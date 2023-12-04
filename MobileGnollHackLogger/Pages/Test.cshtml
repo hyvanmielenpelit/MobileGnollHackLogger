@@ -6,7 +6,7 @@
 
 <div class="text-center">
     <h1 class="display-4">Test</h1>
-    <form action="/api/log" method="post" enctype="multipart/form-data">
+    <form action="/xlogfile" method="post" enctype="multipart/form-data">
         <h2>Send Post</h2>
         <hr />
         <div asp-validation-summary="ModelOnly" class="text-danger" role="alert"></div>
@@ -21,7 +21,7 @@
             <span asp-validation-for="Input.Email" class="text-danger"></span>
         </div>
         <div class="form-floating mb-3">
-            <input name="Password" asp-for="Input.Password" class="form-control" autocomplete="current-password" aria-required="true" placeholder="password" />
+            <input name="Password" type="password" asp-for="Input.Password" class="form-control" autocomplete="current-password" aria-required="true" placeholder="password" />
             <label asp-for="Input.Password" class="form-label">Password</label>
             <span asp-validation-for="Input.Password" class="text-danger"></span>
         </div>

@@ -8,7 +8,7 @@ using System.Text;
 
 namespace MobileGnollHackLogger.Areas.API
 {
-    [Route("api/[controller]")]
+    [Route("xlogfile")]
     [ApiController]
     public class LogController : ControllerBase
     {
