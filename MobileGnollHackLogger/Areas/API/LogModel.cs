@@ -14,7 +14,7 @@ namespace MobileGnollHackLogger.Areas.API
         public string? XLogEntry { get; set; }
 
         [Required]
-        [RegularExpression(@"^[A-Za-z0-9_]{1,15}$")]
+        [RegularExpression(@"^[A-Za-z0-9_]{1,32}$")]
         public string? UserName { get; set; }
 
         [Required]

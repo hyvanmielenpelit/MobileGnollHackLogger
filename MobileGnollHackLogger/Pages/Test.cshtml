@@ -1,5 +1,6 @@
 ﻿@page
 @inject IConfiguration Configuration
+@inject IWebHostEnvironment WebHostEnvironment
 @model MobileGnollHackLogger.Pages.TestModel
 @{
     ViewData["Title"] = "Test";
@@ -42,7 +43,10 @@
             <label asp-for="Input.HtmlDumpLog" class="form-label">Html Dump Log File</label>
             <span asp-validation-for="Input.HtmlDumpLog" class="text-danger"></span>
         </div>
-        <input name="AntiForgeryToken" asp-for="Input.AntiForgeryToken" class="form-control" aria-required="true" type="hidden" value="@Configuration["AntiForgeryToken"]" />
+        @if(WebHostEnvironment.IsDevelopment())
+        {
+            <input name="AntiForgeryToken" asp-for="Input.AntiForgeryToken" class="form-control" aria-required="true" type="hidden" value="@Configuration["AntiForgeryToken"]" />
+        }
         <button type="sumbit" value="submit">Test</button>
     </form>
     <p>Learn about <a href="https://learn.microsoft.com/aspnet/core">building Web apps with ASP.NET Core</a>.</p>
