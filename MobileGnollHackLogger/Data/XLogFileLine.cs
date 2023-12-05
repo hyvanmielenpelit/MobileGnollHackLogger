@@ -1,4 +1,5 @@
-﻿using System.Globalization;
+﻿using Newtonsoft.Json.Linq;
+using System.Globalization;
 using System.Text;
 
 namespace MobileGnollHackLogger.Data
@@ -9,32 +10,67 @@ namespace MobileGnollHackLogger.Data
     public class XLogFileLine
     {
         public string? Version { get; set; } //version
+        public int EditLevel { get; set; } //edit
         public long Points { get; set; } //points
-        public int DeathDNum { get; set; } //deathdnum
+        public int DeathDungeonNumber { get; set; } //deathdnum
         public int DeathLevel { get; set; } //deathlev
         public int MaxLevel { get; set; } //maxlvl
         public int HitPoints { get; set; } //hp
         public int MaxHitPoints { get; set; } //maxhp
         public int Deaths { get; set; } //deaths
-        public string DeathDateText { get; set; }
-        public DateTime DeathDate { get; set; } //deathdate
-        public string BirthDateText { get; set; }
-        public DateTime BirthDate { get; set; } //birthdate
+        public string? DeathDateText { get; set; } //deathdate
+        public DateTime? DeathDate 
+        {
+            get 
+            {
+                if(DeathDateText == null)
+                {
+                    return null;
+                }
+                return DateTime.ParseExact(DeathDateText, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None);
+            }
+        } 
+        public string? BirthDateText { get; set; } //birthdate
+        public DateTime? BirthDate
+        { 
+            get
+            {
+                if(BirthDateText == null)
+                {
+                    return null;
+                }
+                return DateTime.ParseExact(BirthDateText, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None);
+            }
+        } 
         public int UserID { get; set; } //uid
         public string? Role { get; set; } //role
         public string? Race { get; set; } //race
         public string? Gender { get; set; } //gender
         public string? Alignment { get; set; } //align
         public string? Name { get; set; } //name
+        public string? CharacterName { get; set; } //cname
         public string? DeathText { get; set; } //death
         public string? WhileText { get; set; } //while
         public string? ConductsBinary { get; set; } //conduct 0x904
         public int Turns { get; set; } //turns
         public string? AchievementsBinary { get; set; } //achieve 0xaf0e03
         public string? AchievementsText { get; set; } //achieveX
-        public string[]? AchievementsArray { get; set; }
+        public string[]? AchievementsArray
+        { 
+            get
+            {
+                return AchievementsText?.Split(',');
+            }
+        
+        }
         public string? ConductsText { get; set; } //conductX
-        public string[]? ConductsArray { get; set; }
+        public string[]? ConductsArray 
+        {
+            get 
+            {
+                return ConductsText?.Split(',');
+            }
+        }
         public long RealTime { get; set; } //realtime
         public long StartTime { get; set; } //starttime
         public long EndTime { get; set; } //endtime
@@ -44,6 +80,7 @@ namespace MobileGnollHackLogger.Data
         public int Difficulty { get; set; } //difficulty
         public string? Mode { get; set; } //mode
         public string? Scoring { get; set; } //scoring
+        public int DungeonCollapses { get; set; } //collapse
 
         public XLogFileLine()
         {
@@ -63,11 +100,14 @@ namespace MobileGnollHackLogger.Data
                     case "version":
                         Version = value;
                         break;
+                    case "edit":
+                        EditLevel = int.Parse(value);
+                        break;
                     case "points":
                         Points = long.Parse(value);
                         break;
                     case "deathdnum":
-                        DeathDNum = int.Parse(value);
+                        DeathDungeonNumber = int.Parse(value);
                         break;
                     case "deathlev":
                         DeathLevel = int.Parse(value);
@@ -86,11 +126,9 @@ namespace MobileGnollHackLogger.Data
                         break;
                     case "deathdate":
                         DeathDateText = value;
-                        DeathDate = DateTime.ParseExact(value, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None);
                         break;
                     case "birthdate":
                         BirthDateText = value;
-                        BirthDate = DateTime.ParseExact(value, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None);
                         break;
                     case "uid":
                         UserID = int.Parse(value);
@@ -110,6 +148,9 @@ namespace MobileGnollHackLogger.Data
                     case "name":
                         Name = value;
                         break;
+                    case "cname":
+                        CharacterName = value;
+                        break;
                     case "death":
                         DeathText = value;
                         break;
@@ -127,11 +168,9 @@ namespace MobileGnollHackLogger.Data
                         break;
                     case "achieveX":
                         AchievementsText = value;
-                        AchievementsArray = AchievementsText.Split(',');
                         break;
                     case "conductX":
                         ConductsText = value;
-                        ConductsArray = ConductsText.Split(',');
                         break;
                     case "realtime":
                         RealTime = long.Parse(value);
@@ -160,6 +199,9 @@ namespace MobileGnollHackLogger.Data
                     case "scoring":
                         Scoring = value;
                         break;
+                    case "collapse":
+                        DungeonCollapses = int.Parse(value);
+                        break;
                     default:
                         break;
                 }
@@ -171,8 +213,9 @@ namespace MobileGnollHackLogger.Data
             StringBuilder sb = new StringBuilder();
 
             sb.Append("version=").Append(Version).Append("\t");
+            sb.Append("edit=").Append(EditLevel).Append("\t");
             sb.Append("points=").Append(Points).Append("\t");
-            sb.Append("deathdnum=").Append(DeathDNum).Append("\t");
+            sb.Append("deathdnum=").Append(DeathDungeonNumber).Append("\t");
             sb.Append("deathlev=").Append(DeathLevel).Append("\t");
             sb.Append("maxlvl=").Append(MaxLevel).Append("\t");
             sb.Append("hp=").Append(HitPoints).Append("\t");
@@ -186,6 +229,7 @@ namespace MobileGnollHackLogger.Data
             sb.Append("gender=").Append(Gender).Append("\t");
             sb.Append("align=").Append(Alignment).Append("\t");
             sb.Append("name=").Append(Name).Append("\t");
+            sb.Append("cname=").Append(CharacterName).Append("\t");
             sb.Append("death=").Append(DeathText).Append("\t");
             sb.Append("while=").Append(WhileText).Append("\t");
             sb.Append("conduct=").Append(ConductsBinary).Append("\t");
@@ -200,7 +244,8 @@ namespace MobileGnollHackLogger.Data
             sb.Append("flags=").Append(FlagsBinary).Append("\t");
             sb.Append("difficulty=").Append(Difficulty).Append("\t");
             sb.Append("mode=").Append(Mode).Append("\t");
-            sb.Append("scoring=").Append(Scoring);
+            sb.Append("scoring=").Append(Scoring).Append("\t");
+            sb.Append("collapse=").Append(DungeonCollapses);
 
             return sb.ToString();
         }
