@@ -4,13 +4,10 @@ namespace MobileGnollHackLogger.Areas.API
 {
     public class LogModel
     {
-        [Required]
         public IFormFile? PlainTextDumpLog { get; set; }
 
-        [Required]
         public IFormFile? HtmlDumpLog { get; set; }
 
-        [Required]
         public string? XLogEntry { get; set; }
 
         [Required]

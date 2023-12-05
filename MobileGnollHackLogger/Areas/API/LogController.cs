@@ -59,93 +59,92 @@ namespace MobileGnollHackLogger.Areas.API
             try
             {
                 if (model == null)
-                { 
-                    throw new ArgumentNullException(nameof(model));
+                {
+                    return StatusCode(400); //Bad Request
                 }
                 if(model.UserName == null)
                 {
-                    throw new ArgumentNullException(nameof(model.UserName));
+                    return StatusCode(400); //Bad Request
                 }
                 if (model.Password == null)
                 {
-                    throw new ArgumentNullException(nameof(model.Password));
+                    return StatusCode(400); //Bad Request
                 }
                 if(model.AntiForgeryToken == null)
                 {
-                    throw new ArgumentNullException(nameof(model.AntiForgeryToken));
-                }
-                if (model.XLogEntry == null)
-                {
-                    throw new ArgumentNullException(nameof(model.XLogEntry));
-                }
-                if (model.PlainTextDumpLog == null)
-                {
-                    throw new ArgumentNullException(nameof(model.PlainTextDumpLog));
-                }
-                if (model.HtmlDumpLog == null)
-                {
-                    throw new ArgumentNullException(nameof(model.HtmlDumpLog));
+                    return StatusCode(400); //Bad Request
                 }
 
                 var antiForgeryToken = _configuration["AntiForgeryToken"];
                 if (antiForgeryToken != model.AntiForgeryToken)
                 {
-                    return StatusCode(401);
+                    return StatusCode(401); //Not Authorized
                 }
                 
                 var result = await _signInManager.PasswordSignInAsync(model.UserName, model.Password, false, lockoutOnFailure: false);
                 if (result.Succeeded)
                 {
-                    //Sign in succeedeed
-                    XLogFileLine xLogFileLine = new XLogFileLine(model.XLogEntry);
-
-                    //Change user name to the account name
-                    xLogFileLine.Name = model.UserName;
-
-                    // Write Dumplog Files
-                    string dir = _dumplogBasePath + @"\" + xLogFileLine.Name;
-                    if(!System.IO.Directory.Exists(dir))
+                    if (!string.IsNullOrEmpty(model.XLogEntry) && model.PlainTextDumpLog != null && model.HtmlDumpLog != null)
                     {
-                        Directory.CreateDirectory(dir);
+                        //Sign in succeedeed
+                        XLogFileLine xLogFileLine = new XLogFileLine(model.XLogEntry);
+
+                        //Change user name to the account name
+                        xLogFileLine.Name = model.UserName;
+
+                        // Write Dumplog Files
+                        string dir = _dumplogBasePath + @"\" + xLogFileLine.Name;
+                        if (!System.IO.Directory.Exists(dir))
+                        {
+                            Directory.CreateDirectory(dir);
+                        }
+
+                        string filePathWithoutExtension = dir + @"\" + "gnollhack." + xLogFileLine.Name + "." + xLogFileLine.StartTime;
+                        string plainTextDumpLogPath = filePathWithoutExtension + ".txt";
+                        string htmlDumpLogPath = filePathWithoutExtension + ".html";
+
+                        if (System.IO.File.Exists(plainTextDumpLogPath))
+                        {
+                            return StatusCode(409); //Character already exists
+                        }
+
+                        if (System.IO.File.Exists(htmlDumpLogPath))
+                        {
+                            return StatusCode(409); //Character already exists
+                        }
+
+                        using var plainTextOutStream = System.IO.File.OpenWrite(plainTextDumpLogPath);
+                        var t1 = model.PlainTextDumpLog.CopyToAsync(plainTextOutStream);
+
+                        using var htmlOutStream = System.IO.File.OpenWrite(htmlDumpLogPath);
+                        var t2 = model.HtmlDumpLog.CopyToAsync(htmlOutStream);
+
+                        Task.WaitAll(t1, t2);
+
+                        _logger.LogInformation("Dumplog files written for " + xLogFileLine.Name + " at " + dir);
+
+                        //Write xlogfile entry
+                        string line = xLogFileLine.ToString() + "\n";
+
+                        if (!System.IO.Directory.Exists(_logFileDir))
+                        {
+                            System.IO.Directory.CreateDirectory(_logFileDir);
+                        }
+
+                        await System.IO.File.AppendAllTextAsync(_logFilePath, line);
+
+                        _logger.LogInformation("xlogfile entry written for " + xLogFileLine.Name);
+                        return StatusCode(200); //OK
                     }
-
-                    string filePathWithoutExtension = dir + @"\" + "gnollhack." + xLogFileLine.Name + "." + xLogFileLine.StartTime;
-                    string plainTextDumpLogPath = filePathWithoutExtension + ".txt";
-                    string htmlDumpLogPath = filePathWithoutExtension + ".html";
-
-                    if(System.IO.File.Exists(plainTextDumpLogPath))
+                    else if(string.IsNullOrEmpty(model.XLogEntry) && model.PlainTextDumpLog == null && model.HtmlDumpLog == null)
                     {
-                        return StatusCode(409); //Character already exists
+                        //Test Connection
+                        return Ok();
                     }
-
-                    if (System.IO.File.Exists(htmlDumpLogPath))
+                    else
                     {
-                        return StatusCode(409); //Character already exists
+                        return StatusCode(400); //Bad Request
                     }
-
-                    using var plainTextOutStream = System.IO.File.OpenWrite(plainTextDumpLogPath);
-                    var t1 = model.PlainTextDumpLog.CopyToAsync(plainTextOutStream);
-
-                    using var htmlOutStream = System.IO.File.OpenWrite(htmlDumpLogPath);
-                    var t2 = model.HtmlDumpLog.CopyToAsync(htmlOutStream);
-
-                    Task.WaitAll(t1, t2);
-
-                    _logger.LogInformation("Dumplog files written for " + xLogFileLine.Name + " at " + dir);
-
-                    //Write xlogfile entry
-                    string line = xLogFileLine.ToString() + "\n";
-
-                    if (!System.IO.Directory.Exists(_logFileDir))
-                    {
-                        System.IO.Directory.CreateDirectory(_logFileDir);
-                    }
-
-                    await System.IO.File.AppendAllTextAsync(_logFilePath, line);
-
-                    _logger.LogInformation("xlogfile entry written for " + xLogFileLine.Name);
-
-                    return StatusCode(200); //OK
                 }
                 if (result.RequiresTwoFactor)
                 {
