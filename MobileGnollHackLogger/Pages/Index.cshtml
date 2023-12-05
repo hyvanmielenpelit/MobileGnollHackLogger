@@ -5,6 +5,24 @@
 }
 
 <div class="text-center">
-    <h1 class="display-4">Welcome</h1>
-    <p>Learn about <a href="https://learn.microsoft.com/aspnet/core">building Web apps with ASP.NET Core</a>.</p>
+    <h1 class="display-4">Mobile GnollHack and NetHack Scoreboard Bridge</h1>
+    @if (User?.Identity?.IsAuthenticated ?? false)
+    {
+        <p>Thank you for registering a GnollHack account!</p>
+        <h1>Now The Last Step</h1>
+    }
+    else
+    {
+        <p>
+            To make games played on mobile GnollHack clients to register to
+            <a href="https://nethackscoreboard.org/">NetHack Scoreboard</a>, please take the following steps:
+        </p>
+        <h2>1. Create Account</h2>
+        <p>Create an account on this site and <a href="/Identity/Account/Register">register a user name</a> that you want to be displayed on NetHack Scoreboard.</p>
+        
+        
+    }
+    <h2>2. Enter Credentials to the Mobile App</h2>
+    <p>Enter the credentials to the GnollHack mobile app.</p>
+
 </div>
