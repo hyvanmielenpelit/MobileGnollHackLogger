@@ -34,7 +34,6 @@ namespace MobileGnollHackLogger.Areas.API
             _configuration = configuration;
         }
 
-        // GET: api/<LogController>
         [HttpGet]
         public IActionResult Get()
         {
