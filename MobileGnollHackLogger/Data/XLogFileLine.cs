@@ -1,4 +1,5 @@
 ﻿using System.Globalization;
+using System.Text;
 
 namespace MobileGnollHackLogger.Data
 {
@@ -15,7 +16,9 @@ namespace MobileGnollHackLogger.Data
         public int HitPoints { get; set; } //hp
         public int MaxHitPoints { get; set; } //maxhp
         public int Deaths { get; set; } //deaths
+        public string DeathDateText { get; set; }
         public DateTime DeathDate { get; set; } //deathdate
+        public string BirthDateText { get; set; }
         public DateTime BirthDate { get; set; } //birthdate
         public int UserID { get; set; } //uid
         public string? Role { get; set; } //role
@@ -82,9 +85,11 @@ namespace MobileGnollHackLogger.Data
                         Deaths = int.Parse(value);
                         break;
                     case "deathdate":
+                        DeathDateText = value;
                         DeathDate = DateTime.ParseExact(value, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None);
                         break;
                     case "birthdate":
+                        BirthDateText = value;
                         BirthDate = DateTime.ParseExact(value, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None);
                         break;
                     case "uid":
@@ -159,6 +164,45 @@ namespace MobileGnollHackLogger.Data
                         break;
                 }
             }
+        }
+
+        public override string ToString()
+        {
+            StringBuilder sb = new StringBuilder();
+
+            sb.Append("version=").Append(Version).Append("\t");
+            sb.Append("points=").Append(Points).Append("\t");
+            sb.Append("deathdnum=").Append(DeathDNum).Append("\t");
+            sb.Append("deathlev=").Append(DeathLevel).Append("\t");
+            sb.Append("maxlvl=").Append(MaxLevel).Append("\t");
+            sb.Append("hp=").Append(HitPoints).Append("\t");
+            sb.Append("maxhp=").Append(MaxHitPoints).Append("\t");
+            sb.Append("deaths=").Append(Deaths).Append("\t");
+            sb.Append("deathdate=").Append(DeathDateText).Append("\t");
+            sb.Append("birthdate=").Append(BirthDateText).Append("\t");
+            sb.Append("uid=").Append(UserID).Append("\t");
+            sb.Append("role=").Append(Role).Append("\t");
+            sb.Append("race=").Append(Race).Append("\t");
+            sb.Append("gender=").Append(Gender).Append("\t");
+            sb.Append("align=").Append(Alignment).Append("\t");
+            sb.Append("name=").Append(Name).Append("\t");
+            sb.Append("death=").Append(DeathText).Append("\t");
+            sb.Append("while=").Append(WhileText).Append("\t");
+            sb.Append("conduct=").Append(ConductsBinary).Append("\t");
+            sb.Append("turns=").Append(Turns).Append("\t");
+            sb.Append("achieve=").Append(AchievementsBinary).Append("\t");
+            sb.Append("achieveX=").Append(AchievementsText).Append("\t");
+            sb.Append("realtime=").Append(RealTime).Append("\t");
+            sb.Append("starttime=").Append(StartTime).Append("\t");
+            sb.Append("endtime=").Append(EndTime).Append("\t");
+            sb.Append("gender0=").Append(StartingGender).Append("\t");
+            sb.Append("align0=").Append(StartingAlignment).Append("\t");
+            sb.Append("flags=").Append(FlagsBinary).Append("\t");
+            sb.Append("difficulty=").Append(Difficulty).Append("\t");
+            sb.Append("mode=").Append(Mode).Append("\t");
+            sb.Append("scoring=").Append(Scoring);
+
+            return sb.ToString();
         }
     }
 }
