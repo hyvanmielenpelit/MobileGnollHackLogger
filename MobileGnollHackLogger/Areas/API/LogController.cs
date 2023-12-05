@@ -19,6 +19,7 @@ namespace MobileGnollHackLogger.Areas.API
         private IWebHostEnvironment _environment;
         private IConfiguration _configuration;
         private string _logFilePath = "";
+        private string _logFileDir = "";
         private string _dumplogBasePath = "";
 
         public LogController(SignInManager<IdentityUser> signInManager, ILogger<LogModel> logger, IWebHostEnvironment environment, 
@@ -27,7 +28,8 @@ namespace MobileGnollHackLogger.Areas.API
             _signInManager = signInManager;
             _logger = logger;
             _environment = environment;
-            _logFilePath = _environment.WebRootPath + @"\logs\xlogfile";
+            _logFileDir = _environment.WebRootPath + @"\logs";
+            _logFilePath = _logFileDir + @"\xlogfile";
             _dumplogBasePath = _environment.WebRootPath + @"\dumplogs";
             _configuration = configuration;
         }
@@ -107,6 +109,11 @@ namespace MobileGnollHackLogger.Areas.API
                     xLogFileLine.Name = model.UserName;
 
                     string line = xLogFileLine.ToString() + "\n";
+
+                    if(!System.IO.Directory.Exists(_logFileDir))
+                    {
+                        System.IO.Directory.CreateDirectory(_logFileDir);
+                    }
                     await System.IO.File.AppendAllTextAsync(_logFilePath, line);
 
                     _logger.LogInformation("xlogfile entry written for " + xLogFileLine.Name);
