@@ -2,6 +2,8 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using MobileGnollHackLogger.Data;
+using System.Net;
 using System.Text;
 
 // For more information on enabling Web API for empty projects, visit https://go.microsoft.com/fwlink/?LinkID=397860
@@ -14,12 +16,20 @@ namespace MobileGnollHackLogger.Areas.API
     {
         private readonly SignInManager<IdentityUser> _signInManager;
         private readonly ILogger<LogModel> _logger;
-        private string _logFilePath = "xlogfile";
+        private IWebHostEnvironment _environment;
+        private IConfiguration _configuration;
+        private string _logFilePath = "";
+        private string _dumplogBasePath = "";
 
-        public LogController(SignInManager<IdentityUser> signInManager, ILogger<LogModel> logger)
+        public LogController(SignInManager<IdentityUser> signInManager, ILogger<LogModel> logger, IWebHostEnvironment environment, 
+            IConfiguration configuration)
         {
             _signInManager = signInManager;
             _logger = logger;
+            _environment = environment;
+            _logFilePath = _environment.WebRootPath + @"\logs\xlogfile";
+            _dumplogBasePath = _environment.WebRootPath + @"\dumplogs";
+            _configuration = configuration;
         }
 
         // GET: api/<LogController>
@@ -45,30 +55,70 @@ namespace MobileGnollHackLogger.Areas.API
 
         // POST api/<LogController>
         [HttpPost]
-        public async void Post([FromForm] LogModel model)
+        public async Task<IActionResult> Post([FromForm] LogModel model)
         {
-            //CancellationToken ct = new CancellationToken();
-            //var formCollection = await Request.ReadFormAsync(ct);
-            //foreach (var formField in formCollection)
-            //{
-            //    var key = formField.Key;
-            //    var value = formField.Value;
+            try
+            {
+                if (model == null)
+                { 
+                    throw new ArgumentNullException(nameof(model));
+                }
+                if(model.UserName == null)
+                {
+                    throw new ArgumentNullException(nameof(model.UserName));
+                }
+                if (model.Password == null)
+                {
+                    throw new ArgumentNullException(nameof(model.Password));
+                }
+                if(model.AntiForgeryToken == null)
+                {
+                    throw new ArgumentNullException(nameof(model.AntiForgeryToken));
+                }
+                if (model.XLogEntry == null)
+                {
+                    throw new ArgumentNullException(nameof(model.XLogEntry));
+                }
 
-            //}
+                var antiForgeryToken = _configuration["AntiForgeryToken"];
+                if (antiForgeryToken != model.AntiForgeryToken)
+                {
+                    return StatusCode(401);
+                }
 
-            //if (model?.PlainTextDumpLog == null || model?.PlainTextDumpLog.Length <= 0)
-            //{
-            //   return new HttpResponseMessage(System.Net.HttpStatusCode.BadRequest);
-            //}
+                var result = await _signInManager.PasswordSignInAsync(model.UserName, model.Password, false, lockoutOnFailure: false);
+                if (result.Succeeded)
+                {
+                    //Sign in succeedeed
+                    XLogFileLine xLogFileLine = new XLogFileLine(model.XLogEntry);
 
-            //if (model?.HtmlDumpLog == null || model?.HtmlDumpLog.Length <= 0)
-            //{
-            //    return new HttpResponseMessage(System.Net.HttpStatusCode.BadRequest);
-            //}
-            //var result = await _signInManager.PasswordSignInAsync(model.UserName, model.Password, false, lockoutOnFailure: false);
+                    //Do checks on xLogFileLine here
+                    //TODO
 
-            //var response = new HttpResponseMessage(System.Net.HttpStatusCode.NoContent);
-            //return response;
+                    string line = model.XLogEntry + "\n";
+                    await System.IO.File.AppendAllTextAsync(_logFilePath, line);
+
+                    _logger.LogInformation("User logged in.");
+                    return StatusCode(200); //OK
+                }
+                if (result.RequiresTwoFactor)
+                {
+                    return StatusCode(500);
+                }
+                if (result.IsLockedOut)
+                {
+                    return StatusCode(403);
+                }
+                else
+                {
+                    return StatusCode(400);
+                }
+            }
+            catch (Exception ex) 
+            {
+                Response.StatusCode = 500;
+                return Content(ex.ToString() + ", Message: ", ex.Message);
+            }
         }
     }
 }

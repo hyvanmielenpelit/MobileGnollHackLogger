@@ -6,25 +6,15 @@ namespace MobileGnollHackLogger.Pages
 {
     public class TestModel : PageModel
     {
+        private IConfiguration _configuration;
+
+        public TestModel(IConfiguration configuration)
+        {
+            _configuration = configuration;
+        }
+
         [BindProperty]
-        public MobileGnollHackLogger.Areas.API.LogModel Input { get; set; }
+        public MobileGnollHackLogger.Areas.API.LogModel? Input { get; set; }
 
-        public void OnGet()
-        {
-        }
-
-        public IActionResult OnPost()
-        {
-            //To Do
-            HttpClient httpClient = new HttpClient();
-            var baseUrl = "https://" + HttpContext.Request.Headers.Host;
-            HttpRequestMessage msg = new HttpRequestMessage(HttpMethod.Post, baseUrl + "/API/log");
-            var result = httpClient.Send(msg);
-            using var contentStream = result.Content.ReadAsStream();
-            using var streamReader = new StreamReader(contentStream);
-            var text = streamReader.ReadToEnd();
-
-            return Page();
-        }
     }
 }
