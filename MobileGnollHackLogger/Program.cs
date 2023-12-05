@@ -45,19 +45,10 @@ app.UseStaticFiles();
 
 app.UseRouting();
 
-//app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapRazorPages();
 
 app.MapControllers();
-app.MapIdentityApi<IdentityUser>();
-
-app.MapPost("/log", (HttpContext httpContext) =>
-{
-    return "OK!";
-})
-.WithName("PostLog")
-.RequireAuthorization();
 
 app.Run();

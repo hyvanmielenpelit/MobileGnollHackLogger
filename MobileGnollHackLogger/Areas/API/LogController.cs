@@ -123,12 +123,12 @@ namespace MobileGnollHackLogger.Areas.API
 
                     if(System.IO.File.Exists(plainTextDumpLogPath))
                     {
-                        throw new Exception("File " + plainTextDumpLogPath +  " already exists.");
+                        throw new FileAlreadyExistsException("File " + plainTextDumpLogPath +  " already exists.");
                     }
 
                     if (System.IO.File.Exists(htmlDumpLogPath))
                     {
-                        throw new Exception("File " + htmlDumpLogPath + " already exists.");
+                        throw new FileAlreadyExistsException("File " + htmlDumpLogPath + " already exists.");
                     }
 
                     using var plainTextOutStream = System.IO.File.OpenWrite(plainTextDumpLogPath);
@@ -159,7 +159,7 @@ namespace MobileGnollHackLogger.Areas.API
             catch (Exception ex) 
             {
                 Response.StatusCode = 500;
-                return Content(ex.ToString() + ", Message: ", ex.Message);
+                return Content((ex.InnerException ?? ex).GetType().FullName + ", Message: " + ex.Message);
             }
         }
     }
