@@ -102,22 +102,10 @@ namespace MobileGnollHackLogger.Areas.API
                     //Sign in succeedeed
                     XLogFileLine xLogFileLine = new XLogFileLine(model.XLogEntry);
 
-                    //Do checks on xLogFileLine here
-                    //TODO
-
                     //Change user name to the account name
                     xLogFileLine.Name = model.UserName;
 
-                    string line = xLogFileLine.ToString() + "\n";
-
-                    if(!System.IO.Directory.Exists(_logFileDir))
-                    {
-                        System.IO.Directory.CreateDirectory(_logFileDir);
-                    }
-                    await System.IO.File.AppendAllTextAsync(_logFilePath, line);
-
-                    _logger.LogInformation("xlogfile entry written for " + xLogFileLine.Name);
-
+                    // Write Dumplog Files
                     string dir = _dumplogBasePath + @"\" + xLogFileLine.Name;
                     if(!System.IO.Directory.Exists(dir))
                     {
@@ -130,12 +118,12 @@ namespace MobileGnollHackLogger.Areas.API
 
                     if(System.IO.File.Exists(plainTextDumpLogPath))
                     {
-                        throw new FileAlreadyExistsException("File " + plainTextDumpLogPath +  " already exists.");
+                        return StatusCode(409); //Character already exists
                     }
 
                     if (System.IO.File.Exists(htmlDumpLogPath))
                     {
-                        throw new FileAlreadyExistsException("File " + htmlDumpLogPath + " already exists.");
+                        return StatusCode(409); //Character already exists
                     }
 
                     using var plainTextOutStream = System.IO.File.OpenWrite(plainTextDumpLogPath);
@@ -147,6 +135,18 @@ namespace MobileGnollHackLogger.Areas.API
                     Task.WaitAll(t1, t2);
 
                     _logger.LogInformation("Dumplog files written for " + xLogFileLine.Name + " at " + dir);
+
+                    //Write xlogfile entry
+                    string line = xLogFileLine.ToString() + "\n";
+
+                    if (!System.IO.Directory.Exists(_logFileDir))
+                    {
+                        System.IO.Directory.CreateDirectory(_logFileDir);
+                    }
+
+                    await System.IO.File.AppendAllTextAsync(_logFilePath, line);
+
+                    _logger.LogInformation("xlogfile entry written for " + xLogFileLine.Name);
 
                     return StatusCode(200); //OK
                 }
