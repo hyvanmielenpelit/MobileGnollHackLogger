@@ -6,12 +6,19 @@ using System.Configuration;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-var connectionString =
-#if DEBUG    
-    builder.Configuration["DbConnectionStringDebug"];
-#else
-    builder.Configuration["DbConnectionStringRelease"];
-#endif
+string? connectionString = null;
+if(builder.Environment.IsProduction())
+{
+    connectionString = builder.Configuration["Environment:Production:ConnectionString"];
+}
+else if (builder.Environment.IsDevelopment())
+{
+    connectionString = builder.Configuration["Environment:Development:ConnectionString"];
+}
+else if (builder.Environment.IsStaging())
+{
+    connectionString = builder.Configuration["Environment:Staging:ConnectionString"];
+}
 
 if(string.IsNullOrEmpty(connectionString))
 {
