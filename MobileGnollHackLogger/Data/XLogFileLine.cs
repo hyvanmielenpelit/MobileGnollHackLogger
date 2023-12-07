@@ -256,6 +256,7 @@ namespace MobileGnollHackLogger.Data
             sb.Append("turns=").Append(Turns).Append("\t");
             sb.Append("achieve=").Append(AchievementsBinary).Append("\t");
             sb.Append("achieveX=").Append(AchievementsText).Append("\t");
+            sb.Append("conductX=").Append(ConductsText).Append("\t");
             sb.Append("realtime=").Append(RealTime).Append("\t");
             sb.Append("starttime=").Append(StartTime).Append("\t");
             sb.Append("endtime=").Append(EndTime).Append("\t");

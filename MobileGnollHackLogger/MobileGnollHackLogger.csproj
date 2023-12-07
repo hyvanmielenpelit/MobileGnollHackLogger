@@ -24,6 +24,7 @@
 
   <ItemGroup>
     <Folder Include="wwwroot\dumplogs\" />
+    <Folder Include="wwwroot\dumplogs\Tommi\" />
     <Folder Include="wwwroot\logs\" />
   </ItemGroup>
 
