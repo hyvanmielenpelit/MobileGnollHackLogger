@@ -1,4 +1,5 @@
-﻿using Newtonsoft.Json.Linq;
+﻿using Microsoft.EntityFrameworkCore;
+using Newtonsoft.Json.Linq;
 using System.Globalization;
 using System.Text;
 
@@ -42,7 +43,7 @@ namespace MobileGnollHackLogger.Data
                 return DateTime.ParseExact(BirthDateText, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None);
             }
         } 
-        public int UserID { get; set; } //uid
+        public int ProcessUserID { get; set; } //uid
         public string? Role { get; set; } //role
         public string? Race { get; set; } //race
         public string? Gender { get; set; } //gender
@@ -95,115 +96,134 @@ namespace MobileGnollHackLogger.Data
                 var split = item.Split('=');
                 var key = split[0];
                 var value = split[1];
-                switch(key) 
+                if(split.Length != 2)
                 {
-                    case "version":
-                        Version = value;
-                        break;
-                    case "edit":
-                        EditLevel = int.Parse(value);
-                        break;
-                    case "points":
-                        Points = long.Parse(value);
-                        break;
-                    case "deathdnum":
-                        DeathDungeonNumber = int.Parse(value);
-                        break;
-                    case "deathlev":
-                        DeathLevel = int.Parse(value);
-                        break;
-                    case "maxlvl":
-                        MaxLevel = int.Parse(value);
-                        break;
-                    case "hp":
-                        HitPoints = int.Parse(value);
-                        break;
-                    case "maxhp":
-                        MaxHitPoints = int.Parse(value);
-                        break;
-                    case "deaths":
-                        Deaths = int.Parse(value);
-                        break;
-                    case "deathdate":
-                        DeathDateText = value;
-                        break;
-                    case "birthdate":
-                        BirthDateText = value;
-                        break;
-                    case "uid":
-                        UserID = int.Parse(value);
-                        break;
-                    case "role":
-                        Role = value;
-                        break;
-                    case "race":
-                        Race = value;
-                        break;
-                    case "gender":
-                        Gender = value;
-                        break;
-                    case "align":
-                        Alignment = value;
-                        break;
-                    case "name":
-                        Name = value;
-                        break;
-                    case "cname":
-                        CharacterName = value;
-                        break;
-                    case "death":
-                        DeathText = value;
-                        break;
-                    case "while":
-                        WhileText = value;
-                        break;
-                    case "conduct":
-                        ConductsBinary = value;
-                        break;
-                    case "turns":
-                        Turns = int.Parse(value);
-                        break;
-                    case "achieve":
-                        AchievementsBinary = value;
-                        break;
-                    case "achieveX":
-                        AchievementsText = value;
-                        break;
-                    case "conductX":
-                        ConductsText = value;
-                        break;
-                    case "realtime":
-                        RealTime = long.Parse(value);
-                        break;
-                    case "starttime":
-                        StartTime = long.Parse(value);
-                        break;
-                    case "endtime":
-                        EndTime = long.Parse(value);
-                        break;
-                    case "gender0":
-                        StartingGender = value;
-                        break;
-                    case "align0":
-                        StartingAlignment = value;
-                        break;
-                    case "flags":
-                        FlagsBinary = value;
-                        break;
-                    case "difficulty":
-                        Difficulty = int.Parse(value);
-                        break;
-                    case "mode":
-                        Mode = value;
-                        break;
-                    case "scoring":
-                        Scoring = value;
-                        break;
-                    case "collapse":
-                        DungeonCollapses = int.Parse(value);
-                        break;
-                    default:
-                        break;
+                    throw new Exception("XlogLine item '" + item + "' cannot be split into two parts using =.");
+                }
+                try
+                {
+
+                    switch (key)
+                    {
+                        case "id":
+                            if (this is GameLog)
+                            {
+                                GameLog t = (GameLog)this;
+                                t.Id = long.Parse(value);
+                            }
+                            break;
+                        case "version":
+                            Version = value;
+                            break;
+                        case "edit":
+                            EditLevel = int.Parse(value);
+                            break;
+                        case "points":
+                            Points = long.Parse(value);
+                            break;
+                        case "deathdnum":
+                            DeathDungeonNumber = int.Parse(value);
+                            break;
+                        case "deathlev":
+                            DeathLevel = int.Parse(value);
+                            break;
+                        case "maxlvl":
+                            MaxLevel = int.Parse(value);
+                            break;
+                        case "hp":
+                            HitPoints = int.Parse(value);
+                            break;
+                        case "maxhp":
+                            MaxHitPoints = int.Parse(value);
+                            break;
+                        case "deaths":
+                            Deaths = int.Parse(value);
+                            break;
+                        case "deathdate":
+                            DeathDateText = value;
+                            break;
+                        case "birthdate":
+                            BirthDateText = value;
+                            break;
+                        case "uid":
+                            ProcessUserID = int.Parse(value);
+                            break;
+                        case "role":
+                            Role = value;
+                            break;
+                        case "race":
+                            Race = value;
+                            break;
+                        case "gender":
+                            Gender = value;
+                            break;
+                        case "align":
+                            Alignment = value;
+                            break;
+                        case "name":
+                            Name = value;
+                            break;
+                        case "cname":
+                            CharacterName = value;
+                            break;
+                        case "death":
+                            DeathText = value;
+                            break;
+                        case "while":
+                            WhileText = value;
+                            break;
+                        case "conduct":
+                            ConductsBinary = value;
+                            break;
+                        case "turns":
+                            Turns = int.Parse(value);
+                            break;
+                        case "achieve":
+                            AchievementsBinary = value;
+                            break;
+                        case "achieveX":
+                            AchievementsText = value;
+                            break;
+                        case "conductX":
+                            ConductsText = value;
+                            break;
+                        case "realtime":
+                            RealTime = long.Parse(value);
+                            break;
+                        case "starttime":
+                            StartTime = long.Parse(value);
+                            break;
+                        case "endtime":
+                            EndTime = long.Parse(value);
+                            break;
+                        case "gender0":
+                            StartingGender = value;
+                            break;
+                        case "align0":
+                            StartingAlignment = value;
+                            break;
+                        case "flags":
+                            FlagsBinary = value;
+                            break;
+                        case "difficulty":
+                            Difficulty = int.Parse(value);
+                            break;
+                        case "mode":
+                            Mode = value;
+                            break;
+                        case "scoring":
+                            Scoring = value;
+                            break;
+                        case "collapse":
+                            DungeonCollapses = int.Parse(value);
+                            break;
+                        default:
+                            break;
+                    }
+                }
+                catch(Exception ex)
+                {
+                    throw new Exception($"XLogFileLine item with key '{key}' and value '{value}' is invalid.", ex);
                 }
             }
         }
@@ -223,7 +243,7 @@ namespace MobileGnollHackLogger.Data
             sb.Append("deaths=").Append(Deaths).Append("\t");
             sb.Append("deathdate=").Append(DeathDateText).Append("\t");
             sb.Append("birthdate=").Append(BirthDateText).Append("\t");
-            sb.Append("uid=").Append(UserID).Append("\t");
+            sb.Append("uid=").Append(ProcessUserID).Append("\t");
             sb.Append("role=").Append(Role).Append("\t");
             sb.Append("race=").Append(Race).Append("\t");
             sb.Append("gender=").Append(Gender).Append("\t");

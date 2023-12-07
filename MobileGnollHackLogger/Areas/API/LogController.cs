@@ -8,51 +8,49 @@ using System.Text;
 
 namespace MobileGnollHackLogger.Areas.API
 {
-    [Route("xlogfile")]
     [ApiController]
     public class LogController : ControllerBase
     {
-        private readonly SignInManager<IdentityUser> _signInManager;
+        private readonly SignInManager<ApplicationUser> _signInManager;
         private readonly ILogger<LogModel> _logger;
         private IWebHostEnvironment _environment;
         private IConfiguration _configuration;
-        private string _logFilePath = "";
-        private string _logFileDir = "";
+        private ApplicationDbContext _dbContext;
+
         private string _dumplogBasePath = "";
 
-        public LogController(SignInManager<IdentityUser> signInManager, ILogger<LogModel> logger, IWebHostEnvironment environment, 
-            IConfiguration configuration)
+        public LogController(SignInManager<ApplicationUser> signInManager, ILogger<LogModel> logger, IWebHostEnvironment environment, 
+            IConfiguration configuration, ApplicationDbContext dbContext)
         {
             _signInManager = signInManager;
             _logger = logger;
             _environment = environment;
-            _logFileDir = _environment.WebRootPath + @"\logs";
-            _logFilePath = _logFileDir + @"\xlogfile";
             _dumplogBasePath = _environment.WebRootPath + @"\dumplogs";
             _configuration = configuration;
+            _dbContext = dbContext;
         }
 
+        [Route("xlogfile")]
         [HttpGet]
         public IActionResult Get()
         {
-            if(!System.IO.File.Exists(_logFilePath)) 
+            return Get(0);
+        }
+        
+        [Route("xlogfile/{lastId}")]
+        [HttpGet]
+        public IActionResult Get(long? lastId)
+        {
+            var gameLogs = _dbContext.GameLog.Where(gl => gl.Id > (lastId ?? 0));
+            StringBuilder sb = new StringBuilder();
+            foreach(var gameLog in gameLogs)
             {
-                return Ok();
+                sb.AppendLine(gameLog.ToString());
             }
-            try
-            {
-                var text = System.IO.File.ReadAllText(_logFilePath, Encoding.ASCII);
-                var text2 = text.Replace("\r", ""); //Ensure Linux line endings
-                //var bytes = Encoding.UTF8.GetBytes(text2);
-                //return File(bytes, "text/plain", "xlogfile",);
-                return Content(text2, "text/plain", Encoding.ASCII);
-            }
-            catch(Exception ex) 
-            { 
-                return StatusCode(500, ex?.Message ?? "");
-            }
+            return Content(sb.ToString(), "text/plain", Encoding.ASCII);
         }
 
+        [Route("xlogfile")]
         [HttpPost]
         public async Task<IActionResult> Post([FromForm] LogModel model)
         {
@@ -123,18 +121,22 @@ namespace MobileGnollHackLogger.Areas.API
 
                         _logger.LogInformation("Dumplog files written for " + xLogFileLine.Name + " at " + dir);
 
-                        //Write xlogfile entry
-                        string line = xLogFileLine.ToString() + "\n";
-
-                        if (!System.IO.Directory.Exists(_logFileDir))
+                        try
                         {
-                            System.IO.Directory.CreateDirectory(_logFileDir);
+                            GameLog gameLog = new GameLog(xLogFileLine, _dbContext);
+                            await _dbContext.GameLog.AddAsync(gameLog);
+                            await _dbContext.SaveChangesAsync();
+                            return StatusCode(200); //OK
                         }
-
-                        await System.IO.File.AppendAllTextAsync(_logFilePath, line);
-
-                        _logger.LogInformation("xlogfile entry written for " + xLogFileLine.Name);
-                        return StatusCode(200); //OK
+                        catch(InvalidOperationException)
+                        {
+                            return StatusCode(410); //Gone
+                        }
+                        catch(Exception ex)
+                        {
+                            Response.StatusCode = 500; //Server Error
+                            return Content(ex.Message.ToString());
+                        }
                     }
                     else if(string.IsNullOrEmpty(model.XLogEntry) && model.PlainTextDumpLog == null && model.HtmlDumpLog == null)
                     {
