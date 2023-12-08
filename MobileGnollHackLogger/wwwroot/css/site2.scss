@@ -1,6 +1,6 @@
 ﻿$font-color: white;
 $link-color: #ded18b;
-$font-em-color: lighten($link-color, 5%);
+$font-em-color: $link-color;
 
 body {
     margin-bottom: 60px;
@@ -50,6 +50,11 @@ footer {
 
 a {
     color: $link-color;
+
+    &:hover
+    {
+        color: darken($link-color, 20%);
+    }
 }
 
 input.form-control {
@@ -93,4 +98,8 @@ hr.separator {
         font-style: normal;
         color: $font-em-color;
     }
+}
+
+.navbar-toggler-icon {
+   font-size: 12px;
 }

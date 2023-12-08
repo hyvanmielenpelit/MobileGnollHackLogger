@@ -41,6 +41,9 @@ footer.border-top {
 a {
   color: #ded18b;
 }
+a:hover {
+  color: #c7b23c;
+}
 
 input.form-control {
   color: white;
@@ -78,5 +81,9 @@ hr.separator {
   /*text-decoration:underline;*/
   /*font-variant:small-caps;*/
   font-style: normal;
-  color: #e4d99f;
+  color: #ded18b;
+}
+
+.navbar-toggler-icon {
+  font-size: 12px;
 }
