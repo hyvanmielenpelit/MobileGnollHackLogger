@@ -6,11 +6,12 @@
 
 <div class="text-center">
     <h1 class="display-4">GnollHack Account</h1>
-    <h5 style="margin-bottom:30px;">Bridge Between Mobile GnollHack Clients and NetHack Scoreboard </h5>
+    <h5>Bridge Between Mobile GnollHack Clients and NetHack Scoreboard </h5>
+    <hr class="separator" />
     
     @if (User?.Identity?.IsAuthenticated ?? false)
     {
-        <p>Thank you for registering a GnollHack account!</p>
+        <h5 style="margin-bottom:40px;">Thank you for registering a GnollHack account!</h5>
         <h1>Now The Last Step</h1>
     }
     else
@@ -27,5 +28,8 @@
     }
     <h3>2. Enter Credentials to the Mobile App</h3>
     <p>Enter the credentials to the GnollHack mobile app.</p>
-
+    <p class="task-list">
+        1. Open Settings<br />
+       2. Enter your <em>User Name</em> and <em>Password</em> to <em>Account Credentials</em>.
+    </p>
 </div>
