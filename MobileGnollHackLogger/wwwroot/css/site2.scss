@@ -1,0 +1,77 @@
+﻿body {
+    margin-bottom: 60px;
+
+    color: white;
+    background-image: url(/img/gnoll-illustration-w1920-q30.jpg);
+    background-repeat: no-repeat;
+    background-size: cover;
+    background-position: center;
+}
+
+nav {
+    &.navbar a {
+        color: white !important;
+        background: #111 !important;
+
+        &:hover {
+            color: #ddd !important;
+        }
+    }
+
+    &.border-bottom {
+        color: white !important;
+        background: #111 !important;
+        border-bottom-color: black !important;
+    }
+}
+
+main {
+    background: #111;
+    border: white;
+    border-radius: 10px;
+    padding: 15px;
+    max-width: 1000px;
+    margin: 30px auto;
+    box-shadow: 0px 0px 20px 20px black;
+}
+
+footer {
+    background: #111;
+
+    &.border-top {
+        color: white !important;
+        border-top-color: black !important;
+    }
+}
+
+a {
+    color: #ded18b;
+}
+
+input.form-control {
+    color: white;
+    background: #222;
+
+    &:focus {
+        color: white !important;
+        background: #222 !important;
+    }
+
+    &:disabled {
+        color: #ccc !important;
+        background: #444 !important;
+    }
+}
+
+.center-box {
+    margin: 0 auto;
+    max-width: 600px;
+}
+
+a.nav-link {
+    color: #ded18b;
+
+    &:hover {
+        color: #ded18b;
+    }
+}
