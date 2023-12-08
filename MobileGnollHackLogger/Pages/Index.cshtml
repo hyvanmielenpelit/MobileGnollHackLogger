@@ -5,7 +5,9 @@
 }
 
 <div class="text-center">
-    <h1 class="display-4">Mobile GnollHack and NetHack Scoreboard Bridge</h1>
+    <h1 class="display-4">GnollHack Account</h1>
+    <h5 style="margin-bottom:30px;">Bridge Between Mobile GnollHack Clients and NetHack Scoreboard </h5>
+    
     @if (User?.Identity?.IsAuthenticated ?? false)
     {
         <p>Thank you for registering a GnollHack account!</p>
@@ -13,16 +15,17 @@
     }
     else
     {
+        <h2>Getting Started</h2>
         <p>
             To make games played on mobile GnollHack clients to register to
             <a href="https://nethackscoreboard.org/">NetHack Scoreboard</a>, please take the following steps:
         </p>
-        <h2>1. Create Account</h2>
+        <h3>1. Create Account</h3>
         <p>Create an account on this site and <a href="/Identity/Account/Register">register a user name</a> that you want to be displayed on NetHack Scoreboard.</p>
         
         
     }
-    <h2>2. Enter Credentials to the Mobile App</h2>
+    <h3>2. Enter Credentials to the Mobile App</h3>
     <p>Enter the credentials to the GnollHack mobile app.</p>
 
 </div>
