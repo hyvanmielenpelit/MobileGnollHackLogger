@@ -11,10 +11,11 @@ namespace MobileGnollHackLogger.Pages
         public TestModel(IConfiguration configuration)
         {
             _configuration = configuration;
+            Input = new Areas.API.LogModel();
         }
 
         [BindProperty]
-        public MobileGnollHackLogger.Areas.API.LogModel? Input { get; set; }
+        public MobileGnollHackLogger.Areas.API.LogModel Input { get; set; }
 
     }
 }
