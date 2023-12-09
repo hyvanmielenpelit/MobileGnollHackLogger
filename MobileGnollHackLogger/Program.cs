@@ -1,18 +1,30 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Azure;
 using MobileGnollHackLogger.Data;
 using System.Configuration;
+using Azure.Communication.Email;
+using Azure.Core.Extensions;
+using Microsoft.AspNetCore.Identity.UI.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var environmentName = builder.Environment.EnvironmentName;
-string? connectionString = builder.Configuration[$"Environment:{environmentName}:ConnectionString"];
+string? connectionString = builder.Configuration["ConnectionStrings:SqlDatabaseConnection"];
 
 if(string.IsNullOrEmpty(connectionString))
 {
-    throw new Exception("Connection string is null or empty.");
+    throw new Exception("SqlDatabaseConnection string is null or empty.");
 }
-    
+
+string? emailConnectionString = builder.Configuration["ConnectionStrings:EmailConnection"];
+
+if (string.IsNullOrEmpty(emailConnectionString))
+{
+    throw new Exception("EmailConnection string is null or empty.");
+}
+
+EmailSender.ConnectionString = emailConnectionString;
+
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(connectionString));
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
@@ -23,6 +35,8 @@ builder.Services.AddDefaultIdentity<ApplicationUser>(options =>
 }).AddEntityFrameworkStores<ApplicationDbContext>();
 
 builder.Services.AddRazorPages();
+
+builder.Services.AddTransient<IEmailSender, EmailSender>();
 
 var app = builder.Build();
 
