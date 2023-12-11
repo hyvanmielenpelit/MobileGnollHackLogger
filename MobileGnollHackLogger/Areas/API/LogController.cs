@@ -97,7 +97,7 @@ namespace MobileGnollHackLogger.Areas.API
                             Directory.CreateDirectory(dir);
                         }
 
-                        string filePathWithoutExtension = dir + @"\" + "gnollhack." + xLogFileLine.Name + "." + xLogFileLine.StartTime;
+                        string filePathWithoutExtension = dir + @"\" + "gnollhack." + xLogFileLine.Name + "." + xLogFileLine.StartTimeUTC;
                         string plainTextDumpLogPath = filePathWithoutExtension + ".txt";
                         string htmlDumpLogPath = filePathWithoutExtension + ".html";
 

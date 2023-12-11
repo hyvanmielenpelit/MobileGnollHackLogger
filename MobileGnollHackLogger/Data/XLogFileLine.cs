@@ -104,7 +104,9 @@ namespace MobileGnollHackLogger.Data
 
         public long RealTime { get; set; } //realtime
         public long StartTime { get; set; } //starttime
+        public long StartTimeUTC { get; set; } //starttimeUTC
         public long EndTime { get; set; } //endtime
+        public long EndTimeUTC { get; set; } //endtimeUTC
 
         [MaxLength(3)]
         public string? StartingGender { get; set; } //gender0
@@ -235,8 +237,14 @@ namespace MobileGnollHackLogger.Data
                         case "starttime":
                             StartTime = long.Parse(value);
                             break;
+                        case "starttimeUTC":
+                            StartTimeUTC = long.Parse(value);
+                            break;
                         case "endtime":
                             EndTime = long.Parse(value);
+                            break;
+                        case "endtimeUTC":
+                            EndTimeUTC = long.Parse(value);
                             break;
                         case "gender0":
                             StartingGender = value;
@@ -301,7 +309,9 @@ namespace MobileGnollHackLogger.Data
             sb.Append("conductX=").Append(ConductsText).Append("\t");
             sb.Append("realtime=").Append(RealTime).Append("\t");
             sb.Append("starttime=").Append(StartTime).Append("\t");
+            sb.Append("starttimeUTC=").Append(StartTimeUTC).Append("\t");
             sb.Append("endtime=").Append(EndTime).Append("\t");
+            sb.Append("endtimeUTC=").Append(EndTimeUTC).Append("\t");
             sb.Append("gender0=").Append(StartingGender).Append("\t");
             sb.Append("align0=").Append(StartingAlignment).Append("\t");
             sb.Append("flags=").Append(FlagsBinary).Append("\t");
