@@ -13,9 +13,8 @@ body {
 }
 
 nav {
-    &.navbar a {
+    &.navbar a, &.navbar button {
         color: white !important;
-        background: #111 !important;
 
         &:hover {
             color: #ddd !important;

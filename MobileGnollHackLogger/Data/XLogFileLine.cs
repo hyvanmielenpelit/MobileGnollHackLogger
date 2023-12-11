@@ -11,7 +11,9 @@ namespace MobileGnollHackLogger.Data
     /// </summary>
     public class XLogFileLine
     {
+        [MaxLength(32)]
         public string? Version { get; set; } //version
+
         public int EditLevel { get; set; } //edit
         public long Points { get; set; } //points
         public int DeathDungeonNumber { get; set; } //deathdnum
@@ -37,6 +39,7 @@ namespace MobileGnollHackLogger.Data
 
         [MaxLength(8)]
         public string? BirthDateText { get; set; } //birthdate
+
         public DateTime? BirthDate
         { 
             get
@@ -48,6 +51,7 @@ namespace MobileGnollHackLogger.Data
                 return DateTime.ParseExact(BirthDateText, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None);
             }
         } 
+
         public int ProcessUserID { get; set; } //uid
 
         [MaxLength(3)]
@@ -88,6 +92,7 @@ namespace MobileGnollHackLogger.Data
             }
         
         }
+
         public string? ConductsText { get; set; } //conductX
         public string[]? ConductsArray 
         {
@@ -96,6 +101,7 @@ namespace MobileGnollHackLogger.Data
                 return ConductsText?.Split(',');
             }
         }
+
         public long RealTime { get; set; } //realtime
         public long StartTime { get; set; } //starttime
         public long EndTime { get; set; } //endtime

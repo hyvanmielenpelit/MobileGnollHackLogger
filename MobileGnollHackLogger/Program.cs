@@ -27,7 +27,32 @@ EmailSender.ConnectionString = emailConnectionString;
 
 string contentRootPath = builder.Environment.ContentRootPath;
 string confirmAccountEmailPath = Path.Combine(contentRootPath, @"Areas\Identity\Pages\Account\ConfirmAccountEmail.html");
+
+if(!File.Exists(confirmAccountEmailPath))
+{
+    throw new FileNotFoundException($"{confirmAccountEmailPath} does not exist.");
+}
+
 EmailSender.ConfirmAccountEmailHtml = File.ReadAllText(confirmAccountEmailPath);
+
+if(string.IsNullOrEmpty(EmailSender.ConfirmAccountEmailHtml))
+{
+    throw new Exception("EmailSender.ConfirmAccountEmailHtml is null or empty.");
+}
+
+string forgotPasswordEmailPath = Path.Combine(contentRootPath, @"Areas\Identity\Pages\Account\ForgotPasswordEmail.html");
+
+if(!File.Exists(forgotPasswordEmailPath))
+{
+    throw new FileNotFoundException($"{forgotPasswordEmailPath} does not exist.");
+}
+
+EmailSender.ForgotPasswordEmailHtml = File.ReadAllText(forgotPasswordEmailPath);
+
+if(string.IsNullOrEmpty(EmailSender.ForgotPasswordEmailHtml))
+{
+    throw new Exception("EmailSender.ForgotPasswordEmailHtml is null or empty.");
+}
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(connectionString));

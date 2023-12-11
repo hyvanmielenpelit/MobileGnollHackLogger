@@ -7,11 +7,10 @@
   background-position: center;
 }
 
-nav.navbar a {
+nav.navbar a, nav.navbar button {
   color: white !important;
-  background: #111 !important;
 }
-nav.navbar a:hover {
+nav.navbar a:hover, nav.navbar button:hover {
   color: #ddd !important;
 }
 nav.border-bottom {
