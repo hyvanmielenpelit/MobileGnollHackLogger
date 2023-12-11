@@ -117,10 +117,10 @@ namespace MobileGnollHackLogger.Data
 
         public int Difficulty { get; set; } //difficulty
 
-        [MaxLength(50)]
+        [MaxLength(32)]
         public string? Mode { get; set; } //mode
 
-        [MaxLength(50)]
+        [MaxLength(32)]
         public string? Scoring { get; set; } //scoring
 
         public int DungeonCollapses { get; set; } //collapse
