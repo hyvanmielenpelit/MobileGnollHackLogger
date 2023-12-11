@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using MobileGnollHackLogger.Data;
 
@@ -11,9 +12,11 @@ using MobileGnollHackLogger.Data;
 namespace MobileGnollHackLogger.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20231211092906_LengthAttributes")]
+    partial class LengthAttributes
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -249,19 +252,17 @@ namespace MobileGnollHackLogger.Data.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Alignment")
-                        .HasMaxLength(3)
-                        .HasColumnType("nvarchar(3)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("AspNetUserId")
                         .HasColumnType("nvarchar(450)");
 
                     b.Property<string>("BirthDateText")
-                        .HasMaxLength(8)
-                        .HasColumnType("nvarchar(8)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("CharacterName")
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
+                        .HasMaxLength(31)
+                        .HasColumnType("nvarchar(31)");
 
                     b.Property<string>("ConductsBinary")
                         .HasMaxLength(50)
@@ -271,8 +272,7 @@ namespace MobileGnollHackLogger.Data.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("DeathDateText")
-                        .HasMaxLength(8)
-                        .HasColumnType("nvarchar(8)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<int>("DeathDungeonNumber")
                         .HasColumnType("int");
@@ -303,8 +303,7 @@ namespace MobileGnollHackLogger.Data.Migrations
                         .HasColumnType("nvarchar(50)");
 
                     b.Property<string>("Gender")
-                        .HasMaxLength(3)
-                        .HasColumnType("nvarchar(3)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<int>("HitPoints")
                         .HasColumnType("int");
@@ -320,8 +319,8 @@ namespace MobileGnollHackLogger.Data.Migrations
                         .HasColumnType("nvarchar(50)");
 
                     b.Property<string>("Name")
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
+                        .HasMaxLength(31)
+                        .HasColumnType("nvarchar(31)");
 
                     b.Property<long>("Points")
                         .HasColumnType("bigint");
@@ -330,15 +329,13 @@ namespace MobileGnollHackLogger.Data.Migrations
                         .HasColumnType("int");
 
                     b.Property<string>("Race")
-                        .HasMaxLength(3)
-                        .HasColumnType("nvarchar(3)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<long>("RealTime")
                         .HasColumnType("bigint");
 
                     b.Property<string>("Role")
-                        .HasMaxLength(3)
-                        .HasColumnType("nvarchar(3)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Scoring")
                         .HasMaxLength(50)
@@ -348,12 +345,10 @@ namespace MobileGnollHackLogger.Data.Migrations
                         .HasColumnType("bigint");
 
                     b.Property<string>("StartingAlignment")
-                        .HasMaxLength(3)
-                        .HasColumnType("nvarchar(3)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("StartingGender")
-                        .HasMaxLength(3)
-                        .HasColumnType("nvarchar(3)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<int>("Turns")
                         .HasColumnType("int");

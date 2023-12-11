@@ -25,6 +25,10 @@ if (string.IsNullOrEmpty(emailConnectionString))
 
 EmailSender.ConnectionString = emailConnectionString;
 
+string contentRootPath = builder.Environment.ContentRootPath;
+string confirmAccountEmailPath = Path.Combine(contentRootPath, @"Areas\Identity\Pages\Account\ConfirmAccountEmail.html");
+EmailSender.ConfirmAccountEmailHtml = File.ReadAllText(confirmAccountEmailPath);
+
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(connectionString));
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();

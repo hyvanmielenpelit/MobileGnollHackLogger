@@ -1,5 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json.Linq;
+using System.ComponentModel.DataAnnotations;
 using System.Globalization;
 using System.Text;
 
@@ -19,6 +20,8 @@ namespace MobileGnollHackLogger.Data
         public int HitPoints { get; set; } //hp
         public int MaxHitPoints { get; set; } //maxhp
         public int Deaths { get; set; } //deaths
+
+        [MaxLength(8)]
         public string? DeathDateText { get; set; } //deathdate
         public DateTime? DeathDate 
         {
@@ -30,7 +33,9 @@ namespace MobileGnollHackLogger.Data
                 }
                 return DateTime.ParseExact(DeathDateText, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None);
             }
-        } 
+        }
+
+        [MaxLength(8)]
         public string? BirthDateText { get; set; } //birthdate
         public DateTime? BirthDate
         { 
@@ -44,18 +49,37 @@ namespace MobileGnollHackLogger.Data
             }
         } 
         public int ProcessUserID { get; set; } //uid
+
+        [MaxLength(3)]
         public string? Role { get; set; } //role
+
+        [MaxLength(3)]
         public string? Race { get; set; } //race
+
+        [MaxLength(3)]
         public string? Gender { get; set; } //gender
+
+        [MaxLength(3)]
         public string? Alignment { get; set; } //align
+
+        [MaxLength(32)]
         public string? Name { get; set; } //name
+
+        [MaxLength(32)]
         public string? CharacterName { get; set; } //cname
+
         public string? DeathText { get; set; } //death
         public string? WhileText { get; set; } //while
+
+        [MaxLength(50)]
         public string? ConductsBinary { get; set; } //conduct 0x904
         public int Turns { get; set; } //turns
+
+        [MaxLength(50)]
         public string? AchievementsBinary { get; set; } //achieve 0xaf0e03
+
         public string? AchievementsText { get; set; } //achieveX
+
         public string[]? AchievementsArray
         { 
             get
@@ -75,12 +99,24 @@ namespace MobileGnollHackLogger.Data
         public long RealTime { get; set; } //realtime
         public long StartTime { get; set; } //starttime
         public long EndTime { get; set; } //endtime
+
+        [MaxLength(3)]
         public string? StartingGender { get; set; } //gender0
+
+        [MaxLength(3)]
         public string? StartingAlignment { get; set; } //align0
+
+        [MaxLength(50)]
         public string? FlagsBinary { get; set; } //flags
+
         public int Difficulty { get; set; } //difficulty
+
+        [MaxLength(50)]
         public string? Mode { get; set; } //mode
+
+        [MaxLength(50)]
         public string? Scoring { get; set; } //scoring
+
         public int DungeonCollapses { get; set; } //collapse
 
         public XLogFileLine()
