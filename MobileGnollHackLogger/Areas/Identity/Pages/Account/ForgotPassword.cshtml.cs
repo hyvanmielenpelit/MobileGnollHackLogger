@@ -71,10 +71,10 @@ namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
                     values: new { area = "Identity", code },
                     protocol: Request.Scheme);
 
-                await _emailSender.SendEmailAsync(
-                    Input.Email,
-                    "Reset GnollHack Account Password",
-                    string.Format(EmailSender.ForgotPasswordEmailHtml, HtmlEncoder.Default.Encode(callbackUrl)));
+                var htmlBody = EmailSender.ForgotPasswordEmailHtml
+                        .Replace(@"{CallbackUrl}", HtmlEncoder.Default.Encode(callbackUrl));
+
+                await _emailSender.SendEmailAsync(Input.Email, "Reset GnollHack Account Password", htmlBody);
 
                 return RedirectToPage("./ForgotPasswordConfirmation");
             }

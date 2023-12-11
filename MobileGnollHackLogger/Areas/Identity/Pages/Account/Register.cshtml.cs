@@ -153,8 +153,10 @@ namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
                         values: new { area = "Identity", userId = userId, code = code, returnUrl = returnUrl },
                         protocol: Request.Scheme);
 
-                    await _emailSender.SendEmailAsync(Input.Email, "Confirm Your Email - GnollHack Account",
-                        string.Format(EmailSender.ConfirmAccountEmailHtml, HtmlEncoder.Default.Encode(callbackUrl)));
+                    var htmlBody = EmailSender.ConfirmAccountEmailHtml
+                        .Replace(@"{CallbackUrl}", HtmlEncoder.Default.Encode(callbackUrl));
+
+                    await _emailSender.SendEmailAsync(Input.Email, "Confirm Your Email - GnollHack Account", htmlBody);
 
                     if (_userManager.Options.SignIn.RequireConfirmedAccount)
                     {
