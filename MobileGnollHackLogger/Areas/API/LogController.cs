@@ -129,7 +129,13 @@ namespace MobileGnollHackLogger.Areas.API
                             GameLog gameLog = new GameLog(xLogFileLine, _dbContext);
                             await _dbContext.GameLog.AddAsync(gameLog);
                             await _dbContext.SaveChangesAsync();
-                            return StatusCode(200); //OK
+                            long id = gameLog.Id;
+                            if (id == 0)
+                            {
+                                Response.StatusCode = 500;
+                                return Content("Inserted Id is 0.");
+                            }
+                            return Content(id.ToString(), "text/plain", Encoding.UTF8); //OK
                         }
                         catch(InvalidOperationException)
                         {
