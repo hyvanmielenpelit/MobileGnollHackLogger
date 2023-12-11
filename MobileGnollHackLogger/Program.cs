@@ -26,7 +26,7 @@ if (string.IsNullOrEmpty(emailConnectionString))
 EmailSender.ConnectionString = emailConnectionString;
 
 string contentRootPath = builder.Environment.ContentRootPath;
-string confirmAccountEmailPath = Path.Combine(contentRootPath, @"Areas\Identity\Pages\Account\ConfirmAccountEmail.html");
+string confirmAccountEmailPath = Path.Combine(contentRootPath, @"Content\ConfirmAccountEmail.html");
 
 if(!File.Exists(confirmAccountEmailPath))
 {
@@ -40,7 +40,7 @@ if(string.IsNullOrEmpty(EmailSender.ConfirmAccountEmailHtml))
     throw new Exception("EmailSender.ConfirmAccountEmailHtml is null or empty.");
 }
 
-string forgotPasswordEmailPath = Path.Combine(contentRootPath, @"Areas\Identity\Pages\Account\ForgotPasswordEmail.html");
+string forgotPasswordEmailPath = Path.Combine(contentRootPath, @"Content\ForgotPasswordEmail.html");
 
 if(!File.Exists(forgotPasswordEmailPath))
 {

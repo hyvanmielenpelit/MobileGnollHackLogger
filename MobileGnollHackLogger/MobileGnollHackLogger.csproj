@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <Content Remove="compilerconfig.json" />
+	<Content Include="Content\**" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
