@@ -13,21 +13,24 @@ namespace MobileGnollHackLogger.Areas.API
     {
         private readonly SignInManager<ApplicationUser> _signInManager;
         private readonly ILogger<LogModel> _logger;
-        private IWebHostEnvironment _environment;
-        private IConfiguration _configuration;
-        private ApplicationDbContext _dbContext;
+        private readonly IConfiguration _configuration;
+        private readonly ApplicationDbContext _dbContext;
+        private readonly string _dumplogBasePath = "";
 
-        private string _dumplogBasePath = "";
-
-        public LogController(SignInManager<ApplicationUser> signInManager, ILogger<LogModel> logger, IWebHostEnvironment environment, 
+        public LogController(SignInManager<ApplicationUser> signInManager, ILogger<LogModel> logger, 
             IConfiguration configuration, ApplicationDbContext dbContext)
         {
             _signInManager = signInManager;
             _logger = logger;
-            _environment = environment;
-            _dumplogBasePath = _environment.WebRootPath + @"\dumplogs";
             _configuration = configuration;
             _dbContext = dbContext;
+
+            _dumplogBasePath = _configuration["DumpLogPath"] ?? "";
+
+            if(string.IsNullOrEmpty(_dumplogBasePath))
+            {
+                throw new Exception("DumpLogPath is null");
+            }
         }
 
         [Route("xlogfile")]
@@ -91,7 +94,7 @@ namespace MobileGnollHackLogger.Areas.API
                         xLogFileLine.Name = model.UserName;
 
                         // Write Dumplog Files
-                        string dir = _dumplogBasePath + @"\" + xLogFileLine.Name;
+                        string dir = Path.Combine(_dumplogBasePath, xLogFileLine.Name);
                         if (!System.IO.Directory.Exists(dir))
                         {
                             Directory.CreateDirectory(dir);

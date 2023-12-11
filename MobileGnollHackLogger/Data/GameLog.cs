@@ -53,7 +53,9 @@ namespace MobileGnollHackLogger.Data
             ConductsText = line.ConductsText;
             RealTime = line.RealTime;
             StartTime = line.StartTime;
+            StartTimeUTC = line.StartTimeUTC;
             EndTime = line.EndTime;
+            EndTimeUTC = line.EndTimeUTC;
             StartingGender = line.StartingGender;
             StartingAlignment = line.StartingAlignment;
             FlagsBinary = line.FlagsBinary;
