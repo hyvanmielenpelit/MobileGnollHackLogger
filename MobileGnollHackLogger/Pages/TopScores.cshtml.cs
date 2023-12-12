@@ -23,9 +23,9 @@ namespace MobileGnollHackLogger.Pages
 
         public IList<GameLog>? GameLogs { get; set; }
 
-        public void OnGet(string? death, string? mode)
+        public async Task OnGetAsync(string? death, string? mode)
         {
-            IEnumerable<GameLog> gameLogs = _dbContext.GameLog
+            IQueryable<GameLog> gameLogs = _dbContext.GameLog
                 .Take(1000)
                 .OrderByDescending(gl => gl.Points)
                 .Where(gl => gl.Scoring == "yes");
@@ -46,9 +46,7 @@ namespace MobileGnollHackLogger.Pages
                 gameLogs = gameLogs.Where(gl => gl.Mode == mode);
             }
 
-            IList<GameLog> gameLogList = gameLogs.ToList();
-
-            GameLogs = gameLogList;
+            GameLogs = await gameLogs.ToListAsync();;
         }
     }
 }

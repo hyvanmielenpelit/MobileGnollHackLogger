@@ -41,7 +41,7 @@
 @if (Model.GameLogs != null && Model.GameLogs.Count > 0)
 {
     <div class="table-responsive">
-        <table id="topScoreTable" class="table table-dark table-striped" style="display:none;">
+        <table id="topScoreTable" class="table table-dark table-striped table-hover" style="display:none;">
             <thead>
                 <tr>
                     <th>Version</th>
@@ -58,8 +58,8 @@
             <tbody>
                 @foreach (var gameLog in Model.GameLogs)
                 {
-                    <tr>
-                        <td>@(gameLog.Version).@(gameLog.EditLevel)</td>
+                    <tr data-id="@gameLog.Id">
+                        <td>@(gameLog.Version)-@(gameLog.EditLevel)</td>
                         <td>@gameLog.Name, @gameLog.CharacterName<br /></td>
                         <td>@(gameLog.Role)-@(gameLog.Race)-@(gameLog.Gender)-@(gameLog.Alignment)</td>
                         <td>@gameLog.DifficultyText<br />@gameLog.ModeText</td>
@@ -94,6 +94,13 @@ else
 {
     <script src="~/lib/datatables/dist/datatables.min.js"></script>
     <script>
+        $("#topScoreTable>tbody>tr").on("click", function () {
+            var id = $(this).attr("data-id");
+            var href = "/dumplog/" + id;
+            window.location.href = href;
+        });
         $("#topScoreTable").dataTable().show();
+
+        
     </script>
 }

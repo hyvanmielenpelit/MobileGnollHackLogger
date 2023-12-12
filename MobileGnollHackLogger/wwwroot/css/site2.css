@@ -97,3 +97,7 @@ select.form-select {
   color: white;
   border-color: #ddd !important;
 }
+
+#topScoreTable > tbody > tr > td {
+  cursor: pointer;
+}
