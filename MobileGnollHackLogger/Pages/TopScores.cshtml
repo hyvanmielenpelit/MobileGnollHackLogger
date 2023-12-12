@@ -61,15 +61,15 @@
                 @foreach (var gameLog in Model.GameLogs)
                 {
                     <tr data-id="@gameLog.Id">
-                        <td>@(gameLog.Version)-@(gameLog.EditLevel)</td>
-                        <td>@gameLog.Name, @gameLog.CharacterName<br /></td>
-                        <td>@(gameLog.RoleText), @(gameLog.RaceText), @(gameLog.GenderText), @(gameLog.AlignmentText)</td>
-                        <td>@gameLog.DifficultyText, @gameLog.ModeText</td>
-                        <td>@gameLog.Points</td>
-                        <td>T: @(gameLog.Turns)<br />D: @gameLog.RealTimeSpan.ToString("c", CultureInfo.InvariantCulture)</td>
-                        <td>DL: @(gameLog.DeathLevel)/@(gameLog.MaxLevel)<br />HP: @(gameLog.HitPoints)/@(gameLog.MaxHitPoints)</td>
-                        <td>@gameLog.EndTimeUTCDate.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)</td>
-                        <td>
+                        <td class="w-xs">@(gameLog.Version)-@(gameLog.EditLevel)</td>
+                        <td class="w-m">@gameLog.Name, @gameLog.CharacterName<br /></td>
+                        <td class="w-m">@(gameLog.RoleText), @(gameLog.RaceText), @(gameLog.GenderText), @(gameLog.AlignmentText)</td>
+                        <td class="w-s">@gameLog.DifficultyText, @gameLog.ModeText</td>
+                        <td class="w-s">@gameLog.Points</td>
+                        <td class="w-s">T: @(gameLog.Turns)<br />D: @gameLog.RealTimeSpan.ToString("c", CultureInfo.InvariantCulture)</td>
+                        <td class="w-s">DL: @(gameLog.DeathLevel)/@(gameLog.MaxLevel)<br />HP: @(gameLog.HitPoints)/@(gameLog.MaxHitPoints)</td>
+                        <td class="w-s">@gameLog.EndTimeUTCDate.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)</td>
+                        <td class="w-m">
                             @gameLog.DeathText
                             @if (!string.IsNullOrEmpty(gameLog.WhileText))
                             {
