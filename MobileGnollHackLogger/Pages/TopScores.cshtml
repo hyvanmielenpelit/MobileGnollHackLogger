@@ -94,7 +94,7 @@ else
 {
     <script src="~/lib/datatables/dist/datatables.min.js"></script>
     <script>
-        $("#topScoreTable>tbody>tr").on("click", function () {
+        $("#topScoreTable>tbody").on("click", "tr", function () {
             var id = $(this).attr("data-id");
             var href = "/dumplog/" + id;
             window.location.href = href;
