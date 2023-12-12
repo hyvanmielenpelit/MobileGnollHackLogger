@@ -7,8 +7,8 @@
     ViewData["MainClass"] = "topScoreMaxWidth";
 }
 
-<h1>Top Scores</h1>
-<p>
+<h1 class="text-center">Top Scores</h1>
+<p class="text-center">
     @if (Model.TopScoreMode != TopScoreMode.Ascensions)
     {
         <a class="link-light" href="/TopScores?death=ascended">Ascensions</a>
@@ -27,14 +27,15 @@
         <b>Recent Games</b>
     }
 </p>
-<div>
+<hr />
+<div class="text-center">
     @if (Model.TopScoreMode == TopScoreMode.Ascensions)
     {
-        <h3>Ascensions</h3>
+        <h2>Ascensions</h2>
     }
     @if (Model.TopScoreMode == TopScoreMode.Games)
     {
-        <h3>Recent Games</h3>
+        <h2>Recent Games</h2>
     }
 </div>
 
