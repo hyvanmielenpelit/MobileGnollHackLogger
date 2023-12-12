@@ -61,7 +61,7 @@
                 @foreach (var gameLog in Model.GameLogs)
                 {
                     <tr data-id="@gameLog.Id">
-                        <td class="w-xs">@(gameLog.Version)-@(gameLog.EditLevel)</td>
+                        <td class="w-xxs">@(gameLog.Version)-@(gameLog.EditLevel)</td>
                         <td class="w-m">@gameLog.Name, @gameLog.CharacterName<br /></td>
                         <td class="w-m">@(gameLog.RoleText), @(gameLog.RaceText), @(gameLog.GenderText), @(gameLog.AlignmentText)</td>
                         <td class="w-s">@gameLog.DifficultyText, @gameLog.ModeText</td>

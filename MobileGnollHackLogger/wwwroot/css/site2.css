@@ -109,8 +109,12 @@ div.container.topScoreMaxWidth main.topScoreMaxWidth {
   max-width: 1500px;
 }
 
-.w-xs {
+.w-xxs {
   width: 5%;
+}
+
+.w-xs {
+  width: 7.5%;
 }
 
 .w-s {
