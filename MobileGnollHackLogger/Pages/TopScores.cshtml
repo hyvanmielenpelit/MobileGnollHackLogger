@@ -64,7 +64,7 @@
                         <td>@(gameLog.Role)-@(gameLog.Race)-@(gameLog.Gender)-@(gameLog.Alignment)</td>
                         <td>@gameLog.DifficultyText<br />@gameLog.ModeText</td>
                         <td>@gameLog.Points</td>
-                        <td>@(gameLog.Turns)<br />@gameLog.RealTimeSpan.ToString("c", CultureInfo.InvariantCulture)</td>
+                        <td>T: @(gameLog.Turns)<br />D: @gameLog.RealTimeSpan.ToString("c", CultureInfo.InvariantCulture)</td>
                         <td>DL: @(gameLog.DeathLevel)/@(gameLog.MaxLevel)<br />HP: @(gameLog.HitPoints)/@(gameLog.MaxHitPoints)</td>
                         <td>@gameLog.EndTimeUTCDate.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)</td>
                         <td>
