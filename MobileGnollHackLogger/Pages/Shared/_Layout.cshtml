@@ -60,8 +60,8 @@
             </div>
         </nav>
     </header>
-    <div class="container">
-        <main role="main" class="">
+    <div class="container @ViewData["ContainerClass"]">
+        <main role="main" class="@ViewData["MainClass"]">
             @RenderBody()
         </main>
     </div>

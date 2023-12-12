@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.AspNetCore.Routing.Matching;
+using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json.Linq;
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
@@ -57,14 +58,104 @@ namespace MobileGnollHackLogger.Data
         [MaxLength(3)]
         public string? Role { get; set; } //role
 
+        public string? RoleText
+        {
+            get
+            {
+                switch(Role)
+                {
+                    case "Arc":
+                        return "Archaeologist";
+                    case "Bar":
+                        return "Barbarian";
+                    case "Cav":
+                        if(Gender == "Mal")
+                        {
+                            return "Caveman";
+                        }
+                        else
+                        {
+                            return "Cavewoman";
+                        }
+                    case "Hea":
+                        return "Healer";
+                    case "Kni":
+                        return "Knight";
+                    case "Mon":
+                        return "Monk";
+                    case "Pri":
+                        if (Gender == "Mal")
+                        {
+                            return "Priest";
+                        }
+                        else
+                        {
+                            return "Priestess";
+                        }
+                    case "Ran":
+                        return "Ranger";
+                    case "Rog":
+                        return "Rogue";
+                    case "Sam":
+                        return "Samurai";
+                    case "Tou":
+                        return "Tourist";
+                    case "Val":
+                        return "Valkyrie";
+                    case "Wiz":
+                        return "Wizard";
+                    default:
+                        return Role;
+                }
+            }
+        }
+
         [MaxLength(3)]
         public string? Race { get; set; } //race
+
+        public string? RaceText
+        {
+            get
+            {
+                switch(Race)
+                {
+                    case "Hum":
+                        return "Human";
+                    case "Dwa":
+                        return "Dwarf";
+                    case "Elf":
+                        return "Elf";
+                    case "Gnl":
+                        return "Gnoll";
+                    case "Orc":
+                        return "Orc";
+                    default:
+                        return Race;
+                }
+            }
+        }
 
         [MaxLength(3)]
         public string? Gender { get; set; } //gender
 
+        public string? GenderText
+        {
+            get
+            {
+                return ConvertGender(Gender);
+            }
+        }
+
         [MaxLength(3)]
         public string? Alignment { get; set; } //align
+
+        public string? AlignmentText
+        {
+            get
+            {
+                return ConvertAlignment(Alignment);
+            }
+        }
 
         [MaxLength(32)]
         public string? Name { get; set; } //name
@@ -138,8 +229,24 @@ namespace MobileGnollHackLogger.Data
         [MaxLength(3)]
         public string? StartingGender { get; set; } //gender0
 
+        public string? StartingGenderText
+        {
+            get
+            {
+                return ConvertGender(StartingGender);
+            }
+        }
+
         [MaxLength(3)]
         public string? StartingAlignment { get; set; } //align0
+
+        public string? StartingAlignmentText
+        {
+            get
+            {
+                return ConvertAlignment(StartingAlignment);
+            }
+        }
 
         [MaxLength(50)]
         public string? FlagsBinary { get; set; } //flags
@@ -415,6 +522,34 @@ namespace MobileGnollHackLogger.Data
             sb.Append("collapse=").Append(DungeonCollapses);
 
             return sb.ToString();
+        }
+
+        private string? ConvertGender(string? genderCode)
+        {
+            switch(genderCode)
+            {
+                case "Mal":
+                    return "Male";
+                case "Fem":
+                    return "Female";
+                default:
+                    return genderCode;
+            }
+        }
+
+        private string? ConvertAlignment(string? alignmentCode)
+        {
+            switch (alignmentCode)
+            {
+                case "Law":
+                    return "Lawful";
+                case "Neu":
+                    return "Neutral";
+                case "Cha":
+                    return "Chaotic";
+                default:
+                    return alignmentCode;
+            }
         }
     }
 }

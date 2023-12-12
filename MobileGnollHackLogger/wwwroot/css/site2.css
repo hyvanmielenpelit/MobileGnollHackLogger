@@ -101,3 +101,10 @@ select.form-select {
 #topScoreTable > tbody > tr > td {
   cursor: pointer;
 }
+
+div.container.topScoreMaxWidth {
+  max-width: 1500px;
+}
+div.container.topScoreMaxWidth main.topScoreMaxWidth {
+  max-width: 1500px;
+}

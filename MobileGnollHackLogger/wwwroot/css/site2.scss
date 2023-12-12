@@ -124,3 +124,11 @@ select.form-select {
         cursor: pointer;
     }
 }
+
+div.container.topScoreMaxWidth {
+    max-width: 1500px;
+
+    main.topScoreMaxWidth {
+        max-width: 1500px;
+    }
+}
