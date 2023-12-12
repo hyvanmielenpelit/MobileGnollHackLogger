@@ -1,0 +1,97 @@
+﻿@page
+@using System.Globalization
+@model MobileGnollHackLogger.Pages.TopScoresModel
+@{
+    ViewData["Title"] = Model.Title;
+}
+
+<h1>Top Scores</h1>
+<p>
+    @if (Model.TopScoreMode != TopScoreMode.Ascensions)
+    {
+        <a class="link-light" href="/TopScores?death=ascended">Ascensions</a>
+    }
+    else
+    {
+        <b>Ascensions</b>
+    }
+    <span>|</span>
+    @if (Model.TopScoreMode != TopScoreMode.Games)
+    {
+        <a class="link-light" href="/TopScores">Recent Games</a>
+    }
+    else
+    {
+        <b>Recent Games</b>
+    }
+</p>
+<div>
+    @if (Model.TopScoreMode == TopScoreMode.Ascensions)
+    {
+        <h3>Ascensions</h3>
+    }
+    @if (Model.TopScoreMode == TopScoreMode.Games)
+    {
+        <h3>Recent Games</h3>
+    }
+</div>
+
+
+
+@if (Model.GameLogs != null && Model.GameLogs.Count > 0)
+{
+    <table id="topScoreTable" class="table table-dark" style="display:none;">
+        <thead>
+            <tr>
+                <th>Version</th>
+                <th>Account Name,<br />Character Name</th>
+                <th>Role-Race-Gender-Alignment</th>
+                <th>Difficulty,<br />Mode</th>
+                <th>Points</th>
+                <th>Turns, Duration</th>
+                <th>Dungeon Level,<br />Hit Points</th>
+                <th>End Time UTC</th>
+                <th>Death Reason</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var gameLog in Model.GameLogs)
+            {
+                <tr>
+                    <td>@(gameLog.Version).@(gameLog.EditLevel)</td>
+                    <td>@gameLog.Name, @gameLog.CharacterName<br /></td>
+                    <td>@(gameLog.Role)-@(gameLog.Race)-@(gameLog.Gender)-@(gameLog.Alignment)</td>
+                    <td>@gameLog.DifficultyText<br />@gameLog.ModeText</td>
+                    <td>@gameLog.Points</td>
+                    <td>@(gameLog.Turns)<br />@gameLog.RealTimeSpan.ToString("c", CultureInfo.InvariantCulture)</td>
+                    <td>DL: @(gameLog.DeathLevel)/@(gameLog.MaxLevel)<br />HP: @(gameLog.HitPoints)/@(gameLog.MaxHitPoints)</td>
+                    <td>@gameLog.EndTimeUTCDate.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)</td>
+                    <td>
+                        @gameLog.DeathText
+                        @if (!string.IsNullOrEmpty(gameLog.WhileText))
+                        {
+                            <text>while </text> @gameLog.WhileText
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+else
+{
+    <h4>No @Model.Title</h4>
+}
+
+@section Styles
+{
+    <link rel="stylesheet" href="~/lib/datatables/dist/datatables.min.css" asp-append-version="true" />
+}
+
+@section Scripts
+{
+    <script src="~/lib/datatables/dist/datatables.min.js"></script>
+    <script>
+        $("#topScoreTable").dataTable().show();
+    </script>
+}

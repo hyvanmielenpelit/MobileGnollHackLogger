@@ -4,7 +4,6 @@ $font-em-color: $link-color;
 
 body {
     margin-bottom: 60px;
-
     color: white;
     background-color: black;
     background-image: url(/img/gnoll-illustration-w1920-q30.jpg);
@@ -51,8 +50,7 @@ footer {
 a {
     color: $link-color;
 
-    &:hover
-    {
+    &:hover {
         color: darken($link-color, 20%);
     }
 }
@@ -101,5 +99,22 @@ hr.separator {
 }
 
 .navbar-toggler-icon {
-   font-size: 12px;
+    font-size: 12px;
+}
+
+.page-item {
+    a.page-link {
+        background-color: rgb(33, 37, 41) !important;
+        border-color: #444 !important;
+    }
+
+    &.disabled {
+
+    }
+}
+
+select.form-select {
+    background-color: rgb(33, 37, 41) !important;
+    color: white;
+    border-color: #ddd !important;
 }

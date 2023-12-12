@@ -103,10 +103,37 @@ namespace MobileGnollHackLogger.Data
         }
 
         public long RealTime { get; set; } //realtime
+
+        public TimeSpan RealTimeSpan 
+        {
+            get 
+            {
+                return TimeSpan.FromSeconds(RealTime);
+            }        
+        }
+
         public long StartTime { get; set; } //starttime
         public long StartTimeUTC { get; set; } //starttimeUTC
+
+        public DateTimeOffset StartTimeUTCDate
+        {
+            get
+            {
+                return DateTimeOffset.FromUnixTimeSeconds(StartTimeUTC);
+            }
+        }
+
         public long EndTime { get; set; } //endtime
+
         public long EndTimeUTC { get; set; } //endtimeUTC
+
+        public DateTimeOffset EndTimeUTCDate
+        {
+            get
+            {
+                return DateTimeOffset.FromUnixTimeSeconds(EndTimeUTC);
+            }
+        }
 
         [MaxLength(3)]
         public string? StartingGender { get; set; } //gender0
@@ -119,11 +146,78 @@ namespace MobileGnollHackLogger.Data
 
         public int Difficulty { get; set; } //difficulty
 
+        public string DifficultyText
+        {
+            get
+            {
+                switch (Difficulty)
+                {
+                    case -4:
+                        return "Standard";
+                    case -3:
+                        return "Experienced";
+                    case -2:
+                        return "Adept";
+                    case -1:
+                        return "Veteran";
+                    case 0:
+                        return "Expert";
+                    case 1:
+                        return "Master";
+                    case 2:
+                        return "Grand Master";
+                    default:
+                        return "Unknown: " + Difficulty;
+
+                }
+            }
+        }
+
         [MaxLength(32)]
         public string? Mode { get; set; } //mode
 
+        public string ModeText
+        {
+            get
+            {
+                switch (Mode)
+                {
+                    case "normal":
+                        return "Classic";
+                    case "debug":
+                        return "Wizard";
+                    case "explore":
+                        return "Explore";
+                    case "casual":
+                        return "Casual";
+                    case "reloadable":
+                        return "Reloadable";
+                    case "modern":
+                        return "Modern";
+                    default:
+                        return "Unknown";
+                }
+            }
+        }
+
         [MaxLength(32)]
         public string? Scoring { get; set; } //scoring
+
+        public bool IsScoring
+        {
+            get
+            {
+                switch (Scoring)
+                {
+                    case "yes":
+                        return true;
+                    case "no": 
+                        return false;
+                    default:
+                        return false;
+                }
+            }
+        }
 
         public int DungeonCollapses { get; set; } //collapse
 

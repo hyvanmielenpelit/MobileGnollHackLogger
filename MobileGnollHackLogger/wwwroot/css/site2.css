@@ -87,3 +87,13 @@ hr.separator {
 .navbar-toggler-icon {
   font-size: 12px;
 }
+
+.page-item a.page-link {
+  background-color: rgb(33, 37, 41) !important;
+  border-color: #444 !important;
+}
+select.form-select {
+  background-color: rgb(33, 37, 41) !important;
+  color: white;
+  border-color: #ddd !important;
+}
