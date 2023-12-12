@@ -40,43 +40,45 @@
 
 @if (Model.GameLogs != null && Model.GameLogs.Count > 0)
 {
-    <table id="topScoreTable" class="table table-dark" style="display:none;">
-        <thead>
-            <tr>
-                <th>Version</th>
-                <th>Account Name,<br />Character Name</th>
-                <th>Role-Race-Gender-Alignment</th>
-                <th>Difficulty,<br />Mode</th>
-                <th>Points</th>
-                <th>Turns, Duration</th>
-                <th>Dungeon Level,<br />Hit Points</th>
-                <th>End Time UTC</th>
-                <th>Death Reason</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var gameLog in Model.GameLogs)
-            {
+    <div class="table-responsive">
+        <table id="topScoreTable" class="table table-dark table-striped" style="display:none;">
+            <thead>
                 <tr>
-                    <td>@(gameLog.Version).@(gameLog.EditLevel)</td>
-                    <td>@gameLog.Name, @gameLog.CharacterName<br /></td>
-                    <td>@(gameLog.Role)-@(gameLog.Race)-@(gameLog.Gender)-@(gameLog.Alignment)</td>
-                    <td>@gameLog.DifficultyText<br />@gameLog.ModeText</td>
-                    <td>@gameLog.Points</td>
-                    <td>@(gameLog.Turns)<br />@gameLog.RealTimeSpan.ToString("c", CultureInfo.InvariantCulture)</td>
-                    <td>DL: @(gameLog.DeathLevel)/@(gameLog.MaxLevel)<br />HP: @(gameLog.HitPoints)/@(gameLog.MaxHitPoints)</td>
-                    <td>@gameLog.EndTimeUTCDate.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)</td>
-                    <td>
-                        @gameLog.DeathText
-                        @if (!string.IsNullOrEmpty(gameLog.WhileText))
-                        {
-                            <text>while </text> @gameLog.WhileText
-                        }
-                    </td>
+                    <th>Version</th>
+                    <th>Account Name,<br />Character Name</th>
+                    <th>Role-Race-Gender-Alignment</th>
+                    <th>Difficulty,<br />Mode</th>
+                    <th>Points</th>
+                    <th>Turns, Duration</th>
+                    <th>Dungeon Level,<br />Hit Points</th>
+                    <th>End Time UTC</th>
+                    <th>Death Reason</th>
                 </tr>
-            }
-        </tbody>
-    </table>
+            </thead>
+            <tbody>
+                @foreach (var gameLog in Model.GameLogs)
+                {
+                    <tr>
+                        <td>@(gameLog.Version).@(gameLog.EditLevel)</td>
+                        <td>@gameLog.Name, @gameLog.CharacterName<br /></td>
+                        <td>@(gameLog.Role)-@(gameLog.Race)-@(gameLog.Gender)-@(gameLog.Alignment)</td>
+                        <td>@gameLog.DifficultyText<br />@gameLog.ModeText</td>
+                        <td>@gameLog.Points</td>
+                        <td>@(gameLog.Turns)<br />@gameLog.RealTimeSpan.ToString("c", CultureInfo.InvariantCulture)</td>
+                        <td>DL: @(gameLog.DeathLevel)/@(gameLog.MaxLevel)<br />HP: @(gameLog.HitPoints)/@(gameLog.MaxHitPoints)</td>
+                        <td>@gameLog.EndTimeUTCDate.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)</td>
+                        <td>
+                            @gameLog.DeathText
+                            @if (!string.IsNullOrEmpty(gameLog.WhileText))
+                            {
+                                <text>while </text> @gameLog.WhileText
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
 }
 else
 {
