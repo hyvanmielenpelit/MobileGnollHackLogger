@@ -5,6 +5,9 @@
     ViewData["Title"] = Model.Title;
     ViewData["ContainerClass"] = "topScoreMaxWidth";
     ViewData["MainClass"] = "topScoreMaxWidth";
+    int rank = 0;
+    int displayRank = 0;
+    long lastPoints = -1;
 }
 
 <h1 class="text-center">Top Scores</h1>
@@ -47,6 +50,7 @@
         <table id="topScoreTable" class="table table-dark table-striped table-hover" style="display:none;">
             <thead>
                 <tr>
+                    <th>Rank</th>
                     <th>Version</th>
                     <th>Account Name, Character Name</th>
                     <th>Class, Race, Gender, Alignment</th>
@@ -62,14 +66,23 @@
                 @foreach (var gameLog in Model.GameLogs)
                 {
                     <tr data-id="@gameLog.Id">
+                        <td class="w-xxs">@{
+                                rank++;
+                                if(gameLog.Points < lastPoints || lastPoints == -1)
+                                {
+                                    displayRank = rank;
+                                    lastPoints = gameLog.Points;
+                                }
+                                <text>@displayRank</text>
+                            }</td>
                         <td class="w-xxs">@(gameLog.Version)-@(gameLog.EditLevel)</td>
                         <td class="w-m">@gameLog.Name, @gameLog.CharacterName<br /></td>
-                        <td class="w-m">@(gameLog.RoleText), @(gameLog.RaceText), @(gameLog.GenderText), @(gameLog.AlignmentText)</td>
+                        <td class="w-ms">@(gameLog.RoleText), @(gameLog.RaceText), @(gameLog.GenderText), @(gameLog.AlignmentText)</td>
                         <td class="w-s">@gameLog.DifficultyText, @gameLog.ModeText</td>
                         <td class="w-s">@gameLog.Points</td>
                         <td class="w-s">T: @(gameLog.Turns)<br />D: @gameLog.RealTimeSpan.ToString("c", CultureInfo.InvariantCulture)</td>
                         <td class="w-s">DL: @(gameLog.DeathLevel)/@(gameLog.MaxLevel)<br />HP: @(gameLog.HitPoints)/@(gameLog.MaxHitPoints)</td>
-                        <td class="w-s">@gameLog.EndTimeUTCDate.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)</td>
+                        <td class="w-xs">@gameLog.EndTimeUTCDate.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)</td>
                         <td class="w-m">
                             @gameLog.DeathText
                             @if (!string.IsNullOrEmpty(gameLog.WhileText))
