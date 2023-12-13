@@ -28,6 +28,8 @@ namespace MobileGnollHackLogger.Data
         {
             Version = line.Version;
             EditLevel = line.EditLevel;
+            Platform = line.Platform;
+            PlatformVersion = line.PlatformVersion;
             Points = line.Points;
             DeathDungeonNumber = line.DeathDungeonNumber;
             DeathLevel = line.DeathLevel;

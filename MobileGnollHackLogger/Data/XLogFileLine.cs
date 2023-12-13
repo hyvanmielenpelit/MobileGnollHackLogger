@@ -16,6 +16,44 @@ namespace MobileGnollHackLogger.Data
         public string? Version { get; set; } //version
 
         public int EditLevel { get; set; } //edit
+
+        [MaxLength(32)]
+        public string? Platform { get; set; }
+
+        public string? PlatformText
+        {
+            get
+            {
+                switch (Platform)
+                {
+                    case "android":
+                        return "Android";
+                    case "ios":
+                        return "iOS";
+                    default:
+                        return Platform;
+                }
+            }
+        }
+        public string? PlatformLetter
+        {
+            get
+            {
+                switch (Platform)
+                {
+                    case "android":
+                        return "a";
+                    case "ios":
+                        return "i";
+                    default:
+                        return "o";
+                }
+            }
+        }
+
+        [MaxLength(16)]
+        public string? PlatformVersion { get; set; }
+
         public long Points { get; set; } //points
         public int DeathDungeonNumber { get; set; } //deathdnum
         public int DeathLevel { get; set; } //deathlev
@@ -363,6 +401,12 @@ namespace MobileGnollHackLogger.Data
                         case "edit":
                             EditLevel = int.Parse(value);
                             break;
+                        case "platform":
+                            Platform = value;
+                            break;
+                        case "platformversion":
+                            PlatformVersion = value;
+                            break;
                         case "points":
                             Points = long.Parse(value);
                             break;
@@ -485,6 +529,8 @@ namespace MobileGnollHackLogger.Data
 
             sb.Append("version=").Append(Version).Append("\t");
             sb.Append("edit=").Append(EditLevel).Append("\t");
+            sb.Append("platform=").Append(Platform).Append("\t");
+            sb.Append("platformversion=").Append(PlatformVersion).Append("\t");
             sb.Append("points=").Append(Points).Append("\t");
             sb.Append("deathdnum=").Append(DeathDungeonNumber).Append("\t");
             sb.Append("deathlev=").Append(DeathLevel).Append("\t");
