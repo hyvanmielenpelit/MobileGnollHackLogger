@@ -45,6 +45,10 @@ namespace MobileGnollHackLogger.Data
                         return "a";
                     case "ios":
                         return "i";
+                    case null:
+                        return null;
+                    case "":
+                        return "";
                     default:
                         return "o";
                 }
