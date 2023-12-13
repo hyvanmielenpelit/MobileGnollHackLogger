@@ -54,6 +54,12 @@ namespace MobileGnollHackLogger.Data
         [MaxLength(16)]
         public string? PlatformVersion { get; set; }
 
+        [MaxLength(16)]
+        public string? PortVersion { get; set; }
+
+        [MaxLength(16)]
+        public string? PortBuild { get; set; }
+
         public long Points { get; set; } //points
         public int DeathDungeonNumber { get; set; } //deathdnum
         public int DeathLevel { get; set; } //deathlev
@@ -407,6 +413,12 @@ namespace MobileGnollHackLogger.Data
                         case "platformversion":
                             PlatformVersion = value;
                             break;
+                        case "portversion":
+                            PortVersion = value;
+                            break;
+                        case "portbuild":
+                            PortBuild = value;
+                            break;
                         case "points":
                             Points = long.Parse(value);
                             break;
@@ -531,6 +543,8 @@ namespace MobileGnollHackLogger.Data
             sb.Append("edit=").Append(EditLevel).Append("\t");
             sb.Append("platform=").Append(Platform).Append("\t");
             sb.Append("platformversion=").Append(PlatformVersion).Append("\t");
+            sb.Append("portversion=").Append(PortVersion).Append("\t");
+            sb.Append("portbuild=").Append(PortBuild).Append("\t");
             sb.Append("points=").Append(Points).Append("\t");
             sb.Append("deathdnum=").Append(DeathDungeonNumber).Append("\t");
             sb.Append("deathlev=").Append(DeathLevel).Append("\t");

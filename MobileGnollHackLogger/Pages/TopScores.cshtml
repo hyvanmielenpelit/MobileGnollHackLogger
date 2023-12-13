@@ -75,9 +75,9 @@
                                 }
                                 <text>@displayRank</text>
                             }</td>
-                        <td class="w-xxs">@(gameLog.Version)-@(gameLog.EditLevel)@if (!string.IsNullOrEmpty(gameLog.PlatformVersion) && !string.IsNullOrEmpty(gameLog.Platform))
+                        <td class="w-xxs">@(gameLog.Version)-@(gameLog.EditLevel)@if (!string.IsNullOrEmpty(gameLog.PortVersion) && !string.IsNullOrEmpty(gameLog.Platform))
                             {
-                                <text>, @(gameLog.PlatformVersion + gameLog.PlatformLetter)</text>
+                                <text>, @(gameLog.PortVersion + gameLog.PlatformLetter)</text>
                             }
                         </td>
                         <td class="w-m">@gameLog.Name, @gameLog.CharacterName<br /></td>
