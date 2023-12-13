@@ -88,10 +88,22 @@ hr.separator {
   font-size: 12px;
 }
 
+.page-item:active {
+  border-color: red !important;
+}
 .page-item a.page-link {
+  color: white;
   background-color: rgb(33, 37, 41) !important;
   border-color: #444 !important;
 }
+.page-item.active a.page-link {
+  background-color: #383f45 !important;
+  color: #cccccc;
+}
+.page-item.active a.page-link:hover {
+  cursor: default;
+}
+
 select.form-select {
   background-color: rgb(33, 37, 41) !important;
   color: white;

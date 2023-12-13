@@ -102,14 +102,32 @@ hr.separator {
     font-size: 12px;
 }
 
+$pagination-bg-color: rgb(33, 37, 41);
+
 .page-item {
+    &:active {
+        border-color: red !important;
+    }
+
     a.page-link {
-        background-color: rgb(33, 37, 41) !important;
+        color: white;
+        background-color: $pagination-bg-color !important;
         border-color: #444 !important;
     }
 
-    &.disabled {
+    &.disabled a.page-link {
 
+    }
+
+    &.active {
+        a.page-link {
+            background-color: lighten($pagination-bg-color, 10%) !important;
+            color: darken(white, 20%);
+
+            &:hover {
+                cursor: default;
+            }
+        }
     }
 }
 
