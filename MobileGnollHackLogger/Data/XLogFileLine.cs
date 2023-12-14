@@ -55,16 +55,16 @@ namespace MobileGnollHackLogger.Data
             }
         }
 
-        [MaxLength(16)]
+        [MaxLength(32)]
         public string? PlatformVersion { get; set; }
 
         [MaxLength(128)]
         public string? Port { get; set; }
 
-        [MaxLength(16)]
+        [MaxLength(32)]
         public string? PortVersion { get; set; }
 
-        [MaxLength(16)]
+        [MaxLength(32)]
         public string? PortBuild { get; set; }
 
         public long Points { get; set; } //points
