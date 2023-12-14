@@ -58,6 +58,9 @@ namespace MobileGnollHackLogger.Data
         [MaxLength(16)]
         public string? PlatformVersion { get; set; }
 
+        [MaxLength(128)]
+        public string? Port { get; set; }
+
         [MaxLength(16)]
         public string? PortVersion { get; set; }
 
@@ -417,6 +420,9 @@ namespace MobileGnollHackLogger.Data
                         case "platformversion":
                             PlatformVersion = value;
                             break;
+                        case "port":
+                            Port = value;
+                            break;
                         case "portversion":
                             PortVersion = value;
                             break;
@@ -547,6 +553,7 @@ namespace MobileGnollHackLogger.Data
             sb.Append("edit=").Append(EditLevel).Append("\t");
             sb.Append("platform=").Append(Platform).Append("\t");
             sb.Append("platformversion=").Append(PlatformVersion).Append("\t");
+            sb.Append("port=").Append(Port).Append("\t");
             sb.Append("portversion=").Append(PortVersion).Append("\t");
             sb.Append("portbuild=").Append(PortBuild).Append("\t");
             sb.Append("points=").Append(Points).Append("\t");

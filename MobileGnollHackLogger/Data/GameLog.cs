@@ -30,6 +30,7 @@ namespace MobileGnollHackLogger.Data
             EditLevel = line.EditLevel;
             Platform = line.Platform;
             PlatformVersion = line.PlatformVersion;
+            Port = line.Port;
             PortVersion = line.PortVersion;
             PortBuild = line.PortBuild;
             Points = line.Points;
