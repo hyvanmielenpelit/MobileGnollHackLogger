@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using System.Reflection.Metadata;
 
 namespace MobileGnollHackLogger.Data
 {
@@ -11,6 +12,14 @@ namespace MobileGnollHackLogger.Data
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
         {
+        }
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+            modelBuilder.Entity<Bones>()
+                .Property(b => b.Created)
+                .HasDefaultValueSql("getutcdate()");
         }
     }
 }

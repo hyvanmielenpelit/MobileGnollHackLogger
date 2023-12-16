@@ -1,0 +1,90 @@
+﻿@page
+@inject IConfiguration Configuration
+@inject IWebHostEnvironment WebHostEnvironment
+@model MobileGnollHackLogger.Pages.TestBonesModel
+@{
+    ViewData["Title"] = "Test Bones";
+}
+
+<div class="text-center">
+    <h1 class="display-4">Test Bones</h1>
+    <form action="/bones" method="post" enctype="multipart/form-data">
+        <h2>Send Bones File Post</h2>
+        <hr />
+        <div asp-validation-summary="ModelOnly" class="text-danger" role="alert"></div>
+        <div class="form-floating mb-3">
+            <input name="UserName" asp-for="Input.UserName" class="form-control" autocomplete="username" aria-required="true" placeholder="username" />
+            <label asp-for="Input.UserName" class="form-label">User Name</label>
+            <span asp-validation-for="Input.UserName" class="text-danger"></span>
+        </div>
+        <div class="form-floating mb-3">
+            <input name="Password" type="password" asp-for="Input.Password" class="form-control" autocomplete="current-password" aria-required="true" placeholder="password" />
+            <label asp-for="Input.Password" class="form-label">Password</label>
+            <span asp-validation-for="Input.Password" class="text-danger"></span>
+        </div>
+        <div class="form-floating mb-3">
+            <input name="Command" asp-for="Input.Command" class="form-control" autocomplete="" aria-required="true" placeholder="command"
+                   value="SendBonesFile" />
+            <label asp-for="Input.Command" class="form-label">Command</label>
+            <span asp-validation-for="Input.Command" class="text-danger"></span>
+        </div>
+        <div class="form-floating mb-3">
+            <input name="Data" asp-for="Input.Data" class="form-control" autocomplete="" aria-required="true" placeholder="data"
+                   value="4" />
+            <label asp-for="Input.Data" class="form-label">Data</label>
+            <span asp-validation-for="Input.Data" class="text-danger"></span>
+        </div>
+        <div class="form-floating mb-3">
+            <input name="VersionNumber" asp-for="Input.Data" class="form-control" autocomplete="" aria-required="true" placeholder="version"
+                   value="67175193" />
+            <label asp-for="Input.VersionNumber" class="form-label">VersionNumber</label>
+            <span asp-validation-for="Input.VersionNumber" class="text-danger"></span>
+        </div>
+        <div class="form-floating mb-3">
+            <input name="VersionCompatibilityNumber" asp-for="Input.Data" class="form-control" autocomplete="" aria-required="true" placeholder="versioncompatibility"
+                   value="67174919" />
+            <label asp-for="Input.VersionCompatibilityNumber" class="form-label">VersionCompatibilityNumber</label>
+            <span asp-validation-for="Input.VersionCompatibilityNumber" class="text-danger"></span>
+        </div>
+        <div class="form-floating mb-3">
+            <input name="Platform" asp-for="Input.Platform" class="form-control" autocomplete="" aria-required="true" placeholder="platform"
+                   value="Web" />
+            <label asp-for="Input.Platform" class="form-label">Platform</label>
+            <span asp-validation-for="Input.Platform" class="text-danger"></span>
+        </div>
+        <div class="form-floating mb-3">
+            <input name="PlatformVersion" asp-for="Input.PlatformVersion" class="form-control" autocomplete="" aria-required="true" placeholder="platformversion"
+                   value="3.0" />
+            <label asp-for="Input.PlatformVersion" class="form-label">PlatformVersion</label>
+            <span asp-validation-for="Input.PlatformVersion" class="text-danger"></span>
+        </div>
+        <div class="form-floating mb-3">
+            <input name="Port" asp-for="Input.Port" class="form-control" autocomplete="" aria-required="true" placeholder="port"
+                   value="TestForm" />
+            <label asp-for="Input.Port" class="form-label">Port</label>
+            <span asp-validation-for="Input.Port" class="text-danger"></span>
+        </div>
+        <div class="form-floating mb-3">
+            <input name="PortVersion" asp-for="Input.PortVersion" class="form-control" autocomplete="" aria-required="true" placeholder="portversion"
+                   value="1.42" />
+            <label asp-for="Input.PortVersion" class="form-label">PortVersion</label>
+            <span asp-validation-for="Input.PortVersion" class="text-danger"></span>
+        </div>
+        <div class="form-floating mb-3">
+            <input name="PortBuild" asp-for="Input.PortBuild" class="form-control" autocomplete="" aria-required="true" placeholder="portbuild"
+                   value="98" />
+            <label asp-for="Input.PortBuild" class="form-label">PortBuild</label>
+            <span asp-validation-for="Input.PortBuild" class="text-danger"></span>
+        </div>
+        <div class="form-floating mb-3">
+            <input name="BonesFile" asp-for="Input.BonesFile" class="form-control" aria-required="true" type="file" />
+            <label asp-for="Input.BonesFile" class="form-label">Bones File</label>
+            <span asp-validation-for="Input.BonesFile" class="text-danger"></span>
+        </div>
+        @if(WebHostEnvironment.IsDevelopment())
+        {
+            <input name="AntiForgeryToken" asp-for="Input.AntiForgeryToken" class="form-control" aria-required="true" type="hidden" value="@Configuration["AntiForgeryToken"]" />
+        }
+        <button type="submit" value="submit">Test</button>
+    </form>
+</div>

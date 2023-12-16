@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
 using System.Text;
 
@@ -86,63 +87,169 @@ namespace MobileGnollHackLogger.Areas.API
                 var result = await _signInManager.PasswordSignInAsync(model.UserName, model.Password, false, lockoutOnFailure: false);
                 if (result.Succeeded)
                 {
-                    if (!string.IsNullOrEmpty(model.Data) && model.BonesFile != null)
+                    if (!string.IsNullOrEmpty(model.Command) && !string.IsNullOrEmpty(model.Data))
                     {
                         //Sign in succeedeed
-                        XLogFileLine xLogFileLine = new XLogFileLine(model.Data);
-
-                        //Change user name to the account name
-                        xLogFileLine.Name = model.UserName;
-
-                        // Write Bones Files
-                        string dir = Path.Combine(_bonesBasePath, xLogFileLine.Name);
-                        if (!System.IO.Directory.Exists(dir))
+                        if(model.Command == "SendBonesFile")
                         {
-                            Directory.CreateDirectory(dir);
-                        }
-
-                        string filePathWithoutExtension = dir + @"\" + "gnollhack." + xLogFileLine.Name + "." + xLogFileLine.StartTimeUTC;
-                        string plainTextDumpLogPath = filePathWithoutExtension + ".txt";
-                        string htmlDumpLogPath = filePathWithoutExtension + ".html";
-
-                        if (System.IO.File.Exists(plainTextDumpLogPath))
-                        {
-                            return StatusCode(409); //Character already exists
-                        }
-
-                        if (System.IO.File.Exists(htmlDumpLogPath))
-                        {
-                            return StatusCode(409); //Character already exists
-                        }
-
-                        using var htmlOutStream = System.IO.File.OpenWrite(htmlDumpLogPath);
-                        var t2 = model.BonesFile.CopyToAsync(htmlOutStream);
-
-                        Task.WaitAll(t2);
-
-                        _logger.LogInformation("Bones files written for " + xLogFileLine.Name + " at " + dir);
-
-                        try
-                        {
-                            GameLog gameLog = new GameLog(xLogFileLine, _dbContext);
-                            await _dbContext.GameLog.AddAsync(gameLog);
-                            await _dbContext.SaveChangesAsync();
-                            long id = gameLog.Id;
-                            if (id == 0)
+                            if (model.BonesFile == null)
                             {
                                 Response.StatusCode = 500;
-                                return Content("Inserted Id is 0.");
+                                return Content("Bones file is null when sending a bones file.");
                             }
-                            return Content(id.ToString(), "text/plain", Encoding.UTF8); //OK
+
+                            // Write Bones Files
+                            string dir = Path.Combine(_bonesBasePath, model.UserName);
+                            if (!System.IO.Directory.Exists(dir))
+                            {
+                                Directory.CreateDirectory(dir);
+                            }
+
+                            string baseFilePath = dir + @"\" + model.BonesFile.FileName;
+                            string fullFilePath;
+                            int i = 0;
+                            do
+                            {
+                                fullFilePath = baseFilePath + "_" + i;
+                                i++;
+                            } while (System.IO.File.Exists(fullFilePath));
+
+                            using var bonesOutStream = System.IO.File.OpenWrite(fullFilePath);
+                            await model.BonesFile.CopyToAsync(bonesOutStream);
+
+                            _logger.LogInformation("Bones files written for " + model.BonesFile.FileName + " at " + dir);
+
+                            try
+                            {
+                                int dif = 0;
+                                int.TryParse(dir, out dif);
+                                Bones bone = new Bones(model.UserName, 
+                                    model.Platform == null ? "Unknown" : model.Platform,
+                                    model.PlatformVersion == null ? "" : model.PlatformVersion,
+                                    model.Port == null ? "" : model.Port,
+                                    model.PortVersion == null ? "" : model.PortVersion,
+                                    model.PortBuild == null ? "" : model.PortBuild,
+                                    model.VersionNumber, 
+                                    model.VersionCompatibilityNumber, 
+                                    dif, fullFilePath, model.BonesFile.FileName, _dbContext);
+                                await _dbContext.Bones.AddAsync(bone);
+                                await _dbContext.SaveChangesAsync();
+                                long id = bone.Id;
+                                if (id == 0)
+                                {
+                                    Response.StatusCode = 500;
+                                    return Content("Inserted Id is 0.");
+                                }
+
+                                /* Return a bones file from the existing bones, if possible */
+                                var availableBones = _dbContext.Bones.Where(
+                                    b => b.AspNetUserId != bone.AspNetUserId 
+                                    && b.DifficultyLevel == bone.DifficultyLevel 
+                                    && (b.VersionNumber == bone.VersionNumber 
+                                        || (b.VersionNumber < bone.VersionNumber 
+                                            ? (b.VersionNumber >= bone.VersionCompatibilityNumber) 
+                                            : (b.VersionCompatibilityNumber <= bone.VersionNumber))));
+
+                                var list = availableBones.ToList();
+                                if (list != null)
+                                {
+                                    if(list.Count < 5)
+                                        return Content(id.ToString() + ", too few bones files on server: " + list.Count + " applicable bones file" + (list.Count == 1 ? "" : "s") + " on server", "text/plain", Encoding.UTF8); //OK
+
+                                    if (list.Count < 200)
+                                    {
+                                        Random random1 = new Random();
+                                        double chance = 1.0 / 3.0 + 2.0 / 3.0 * ((double)(list.Count - 5) / 195);
+                                        if (!(random1.NextDouble() < chance))
+                                            return Content(id.ToString() + ", randomly did not send a bones file: " + list.Count + " applicable bones file" + (list.Count == 1 ? "" : "s") + " on server", "text/plain", Encoding.UTF8); //OK
+                                    }
+
+                                    /* Send a bones file */
+                                    if (list.Count > 0)
+                                    {
+                                        Random random = new Random();
+                                        int indx = list.Count == 1 ? 0 : random.Next(list.Count);
+                                        if (list.Count > 1 && (list[indx].BonesFilePath == null || !System.IO.File.Exists(list[indx].BonesFilePath)))
+                                        {
+                                            for (i = 0; i < list.Count; i++)
+                                            {
+                                                if (list[indx].BonesFilePath != null && System.IO.File.Exists(list[indx].BonesFilePath))
+                                                {
+                                                    id = i;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        if (list[indx]?.BonesFilePath != null && System.IO.File.Exists(list[indx]?.BonesFilePath))
+                                        {
+                                            try
+                                            {
+                                                byte[] bytes = await System.IO.File.ReadAllBytesAsync(list[indx].BonesFilePath);
+                                                if (bytes != null && bytes.Length > 0) 
+                                                {
+                                                    Response?.Headers?.TryAdd("X-GH-OriginalFileName", new Microsoft.Extensions.Primitives.StringValues(list[indx]?.OriginalFileName != null ? list[indx]?.OriginalFileName : ""));
+                                                    Response?.Headers?.TryAdd("X-GH-BonesFilePath", new Microsoft.Extensions.Primitives.StringValues(list[indx]?.BonesFilePath));
+                                                    return File(bytes, "application/octet-stream", list[indx].OriginalFileName);
+                                                }
+                                                else
+                                                    return Content(id.ToString() + ", read zero bytes", "text/plain", Encoding.UTF8); //OK
+                                            }
+                                            catch (Exception ex)
+                                            {
+                                                return Content(id.ToString() + ", reading all bytes failed: " + ex.Message, "text/plain", Encoding.UTF8); //OK
+                                            }
+                                        }
+                                        else
+                                            return Content(id.ToString() + ", " + (list[indx]?.BonesFilePath == null ? "bones file path is null" : "bones file " + list[indx]?.BonesFilePath + " does not exist"), "text/plain", Encoding.UTF8); //OK
+                                    }
+                                    else
+                                        return Content(id.ToString() + ", couldn't locate a bones file", "text/plain", Encoding.UTF8); //OK
+                                }
+                                else
+                                    return Content(id.ToString() + ", bones list is null", "text/plain", Encoding.UTF8); //OK
+                            }
+                            catch (InvalidOperationException)
+                            {
+                                return StatusCode(410); //Gone
+                            }
+                            catch (Exception ex)
+                            {
+                                Response.StatusCode = 500; //Server Error
+                                return Content(ex.Message.ToString());
+                            }
                         }
-                        catch (InvalidOperationException)
+                        else if(model.Command == "ConfirmReceipt")
                         {
-                            return StatusCode(410); //Gone
+                            try
+                            {
+                                var availableBones = _dbContext.Bones.Where(b => b.BonesFilePath == model.Data);
+                                var list = availableBones.ToList();
+                                if(list != null && list.Count > 0)
+                                {
+                                    foreach(var bone in list)
+                                    {
+                                        if(bone != null)
+                                        {
+                                            _dbContext.Bones.Remove(bone);
+                                        }
+                                    }
+                                    await _dbContext.SaveChangesAsync();
+                                }
+                                if (System.IO.File.Exists(model.Data))
+                                {
+                                    System.IO.File.Delete(model.Data);
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                Response.StatusCode = 500; //Server Error
+                                return Content(ex.Message.ToString());
+                            }
                         }
-                        catch (Exception ex)
+                        else
                         {
-                            Response.StatusCode = 500; //Server Error
-                            return Content(ex.Message.ToString());
+                            Response.StatusCode = 500;
+                            return Content("Unknown bones file command.");
                         }
                     }
                     else if (string.IsNullOrEmpty(model.Data) && model.BonesFile == null)
