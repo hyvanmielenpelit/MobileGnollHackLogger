@@ -74,9 +74,16 @@ namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
                 var htmlBody = EmailSender.ForgotPasswordEmailHtml
                         .Replace(@"{CallbackUrl}", HtmlEncoder.Default.Encode(callbackUrl));
 
-                await _emailSender.SendEmailAsync(Input.Email, "Reset GnollHack Account Password", htmlBody);
+                try
+                {
+                    await _emailSender.SendEmailAsync(Input.Email, "Reset GnollHack Account Password", htmlBody);
 
-                return RedirectToPage("./ForgotPasswordConfirmation");
+                    return RedirectToPage("./ForgotPasswordConfirmation");
+                }
+                catch (Exception ex)
+                {
+                    ModelState.AddModelError(string.Empty, "Error occurred sending email: " + ex.Message);
+                }
             }
 
             return Page();

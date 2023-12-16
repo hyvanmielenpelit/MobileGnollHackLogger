@@ -81,10 +81,17 @@ namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
             var htmlBody = EmailSender.ConfirmAccountEmailHtml
                 .Replace(@"{CallbackUrl}", HtmlEncoder.Default.Encode(callbackUrl));
 
-            await _emailSender.SendEmailAsync(Input.Email, "Confirm Your Email - GnollHack Account", htmlBody);
-
-            ModelState.AddModelError(string.Empty, "Verification email sent. Please check your email.");
-            return Page();
+            try
+            {
+                await _emailSender.SendEmailAsync(Input.Email, "Confirm Your Email - GnollHack Account", htmlBody);
+                ModelState.AddModelError(string.Empty, "Verification email sent. Please check your email.");
+                return Page();
+            }
+            catch (Exception ex)
+            {
+                ModelState.AddModelError(string.Empty, "Error occurred sending email: " + ex.Message);
+                return Page();
+            }
         }
     }
 }

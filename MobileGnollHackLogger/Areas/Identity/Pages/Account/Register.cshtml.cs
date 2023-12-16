@@ -156,16 +156,23 @@ namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
                     var htmlBody = EmailSender.ConfirmAccountEmailHtml
                         .Replace(@"{CallbackUrl}", HtmlEncoder.Default.Encode(callbackUrl));
 
-                    await _emailSender.SendEmailAsync(Input.Email, "Confirm Your Email - GnollHack Account", htmlBody);
+                    try
+                    {
+                        await _emailSender.SendEmailAsync(Input.Email, "Confirm Your Email - GnollHack Account", htmlBody);
 
-                    if (_userManager.Options.SignIn.RequireConfirmedAccount)
-                    {
-                        return RedirectToPage("RegisterConfirmation", new { email = Input.Email, returnUrl = returnUrl });
+                        if (_userManager.Options.SignIn.RequireConfirmedAccount)
+                        {
+                            return RedirectToPage("RegisterConfirmation", new { email = Input.Email, returnUrl = returnUrl });
+                        }
+                        else
+                        {
+                            await _signInManager.SignInAsync(user, isPersistent: false);
+                            return LocalRedirect(returnUrl);
+                        }
                     }
-                    else
+                    catch (Exception ex)
                     {
-                        await _signInManager.SignInAsync(user, isPersistent: false);
-                        return LocalRedirect(returnUrl);
+                        ModelState.AddModelError(string.Empty, "Error occurred sending email: " + ex.Message);
                     }
                 }
                 foreach (var error in result.Errors)
