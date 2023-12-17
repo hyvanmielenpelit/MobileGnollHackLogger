@@ -121,8 +121,11 @@ namespace MobileGnollHackLogger.Areas.API
 
                             try
                             {
-                                int dif = 0;
-                                int.TryParse(dir, out dif);
+                                //Difficulty is in the data field of the SendBonesFile command
+                                int difficulty = 0;
+                                if(!string.IsNullOrEmpty(model.Data))
+                                    int.TryParse(model.Data, out difficulty);
+
                                 Bones bone = new Bones(model.UserName, 
                                     model.Platform == null ? "Unknown" : model.Platform,
                                     model.PlatformVersion == null ? "" : model.PlatformVersion,
@@ -130,8 +133,12 @@ namespace MobileGnollHackLogger.Areas.API
                                     model.PortVersion == null ? "" : model.PortVersion,
                                     model.PortBuild == null ? "" : model.PortBuild,
                                     model.VersionNumber, 
-                                    model.VersionCompatibilityNumber, 
-                                    dif, fullFilePath, model.BonesFile.FileName, _dbContext);
+                                    model.VersionCompatibilityNumber,
+                                    difficulty, 
+                                    fullFilePath, 
+                                    model.BonesFile.FileName, 
+                                    _dbContext);
+
                                 await _dbContext.Bones.AddAsync(bone);
                                 await _dbContext.SaveChangesAsync();
                                 long id = bone.Id;
@@ -167,29 +174,33 @@ namespace MobileGnollHackLogger.Areas.API
                                     /* Send a bones file */
                                     if (list.Count > 0)
                                     {
+                                        string? bonespath = null;
                                         Random random = new Random();
                                         int indx = list.Count == 1 ? 0 : random.Next(list.Count);
-                                        if (list.Count > 1 && (list[indx].BonesFilePath == null || !System.IO.File.Exists(list[indx].BonesFilePath)))
+                                        bonespath = list[indx].BonesFilePath;
+                                        if (list.Count > 1 && (bonespath == null || !System.IO.File.Exists(bonespath)))
                                         {
                                             for (i = 0; i < list.Count; i++)
                                             {
-                                                if (list[indx].BonesFilePath != null && System.IO.File.Exists(list[indx].BonesFilePath))
+                                                bonespath = list[i].BonesFilePath;
+                                                if (bonespath != null && System.IO.File.Exists(bonespath))
                                                 {
-                                                    id = i;
+                                                    indx = i;
                                                     break;
                                                 }
                                             }
                                         }
-                                        if (list[indx]?.BonesFilePath != null && System.IO.File.Exists(list[indx]?.BonesFilePath))
+                                        if (bonespath != null && System.IO.File.Exists(bonespath))
                                         {
+                                            string? originalfilename = list[indx].OriginalFileName != null ? list[indx].OriginalFileName : "";
                                             try
                                             {
-                                                byte[] bytes = await System.IO.File.ReadAllBytesAsync(list[indx].BonesFilePath);
+                                                byte[] bytes = await System.IO.File.ReadAllBytesAsync(bonespath);
                                                 if (bytes != null && bytes.Length > 0) 
                                                 {
-                                                    Response?.Headers?.TryAdd("X-GH-OriginalFileName", new Microsoft.Extensions.Primitives.StringValues(list[indx]?.OriginalFileName != null ? list[indx]?.OriginalFileName : ""));
-                                                    Response?.Headers?.TryAdd("X-GH-BonesFilePath", new Microsoft.Extensions.Primitives.StringValues(list[indx]?.BonesFilePath));
-                                                    return File(bytes, "application/octet-stream", list[indx].OriginalFileName);
+                                                    Response?.Headers?.TryAdd("X-GH-OriginalFileName", new Microsoft.Extensions.Primitives.StringValues(originalfilename));
+                                                    Response?.Headers?.TryAdd("X-GH-BonesFilePath", new Microsoft.Extensions.Primitives.StringValues(bonespath));
+                                                    return File(bytes, "application/octet-stream", originalfilename);
                                                 }
                                                 else
                                                     return Content(id.ToString() + ", read zero bytes", "text/plain", Encoding.UTF8); //OK
@@ -200,7 +211,7 @@ namespace MobileGnollHackLogger.Areas.API
                                             }
                                         }
                                         else
-                                            return Content(id.ToString() + ", " + (list[indx]?.BonesFilePath == null ? "bones file path is null" : "bones file " + list[indx]?.BonesFilePath + " does not exist"), "text/plain", Encoding.UTF8); //OK
+                                            return Content(id.ToString() + ", " + (bonespath == null ? "bones file path is null" : "bones file " + bonespath + " does not exist"), "text/plain", Encoding.UTF8); //OK
                                     }
                                     else
                                         return Content(id.ToString() + ", couldn't locate a bones file", "text/plain", Encoding.UTF8); //OK
