@@ -99,7 +99,7 @@ namespace MobileGnollHackLogger.Areas.API
                             }
 
                             const int ServerAllBoneLimit = 512;
-                            const int ServerUserBoneLimit = 16;
+                            const int ServerUserBoneLimit = 32;
                             const int ServerAvailableBoneMinLimit = 4;
                             const int ServerAvailableBoneMaxLimit = 128;
 
@@ -170,10 +170,9 @@ namespace MobileGnollHackLogger.Areas.API
 
                                 _logger.LogInformation("Bones files written for " + model.BonesFile.FileName + " at " + dir);
 
-                                Bones bone;
                                 try
                                 {
-                                    bone = new Bones(model.UserName,
+                                    Bones bone = new Bones(model.UserName,
                                         model.Platform == null ? "Unknown" : model.Platform,
                                         model.PlatformVersion == null ? "" : model.PlatformVersion,
                                         model.Port == null ? "" : model.Port,
@@ -186,9 +185,9 @@ namespace MobileGnollHackLogger.Areas.API
                                         model.BonesFile.FileName,
                                         _dbContext);
 
-                                    id = bone.Id;
                                     await _dbContext.Bones.AddAsync(bone);
                                     await _dbContext.SaveChangesAsync();
+                                    id = bone.Id;
                                     if (id == 0)
                                     {
                                         Response.StatusCode = 500;
