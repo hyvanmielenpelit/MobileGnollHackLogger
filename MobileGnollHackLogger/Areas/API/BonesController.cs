@@ -98,129 +98,148 @@ namespace MobileGnollHackLogger.Areas.API
                                 return Content("Bones file is null when sending a bones file.");
                             }
 
-                            const int ServerAllBoneLimit = 256;
+                            const int ServerAllBoneLimit = 512;
                             const int ServerUserBoneLimit = 16;
                             const int ServerAvailableBoneMinLimit = 4;
                             const int ServerAvailableBoneMaxLimit = 128;
+
+                            long id = 0;
+                            int i = 0;
 
                             //Difficulty is in the data field of the SendBonesFile command
                             int difficulty = 0;
                             if (!string.IsNullOrEmpty(model.Data))
                                 int.TryParse(model.Data, out difficulty);
 
-                            var allBones = _dbContext.Bones.Where(
-                                b => b.DifficultyLevel == difficulty
-                                && (b.VersionNumber == model.VersionNumber
-                                    || (b.VersionNumber < model.VersionNumber
-                                        ? (b.VersionNumber >= model.VersionCompatibilityNumber)
-                                        : (b.VersionCompatibilityNumber <= model.VersionNumber))));
-
-                            var allBoneList = allBones.ToList();
-                            if (allBoneList?.Count >= ServerAllBoneLimit)
-                            {
-                                Response.StatusCode = 202;
-                                return Content("-1, Bones file received but not added to the server: The server has too many bones files for this difficulty level (" + allBoneList.Count + " / " + ServerAllBoneLimit + ")", "text/plain", Encoding.UTF8); //OK
-                            }
-
-                            var dbUser = _dbContext.Users.First(u => u.UserName == model.UserName);
-                            string? aspNetUserId = dbUser.Id;
-
-                            /* Return a bones file from the existing bones, if possible */
-                            var userBones = _dbContext.Bones.Where(
-                                b => b.AspNetUserId == aspNetUserId
-                                && b.DifficultyLevel == difficulty
-                                && (b.VersionNumber == model.VersionNumber
-                                    || (b.VersionNumber < model.VersionNumber
-                                        ? (b.VersionNumber >= model.VersionCompatibilityNumber)
-                                        : (b.VersionCompatibilityNumber <= model.VersionNumber))));
-
-                            var userBoneList = userBones.ToList();
-                            if(userBoneList?.Count >= ServerUserBoneLimit)
-                            {
-                                Response.StatusCode = 202;
-                                return Content("-2, Bones file received but not added to the server: User \"" + model.UserName + "\" has too many bones files for this difficulty level (" + userBoneList.Count + " / " + ServerUserBoneLimit +  ")", "text/plain", Encoding.UTF8); //OK
-                            }
-
-                            // Write Bones Files
-                            string dir = Path.Combine(_bonesBasePath, model.UserName);
-                            if (!System.IO.Directory.Exists(dir))
-                            {
-                                Directory.CreateDirectory(dir);
-                            }
-
-                            string baseFilePath = dir + @"\" + model.BonesFile.FileName;
-                            string fullFilePath;
-                            int i = 0;
-                            do
-                            {
-                                fullFilePath = baseFilePath + "_" + i;
-                                i++;
-                            } while (System.IO.File.Exists(fullFilePath));
-
-                            using var bonesOutStream = System.IO.File.OpenWrite(fullFilePath);
-                            await model.BonesFile.CopyToAsync(bonesOutStream);
-
-                            _logger.LogInformation("Bones files written for " + model.BonesFile.FileName + " at " + dir);
+                            string aspNetUserId = "";
+                            int userBoneCount = 0;
+                            int allBoneCount = 0;
 
                             try
                             {
-                                Bones bone = new Bones(model.UserName, 
-                                    model.Platform == null ? "Unknown" : model.Platform,
-                                    model.PlatformVersion == null ? "" : model.PlatformVersion,
-                                    model.Port == null ? "" : model.Port,
-                                    model.PortVersion == null ? "" : model.PortVersion,
-                                    model.PortBuild == null ? "" : model.PortBuild,
-                                    model.VersionNumber, 
-                                    model.VersionCompatibilityNumber,
-                                    difficulty, 
-                                    fullFilePath, 
-                                    model.BonesFile.FileName, 
-                                    _dbContext);
+                                var dbUser = _dbContext.Users.First(u => u.UserName == model.UserName);
+                                aspNetUserId = dbUser.Id;
 
-                                await _dbContext.Bones.AddAsync(bone);
-                                await _dbContext.SaveChangesAsync();
-                                long id = bone.Id;
-                                if (id == 0)
-                                {
-                                    Response.StatusCode = 500;
-                                    return Content("Inserted Id is 0.");
-                                }
+                                var allBones = _dbContext.Bones.Where(
+                                    b => b.DifficultyLevel == difficulty
+                                    && (b.VersionNumber == model.VersionNumber
+                                        || (b.VersionNumber < model.VersionNumber
+                                            ? (b.VersionNumber >= model.VersionCompatibilityNumber)
+                                            : (b.VersionCompatibilityNumber <= model.VersionNumber))));
+
+                                var allBoneList = allBones.ToList();
 
                                 /* Return a bones file from the existing bones, if possible */
+                                var userBones = _dbContext.Bones.Where(
+                                    b => b.AspNetUserId == aspNetUserId
+                                    && b.DifficultyLevel == difficulty
+                                    && (b.VersionNumber == model.VersionNumber
+                                        || (b.VersionNumber < model.VersionNumber
+                                            ? (b.VersionNumber >= model.VersionCompatibilityNumber)
+                                            : (b.VersionCompatibilityNumber <= model.VersionNumber))));
+
+                                var userBoneList = userBones.ToList();
+                                userBoneCount = userBoneList.Count;
+                                allBoneCount = allBoneList.Count;
+                            }
+                            catch
+                            {
+                                userBoneCount = 0;
+                                allBoneCount = 0;
+                            }
+
+                            if (userBoneCount < ServerUserBoneLimit && allBoneCount < ServerAllBoneLimit)
+                            {
+                                // Write Bones Files
+                                string dir = Path.Combine(_bonesBasePath, model.UserName);
+                                if (!System.IO.Directory.Exists(dir))
+                                {
+                                    Directory.CreateDirectory(dir);
+                                }
+
+                                string baseFilePath = dir + @"\" + model.BonesFile.FileName;
+                                string fullFilePath;
+                                do
+                                {
+                                    fullFilePath = baseFilePath + "_" + i;
+                                    i++;
+                                } while (System.IO.File.Exists(fullFilePath));
+
+                                using var bonesOutStream = System.IO.File.OpenWrite(fullFilePath);
+                                await model.BonesFile.CopyToAsync(bonesOutStream);
+
+                                _logger.LogInformation("Bones files written for " + model.BonesFile.FileName + " at " + dir);
+
+                                Bones bone;
+                                try
+                                {
+                                    bone = new Bones(model.UserName,
+                                        model.Platform == null ? "Unknown" : model.Platform,
+                                        model.PlatformVersion == null ? "" : model.PlatformVersion,
+                                        model.Port == null ? "" : model.Port,
+                                        model.PortVersion == null ? "" : model.PortVersion,
+                                        model.PortBuild == null ? "" : model.PortBuild,
+                                        model.VersionNumber,
+                                        model.VersionCompatibilityNumber,
+                                        difficulty,
+                                        fullFilePath,
+                                        model.BonesFile.FileName,
+                                        _dbContext);
+
+                                    id = bone.Id;
+                                    await _dbContext.Bones.AddAsync(bone);
+                                    await _dbContext.SaveChangesAsync();
+                                    if (id == 0)
+                                    {
+                                        Response.StatusCode = 500;
+                                        return Content("Inserted Id is 0.");
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    Response.StatusCode = 500;
+                                    return Content("Exception occurred while adding a new bones entry: " + ex.Message);
+                                }
+                            }
+
+                            /* Return a bones file from the existing bones, if possible */
+                            try
+                            {
                                 var availableBones = _dbContext.Bones.Where(
-                                    b => b.AspNetUserId != bone.AspNetUserId 
-                                    && b.DifficultyLevel == bone.DifficultyLevel 
-                                    && (b.VersionNumber == bone.VersionNumber 
-                                        || (b.VersionNumber < bone.VersionNumber 
-                                            ? (b.VersionNumber >= bone.VersionCompatibilityNumber) 
-                                            : (b.VersionCompatibilityNumber <= bone.VersionNumber))));
+                                    b => b.AspNetUserId != aspNetUserId 
+                                    && b.DifficultyLevel == difficulty 
+                                    && (b.VersionNumber == model.VersionNumber 
+                                        || (b.VersionNumber < model.VersionNumber 
+                                            ? (b.VersionNumber >= model.VersionCompatibilityNumber) 
+                                            : (b.VersionCompatibilityNumber <= model.VersionNumber))));
 
                                 var availableBoneList = availableBones.ToList();
                                 if (availableBoneList != null)
                                 {
-                                    if (availableBoneList.Count < ServerAvailableBoneMinLimit)
-                                        return Content(id.ToString() + ", too few bones files on server: " + availableBoneList.Count + " applicable bones file" + (availableBoneList.Count == 1 ? "" : "s") + " on server", "text/plain", Encoding.UTF8); //OK
+                                    int availableBoneCount = availableBoneList.Count;
+                                    if (availableBoneCount < ServerAvailableBoneMinLimit)
+                                        return Content(id.ToString() + ", too few bones files on server to send a bones file back: " + availableBoneCount + " applicable bones file" + (availableBoneCount == 1 ? "" : "s") + " on server", "text/plain", Encoding.UTF8); //OK
 
-                                    if (availableBoneList.Count < ServerAvailableBoneMaxLimit)
+                                    if (availableBoneCount < ServerAvailableBoneMaxLimit)
                                     {
                                         Random random1 = new Random();
-                                        double chance = 1.0; // 1.0 / 3.0 + 2.0 / 3.0 * ((double)(list.Count - ServerAvailableBoneMinLimit) / (ServerAvailableBoneMaxLimit - ServerAvailableBoneMinLimit));
+                                        double chance = 1.0 / 3.0 + 2.0 / 3.0 * ((double)(availableBoneCount - ServerAvailableBoneMinLimit) / (ServerAvailableBoneMaxLimit - ServerAvailableBoneMinLimit));
                                         if (!(random1.NextDouble() < chance))
-                                            return Content(id.ToString() + ", randomly did not send a bones file: " + availableBoneList.Count + " applicable bones file" + (availableBoneList.Count == 1 ? "" : "s") + " on server", "text/plain", Encoding.UTF8); //OK
+                                            return Content(id.ToString() + ", randomly did not send a bones file back: " + availableBoneCount + " applicable bones file" + (availableBoneList.Count == 1 ? "" : "s") + " on server", "text/plain", Encoding.UTF8); //OK
                                     }
 
                                     /* Send a bones file */
-                                    if (availableBoneList.Count > 0)
+                                    if (availableBoneCount > 0)
                                     {
                                         string? bonespath = null;
                                         long bonesid = 0;
                                         Random random = new Random();
-                                        int indx = availableBoneList.Count == 1 ? 0 : random.Next(availableBoneList.Count);
+                                        int indx = availableBoneCount == 1 ? 0 : random.Next(availableBoneCount);
                                         bonespath = availableBoneList[indx].BonesFilePath;
                                         bonesid = availableBoneList[indx].Id;
-                                        if (availableBoneList.Count > 1 && (bonespath == null || !System.IO.File.Exists(bonespath)))
+                                        if (availableBoneCount > 1 && (bonespath == null || !System.IO.File.Exists(bonespath)))
                                         {
-                                            for (i = 0; i < availableBoneList.Count; i++)
+                                            for (i = 0; i < availableBoneCount; i++)
                                             {
                                                 bonespath = availableBoneList[i].BonesFilePath;
                                                 bonesid = availableBoneList[i].Id;
