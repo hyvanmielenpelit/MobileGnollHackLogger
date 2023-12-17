@@ -98,6 +98,49 @@ namespace MobileGnollHackLogger.Areas.API
                                 return Content("Bones file is null when sending a bones file.");
                             }
 
+                            const int ServerAllBoneLimit = 256;
+                            const int ServerUserBoneLimit = 16;
+                            const int ServerAvailableBoneMinLimit = 4;
+                            const int ServerAvailableBoneMaxLimit = 128;
+
+                            //Difficulty is in the data field of the SendBonesFile command
+                            int difficulty = 0;
+                            if (!string.IsNullOrEmpty(model.Data))
+                                int.TryParse(model.Data, out difficulty);
+
+                            var allBones = _dbContext.Bones.Where(
+                                b => b.DifficultyLevel == difficulty
+                                && (b.VersionNumber == model.VersionNumber
+                                    || (b.VersionNumber < model.VersionNumber
+                                        ? (b.VersionNumber >= model.VersionCompatibilityNumber)
+                                        : (b.VersionCompatibilityNumber <= model.VersionNumber))));
+
+                            var allBoneList = allBones.ToList();
+                            if (allBoneList?.Count >= ServerAllBoneLimit)
+                            {
+                                Response.StatusCode = 202;
+                                return Content("-1, Bones file received but not added to the server: The server has too many bones files for this difficulty level (" + allBoneList.Count + " / " + ServerAllBoneLimit + ")", "text/plain", Encoding.UTF8); //OK
+                            }
+
+                            var dbUser = _dbContext.Users.First(u => u.UserName == model.UserName);
+                            string? aspNetUserId = dbUser.Id;
+
+                            /* Return a bones file from the existing bones, if possible */
+                            var userBones = _dbContext.Bones.Where(
+                                b => b.AspNetUserId == aspNetUserId
+                                && b.DifficultyLevel == difficulty
+                                && (b.VersionNumber == model.VersionNumber
+                                    || (b.VersionNumber < model.VersionNumber
+                                        ? (b.VersionNumber >= model.VersionCompatibilityNumber)
+                                        : (b.VersionCompatibilityNumber <= model.VersionNumber))));
+
+                            var userBoneList = userBones.ToList();
+                            if(userBoneList?.Count >= ServerUserBoneLimit)
+                            {
+                                Response.StatusCode = 202;
+                                return Content("-2, Bones file received but not added to the server: User \"" + model.UserName + "\" has too many bones files for this difficulty level (" + userBoneList.Count + " / " + ServerUserBoneLimit +  ")", "text/plain", Encoding.UTF8); //OK
+                            }
+
                             // Write Bones Files
                             string dir = Path.Combine(_bonesBasePath, model.UserName);
                             if (!System.IO.Directory.Exists(dir))
@@ -121,11 +164,6 @@ namespace MobileGnollHackLogger.Areas.API
 
                             try
                             {
-                                //Difficulty is in the data field of the SendBonesFile command
-                                int difficulty = 0;
-                                if(!string.IsNullOrEmpty(model.Data))
-                                    int.TryParse(model.Data, out difficulty);
-
                                 Bones bone = new Bones(model.UserName, 
                                     model.Platform == null ? "Unknown" : model.Platform,
                                     model.PlatformVersion == null ? "" : model.PlatformVersion,
@@ -157,32 +195,35 @@ namespace MobileGnollHackLogger.Areas.API
                                             ? (b.VersionNumber >= bone.VersionCompatibilityNumber) 
                                             : (b.VersionCompatibilityNumber <= bone.VersionNumber))));
 
-                                var list = availableBones.ToList();
-                                if (list != null)
+                                var availableBoneList = availableBones.ToList();
+                                if (availableBoneList != null)
                                 {
-                                    if(list.Count < 5)
-                                        return Content(id.ToString() + ", too few bones files on server: " + list.Count + " applicable bones file" + (list.Count == 1 ? "" : "s") + " on server", "text/plain", Encoding.UTF8); //OK
+                                    if (availableBoneList.Count < ServerAvailableBoneMinLimit)
+                                        return Content(id.ToString() + ", too few bones files on server: " + availableBoneList.Count + " applicable bones file" + (availableBoneList.Count == 1 ? "" : "s") + " on server", "text/plain", Encoding.UTF8); //OK
 
-                                    if (list.Count < 200)
+                                    if (availableBoneList.Count < ServerAvailableBoneMaxLimit)
                                     {
                                         Random random1 = new Random();
-                                        double chance = 1.0 / 3.0 + 2.0 / 3.0 * ((double)(list.Count - 5) / 195);
+                                        double chance = 1.0; // 1.0 / 3.0 + 2.0 / 3.0 * ((double)(list.Count - ServerAvailableBoneMinLimit) / (ServerAvailableBoneMaxLimit - ServerAvailableBoneMinLimit));
                                         if (!(random1.NextDouble() < chance))
-                                            return Content(id.ToString() + ", randomly did not send a bones file: " + list.Count + " applicable bones file" + (list.Count == 1 ? "" : "s") + " on server", "text/plain", Encoding.UTF8); //OK
+                                            return Content(id.ToString() + ", randomly did not send a bones file: " + availableBoneList.Count + " applicable bones file" + (availableBoneList.Count == 1 ? "" : "s") + " on server", "text/plain", Encoding.UTF8); //OK
                                     }
 
                                     /* Send a bones file */
-                                    if (list.Count > 0)
+                                    if (availableBoneList.Count > 0)
                                     {
                                         string? bonespath = null;
+                                        long bonesid = 0;
                                         Random random = new Random();
-                                        int indx = list.Count == 1 ? 0 : random.Next(list.Count);
-                                        bonespath = list[indx].BonesFilePath;
-                                        if (list.Count > 1 && (bonespath == null || !System.IO.File.Exists(bonespath)))
+                                        int indx = availableBoneList.Count == 1 ? 0 : random.Next(availableBoneList.Count);
+                                        bonespath = availableBoneList[indx].BonesFilePath;
+                                        bonesid = availableBoneList[indx].Id;
+                                        if (availableBoneList.Count > 1 && (bonespath == null || !System.IO.File.Exists(bonespath)))
                                         {
-                                            for (i = 0; i < list.Count; i++)
+                                            for (i = 0; i < availableBoneList.Count; i++)
                                             {
-                                                bonespath = list[i].BonesFilePath;
+                                                bonespath = availableBoneList[i].BonesFilePath;
+                                                bonesid = availableBoneList[i].Id;
                                                 if (bonespath != null && System.IO.File.Exists(bonespath))
                                                 {
                                                     indx = i;
@@ -192,7 +233,7 @@ namespace MobileGnollHackLogger.Areas.API
                                         }
                                         if (bonespath != null && System.IO.File.Exists(bonespath))
                                         {
-                                            string? originalfilename = list[indx].OriginalFileName != null ? list[indx].OriginalFileName : "";
+                                            string? originalfilename = availableBoneList[indx].OriginalFileName != null ? availableBoneList[indx].OriginalFileName : "";
                                             try
                                             {
                                                 byte[] bytes = await System.IO.File.ReadAllBytesAsync(bonespath);
@@ -200,6 +241,7 @@ namespace MobileGnollHackLogger.Areas.API
                                                 {
                                                     Response?.Headers?.TryAdd("X-GH-OriginalFileName", new Microsoft.Extensions.Primitives.StringValues(originalfilename));
                                                     Response?.Headers?.TryAdd("X-GH-BonesFilePath", new Microsoft.Extensions.Primitives.StringValues(bonespath));
+                                                    Response?.Headers?.TryAdd("X-GH-DataBaseTableId", new Microsoft.Extensions.Primitives.StringValues(bonesid.ToString()));
                                                     return File(bytes, "application/octet-stream", originalfilename);
                                                 }
                                                 else
@@ -235,6 +277,7 @@ namespace MobileGnollHackLogger.Areas.API
                             {
                                 var availableBones = _dbContext.Bones.Where(b => b.BonesFilePath == model.Data);
                                 var list = availableBones.ToList();
+                                bool didremoveentry = false, diddeletefile = false;
                                 if(list != null && list.Count > 0)
                                 {
                                     foreach(var bone in list)
@@ -242,6 +285,7 @@ namespace MobileGnollHackLogger.Areas.API
                                         if(bone != null)
                                         {
                                             _dbContext.Bones.Remove(bone);
+                                            didremoveentry = true;
                                         }
                                     }
                                     await _dbContext.SaveChangesAsync();
@@ -249,7 +293,12 @@ namespace MobileGnollHackLogger.Areas.API
                                 if (System.IO.File.Exists(model.Data))
                                 {
                                     System.IO.File.Delete(model.Data);
+                                    diddeletefile = true;
                                 }
+                                if(diddeletefile)
+                                    return Content("File " + model.Data + " was successfully deleted from the server."  + (didremoveentry ? " Corresponding entry was also deleted from the database." : ""), "text/plain", Encoding.UTF8);
+                                else
+                                    return Content("File " + model.Data + " was did not exist on the server and was thus not deleted." + (didremoveentry ? " However, a corresponding entry to the file was deleted from the database." : " A corresponding entry did not exist in the database either."), "text/plain", Encoding.UTF8);
                             }
                             catch (Exception ex)
                             {
