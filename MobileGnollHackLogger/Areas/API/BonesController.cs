@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
+//using MobileGnollHackLogger.Data.Migrations;
 using System.Text;
 
 // For more information on enabling Web API for empty projects, visit https://go.microsoft.com/fwlink/?LinkID=397860
@@ -92,8 +93,10 @@ namespace MobileGnollHackLogger.Areas.API
                         //Sign in succeedeed
                         if(model.Command == "SendBonesFile")
                         {
+                            _logger.LogInformation("SendBonesFile request received from user " + model.UserName);
                             if (model.BonesFile == null)
                             {
+                                _logger.LogInformation("No bones file was attached to the request");
                                 Response.StatusCode = 500;
                                 return Content("Bones file is null when sending a bones file.");
                             }
@@ -168,7 +171,7 @@ namespace MobileGnollHackLogger.Areas.API
                                 using var bonesOutStream = System.IO.File.OpenWrite(fullFilePath);
                                 await model.BonesFile.CopyToAsync(bonesOutStream);
 
-                                _logger.LogInformation("Bones files written for " + model.BonesFile.FileName + " at " + dir);
+                                _logger.LogInformation("Bones file " + fullFilePath + " from user " + model.UserName + " written as " + model.BonesFile.FileName + " at directory " + dir);
 
                                 try
                                 {
@@ -188,6 +191,7 @@ namespace MobileGnollHackLogger.Areas.API
                                     await _dbContext.Bones.AddAsync(bone);
                                     await _dbContext.SaveChangesAsync();
                                     id = bone.Id;
+                                    _logger.LogInformation("Bones file from user " + model.UserName + " written to database as ID " + id);
                                     if (id == 0)
                                     {
                                         Response.StatusCode = 500;
@@ -216,6 +220,8 @@ namespace MobileGnollHackLogger.Areas.API
                                 if (availableBoneList != null)
                                 {
                                     int availableBoneCount = availableBoneList.Count;
+                                    _logger.LogInformation("Listed " + availableBoneCount + " bones file(s) available to be returned to user " + model.UserName);
+
                                     if (availableBoneCount < ServerAvailableBoneMinLimit)
                                         return Content(id.ToString() + ", too few bones files on server to send a bones file back: " + availableBoneCount + " applicable bones file" + (availableBoneCount == 1 ? "" : "s") + " on server", "text/plain", Encoding.UTF8); //OK
 
@@ -252,6 +258,7 @@ namespace MobileGnollHackLogger.Areas.API
                                         if (bonespath != null && System.IO.File.Exists(bonespath))
                                         {
                                             string? originalfilename = availableBoneList[indx].OriginalFileName != null ? availableBoneList[indx].OriginalFileName : "";
+                                            _logger.LogInformation("Sending back to user " + model.UserName + " a  bones file with ID " + bonesid + ", original name of " + originalfilename + " and server path " + bonespath);
                                             try
                                             {
                                                 byte[] bytes = await System.IO.File.ReadAllBytesAsync(bonespath);
@@ -291,6 +298,7 @@ namespace MobileGnollHackLogger.Areas.API
                         }
                         else if(model.Command == "ConfirmReceipt")
                         {
+                            _logger.LogInformation("Received a bones file confirmation receipt from user " + model.UserName + " for server bones file path " + model.Data);
                             try
                             {
                                 var availableBones = _dbContext.Bones.Where(b => b.BonesFilePath == model.Data);
@@ -302,8 +310,10 @@ namespace MobileGnollHackLogger.Areas.API
                                     {
                                         if(bone != null)
                                         {
+                                            long bonesid = bone.Id;
                                             _dbContext.Bones.Remove(bone);
                                             didremoveentry = true;
+                                            _logger.LogInformation("Deleted a database bones entry ID " + bonesid);
                                         }
                                     }
                                     await _dbContext.SaveChangesAsync();
@@ -312,8 +322,9 @@ namespace MobileGnollHackLogger.Areas.API
                                 {
                                     System.IO.File.Delete(model.Data);
                                     diddeletefile = true;
+                                    _logger.LogInformation("Deleted the server file " + model.Data);
                                 }
-                                if(diddeletefile)
+                                if (diddeletefile)
                                     return Content("File " + model.Data + " was successfully deleted from the server."  + (didremoveentry ? " Corresponding entry was also deleted from the database." : ""), "text/plain", Encoding.UTF8);
                                 else
                                     return Content("File " + model.Data + " was did not exist on the server and was thus not deleted." + (didremoveentry ? " However, a corresponding entry to the file was deleted from the database." : " A corresponding entry did not exist in the database either."), "text/plain", Encoding.UTF8);
