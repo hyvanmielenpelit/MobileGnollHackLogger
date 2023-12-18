@@ -39,7 +39,7 @@ namespace MobileGnollHackLogger.Pages
                 }
             }
 
-            if(!string.IsNullOrEmpty(mode) )
+            if(!string.IsNullOrEmpty(mode))
             {
                 gameLogs = gameLogs.Where(gl => gl.Mode == mode);
             }

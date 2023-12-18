@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Routing.Matching;
 using Microsoft.EntityFrameworkCore;
+using MobileGnollHackLogger.Data.Migrations;
 using Newtonsoft.Json.Linq;
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
@@ -7,11 +8,62 @@ using System.Text;
 
 namespace MobileGnollHackLogger.Data
 {
+    public enum OutputMode { XLog, CSV };
+
     /// <summary>
     /// 
     /// </summary>
     public class XLogFileLine
     {
+        private const char _separator = '\t';
+
+        private static readonly List<string> _headerTexts = new List<string>()
+        {
+            "version",
+            "edit",
+            "platform",
+            "platformversion",
+            "port",
+            "portversion",
+            "portbuild",
+            "points",
+            "deathdnum",
+            "deathlev",
+            "maxlvl",
+            "hp",
+            "maxhp",
+            "deaths",
+            "deathdate",
+            "birthdate",
+            "uid",
+            "role",
+            "race",
+            "gender",
+            "align",
+            "name",
+            "cname",
+            "death",
+            "while",
+            "conduct",
+            "turns",
+            "achieve",
+            "achieveX",
+            "conductX",
+            "realtime",
+            "starttime",
+            "starttimeUTC",
+            "endtime",
+            "endtimeUTC",
+            "gender0",
+            "align0",
+            "flags",
+            "difficulty",
+            "mode",
+            "scoring",
+            "collapse"
+        };
+
+        
         [MaxLength(32)]
         public string? Version { get; set; } //version
 
@@ -77,11 +129,11 @@ namespace MobileGnollHackLogger.Data
 
         [MaxLength(8)]
         public string? DeathDateText { get; set; } //deathdate
-        public DateTime? DeathDate 
+        public DateTime? DeathDate
         {
-            get 
+            get
             {
-                if(DeathDateText == null)
+                if (DeathDateText == null)
                 {
                     return null;
                 }
@@ -93,16 +145,16 @@ namespace MobileGnollHackLogger.Data
         public string? BirthDateText { get; set; } //birthdate
 
         public DateTime? BirthDate
-        { 
+        {
             get
             {
-                if(BirthDateText == null)
+                if (BirthDateText == null)
                 {
                     return null;
                 }
                 return DateTime.ParseExact(BirthDateText, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None);
             }
-        } 
+        }
 
         public int ProcessUserID { get; set; } //uid
 
@@ -113,14 +165,14 @@ namespace MobileGnollHackLogger.Data
         {
             get
             {
-                switch(Role)
+                switch (Role)
                 {
                     case "Arc":
                         return "Archaeologist";
                     case "Bar":
                         return "Barbarian";
                     case "Cav":
-                        if(Gender == "Mal")
+                        if (Gender == "Mal")
                         {
                             return "Caveman";
                         }
@@ -168,7 +220,7 @@ namespace MobileGnollHackLogger.Data
         {
             get
             {
-                switch(Race)
+                switch (Race)
                 {
                     case "Hum":
                         return "Human";
@@ -220,7 +272,7 @@ namespace MobileGnollHackLogger.Data
         {
             get
             {
-                if(DeathDateText == "ascended")
+                if (DeathDateText == "ascended")
                 {
                     return true;
                 }
@@ -240,18 +292,18 @@ namespace MobileGnollHackLogger.Data
         public string? AchievementsText { get; set; } //achieveX
 
         public string[]? AchievementsArray
-        { 
+        {
             get
             {
                 return AchievementsText?.Split(',');
             }
-        
+
         }
 
         public string? ConductsText { get; set; } //conductX
-        public string[]? ConductsArray 
+        public string[]? ConductsArray
         {
-            get 
+            get
             {
                 return ConductsText?.Split(',');
             }
@@ -259,12 +311,12 @@ namespace MobileGnollHackLogger.Data
 
         public long RealTime { get; set; } //realtime
 
-        public TimeSpan RealTimeSpan 
+        public TimeSpan RealTimeSpan
         {
-            get 
+            get
             {
                 return TimeSpan.FromSeconds(RealTime);
-            }        
+            }
         }
 
         public long StartTime { get; set; } //starttime
@@ -382,7 +434,7 @@ namespace MobileGnollHackLogger.Data
                 {
                     case "yes":
                         return true;
-                    case "no": 
+                    case "no":
                         return false;
                     default:
                         return false;
@@ -409,7 +461,7 @@ namespace MobileGnollHackLogger.Data
 
         public XLogFileLine()
         {
-            
+
         }
 
         public XLogFileLine(string entry)
@@ -420,7 +472,7 @@ namespace MobileGnollHackLogger.Data
                 var split = item.Split('=');
                 var key = split[0];
                 var value = split[1];
-                if(split.Length != 2)
+                if (split.Length != 2)
                 {
                     throw new Exception("XlogLine item '" + item + "' cannot be split into two parts using =.");
                 }
@@ -566,7 +618,7 @@ namespace MobileGnollHackLogger.Data
                             break;
                     }
                 }
-                catch(Exception ex)
+                catch (Exception ex)
                 {
                     throw new Exception($"XLogFileLine item with key '{key}' and value '{value}' is invalid.", ex);
                 }
@@ -575,50 +627,152 @@ namespace MobileGnollHackLogger.Data
 
         public override string ToString()
         {
-            StringBuilder sb = new StringBuilder();
+            return ToXLogString();
+        }
 
-            sb.Append("version=").Append(Version).Append("\t");
-            sb.Append("edit=").Append(EditLevel).Append("\t");
-            sb.Append("platform=").Append(Platform).Append("\t");
-            sb.Append("platformversion=").Append(PlatformVersion).Append("\t");
-            sb.Append("port=").Append(Port).Append("\t");
-            sb.Append("portversion=").Append(PortVersion).Append("\t");
-            sb.Append("portbuild=").Append(PortBuild).Append("\t");
-            sb.Append("points=").Append(Points).Append("\t");
-            sb.Append("deathdnum=").Append(DeathDungeonNumber).Append("\t");
-            sb.Append("deathlev=").Append(DeathLevel).Append("\t");
-            sb.Append("maxlvl=").Append(MaxLevel).Append("\t");
-            sb.Append("hp=").Append(HitPoints).Append("\t");
-            sb.Append("maxhp=").Append(MaxHitPoints).Append("\t");
-            sb.Append("deaths=").Append(Deaths).Append("\t");
-            sb.Append("deathdate=").Append(DeathDateText).Append("\t");
-            sb.Append("birthdate=").Append(BirthDateText).Append("\t");
-            sb.Append("uid=").Append(ProcessUserID).Append("\t");
-            sb.Append("role=").Append(Role).Append("\t");
-            sb.Append("race=").Append(Race).Append("\t");
-            sb.Append("gender=").Append(Gender).Append("\t");
-            sb.Append("align=").Append(Alignment).Append("\t");
-            sb.Append("name=").Append(Name).Append("\t");
-            sb.Append("cname=").Append(CharacterName).Append("\t");
-            sb.Append("death=").Append(DeathText).Append("\t");
-            sb.Append("while=").Append(WhileText).Append("\t");
-            sb.Append("conduct=").Append(ConductsBinary).Append("\t");
-            sb.Append("turns=").Append(Turns).Append("\t");
-            sb.Append("achieve=").Append(AchievementsBinary).Append("\t");
-            sb.Append("achieveX=").Append(AchievementsText).Append("\t");
-            sb.Append("conductX=").Append(ConductsText).Append("\t");
-            sb.Append("realtime=").Append(RealTime).Append("\t");
-            sb.Append("starttime=").Append(StartTime).Append("\t");
-            sb.Append("starttimeUTC=").Append(StartTimeUTC).Append("\t");
-            sb.Append("endtime=").Append(EndTime).Append("\t");
-            sb.Append("endtimeUTC=").Append(EndTimeUTC).Append("\t");
-            sb.Append("gender0=").Append(StartingGender).Append("\t");
-            sb.Append("align0=").Append(StartingAlignment).Append("\t");
-            sb.Append("flags=").Append(FlagsBinary).Append("\t");
-            sb.Append("difficulty=").Append(Difficulty).Append("\t");
-            sb.Append("mode=").Append(Mode).Append("\t");
-            sb.Append("scoring=").Append(Scoring).Append("\t");
-            sb.Append("collapse=").Append(DungeonCollapses);
+        public string ToString(OutputMode outputMode)
+        {
+            StringBuilder sb = new StringBuilder();
+            int fieldNum = 0;
+
+            AddField(sb, fieldNum++, Version, outputMode);
+            AddField(sb, fieldNum++, EditLevel, outputMode);
+            AddField(sb, fieldNum++, Platform, outputMode);
+            AddField(sb, fieldNum++, PlatformVersion, outputMode);
+            AddField(sb, fieldNum++, Port, outputMode);
+            AddField(sb, fieldNum++, PortVersion, outputMode);
+            AddField(sb, fieldNum++, PortBuild, outputMode);
+            AddField(sb, fieldNum++, Points, outputMode);
+            AddField(sb, fieldNum++, DeathDungeonNumber, outputMode);
+            AddField(sb, fieldNum++, DeathLevel, outputMode);
+            AddField(sb, fieldNum++, MaxLevel, outputMode);
+            AddField(sb, fieldNum++, HitPoints, outputMode);
+            AddField(sb, fieldNum++, MaxHitPoints, outputMode);
+            AddField(sb, fieldNum++, Deaths, outputMode);
+            AddField(sb, fieldNum++, DeathDateText, outputMode);
+            AddField(sb, fieldNum++, BirthDateText, outputMode);
+            AddField(sb, fieldNum++, ProcessUserID, outputMode);
+            AddField(sb, fieldNum++, Role, outputMode);
+            AddField(sb, fieldNum++, Race, outputMode);
+            AddField(sb, fieldNum++, Gender, outputMode);
+            AddField(sb, fieldNum++, Alignment, outputMode);
+            AddField(sb, fieldNum++, Name, outputMode);
+            AddField(sb, fieldNum++, CharacterName, outputMode);
+            AddField(sb, fieldNum++, DeathText, outputMode);
+            AddField(sb, fieldNum++, WhileText, outputMode);
+            AddField(sb, fieldNum++, ConductsBinary, outputMode);
+            AddField(sb, fieldNum++, Turns, outputMode);
+            AddField(sb, fieldNum++, AchievementsBinary, outputMode);
+            AddField(sb, fieldNum++, AchievementsText, outputMode);
+            AddField(sb, fieldNum++, ConductsText, outputMode);
+            AddField(sb, fieldNum++, RealTime, outputMode);
+            AddField(sb, fieldNum++, StartTime, outputMode);
+            AddField(sb, fieldNum++, StartTimeUTC, outputMode);
+            AddField(sb, fieldNum++, EndTime, outputMode);
+            AddField(sb, fieldNum++, EndTimeUTC, outputMode);
+            AddField(sb, fieldNum++, StartingGender, outputMode);
+            AddField(sb, fieldNum++, StartingAlignment, outputMode);
+            AddField(sb, fieldNum++, FlagsBinary, outputMode);
+            AddField(sb, fieldNum++, Difficulty, outputMode);
+            AddField(sb, fieldNum++, Mode, outputMode);
+            AddField(sb, fieldNum++, Scoring, outputMode);
+            AddField(sb, fieldNum++, DungeonCollapses, outputMode);
+
+            return sb.ToString();
+        }
+
+        public string ToCsvString()
+        {
+            return ToString(OutputMode.CSV);
+        }
+
+        public string ToXLogString()
+        {
+            return ToString(OutputMode.XLog);
+        }
+
+        private void AddField (StringBuilder sbBody, int fieldNum, string? value, OutputMode outputMode)
+        {
+            if(outputMode == OutputMode.XLog)
+            {
+                if (sbBody.Length > 0)
+                {
+                    sbBody.Append(_separator);
+                }
+                string key = _headerTexts[fieldNum];
+                sbBody.Append(key).Append('=').Append(value);
+            }
+            else if (outputMode == OutputMode.CSV)
+            {
+                if (sbBody.Length > 0)
+                {
+                    sbBody.Append(_separator);
+                }
+                sbBody.Append(value);
+            }
+        }
+
+        private void AddField(StringBuilder sbBody, int fieldNum, int? value, OutputMode outputMode)
+        {
+            string? val2 = value.HasValue ? value.ToString() : null;
+
+            AddField(sbBody, fieldNum, val2, outputMode);
+        }
+
+        private void AddField(StringBuilder sbBody, int fieldNum, long? value, OutputMode outputMode)
+        {
+            string? val2 = value.HasValue ? value.ToString() : null;
+
+            AddField(sbBody, fieldNum, val2, outputMode);
+        }
+
+        public static string GetCsvHeader()
+        {
+            StringBuilder sb = new StringBuilder();
+            int fieldNum = 0;
+
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
+            sb.Append(_headerTexts[fieldNum++]);
 
             return sb.ToString();
         }

@@ -48,9 +48,31 @@ namespace MobileGnollHackLogger.Areas.API
             StringBuilder sb = new StringBuilder();
             foreach(var gameLog in gameLogs)
             {
-                sb.AppendLine(gameLog.ToString());
+                sb.AppendLine(gameLog.ToXLogString());
             }
             return Content(sb.ToString(), "text/plain", Encoding.ASCII);
+        }
+
+
+        [Route("api/games/csv")]
+        [HttpGet]
+        public IActionResult GetCsv()
+        {
+            return GetCsv(0);
+        }
+
+        [Route("api/games/csv/{lastId}")]
+        [HttpGet]
+        public IActionResult GetCsv(long? lastId)
+        {
+            var gameLogs = _dbContext.GameLog.Where(gl => gl.Id > (lastId ?? 0));
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine(GameLog.GetCsvHeader());
+            foreach (var gameLog in gameLogs)
+            {
+                sb.AppendLine(gameLog.ToCsvString());
+            }
+            return Content(sb.ToString(), "text/plain", Encoding.UTF8);
         }
 
         [Route("xlogfile")]
