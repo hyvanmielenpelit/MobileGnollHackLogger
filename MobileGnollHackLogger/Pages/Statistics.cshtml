@@ -1,0 +1,197 @@
+﻿@page
+@using System.Globalization
+@model MobileGnollHackLogger.Pages.StatisticsModel
+@{
+    var modeText = "All Modes";
+    if (!string.IsNullOrEmpty(Model.Mode) && GnollHackHelper.Modes.ContainsKey(Model.Mode))
+    {
+        modeText = GnollHackHelper.Modes[Model.Mode] + " Mode";
+    }
+    ViewData["Title"] = Model.Title;
+    ViewData["ContainerClass"] = "statisticsMaxWidth";
+    ViewData["MainClass"] = "statisticsMaxWidth";
+
+    var allGamesCount = Model.GameLogs != null ? Model.GameLogs.Count() : 0;
+    var allAscensionCount = Model.GameLogs != null ? Model.GameLogs.Where(gl => gl.DeathText == "ascended").Count() : 0;
+    string percentageFormat = "P0";
+}
+
+<h1 class="text-center">Statistics</h1>
+<h5 class="text-center">Gameplay Mode</h5>
+<p class="text-center">
+    @if(!string.IsNullOrEmpty(Model.Mode))
+    {
+        <a class="link-light" href="/Statistics">All Modes</a>
+    }
+    else
+    {
+        <b>@modeText</b>
+    }
+    <span>|</span>
+    @foreach (var mode in Model.DisplayModes)
+    {
+        @if (Model.Mode != mode)
+        {
+            <a class="link-light" href="/Statistics?mode=@mode">@GnollHackHelper.Modes[mode]</a>
+        }
+        else
+        {
+            <b>@GnollHackHelper.Modes[mode]</b>
+        }
+        <span>|</span>
+    }
+</p>
+
+<hr />
+
+<h2 class="text-center pt-1">Win Rate per Role and Difficulty in Games in @modeText</h2>
+
+<h6 class="text-center pb-3">G = Games, A = Ascensions</h6>
+
+<div class="table-responsive">
+    <table id="statisticsTable" class="table table-dark table-striped">
+        <thead>
+            <tr>
+                <th>
+                    Difficulty
+                </th>
+                @foreach(var role in GnollHackHelper.Roles)
+                {
+                    <th class="text-center">@GnollHackHelper.GetRoleText(role, "Mal")</th>
+                }
+                <th class="text-center border-start">All Roles</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach(var difficulty in GnollHackHelper.Difficulties)
+            {
+                <tr>
+                    @{
+                        long allDiffGames = Model.GameLogs != null ? Model.GameLogs.Where(gl => gl.Difficulty == difficulty.Key).Count() : 0; ;
+                        long allDiffAscensions = Model.GameLogs != null ? Model.GameLogs.Where(gl => gl.Difficulty == difficulty.Key && gl.DeathText == "ascended").Count() : 0;
+                    }
+                    <td class="w-diff"><h6>@difficulty.Value</h6></td>
+                    @foreach (var role in GnollHackHelper.Roles)
+                    {                        
+                        long games = 0;
+                        long ascensions = 0;
+
+                        if (Model.GroupByRole != null)
+                        {
+                            var grouping = Model.GroupByRole.FirstOrDefault(gr => gr.Key == role);
+                            if (grouping != null)
+                            {
+                                games = grouping.Where(g => g.Difficulty == difficulty.Key).LongCount();
+                            }
+                        }
+                        if (Model.GroupByRoleAscended != null)
+                        {
+                            var grouping = Model.GroupByRoleAscended.FirstOrDefault(gr => gr.Key == role);
+                            if (grouping != null)
+                            {
+                                ascensions = grouping.Where(g => g.Difficulty == difficulty.Key).LongCount();
+                            }
+                        }
+                        string? darkeningClass = games > 0 ? null : "text-muted";
+
+                        <td class="w-role text-center border-bottom-0 @darkeningClass">
+                            <div class="font-l"><h5>@(games > 0 ? ((double)ascensions / (double)games).ToString(percentageFormat, CultureInfo.InvariantCulture) : "N/A")</h5></div>
+                            <div>
+                                <span>G: @games</span>
+                                @if (allDiffGames > 0)
+                                {
+                                    <span>(@(((double)games / (double)allDiffGames).ToString(percentageFormat, CultureInfo.InvariantCulture)))</span>
+                                }
+                            </div>
+                            <div>
+                                <span>A: @ascensions</span>
+                                @if (allDiffAscensions > 0)
+                                {
+                                    <span>(@(((double)ascensions / (double)allDiffAscensions).ToString(percentageFormat, CultureInfo.InvariantCulture)))</span>
+                                }
+                            </div>
+                        </td>
+                        
+                    }
+
+                    @{
+                        string? darkeningClassTotal = allDiffGames > 0 ? null : "text-muted";
+                    }
+
+                    <td class="w-role text-center border-start border-bottom-0 @darkeningClassTotal">
+                        <div class="font-l"><h5>@(allDiffGames > 0 ? ((double)allDiffAscensions / (double)allDiffGames).ToString(percentageFormat, CultureInfo.InvariantCulture) : "N/A")</h5></div>
+                        <div>
+                            <span>G: @allDiffGames</span>
+                            @if (allGamesCount > 0)
+                            {
+                                <span>(@(((double)allDiffGames / (double)allGamesCount).ToString(percentageFormat, CultureInfo.InvariantCulture)))</span>
+                            }
+                        </div>
+                        <div>
+                            <span>A: @allDiffAscensions</span>
+                            @if (allAscensionCount > 0)
+                            {
+                                <span>(@(((double)allDiffAscensions / (double)allAscensionCount).ToString(percentageFormat, CultureInfo.InvariantCulture)))</span>
+                            }
+                        </div>
+                    </td>
+                </tr>
+            }
+        </tbody>
+        <tfoot>
+            <tr>
+                <td><h6>All Difficulties</h6></td>
+                @foreach (var role in GnollHackHelper.Roles)
+                {
+                    long games = 0;
+                    long ascensions = 0;
+
+                    if (Model.GroupByRole != null)
+                    {
+                        var grouping = Model.GroupByRole.FirstOrDefault(gr => gr.Key == role);
+                        if (grouping != null)
+                        {
+                            games = grouping.LongCount();
+                        }
+                    }
+                    if (Model.GroupByRoleAscended != null)
+                    {
+                        var grouping = Model.GroupByRoleAscended.FirstOrDefault(gr => gr.Key == role);
+                        if (grouping != null)
+                        {
+                            ascensions = grouping.LongCount();
+                        }
+                    }
+
+                    string? darkeningClass = games > 0 ? null : "text-muted";
+
+                <td class="w-role text-center border-top @darkeningClass">
+                    <div class="font-l"><h5>@(games > 0 ? ((double)ascensions / (double)games).ToString(percentageFormat, CultureInfo.InvariantCulture) : "N/A")</h5></div>
+                    <div>
+                        <span>G: @games</span>
+                        @if (allGamesCount > 0)
+                        {
+                            <span>(@(((double)games / (double)allGamesCount).ToString(percentageFormat, CultureInfo.InvariantCulture)))</span>
+                        }
+                    </div>
+                    <div>
+                        <span>A: @ascensions</span>
+                        @if (allAscensionCount > 0)
+                        {
+                            <span>(@(((double)ascensions / (double)allAscensionCount).ToString(percentageFormat, CultureInfo.InvariantCulture)))</span>
+                        }
+                    </div>
+                </td>
+                    
+                    
+                }
+
+                <td class="w-role text-center border-start border-top">
+                    <div class="font-l"><h5>@(allGamesCount > 0 ? ((double)allAscensionCount / (double)allGamesCount).ToString(percentageFormat, CultureInfo.InvariantCulture) : "N/A")</h5></div>
+                    <div>G: @allGamesCount</div>
+                    <div>A: @allAscensionCount</div>
+                </td>
+            </tr>
+        </tfoot>
+    </table>
+</div>

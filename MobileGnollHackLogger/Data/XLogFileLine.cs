@@ -165,51 +165,7 @@ namespace MobileGnollHackLogger.Data
         {
             get
             {
-                switch (Role)
-                {
-                    case "Arc":
-                        return "Archaeologist";
-                    case "Bar":
-                        return "Barbarian";
-                    case "Cav":
-                        if (Gender == "Mal")
-                        {
-                            return "Caveman";
-                        }
-                        else
-                        {
-                            return "Cavewoman";
-                        }
-                    case "Hea":
-                        return "Healer";
-                    case "Kni":
-                        return "Knight";
-                    case "Mon":
-                        return "Monk";
-                    case "Pri":
-                        if (Gender == "Mal")
-                        {
-                            return "Priest";
-                        }
-                        else
-                        {
-                            return "Priestess";
-                        }
-                    case "Ran":
-                        return "Ranger";
-                    case "Rog":
-                        return "Rogue";
-                    case "Sam":
-                        return "Samurai";
-                    case "Tou":
-                        return "Tourist";
-                    case "Val":
-                        return "Valkyrie";
-                    case "Wiz":
-                        return "Wizard";
-                    default:
-                        return Role;
-                }
+                return GnollHackHelper.GetRoleText(Role, Gender);
             }
         }
 
@@ -220,21 +176,7 @@ namespace MobileGnollHackLogger.Data
         {
             get
             {
-                switch (Race)
-                {
-                    case "Hum":
-                        return "Human";
-                    case "Dwa":
-                        return "Dwarf";
-                    case "Elf":
-                        return "Elf";
-                    case "Gnl":
-                        return "Gnoll";
-                    case "Orc":
-                        return "Orc";
-                    default:
-                        return Race;
-                }
+                return GnollHackHelper.GetRaceText(Race);
             }
         }
 
@@ -373,25 +315,13 @@ namespace MobileGnollHackLogger.Data
         {
             get
             {
-                switch (Difficulty)
+                if(GnollHackHelper.Difficulties.ContainsKey(Difficulty))
                 {
-                    case -4:
-                        return "Standard";
-                    case -3:
-                        return "Experienced";
-                    case -2:
-                        return "Adept";
-                    case -1:
-                        return "Veteran";
-                    case 0:
-                        return "Expert";
-                    case 1:
-                        return "Master";
-                    case 2:
-                        return "Grand Master";
-                    default:
-                        return "Unknown: " + Difficulty;
-
+                    return GnollHackHelper.Difficulties[Difficulty];
+                }
+                else
+                {
+                    return "Unknown: " + Difficulty;
                 }
             }
         }
@@ -403,22 +333,13 @@ namespace MobileGnollHackLogger.Data
         {
             get
             {
-                switch (Mode)
+                if (Mode != null && GnollHackHelper.Modes.ContainsKey(Mode))
                 {
-                    case "normal":
-                        return "Classic";
-                    case "debug":
-                        return "Wizard";
-                    case "explore":
-                        return "Explore";
-                    case "casual":
-                        return "Casual";
-                    case "reloadable":
-                        return "Reloadable";
-                    case "modern":
-                        return "Modern";
-                    default:
-                        return "Unknown";
+                    return GnollHackHelper.Modes[Mode];
+                }
+                else
+                {
+                    return "Unknown: " + Mode;
                 }
             }
         }

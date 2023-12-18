@@ -121,6 +121,13 @@ div.container.topScoreMaxWidth main.topScoreMaxWidth {
   max-width: 1500px;
 }
 
+div.container.statisticsMaxWidth {
+  max-width: 2200px;
+}
+div.container.statisticsMaxWidth main.statisticsMaxWidth {
+  max-width: 2200px;
+}
+
 .w-xxs {
   width: 5%;
 }
@@ -147,4 +154,12 @@ div.container.topScoreMaxWidth main.topScoreMaxWidth {
 
 .w-xl {
   width: 25%;
+}
+
+.w-diff {
+  width: 6.62%;
+}
+
+.w-role {
+  width: 6.67%;
 }
