@@ -27,9 +27,9 @@
     {
         <b>@modeText</b>
     }
-    <span>|</span>
     @foreach (var mode in Model.DisplayModes)
     {
+        <span>|</span>
         @if (Model.Mode != mode)
         {
             <a class="link-light" href="/Statistics?mode=@mode">@GnollHackHelper.Modes[mode]</a>
@@ -38,7 +38,6 @@
         {
             <b>@GnollHackHelper.Modes[mode]</b>
         }
-        <span>|</span>
     }
 </p>
 
