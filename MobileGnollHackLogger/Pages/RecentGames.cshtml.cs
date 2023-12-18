@@ -27,8 +27,7 @@ namespace MobileGnollHackLogger.Pages
         {
             IQueryable<GameLog> gameLogs = _dbContext.GameLog
                 .Take(1000)
-                .OrderByDescending(gl => gl.EndTimeUTC)
-                .Where(gl => gl.Scoring == "yes");
+                .OrderByDescending(gl => gl.EndTimeUTC);
 
             if(!string.IsNullOrEmpty(death) )
             {

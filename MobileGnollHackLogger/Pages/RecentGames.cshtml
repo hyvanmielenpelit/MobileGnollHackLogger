@@ -55,6 +55,7 @@
                     <th>Points</th>
                     <th>Turns, Duration</th>
                     <th>Dungeon Level, Hit Points</th>
+                    <th>Crashes, Scoring</th>
                     <th>Death Reason</th>
                 </tr>
             </thead>
@@ -75,7 +76,8 @@
                         <td class="w-s">@gameLog.Points</td>
                         <td class="w-s">T: @(gameLog.Turns)<br />D: @gameLog.RealTimeSpan.ToString("c", CultureInfo.InvariantCulture)</td>
                         <td class="w-s">DL: @(gameLog.DeathLevel)/@(gameLog.MaxLevel)<br />HP: @(gameLog.HitPoints)/@(gameLog.MaxHitPoints)</td>
-                        <td class="w-l">
+                        <td class="w-xxs">@(gameLog.DungeonCollapses)<br />@(gameLog.ScoringText)</td>
+                        <td class="w-m">
                             @gameLog.DeathText
                             @if (!string.IsNullOrEmpty(gameLog.WhileText))
                             {

@@ -14,7 +14,7 @@ namespace MobileGnollHackLogger.Pages
         public TopScoresModel(ApplicationDbContext dbContext)
         {
             _dbContext = dbContext;
-            Title = "Recent Games";
+            Title = "Games";
             TopScoreMode = TopScoreMode.Games;
         }
 
@@ -28,7 +28,7 @@ namespace MobileGnollHackLogger.Pages
             IQueryable<GameLog> gameLogs = _dbContext.GameLog
                 .Take(1000)
                 .OrderByDescending(gl => gl.Points)
-                .Where(gl => gl.Scoring == "yes");
+                .Where(gl => gl.IsScoring == true);
 
             if(!string.IsNullOrEmpty(death) )
             {

@@ -377,6 +377,21 @@ namespace MobileGnollHackLogger.Data
             }
         }
 
+        public string ScoringText
+        {
+            get
+            {
+                if (IsScoring)
+                {
+                    return "Yes";
+                }
+                else
+                {
+                    return "No";
+                }
+            }
+        }
+
         public int DungeonCollapses { get; set; } //collapse
 
         public XLogFileLine()
