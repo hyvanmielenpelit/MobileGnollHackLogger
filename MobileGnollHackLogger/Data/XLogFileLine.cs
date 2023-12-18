@@ -215,6 +215,19 @@ namespace MobileGnollHackLogger.Data
         public string? CharacterName { get; set; } //cname
 
         public string? DeathText { get; set; } //death
+
+        public bool IsAscension
+        {
+            get
+            {
+                if(DeathDateText == "ascended")
+                {
+                    return true;
+                }
+                return false;
+            }
+        }
+
         public string? WhileText { get; set; } //while
 
         [MaxLength(50)]

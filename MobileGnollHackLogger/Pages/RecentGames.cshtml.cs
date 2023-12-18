@@ -31,10 +31,9 @@ namespace MobileGnollHackLogger.Pages
 
             if(!string.IsNullOrEmpty(death) )
             {
-                gameLogs = gameLogs.Where(gl => gl.DeathText == death);
-
-                if(death == "ascended")
+                if (death == "ascended")
                 {
+                    gameLogs = gameLogs.Where(gl => gl.DeathText == death);
                     RecentGamesMode = RecentGamesMode.Ascensions;
                     Title = "Ascensions";
                 }
