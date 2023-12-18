@@ -186,7 +186,10 @@
                     
                 }
 
-                <td class="w-role text-center border-start border-top">
+                @{
+                    string? darkeningClassAll = allGamesCount > 0 ? null : "text-muted";
+                }
+                <td class="w-role text-center border-start border-top @darkeningClassAll">
                     <div class="font-l"><h5>@(allGamesCount > 0 ? ((double)allAscensionCount / (double)allGamesCount).ToString(percentageFormat, CultureInfo.InvariantCulture) : "N/A")</h5></div>
                     <div>G: @allGamesCount</div>
                     <div>A: @allAscensionCount</div>
