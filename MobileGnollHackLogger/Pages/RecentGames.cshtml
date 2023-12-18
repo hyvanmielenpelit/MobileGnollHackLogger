@@ -1,0 +1,112 @@
+﻿@page
+@using System.Globalization
+@model MobileGnollHackLogger.Pages.RecentGamesModel
+@{
+    ViewData["Title"] = Model.Title;
+    ViewData["ContainerClass"] = "topScoreMaxWidth";
+    ViewData["MainClass"] = "topScoreMaxWidth";
+}
+
+<h1 class="text-center">Recent Games</h1>
+<p class="text-center">
+    @if (Model.RecentGamesMode != RecentGamesMode.Ascensions)
+    {
+        <a class="link-light" href="/RecentGames?death=ascended">Ascensions</a>
+    }
+    else
+    {
+        <b>Ascensions</b>
+    }
+    <span>|</span>
+    @if (Model.RecentGamesMode != RecentGamesMode.Games)
+    {
+        <a class="link-light" href="/RecentGames">Games</a>
+    }
+    else
+    {
+        <b>Games</b>
+    }
+</p>
+<hr />
+<div class="text-center">
+    @if (Model.RecentGamesMode == RecentGamesMode.Ascensions)
+    {
+        <h2>Ascensions</h2>
+    }
+    @if (Model.RecentGamesMode == RecentGamesMode.Games)
+    {
+        <h2>Games</h2>
+    }
+</div>
+
+
+
+@if (Model.GameLogs != null && Model.GameLogs.Count > 0)
+{
+    <div class="table-responsive">
+        <table id="topScoreTable" class="table table-dark table-striped table-hover" style="display:none;">
+            <thead>
+                <tr>
+                    <th>Version</th>
+                    <th>Account Name, Character Name</th>
+                    <th>Class, Race, Gender, Alignment</th>
+                    <th>Difficulty, Mode</th>
+                    <th>End Time UTC</th>
+                    <th>Points</th>
+                    <th>Turns, Duration</th>
+                    <th>Dungeon Level, Hit Points</th>
+                    <th>Death Reason</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var gameLog in Model.GameLogs)
+                {
+                    <tr data-id="@gameLog.Id">
+                        <td class="w-xxs">
+                            @(gameLog.Version)-@(gameLog.EditLevel)@if (!string.IsNullOrEmpty(gameLog.PortVersion) && !string.IsNullOrEmpty(gameLog.Platform))
+                            {
+                                <text>, @(gameLog.PortVersion + gameLog.PlatformLetter)</text>
+                            }
+                        </td>
+                        <td class="w-m">@gameLog.Name<br />@gameLog.CharacterName</td>
+                        <td class="w-ms">@(gameLog.RoleText), @(gameLog.RaceText), @(gameLog.GenderText), @(gameLog.AlignmentText)</td>
+                        <td class="w-s">@gameLog.DifficultyText, @gameLog.ModeText</td>
+                        <td class="w-xs">@gameLog.EndTimeUTCDate.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)</td>
+                        <td class="w-s">@gameLog.Points</td>
+                        <td class="w-s">T: @(gameLog.Turns)<br />D: @gameLog.RealTimeSpan.ToString("c", CultureInfo.InvariantCulture)</td>
+                        <td class="w-s">DL: @(gameLog.DeathLevel)/@(gameLog.MaxLevel)<br />HP: @(gameLog.HitPoints)/@(gameLog.MaxHitPoints)</td>
+                        <td class="w-l">
+                            @gameLog.DeathText
+                            @if (!string.IsNullOrEmpty(gameLog.WhileText))
+                            {
+                                <text>while </text> @gameLog.WhileText
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+else
+{
+    <h4>No @Model.Title</h4>
+}
+
+@section Styles
+{
+    <link rel="stylesheet" href="~/lib/datatables/dist/datatables.min.css" asp-append-version="true" />
+}
+
+@section Scripts
+{
+    <script src="~/lib/datatables/dist/datatables.min.js"></script>
+    <script>
+        $("#topScoreTable>tbody").on("click", "tr", function () {
+            var id = $(this).attr("data-id");
+            var href = "/dumplog/" + id;
+            window.location.href = href;
+        });
+        $("#topScoreTable").dataTable().show();
+    </script>
+}
