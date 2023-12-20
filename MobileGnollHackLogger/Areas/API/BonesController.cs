@@ -44,7 +44,7 @@ namespace MobileGnollHackLogger.Areas.API
 
         // GET api/<BonesController>/5
         [Route("bones/{id}")]
-        [HttpGet("{id}")]
+        [HttpGet]
         public IActionResult Get(int id)
         {
             var bones = _dbContext.Bones.Where(gl => gl.Id == id);

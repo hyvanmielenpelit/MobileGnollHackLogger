@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using MobileGnollHackLogger.Data;
@@ -16,6 +17,7 @@ namespace MobileGnollHackLogger.Areas.API
         private readonly IConfiguration _configuration;
         private readonly ApplicationDbContext _dbContext;
         private readonly string _dumplogBasePath = "";
+        private readonly DbLogger _dbLogger;
 
         public LogController(SignInManager<ApplicationUser> signInManager, ILogger<LogModel> logger, 
             IConfiguration configuration, ApplicationDbContext dbContext)
@@ -24,6 +26,8 @@ namespace MobileGnollHackLogger.Areas.API
             _logger = logger;
             _configuration = configuration;
             _dbContext = dbContext;
+            _dbLogger = new DbLogger(_dbContext);
+            _dbLogger.LogType = LogType.GameLog;
 
             _dumplogBasePath = _configuration["DumpLogPath"] ?? "";
 
@@ -81,35 +85,62 @@ namespace MobileGnollHackLogger.Areas.API
         {
             try
             {
+                _dbLogger.RequestCommand = "Post";
+                _dbLogger.RequestId = Guid.NewGuid();
+                _dbLogger.RequestPath = Request.GetEncodedUrl();
+
                 if (model == null)
                 {
-                    return StatusCode(400); //Bad Request
+                    int responseCode = 400;
+                    await _dbLogger.LogAsync("model is null", Data.LogLevel.Error, responseCode);
+                    return StatusCode(responseCode); //Bad Request
                 }
-                if(model.UserName == null)
+
+                _dbLogger.RequestData = model.XLogEntry;
+
+                if (model.UserName == null)
                 {
-                    return StatusCode(400); //Bad Request
+                    int responseCode = 400;
+                    await _dbLogger.LogAsync("model.UserName is null", Data.LogLevel.Error, responseCode);
+                    return StatusCode(responseCode); //Bad Request
                 }
+
+                _dbLogger.RequestUserName = model.UserName;
+
                 if (model.Password == null)
                 {
-                    return StatusCode(400); //Bad Request
+                    int responseCode = 400;
+                    await _dbLogger.LogAsync("model.Password is null", Data.LogLevel.Error, responseCode);
+                    return StatusCode(responseCode); //Bad Request
                 }
                 if(model.AntiForgeryToken == null)
                 {
-                    return StatusCode(400); //Bad Request
+                    int responseCode = 400;
+                    await _dbLogger.LogAsync("model.AntiForgeryToken is null", Data.LogLevel.Error, responseCode);
+                    return StatusCode(responseCode); //Bad Request
                 }
+
+                _dbLogger.RequestAntiForgeryToken = model.AntiForgeryToken;
 
                 var antiForgeryToken = _configuration["AntiForgeryToken"];
                 if (antiForgeryToken != model.AntiForgeryToken)
                 {
-                    return StatusCode(401); //Not Authorized
+                    int responseCode = 401;
+                    await _dbLogger.LogAsync($"AntiForgeryToken is invalid. Request: '{model.AntiForgeryToken}'. Server: '{antiForgeryToken}'.",
+                        Data.LogLevel.Warning, responseCode);
+                    return StatusCode(responseCode); //Not Authorized
                 }
                 
                 var result = await _signInManager.PasswordSignInAsync(model.UserName, model.Password, false, lockoutOnFailure: false);
                 if (result.Succeeded)
                 {
+                    _dbLogger.UserName = model.UserName;
+
                     if (!string.IsNullOrEmpty(model.XLogEntry) && model.PlainTextDumpLog != null && model.HtmlDumpLog != null)
                     {
                         //Sign in succeedeed
+                        await _dbLogger.LogAsync("Login succeeded with all data.", Data.LogLevel.Info);
+
                         XLogFileLine xLogFileLine = new XLogFileLine(model.XLogEntry);
 
                         //Change user name to the account name
@@ -128,12 +159,18 @@ namespace MobileGnollHackLogger.Areas.API
 
                         if (System.IO.File.Exists(plainTextDumpLogPath))
                         {
-                            return StatusCode(409); //Character already exists
+                            int responseCode = 409;
+                            await _dbLogger.LogAsync("Character already exists. Plain Text Dumplog Path found: " + plainTextDumpLogPath,
+                                Data.LogLevel.Warning, responseCode);
+                            return StatusCode(responseCode); //Character already exists
                         }
 
                         if (System.IO.File.Exists(htmlDumpLogPath))
                         {
-                            return StatusCode(409); //Character already exists
+                            int responseCode = 409;
+                            await _dbLogger.LogAsync("Character already exists. HTML Dumplog Path found: " + htmlDumpLogPath,
+                                Data.LogLevel.Warning, responseCode);
+                            return StatusCode(responseCode); //Character already exists
                         }
 
                         using var plainTextOutStream = System.IO.File.OpenWrite(plainTextDumpLogPath);
@@ -144,7 +181,7 @@ namespace MobileGnollHackLogger.Areas.API
 
                         Task.WaitAll(t1, t2);
 
-                        _logger.LogInformation("Dumplog files written for " + xLogFileLine.Name + " at " + dir);
+                        //_logger.LogInformation("Dumplog files written for " + xLogFileLine.Name + " at " + dir);
 
                         try
                         {
@@ -154,48 +191,67 @@ namespace MobileGnollHackLogger.Areas.API
                             long id = gameLog.Id;
                             if (id == 0)
                             {
-                                Response.StatusCode = 500;
+                                int responseCode = 500;
+                                await _dbLogger.LogAsync("Inserted Id is 0.", Data.LogLevel.Error, responseCode);
+                                Response.StatusCode = responseCode;
                                 return Content("Inserted Id is 0.");
                             }
+                            await _dbLogger.LogAsync("GameLog successfully inserted to the database", Data.LogLevel.Info, 200);
                             return Content(id.ToString(), "text/plain", Encoding.UTF8); //OK
                         }
-                        catch(InvalidOperationException)
+                        catch(InvalidOperationException invEx)
                         {
-                            return StatusCode(410); //Gone
+                            int responseCode = 410;
+                            await _dbLogger.LogAsync("GameLog insertion to database failed. Message: " + invEx.Message, Data.LogLevel.Error, responseCode);
+                            return StatusCode(responseCode); //Gone
                         }
                         catch(Exception ex)
                         {
-                            Response.StatusCode = 500; //Server Error
+                            int responseCode = 500;
+                            await _dbLogger.LogAsync("GameLog insertion to database failed. Message: " + ex.Message, Data.LogLevel.Error, responseCode);
+                            Response.StatusCode = responseCode; //Server Error
                             return Content(ex.Message.ToString());
                         }
                     }
                     else if(string.IsNullOrEmpty(model.XLogEntry) && model.PlainTextDumpLog == null && model.HtmlDumpLog == null)
                     {
                         //Test Connection
+                        await _dbLogger.LogAsync("Test connection and login succeeded.", Data.LogLevel.Info, 200);
                         return Ok();
                     }
                     else
                     {
-                        return StatusCode(400); //Bad Request
+                        int responseCode = 400;
+                        await _dbLogger.LogAsync("Login succeeded but there is missing data.", Data.LogLevel.Error, responseCode);
+                        return StatusCode(responseCode); //Bad Request
                     }
                 }
                 if (result.RequiresTwoFactor)
                 {
-                    return StatusCode(412);
+                    int responseCode = 412;
+                    await _dbLogger.LogAsync("Login requires two factor authentication. Error.", Data.LogLevel.Error, responseCode);
+                    return StatusCode(responseCode);
                 }
                 if (result.IsLockedOut)
                 {
-                    return StatusCode(423);
+                    int responseCode = 423;
+                    await _dbLogger.LogAsync("User is locked out.", Data.LogLevel.Warning, responseCode);
+                    return StatusCode(responseCode);
                 }
                 else
                 {
-                    return StatusCode(403);
+                    int responseCode = 403;
+                    await _dbLogger.LogAsync($"Login failed for user '{model.UserName}'.", Data.LogLevel.Warning, responseCode);
+                    return StatusCode(responseCode);
                 }
             }
             catch (Exception ex) 
             {
-                Response.StatusCode = 500;
-                return Content((ex.InnerException ?? ex).GetType().FullName + ", Message: " + ex.Message);
+                int responseCode = 500;
+                string message = (ex.InnerException ?? ex).GetType().FullName + ", Message: " + ex.Message;
+                await _dbLogger.LogAsync(message, Data.LogLevel.Warning, responseCode);
+                Response.StatusCode = responseCode;
+                return Content(message);
             }
         }
     }
