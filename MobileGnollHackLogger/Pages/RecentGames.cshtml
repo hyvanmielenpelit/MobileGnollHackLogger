@@ -109,6 +109,8 @@ else
             var href = "/dumplog/" + id;
             window.location.href = href;
         });
-        $("#topScoreTable").dataTable().show();
+        $("#topScoreTable").dataTable({
+            order: [[4, 'desc']]
+        }).show();
     </script>
 }
