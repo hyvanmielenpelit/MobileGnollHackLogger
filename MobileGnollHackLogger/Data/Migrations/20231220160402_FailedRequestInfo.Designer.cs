@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using MobileGnollHackLogger.Data;
 
@@ -11,9 +12,11 @@ using MobileGnollHackLogger.Data;
 namespace MobileGnollHackLogger.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20231220160402_FailedRequestInfo")]
+    partial class FailedRequestInfo
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -293,6 +296,71 @@ namespace MobileGnollHackLogger.Data.Migrations
                     b.ToTable("Bones");
                 });
 
+            modelBuilder.Entity("MobileGnollHackLogger.Data.FailedRequestInfo", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("AspNetUserId")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<long>("Count")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("FirstDate")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("getutcdate()");
+
+                    b.Property<DateTime>("LastDate")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("getutcdate()");
+
+                    b.Property<int>("Level")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Message")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("RequestAntiForgeryToken")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("RequestCommand")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("RequestData")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("RequestPath")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("RequestUserName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<int?>("ResponseCode")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("SubType")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("Type")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AspNetUserId");
+
+                    b.ToTable("FailLogs");
+                });
+
             modelBuilder.Entity("MobileGnollHackLogger.Data.GameLog", b =>
                 {
                     b.Property<long>("Id")
@@ -458,7 +526,7 @@ namespace MobileGnollHackLogger.Data.Migrations
                     b.ToTable("GameLog");
                 });
 
-            modelBuilder.Entity("MobileGnollHackLogger.Data.RequestInfo", b =>
+            modelBuilder.Entity("MobileGnollHackLogger.Data.LogInfo", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
@@ -469,21 +537,10 @@ namespace MobileGnollHackLogger.Data.Migrations
                     b.Property<string>("AspNetUserId")
                         .HasColumnType("nvarchar(450)");
 
-                    b.Property<long>("Count")
-                        .HasColumnType("bigint");
-
-                    b.Property<DateTime>("FirstDate")
+                    b.Property<DateTime>("CreationDate")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")
                         .HasDefaultValueSql("getutcdate()");
-
-                    b.Property<DateTime>("LastDate")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasDefaultValueSql("getutcdate()");
-
-                    b.Property<Guid?>("LastRequestId")
-                        .HasColumnType("uniqueidentifier");
 
                     b.Property<int>("Level")
                         .HasColumnType("int");
@@ -495,12 +552,15 @@ namespace MobileGnollHackLogger.Data.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<string>("RequestCommand")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
                     b.Property<string>("RequestData")
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<string>("RequestMethod")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
+                    b.Property<Guid?>("RequestId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("RequestPath")
                         .HasMaxLength(2000)
@@ -513,21 +573,14 @@ namespace MobileGnollHackLogger.Data.Migrations
                     b.Property<int?>("ResponseCode")
                         .HasColumnType("int");
 
-                    b.Property<int?>("SubType")
-                        .HasColumnType("int");
-
                     b.Property<int?>("Type")
                         .HasColumnType("int");
-
-                    b.Property<string>("UserIPAddress")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
 
                     b.HasKey("Id");
 
                     b.HasIndex("AspNetUserId");
 
-                    b.ToTable("RequestLogs");
+                    b.ToTable("Logs");
                 });
 
             modelBuilder.Entity("MobileGnollHackLogger.Data.ApplicationUser", b =>
@@ -597,6 +650,15 @@ namespace MobileGnollHackLogger.Data.Migrations
                     b.Navigation("AspNetUser");
                 });
 
+            modelBuilder.Entity("MobileGnollHackLogger.Data.FailedRequestInfo", b =>
+                {
+                    b.HasOne("MobileGnollHackLogger.Data.ApplicationUser", "AspNetUser")
+                        .WithMany()
+                        .HasForeignKey("AspNetUserId");
+
+                    b.Navigation("AspNetUser");
+                });
+
             modelBuilder.Entity("MobileGnollHackLogger.Data.GameLog", b =>
                 {
                     b.HasOne("MobileGnollHackLogger.Data.ApplicationUser", "AspNetUser")
@@ -606,7 +668,7 @@ namespace MobileGnollHackLogger.Data.Migrations
                     b.Navigation("AspNetUser");
                 });
 
-            modelBuilder.Entity("MobileGnollHackLogger.Data.RequestInfo", b =>
+            modelBuilder.Entity("MobileGnollHackLogger.Data.LogInfo", b =>
                 {
                     b.HasOne("MobileGnollHackLogger.Data.ApplicationUser", "AspNetUser")
                         .WithMany()

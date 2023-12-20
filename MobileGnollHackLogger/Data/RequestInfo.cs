@@ -19,24 +19,28 @@ namespace MobileGnollHackLogger.Data
         Bones = 2
     }
 
+    public enum RequestLogSubType : int
+    {
+        Default = 0,
+        ModelStateFailed = 1
+    }
+
     [PrimaryKey(nameof(Id))]
-    public class LogInfo
+    public class RequestInfo
     {
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
         public long Id { get; set; }
 
-        public DateTime CreationDate { get; set; }
-        public Guid? RequestId { get; set; }
+        public DateTime FirstDate { get; set; }
+        public DateTime LastDate { get; set; }
+        public long Count { get; set; }
+        public Guid? LastRequestId { get; set; }
 
         [MaxLength(2000)]
-        public string? RequestPath {  get; set; }
-
-        public LogLevel Level { get; set; }
-
+        public string? RequestPath { get; set; }
         public LogType? Type { get; set; }
-
-        [MaxLength(128)]
-        public string? RequestCommand { get; set; }
+        public RequestLogSubType? SubType { get; set; }
+        public LogLevel Level { get; set; }
 
         public string? Message { get; set; }
 
@@ -47,23 +51,29 @@ namespace MobileGnollHackLogger.Data
 
         [MaxLength(256)]
         public string? RequestAntiForgeryToken { get; set; }
-
         public int? ResponseCode { get; set; }
+        
+        [MaxLength(128)]
+        public string? RequestMethod { get; set; }
+ 
+        [MaxLength(128)]
+        public string? UserIPAddress { get; set; }
 
         [ForeignKey("AspNetUser")]
         public string? AspNetUserId { get; set; }
         public ApplicationUser? AspNetUser { get; set; }
 
-        public LogInfo()
+        public RequestInfo()
         {
-            
+
         }
 
-        public LogInfo(string userName, ApplicationDbContext dbContext)
+        public RequestInfo(string userName, ApplicationDbContext dbContext)
         {
             var user = dbContext.Users.First(u => u.UserName == userName);
             AspNetUserId = user.Id;
             AspNetUser = (ApplicationUser)user;
         }
+
     }
 }

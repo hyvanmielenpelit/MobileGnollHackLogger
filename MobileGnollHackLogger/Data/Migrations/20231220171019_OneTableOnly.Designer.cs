@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using MobileGnollHackLogger.Data;
 
@@ -11,9 +12,11 @@ using MobileGnollHackLogger.Data;
 namespace MobileGnollHackLogger.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20231220171019_OneTableOnly")]
+    partial class OneTableOnly
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -495,12 +498,12 @@ namespace MobileGnollHackLogger.Data.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
-                    b.Property<string>("RequestData")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("RequestMethod")
+                    b.Property<string>("RequestCommand")
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("RequestData")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("RequestPath")
                         .HasMaxLength(2000)
@@ -518,10 +521,6 @@ namespace MobileGnollHackLogger.Data.Migrations
 
                     b.Property<int?>("Type")
                         .HasColumnType("int");
-
-                    b.Property<string>("UserIPAddress")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
 
                     b.HasKey("Id");
 

@@ -28,6 +28,7 @@ namespace MobileGnollHackLogger.Areas.API
             _dbContext = dbContext;
             _dbLogger = new DbLogger(_dbContext);
             _dbLogger.LogType = LogType.GameLog;
+            _dbLogger.LogSubType = RequestLogSubType.Default;
 
             _dumplogBasePath = _configuration["DumpLogPath"] ?? "";
 
@@ -85,14 +86,15 @@ namespace MobileGnollHackLogger.Areas.API
         {
             try
             {
-                _dbLogger.RequestCommand = "Post";
-                _dbLogger.RequestId = Guid.NewGuid();
+                _dbLogger.RequestMethod = Request.Method;
+                _dbLogger.LastRequestId = Guid.NewGuid();
                 _dbLogger.RequestPath = Request.GetEncodedUrl();
-
+                _dbLogger.UserIPAddress = Request.HttpContext.Connection.RemoteIpAddress?.ToString();
+                
                 if (model == null)
                 {
                     int responseCode = 400;
-                    await _dbLogger.LogAsync("model is null", Data.LogLevel.Error, responseCode);
+                    await _dbLogger.LogRequestAsync("model is null", Data.LogLevel.Error, responseCode);
                     return StatusCode(responseCode); //Bad Request
                 }
 
@@ -101,7 +103,7 @@ namespace MobileGnollHackLogger.Areas.API
                 if (model.UserName == null)
                 {
                     int responseCode = 400;
-                    await _dbLogger.LogAsync("model.UserName is null", Data.LogLevel.Error, responseCode);
+                    await _dbLogger.LogRequestAsync("model.UserName is null", Data.LogLevel.Error, responseCode);
                     return StatusCode(responseCode); //Bad Request
                 }
 
@@ -110,13 +112,13 @@ namespace MobileGnollHackLogger.Areas.API
                 if (model.Password == null)
                 {
                     int responseCode = 400;
-                    await _dbLogger.LogAsync("model.Password is null", Data.LogLevel.Error, responseCode);
+                    await _dbLogger.LogRequestAsync("model.Password is null", Data.LogLevel.Error, responseCode);
                     return StatusCode(responseCode); //Bad Request
                 }
                 if(model.AntiForgeryToken == null)
                 {
                     int responseCode = 400;
-                    await _dbLogger.LogAsync("model.AntiForgeryToken is null", Data.LogLevel.Error, responseCode);
+                    await _dbLogger.LogRequestAsync("model.AntiForgeryToken is null", Data.LogLevel.Error, responseCode);
                     return StatusCode(responseCode); //Bad Request
                 }
 
@@ -126,7 +128,7 @@ namespace MobileGnollHackLogger.Areas.API
                 if (antiForgeryToken != model.AntiForgeryToken)
                 {
                     int responseCode = 401;
-                    await _dbLogger.LogAsync($"AntiForgeryToken is invalid. Request: '{model.AntiForgeryToken}'. Server: '{antiForgeryToken}'.",
+                    await _dbLogger.LogRequestAsync($"AntiForgeryToken is invalid. Request: '{model.AntiForgeryToken}'. Server: '{antiForgeryToken}'.",
                         Data.LogLevel.Warning, responseCode);
                     return StatusCode(responseCode); //Not Authorized
                 }
@@ -139,7 +141,7 @@ namespace MobileGnollHackLogger.Areas.API
                     if (!string.IsNullOrEmpty(model.XLogEntry) && model.PlainTextDumpLog != null && model.HtmlDumpLog != null)
                     {
                         //Sign in succeedeed
-                        await _dbLogger.LogAsync("Login succeeded with all data.", Data.LogLevel.Info);
+                        await _dbLogger.LogRequestAsync("Login succeeded with all data.", Data.LogLevel.Info);
 
                         XLogFileLine xLogFileLine = new XLogFileLine(model.XLogEntry);
 
@@ -160,7 +162,7 @@ namespace MobileGnollHackLogger.Areas.API
                         if (System.IO.File.Exists(plainTextDumpLogPath))
                         {
                             int responseCode = 409;
-                            await _dbLogger.LogAsync("Character already exists. Plain Text Dumplog Path found: " + plainTextDumpLogPath,
+                            await _dbLogger.LogRequestAsync("Character already exists. Plain Text Dumplog Path found: " + plainTextDumpLogPath,
                                 Data.LogLevel.Warning, responseCode);
                             return StatusCode(responseCode); //Character already exists
                         }
@@ -168,7 +170,7 @@ namespace MobileGnollHackLogger.Areas.API
                         if (System.IO.File.Exists(htmlDumpLogPath))
                         {
                             int responseCode = 409;
-                            await _dbLogger.LogAsync("Character already exists. HTML Dumplog Path found: " + htmlDumpLogPath,
+                            await _dbLogger.LogRequestAsync("Character already exists. HTML Dumplog Path found: " + htmlDumpLogPath,
                                 Data.LogLevel.Warning, responseCode);
                             return StatusCode(responseCode); //Character already exists
                         }
@@ -181,8 +183,6 @@ namespace MobileGnollHackLogger.Areas.API
 
                         Task.WaitAll(t1, t2);
 
-                        //_logger.LogInformation("Dumplog files written for " + xLogFileLine.Name + " at " + dir);
-
                         try
                         {
                             GameLog gameLog = new GameLog(xLogFileLine, _dbContext);
@@ -192,23 +192,23 @@ namespace MobileGnollHackLogger.Areas.API
                             if (id == 0)
                             {
                                 int responseCode = 500;
-                                await _dbLogger.LogAsync("Inserted Id is 0.", Data.LogLevel.Error, responseCode);
+                                await _dbLogger.LogRequestAsync("Inserted Id is 0.", Data.LogLevel.Error, responseCode);
                                 Response.StatusCode = responseCode;
                                 return Content("Inserted Id is 0.");
                             }
-                            await _dbLogger.LogAsync("GameLog successfully inserted to the database", Data.LogLevel.Info, 200);
+                            await _dbLogger.LogRequestAsync("GameLog successfully inserted to the database", Data.LogLevel.Info, 200);
                             return Content(id.ToString(), "text/plain", Encoding.UTF8); //OK
                         }
                         catch(InvalidOperationException invEx)
                         {
                             int responseCode = 410;
-                            await _dbLogger.LogAsync("GameLog insertion to database failed. Message: " + invEx.Message, Data.LogLevel.Error, responseCode);
+                            await _dbLogger.LogRequestAsync("GameLog insertion to database failed. Message: " + invEx.Message, Data.LogLevel.Error, responseCode);
                             return StatusCode(responseCode); //Gone
                         }
                         catch(Exception ex)
                         {
                             int responseCode = 500;
-                            await _dbLogger.LogAsync("GameLog insertion to database failed. Message: " + ex.Message, Data.LogLevel.Error, responseCode);
+                            await _dbLogger.LogRequestAsync("GameLog insertion to database failed. Message: " + ex.Message, Data.LogLevel.Error, responseCode);
                             Response.StatusCode = responseCode; //Server Error
                             return Content(ex.Message.ToString());
                         }
@@ -216,32 +216,32 @@ namespace MobileGnollHackLogger.Areas.API
                     else if(string.IsNullOrEmpty(model.XLogEntry) && model.PlainTextDumpLog == null && model.HtmlDumpLog == null)
                     {
                         //Test Connection
-                        await _dbLogger.LogAsync("Test connection and login succeeded.", Data.LogLevel.Info, 200);
+                        await _dbLogger.LogRequestAsync("Test connection and login succeeded.", Data.LogLevel.Info, 200);
                         return Ok();
                     }
                     else
                     {
                         int responseCode = 400;
-                        await _dbLogger.LogAsync("Login succeeded but there is missing data.", Data.LogLevel.Error, responseCode);
+                        await _dbLogger.LogRequestAsync("Login succeeded but there is missing data.", Data.LogLevel.Error, responseCode);
                         return StatusCode(responseCode); //Bad Request
                     }
                 }
                 if (result.RequiresTwoFactor)
                 {
                     int responseCode = 412;
-                    await _dbLogger.LogAsync("Login requires two factor authentication. Error.", Data.LogLevel.Error, responseCode);
+                    await _dbLogger.LogRequestAsync("Login requires two factor authentication. Error.", Data.LogLevel.Error, responseCode);
                     return StatusCode(responseCode);
                 }
                 if (result.IsLockedOut)
                 {
                     int responseCode = 423;
-                    await _dbLogger.LogAsync("User is locked out.", Data.LogLevel.Warning, responseCode);
+                    await _dbLogger.LogRequestAsync("User is locked out.", Data.LogLevel.Warning, responseCode);
                     return StatusCode(responseCode);
                 }
                 else
                 {
                     int responseCode = 403;
-                    await _dbLogger.LogAsync($"Login failed for user '{model.UserName}'.", Data.LogLevel.Warning, responseCode);
+                    await _dbLogger.LogRequestAsync($"Login failed for user '{model.UserName}'.", Data.LogLevel.Warning, responseCode);
                     return StatusCode(responseCode);
                 }
             }
@@ -249,7 +249,7 @@ namespace MobileGnollHackLogger.Areas.API
             {
                 int responseCode = 500;
                 string message = (ex.InnerException ?? ex).GetType().FullName + ", Message: " + ex.Message;
-                await _dbLogger.LogAsync(message, Data.LogLevel.Warning, responseCode);
+                await _dbLogger.LogRequestAsync(message, Data.LogLevel.Warning, responseCode);
                 Response.StatusCode = responseCode;
                 return Content(message);
             }

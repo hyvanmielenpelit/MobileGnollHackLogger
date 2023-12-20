@@ -8,7 +8,7 @@ namespace MobileGnollHackLogger.Data
     {
         public DbSet<GameLog> GameLog {  get; set; }
         public DbSet<Bones> Bones { get; set; }
-        public DbSet<LogInfo> Logs { get; set; }
+        public DbSet<RequestInfo> RequestLogs { get; set; }
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
@@ -22,8 +22,11 @@ namespace MobileGnollHackLogger.Data
             modelBuilder.Entity<Bones>()
                 .Property(b => b.Created)
                 .HasDefaultValueSql("getutcdate()");
-            modelBuilder.Entity<LogInfo>()
-                .Property(li => li.CreationDate)
+            modelBuilder.Entity<RequestInfo>()
+                .Property(li => li.FirstDate)
+                .HasDefaultValueSql("getutcdate()");
+            modelBuilder.Entity<RequestInfo>()
+                .Property(li => li.LastDate)
                 .HasDefaultValueSql("getutcdate()");
         }
     }

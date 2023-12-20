@@ -6,6 +6,11 @@ using System.Configuration;
 using Azure.Communication.Email;
 using Azure.Core.Extensions;
 using Microsoft.AspNetCore.Identity.UI.Services;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.VisualStudio.Web.CodeGenerators.Mvc.Controller;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.AspNetCore.Http.Extensions;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -63,7 +68,46 @@ builder.Services.AddDefaultIdentity<ApplicationUser>(options =>
     options.SignIn.RequireConfirmedAccount = true;
 }).AddEntityFrameworkStores<ApplicationDbContext>();
 
-builder.Services.AddRazorPages();
+builder.Services.AddRazorPages()
+    .ConfigureApiBehaviorOptions(options =>
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        var dbContext = context.HttpContext.RequestServices.GetRequiredService<ApplicationDbContext>();
+        var dbLogger = new DbLogger(dbContext);
+        LogType logType = LogType.Other;
+        KeyValuePair<string,string?>? kvpController = context.ActionDescriptor.RouteValues.FirstOrDefault(rv => rv.Key == "controller");
+        if(kvpController.HasValue)
+        {
+            if (kvpController.Value.Value == "Log")
+            {
+                logType = LogType.GameLog;
+            }
+            else if(kvpController.Value.Value == "Bones")
+            {
+                logType = LogType.Bones;
+            }
+        }
+        dbLogger.LogType = logType;
+        dbLogger.LogSubType = RequestLogSubType.ModelStateFailed;
+        dbLogger.RequestPath = context.HttpContext.Request.GetEncodedUrl();
+        dbLogger.RequestMethod = context.HttpContext.Request.Method;
+        dbLogger.UserIPAddress = context.HttpContext.Connection.RemoteIpAddress?.ToString();
+        StringBuilder sbErr = new StringBuilder();
+        foreach(var kvp in context.ModelState)
+        {
+            foreach(var err in kvp.Value.Errors)
+            {
+                if (sbErr.Length > 0)
+                {
+                    sbErr.Append("; ");
+                }
+                sbErr.Append(err.ErrorMessage);
+            }
+        }
+        dbLogger.LogRequest("ModelState Failed: " + sbErr.ToString(), 
+            MobileGnollHackLogger.Data.LogLevel.Error, 400);
+        return new BadRequestObjectResult(context.ModelState);
+    });
 
 builder.Services.AddTransient<IEmailSender, EmailSender>();
 
