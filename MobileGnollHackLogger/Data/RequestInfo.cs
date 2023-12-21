@@ -22,7 +22,10 @@ namespace MobileGnollHackLogger.Data
     public enum RequestLogSubType : int
     {
         Default = 0,
-        ModelStateFailed = 1
+        ModelStateFailed = 1,
+        MainFunctionality = 2,
+        TestConnection = 3,
+        PartialDataError = 4
     }
 
     [PrimaryKey(nameof(Id))]
@@ -58,6 +61,8 @@ namespace MobileGnollHackLogger.Data
  
         [MaxLength(128)]
         public string? UserIPAddress { get; set; }
+
+        public bool? LoginSucceeded { get; set; }
 
         [ForeignKey("AspNetUser")]
         public string? AspNetUserId { get; set; }

@@ -13,7 +13,6 @@ namespace MobileGnollHackLogger.Data
             MinLogLevel = minLogLevel;
         }
 
-        public string? UserName { get; set; }
         public string? RequestMethod { get; set; }
         public string? UserIPAddress { get; set; }
         public LogType? LogType { get; set; }
@@ -23,6 +22,7 @@ namespace MobileGnollHackLogger.Data
         public string? RequestPath { get; set; }
         public string? RequestUserName { get; set; }
         public string? RequestAntiForgeryToken { get; set; }
+        public bool? LoginSucceeded { get; set; }
 
         public LogLevel MinLogLevel { get; set; }
 
@@ -168,16 +168,18 @@ namespace MobileGnollHackLogger.Data
                 && f.RequestMethod == req.RequestMethod
                 && f.RequestAntiForgeryToken == req.RequestAntiForgeryToken
                 && f.RequestPath == req.RequestPath
-                && f.UserIPAddress == req.UserIPAddress);
+                && f.RequestUserName == req.RequestUserName
+                //&& f.UserIPAddress == req.UserIPAddress //IP Adress seems to change often
+                );
         }
 
         private RequestInfo InitializeReq(string message, LogLevel level, int? responseCode)
         {
             RequestInfo req;
 
-            if (!string.IsNullOrEmpty(UserName))
+            if (!string.IsNullOrEmpty(RequestUserName))
             {
-                req = new RequestInfo(UserName, _dbContext);
+                req = new RequestInfo(RequestUserName, _dbContext);
             }
             else
             {
@@ -196,6 +198,7 @@ namespace MobileGnollHackLogger.Data
             req.SubType = LogSubType;
             req.LastRequestId = LastRequestId;
             req.UserIPAddress = UserIPAddress;
+            req.LoginSucceeded = LoginSucceeded;
 
             return req;
         }

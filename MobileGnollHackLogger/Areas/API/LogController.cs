@@ -136,13 +136,13 @@ namespace MobileGnollHackLogger.Areas.API
                 var result = await _signInManager.PasswordSignInAsync(model.UserName, model.Password, false, lockoutOnFailure: false);
                 if (result.Succeeded)
                 {
-                    _dbLogger.UserName = model.UserName;
+                    _dbLogger.LoginSucceeded = true;
 
                     if (!string.IsNullOrEmpty(model.XLogEntry) && model.PlainTextDumpLog != null && model.HtmlDumpLog != null)
                     {
-                        //Sign in succeedeed
-                        await _dbLogger.LogRequestAsync("Login succeeded with all data.", Data.LogLevel.Info);
+                        _dbLogger.LogSubType = RequestLogSubType.MainFunctionality;
 
+                        //Sign in succeedeed
                         XLogFileLine xLogFileLine = new XLogFileLine(model.XLogEntry);
 
                         //Change user name to the account name
@@ -216,11 +216,13 @@ namespace MobileGnollHackLogger.Areas.API
                     else if(string.IsNullOrEmpty(model.XLogEntry) && model.PlainTextDumpLog == null && model.HtmlDumpLog == null)
                     {
                         //Test Connection
+                        _dbLogger.LogSubType = RequestLogSubType.TestConnection;
                         await _dbLogger.LogRequestAsync("Test connection and login succeeded.", Data.LogLevel.Info, 200);
                         return Ok();
                     }
                     else
                     {
+                        _dbLogger.LogSubType = RequestLogSubType.PartialDataError;
                         int responseCode = 400;
                         await _dbLogger.LogRequestAsync("Login succeeded but there is missing data.", Data.LogLevel.Error, responseCode);
                         return StatusCode(responseCode); //Bad Request
@@ -228,18 +230,21 @@ namespace MobileGnollHackLogger.Areas.API
                 }
                 if (result.RequiresTwoFactor)
                 {
+                    _dbLogger.LoginSucceeded = false;
                     int responseCode = 412;
                     await _dbLogger.LogRequestAsync("Login requires two factor authentication. Error.", Data.LogLevel.Error, responseCode);
                     return StatusCode(responseCode);
                 }
                 if (result.IsLockedOut)
                 {
+                    _dbLogger.LoginSucceeded = false;
                     int responseCode = 423;
                     await _dbLogger.LogRequestAsync("User is locked out.", Data.LogLevel.Warning, responseCode);
                     return StatusCode(responseCode);
                 }
                 else
                 {
+                    _dbLogger.LoginSucceeded = false;
                     int responseCode = 403;
                     await _dbLogger.LogRequestAsync($"Login failed for user '{model.UserName}'.", Data.LogLevel.Warning, responseCode);
                     return StatusCode(responseCode);
