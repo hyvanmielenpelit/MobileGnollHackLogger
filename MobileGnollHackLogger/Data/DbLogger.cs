@@ -135,7 +135,7 @@ namespace MobileGnollHackLogger.Data
                 try
                 {
                     req2.Count++;
-                    req2.LastDate = DateTime.Now;
+                    req2.LastDate = DateTime.Now.ToUniversalTime();
                     _dbContext.SaveChanges();
                 }
                 catch (Exception ex)
