@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
+using MobileGnollHackLogger.Data.Migrations;
+
 //using MobileGnollHackLogger.Data.Migrations;
 using System.Text;
 
@@ -214,7 +216,7 @@ namespace MobileGnollHackLogger.Areas.API
 
                                 try
                                 {
-                                    Bones bone = new Bones(model.UserName,
+                                    Data.Bones bone = new Data.Bones(model.UserName,
                                         model.Platform == null ? "Unknown" : model.Platform,
                                         model.PlatformVersion == null ? "" : model.PlatformVersion,
                                         model.Port == null ? "" : model.Port,
@@ -268,17 +270,27 @@ namespace MobileGnollHackLogger.Areas.API
                                 if (availableBoneList != null)
                                 {
                                     int availableBoneCount = availableBoneList.Count;
-                                    _logger.LogInformation("Listed " + availableBoneCount + " bones file(s) available to be returned to user " + model.UserName);
+                                    //_logger.LogInformation("Listed " + availableBoneCount + " bones file(s) available to be returned to user " + model.UserName);
+                                    await _dbLogger.LogRequestAsync($"Listed {availableBoneCount} bones file(s) available to be returned to user {model.UserName}.",
+                                        Data.LogLevel.Info);
 
                                     if (availableBoneCount < ServerAvailableBoneMinLimit)
-                                        return Content(id.ToString() + ", too few bones files on server to send a bones file back: " + availableBoneCount + " applicable bones file" + (availableBoneCount == 1 ? "" : "s") + " on server", "text/plain", Encoding.UTF8); //OK
+                                    {
+                                        string msg = id.ToString() + ", too few bones files on server to send a bones file back: " + availableBoneCount + " applicable bones file" + (availableBoneCount == 1 ? "" : "s") + " on server";
+                                        await _dbLogger.LogRequestAsync(msg, Data.LogLevel.Info, 200);
+                                        return Content(msg, "text/plain", Encoding.UTF8); //OK
+                                    }
 
                                     if (availableBoneCount < ServerAvailableBoneMaxLimit)
                                     {
                                         Random random1 = new Random();
                                         double chance = 1.0 / 3.0 + 2.0 / 3.0 * ((double)(availableBoneCount - ServerAvailableBoneMinLimit) / (ServerAvailableBoneMaxLimit - ServerAvailableBoneMinLimit));
                                         if (!(random1.NextDouble() < chance))
-                                            return Content(id.ToString() + ", randomly did not send a bones file back: " + availableBoneCount + " applicable bones file" + (availableBoneList.Count == 1 ? "" : "s") + " on server", "text/plain", Encoding.UTF8); //OK
+                                        {
+                                            string msg = id.ToString() + ", randomly did not send a bones file back: " + availableBoneCount + " applicable bones file" + (availableBoneList.Count == 1 ? "" : "s") + " on server";
+                                            await _dbLogger.LogRequestAsync(msg, Data.LogLevel.Info, 200);
+                                            return Content(msg, "text/plain", Encoding.UTF8); //OK
+                                        }
                                     }
 
                                     /* Send a bones file */
@@ -306,37 +318,71 @@ namespace MobileGnollHackLogger.Areas.API
                                         if (bonespath != null && System.IO.File.Exists(bonespath))
                                         {
                                             string? originalfilename = availableBoneList[indx].OriginalFileName != null ? availableBoneList[indx].OriginalFileName : "";
-                                            _logger.LogInformation("Sending back to user " + model.UserName + " a  bones file with ID " + bonesid + ", original name of " + originalfilename + " and server path " + bonespath);
+                                            //_logger.LogInformation("Sending back to user " + model.UserName + " a  bones file with ID " + bonesid + ", original name of " + originalfilename + " and server path " + bonespath);
+                                            await _dbLogger.LogRequestAsync($"Sending back to user {model.UserName} a bones file with ID {bonesid}, original name of {originalfilename} and server path {bonespath}",
+                                                Data.LogLevel.Info);
                                             try
                                             {
                                                 byte[] bytes = await System.IO.File.ReadAllBytesAsync(bonespath);
                                                 if (bytes != null && bytes.Length > 0) 
                                                 {
+                                                    await _dbLogger.LogRequestAsync($"Sending back to user {model.UserName} a bones file with ID {bonesid}, original name of {originalfilename} and server path {bonespath}. File length is {bytes.LongLength}.",
+                                                        Data.LogLevel.Info, 200);
                                                     Response?.Headers?.TryAdd("X-GH-OriginalFileName", new Microsoft.Extensions.Primitives.StringValues(originalfilename));
                                                     Response?.Headers?.TryAdd("X-GH-BonesFilePath", new Microsoft.Extensions.Primitives.StringValues(bonespath));
                                                     Response?.Headers?.TryAdd("X-GH-DataBaseTableId", new Microsoft.Extensions.Primitives.StringValues(bonesid.ToString()));
                                                     return File(bytes, "application/octet-stream", originalfilename);
                                                 }
                                                 else
-                                                    return Content(id.ToString() + ", read zero bytes", "text/plain", Encoding.UTF8); //OK
+                                                {
+                                                    int responseCode = 500;
+                                                    await _dbLogger.LogRequestAsync($"Sending back to user {model.UserName} a bones file with ID {bonesid}, original name of {originalfilename} and server path {bonespath}. However, id {id.ToString()}: read zero bytes.",
+                                                        Data.LogLevel.Error, responseCode);
+                                                    Response.StatusCode = responseCode;
+                                                    return Content(id.ToString() + ", read zero bytes", "text/plain", Encoding.UTF8);
+                                                }
                                             }
                                             catch (Exception ex)
                                             {
-                                                return Content(id.ToString() + ", reading all bytes failed: " + ex.Message, "text/plain", Encoding.UTF8); //OK
+                                                int responseCode = 500;
+                                                string msg = id.ToString() + ", reading all bytes failed: " + ex.Message;
+                                                await _dbLogger.LogRequestAsync(msg, Data.LogLevel.Error, responseCode);
+                                                Response.StatusCode = responseCode;
+                                                return Content(id.ToString() + ", reading all bytes failed: " + ex.Message, "text/plain", Encoding.UTF8);
                                             }
                                         }
                                         else
-                                            return Content(id.ToString() + ", " + (bonespath == null ? "bones file path is null" : "bones file " + bonespath + " does not exist"), "text/plain", Encoding.UTF8); //OK
+                                        {
+                                            int responseCode = 500;
+                                            string msg = id.ToString() + ", " + (bonespath == null ? "bones file path is null" : "bones file " + bonespath + " does not exist");
+                                            await _dbLogger.LogRequestAsync(msg, Data.LogLevel.Error, responseCode);
+                                            Response.StatusCode = responseCode;
+                                            return Content(msg, "text/plain", Encoding.UTF8);
+                                        }
                                     }
                                     else
-                                        return Content(id.ToString() + ", couldn't locate a bones file", "text/plain", Encoding.UTF8); //OK
+                                    {
+                                        int responseCode = 500;
+                                        string msg = id.ToString() + ", couldn't locate a bones file";
+                                        await _dbLogger.LogRequestAsync(msg, Data.LogLevel.Error, responseCode);
+                                        Response.StatusCode = responseCode;
+                                        return Content(msg, "text/plain", Encoding.UTF8);
+                                    }
                                 }
                                 else
-                                    return Content(id.ToString() + ", bones list is null", "text/plain", Encoding.UTF8); //OK
+                                {
+                                    int responseCode = 500;
+                                    string msg = id.ToString() + ", bones list is null";
+                                    await _dbLogger.LogRequestAsync(msg, Data.LogLevel.Error, responseCode);
+                                    Response.StatusCode = responseCode;
+                                    return Content(msg, "text/plain", Encoding.UTF8);
+                                }
                             }
-                            catch (InvalidOperationException)
+                            catch (InvalidOperationException invEx)
                             {
-                                return StatusCode(410); //Gone
+                                int responseCode = 410;
+                                await _dbLogger.LogRequestAsync("Invalid Operation: " + invEx.Message, Data.LogLevel.Error, responseCode);
+                                return StatusCode(responseCode); //Gone
                             }
                             catch (Exception ex)
                             {
