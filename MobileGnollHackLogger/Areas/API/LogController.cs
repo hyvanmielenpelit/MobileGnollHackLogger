@@ -254,7 +254,7 @@ namespace MobileGnollHackLogger.Areas.API
             {
                 int responseCode = 500;
                 string message = (ex.InnerException ?? ex).GetType().FullName + ", Message: " + ex.Message;
-                await _dbLogger.LogRequestAsync(message, Data.LogLevel.Warning, responseCode);
+                await _dbLogger.LogRequestAsync(message, Data.LogLevel.Error, responseCode);
                 Response.StatusCode = responseCode;
                 return Content(message);
             }

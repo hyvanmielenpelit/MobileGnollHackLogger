@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Identity;
+﻿using Microsoft.AspNetCore.Http.Extensions;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
@@ -16,6 +17,7 @@ namespace MobileGnollHackLogger.Areas.API
         private readonly ILogger<LogModel> _logger;
         private readonly IConfiguration _configuration;
         private readonly ApplicationDbContext _dbContext;
+        private readonly DbLogger _dbLogger;
         private readonly string _bonesBasePath = "";
 
         public BonesController(SignInManager<ApplicationUser> signInManager, ILogger<LogModel> logger,
@@ -25,6 +27,9 @@ namespace MobileGnollHackLogger.Areas.API
             _logger = logger;
             _configuration = configuration;
             _dbContext = dbContext;
+            _dbLogger = new DbLogger(_dbContext);
+            _dbLogger.LogType = LogType.Bones;
+            _dbLogger.LogSubType = RequestLogSubType.Default;
 
             _bonesBasePath = _configuration["BonesPath"] ?? "";
 
@@ -62,32 +67,58 @@ namespace MobileGnollHackLogger.Areas.API
         {
             try
             {
+                _dbLogger.RequestMethod = Request.Method;
+                _dbLogger.LastRequestId = Guid.NewGuid();
+                _dbLogger.RequestPath = Request.GetEncodedUrl();
+                _dbLogger.UserIPAddress = Request.HttpContext.Connection.RemoteIpAddress?.ToString();
+
                 if (model == null)
                 {
-                    return StatusCode(400); //Bad Request
+                    int responseCode = 400;
+                    await _dbLogger.LogRequestAsync("model is null", Data.LogLevel.Error, responseCode);
+                    return StatusCode(responseCode); //Bad Request
                 }
+
+                _dbLogger.RequestData = model.Data;
+
                 if (model.UserName == null)
                 {
-                    return StatusCode(400); //Bad Request
+                    int responseCode = 400;
+                    await _dbLogger.LogRequestAsync("model.UserName is null", Data.LogLevel.Error, responseCode);
+                    return StatusCode(responseCode); //Bad Request
                 }
+
+                _dbLogger.RequestUserName = model.UserName;
+
                 if (model.Password == null)
                 {
-                    return StatusCode(400); //Bad Request
+                    int responseCode = 400;
+                    await _dbLogger.LogRequestAsync("model.Password is null", Data.LogLevel.Error, responseCode);
+                    return StatusCode(responseCode); //Bad Request
                 }
                 if (model.AntiForgeryToken == null)
                 {
-                    return StatusCode(400); //Bad Request
+                    int responseCode = 400;
+                    await _dbLogger.LogRequestAsync("model.AntiForgeryToken is null", Data.LogLevel.Error, responseCode);
+                    return StatusCode(responseCode); //Bad Request
                 }
+
+                _dbLogger.RequestAntiForgeryToken = model.AntiForgeryToken;
 
                 var antiForgeryToken = _configuration["AntiForgeryToken"];
                 if (antiForgeryToken != model.AntiForgeryToken)
                 {
-                    return StatusCode(401); //Not Authorized
+                    int responseCode = 401;
+                    await _dbLogger.LogRequestAsync($"AntiForgeryToken is invalid. Request: '{model.AntiForgeryToken}'. Server: '{antiForgeryToken}'.",
+                        Data.LogLevel.Warning, responseCode);
+                    return StatusCode(responseCode); //Not Authorized
                 }
 
                 var result = await _signInManager.PasswordSignInAsync(model.UserName, model.Password, false, lockoutOnFailure: false);
                 if (result.Succeeded)
                 {
+                    _dbLogger.LoginSucceeded = true;
+
                     if (!string.IsNullOrEmpty(model.Command) && !string.IsNullOrEmpty(model.Data))
                     {
                         //Sign in succeedeed
@@ -344,30 +375,47 @@ namespace MobileGnollHackLogger.Areas.API
                     else if (string.IsNullOrEmpty(model.Data) && model.BonesFile == null)
                     {
                         //Test Connection
+                        _dbLogger.LogSubType = RequestLogSubType.TestConnection;
+                        await _dbLogger.LogRequestAsync("Test connection and login succeeded.", Data.LogLevel.Info, 200);
                         return Ok();
                     }
                     else
                     {
-                        return StatusCode(400); //Bad Request
+                        _dbLogger.LogSubType = RequestLogSubType.PartialDataError;
+                        int responseCode = 400;
+                        await _dbLogger.LogRequestAsync("Login succeeded but there is missing data.", Data.LogLevel.Error, responseCode);
+                        return StatusCode(responseCode); //Bad Request
                     }
                 }
                 if (result.RequiresTwoFactor)
                 {
-                    return StatusCode(412);
+                    _dbLogger.LoginSucceeded = false;
+                    int responseCode = 412;
+                    await _dbLogger.LogRequestAsync("Login requires two factor authentication. Error.", Data.LogLevel.Error, responseCode);
+                    return StatusCode(responseCode);
                 }
                 if (result.IsLockedOut)
                 {
-                    return StatusCode(423);
+                    _dbLogger.LoginSucceeded = false;
+                    int responseCode = 423;
+                    await _dbLogger.LogRequestAsync("User is locked out.", Data.LogLevel.Warning, responseCode);
+                    return StatusCode(responseCode);
                 }
                 else
                 {
-                    return StatusCode(403);
+                    _dbLogger.LoginSucceeded = false;
+                    int responseCode = 403;
+                    await _dbLogger.LogRequestAsync($"Login failed for user '{model.UserName}'.", Data.LogLevel.Warning, responseCode);
+                    return StatusCode(responseCode);
                 }
             }
             catch (Exception ex)
             {
-                Response.StatusCode = 500;
-                return Content((ex.InnerException ?? ex).GetType().FullName + ", Message: " + ex.Message);
+                int responseCode = 500;
+                string message = (ex.InnerException ?? ex).GetType().FullName + ", Message: " + ex.Message;
+                await _dbLogger.LogRequestAsync(message, Data.LogLevel.Error, responseCode);
+                Response.StatusCode = responseCode;
+                return Content(message);
             }
         }
     }
