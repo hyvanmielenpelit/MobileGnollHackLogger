@@ -23,6 +23,11 @@ namespace MobileGnollHackLogger.Data
 
         public static string ToPercentageString(this double value, IFormatProvider formatProvider, bool nonBreakingSpace, int significantDigits = 3)
         {
+            if(significantDigits < 1)
+            {
+                throw new ArgumentOutOfRangeException(nameof(significantDigits), "significantDigits must be positive.");
+            }
+
             return (value * 100d).ToString("G" + significantDigits, formatProvider) + (nonBreakingSpace ? "\u00A0" : " ") + "%";
         }
     }
