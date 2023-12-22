@@ -8,17 +8,21 @@ namespace MobileGnollHackLogger.Data
         public static string? ConfirmAccountEmailHtml { get; set; }
         public static string? ForgotPasswordEmailHtml { get; set; }
 
+        public Azure.WaitUntil WaitUntil { get; set; }
+
         public EmailSender() : base(ConnectionString)
         {
             if(string.IsNullOrEmpty(ConnectionString))
             {
                 throw new Exception("ConnectionString is null");
             }
+
+            WaitUntil = Azure.WaitUntil.Started;
         }
 
         public Task SendEmailAsync(string email, string subject, string htmlMessage)
         {
-            return base.SendAsync(Azure.WaitUntil.Completed, "DoNotReply@gnollhack.com", email, subject, htmlMessage);
+            return base.SendAsync(WaitUntil, "DoNotReply@gnollhack.com", email, subject, htmlMessage);
         }
     }
 }
