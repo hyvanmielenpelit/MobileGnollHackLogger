@@ -23,6 +23,7 @@ using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Hosting.Internal;
 using Microsoft.Extensions.Logging;
 using MobileGnollHackLogger.Data;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
 {
@@ -134,50 +135,58 @@ namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
             ExternalLogins = (await _signInManager.GetExternalAuthenticationSchemesAsync()).ToList();
             if (ModelState.IsValid)
             {
-                var user = CreateUser();
-
-                await _userStore.SetUserNameAsync(user, Input.UserName, CancellationToken.None);
-                await _emailStore.SetEmailAsync(user, Input.Email, CancellationToken.None);
-                var result = await _userManager.CreateAsync(user, Input.Password);
-
-                if (result.Succeeded)
+                var existingUser = await _userManager.FindByEmailAsync(Input.Email);
+                if (existingUser == null)
                 {
-                    _logger.LogInformation("User created a new account with password.");
+                    var user = CreateUser();
 
-                    var userId = await _userManager.GetUserIdAsync(user);
-                    var code = await _userManager.GenerateEmailConfirmationTokenAsync(user);
-                    code = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(code));
-                    var callbackUrl = Url.Page(
-                        "/Account/ConfirmEmail",
-                        pageHandler: null,
-                        values: new { area = "Identity", userId = userId, code = code, returnUrl = returnUrl },
-                        protocol: Request.Scheme);
+                    await _userStore.SetUserNameAsync(user, Input.UserName, CancellationToken.None);
+                    await _emailStore.SetEmailAsync(user, Input.Email, CancellationToken.None);
+                    var result = await _userManager.CreateAsync(user, Input.Password);
 
-                    var htmlBody = EmailSender.ConfirmAccountEmailHtml
-                        .Replace(@"{CallbackUrl}", HtmlEncoder.Default.Encode(callbackUrl));
-
-                    try
+                    if (result.Succeeded)
                     {
-                        await _emailSender.SendEmailAsync(Input.Email, "Confirm Your Email - GnollHack Account", htmlBody);
+                        _logger.LogInformation("User created a new account with password.");
 
-                        if (_userManager.Options.SignIn.RequireConfirmedAccount)
+                        var userId = await _userManager.GetUserIdAsync(user);
+                        var code = await _userManager.GenerateEmailConfirmationTokenAsync(user);
+                        code = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(code));
+                        var callbackUrl = Url.Page(
+                            "/Account/ConfirmEmail",
+                            pageHandler: null,
+                            values: new { area = "Identity", userId = userId, code = code, returnUrl = returnUrl },
+                            protocol: Request.Scheme);
+
+                        var htmlBody = EmailSender.ConfirmAccountEmailHtml
+                            .Replace(@"{CallbackUrl}", HtmlEncoder.Default.Encode(callbackUrl));
+
+                        try
                         {
-                            return RedirectToPage("RegisterConfirmation", new { email = Input.Email, returnUrl = returnUrl });
+                            await _emailSender.SendEmailAsync(Input.Email, "Confirm Your Email - GnollHack Account", htmlBody);
+
+                            if (_userManager.Options.SignIn.RequireConfirmedAccount)
+                            {
+                                return RedirectToPage("RegisterConfirmation", new { email = Input.Email, returnUrl = returnUrl });
+                            }
+                            else
+                            {
+                                await _signInManager.SignInAsync(user, isPersistent: false);
+                                return LocalRedirect(returnUrl);
+                            }
                         }
-                        else
+                        catch (Exception ex)
                         {
-                            await _signInManager.SignInAsync(user, isPersistent: false);
-                            return LocalRedirect(returnUrl);
+                            ModelState.AddModelError(string.Empty, "Error occurred sending email: " + ex.Message);
                         }
                     }
-                    catch (Exception ex)
+                    foreach (var error in result.Errors)
                     {
-                        ModelState.AddModelError(string.Empty, "Error occurred sending email: " + ex.Message);
+                        ModelState.AddModelError(string.Empty, error.Description);
                     }
                 }
-                foreach (var error in result.Errors)
+                else
                 {
-                    ModelState.AddModelError(string.Empty, error.Description);
+                    ModelState.AddModelError(string.Empty, "Email is already taken.");
                 }
             }
 
