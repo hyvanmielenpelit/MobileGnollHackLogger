@@ -290,10 +290,17 @@ namespace MobileGnollHackLogger.Areas.API
                                     if (availableBoneCount < ServerAvailableBoneMaxLimit)
                                     {
                                         Random random1 = new Random();
-                                        double chance = 1.0 / 3.0 + 2.0 / 3.0 * ((double)(availableBoneCount - ServerAvailableBoneMinLimit) / (ServerAvailableBoneMaxLimit - ServerAvailableBoneMinLimit));
-                                        if (!(random1.NextDouble() < chance))
+                                        double chance = 1.0d / 2.0d + 1.0d / 2.0d * ((double)(availableBoneCount - ServerAvailableBoneMinLimit) / (double)(ServerAvailableBoneMaxLimit - ServerAvailableBoneMinLimit));
+                                        double rndResult = random1.NextDouble();
+                                        if (rndResult >= chance) //If fails
                                         {
-                                            string msg = id.ToString() + ", randomly did not send a bones file back: " + availableBoneCount + " applicable bones file" + (availableBoneList.Count == 1 ? "" : "s") + " on server";
+                                            string msg = id.ToString() + 
+                                                ", randomly did not send a bones file back: " + 
+                                                availableBoneCount + " applicable bones file" + 
+                                                (availableBoneList.Count == 1 ? "" : "s") + 
+                                                " on server. " +
+                                                "Chance=" + chance.ToPercentageString(4) +
+                                                ", result=" + rndResult.ToPercentageString(4);
                                             await _dbLogger.LogRequestAsync(msg, Data.LogLevel.Info, 200);
                                             return Content(msg, "text/plain", Encoding.UTF8); //OK
                                         }
