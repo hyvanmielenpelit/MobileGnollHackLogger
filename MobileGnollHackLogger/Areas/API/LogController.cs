@@ -192,9 +192,10 @@ namespace MobileGnollHackLogger.Areas.API
                             if (id == 0)
                             {
                                 int responseCode = 500;
-                                await _dbLogger.LogRequestAsync("Inserted Id is 0.", Data.LogLevel.Error, responseCode);
+                                string msg = "Inserted Id is 0.";
+                                await _dbLogger.LogRequestAsync(msg, Data.LogLevel.Error, responseCode);
                                 Response.StatusCode = responseCode;
-                                return Content("Inserted Id is 0.");
+                                return Content(msg);
                             }
                             await _dbLogger.LogRequestAsync("GameLog successfully inserted to the database", Data.LogLevel.Info, 200);
                             return Content(id.ToString(), "text/plain", Encoding.UTF8); //OK

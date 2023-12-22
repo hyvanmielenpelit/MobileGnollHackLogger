@@ -124,12 +124,18 @@ namespace MobileGnollHackLogger.Areas.API
                         //Sign in succeedeed
                         if(model.Command == "SendBonesFile")
                         {
-                            _logger.LogInformation("SendBonesFile request received from user " + model.UserName);
+                            _dbLogger.LogSubType = RequestLogSubType.MainFunctionality;
+                            //_logger.LogInformation("SendBonesFile request received from user " + model.UserName);
+                            await _dbLogger.LogRequestAsync($"SendBonesFile request received from user {model.UserName}.",
+                                Data.LogLevel.Info);
                             if (model.BonesFile == null)
                             {
-                                _logger.LogInformation("No bones file was attached to the request");
-                                Response.StatusCode = 500;
-                                return Content("Bones file is null when sending a bones file.");
+                                //_logger.LogInformation("No bones file was attached to the request");
+                                int responseCode = 500;
+                                string msg = "Bones file is null when sending a bones file.";
+                                await _dbLogger.LogRequestAsync(msg, Data.LogLevel.Error, responseCode);
+                                Response.StatusCode = responseCode; //Server Error
+                                return Content(msg);
                             }
 
                             const int ServerAllBoneLimit = 512;
@@ -202,7 +208,9 @@ namespace MobileGnollHackLogger.Areas.API
                                 using var bonesOutStream = System.IO.File.OpenWrite(fullFilePath);
                                 await model.BonesFile.CopyToAsync(bonesOutStream);
 
-                                _logger.LogInformation("Bones file " + fullFilePath + " from user " + model.UserName + " written as " + model.BonesFile.FileName + " at directory " + dir);
+                                //_logger.LogInformation("Bones file " + fullFilePath + " from user " + model.UserName + " written as " + model.BonesFile.FileName + " at directory " + dir);
+                                await _dbLogger.LogRequestAsync($"Bones file {fullFilePath} from user {model.UserName} written as {model.BonesFile.FileName} at directory {dir}.",
+                                    Data.LogLevel.Info);
 
                                 try
                                 {
@@ -222,17 +230,26 @@ namespace MobileGnollHackLogger.Areas.API
                                     await _dbContext.Bones.AddAsync(bone);
                                     await _dbContext.SaveChangesAsync();
                                     id = bone.Id;
-                                    _logger.LogInformation("Bones file from user " + model.UserName + " written to database as ID " + id);
+                                    //_logger.LogInformation("Bones file from user " + model.UserName + " written to database as ID " + id);
+                                    await _dbLogger.LogRequestAsync($"Bones file from user {model.UserName} written to database as ID {id}.",
+                                        Data.LogLevel.Info);
+
                                     if (id == 0)
                                     {
-                                        Response.StatusCode = 500;
-                                        return Content("Inserted Id is 0.");
+                                        int responseCode = 500;
+                                        string msg = "Inserted Id is 0";
+                                        await _dbLogger.LogRequestAsync(msg, Data.LogLevel.Error, responseCode);
+                                        Response.StatusCode = responseCode;
+                                        return Content(msg);
                                     }
                                 }
                                 catch (Exception ex)
                                 {
-                                    Response.StatusCode = 500;
-                                    return Content("Exception occurred while adding a new bones entry: " + ex.Message);
+                                    int responseCode = 500;
+                                    string msg = $"Exception occurred while adding a new bones entry. Message: {ex.Message}";
+                                    await _dbLogger.LogRequestAsync(msg, Data.LogLevel.Error, responseCode);
+                                    Response.StatusCode = responseCode; //Server Error
+                                    return Content(msg);
                                 }
                             }
 
@@ -323,13 +340,19 @@ namespace MobileGnollHackLogger.Areas.API
                             }
                             catch (Exception ex)
                             {
-                                Response.StatusCode = 500; //Server Error
-                                return Content(ex.Message.ToString());
+                                int responseCode = 500;
+                                string msg = "Error: " + ex.Message.ToString();
+                                await _dbLogger.LogRequestAsync(msg, Data.LogLevel.Error, responseCode);
+                                Response.StatusCode = responseCode; //Server Error
+                                return Content(msg);
                             }
                         }
                         else if(model.Command == "ConfirmReceipt")
                         {
-                            _logger.LogInformation("Received a bones file confirmation receipt from user " + model.UserName + " for server bones file path " + model.Data);
+                            _dbLogger.LogSubType = RequestLogSubType.MainFunctionality2;
+                            await _dbLogger.LogRequestAsync($"Received a bones file confirmation receipt from user {model.UserName} for server bones file path {model.Data}",
+                                Data.LogLevel.Info);
+                            //_logger.LogInformation("Received a bones file confirmation receipt from user " + model.UserName + " for server bones file path " + model.Data);
                             try
                             {
                                 var availableBones = _dbContext.Bones.Where(b => b.BonesFilePath == model.Data);
@@ -337,6 +360,7 @@ namespace MobileGnollHackLogger.Areas.API
                                 bool didremoveentry = false, diddeletefile = false;
                                 if(list != null && list.Count > 0)
                                 {
+                                    List<Task> tasks = new List<Task>();
                                     foreach(var bone in list)
                                     {
                                         if(bone != null)
@@ -344,16 +368,21 @@ namespace MobileGnollHackLogger.Areas.API
                                             long bonesid = bone.Id;
                                             _dbContext.Bones.Remove(bone);
                                             didremoveentry = true;
-                                            _logger.LogInformation("Deleted a database bones entry ID " + bonesid);
+
+                                            tasks.Add(_dbLogger.LogRequestAsync($"Deleted a database bones entry ID {bonesid}.",
+                                                Data.LogLevel.Info));
+                                            //_logger.LogInformation("Deleted a database bones entry ID " + bonesid);
                                         }
                                     }
+                                    Task.WaitAll(tasks.ToArray());
                                     await _dbContext.SaveChangesAsync();
                                 }
                                 if (System.IO.File.Exists(model.Data))
                                 {
                                     System.IO.File.Delete(model.Data);
                                     diddeletefile = true;
-                                    _logger.LogInformation("Deleted the server file " + model.Data);
+                                    await _dbLogger.LogRequestAsync($"Deleted the server file {model.Data}", Data.LogLevel.Info);
+                                    //_logger.LogInformation("Deleted the server file " + model.Data);
                                 }
                                 if (diddeletefile)
                                     return Content("File " + model.Data + " was successfully deleted from the server."  + (didremoveentry ? " Corresponding entry was also deleted from the database." : ""), "text/plain", Encoding.UTF8);
@@ -362,14 +391,20 @@ namespace MobileGnollHackLogger.Areas.API
                             }
                             catch (Exception ex)
                             {
-                                Response.StatusCode = 500; //Server Error
-                                return Content(ex.Message.ToString());
+                                int responseCode = 500;
+                                string message = (ex.InnerException ?? ex).GetType().FullName + ", Message: " + ex.Message;
+                                await _dbLogger.LogRequestAsync(message, Data.LogLevel.Error, responseCode);
+                                Response.StatusCode = responseCode;
+                                return Content(message);
                             }
                         }
                         else
                         {
-                            Response.StatusCode = 500;
-                            return Content("Unknown bones file command.");
+                            int responseCode = 500;
+                            string msg = "Unknown bones file command.";
+                            await _dbLogger.LogRequestAsync(msg, Data.LogLevel.Error, responseCode);
+                            Response.StatusCode = responseCode;
+                            return Content(msg);
                         }
                     }
                     else if (string.IsNullOrEmpty(model.Data) && model.BonesFile == null)

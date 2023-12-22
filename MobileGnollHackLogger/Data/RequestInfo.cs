@@ -25,7 +25,8 @@ namespace MobileGnollHackLogger.Data
         ModelStateFailed = 1,
         MainFunctionality = 2,
         TestConnection = 3,
-        PartialDataError = 4
+        PartialDataError = 4,
+        MainFunctionality2 = 5
     }
 
     [PrimaryKey(nameof(Id))]
