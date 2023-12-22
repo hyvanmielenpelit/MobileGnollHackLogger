@@ -49,10 +49,15 @@ namespace MobileGnollHackLogger.Data
         }
 
         public Bones(string username, string plat, string platver, string port, string portver, string portbuild, ulong vernum, ulong vercompatnum, int difficulty, string bonesfilepath, string originalfilename, ApplicationDbContext dbContext)
+            : this(username, plat, platver, port, portver, portbuild, vernum, vercompatnum, difficulty, bonesfilepath, originalfilename, (ApplicationUser)dbContext.Users.First(u => u.UserName == username))
         {
-            var user = dbContext.Users.First(u => u.UserName == username);
+
+        }
+
+        public Bones(string username, string plat, string platver, string port, string portver, string portbuild, ulong vernum, ulong vercompatnum, int difficulty, string bonesfilepath, string originalfilename, ApplicationUser user)
+        {
             AspNetUserId = user.Id;
-            AspNetUser = (ApplicationUser)user;
+            AspNetUser = user;
             DifficultyLevel = difficulty;
             Platform = plat;
             PlatformVersion = platver;
@@ -60,7 +65,7 @@ namespace MobileGnollHackLogger.Data
             PortVersion = portver;
             PortBuild = portbuild;
             VersionNumber = vernum;
-            VersionCompatibilityNumber = vercompatnum;            
+            VersionCompatibilityNumber = vercompatnum;
             BonesFilePath = bonesfilepath;
             OriginalFileName = originalfilename;
         }

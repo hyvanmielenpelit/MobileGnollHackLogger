@@ -39,5 +39,30 @@ namespace MobileGnollHackLogger.Areas.API
         {
             return System.Text.Json.JsonSerializer.Serialize<BonesModel>(this);
         }
+
+        public string GetPlatform()
+        {
+            return Platform == null ? "Unknown" : Platform;
+        }
+
+        public string GetPlatformVersion()
+        {
+            return PlatformVersion == null ? "" : PlatformVersion;
+        }
+
+        public string GetPort()
+        {
+            return Port == null ? "" : Port;
+        }
+
+        public string GetPortVersion()
+        {
+            return PortVersion == null ? "" : PortVersion;
+        }
+
+        public string GetPortBuild()
+        {
+            return PortBuild == null ? "" : PortBuild;
+        }
     }
 }

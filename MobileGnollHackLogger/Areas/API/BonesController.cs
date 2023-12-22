@@ -1,9 +1,12 @@
 ﻿using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.CodeAnalysis;
 using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
 using MobileGnollHackLogger.Data.Migrations;
+using System.Globalization;
+
 
 //using MobileGnollHackLogger.Data.Migrations;
 using System.Text;
@@ -153,15 +156,13 @@ namespace MobileGnollHackLogger.Areas.API
                             if (!string.IsNullOrEmpty(model.Data))
                                 int.TryParse(model.Data, out difficulty);
 
-                            string aspNetUserId = "";
                             int userBoneCount = 0;
                             int allBoneCount = 0;
+                            ApplicationUser dbUser = (ApplicationUser)_dbContext.Users.First(u => u.UserName == model.UserName);
+                            string aspNetUserId = dbUser.Id;
 
                             try
-                            {
-                                var dbUser = _dbContext.Users.First(u => u.UserName == model.UserName);
-                                aspNetUserId = dbUser.Id;
-
+                            {                                
                                 var allBones = _dbContext.Bones.Where(
                                     b => b.DifficultyLevel == difficulty
                                     && (b.VersionNumber == model.VersionNumber
@@ -217,20 +218,24 @@ namespace MobileGnollHackLogger.Areas.API
                                 try
                                 {
                                     Data.Bones bone = new Data.Bones(model.UserName,
-                                        model.Platform == null ? "Unknown" : model.Platform,
-                                        model.PlatformVersion == null ? "" : model.PlatformVersion,
-                                        model.Port == null ? "" : model.Port,
-                                        model.PortVersion == null ? "" : model.PortVersion,
-                                        model.PortBuild == null ? "" : model.PortBuild,
+                                        model.GetPlatform(),
+                                        model.GetPlatformVersion(),
+                                        model.GetPort(),
+                                        model.GetPortVersion(),
+                                        model.GetPortBuild(),
                                         model.VersionNumber,
                                         model.VersionCompatibilityNumber,
                                         difficulty,
                                         fullFilePath,
                                         model.BonesFile.FileName,
-                                        _dbContext);
+                                        dbUser);
+
+                                    Data.BonesTransaction transaction = new Data.BonesTransaction(model.UserName, TransactionType.Upload, bone, dbUser);
 
                                     await _dbContext.Bones.AddAsync(bone);
+                                    await _dbContext.BonesTransactions.AddAsync(transaction);
                                     await _dbContext.SaveChangesAsync();
+
                                     id = bone.Id;
                                     //_logger.LogInformation("Bones file from user " + model.UserName + " written to database as ID " + id);
                                     await _dbLogger.LogRequestAsync($"Bones file from user {model.UserName} written to database as ID {id}.",
@@ -318,9 +323,6 @@ namespace MobileGnollHackLogger.Areas.API
                                         if (bonespath != null && System.IO.File.Exists(bonespath))
                                         {
                                             string? originalfilename = availableBoneList[indx].OriginalFileName != null ? availableBoneList[indx].OriginalFileName : "";
-                                            //_logger.LogInformation("Sending back to user " + model.UserName + " a  bones file with ID " + bonesid + ", original name of " + originalfilename + " and server path " + bonespath);
-                                            await _dbLogger.LogRequestAsync($"Sending back to user {model.UserName} a bones file with ID {bonesid}, original name of {originalfilename} and server path {bonespath}",
-                                                Data.LogLevel.Info);
                                             try
                                             {
                                                 byte[] bytes = await System.IO.File.ReadAllBytesAsync(bonespath);
@@ -328,6 +330,23 @@ namespace MobileGnollHackLogger.Areas.API
                                                 {
                                                     await _dbLogger.LogRequestAsync($"Sending back to user {model.UserName} a bones file with ID {bonesid}, original name of {originalfilename} and server path {bonespath}. File length is {bytes.LongLength}.",
                                                         Data.LogLevel.Info, 200);
+
+                                                    Data.BonesTransaction transaction = new Data.BonesTransaction(model.UserName, TransactionType.Download, null, dbUser)
+                                                    {
+                                                        BonesId = bonesid,
+                                                        DifficultyLevel = difficulty,
+                                                        Platform = model.GetPlatform(),
+                                                        PlatformVersion = model.GetPlatformVersion(),
+                                                        Port = model.GetPort(),
+                                                        PortVersion = model.GetPortVersion(),
+                                                        PortBuild = model.GetPortBuild(),
+                                                        VersionNumber = model.VersionNumber,
+                                                        VersionCompatibilityNumber = model.VersionCompatibilityNumber
+                                                    };
+
+                                                    await _dbContext.BonesTransactions.AddAsync(transaction);
+                                                    await _dbContext.SaveChangesAsync();
+
                                                     Response?.Headers?.TryAdd("X-GH-OriginalFileName", new Microsoft.Extensions.Primitives.StringValues(originalfilename));
                                                     Response?.Headers?.TryAdd("X-GH-BonesFilePath", new Microsoft.Extensions.Primitives.StringValues(bonespath));
                                                     Response?.Headers?.TryAdd("X-GH-DataBaseTableId", new Microsoft.Extensions.Primitives.StringValues(bonesid.ToString()));
@@ -404,7 +423,9 @@ namespace MobileGnollHackLogger.Areas.API
                                 var availableBones = _dbContext.Bones.Where(b => b.BonesFilePath == model.Data);
                                 var list = availableBones.ToList();
                                 bool didremoveentry = false, diddeletefile = false;
-                                if(list != null && list.Count > 0)
+                                ApplicationUser dbUser = (ApplicationUser)_dbContext.Users.First(u => u.UserName == model.UserName);
+
+                                if (list != null && list.Count > 0)
                                 {
                                     List<Task> tasks = new List<Task>();
                                     foreach(var bone in list)
@@ -417,7 +438,9 @@ namespace MobileGnollHackLogger.Areas.API
 
                                             tasks.Add(_dbLogger.LogRequestAsync($"Deleted a database bones entry ID {bonesid}.",
                                                 Data.LogLevel.Info));
-                                            //_logger.LogInformation("Deleted a database bones entry ID " + bonesid);
+
+                                            Data.BonesTransaction transaction = new Data.BonesTransaction(model.UserName, TransactionType.Deletion, bone, dbUser);
+                                            _dbContext.BonesTransactions.Add(transaction);
                                         }
                                     }
                                     Task.WaitAll(tasks.ToArray());
@@ -428,12 +451,23 @@ namespace MobileGnollHackLogger.Areas.API
                                     System.IO.File.Delete(model.Data);
                                     diddeletefile = true;
                                     await _dbLogger.LogRequestAsync($"Deleted the server file {model.Data}", Data.LogLevel.Info);
-                                    //_logger.LogInformation("Deleted the server file " + model.Data);
                                 }
                                 if (diddeletefile)
-                                    return Content("File " + model.Data + " was successfully deleted from the server."  + (didremoveentry ? " Corresponding entry was also deleted from the database." : ""), "text/plain", Encoding.UTF8);
+                                {
+                                    int responseCode = 200;
+                                    string msg = "File " + model.Data + " was successfully deleted from the server." + (didremoveentry ? " Corresponding entry was also deleted from the database." : "");
+                                    await _dbLogger.LogRequestAsync(msg, Data.LogLevel.Info);
+                                    Response.StatusCode = responseCode;
+                                    return Content(msg, "text/plain", Encoding.UTF8);
+                                }
                                 else
-                                    return Content("File " + model.Data + " was did not exist on the server and was thus not deleted." + (didremoveentry ? " However, a corresponding entry to the file was deleted from the database." : " A corresponding entry did not exist in the database either."), "text/plain", Encoding.UTF8);
+                                {
+                                    int responseCode = 410; 
+                                    string msg = "File " + model.Data + " was did not exist on the server and was thus not deleted." + (didremoveentry ? " However, a corresponding entry to the file was deleted from the database." : " A corresponding entry did not exist in the database either.");
+                                    await _dbLogger.LogRequestAsync(msg, Data.LogLevel.Error);
+                                    Response.StatusCode = responseCode; //Gone
+                                    return Content(msg, "text/plain", Encoding.UTF8);
+                                }
                             }
                             catch (Exception ex)
                             {
