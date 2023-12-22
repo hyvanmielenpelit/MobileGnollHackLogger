@@ -99,14 +99,14 @@
                                 <span>G: @games</span>
                                 @if (allDiffGames > 0)
                                 {
-                                    <span>(@(((double)games / (double)allDiffGames).ToString(percentageFormat, CultureInfo.InvariantCulture)))</span>
+                                    <span>(@(((double)games / (double)allDiffGames).ToPercentageString(true)))</span>
                                 }
                             </div>
                             <div>
                                 <span>A: @ascensions</span>
                                 @if (allDiffAscensions > 0)
                                 {
-                                    <span>(@(((double)ascensions / (double)allDiffAscensions).ToString(percentageFormat, CultureInfo.InvariantCulture)))</span>
+                                    <span>(@(((double)ascensions / (double)allDiffAscensions).ToPercentageString(true)))</span>
                                 }
                             </div>
                         </td>
@@ -118,19 +118,19 @@
                     }
 
                     <td class="w-role text-center border-start border-bottom-0 @darkeningClassTotal">
-                        <div class="font-l"><h5>@(allDiffGames > 0 ? ((double)allDiffAscensions / (double)allDiffGames).ToString(percentageFormat, CultureInfo.InvariantCulture) : "N/A")</h5></div>
+                        <div class="font-l"><h5>@(allDiffGames > 0 ? ((double)allDiffAscensions / (double)allDiffGames).ToPercentageString(true) : "N/A")</h5></div>
                         <div>
                             <span>G: @allDiffGames</span>
                             @if (allGamesCount > 0)
                             {
-                                <span>(@(((double)allDiffGames / (double)allGamesCount).ToString(percentageFormat, CultureInfo.InvariantCulture)))</span>
+                                <span>(@(((double)allDiffGames / (double)allGamesCount).ToPercentageString(true)))</span>
                             }
                         </div>
                         <div>
                             <span>A: @allDiffAscensions</span>
                             @if (allAscensionCount > 0)
                             {
-                                <span>(@(((double)allDiffAscensions / (double)allAscensionCount).ToString(percentageFormat, CultureInfo.InvariantCulture)))</span>
+                                <span>(@(((double)allDiffAscensions / (double)allAscensionCount).ToPercentageString(true)))</span>
                             }
                         </div>
                     </td>
@@ -165,19 +165,19 @@
                     string? darkeningClass = games > 0 ? null : "text-muted";
 
                 <td class="w-role text-center border-top @darkeningClass">
-                    <div class="font-l"><h5>@(games > 0 ? ((double)ascensions / (double)games).ToString(percentageFormat, CultureInfo.InvariantCulture) : "N/A")</h5></div>
+                    <div class="font-l"><h5>@(games > 0 ? ((double)ascensions / (double)games).ToPercentageString(true) : "N/A")</h5></div>
                     <div>
                         <span>G: @games</span>
                         @if (allGamesCount > 0)
                         {
-                            <span>(@(((double)games / (double)allGamesCount).ToString(percentageFormat, CultureInfo.InvariantCulture)))</span>
+                            <span>(@(((double)games / (double)allGamesCount).ToPercentageString(true)))</span>
                         }
                     </div>
                     <div>
                         <span>A: @ascensions</span>
                         @if (allAscensionCount > 0)
                         {
-                            <span>(@(((double)ascensions / (double)allAscensionCount).ToString(percentageFormat, CultureInfo.InvariantCulture)))</span>
+                            <span>(@(((double)ascensions / (double)allAscensionCount).ToPercentageString(true)))</span>
                         }
                     </div>
                 </td>
@@ -189,7 +189,7 @@
                     string? darkeningClassAll = allGamesCount > 0 ? null : "text-muted";
                 }
                 <td class="w-role text-center border-start border-top @darkeningClassAll">
-                    <div class="font-l"><h5>@(allGamesCount > 0 ? ((double)allAscensionCount / (double)allGamesCount).ToString(percentageFormat, CultureInfo.InvariantCulture) : "N/A")</h5></div>
+                    <div class="font-l"><h5>@(allGamesCount > 0 ? ((double)allAscensionCount / (double)allGamesCount).ToPercentageString(true) : "N/A")</h5></div>
                     <div>G: @allGamesCount</div>
                     <div>A: @allAscensionCount</div>
                 </td>
