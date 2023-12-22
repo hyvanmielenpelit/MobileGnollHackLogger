@@ -79,7 +79,7 @@ namespace MobileGnollHackLogger.Areas.API
                     return StatusCode(responseCode); //Bad Request
                 }
 
-                _dbLogger.RequestData = model.Data;
+                _dbLogger.RequestData = model.GetJson();
 
                 if (model.UserName == null)
                 {
