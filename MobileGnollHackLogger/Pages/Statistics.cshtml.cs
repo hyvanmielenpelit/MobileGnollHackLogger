@@ -16,7 +16,7 @@ namespace MobileGnollHackLogger.Pages
         public StatisticsModel(ApplicationDbContext dbContext)
         {
             _dbContext = dbContext;
-            Title = "Statistics";
+            Title = "Statistics for All Gameplay Modes";
             Mode = null;
 
             DisplayModes = new List<string>()
@@ -42,6 +42,24 @@ namespace MobileGnollHackLogger.Pages
             GameLogs = _dbContext.GameLog.Where(gl => (mode == null || gl.Mode == mode) && gl.Mode != "debug" && gl.Mode != "explore" && gl.Scoring == "yes");
             GroupByRole = await GameLogs.GroupBy(gl => gl.Role).ToListAsync();
             GroupByRoleAscended = await GameLogs.Where(gl=>gl.DeathText == "ascended").GroupBy(gl => gl.Role).ToListAsync();
+
+            switch (Mode)
+            {
+                case "normal":
+                    Title = "Statistics for Classic Mode";
+                    break;
+                case "modern":
+                    Title = "Statistics for Modern Mode";
+                    break;
+                case "casual":
+                    Title = "Statistics for Casual Mode";
+                    break;
+                case "reloadable":
+                    Title = "Statistics for Reloadable Mode";
+                    break;
+                default:
+                    break;
+            }
         }
     }
 }

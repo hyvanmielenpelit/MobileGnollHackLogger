@@ -35,7 +35,7 @@ namespace MobileGnollHackLogger.Pages
                 {
                     gameLogs = gameLogs.Where(gl => gl.DeathText == death);
                     RecentGamesMode = RecentGamesMode.Ascensions;
-                    Title = "Ascensions";
+                    Title = "Recent Ascensions";
                 }
             }
 

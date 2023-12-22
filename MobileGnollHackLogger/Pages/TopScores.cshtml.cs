@@ -14,7 +14,7 @@ namespace MobileGnollHackLogger.Pages
         public TopScoresModel(ApplicationDbContext dbContext)
         {
             _dbContext = dbContext;
-            Title = "Games";
+            Title = "Top Scores for Games";
             TopScoreMode = TopScoreMode.Games;
         }
 
@@ -37,7 +37,7 @@ namespace MobileGnollHackLogger.Pages
                 if(death == "ascended")
                 {
                     TopScoreMode = TopScoreMode.Ascensions;
-                    Title = "Ascensions";
+                    Title = "Top Scores for Ascensions";
                 }
             }
 
