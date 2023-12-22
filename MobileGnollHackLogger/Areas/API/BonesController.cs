@@ -441,13 +441,25 @@ namespace MobileGnollHackLogger.Areas.API
                                         if(bone != null)
                                         {
                                             long bonesid = bone.Id;
+                                            int difficulty = bone.DifficultyLevel;
                                             _dbContext.Bones.Remove(bone);
                                             didremoveentry = true;
 
                                             tasks.Add(_dbLogger.LogRequestAsync($"Deleted a database bones entry ID {bonesid}.",
                                                 Data.LogLevel.Info));
 
-                                            Data.BonesTransaction transaction = new Data.BonesTransaction(model.UserName, TransactionType.Deletion, bone, dbUser);
+                                            Data.BonesTransaction transaction = new Data.BonesTransaction(model.UserName, TransactionType.Deletion, null, dbUser)
+                                            {
+                                                BonesId = bonesid,
+                                                DifficultyLevel = difficulty,
+                                                Platform = model.GetPlatform(),
+                                                PlatformVersion = model.GetPlatformVersion(),
+                                                Port = model.GetPort(),
+                                                PortVersion = model.GetPortVersion(),
+                                                PortBuild = model.GetPortBuild(),
+                                                VersionNumber = model.VersionNumber,
+                                                VersionCompatibilityNumber = model.VersionCompatibilityNumber
+                                            };
                                             _dbContext.BonesTransactions.Add(transaction);
                                         }
                                     }
