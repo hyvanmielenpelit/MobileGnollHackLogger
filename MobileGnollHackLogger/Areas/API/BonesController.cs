@@ -230,9 +230,10 @@ namespace MobileGnollHackLogger.Areas.API
                                         model.BonesFile.FileName,
                                         dbUser);
 
-                                    Data.BonesTransaction transaction = new Data.BonesTransaction(model.UserName, TransactionType.Upload, bone, dbUser);
-
                                     await _dbContext.Bones.AddAsync(bone);
+                                    await _dbContext.SaveChangesAsync();
+
+                                    Data.BonesTransaction transaction = new Data.BonesTransaction(model.UserName, TransactionType.Upload, bone, dbUser);
                                     await _dbContext.BonesTransactions.AddAsync(transaction);
                                     await _dbContext.SaveChangesAsync();
 
