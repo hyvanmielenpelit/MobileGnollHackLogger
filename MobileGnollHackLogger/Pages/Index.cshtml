@@ -6,7 +6,6 @@
 
 <div class="text-center">
     <h1 class="display-4">GnollHack Account</h1>
-    <h5>Bridge Between GnollHack App and NetHack Scoreboard</h5>
     <hr class="separator" />
     
     @if (User?.Identity?.IsAuthenticated ?? false)
@@ -17,21 +16,16 @@
     else
     {
         <h2>Getting Started</h2>
-        <p>
-            To make games played on the mobile GnollHack app to register to
-            <a href="https://nethackscoreboard.org/">NetHack Scoreboard</a>, please take the following steps:
-        </p>
         <h3>1. Create Account</h3>
-        <p>Create an account on this site and <a href="/Identity/Account/Register">register a user name</a> that you want to be displayed on NetHack Scoreboard.</p>
-        
-        
+        <p>Create an account on this site by <a href="/Identity/Account/Register">registering a user name</a>.</p>
     }
     <h3>2. Enter Credentials to the Mobile App</h3>
     <p>Enter the credentials to the GnollHack mobile app.</p>
     <p class="task-list">
-        2.1. Go to Settings.<br />
-        2.2. Locate the <em>Post Top Scores</em> section.<br />
-        2.3. Enter your <em>User Name</em> and <em>Password</em> to the respective fields.
+        2.1. Go to <em>Settings</em>.<br />
+        2.2. Locate the <em>Server Posting</em> section.<br />
+        2.3. Enter your <em>User Name</em> and <em>Password</em> to the respective fields.<br />
+        2.4. Enable <em>Post Top Scores</em> and/or <em>Post Bones Files</em>.
     </p>
 
     @if (User?.Identity?.IsAuthenticated ?? false)
