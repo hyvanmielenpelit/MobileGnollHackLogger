@@ -76,6 +76,9 @@ hr.separator {
 
 .task-list {
   font-weight: bold;
+  text-align: left;
+  max-width: 360px;
+  margin: 0 auto;
 }
 .task-list em {
   /*text-decoration:underline;*/
@@ -162,4 +165,11 @@ div.container.statisticsMaxWidth main.statisticsMaxWidth {
 
 .w-role {
   width: 6.67%;
+}
+
+.h-line {
+  display: inline-block;
+  height: 1em;
+  vertical-align: auto;
+  margin-bottom: 5px;
 }

@@ -6,7 +6,7 @@
 
 <div class="text-center">
     <h1 class="display-4">GnollHack Account</h1>
-    <h4 class="fw-light">Community Server for GnollHack Mobile App</h4>
+    <h4 class="fw-light">Community Server for GnollHack Mobile</h4>
     <p class="fw-light">Top Score Recording &bull; Bones Sharing &bull; NetHack Scoreboard Support &bull; Statistics</p>
     <hr class="separator" />
     
@@ -18,20 +18,25 @@
     else
     {
         <h2>Getting Started</h2>
-        <h3>1. Create Account</h3>
-        <p>Create an account on this site by <a href="/Identity/Account/Register">registering a user name</a>.</p>
+        <h3>Create GnollHack Account</h3>
+        <div class="task-list">
+            <ol>
+                <li>Create an account on this site by <a href="/Identity/Account/Register">registering a user name</a>.</li>
+            </ol>            
+        </div>
     }
-    <h3>2. Enter Credentials to the Mobile App</h3>
-    <p>Enter the credentials to the GnollHack mobile app.</p>
-    <p class="task-list">
-        2.1. Go to <em>Settings</em>.<br />
-        2.2. Locate the <em>Server Posting</em> section.<br />
-        2.3. Enter your <em>User Name</em> and <em>Password</em> to the respective fields.<br />
-        2.4. Enable <em>Post Top Scores</em> and/or <em>Post Bones Files</em>.
-    </p>
+    <h3>Enter Credentials to the App</h3>
+    <div class="task-list">
+        <ol>
+            <li>Go to <em>Settings</em>.</li>
+            <li>Locate the <em>Server Posting</em> section.</li>
+            <li>Enter your <em>User Name</em> and <em>Password</em> to the respective fields.</li>
+            <li>Enable <em>Post Top Scores</em> and/or <em>Post Bones Files</em>.</li>
+        </ol>
+    </div>
 
     @if (User?.Identity?.IsAuthenticated ?? false)
     {
-        <p style="font-style:italic;">(If you have already entered the credentials to the mobile app, you can ignore these instructions.)</p>
+        <p style="font-style:italic;">(If you have already entered the credentials to the app, you can ignore these instructions.)</p>
     }
 </div>
