@@ -1,6 +1,8 @@
 ﻿$font-color: white;
 $link-color: #ded18b;
 $font-em-color: $link-color;
+$primary-color: lighten(gold, 10%);
+$nav-color: lighten(#626157, 40%);
 
 body {
     margin-bottom: 60px;
@@ -14,10 +16,18 @@ body {
 
 nav {
     &.navbar a, &.navbar button {
-        color: white !important;
+        color: $nav-color !important;
 
         &:hover {
-            color: #ddd !important;
+            color: lighten($nav-color, 15%) !important;
+        }
+
+        &.text-primary {
+            color: $primary-color !important;
+
+            &:hover {
+                color: lighten($primary-color, 15%) !important;
+            }
         }
     }
 
@@ -42,7 +52,7 @@ footer {
     background: #111;
 
     &.border-top {
-        color: white !important;
+        color: $nav-color !important;
         border-top-color: black !important;
     }
 }

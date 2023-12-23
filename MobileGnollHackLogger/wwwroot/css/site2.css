@@ -9,10 +9,16 @@
 }
 
 nav.navbar a, nav.navbar button {
-  color: white !important;
+  color: #c6c5bf !important;
 }
 nav.navbar a:hover, nav.navbar button:hover {
-  color: #ddd !important;
+  color: #eaeae7 !important;
+}
+nav.navbar a.text-primary, nav.navbar button.text-primary {
+  color: #ffdf33 !important;
+}
+nav.navbar a.text-primary:hover, nav.navbar button.text-primary:hover {
+  color: #ffeb80 !important;
 }
 nav.border-bottom {
   color: white !important;
@@ -34,7 +40,7 @@ footer {
   background: #111;
 }
 footer.border-top {
-  color: white !important;
+  color: #c6c5bf !important;
   border-top-color: black !important;
 }
 
