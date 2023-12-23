@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/site2.min.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/MobileGnollHackLogger.styles.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/lib/bootstrap-icons/dist/bootstrap-icons.min.css" asp-append-version="true" />
 
     @await RenderSectionAsync("Styles", required: false)
 
@@ -61,7 +62,10 @@
                             <a class="nav-link text-dark" asp-area="" asp-page="/Contact">Contact</a>
                         </li>
                         <li class="nav-item">
-                            <a target="_blank" class="nav-link text-dark" href="https://nethackscoreboard.org/">NetHack Scoreboard <img class="h-line" src="~/img/external-link-white.png" /></a>
+                            <a target="_blank" class="nav-link text-dark" href="https://nethackscoreboard.org/">NetHack Scoreboard 
+                                @* <img class="h-line" src="~/img/external-link-white.png" /> *@
+                                <i class="bi bi-box-arrow-up-right h-line"></i>
+                            </a>
                         </li>
                     </ul>
                     <partial name="_LoginPartial" />

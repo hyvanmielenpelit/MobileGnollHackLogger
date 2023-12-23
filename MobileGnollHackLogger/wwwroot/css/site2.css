@@ -168,8 +168,6 @@ div.container.statisticsMaxWidth main.statisticsMaxWidth {
 }
 
 .h-line {
-  display: inline-block;
-  height: 1em;
-  vertical-align: auto;
-  margin-bottom: 5px;
+  vertical-align: top;
+  font-size: 0.9em;
 }
