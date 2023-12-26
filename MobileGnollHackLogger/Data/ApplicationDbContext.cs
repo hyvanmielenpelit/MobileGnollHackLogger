@@ -32,15 +32,15 @@ namespace MobileGnollHackLogger.Data
             modelBuilder.Entity<BonesTransaction>()
                 .Property(li => li.Date)
                 .HasDefaultValueSql("getutcdate()");
-            modelBuilder.Entity<ApplicationUser>()
-                .Property(u => u.IsBanned)
-                .HasDefaultValue(0);
-            modelBuilder.Entity<ApplicationUser>()
-                .Property(u => u.IsBonesBanned)
-                .HasDefaultValue(0);
-            modelBuilder.Entity<ApplicationUser>()
-                .Property(u => u.IsGameLogBanned)
-                .HasDefaultValue(0);
+            //modelBuilder.Entity<ApplicationUser>()
+            //    .Property(u => u.IsBanned)
+            //    .HasDefaultValue(0);
+            //modelBuilder.Entity<ApplicationUser>()
+            //    .Property(u => u.IsBonesBanned)
+            //    .HasDefaultValue(0);
+            //modelBuilder.Entity<ApplicationUser>()
+            //    .Property(u => u.IsGameLogBanned)
+            //    .HasDefaultValue(0);
         }
     }
 }

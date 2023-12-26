@@ -13,16 +13,18 @@ namespace MobileGnollHackLogger.Areas.API
     public class LogController : ControllerBase
     {
         private readonly SignInManager<ApplicationUser> _signInManager;
+        private readonly UserManager<ApplicationUser> _userManager;
         private readonly ILogger<LogModel> _logger;
         private readonly IConfiguration _configuration;
         private readonly ApplicationDbContext _dbContext;
         private readonly string _dumplogBasePath = "";
         private readonly DbLogger _dbLogger;
 
-        public LogController(SignInManager<ApplicationUser> signInManager, ILogger<LogModel> logger, 
-            IConfiguration configuration, ApplicationDbContext dbContext)
+        public LogController(SignInManager<ApplicationUser> signInManager, UserManager<ApplicationUser> userManager, 
+            ILogger<LogModel> logger, IConfiguration configuration, ApplicationDbContext dbContext)
         {
             _signInManager = signInManager;
+            _userManager = userManager;
             _logger = logger;
             _configuration = configuration;
             _dbContext = dbContext;
@@ -32,10 +34,11 @@ namespace MobileGnollHackLogger.Areas.API
 
             _dumplogBasePath = _configuration["DumpLogPath"] ?? "";
 
-            if(string.IsNullOrEmpty(_dumplogBasePath))
+            if (string.IsNullOrEmpty(_dumplogBasePath))
             {
                 throw new Exception("DumpLogPath is null");
             }
+            _userManager = userManager;
         }
 
         [Route("xlogfile")]
@@ -136,13 +139,56 @@ namespace MobileGnollHackLogger.Areas.API
                 var result = await _signInManager.PasswordSignInAsync(model.UserName, model.Password, false, lockoutOnFailure: false);
                 if (result.Succeeded)
                 {
+                    //Sign in succeedeed
                     _dbLogger.LoginSucceeded = true;
 
+                    //Check next whether the user is not banned
+                    try
+                    {
+                        var user = await _userManager.FindByNameAsync(model.UserName);
+                        if (user != null)
+                        {
+                            if (user.IsBanned == true)
+                            {
+                                int responseCode = 423;
+                                string msg = "User " + model.UserName + " is banned.";
+                                await _dbLogger.LogRequestAsync(msg, Data.LogLevel.Error, responseCode);
+                                Response.StatusCode = responseCode; //Server Error
+                                return Content(msg);
+                            }
+                            else if (user.IsGameLogBanned == true)
+                            {
+                                int responseCode = 423;
+                                string msg = "User " + model.UserName + " is not allowed to make GameLog entries.";
+                                await _dbLogger.LogRequestAsync(msg, Data.LogLevel.Error, responseCode);
+                                Response.StatusCode = responseCode; //Server Error
+                                return Content(msg);
+                            }
+                        }
+                        else
+                        {
+                            int responseCode = 500;
+                            string msg = "Server error occurred while verifying user: User is null.";
+                            await _dbLogger.LogRequestAsync(msg, Data.LogLevel.Error, responseCode);
+                            Response.StatusCode = responseCode; //Server Error
+                            return Content(msg);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        int responseCode = 500;
+                        string msg = "Server error occurred while verifying user: " + ex.Message;
+                        await _dbLogger.LogRequestAsync(msg, Data.LogLevel.Error, responseCode);
+                        Response.StatusCode = responseCode; //Server Error
+                        return Content(msg);
+                    }
+
+                    //OK, now proceed to making the log entry
                     if (!string.IsNullOrEmpty(model.XLogEntry) && model.PlainTextDumpLog != null && model.HtmlDumpLog != null)
                     {
                         _dbLogger.LogSubType = RequestLogSubType.MainFunctionality;
 
-                        //Sign in succeedeed
+                        //Sign in succeeded
                         XLogFileLine xLogFileLine = new XLogFileLine(model.XLogEntry);
 
                         //Change user name to the account name

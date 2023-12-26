@@ -19,23 +19,24 @@ namespace MobileGnollHackLogger.Areas.API
     public class BonesController : ControllerBase
     {
         private readonly SignInManager<ApplicationUser> _signInManager;
+        private readonly UserManager<ApplicationUser> _userManager;
         private readonly ILogger<LogModel> _logger;
         private readonly IConfiguration _configuration;
         private readonly ApplicationDbContext _dbContext;
         private readonly DbLogger _dbLogger;
         private readonly string _bonesBasePath = "";
 
-        public BonesController(SignInManager<ApplicationUser> signInManager, ILogger<LogModel> logger,
-            IConfiguration configuration, ApplicationDbContext dbContext)
+        public BonesController(SignInManager<ApplicationUser> signInManager, UserManager<ApplicationUser> userManager,
+            ILogger<LogModel> logger, IConfiguration configuration, ApplicationDbContext dbContext)
         {
             _signInManager = signInManager;
+            _userManager = userManager;
             _logger = logger;
             _configuration = configuration;
             _dbContext = dbContext;
             _dbLogger = new DbLogger(_dbContext);
             _dbLogger.LogType = LogType.Bones;
             _dbLogger.LogSubType = RequestLogSubType.Default;
-
             _bonesBasePath = _configuration["BonesPath"] ?? "";
 
             if (string.IsNullOrEmpty(_bonesBasePath))
@@ -122,9 +123,51 @@ namespace MobileGnollHackLogger.Areas.API
                 var result = await _signInManager.PasswordSignInAsync(model.UserName, model.Password, false, lockoutOnFailure: false);
                 if (result.Succeeded)
                 {
-                    //Sign in succeedeed
+                    //Sign in succeeded
                     _dbLogger.LoginSucceeded = true;
 
+                    //Check next whether the user is not banned
+                    try
+                    {
+                        var user = await _userManager.FindByNameAsync(model.UserName);
+                        if (user != null)
+                        {
+                            if (user.IsBanned == true)
+                            {
+                                int responseCode = 423;
+                                string msg = "User " + model.UserName + " is banned.";
+                                await _dbLogger.LogRequestAsync(msg, Data.LogLevel.Error, responseCode);
+                                Response.StatusCode = responseCode; //Server Error
+                                return Content(msg);
+                            }
+                            else if (user.IsBonesBanned == true)
+                            {
+                                int responseCode = 423;
+                                string msg = "User " + model.UserName + " is not allowed to send bones.";
+                                await _dbLogger.LogRequestAsync(msg, Data.LogLevel.Error, responseCode);
+                                Response.StatusCode = responseCode; //Server Error
+                                return Content(msg);
+                            }
+                        }
+                        else
+                        {
+                            int responseCode = 500;
+                            string msg = "Server error occurred while verifying user: User is null.";
+                            await _dbLogger.LogRequestAsync(msg, Data.LogLevel.Error, responseCode);
+                            Response.StatusCode = responseCode; //Server Error
+                            return Content(msg);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        int responseCode = 500;
+                        string msg = "Server error occurred while verifying user: " + ex.Message;
+                        await _dbLogger.LogRequestAsync(msg, Data.LogLevel.Error, responseCode);
+                        Response.StatusCode = responseCode; //Server Error
+                        return Content(msg);
+                    }
+
+                    //OK, now check command and data
                     if (!string.IsNullOrEmpty(model.Command) && !string.IsNullOrEmpty(model.Data))
                     {
                         //Unpack AllowedUsers
@@ -133,7 +176,6 @@ namespace MobileGnollHackLogger.Areas.API
                         bool isEmptyUserList = string.IsNullOrWhiteSpace(adjustedAllowedUsers);
                         IEnumerable<string> allowedUserSelection = isEmptyUserList ? new List<string>(1) : adjustedAllowedUsers.Split(", ".ToCharArray(), StringSplitOptions.RemoveEmptyEntries).Select(u => u.ToUpper(CultureInfo.InvariantCulture));
                         List<string> allowedUserList = allowedUserSelection.ToList();
-
                         if (model.Command == "SendBonesFile")
                         {
                             _dbLogger.LogSubType = RequestLogSubType.MainFunctionality;
@@ -170,7 +212,7 @@ namespace MobileGnollHackLogger.Areas.API
 
                             try
                             {                                
-                                var allBones = _dbContext.Bones.Include(b => b.AspNetUser).Where(b => b.AspNetUser != null && !b.AspNetUser.IsBanned && !b.AspNetUser.IsBonesBanned)
+                                var allBones = _dbContext.Bones.Include(b => b.AspNetUser).Where(b => b.AspNetUser != null && !(b.AspNetUser.IsBanned == true) && !(b.AspNetUser.IsBonesBanned == true))
                                     .Where(b => b.DifficultyLevel == difficulty
                                     && (b.VersionNumber == model.VersionNumber
                                         || (b.VersionNumber < model.VersionNumber
@@ -189,8 +231,8 @@ namespace MobileGnollHackLogger.Areas.API
                             }
                             catch
                             {
-                                userBoneCount = 0;
-                                allBoneCount = 0;
+                                userBoneCount = -1;
+                                allBoneCount = -1;
                             }
 
                             if (userBoneCount < ServerUserBoneLimit && allBoneCount < ServerAllBoneLimit)
@@ -266,7 +308,7 @@ namespace MobileGnollHackLogger.Areas.API
                             /* Return a bones file from the existing bones, if possible */
                             try
                             {
-                                IQueryable<Data.Bones> availableBonesQuery = _dbContext.Bones.Include(b => b.AspNetUser).Where(b => b.AspNetUser != null && !b.AspNetUser.IsBanned && !b.AspNetUser.IsBonesBanned);
+                                IQueryable<Data.Bones> availableBonesQuery = _dbContext.Bones.Include(b => b.AspNetUser).Where(b => b.AspNetUser != null && !(b.AspNetUser.IsBanned == true) && !(b.AspNetUser.IsBonesBanned == true));
                                 if (!isEmptyUserList)
                                 {
                                     if (isBlackList)
@@ -301,7 +343,8 @@ namespace MobileGnollHackLogger.Areas.API
 
                                     if (availableBoneCount < ServerAvailableBoneMinLimit)
                                     {
-                                        string msg = id.ToString() + ", too few bones files on server to send a bones file back: " + availableBoneCount + " applicable bones file" + (availableBoneCount == 1 ? "" : "s") + " on server";
+                                        string msg = id.ToString() + ", too few bones files on server to send a bones file back: " + availableBoneCount + " applicable bones file" + (availableBoneCount == 1 ? "" : "s") 
+                                            + " on server. IsBlackList: " + (isBlackList ? "Yes" : "No") + ". Allowed users: " + allowedUserList.Count + ". All bones: " + allBoneCount + ". User bones: " + userBoneCount;
                                         await _dbLogger.LogRequestAsync(msg, Data.LogLevel.Info, 200);
                                         return Content(msg, "text/plain", Encoding.UTF8); //OK
                                     }
