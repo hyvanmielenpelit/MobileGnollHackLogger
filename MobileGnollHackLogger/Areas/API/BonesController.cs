@@ -122,12 +122,19 @@ namespace MobileGnollHackLogger.Areas.API
                 var result = await _signInManager.PasswordSignInAsync(model.UserName, model.Password, false, lockoutOnFailure: false);
                 if (result.Succeeded)
                 {
+                    //Sign in succeedeed
                     _dbLogger.LoginSucceeded = true;
 
                     if (!string.IsNullOrEmpty(model.Command) && !string.IsNullOrEmpty(model.Data))
                     {
-                        //Sign in succeedeed
-                        if(model.Command == "SendBonesFile")
+                        //Unpack AllowedUsers
+                        bool isBlackList = string.IsNullOrWhiteSpace(model.AllowedUsers) ? true : model.AllowedUsers.StartsWith("!");
+                        string adjustedAllowedUsers = string.IsNullOrWhiteSpace(model.AllowedUsers) ? "" : model.AllowedUsers.TrimStart('!');
+                        bool isEmptyUserList = string.IsNullOrWhiteSpace(adjustedAllowedUsers);
+                        IEnumerable<string> allowedUserSelection = isEmptyUserList ? new List<string>(1) : adjustedAllowedUsers.Split(", ".ToCharArray(), StringSplitOptions.RemoveEmptyEntries).Select(u => u.ToUpper(CultureInfo.InvariantCulture));
+                        List<string> allowedUserList = allowedUserSelection.ToList();
+
+                        if (model.Command == "SendBonesFile")
                         {
                             _dbLogger.LogSubType = RequestLogSubType.MainFunctionality;
                             //_logger.LogInformation("SendBonesFile request received from user " + model.UserName);
@@ -163,8 +170,8 @@ namespace MobileGnollHackLogger.Areas.API
 
                             try
                             {                                
-                                var allBones = _dbContext.Bones.Where(
-                                    b => b.DifficultyLevel == difficulty
+                                var allBones = _dbContext.Bones.Include(b => b.AspNetUser).Where(b => b.AspNetUser != null && !b.AspNetUser.IsBanned && !b.AspNetUser.IsBonesBanned)
+                                    .Where(b => b.DifficultyLevel == difficulty
                                     && (b.VersionNumber == model.VersionNumber
                                         || (b.VersionNumber < model.VersionNumber
                                             ? (b.VersionNumber >= model.VersionCompatibilityNumber)
@@ -173,13 +180,8 @@ namespace MobileGnollHackLogger.Areas.API
                                 var allBoneList = allBones.ToList();
 
                                 /* Return a bones file from the existing bones, if possible */
-                                var userBones = _dbContext.Bones.Where(
-                                    b => b.AspNetUserId == aspNetUserId
-                                    && b.DifficultyLevel == difficulty
-                                    && (b.VersionNumber == model.VersionNumber
-                                        || (b.VersionNumber < model.VersionNumber
-                                            ? (b.VersionNumber >= model.VersionCompatibilityNumber)
-                                            : (b.VersionCompatibilityNumber <= model.VersionNumber))));
+                                var userBones = allBones
+                                    .Where(b => b.AspNetUserId == aspNetUserId);
 
                                 var userBoneList = userBones.ToList();
                                 userBoneCount = userBoneList.Count;
@@ -264,18 +266,35 @@ namespace MobileGnollHackLogger.Areas.API
                             /* Return a bones file from the existing bones, if possible */
                             try
                             {
-                                var availableBones = _dbContext.Bones.Where(
-                                    b => b.AspNetUserId != aspNetUserId 
-                                    && b.DifficultyLevel == difficulty 
-                                    && (b.VersionNumber == model.VersionNumber 
-                                        || (b.VersionNumber < model.VersionNumber 
-                                            ? (b.VersionNumber >= model.VersionCompatibilityNumber) 
-                                            : (b.VersionCompatibilityNumber <= model.VersionNumber))));
-
-                                var availableBoneList = availableBones.ToList();
-                                if (availableBoneList != null)
+                                IQueryable<Data.Bones> availableBonesQuery = _dbContext.Bones.Include(b => b.AspNetUser).Where(b => b.AspNetUser != null && !b.AspNetUser.IsBanned && !b.AspNetUser.IsBonesBanned);
+                                if (!isEmptyUserList)
                                 {
-                                    int availableBoneCount = availableBoneList.Count;
+                                    if (isBlackList)
+                                    {
+                                        availableBonesQuery = availableBonesQuery.Where(
+                                            b => b.AspNetUser != null && b.AspNetUser.NormalizedUserName != null && !allowedUserList.Contains(b.AspNetUser.NormalizedUserName)
+                                            );
+                                    }
+                                    else
+                                    {
+                                        availableBonesQuery = availableBonesQuery.Where(
+                                            b => b.AspNetUser != null && b.AspNetUser.NormalizedUserName != null && allowedUserList.Contains(b.AspNetUser.NormalizedUserName)
+                                            );
+                                    }
+                                }
+                                availableBonesQuery = availableBonesQuery.Where(
+                                        b => b.AspNetUserId != aspNetUserId
+                                        && b.DifficultyLevel == difficulty
+                                        && (b.VersionNumber == model.VersionNumber
+                                            || (b.VersionNumber < model.VersionNumber
+                                                ? (b.VersionNumber >= model.VersionCompatibilityNumber)
+                                                : (b.VersionCompatibilityNumber <= model.VersionNumber))));
+
+                                var availableBonesList = availableBonesQuery.ToList();
+
+                                if (availableBonesList != null)
+                                {
+                                    int availableBoneCount = availableBonesList.Count;
                                     //_logger.LogInformation("Listed " + availableBoneCount + " bones file(s) available to be returned to user " + model.UserName);
                                     await _dbLogger.LogRequestAsync($"Listed {availableBoneCount} bones file(s) available to be returned to user {model.UserName}.",
                                         Data.LogLevel.Info);
@@ -297,7 +316,7 @@ namespace MobileGnollHackLogger.Areas.API
                                             string msg = id.ToString() + 
                                                 ", randomly did not send a bones file back: " + 
                                                 availableBoneCount + " applicable bones file" + 
-                                                (availableBoneList.Count == 1 ? "" : "s") + 
+                                                (availableBonesList.Count == 1 ? "" : "s") + 
                                                 " on server. " +
                                                 "Chance=" + chance.ToPercentageString(4) +
                                                 ", result=" + rndResult.ToPercentageString(4);
@@ -313,14 +332,14 @@ namespace MobileGnollHackLogger.Areas.API
                                         long bonesid = 0;
                                         Random random = new Random();
                                         int indx = availableBoneCount == 1 ? 0 : random.Next(availableBoneCount);
-                                        bonespath = availableBoneList[indx].BonesFilePath;
-                                        bonesid = availableBoneList[indx].Id;
+                                        bonespath = availableBonesList[indx].BonesFilePath;
+                                        bonesid = availableBonesList[indx].Id;
                                         if (availableBoneCount > 1 && (bonespath == null || !System.IO.File.Exists(bonespath)))
                                         {
                                             for (i = 0; i < availableBoneCount; i++)
                                             {
-                                                bonespath = availableBoneList[i].BonesFilePath;
-                                                bonesid = availableBoneList[i].Id;
+                                                bonespath = availableBonesList[i].BonesFilePath;
+                                                bonesid = availableBonesList[i].Id;
                                                 if (bonespath != null && System.IO.File.Exists(bonespath))
                                                 {
                                                     indx = i;
@@ -330,7 +349,7 @@ namespace MobileGnollHackLogger.Areas.API
                                         }
                                         if (bonespath != null && System.IO.File.Exists(bonespath))
                                         {
-                                            string? originalfilename = availableBoneList[indx].OriginalFileName != null ? availableBoneList[indx].OriginalFileName : "";
+                                            string? originalfilename = availableBonesList[indx].OriginalFileName != null ? availableBonesList[indx].OriginalFileName : "";
                                             try
                                             {
                                                 byte[] bytes = await System.IO.File.ReadAllBytesAsync(bonespath);

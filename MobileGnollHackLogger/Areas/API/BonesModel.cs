@@ -11,7 +11,9 @@ namespace MobileGnollHackLogger.Areas.API
         public string? Command { get; set; }
         public string? Data { get; set; }
 
-        [RegularExpression(@"^\!?(\*?[A-Za-z0-9_\?]*\*?\,? *)*(\*?[A-Za-z0-9_\?]*\*?)?$")]
+        [RegularExpression(@"^\!?([A-Za-z0-9_]*[ \,]+)*([A-Za-z0-9_]*)?$")]
+
+        [MaxLength(2048)]
         public string? AllowedUsers { get; set; }
 
         public ulong VersionNumber { get; set; }
