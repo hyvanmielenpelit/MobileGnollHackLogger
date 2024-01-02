@@ -75,7 +75,7 @@ namespace MobileGnollHackLogger.Areas.API
         {
             var gameLogs = _dbContext.GameLog.Where(gl => gl.Id > (lastId ?? 0));
             StringBuilder sb = new StringBuilder();
-            sb.AppendLine(GameLog.GetCsvHeader());
+            sb.AppendLine(GameLog.GetCsvHeader(true));
             foreach (var gameLog in gameLogs)
             {
                 sb.AppendLine(gameLog.ToCsvString());

@@ -74,12 +74,9 @@ namespace MobileGnollHackLogger.Data
             AspNetUser = (ApplicationUser)user;
         }
 
-        public override string ToString()
+        public override string ToString(OutputMode outputMode)
         {
-            StringBuilder sb = new StringBuilder();
-            sb.Append("id=").Append(Id).Append("\t");
-            sb.Append(base.ToString());
-            return sb.ToString();
+            return ToString(outputMode, Id);
         }
     }
 }

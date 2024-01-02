@@ -551,10 +551,20 @@ namespace MobileGnollHackLogger.Data
             return ToXLogString();
         }
 
-        public string ToString(OutputMode outputMode)
+        public virtual string ToString(OutputMode outputMode)
+        {
+            return ToString(outputMode, null);
+        }
+
+        public string ToString(OutputMode outputMode, long? id)
         {
             StringBuilder sb = new StringBuilder();
             int fieldNum = 0;
+
+            if(id != null)
+            {
+                AddField(sb, "id", id.Value, outputMode);
+            }
 
             AddField(sb, fieldNum++, Version, outputMode);
             AddField(sb, fieldNum++, EditLevel, outputMode);
@@ -602,40 +612,56 @@ namespace MobileGnollHackLogger.Data
             return sb.ToString();
         }
 
-        public string ToCsvString()
+        public virtual string ToCsvString()
         {
             return ToString(OutputMode.CSV);
         }
 
-        public string ToXLogString()
+        public virtual string ToXLogString()
         {
             return ToString(OutputMode.XLog);
         }
 
-        private void AddField (StringBuilder sbBody, int fieldNum, string? value, OutputMode outputMode)
+        private void AddField(StringBuilder sbBody, int fieldNum, string? value, OutputMode outputMode)
         {
-            if(!string.IsNullOrEmpty(value))
+            string? key = null;
+
+            if (outputMode == OutputMode.XLog)
+            {
+                key = _headerTexts[fieldNum];
+            }
+
+            AddField(sbBody, key, value);
+        }
+
+        private void AddField(StringBuilder sbBody, string key, string? value, OutputMode outputMode)
+        {
+            AddField(sbBody, outputMode == OutputMode.XLog ? key : null, value);
+        }
+
+        private void AddField(StringBuilder sbBody, string key, long? value, OutputMode outputMode)
+        {
+            AddField(sbBody, outputMode == OutputMode.XLog ? key : null, value.HasValue ? value.Value.ToString() : null);
+        }
+
+        private void AddField(StringBuilder sbBody, string? key, string? value)
+        {
+            if (!string.IsNullOrEmpty(value))
             {
                 value = value.Trim();
             }
 
-            if(outputMode == OutputMode.XLog)
+            if (sbBody.Length > 0)
             {
-                if (sbBody.Length > 0)
-                {
-                    sbBody.Append(_separator);
-                }
-                string key = _headerTexts[fieldNum];
-                sbBody.Append(key).Append('=').Append(value);
+                sbBody.Append(_separator);
             }
-            else if (outputMode == OutputMode.CSV)
+
+            if(!string.IsNullOrEmpty(key))
             {
-                if (sbBody.Length > 0)
-                {
-                    sbBody.Append(_separator);
-                }
-                sbBody.Append(value);
+                sbBody.Append(key).Append('=');
             }
+
+            sbBody.Append(value);
         }
 
         private void AddField(StringBuilder sbBody, int fieldNum, int? value, OutputMode outputMode)
@@ -652,9 +678,15 @@ namespace MobileGnollHackLogger.Data
             AddField(sbBody, fieldNum, val2, outputMode);
         }
 
-        public static string GetCsvHeader()
+        public static string GetCsvHeader(bool hasIdColumn = false)
         {
             StringBuilder sb = new StringBuilder();
+
+            if(hasIdColumn)
+            {
+                sb.Append("id").Append(_separator);
+            }
+
             int fieldNum = 0;
 
             sb.Append(_headerTexts[fieldNum++]).Append(_separator);
