@@ -26,7 +26,6 @@ namespace MobileGnollHackLogger.Areas.API
             }
         }
 
-        // GET api/<DumpLogController>/5
         [HttpGet("{id:int}")]
         public IActionResult Get(int id)
         {
@@ -41,26 +40,26 @@ namespace MobileGnollHackLogger.Areas.API
             return GetGameLog(gameLog, type);
         }
 
-        [HttpGet("byname/{name}/{starttimeUTC}")]
-        public IActionResult Get(string name, long starttimeUTC)
+        [HttpGet("byname/{name}/{starttime}")]
+        public IActionResult Get(string name, long starttime)
         {
-            return Get(name, starttimeUTC, "html");
+            return Get(name, starttime, "html");
         }
 
-        [HttpGet("byname/{name}/{starttimeUTC}/{type}")]
-        public IActionResult Get(string name, long starttimeUTC, string type = "html")
+        [HttpGet("byname/{name}/{starttime}/{type}")]
+        public IActionResult Get(string name, long starttime, string type = "html")
         {
             if(string.IsNullOrEmpty(name))
             {
                 return StatusCode(400); //Bad Request
             }
 
-            if (starttimeUTC <= 0)
+            if (starttime <= 0)
             {
                 return StatusCode(400); //Bad Request
             }
 
-            var gameLog = _dbContext.GameLog.FirstOrDefault(gl => gl.Name == name && gl.StartTimeUTC == starttimeUTC);
+            var gameLog = _dbContext.GameLog.FirstOrDefault(gl => gl.Name == name && gl.StartTime == starttime);
 
             return GetGameLog(gameLog, type);
         }
