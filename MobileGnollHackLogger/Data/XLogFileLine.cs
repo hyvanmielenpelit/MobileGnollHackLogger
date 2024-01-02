@@ -614,6 +614,11 @@ namespace MobileGnollHackLogger.Data
 
         private void AddField (StringBuilder sbBody, int fieldNum, string? value, OutputMode outputMode)
         {
+            if(!string.IsNullOrEmpty(value))
+            {
+                value = value.Trim();
+            }
+
             if(outputMode == OutputMode.XLog)
             {
                 if (sbBody.Length > 0)
