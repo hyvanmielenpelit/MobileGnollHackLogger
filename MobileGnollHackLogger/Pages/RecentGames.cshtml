@@ -63,18 +63,7 @@
 
 <hr />
 
-<div class="text-center">
-    @if (Model.RecentGamesMode == RecentGamesMode.Ascensions)
-    {
-        <h2>Ascensions</h2>
-    }
-    @if (Model.RecentGamesMode == RecentGamesMode.Games)
-    {
-        <h2>Games</h2>
-    }
-</div>
-
-
+<h2 class="text-center">@Model.Title</h2>
 
 @if (Model.GameLogs != null && Model.GameLogs.Count > 0)
 {
@@ -127,7 +116,7 @@
 }
 else
 {
-    <h4 class="text-center">No @Model.Title</h4>
+    <h5 class="text-center">No Matching Data</h5>
 }
 
 @section Styles

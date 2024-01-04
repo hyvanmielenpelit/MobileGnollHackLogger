@@ -62,19 +62,10 @@
         <b>Games</b>
     }
 </p>
+
 <hr />
-<div class="text-center">
-    @if (Model.TopScoreMode == TopScoreMode.Ascensions)
-    {
-        <h2>Ascensions</h2>
-    }
-    @if (Model.TopScoreMode == TopScoreMode.Games)
-    {
-        <h2>Games</h2>
-    }
-</div>
 
-
+<h2 class="text-center">@Model.Title</h2>
 
 @if (Model.GameLogs != null && Model.GameLogs.Count > 0)
 {
@@ -134,7 +125,7 @@
 }
 else
 {
-    <h4 class="text-center">No @Model.Title</h4>
+    <h5 class="text-center">No Matching Data</h5>
 }
 
 @section Styles
