@@ -5,31 +5,15 @@ using MobileGnollHackLogger.Data;
 
 namespace MobileGnollHackLogger.Pages
 {
-    //public enum StatisticsType { RoleStatistics, DifficultyStatistics };
-
-    public class StatisticsModel : PageModel
+    public class StatisticsModel : ModeModel
     {
         private ApplicationDbContext _dbContext;
 
-        public List<string> DisplayModes { get; private set; }
-
-        public StatisticsModel(ApplicationDbContext dbContext)
+        public StatisticsModel(ApplicationDbContext dbContext) : base()
         {
             _dbContext = dbContext;
             Title = "Statistics for All Gameplay Modes";
-            Mode = null;
-
-            DisplayModes = new List<string>()
-            {
-                "normal",
-                "modern",
-                "casual",
-                "reloadable"
-            };
         }
-
-        public string Title { get; set; }
-        public string? Mode { get; set; }
 
         public IQueryable<GameLog>? GameLogs { get; set; }
 

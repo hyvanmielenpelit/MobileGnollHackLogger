@@ -2,6 +2,12 @@
 @using System.Globalization
 @model MobileGnollHackLogger.Pages.TopScoresModel
 @{
+    var modeText = "All Modes";
+    if (!string.IsNullOrEmpty(Model.Mode) && GnollHackHelper.Modes.ContainsKey(Model.Mode))
+    {
+        modeText = GnollHackHelper.Modes[Model.Mode] + " Mode";
+    }
+
     ViewData["Title"] = Model.Title;
     ViewData["ContainerClass"] = "topScoreMaxWidth";
     ViewData["MainClass"] = "topScoreMaxWidth";
@@ -11,10 +17,36 @@
 }
 
 <h1 class="text-center">Top Scores</h1>
+<h5 class="text-center">Gameplay Mode</h5>
+<p class="text-center">
+    @if (!string.IsNullOrEmpty(Model.Mode))
+    {
+        <a class="link-light" href="@Model.GetUrl(null, Model.Death)">All Modes</a>
+    }
+    else
+    {
+        <b>@modeText</b>
+    }
+    @foreach (var mode in Model.DisplayModes)
+    {
+        <span>|</span>
+        @if (Model.Mode != mode)
+        {
+            <a class="link-light" href="@Model.GetUrl(mode, Model.Death)">@GnollHackHelper.Modes[mode]</a>
+        }
+        else
+        {
+            <b>@GnollHackHelper.Modes[mode]</b>
+        }
+    }
+</p>
+
+<h5 class="text-center">Game Type</h5>
+
 <p class="text-center">
     @if (Model.TopScoreMode != TopScoreMode.Ascensions)
     {
-        <a class="link-light" href="/TopScores?death=ascended">Ascensions</a>
+        <a class="link-light" href="@Model.GetUrl(Model.Mode, "ascended")">Ascensions</a>
     }
     else
     {
@@ -23,7 +55,7 @@
     <span>|</span>
     @if (Model.TopScoreMode != TopScoreMode.Games)
     {
-        <a class="link-light" href="/TopScores">Games</a>
+        <a class="link-light" href="@Model.GetUrl(Model.Mode, null)">Games</a>
     }
     else
     {
@@ -102,7 +134,7 @@
 }
 else
 {
-    <h4>No @Model.Title</h4>
+    <h4 class="text-center">No @Model.Title</h4>
 }
 
 @section Styles

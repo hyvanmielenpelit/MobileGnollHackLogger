@@ -7,24 +7,26 @@ namespace MobileGnollHackLogger.Pages
 {
     public enum TopScoreMode { Games, Ascensions }
 
-    public class TopScoresModel : PageModel
+    public class TopScoresModel : DeathModel
     {
         ApplicationDbContext _dbContext;
 
-        public TopScoresModel(ApplicationDbContext dbContext)
+        public TopScoresModel(ApplicationDbContext dbContext) : base("TopScores")
         {
             _dbContext = dbContext;
             Title = "Top Scores for Games";
             TopScoreMode = TopScoreMode.Games;
         }
 
-        public string Title { get; set; }
         public TopScoreMode TopScoreMode { get; set; }
 
         public IList<GameLog>? GameLogs { get; set; }
 
         public async Task OnGetAsync(string? death, string? mode)
         {
+            Death = death;
+            Mode = mode;
+
             IQueryable<GameLog> gameLogs = _dbContext.GameLog
                 .Take(1000)
                 .OrderByDescending(gl => gl.Points)
@@ -39,14 +41,41 @@ namespace MobileGnollHackLogger.Pages
                     TopScoreMode = TopScoreMode.Ascensions;
                     Title = "Top Scores for Ascensions";
                 }
+                else
+                {
+                    Title = "Top Scores for Games";
+                }
+            }
+            else
+            {
+                Title = "Top Scores for Games";
             }
 
-            if(!string.IsNullOrEmpty(mode) )
+            if (!string.IsNullOrEmpty(mode))
             {
                 gameLogs = gameLogs.Where(gl => gl.Mode == mode);
             }
 
-            GameLogs = await gameLogs.ToListAsync();;
+            GameLogs = await gameLogs.ToListAsync();
+
+            switch (Mode)
+            {
+                case "normal":
+                    Title += " in Classic Mode";
+                    break;
+                case "modern":
+                    Title += " in Modern Mode";
+                    break;
+                case "casual":
+                    Title += " in Casual Mode";
+                    break;
+                case "reloadable":
+                    Title += " in Reloadable Mode";
+                    break;
+                default:
+                    Title += " in All Modes";
+                    break;
+            }
         }
     }
 }
