@@ -2,9 +2,6 @@
 @model MobileGnollHackLogger.Pages.BonesTransactionsModel
 @{
     ViewData["Title"] = Model.Title;
-    // ViewData["ContainerClass"] = "statisticsMaxWidth";
-    // ViewData["MainClass"] = "statisticsMaxWidth";
-    int count = 0;
 
     var query = from u in Model.DbContext.Users
             join bt in Model.DbContext.BonesTransactions
@@ -28,6 +25,7 @@
                 <th>Account Name</th>
                 <th class="text-center">Bones Uploaded</th>
                 <th class="text-center">Bones Downloaded</th>
+                <th class="text-center">Bones Shared</th>
             </tr>
         </thead>
         <tbody>
@@ -38,16 +36,9 @@
                     <tr>
                         <td>@grouping.User.UserName</td>
                         <td class="text-center">@grouping.Uploads</td>
-                        <td class="text-center">
-                            @grouping.Downloads
-                            @if (grouping.Downloads != grouping.Deletions)
-                            {
-                                <span>(Del: @grouping.Deletions)</span>
-                            }
-                        </td>
+                        <td class="text-center">@grouping.Downloads</td>
+                        <td class="text-center">@grouping.Deletions</td>
                     </tr>
-
-                    count++;
                 }
             }
         </tbody>
