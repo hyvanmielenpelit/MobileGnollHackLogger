@@ -6,6 +6,7 @@
     var query = from u in Model.DbContext.Users
             join bt in Model.DbContext.BonesTransactions
             on u.Id equals bt.AspNetUserId into g
+            orderby u.NormalizedUserName
             select new
             {
                 User = (ApplicationUser)u,
@@ -16,7 +17,7 @@
 
 }
 
-<h1 class="text-center">Bones Transactions</h1>
+<h1 class="text-center">Bones Sharing</h1>
 
 <div class="table-responsive">
     <table id="btTable" class="table table-dark table-striped">

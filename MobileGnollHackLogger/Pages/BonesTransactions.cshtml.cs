@@ -14,7 +14,7 @@ namespace MobileGnollHackLogger.Pages
         public BonesTransactionsModel(ApplicationDbContext dbContext)
         {
             DbContext = dbContext;
-            Title = "Bones Transactions";
+            Title = "Bones Sharing";
         }
 
         public void OnGet()
