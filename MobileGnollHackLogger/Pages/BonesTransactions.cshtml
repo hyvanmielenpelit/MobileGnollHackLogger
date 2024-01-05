@@ -1,0 +1,70 @@
+﻿@page
+@model MobileGnollHackLogger.Pages.BonesTransactionsModel
+@{
+    ViewData["Title"] = Model.Title;
+    // ViewData["ContainerClass"] = "statisticsMaxWidth";
+    // ViewData["MainClass"] = "statisticsMaxWidth";
+    int count = 0;
+
+    var query = from u in Model.DbContext.Users
+            join bt in Model.DbContext.BonesTransactions
+            on u.Id equals bt.AspNetUserId into g
+            select new
+            {
+                User = (ApplicationUser)u,
+                Uploads = g.Where(bt => bt.Type == TransactionType.Upload).Count(),
+                Downloads = g.Where(bt => bt.Type == TransactionType.Download).Count(),
+                Deletions = g.Where(bt => bt.Type == TransactionType.Deletion).Count()
+            };
+
+}
+
+<h1 class="text-center">Bones Transactions</h1>
+
+<div class="table-responsive">
+    <table id="btTable" class="table table-dark table-striped">
+        <thead>
+            <tr>
+                <th>Account Name</th>
+                <th class="text-center">Bones Uploaded</th>
+                <th class="text-center">Bones Downloaded</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var grouping in query)
+            {
+                if (grouping.Uploads > 0 || grouping.Downloads > 0 || grouping.Deletions > 0)
+                {
+                    <tr>
+                        <td>@grouping.User.UserName</td>
+                        <td class="text-center">@grouping.Uploads</td>
+                        <td class="text-center">
+                            @grouping.Downloads
+                            @if (grouping.Downloads != grouping.Deletions)
+                            {
+                                <span>(Del: @grouping.Deletions)</span>
+                            }
+                        </td>
+                    </tr>
+
+                    count++;
+                }
+            }
+        </tbody>
+    </table>
+</div>
+
+@section Styles
+                        {
+    <link rel="stylesheet" href="~/lib/datatables/dist/datatables.min.css" asp-append-version="true" />
+}
+
+@section Scripts
+{
+    <script src="~/lib/datatables/dist/datatables.min.js"></script>
+    <script>
+        $("#btTable").dataTable({
+            order: []
+        }).show();
+    </script>
+}

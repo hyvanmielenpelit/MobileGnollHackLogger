@@ -25,7 +25,9 @@ namespace MobileGnollHackLogger.Data
 
         public TransactionType Type { get; set; }
 
+        [ForeignKey("Bones")]
         public long BonesId { get; set; }
+        public Bones? Bones { get; set; }
 
         public int DifficultyLevel { get; set; }
 
