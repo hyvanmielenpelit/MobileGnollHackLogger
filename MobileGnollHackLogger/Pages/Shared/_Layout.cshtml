@@ -37,7 +37,7 @@
 </head>
 <body>
     <header>
-        <nav class="navbar navbar-expand-lg navbar-toggleable-lg navbar-dark bg-white border-bottom box-shadow mb-3">
+        <nav class="navbar navbar-expand-lg navbar-toggleable-lg bg-white border-bottom box-shadow mb-3" data-bs-theme="dark">
             <div class="container">
                 <a class="navbar-brand" asp-area="" asp-page="/Index">GnollHack Account</a>
                 <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target=".navbar-collapse" aria-controls="navbarSupportedContent"
@@ -46,25 +46,47 @@
                 </button>
                 <div class="navbar-collapse collapse justify-content-between">
                     <ul class="navbar-nav flex-grow-1">
-                        <li class="nav-item">
-                            <a class="nav-link text-dark" asp-area="" asp-page="/Index">Home</a>
+                        <li class="nav-item dropdown" data-bs-theme="dark">
+                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                Results
+                            </a>
+                            <ul class="dropdown-menu">
+                                <li>
+                                    <a class="dropdown-item text-dark" asp-area="" asp-page="/TopScores">Top Scores</a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item text-dark" asp-area="" asp-page="/RecentGames">Recent Games</a>
+                                </li>
+                            </ul>
                         </li>
-                        <li class="nav-item">
-                            <a class="nav-link text-dark" asp-area="" asp-page="/TopScores">Top Scores</a>
+                        <li class="nav-item dropdown" data-bs-theme="dark">
+                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                Statistics
+                            </a>
+                            <ul class="dropdown-menu">
+                                <li>
+                                    <a class="dropdown-item text-dark" asp-area="" asp-page="/Statistics">Win Rates</a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item text-dark" asp-area="" asp-page="/BonesTransactions">Bones Transactions</a>
+                                </li>
+                            </ul>
                         </li>
-                        <li class="nav-item">
-                            <a class="nav-link text-dark" asp-area="" asp-page="/RecentGames">Recent Games</a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link text-dark" asp-area="" asp-page="/Statistics">Statistics</a>
+                        <li class="nav-item dropdown" data-bs-theme="dark">
+                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                Links
+                            </a>
+                            <ul class="dropdown-menu">
+                                <li>
+                                    <a target="_blank" class="dropdown-item text-dark" href="https://nethackscoreboard.org/">
+                                        NetHack Scoreboard
+                                        <i class="bi bi-box-arrow-up-right h-line"></i>
+                                    </a>
+                                </li>
+                            </ul>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link text-dark" asp-area="" asp-page="/Contact">Contact</a>
-                        </li>
-                        <li class="nav-item">
-                            <a target="_blank" class="nav-link text-dark" href="https://nethackscoreboard.org/">NetHack Scoreboard 
-                                <i class="bi bi-box-arrow-up-right h-line"></i>
-                            </a>
                         </li>
                     </ul>
                     <partial name="_LoginPartial" />
