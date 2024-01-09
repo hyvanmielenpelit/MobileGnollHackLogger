@@ -8,10 +8,11 @@ body {
     margin-bottom: 60px;
     color: white;
     background-color: black;
-    background-image: url(/img/gnoll-illustration-w1920-q30.jpg);
+    background-image: url(/img/gnoll-illustration-darkened-bottom-w1920-q60.jpg);
     background-repeat: no-repeat;
-    background-size: cover;
-    background-position: center;
+    background-size: contain;
+    background-position-y: top;
+    background-position-x: center;
 }
 
 nav {
@@ -214,4 +215,9 @@ div.container.statisticsMaxWidth {
 
 .dropdown-menu {
     --bs-dropdown-link-active-bg: #333;
+}
+
+.pb-separator
+{
+    padding-bottom: 20px;
 }

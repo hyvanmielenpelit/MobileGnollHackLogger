@@ -2,49 +2,59 @@
 @model MobileGnollHackLogger.Pages.BonesTransactionsModel
 @{
     ViewData["Title"] = Model.Title;
-
-    var query = from u in Model.DbContext.Users
-            join bt in Model.DbContext.BonesTransactions
-            on u.Id equals bt.AspNetUserId into g
-            orderby u.NormalizedUserName
-            select new
-            {
-                User = (ApplicationUser)u,
-                Uploads = g.Where(bt => bt.Type == TransactionType.Upload).Count(),
-                Downloads = g.Where(bt => bt.Type == TransactionType.Download).Count(),
-                Deletions = g.Where(bt => bt.Type == TransactionType.Deletion).Count()
-            };
-
 }
 
 <h1 class="text-center">Bones Sharing</h1>
 
-<div class="table-responsive">
-    <table id="btTable" class="table table-dark table-striped">
-        <thead>
-            <tr>
-                <th>Account Name</th>
-                <th class="text-center">Bones Uploaded</th>
-                <th class="text-center">Bones Downloaded</th>
-                <th class="text-center">Bones Shared</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var grouping in query)
-            {
-                if (grouping.Uploads > 0 || grouping.Downloads > 0 || grouping.Deletions > 0)
+
+@foreach(var kvp in GnollHackHelper.Difficulties)
+{
+    int btDifficulty = kvp.Key + 4;
+
+    var query = from u in Model.DbContext.Users
+                join bt in Model.DbContext.BonesTransactions
+                on u.Id equals bt.AspNetUserId into g
+                orderby u.NormalizedEmail
+                select new
                 {
-                    <tr>
-                        <td>@grouping.User.UserName</td>
-                        <td class="text-center">@grouping.Uploads</td>
-                        <td class="text-center">@grouping.Downloads</td>
-                        <td class="text-center">@grouping.Deletions</td>
-                    </tr>
+                    User = (ApplicationUser)u,
+                    Uploads = g.Where(bt => bt.Type == TransactionType.Upload && bt.DifficultyLevel == btDifficulty).Count(),
+                    Downloads = g.Where(bt => bt.Type == TransactionType.Download && bt.DifficultyLevel == btDifficulty).Count(),
+                    Deletions = g.Where(bt => bt.Type == TransactionType.Deletion && bt.DifficultyLevel == btDifficulty).Count()
+                };
+
+    <hr />
+
+    <h2 class="text-center">@kvp.Value Difficulty</h2>
+
+    <div class="table-responsive pb-separator">
+        <table id="btTable@(btDifficulty)" class="table table-dark table-striped js-table">
+            <thead>
+                <tr>
+                    <th>Account Name</th>
+                    <th class="text-center">Bones Uploaded</th>
+                    <th class="text-center">Bones Downloaded</th>
+                    <th class="text-center">Bones Shared</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var grouping in query)
+                {
+                    if (grouping.Uploads > 0 || grouping.Downloads > 0 || grouping.Deletions > 0)
+                    {
+                        <tr>
+                            <td>@grouping.User.UserName</td>
+                            <td class="text-center">@grouping.Uploads</td>
+                            <td class="text-center">@grouping.Downloads</td>
+                            <td class="text-center">@grouping.Deletions</td>
+                        </tr>
+                    }
                 }
-            }
-        </tbody>
-    </table>
-</div>
+            </tbody>
+        </table>
+    </div>
+
+}
 
 @section Styles
                         {
@@ -55,7 +65,7 @@
 {
     <script src="~/lib/datatables/dist/datatables.min.js"></script>
     <script>
-        $("#btTable").dataTable({
+        $(".js-table").dataTable({
             order: []
         }).show();
     </script>
