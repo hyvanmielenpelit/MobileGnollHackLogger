@@ -14,7 +14,7 @@
     var query = from u in Model.DbContext.Users
                 join bt in Model.DbContext.BonesTransactions
                 on u.Id equals bt.AspNetUserId into g
-                orderby u.NormalizedEmail
+                orderby u.NormalizedUserName
                 select new
                 {
                     User = (ApplicationUser)u,
