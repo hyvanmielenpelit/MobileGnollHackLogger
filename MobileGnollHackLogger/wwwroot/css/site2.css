@@ -183,6 +183,15 @@ div.container.statisticsMaxWidth main.statisticsMaxWidth {
   --bs-dropdown-link-active-bg: #333;
 }
 
-.pb-separator {
-  padding-bottom: 20px;
+.bt-tab {
+  padding: 15px 0px 0px 0px;
+}
+
+.bt-header {
+  padding: 8px 0px 0px 0px;
+}
+
+.nav-tabs .nav-link {
+  --bs-nav-link-color: #ddd;
+  --bs-nav-link-hover-color: white;
 }
