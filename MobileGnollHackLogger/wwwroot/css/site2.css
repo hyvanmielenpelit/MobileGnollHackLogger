@@ -190,10 +190,6 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
   --bs-dropdown-link-active-bg: #333;
 }
 
-.bt-tab {
-  padding: 15px 0px 0px 0px;
-}
-
 .bt-header {
   padding: 8px 0px 0px 0px;
 }
@@ -201,4 +197,8 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
 .nav-tabs .nav-link {
   --bs-nav-link-color: #ddd;
   --bs-nav-link-hover-color: white;
+}
+
+.tab-padding {
+  padding-top: 15px;
 }

@@ -8,16 +8,66 @@
 <h5 class="text-center">By Difficulty</h5>
 
 <ul class="nav nav-tabs bt-header" id="bonesTab" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="tab-all" data-bs-toggle="tab" data-bs-target="#tab-pane-all" type="button" role="tab" aria-controls="tab-pane-all" aria-selected="true">All</button>
+    </li>
 @foreach(var kvp in GnollHackHelper.Difficulties)
 {
         int btDifficulty = kvp.Key + 4;
         <li class="nav-item" role="presentation">
-            <button class="nav-link@(btDifficulty == 0 ? " active" : "")" id="tab-@(btDifficulty)" data-bs-toggle="tab" data-bs-target="#tab-pane-@(btDifficulty)" type="button" role="tab" aria-controls="tab-pane-@(btDifficulty)" aria-selected="@(btDifficulty == 0 ? "true" : "false")">@kvp.Value</button>
+            <button class="nav-link" id="tab-@(btDifficulty)" data-bs-toggle="tab" data-bs-target="#tab-pane-@(btDifficulty)" type="button" role="tab" aria-controls="tab-pane-@(btDifficulty)" aria-selected="false">@kvp.Value</button>
         </li>
 }
 </ul>
 
 <div class="tab-content" id="bonesTabContent">
+    <div class="tab-pane tab-padding fade show active" id="tab-pane-all" role="tabpanel" aria-labelledby="tab-all" tabindex="0">
+        <h2 class="text-center">All Difficulties</h2>
+        @{
+            var numBones = Model.DbContext.Bones.Count();                            
+        }
+        <h5 class="text-center">@numBones Bones Available</h5>
+        <div class="table-responsive">
+            <table id="btTableAll" class="table table-dark table-striped js-table">
+                <thead>
+                    <tr>
+                        <th>Account Name</th>
+                        <th class="text-center">Bones Uploaded</th>
+                        <th class="text-center">Bones Downloaded</th>
+                        <th class="text-center">Bones Shared</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @{
+                        var queryAll = from u in Model.DbContext.Users
+                                    join bt in Model.DbContext.BonesTransactions
+                                    on u.Id equals bt.AspNetUserId into g
+                                    orderby u.NormalizedUserName
+                                    select new
+                                    {
+                                        User = (ApplicationUser)u,
+                                        Uploads = g.Where(bt => bt.Type == TransactionType.Upload).Count(),
+                                        Downloads = g.Where(bt => bt.Type == TransactionType.Download).Count(),
+                                        Deletions = g.Where(bt => bt.Type == TransactionType.Deletion).Count()
+                                    };
+                    }
+                    @foreach (var grouping in queryAll)
+                    {
+                        if (grouping.Uploads > 0 || grouping.Downloads > 0 || grouping.Deletions > 0)
+                        {
+                            <tr>
+                                <td>@grouping.User.UserName</td>
+                                <td class="text-center">@grouping.Uploads</td>
+                                <td class="text-center">@grouping.Downloads</td>
+                                <td class="text-center">@grouping.Deletions</td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
 @foreach(var kvp in GnollHackHelper.Difficulties)
 {
     int btDifficulty = kvp.Key + 4;
@@ -34,8 +84,13 @@
                     Deletions = g.Where(bt => bt.Type == TransactionType.Deletion && bt.DifficultyLevel == btDifficulty).Count()
                 };
 
-        <div class="tab-pane fade@(btDifficulty == 0 ? " show active" : "")" id="tab-pane-@(btDifficulty)" role="tabpanel" aria-labelledby="tab-@(btDifficulty)" tabindex="0">
-            <div class="table-responsive bt-tab">
+        <div class="tab-pane tab-padding fade" id="tab-pane-@(btDifficulty)" role="tabpanel" aria-labelledby="tab-@(btDifficulty)" tabindex="0">
+            <h2 class="text-center">@kvp.Value Difficulty</h2>
+            @{
+                var numBonesDiff = Model.DbContext.Bones.Where(b => b.DifficultyLevel == btDifficulty).Count();
+            }
+            <h5 class="text-center">@numBonesDiff Bones Available</h5>
+            <div class="table-responsive">
             <table id="btTable@(btDifficulty)" class="table table-dark table-striped js-table">
                 <thead>
                     <tr>
