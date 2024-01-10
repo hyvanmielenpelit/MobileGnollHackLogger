@@ -8,8 +8,8 @@
         modeText = GnollHackHelper.Modes[Model.Mode] + " Mode";
     }
     ViewData["Title"] = Model.Title;
-    ViewData["ContainerClass"] = "statisticsMaxWidth";
-    ViewData["MainClass"] = "statisticsMaxWidth";
+    ViewData["ContainerClass"] = "xxlMaxWidth";
+    ViewData["MainClass"] = "xxlMaxWidth";
 
     var allGamesCount = Model.GameLogs != null ? Model.GameLogs.Count() : 0;
     var allAscensionCount = Model.GameLogs != null ? Model.GameLogs.Where(gl => gl.DeathText == "ascended").Count() : 0;

@@ -157,18 +157,26 @@ select.form-select {
     }
 }
 
-div.container.topScoreMaxWidth {
+div.container.lMaxWidth {
     max-width: 1500px;
 
-    main.topScoreMaxWidth {
+    main.lMaxWidth {
         max-width: 1500px;
     }
 }
 
-div.container.statisticsMaxWidth {
+div.container.xlMaxWidth {
+    max-width: 1800px;
+
+    main.xlMaxWidth {
+        max-width: 1800px;
+    }
+}
+
+div.container.xxlMaxWidth {
     max-width: 2200px;
 
-    main.statisticsMaxWidth {
+    main.xxlMaxWidth {
         max-width: 2200px;
     }
 }
