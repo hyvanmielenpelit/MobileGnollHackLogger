@@ -11,8 +11,6 @@
     <link rel="stylesheet" href="~/MobileGnollHackLogger.styles.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/lib/bootstrap-icons/dist/bootstrap-icons.min.css" asp-append-version="true" />
 
-    <link rel="preload" href="/lib/bootstrap-icons/dist/fonts/bootstrap-icons.woff2" as="font" type="font/woff2" />
-
     @await RenderSectionAsync("Styles", required: false)
 
     <link rel="apple-touch-icon-precomposed" sizes="57x57" href="apple-touch-icon-57x57.png" />
@@ -104,7 +102,7 @@
 
     <footer class="border-top footer text-muted">
         <div class="container">
-            &copy; @DateTime.Now.Year - GnollHack Account - @WebHostEnvironment.EnvironmentName - <a asp-area="" asp-page="/Privacy">Privacy</a>
+            &copy; @DateTime.Now.Year <i class="bi bi-dash"></i> GnollHack Account <i class="bi bi-dash"></i> @WebHostEnvironment.EnvironmentName <i class="bi bi-dash"></i> <a asp-area="" asp-page="/Privacy">Privacy</a>
         </div>
     </footer>
 
