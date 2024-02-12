@@ -487,7 +487,6 @@ namespace MobileGnollHackLogger.Areas.API
                             _dbLogger.LogSubType = RequestLogSubType.MainFunctionality2;
                             await _dbLogger.LogRequestAsync($"Received a bones file confirmation receipt from user {model.UserName} for server bones file path {model.Data}",
                                 Data.LogLevel.Info);
-                            //_logger.LogInformation("Received a bones file confirmation receipt from user " + model.UserName + " for server bones file path " + model.Data);
                             try
                             {
                                 var availableBones = _dbContext.Bones.Where(b => b.BonesFilePath == model.Data);
@@ -497,8 +496,7 @@ namespace MobileGnollHackLogger.Areas.API
 
                                 if (list != null && list.Count > 0)
                                 {
-                                    List<Task> tasks = new List<Task>();
-                                    foreach(var bone in list)
+                                    foreach (var bone in list)
                                     {
                                         if(bone != null)
                                         {
@@ -507,8 +505,8 @@ namespace MobileGnollHackLogger.Areas.API
                                             _dbContext.Bones.Remove(bone);
                                             didremoveentry = true;
 
-                                            tasks.Add(_dbLogger.LogRequestAsync($"Deleted a database bones entry ID {bonesid}.",
-                                                Data.LogLevel.Info));
+                                            await _dbLogger.LogRequestAsync($"Deleted a database bones entry ID {bonesid}.",
+                                                Data.LogLevel.Info);
 
                                             Data.BonesTransaction transaction = new Data.BonesTransaction(model.UserName, TransactionType.Deletion, null, dbUser)
                                             {
@@ -522,10 +520,9 @@ namespace MobileGnollHackLogger.Areas.API
                                                 VersionNumber = model.VersionNumber,
                                                 VersionCompatibilityNumber = model.VersionCompatibilityNumber
                                             };
-                                            _dbContext.BonesTransactions.Add(transaction);
+                                            await _dbContext.BonesTransactions.AddAsync(transaction);
                                         }
                                     }
-                                    Task.WaitAll(tasks.ToArray());
                                     await _dbContext.SaveChangesAsync();
                                 }
                                 if (System.IO.File.Exists(model.Data))
