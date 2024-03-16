@@ -39,18 +39,6 @@ namespace MobileGnollHackLogger.Areas.API
             }
         }
 
-        [HttpGet]
-        public async Task<IEnumerable<Replay>> Get()
-        {
-            return await _dbContext.Replay.ToArrayAsync();
-        }
-
-        [HttpGet("{id}")]
-        public async Task<Replay?> Get(int id)
-        {
-            return await _dbContext.Replay.FirstOrDefaultAsync(r => r.Id == id);
-        }
-
         [HttpPost]
         public async Task<IActionResult> Post([FromForm] ReplayModel model)
         {
@@ -67,8 +55,6 @@ namespace MobileGnollHackLogger.Areas.API
                     await _dbLogger.LogRequestAsync("model is null", Data.LogLevel.Error, responseCode);
                     return StatusCode(responseCode); //Bad Request
                 }
-
-                _dbLogger.RequestData = model.GetJson();
 
                 if (model.UserName == null)
                 {
@@ -183,21 +169,6 @@ namespace MobileGnollHackLogger.Areas.API
                 await _dbLogger.LogRequestAsync(message, Data.LogLevel.Error, responseCode);
                 Response.StatusCode = responseCode;
                 return Content(message);
-            }
-        }
-
-        [HttpDelete("{id}")]
-        public async Task Delete(int id)
-        {
-            var replay = await _dbContext.Replay.FirstOrDefaultAsync(r => r.Id == id);
-            if(replay != null)
-            {
-                _dbContext.Replay.Remove(replay);
-                int result = await _dbContext.SaveChangesAsync();
-            }
-            else
-            {
-                Response.StatusCode = 410; // Gone
             }
         }
     }

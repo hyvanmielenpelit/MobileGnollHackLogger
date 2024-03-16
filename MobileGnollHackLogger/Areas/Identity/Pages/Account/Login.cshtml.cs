@@ -62,8 +62,8 @@ namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
         public class InputModel
         {
             [Required]
-            [StringLength(32, ErrorMessage = "Maximum length is 32 characters.")]
-            [RegularExpression($"^[a-zA-Z0-9_]+$", ErrorMessage = "Only alphanumeric characters and underscore allowed.")]
+            [StringLength(31, ErrorMessage = "Maximum length is 31 characters.")]
+            [RegularExpression($"^[a-zA-Z0-9][a-zA-Z0-9_]*$", ErrorMessage = "Only alphanumeric characters and underscore allowed. Can't start with an underscore.")]
             public string UserName { get; set; }
 
             ///// <summary>
