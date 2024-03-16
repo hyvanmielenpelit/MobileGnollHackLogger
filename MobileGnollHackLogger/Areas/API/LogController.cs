@@ -14,18 +14,16 @@ namespace MobileGnollHackLogger.Areas.API
     {
         private readonly SignInManager<ApplicationUser> _signInManager;
         private readonly UserManager<ApplicationUser> _userManager;
-        private readonly ILogger<LogModel> _logger;
         private readonly IConfiguration _configuration;
         private readonly ApplicationDbContext _dbContext;
         private readonly string _dumplogBasePath = "";
         private readonly DbLogger _dbLogger;
 
         public LogController(SignInManager<ApplicationUser> signInManager, UserManager<ApplicationUser> userManager, 
-            ILogger<LogModel> logger, IConfiguration configuration, ApplicationDbContext dbContext)
+            IConfiguration configuration, ApplicationDbContext dbContext)
         {
             _signInManager = signInManager;
             _userManager = userManager;
-            _logger = logger;
             _configuration = configuration;
             _dbContext = dbContext;
             _dbLogger = new DbLogger(_dbContext);

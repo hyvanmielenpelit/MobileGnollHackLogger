@@ -14,29 +14,20 @@ namespace MobileGnollHackLogger.Areas.API
     {
         private readonly SignInManager<ApplicationUser> _signInManager;
         private readonly UserManager<ApplicationUser> _userManager;
-        private readonly ILogger<LogModel> _logger;
         private readonly IConfiguration _configuration;
         private readonly ApplicationDbContext _dbContext;
         private readonly DbLogger _dbLogger;
-        private readonly string _replayBasePath = "";
 
         public ReplayController(SignInManager<ApplicationUser> signInManager, UserManager<ApplicationUser> userManager,
-            ILogger<LogModel> logger, IConfiguration configuration, ApplicationDbContext dbContext)
+            IConfiguration configuration, ApplicationDbContext dbContext)
         {
             _signInManager = signInManager;
             _userManager = userManager;
-            _logger = logger;
             _configuration = configuration;
             _dbContext = dbContext;
             _dbLogger = new DbLogger(_dbContext);
             _dbLogger.LogType = LogType.Bones;
             _dbLogger.LogSubType = RequestLogSubType.Default;
-            _replayBasePath = _configuration["ReplayPath"] ?? "";
-
-            if (string.IsNullOrEmpty(_replayBasePath))
-            {
-                throw new Exception("ReplayPath is null");
-            }
         }
 
         [HttpPost]
