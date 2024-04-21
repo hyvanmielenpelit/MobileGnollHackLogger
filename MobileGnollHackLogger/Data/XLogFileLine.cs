@@ -60,6 +60,7 @@ namespace MobileGnollHackLogger.Data
             "difficulty",
             "mode",
             "scoring",
+            "tournament",
             "collapse"
         };
 
@@ -363,17 +364,21 @@ namespace MobileGnollHackLogger.Data
             }
         }
 
-        public string ScoringText
+        [MaxLength(32)]
+        public string? Tournament { get; set; } //tournament
+
+        public bool IsTournament
         {
             get
             {
-                if (IsScoring)
+                switch (Tournament)
                 {
-                    return "Yes";
-                }
-                else
-                {
-                    return "No";
+                    case "yes":
+                        return true;
+                    case "no":
+                        return false;
+                    default:
+                        return false;
                 }
             }
         }
@@ -532,6 +537,9 @@ namespace MobileGnollHackLogger.Data
                         case "scoring":
                             Scoring = value;
                             break;
+                        case "tournament":
+                            Tournament = value;
+                            break;
                         case "collapse":
                             DungeonCollapses = int.Parse(value);
                             break;
@@ -607,6 +615,7 @@ namespace MobileGnollHackLogger.Data
             AddField(sb, fieldNum++, Difficulty, outputMode);
             AddField(sb, fieldNum++, Mode, outputMode);
             AddField(sb, fieldNum++, Scoring, outputMode);
+            AddField(sb, fieldNum++, Tournament, outputMode);
             AddField(sb, fieldNum++, DungeonCollapses, outputMode);
 
             return sb.ToString();
@@ -687,50 +696,14 @@ namespace MobileGnollHackLogger.Data
                 sb.Append("id").Append(_separator);
             }
 
-            int fieldNum = 0;
-
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]).Append(_separator);
-            sb.Append(_headerTexts[fieldNum++]);
+            for(int fieldNum = 0; fieldNum < _headerTexts.Count; fieldNum++)
+            {
+                sb.Append(_headerTexts[fieldNum]);
+                if(fieldNum < _headerTexts.Count - 1)
+                {
+                    sb.Append(_separator);
+                }
+            }
 
             return sb.ToString();
         }

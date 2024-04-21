@@ -67,6 +67,7 @@ namespace MobileGnollHackLogger.Data
             Difficulty = line.Difficulty;
             Mode = line.Mode;
             Scoring = line.Scoring;
+            Tournament = line.Tournament;
             DungeonCollapses = line.DungeonCollapses;
 
             var user = dbContext.Users.First(u => u.UserName == line.Name);
