@@ -95,7 +95,7 @@
                         </td>
                         <td class="w-m">@gameLog.Name<br />@gameLog.CharacterName</td>
                         <td class="w-ms">@(gameLog.RoleText), @(gameLog.RaceText), @(gameLog.GenderText), @(gameLog.AlignmentText)</td>
-                        <td class="w-s">@gameLog.DifficultyText, @gameLog.ModeText</td>
+                        <td class="w-s">@gameLog.DifficultyText, @(gameLog.ModeText)@if(gameLog.IsTournament){<text>, Tournament</text>}</td>
                         <td class="w-xs">@gameLog.EndTimeUTCDate.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)</td>
                         <td class="w-s">@gameLog.Points</td>
                         <td class="w-s">T: @(gameLog.Turns)<br />D: @gameLog.RealTimeSpan.ToString("c", CultureInfo.InvariantCulture)</td>
