@@ -364,6 +364,11 @@ namespace MobileGnollHackLogger.Data
             }
         }
 
+        public string ScoringText
+        {
+            get { return Scoring ?? "yes"; }
+        }
+
         [MaxLength(32)]
         public string? Tournament { get; set; } //tournament
 
@@ -381,6 +386,11 @@ namespace MobileGnollHackLogger.Data
                         return false;
                 }
             }
+        }
+
+        public string TournamentText
+        {
+            get { return Tournament ?? "no"; }
         }
 
         public int DungeonCollapses { get; set; } //collapse
@@ -614,8 +624,8 @@ namespace MobileGnollHackLogger.Data
             AddField(sb, fieldNum++, FlagsBinary, outputMode);
             AddField(sb, fieldNum++, Difficulty, outputMode);
             AddField(sb, fieldNum++, Mode, outputMode);
-            AddField(sb, fieldNum++, Scoring, outputMode);
-            AddField(sb, fieldNum++, Tournament, outputMode);
+            AddField(sb, fieldNum++, ScoringText, outputMode);
+            AddField(sb, fieldNum++, TournamentText, outputMode);
             AddField(sb, fieldNum++, DungeonCollapses, outputMode);
 
             return sb.ToString();
