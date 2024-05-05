@@ -28,11 +28,10 @@ namespace MobileGnollHackLogger.Pages
             Mode = mode;
 
             IQueryable<GameLog> gameLogs = _dbContext.GameLog
-                .Take(1000)
                 .OrderByDescending(gl => gl.Points)
                 .Where(gl => gl.Scoring == "yes");
 
-            if(!string.IsNullOrEmpty(death) )
+            if (!string.IsNullOrEmpty(death) )
             {
                 gameLogs = gameLogs.Where(gl => gl.DeathText == death);
 
@@ -55,6 +54,8 @@ namespace MobileGnollHackLogger.Pages
             {
                 gameLogs = gameLogs.Where(gl => gl.Mode == mode);
             }
+
+            gameLogs = gameLogs.Take(1000);
 
             GameLogs = await gameLogs.ToListAsync();
 
