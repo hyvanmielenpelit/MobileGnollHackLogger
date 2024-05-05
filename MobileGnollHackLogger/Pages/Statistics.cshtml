@@ -68,7 +68,7 @@
                         long allDiffGames = Model.GameLogs != null ? Model.GameLogs.Where(gl => gl.Difficulty == difficulty.Key).Count() : 0; ;
                         long allDiffAscensions = Model.GameLogs != null ? Model.GameLogs.Where(gl => gl.Difficulty == difficulty.Key && gl.DeathText == "ascended").Count() : 0;
                     }
-                    <td class="w-diff"><h6>@difficulty.Value</h6></td>
+                    <td class="w-diff border-bottom-0"><h6>@difficulty.Value</h6></td>
                     @foreach (var role in GnollHackHelper.Roles)
                     {                        
                         long games = 0;
@@ -138,7 +138,7 @@
         </tbody>
         <tfoot>
             <tr>
-                <td><h6>All Difficulties</h6></td>
+                <td class="w-diff border-top"><h6>All Difficulties</h6></td>
                 @foreach (var role in GnollHackHelper.Roles)
                 {
                     long games = 0;
