@@ -67,7 +67,7 @@ namespace MobileGnollHackLogger.Pages
             {
                 SubTitle = $"Last {recentCount} of {totalCount} "
                     + (RecentGamesMode == RecentGamesMode.Ascensions ? "Ascension" : "Game")
-                    + (recentCount != 1 ? "s" : "");
+                    + (totalCount != 1 ? "s" : "");
             }
             else
             {
