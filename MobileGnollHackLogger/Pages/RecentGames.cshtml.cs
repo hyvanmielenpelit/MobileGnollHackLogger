@@ -20,6 +20,8 @@ namespace MobileGnollHackLogger.Pages
 
         public RecentGamesMode RecentGamesMode { get; set; }
 
+        public string? SubTitle { get; set; }
+
         public IList<GameLog>? GameLogs { get; set; }
 
         public async Task OnGetAsync(string? death, string? mode)
@@ -53,9 +55,26 @@ namespace MobileGnollHackLogger.Pages
                 gameLogs = gameLogs.Where(gl => gl.Mode == mode);
             }
 
+            int totalCount = gameLogs.Count();
+
             gameLogs = gameLogs.Take(1000);
 
             GameLogs = await gameLogs.ToListAsync();
+
+            int recentCount = GameLogs.Count();
+
+            if (recentCount < totalCount)
+            {
+                SubTitle = $"Last {recentCount} of {totalCount} "
+                    + (RecentGamesMode == RecentGamesMode.Ascensions ? "Ascension" : "Game")
+                    + (recentCount != 1 ? "s" : "");
+            }
+            else
+            {
+                SubTitle = $"Last {recentCount} "
+                    + (RecentGamesMode == RecentGamesMode.Ascensions ? "Ascension" : "Game")
+                    + (recentCount != 1 ? "s" : "");
+            }
 
             switch (Mode)
             {
