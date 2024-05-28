@@ -57,8 +57,8 @@ namespace MobileGnollHackLogger.Areas.Identity.Pages.Account.Manage
             ///     directly from your code. This API may change or be removed in future releases.
             /// </summary>
             [Display(Name = "JunetHack User Name")]
-            [MaxLength(255)]
-            [RegularExpression("^[a-zA-Z0-9_]*$")]
+            [MaxLength(255, ErrorMessage = "Maximum length of JunetHack User Name is 255 characters.")]
+            [RegularExpression("^[a-zA-Z0-9_]*$", ErrorMessage = "JunetHack User Name may contain only lowercase latters, uppercase letters, numbers, and underscores.")]
             public string JunetHackUserName { get; set; }
         }
 
