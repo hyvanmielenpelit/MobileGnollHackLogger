@@ -43,7 +43,6 @@ namespace MobileGnollHackLogger.Areas.API
             }
         }
 
-        // GET: api/<BonesController>
         [Route("bones")]
         [HttpGet]
         public IActionResult Get()
@@ -51,7 +50,6 @@ namespace MobileGnollHackLogger.Areas.API
             return Get(0);
         }
 
-        // GET api/<BonesController>/5
         [Route("bones/{id}")]
         [HttpGet]
         public IActionResult Get(int id)
