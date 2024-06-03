@@ -56,9 +56,62 @@ namespace MobileGnollHackLogger.Areas.API
             {
                 sb.AppendLine(gameLog.ToXLogString());
             }
-            return Content(sb.ToString(), "text/plain", Encoding.ASCII);
-        }
 
+            var xlogfileString = sb.ToString();
+
+            // Range Header Byte Range
+            var rangeHeader = Request.Headers.Range;
+            var bytesRange = rangeHeader.FirstOrDefault(s => s.StartsWith("bytes"));
+            if(bytesRange != null)
+            {
+                var rangeValueSplit = bytesRange.Split('=');
+                if(rangeValueSplit != null && rangeValueSplit.Length == 2)
+                {
+                    var bytesRangeValue = rangeValueSplit[1].Trim();
+                    var bytesRangeValueSplit = bytesRangeValue.Split('-');
+                    if(bytesRangeValueSplit != null && bytesRangeValueSplit.Length == 2)
+                    {
+                        int minRange;
+                        if(!int.TryParse(bytesRangeValueSplit[0].Trim(), out minRange))
+                        {
+                            return BadRequest("Range Header bytes min value is not an integer.");
+                        }
+                        if(minRange >= xlogfileString.Length)
+                        {
+                            return BadRequest("Range Header bytes min value is too large.");
+                        }
+                        int maxRange;
+                        if (!int.TryParse(bytesRangeValueSplit[1].Trim(), out maxRange))
+                        {
+                            return BadRequest("Range Header bytes max value is not an integer.");
+                        }
+                        if (maxRange < minRange)
+                        {
+                            return BadRequest("Range Header bytes max value is less than min value.");
+                        }
+                        if(maxRange >= xlogfileString.Length)
+                        {
+                            xlogfileString = xlogfileString.Substring(minRange);
+                        }
+                        else
+                        {
+                            int length = maxRange - minRange + 1;
+                            xlogfileString = xlogfileString.Substring(minRange, length);
+                        }
+                    }
+                    else
+                    {
+                        return BadRequest("Range Header bytes value is malformed. Error when splitting at -.");
+                    }
+                }
+                else
+                {
+                    return BadRequest("Range Header bytes field is malformed. Error when splitting at =.");
+                }
+            }
+
+            return Content(xlogfileString, "text/plain", Encoding.ASCII);
+        }
 
         [Route("api/games/csv")]
         [HttpGet]
