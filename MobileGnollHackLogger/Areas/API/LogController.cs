@@ -1,8 +1,10 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Extensions;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
 using System.Net;
 using System.Text;
@@ -41,16 +43,16 @@ namespace MobileGnollHackLogger.Areas.API
 
         [Route("xlogfile")]
         [HttpGet]
-        public IActionResult Get()
+        public async Task<IActionResult> GetAsync()
         {
-            return Get(0);
+            return await GetAsync(0);
         }
         
         [Route("xlogfile/{lastId}")]
         [HttpGet]
-        public IActionResult Get(long? lastId)
+        public async Task<IActionResult> GetAsync(long? lastId)
         {
-            var gameLogs = _dbContext.GameLog.Where(gl => gl.Id > (lastId ?? 0));
+            var gameLogs = await _dbContext.GameLog.Where(gl => gl.Id > (lastId ?? 0)).ToListAsync();
             StringBuilder sb = new StringBuilder();
             foreach(var gameLog in gameLogs)
             {
@@ -64,6 +66,9 @@ namespace MobileGnollHackLogger.Areas.API
             var bytesRange = rangeHeader.FirstOrDefault(s => s.StartsWith("bytes"));
             if(bytesRange != null)
             {
+                var errorResult = new ContentResult();
+                errorResult.ContentType = "text/plain";
+
                 var rangeValueSplit = bytesRange.Split('=');
                 if(rangeValueSplit != null && rangeValueSplit.Length == 2)
                 {
@@ -74,20 +79,28 @@ namespace MobileGnollHackLogger.Areas.API
                         int minRange;
                         if(!int.TryParse(bytesRangeValueSplit[0].Trim(), out minRange))
                         {
-                            return BadRequest("Range Header bytes min value is not an integer.");
+                            errorResult.StatusCode = 400;
+                            errorResult.Content = "Range Header bytes min value is not an integer.";
+                            return errorResult;
                         }
                         if(minRange >= xlogfileString.Length)
                         {
-                            return BadRequest("Range Header bytes min value is too large.");
+                            errorResult.StatusCode = 416;
+                            errorResult.Content = "Range Header bytes min value is equal to or greater than the file size.";
+                            return errorResult;
                         }
                         int maxRange;
                         if (!int.TryParse(bytesRangeValueSplit[1].Trim(), out maxRange))
                         {
-                            return BadRequest("Range Header bytes max value is not an integer.");
+                            errorResult.StatusCode = 400;
+                            errorResult.Content = "Range Header bytes max value is not an integer.";
+                            return errorResult;
                         }
                         if (maxRange < minRange)
                         {
-                            return BadRequest("Range Header bytes max value is less than min value.");
+                            errorResult.StatusCode = 416;
+                            errorResult.Content = "Range Header bytes max value is less than min value.";
+                            return errorResult;
                         }
                         if(maxRange >= xlogfileString.Length)
                         {
@@ -101,12 +114,16 @@ namespace MobileGnollHackLogger.Areas.API
                     }
                     else
                     {
-                        return BadRequest("Range Header bytes value is malformed. Error when splitting at -.");
+                        errorResult.StatusCode = 400;
+                        errorResult.Content = "Range Header bytes value is malformed. Error when splitting at -.";
+                        return errorResult;
                     }
                 }
                 else
                 {
-                    return BadRequest("Range Header bytes field is malformed. Error when splitting at =.");
+                    errorResult.StatusCode = 400;
+                    errorResult.Content = "Range Header bytes field is malformed. Error when splitting at =.";
+                    return errorResult;
                 }
             }
 
@@ -115,16 +132,16 @@ namespace MobileGnollHackLogger.Areas.API
 
         [Route("api/games/csv")]
         [HttpGet]
-        public IActionResult GetCsv()
+        public async Task<IActionResult> GetCsvAsync()
         {
-            return GetCsv(0);
+            return await GetCsvAsync(0);
         }
 
         [Route("api/games/csv/{lastId}")]
         [HttpGet]
-        public IActionResult GetCsv(long? lastId)
+        public async Task<IActionResult> GetCsvAsync(long? lastId)
         {
-            var gameLogs = _dbContext.GameLog.Where(gl => gl.Id > (lastId ?? 0));
+            var gameLogs = await _dbContext.GameLog.Where(gl => gl.Id > (lastId ?? 0)).ToListAsync();
             StringBuilder sb = new StringBuilder();
             sb.AppendLine(GameLog.GetCsvHeader(true));
             foreach (var gameLog in gameLogs)
