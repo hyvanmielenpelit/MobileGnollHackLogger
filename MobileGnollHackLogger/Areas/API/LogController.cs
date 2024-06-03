@@ -79,6 +79,7 @@ namespace MobileGnollHackLogger.Areas.API
                         int minRange;
                         if(!int.TryParse(bytesRangeValueSplit[0].Trim(), out minRange))
                         {
+                            //This error seems to be handled by CloudFlare already
                             errorResult.StatusCode = 400;
                             errorResult.Content = "Range Header bytes min value is not an integer.";
                             return errorResult;
@@ -92,6 +93,7 @@ namespace MobileGnollHackLogger.Areas.API
                         int maxRange;
                         if (!int.TryParse(bytesRangeValueSplit[1].Trim(), out maxRange))
                         {
+                            //This error seems to be handled by CloudFlare already
                             errorResult.StatusCode = 400;
                             errorResult.Content = "Range Header bytes max value is not an integer.";
                             return errorResult;
@@ -114,6 +116,7 @@ namespace MobileGnollHackLogger.Areas.API
                     }
                     else
                     {
+                        //This error seems to be handled by CloudFlare already
                         errorResult.StatusCode = 400;
                         errorResult.Content = "Range Header bytes value is malformed. Error when splitting at -.";
                         return errorResult;
@@ -121,6 +124,7 @@ namespace MobileGnollHackLogger.Areas.API
                 }
                 else
                 {
+                    //This error seems to be handled by CloudFlare already
                     errorResult.StatusCode = 400;
                     errorResult.Content = "Range Header bytes field is malformed. Error when splitting at =.";
                     return errorResult;
