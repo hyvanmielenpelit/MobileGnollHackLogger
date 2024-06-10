@@ -402,16 +402,21 @@ namespace MobileGnollHackLogger.Data
 
         public XLogFileLine(string entry)
         {
-            var array = entry.Split('\t', StringSplitOptions.RemoveEmptyEntries);
+            var trimmedEntry = entry.Trim();
+            var array = trimmedEntry.Split('\t', StringSplitOptions.RemoveEmptyEntries);
+
             foreach (var item in array)
             {
                 var split = item.Split('=');
-                var key = split[0];
-                var value = split[1];
+                
                 if (split.Length != 2)
                 {
                     throw new Exception("XlogLine item '" + item + "' cannot be split into two parts using =.");
                 }
+                
+                var key = split[0].Trim();
+                var value = split[1].Trim();
+
                 try
                 {
 
