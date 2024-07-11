@@ -315,8 +315,23 @@ namespace MobileGnollHackLogger.Areas.API
                                 Response.StatusCode = responseCode;
                                 return Content(msg);
                             }
+
                             await _dbLogger.LogRequestAsync("GameLog successfully inserted to the database", Data.LogLevel.Info, 200);
-                            return Content(id.ToString(), "text/plain", Encoding.UTF8); //OK
+
+                            var topScoreNumberData = await _dbContext.GetTopScoreNumberAsync(id, gameLog.Mode, gameLog.DeathText);
+
+                            var resposeInfo = new LogPostResponseInfo()
+                            {
+                                DatabaseRowId = id,
+                                TopScoreDisplayIndex = topScoreNumberData.DisplayIndex,
+                                TopScoreIndex = topScoreNumberData.Index
+                            };
+
+                            var responseText = System.Text.Json.JsonSerializer.Serialize(resposeInfo);
+
+                            await _dbLogger.LogRequestAsync("ResponseText: " + responseText, Data.LogLevel.Info, 200);
+
+                            return Content(responseText, "text/plain", Encoding.UTF8); //OK
                         }
                         catch(InvalidOperationException invEx)
                         {
