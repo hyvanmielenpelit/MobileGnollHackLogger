@@ -1,9 +1,11 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿using Azure.Core;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Build.ObjectModelRemoting;
 using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
 using System.Net;
@@ -318,13 +320,14 @@ namespace MobileGnollHackLogger.Areas.API
 
                             await _dbLogger.LogRequestAsync("GameLog successfully inserted to the database", Data.LogLevel.Info, 200);
 
-                            var topScoreNumberData = await _dbContext.GetTopScoreNumberAsync(id, gameLog.Mode, gameLog.DeathText);
+                            var topScoreNumberData = await _dbContext.GetTopScoreNumberAsync(id, gameLog.Mode);
 
                             var resposeInfo = new LogPostResponseInfo()
                             {
                                 DatabaseRowId = id,
                                 TopScoreDisplayIndex = topScoreNumberData.DisplayIndex,
-                                TopScoreIndex = topScoreNumberData.Index
+                                TopScoreIndex = topScoreNumberData.Index,
+                                TopScorePageUrl = GetTopScorePageUrl(gameLog.Mode)
                             };
 
                             var responseText = System.Text.Json.JsonSerializer.Serialize(resposeInfo);
@@ -393,5 +396,22 @@ namespace MobileGnollHackLogger.Areas.API
                 return Content(message);
             }
         }
+
+        private string GetTopScorePageUrl(string? mode = null, string? death = null)
+        {
+            var url = $"{Request.Scheme}://{Request.Host}/TopScores";
+            int count = 0;
+            if(!string.IsNullOrEmpty(mode) && GnollHackHelper.Modes.ContainsKey(mode))
+            {
+                url += "?mode=" + mode;
+                count++;
+            }
+            if (death == "ascended")
+            {
+                url += (count == 0 ? "?" : "&") + "death=" + death;
+            }
+            return url;
+        }
+
     }
 }

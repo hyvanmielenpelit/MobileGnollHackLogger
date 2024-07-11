@@ -50,7 +50,7 @@ namespace MobileGnollHackLogger.Data
             //    .HasDefaultValue(0);
         }
 
-        public async Task<TopScoreNumberData> GetTopScoreNumberAsync(long databaseId, string? mode, string? death)
+        public async Task<TopScoreNumberData> GetTopScoreNumberAsync(long databaseId, string? mode, string? death = null)
         {
             if(mode == null)
             {
@@ -78,17 +78,13 @@ namespace MobileGnollHackLogger.Data
             }
 
             var gameLogsList = await gameLogs.ToListAsync();
-            long displayIndex = 1;
+            long displayIndex = 0;
             long lastPoints = -1;
             long currentIndex = 0;
             long recordsInDraw = 1;
             foreach (var gameLog in gameLogsList)
             {
-                if(lastPoints == -1)
-                {
-                    lastPoints = gameLog.Points;
-                }
-                if(gameLog.Points < lastPoints)
+                if(gameLog.Points < lastPoints || lastPoints == -1)
                 {
                     displayIndex += recordsInDraw;
                     recordsInDraw = 1;
