@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Build.ObjectModelRemoting;
 using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
+using System.IO.Pipelines;
 using System.Net;
 using System.Text;
 
@@ -45,23 +46,22 @@ namespace MobileGnollHackLogger.Areas.API
 
         [Route("xlogfile")]
         [HttpGet]
-        public async Task<IActionResult> GetAsync()
+        public async Task GetAsync()
         {
-            return await GetAsync(0);
+            await GetAsync(0);
         }
         
         [Route("xlogfile/{lastId}")]
         [HttpGet]
-        public async Task<IActionResult> GetAsync(long? lastId)
+        public async Task GetAsync(long? lastId)
         {
-            int minRange = -1;
-            int maxRange = -1;
-            var errorResult = new ContentResult();
-            errorResult.ContentType = "text/plain";
+            long minRange = -1;
+            long maxRange = -1;
+            Response.ContentType = "text/plain";
 
             // Range Header Byte Range
             var rangeHeader = Request.Headers.Range;
-            var bytesRange = rangeHeader.FirstOrDefault(s => s.StartsWith("bytes"));
+            var bytesRange = rangeHeader.FirstOrDefault(s => s?.StartsWith("bytes") ?? false);
             if (bytesRange != null)
             {
                 var rangeValueSplit = bytesRange.Split('=');
@@ -75,55 +75,54 @@ namespace MobileGnollHackLogger.Areas.API
                         {
                             //No min range
                         }
-                        else if (!int.TryParse(bytesRangeValueSplit[0].Trim(), out minRange))
+                        else if (!long.TryParse(bytesRangeValueSplit[0].Trim(), out minRange))
                         {
                             //This error seems to be handled by CloudFlare already
-                            errorResult.StatusCode = 400;
-                            errorResult.Content = "Range Header bytes min value is not an integer.";
-                            return errorResult;
+                            Response.StatusCode = 400;
+                            await WriteErrorStringToResponse("Range Header bytes min value is not a 64-bit integer.");
+                            return;
                         }
                         if (string.IsNullOrWhiteSpace(bytesRangeValueSplit[1]))
                         {
                             //No max range
                         }
-                        else if (!int.TryParse(bytesRangeValueSplit[1].Trim(), out maxRange))
+                        else if (!long.TryParse(bytesRangeValueSplit[1].Trim(), out maxRange))
                         {
                             //This error seems to be handled by CloudFlare already
-                            errorResult.StatusCode = 400;
-                            errorResult.Content = "Range Header bytes max value is not an integer.";
-                            return errorResult;
+                            Response.StatusCode = 400;
+                            await WriteErrorStringToResponse("Range Header bytes max value is not a 64-bit integer.");
+                            return;
                         }
                         if (maxRange > -1 && minRange > -1 && maxRange < minRange)
                         {
-                            errorResult.StatusCode = 416;
-                            errorResult.Content = "Range Header bytes max value is less than min value.";
-                            return errorResult;
+                            Response.StatusCode = 416;
+                            await WriteErrorStringToResponse("Range Header bytes max value is less than min value.");
+                            return;
                         }
                     }
                     else
                     {
                         //This error seems to be handled by CloudFlare already
-                        errorResult.StatusCode = 400;
-                        errorResult.Content = "Range Header bytes value is malformed. Error when splitting at -.";
-                        return errorResult;
+                        Response.StatusCode = 400;
+                        await WriteErrorStringToResponse("Range Header bytes value is malformed. Error when splitting at -.");
+                        return;
                     }
                 }
                 else
                 {
                     //This error seems to be handled by CloudFlare already
-                    errorResult.StatusCode = 400;
-                    errorResult.Content = "Range Header bytes field is malformed. Error when splitting at =.";
-                    return errorResult;
+                    Response.StatusCode = 400;
+                    await WriteErrorStringToResponse("Range Header bytes field is malformed. Error when splitting at =.");
+                    return;
                 }
             }
 
             var gameLogs = await _dbContext.GameLog.Where(gl => gl.Id > (lastId ?? 0)).ToListAsync();
-            StringBuilder sb = new StringBuilder();
-            var currentCharIndex = 0;
+            long currentCharIndex = 0;
             foreach(var gameLog in gameLogs)
             {
                 var xlogLine = gameLog.ToXLogString();
-                var charIndexWithLogLine = currentCharIndex + xlogLine.Length;
+                long charIndexWithLogLine = currentCharIndex + xlogLine.Length;
 
                 if(minRange > -1 && charIndexWithLogLine < minRange)
                 {
@@ -134,25 +133,25 @@ namespace MobileGnollHackLogger.Areas.API
                 else if (minRange > -1 && minRange > currentCharIndex && minRange < charIndexWithLogLine)
                 {
                     //Min Range within current line
-                    int subStrMin = minRange - currentCharIndex;
+                    long subStrMin = minRange - currentCharIndex;
 
                     if (maxRange > -1 && maxRange < charIndexWithLogLine)
                     {
                         //Min Range and Max Range within current line
                         //We need to include part of the line and drop start and end
-                        int subStrLength = maxRange - minRange + 1;
-                        string line = xlogLine.Substring(subStrMin, subStrLength);
+                        long subStrLength = maxRange - minRange + 1;
+                        string line = xlogLine.Substring((int)subStrMin, (int)subStrLength);
                         currentCharIndex += subStrMin + line.Length;
-                        sb.AppendLine(line);
+                        await WriteStringToResponse(line, true);
                         break;
                     }
                     else
                     {
                         //Only Min Range within current line, Max Range greater
                         //We need to skip first part of the line and include the last part
-                        string line = xlogLine.Substring(subStrMin);
+                        string line = xlogLine.Substring((int)subStrMin);
                         currentCharIndex += subStrMin + line.Length;
-                        sb.AppendLine(line);
+                        await WriteStringToResponse(line, true);
                     }
                 }
                 else if(maxRange > -1 && maxRange < charIndexWithLogLine)
@@ -160,16 +159,16 @@ namespace MobileGnollHackLogger.Areas.API
                     //Min Range has happened before
                     //This time we have only max range inside the line
                     //So, drop the end part of the line
-                    int subStrLength = maxRange - currentCharIndex + 1;
-                    string line = xlogLine.Substring(0, subStrLength);
+                    long subStrLength = maxRange - currentCharIndex + 1;
+                    string line = xlogLine.Substring(0, (int)subStrLength);
                     currentCharIndex += line.Length;
-                    sb.AppendLine(line);
+                    await WriteStringToResponse(line, true);
                     break;
                 }
                 else
                 {
                     currentCharIndex += xlogLine.Length;
-                    sb.AppendLine(xlogLine);
+                    await WriteStringToResponse(xlogLine, true);
                 }
 
                 if(charIndexWithLogLine == maxRange)
@@ -178,17 +177,28 @@ namespace MobileGnollHackLogger.Areas.API
                 }
             }
 
-            var xlogfileString = sb.ToString();
-
             if (minRange > -1 && minRange > currentCharIndex)
             {
-                errorResult.StatusCode = 416;
-                errorResult.Content = "Range Header bytes min value is equal to or greater than the file size.";
-                return errorResult;
+                Response.StatusCode = 416;
+                await WriteErrorStringToResponse("Range Header bytes min value is equal to or greater than the file size.");
+                return;
             }
 
-            //Max Length of xlogfile is int.MaxValue = 2,147,483,647 characters
-            return Content(xlogfileString, "text/plain", Encoding.ASCII);
+            await Response.CompleteAsync();
+        }
+
+        private async ValueTask<FlushResult> WriteStringToResponse(string s, bool addNewLine = false)
+        {
+            string newLine = "\n"; //Use Unix line endings, the same as what Hardfought.org does
+            var readOnlyMem = new ReadOnlyMemory<byte>(Encoding.ASCII.GetBytes(s + (addNewLine ? newLine : "")));
+            var res = await Response.BodyWriter.WriteAsync(readOnlyMem);
+            return res;
+        }
+
+        private async Task WriteErrorStringToResponse(string s, bool addNewLine = false)
+        {
+            await WriteStringToResponse(s, addNewLine);
+            await Response.CompleteAsync();
         }
 
         [Route("api/games/csv")]
