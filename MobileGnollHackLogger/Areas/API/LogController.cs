@@ -54,45 +54,30 @@ namespace MobileGnollHackLogger.Areas.API
         [HttpGet]
         public async Task<IActionResult> GetAsync(long? lastId)
         {
-            var gameLogs = await _dbContext.GameLog.Where(gl => gl.Id > (lastId ?? 0)).ToListAsync();
-            StringBuilder sb = new StringBuilder();
-            foreach(var gameLog in gameLogs)
-            {
-                sb.AppendLine(gameLog.ToXLogString());
-            }
-
-            var xlogfileString = sb.ToString();
+            int minRange = -1;
+            int maxRange = -1;
+            var errorResult = new ContentResult();
+            errorResult.ContentType = "text/plain";
 
             // Range Header Byte Range
             var rangeHeader = Request.Headers.Range;
             var bytesRange = rangeHeader.FirstOrDefault(s => s.StartsWith("bytes"));
-            if(bytesRange != null)
+            if (bytesRange != null)
             {
-                var errorResult = new ContentResult();
-                errorResult.ContentType = "text/plain";
-
                 var rangeValueSplit = bytesRange.Split('=');
-                if(rangeValueSplit != null && rangeValueSplit.Length == 2)
+                if (rangeValueSplit != null && rangeValueSplit.Length == 2)
                 {
                     var bytesRangeValue = rangeValueSplit[1].Trim();
                     var bytesRangeValueSplit = bytesRangeValue.Split('-');
-                    if(bytesRangeValueSplit != null && bytesRangeValueSplit.Length == 2)
+                    if (bytesRangeValueSplit != null && bytesRangeValueSplit.Length == 2)
                     {
-                        int minRange;
-                        if(!int.TryParse(bytesRangeValueSplit[0].Trim(), out minRange))
+                        if (!int.TryParse(bytesRangeValueSplit[0].Trim(), out minRange))
                         {
                             //This error seems to be handled by CloudFlare already
                             errorResult.StatusCode = 400;
                             errorResult.Content = "Range Header bytes min value is not an integer.";
                             return errorResult;
                         }
-                        if(minRange >= xlogfileString.Length)
-                        {
-                            errorResult.StatusCode = 416;
-                            errorResult.Content = "Range Header bytes min value is equal to or greater than the file size.";
-                            return errorResult;
-                        }
-                        int maxRange;
                         if (!int.TryParse(bytesRangeValueSplit[1].Trim(), out maxRange))
                         {
                             //This error seems to be handled by CloudFlare already
@@ -105,15 +90,6 @@ namespace MobileGnollHackLogger.Areas.API
                             errorResult.StatusCode = 416;
                             errorResult.Content = "Range Header bytes max value is less than min value.";
                             return errorResult;
-                        }
-                        if(maxRange >= xlogfileString.Length)
-                        {
-                            xlogfileString = xlogfileString.Substring(minRange);
-                        }
-                        else
-                        {
-                            int length = maxRange - minRange + 1;
-                            xlogfileString = xlogfileString.Substring(minRange, length);
                         }
                     }
                     else
@@ -131,6 +107,82 @@ namespace MobileGnollHackLogger.Areas.API
                     errorResult.Content = "Range Header bytes field is malformed. Error when splitting at =.";
                     return errorResult;
                 }
+            }
+
+            var isMinSubStr = false;
+            var isMaxSubStr = false;
+            var gameLogs = await _dbContext.GameLog.Where(gl => gl.Id > (lastId ?? 0)).ToListAsync();
+            StringBuilder sb = new StringBuilder();
+            var currentCharIndex = 0;
+            foreach(var gameLog in gameLogs)
+            {
+                var xlogLine = gameLog.ToXLogString();
+                var charIndexWithLogLine = currentCharIndex + xlogLine.Length;
+
+                if(minRange > -1 && charIndexWithLogLine < minRange)
+                {
+                    //Skip, Min Range greater than
+
+                    currentCharIndex += xlogLine.Length;
+                }
+                else if (minRange > -1 && minRange > currentCharIndex && minRange < charIndexWithLogLine)
+                {
+                    //Min Range within current line
+                    int subStrMin = minRange - currentCharIndex;
+
+                    if (maxRange > -1 && maxRange < charIndexWithLogLine)
+                    {
+                        //Min Range and Max Range within current line
+                        //We need to include part of the line and drop start and end
+                        isMinSubStr = true;
+                        isMaxSubStr = true;
+                        int subStrLength = maxRange - minRange + 1;
+                        string line = xlogLine.Substring(subStrMin, subStrLength);
+                        currentCharIndex += subStrMin + line.Length;
+                        sb.AppendLine(line);
+                        break;
+                    }
+                    else
+                    {
+                        //Only Min Range within current line, Max Range greater
+                        //We need to skip first part of the line and include the last part
+                        isMinSubStr = true;
+                        string line = xlogLine.Substring(subStrMin);
+                        currentCharIndex += subStrMin + line.Length;
+                        sb.AppendLine(line);
+                    }
+                }
+                else if(maxRange > -1 && maxRange < charIndexWithLogLine)
+                {
+                    //Min Range has happened before
+                    //This time we have only max range inside the line
+                    //So, drop the end part of the line
+                    isMaxSubStr = true;
+                    int subStrLength = maxRange - currentCharIndex + 1;
+                    string line = xlogLine.Substring(0, subStrLength);
+                    currentCharIndex += line.Length;
+                    sb.AppendLine(line);
+                    break;
+                }
+                else
+                {
+                    currentCharIndex += xlogLine.Length;
+                    sb.AppendLine(xlogLine);
+                }
+
+                if(charIndexWithLogLine == maxRange)
+                {
+                    break;
+                }
+            }
+
+            var xlogfileString = sb.ToString();
+
+            if (minRange > -1 && minRange > currentCharIndex)
+            {
+                errorResult.StatusCode = 416;
+                errorResult.Content = "Range Header bytes min value is equal to or greater than the file size.";
+                return errorResult;
             }
 
             return Content(xlogfileString, "text/plain", Encoding.ASCII);
