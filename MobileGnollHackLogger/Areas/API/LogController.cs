@@ -23,6 +23,7 @@ namespace MobileGnollHackLogger.Areas.API
         private readonly ApplicationDbContext _dbContext;
         private readonly string _dumplogBasePath = "";
         private readonly DbLogger _dbLogger;
+        private readonly string _newLine = "\n"; //Use Unix line endings, the same as what Hardfought.org does
 
         public LogController(SignInManager<ApplicationUser> signInManager, UserManager<ApplicationUser> userManager, 
             IConfiguration configuration, ApplicationDbContext dbContext)
@@ -121,7 +122,7 @@ namespace MobileGnollHackLogger.Areas.API
             long currentCharIndex = 0;
             foreach(var gameLog in gameLogs)
             {
-                var xlogLine = gameLog.ToXLogString();
+                var xlogLine = gameLog.ToXLogString() + _newLine;
                 long charIndexWithLogLine = currentCharIndex + xlogLine.Length;
 
                 if(minRange > -1 && charIndexWithLogLine < minRange)
@@ -142,7 +143,7 @@ namespace MobileGnollHackLogger.Areas.API
                         long subStrLength = maxRange - minRange + 1;
                         string line = xlogLine.Substring((int)subStrMin, (int)subStrLength);
                         currentCharIndex += subStrMin + line.Length;
-                        await WriteStringToResponse(line, true);
+                        await WriteStringToResponse(line);
                         break;
                     }
                     else
@@ -151,7 +152,7 @@ namespace MobileGnollHackLogger.Areas.API
                         //We need to skip first part of the line and include the last part
                         string line = xlogLine.Substring((int)subStrMin);
                         currentCharIndex += subStrMin + line.Length;
-                        await WriteStringToResponse(line, true);
+                        await WriteStringToResponse(line);
                     }
                 }
                 else if(maxRange > -1 && maxRange < charIndexWithLogLine)
@@ -162,16 +163,16 @@ namespace MobileGnollHackLogger.Areas.API
                     long subStrLength = maxRange - currentCharIndex + 1;
                     string line = xlogLine.Substring(0, (int)subStrLength);
                     currentCharIndex += line.Length;
-                    await WriteStringToResponse(line, true);
+                    await WriteStringToResponse(line);
                     break;
                 }
                 else
                 {
                     currentCharIndex += xlogLine.Length;
-                    await WriteStringToResponse(xlogLine, true);
+                    await WriteStringToResponse(xlogLine);
                 }
 
-                if(charIndexWithLogLine == maxRange)
+                if(charIndexWithLogLine - 1 == maxRange)
                 {
                     break;
                 }
@@ -187,17 +188,16 @@ namespace MobileGnollHackLogger.Areas.API
             await Response.CompleteAsync();
         }
 
-        private async ValueTask<FlushResult> WriteStringToResponse(string s, bool addNewLine = false)
+        private async ValueTask<FlushResult> WriteStringToResponse(string s)
         {
-            string newLine = "\n"; //Use Unix line endings, the same as what Hardfought.org does
-            var readOnlyMem = new ReadOnlyMemory<byte>(Encoding.ASCII.GetBytes(s + (addNewLine ? newLine : "")));
+            var readOnlyMem = new ReadOnlyMemory<byte>(Encoding.ASCII.GetBytes(s));
             var res = await Response.BodyWriter.WriteAsync(readOnlyMem);
             return res;
         }
 
-        private async Task WriteErrorStringToResponse(string s, bool addNewLine = false)
+        private async Task WriteErrorStringToResponse(string s)
         {
-            await WriteStringToResponse(s, addNewLine);
+            await WriteStringToResponse(s);
             await Response.CompleteAsync();
         }
 
