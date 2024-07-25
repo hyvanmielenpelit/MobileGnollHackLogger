@@ -71,21 +71,29 @@ namespace MobileGnollHackLogger.Areas.API
                     var bytesRangeValueSplit = bytesRangeValue.Split('-');
                     if (bytesRangeValueSplit != null && bytesRangeValueSplit.Length == 2)
                     {
-                        if (!int.TryParse(bytesRangeValueSplit[0].Trim(), out minRange))
+                        if(string.IsNullOrWhiteSpace(bytesRangeValueSplit[0]))
+                        {
+                            //No min range
+                        }
+                        else if (!int.TryParse(bytesRangeValueSplit[0].Trim(), out minRange))
                         {
                             //This error seems to be handled by CloudFlare already
                             errorResult.StatusCode = 400;
                             errorResult.Content = "Range Header bytes min value is not an integer.";
                             return errorResult;
                         }
-                        if (!int.TryParse(bytesRangeValueSplit[1].Trim(), out maxRange))
+                        if (string.IsNullOrWhiteSpace(bytesRangeValueSplit[1]))
+                        {
+                            //No max range
+                        }
+                        else if (!int.TryParse(bytesRangeValueSplit[1].Trim(), out maxRange))
                         {
                             //This error seems to be handled by CloudFlare already
                             errorResult.StatusCode = 400;
                             errorResult.Content = "Range Header bytes max value is not an integer.";
                             return errorResult;
                         }
-                        if (maxRange < minRange)
+                        if (maxRange > -1 && minRange > -1 && maxRange < minRange)
                         {
                             errorResult.StatusCode = 416;
                             errorResult.Content = "Range Header bytes max value is less than min value.";
@@ -109,8 +117,6 @@ namespace MobileGnollHackLogger.Areas.API
                 }
             }
 
-            var isMinSubStr = false;
-            var isMaxSubStr = false;
             var gameLogs = await _dbContext.GameLog.Where(gl => gl.Id > (lastId ?? 0)).ToListAsync();
             StringBuilder sb = new StringBuilder();
             var currentCharIndex = 0;
@@ -134,8 +140,6 @@ namespace MobileGnollHackLogger.Areas.API
                     {
                         //Min Range and Max Range within current line
                         //We need to include part of the line and drop start and end
-                        isMinSubStr = true;
-                        isMaxSubStr = true;
                         int subStrLength = maxRange - minRange + 1;
                         string line = xlogLine.Substring(subStrMin, subStrLength);
                         currentCharIndex += subStrMin + line.Length;
@@ -146,7 +150,6 @@ namespace MobileGnollHackLogger.Areas.API
                     {
                         //Only Min Range within current line, Max Range greater
                         //We need to skip first part of the line and include the last part
-                        isMinSubStr = true;
                         string line = xlogLine.Substring(subStrMin);
                         currentCharIndex += subStrMin + line.Length;
                         sb.AppendLine(line);
@@ -157,7 +160,6 @@ namespace MobileGnollHackLogger.Areas.API
                     //Min Range has happened before
                     //This time we have only max range inside the line
                     //So, drop the end part of the line
-                    isMaxSubStr = true;
                     int subStrLength = maxRange - currentCharIndex + 1;
                     string line = xlogLine.Substring(0, subStrLength);
                     currentCharIndex += line.Length;
@@ -185,6 +187,7 @@ namespace MobileGnollHackLogger.Areas.API
                 return errorResult;
             }
 
+            //Max Length of xlogfile is int.MaxValue = 2,147,483,647 characters
             return Content(xlogfileString, "text/plain", Encoding.ASCII);
         }
 
