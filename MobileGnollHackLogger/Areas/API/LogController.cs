@@ -125,7 +125,7 @@ namespace MobileGnollHackLogger.Areas.API
                 var xlogLine = gameLog.ToXLogString() + _newLine;
                 long charIndexWithLogLine = currentCharIndex + xlogLine.Length;
 
-                if(minRange > -1 && charIndexWithLogLine < minRange)
+                if(minRange > -1 && charIndexWithLogLine <= minRange)
                 {
                     //Skip, Min Range greater than
 
