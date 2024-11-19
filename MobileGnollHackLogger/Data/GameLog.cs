@@ -13,6 +13,7 @@ namespace MobileGnollHackLogger.Data
         [ForeignKey("AspNetUser")]
         public string? AspNetUserId { get; set; }
         public ApplicationUser? AspNetUser { get; set; }
+        public DateTime? CreatedDate { get; set; }
 
         public GameLog()
         {

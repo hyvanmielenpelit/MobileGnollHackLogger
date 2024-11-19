@@ -118,7 +118,8 @@ namespace MobileGnollHackLogger.Areas.API
                 }
             }
 
-            var gameLogs = await _dbContext.GameLog.Where(gl => gl.Id > (lastId ?? 0)).ToListAsync();
+            long lastIDWithDefault = lastId ?? 0;
+            var gameLogs = _dbContext.GameLog.Where(gl => gl.Id > lastIDWithDefault);
             long currentCharIndex = 0;
             foreach(var gameLog in gameLogs)
             {
@@ -371,6 +372,7 @@ namespace MobileGnollHackLogger.Areas.API
                         try
                         {
                             GameLog gameLog = new GameLog(xLogFileLine, _dbContext);
+                            gameLog.CreatedDate = DateTime.Now;
                             await _dbContext.GameLog.AddAsync(gameLog);
                             await _dbContext.SaveChangesAsync();
                             long id = gameLog.Id;

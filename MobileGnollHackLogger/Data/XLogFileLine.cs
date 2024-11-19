@@ -83,6 +83,14 @@ namespace MobileGnollHackLogger.Data
                         return "Android";
                     case "ios":
                         return "iOS";
+                    case "maccatalyst":
+                        return "Mac Catalyst";
+                    case "macos":
+                        return "macOS";
+                    case "winui":
+                        return "Windows";
+                    case "windows":
+                        return "Windows";
                     default:
                         return Platform;
                 }
@@ -98,6 +106,14 @@ namespace MobileGnollHackLogger.Data
                         return "a";
                     case "ios":
                         return "i";
+                    case "maccatalyst":
+                        return "m";
+                    case "macos":
+                        return "m";
+                    case "winui":
+                        return "w";
+                    case "windows":
+                        return "w";
                     case null:
                         return null;
                     case "":

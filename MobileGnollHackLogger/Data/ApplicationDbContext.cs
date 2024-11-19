@@ -13,10 +13,10 @@ namespace MobileGnollHackLogger.Data
 
     public class ApplicationDbContext : IdentityDbContext
     {
-        public DbSet<GameLog> GameLog {  get; set; }
-        public DbSet<Bones> Bones { get; set; }
-        public DbSet<RequestInfo> RequestLogs { get; set; }
-        public DbSet<BonesTransaction> BonesTransactions { get; set; }
+        public DbSet<GameLog> GameLog { get; set; } = null!;
+        public DbSet<Bones> Bones { get; set; } = null!;
+        public DbSet<RequestInfo> RequestLogs { get; set; } = null!;
+        public DbSet<BonesTransaction> BonesTransactions { get; set; } = null!;
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
