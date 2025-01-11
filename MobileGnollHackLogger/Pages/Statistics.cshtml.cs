@@ -22,12 +22,12 @@ namespace MobileGnollHackLogger.Pages
 
         public async Task OnGetAsync(string? mode)
         {
-            Mode = mode;
-            GameLogs = _dbContext.GameLog.Where(gl => (mode == null || gl.Mode == mode) && gl.Mode != "debug" && gl.Mode != "explore" && gl.Scoring == "yes");
-            GroupByRole = await GameLogs.GroupBy(gl => gl.Role).ToListAsync();
-            GroupByRoleAscended = await GameLogs.Where(gl=>gl.DeathText == "ascended").GroupBy(gl => gl.Role).ToListAsync();
+            if (mode == "normal" || mode == "modern")
+            {
+                Mode = mode;
+            }
 
-            switch (Mode)
+            switch (mode)
             {
                 case "normal":
                     Title = "Statistics for Classic Mode";
@@ -35,15 +35,13 @@ namespace MobileGnollHackLogger.Pages
                 case "modern":
                     Title = "Statistics for Modern Mode";
                     break;
-                case "casual":
-                    Title = "Statistics for Casual Mode";
-                    break;
-                case "reloadable":
-                    Title = "Statistics for Reloadable Mode";
-                    break;
                 default:
                     break;
             }
+
+            GameLogs = _dbContext.GameLog.Where(gl => (Mode == null || gl.Mode == Mode) && gl.Mode != "debug" && gl.Mode != "explore" && gl.Scoring == "yes");
+            GroupByRole = await GameLogs.GroupBy(gl => gl.Role).ToListAsync();
+            GroupByRoleAscended = await GameLogs.Where(gl=>gl.DeathText == "ascended").GroupBy(gl => gl.Role).ToListAsync();
         }
     }
 }

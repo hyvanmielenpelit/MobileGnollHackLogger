@@ -15,9 +15,7 @@ namespace MobileGnollHackLogger.Pages
             DisplayModes = new List<string>()
             {
                 "normal",
-                "modern",
-                "casual",
-                "reloadable"
+                "modern"
             };
 
             Mode = null;

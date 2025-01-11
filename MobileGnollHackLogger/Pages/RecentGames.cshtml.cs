@@ -26,33 +26,42 @@ namespace MobileGnollHackLogger.Pages
 
         public async Task OnGetAsync(string? death, string? mode)
         {
-            Death = death;
-            Mode = mode;
+            if (death == "ascended")
+            {
+                Death = death;
+            }
+            if (mode == "normal" || mode == "modern")
+            {
+                Mode = mode;
+            }
 
             IQueryable<GameLog> gameLogs = _dbContext.GameLog
                 .OrderByDescending(gl => gl.EndTimeUTC);
 
-            if (!string.IsNullOrEmpty(death) )
+            if (Death == "ascended")
             {
-                if (death == "ascended")
-                {
-                    gameLogs = gameLogs.Where(gl => gl.DeathText == death);
-                    RecentGamesMode = RecentGamesMode.Ascensions;
-                    Title = "Recent Ascensions";
-                }
-                else
-                {
-                    Title = "Recent Games";
-                }
+                gameLogs = gameLogs.Where(gl => gl.DeathText == Death);
+                RecentGamesMode = RecentGamesMode.Ascensions;
+                Title = "Recent Ascensions";
             }
             else
             {
                 Title = "Recent Games";
             }
 
-            if(!string.IsNullOrEmpty(mode))
+            switch (Mode)
             {
-                gameLogs = gameLogs.Where(gl => gl.Mode == mode);
+                case "normal":
+                    Title += " in Classic Mode";
+                    gameLogs = gameLogs.Where(gl => gl.Mode == Mode);
+                    break;
+                case "modern":
+                    Title += " in Modern Mode";
+                    gameLogs = gameLogs.Where(gl => gl.Mode == Mode);
+                    break;
+                default:
+                    Title += " in All Modes";
+                    break;
             }
 
             int totalCount = gameLogs.Count();
@@ -75,26 +84,6 @@ namespace MobileGnollHackLogger.Pages
                     + (RecentGamesMode == RecentGamesMode.Ascensions ? "Ascension" : "Game")
                     + (recentCount != 1 ? "s" : "");
             }
-
-            switch (Mode)
-            {
-                case "normal":
-                    Title += " in Classic Mode";
-                    break;
-                case "modern":
-                    Title += " in Modern Mode";
-                    break;
-                case "casual":
-                    Title += " in Casual Mode";
-                    break;
-                case "reloadable":
-                    Title += " in Reloadable Mode";
-                    break;
-                default:
-                    Title += " in All Modes";
-                    break;
-            }
-
         }
     }
 }

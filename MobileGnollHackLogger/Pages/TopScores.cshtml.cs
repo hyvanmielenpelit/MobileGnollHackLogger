@@ -24,21 +24,26 @@ namespace MobileGnollHackLogger.Pages
 
         public async Task OnGetAsync(string? death, string? mode)
         {
-            Death = death;
-            Mode = mode;
+            if (death == "ascended")
+            {
+                Death = death;
+            }
+            if (mode == "normal" || mode == "modern")
+            {
+                Mode = mode;
+            }
 
             IQueryable<GameLog> gameLogs = _dbContext.GameLog
                 .OrderByDescending(gl => gl.Points)
                 .Where(gl => gl.Scoring == "yes");
 
-            if (!string.IsNullOrEmpty(death) )
+            if (!string.IsNullOrEmpty(Death) )
             {
-                gameLogs = gameLogs.Where(gl => gl.DeathText == death);
-
-                if(death == "ascended")
+                if(Death == "ascended")
                 {
                     TopScoreMode = TopScoreMode.Ascensions;
                     Title = "Top Scores for Ascensions";
+                    gameLogs = gameLogs.Where(gl => gl.DeathText == Death);
                 }
                 else
                 {
@@ -50,15 +55,6 @@ namespace MobileGnollHackLogger.Pages
                 Title = "Top Scores for Games";
             }
 
-            if (!string.IsNullOrEmpty(mode))
-            {
-                gameLogs = gameLogs.Where(gl => gl.Mode == mode);
-            }
-
-            gameLogs = gameLogs.Take(1000);
-
-            GameLogs = await gameLogs.ToListAsync();
-
             switch (Mode)
             {
                 case "normal":
@@ -67,16 +63,18 @@ namespace MobileGnollHackLogger.Pages
                 case "modern":
                     Title += " in Modern Mode";
                     break;
-                case "casual":
-                    Title += " in Casual Mode";
-                    break;
-                case "reloadable":
-                    Title += " in Reloadable Mode";
-                    break;
                 default:
                     Title += " in All Modes";
                     break;
             }
+
+            if (!string.IsNullOrEmpty(Mode))
+            {
+                gameLogs = gameLogs.Where(gl => gl.Mode == Mode);
+            }
+
+            gameLogs = gameLogs.Take(1000);
+            GameLogs = await gameLogs.ToListAsync();
         }
     }
 }
