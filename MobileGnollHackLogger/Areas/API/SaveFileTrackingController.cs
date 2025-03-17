@@ -172,6 +172,25 @@ namespace MobileGnollHackLogger.Areas.API
                         return Content($"Sha256 hashes do not match.");
                     }
 
+                    if(sft.AspNetUserId == null)
+                    {
+                        Response.StatusCode = 500;
+                        return Content($"AspNetUserId is null.");
+                    }
+
+                    var aspNetUser = _dbContext.Users.FirstOrDefault(u => u.Id == sft.AspNetUserId);
+                    if (aspNetUser == null)
+                    {
+                        Response.StatusCode = 500;
+                        return Content($"AspNetUser not found.");
+                    }
+
+                    if (aspNetUser.UserName != model.UserName)
+                    {
+                        Response.StatusCode = 403;
+                        return Content($"User names do not match.");
+                    }
+
                     sft.UsedDate = DateTime.UtcNow;
                     await _dbContext.SaveChangesAsync();
 
