@@ -231,7 +231,7 @@ namespace MobileGnollHackLogger.Data
         {
             get
             {
-                if (DeathDateText == "ascended")
+                if (DeathText == "ascended")
                 {
                     return true;
                 }

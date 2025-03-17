@@ -7,6 +7,9 @@ namespace MobileGnollHackLogger.Pages
 {
     public class StatisticsModel : ModeModel
     {
+        private const int _minTurns = 1000;
+        public int MinTurns { get {  return _minTurns; } }
+
         private ApplicationDbContext _dbContext;
 
         public StatisticsModel(ApplicationDbContext dbContext) : base()
@@ -39,7 +42,7 @@ namespace MobileGnollHackLogger.Pages
                     break;
             }
 
-            GameLogs = _dbContext.GameLog.Where(gl => (Mode == null || gl.Mode == Mode) && gl.Mode != "debug" && gl.Mode != "explore" && gl.Scoring == "yes");
+            GameLogs = _dbContext.GameLog.Where(gl => (Mode == null || gl.Mode == Mode) && gl.Mode != "debug" && gl.Mode != "explore" && gl.Scoring == "yes" && gl.Turns >= MinTurns);
             GroupByRole = await GameLogs.GroupBy(gl => gl.Role).ToListAsync();
             GroupByRoleAscended = await GameLogs.Where(gl=>gl.DeathText == "ascended").GroupBy(gl => gl.Role).ToListAsync();
         }
