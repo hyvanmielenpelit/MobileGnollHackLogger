@@ -17,6 +17,7 @@ namespace MobileGnollHackLogger.Data
         public DbSet<Bones> Bones { get; set; } = null!;
         public DbSet<RequestInfo> RequestLogs { get; set; } = null!;
         public DbSet<BonesTransaction> BonesTransactions { get; set; } = null!;
+        public DbSet<SaveFileTracking> SaveFileTrackings { get; set; } = null!;
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
