@@ -1,4 +1,5 @@
-﻿using System.ComponentModel.DataAnnotations.Schema;
+﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace MobileGnollHackLogger.Data
 {
@@ -7,7 +8,7 @@ namespace MobileGnollHackLogger.Data
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
         public long Id { get; set; }
 
-        public Guid UniqueId { get; set; }
+        public long TimeStamp { get; set; }
         
         public DateTime CreatedDate { get; set; }
         
@@ -16,6 +17,11 @@ namespace MobileGnollHackLogger.Data
         [ForeignKey("AspNetUser")]
         public string? AspNetUserId { get; set; }
         public ApplicationUser? AspNetUser { get; set; }
+
+        [MaxLength(64)]
+        public string? Sha256 { get; set; }
+        public long FileLength { get; set; }
+
 
         public SaveFileTracking()
         {

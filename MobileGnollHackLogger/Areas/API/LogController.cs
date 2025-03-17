@@ -42,7 +42,6 @@ namespace MobileGnollHackLogger.Areas.API
             {
                 throw new Exception("DumpLogPath is null");
             }
-            _userManager = userManager;
         }
 
         [Route("xlogfile")]

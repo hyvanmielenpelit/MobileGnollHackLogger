@@ -2,7 +2,7 @@
 
 namespace MobileGnollHackLogger.Areas.API
 {
-    public class SaveFileTrackingUseModel : LoginInfoModel
+    public class SaveFileTrackingShaModel : LoginInfoModel
     {
         [Required]
         public long Id { get; set; }
@@ -16,7 +16,7 @@ namespace MobileGnollHackLogger.Areas.API
         [Required]
         public long FileLength { get; set; }
 
-        public SaveFileTrackingUseModel()
+        public SaveFileTrackingShaModel()
         {
             
         }

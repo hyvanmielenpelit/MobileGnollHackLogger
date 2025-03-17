@@ -17,7 +17,6 @@ namespace MobileGnollHackLogger.Areas.API
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly IConfiguration _configuration;
         private readonly ApplicationDbContext _dbContext;
-        private readonly string _newLine = "\n"; //Use Unix line endings, the same as what Hardfought.org does
 
         public SaveFileTrackingController(SignInManager<ApplicationUser> signInManager, UserManager<ApplicationUser> userManager,
             IConfiguration configuration, ApplicationDbContext dbContext)
@@ -26,14 +25,6 @@ namespace MobileGnollHackLogger.Areas.API
             _userManager = userManager;
             _configuration = configuration;
             _dbContext = dbContext;
-            _userManager = userManager;
-        }
-
-
-        [HttpGet]
-        public async Task<IActionResult> Get()
-        {
-            return Ok();
         }
 
         [Route("create")]
@@ -47,7 +38,7 @@ namespace MobileGnollHackLogger.Areas.API
                 {
                     SaveFileTracking sft = new SaveFileTracking(model!.UserName!, _dbContext);
                     sft.CreatedDate = DateTime.UtcNow;
-                    sft.UniqueId = Guid.NewGuid();
+                    sft.TimeStamp = model.TimeStamp;
                     await _dbContext.SaveFileTrackings.AddAsync(sft);
                     await _dbContext.SaveChangesAsync();
                     if (sft.Id == 0)
@@ -57,20 +48,58 @@ namespace MobileGnollHackLogger.Areas.API
                         return Content(msg);
                     }
 
-                    var resposeInfo = new SaveFileTrackingResult(sft.Id, sft.UniqueId);
-                    var responseText = System.Text.Json.JsonSerializer.Serialize(resposeInfo);
-
-                    return Content(responseText, "text/plain", Encoding.UTF8); //OK
-                }
-                catch (InvalidOperationException invEx)
-                {
-                    Response.StatusCode = 410; //Gone
-                    return Content("SaveFileTracking insertion to database failed. Message: " + invEx.Message); 
+                    return Content(sft.Id.ToString(), "text/plain", Encoding.UTF8); //OK
                 }
                 catch (Exception ex)
                 {
                     Response.StatusCode = 500; //Server Error
-                    return Content("GameLog insertion to database failed. Message: " + ex.Message);
+                    return Content("SaveFileTracking creation to database failed. Message: " + ex.Message);
+                }
+            }
+            else
+            {
+                return result;
+            }
+        }
+
+        [Route("sha")]
+        [HttpPost]
+        public async Task<IActionResult> Sha([FromForm] SaveFileTrackingShaModel model)
+        {
+            IActionResult? result = await LogInAsync(model);
+            if (result == null)
+            {
+                try
+                {
+                    var sft = _dbContext.SaveFileTrackings.FirstOrDefault(t => t.Id == model.Id);
+                    if (sft == null)
+                    {
+                        Response.StatusCode = 404;
+                        return Content($"SaveFileTracking with ID {model.Id} not found.");
+                    }
+
+                    if (sft.TimeStamp != model.TimeStamp)
+                    {
+                        Response.StatusCode = 403;
+                        return Content($"UniqueId {model.TimeStamp} is not correct.");
+                    }
+
+                    if (sft.UsedDate != null)
+                    {
+                        Response.StatusCode = 401;
+                        return Content($"SaveFileTracking with ID {model.Id} already used.");
+                    }
+
+                    sft.Sha256 = model.Sha256;
+                    sft.FileLength = model.FileLength;
+                    await _dbContext.SaveChangesAsync();
+
+                    return Ok(); //OK
+                }
+                catch (Exception ex)
+                {
+                    Response.StatusCode = 500; //Server Error
+                    return Content("Sha256 and file length update to database failed. Message: " + ex.Message);
                 }
             }
             else
@@ -88,14 +117,6 @@ namespace MobileGnollHackLogger.Areas.API
             {
                 try
                 {
-                    Guid modelGuid;
-                    bool ok = Guid.TryParse(model.UniqueId, out modelGuid);
-                    if(!ok)
-                    {
-                        Response.StatusCode = 400;
-                        return Content("Unique ID cannot be parsed.");
-                    }
-
                     var sft = _dbContext.SaveFileTrackings.FirstOrDefault(t => t.Id == model.Id);
                     if (sft == null)
                     {
@@ -103,35 +124,63 @@ namespace MobileGnollHackLogger.Areas.API
                         return Content($"SaveFileTracking with ID {model.Id} not found.");
                     }
 
-                    if(sft.UniqueId != modelGuid)
+                    if(sft.TimeStamp!= model.TimeStamp)
                     {
                         Response.StatusCode = 403;
-                        return Content($"UniqueId {model.UniqueId} is not correct.");
+                        return Content($"UniqueId {model.TimeStamp} is not correct.");
                     }
 
                     if(sft.UsedDate != null)
                     {
-                        Response.StatusCode = 401;
+                        Response.StatusCode = 410;
                         return Content($"SaveFileTracking with ID {model.Id} already used.");
+                    }
+
+                    if(sft.FileLength == 0)
+                    {
+                        Response.StatusCode = 403;
+                        return Content($"FileLength not set in database.");
+                    }
+
+                    if (model.FileLength == 0)
+                    {
+                        Response.StatusCode = 400;
+                        return Content($"Model FileLength is 0.");
+                    }
+
+                    if(sft.FileLength != model.FileLength)
+                    {
+                        Response.StatusCode = 403;
+                        return Content($"File lengths do not match.");
+                    }
+
+                    if (sft.Sha256 == null)
+                    {
+                        Response.StatusCode = 403;
+                        return Content($"Sha256 not set in database.");
+                    }
+
+                    if (string.IsNullOrEmpty(model.Sha256))
+                    {
+                        Response.StatusCode = 400;
+                        return Content($"Sha256 not set in Model.");
+                    }
+
+                    if (sft.Sha256 != model.Sha256)
+                    {
+                        Response.StatusCode = 403;
+                        return Content($"Sha256 hashes do not match.");
                     }
 
                     sft.UsedDate = DateTime.UtcNow;
                     await _dbContext.SaveChangesAsync();
 
-                    var resposeInfo = new SaveFileTrackingResult(sft.Id, sft.UniqueId);
-                    var responseText = System.Text.Json.JsonSerializer.Serialize(resposeInfo);
-
-                    return Content(responseText, "text/plain", Encoding.UTF8); //OK
-                }
-                catch (InvalidOperationException invEx)
-                {
-                    Response.StatusCode = 410; //Gone
-                    return Content("SaveFileTracking insertion to database failed. Message: " + invEx.Message);
+                    return Ok();
                 }
                 catch (Exception ex)
                 {
                     Response.StatusCode = 500; //Server Error
-                    return Content("GameLog insertion to database failed. Message: " + ex.Message);
+                    return Content("SaveFileTracking use failed. Message: " + ex.Message);
                 }
             }
             else
