@@ -254,44 +254,36 @@ namespace MobileGnollHackLogger.Areas.API
                         {
                             if (user.IsBanned == true)
                             {
-                                int responseCode = 423;
-                                string msg = "User " + model.UserName + " is banned.";
-                                Response.StatusCode = responseCode; //Server Error
-                                return Content(msg);
+                                Response.StatusCode = 423; //Server Error
+                                return Content("User " + model.UserName + " is banned.");
                             }
                         }
                         else
                         {
-                            int responseCode = 500;
-                            string msg = "Server error occurred while verifying user: User is null.";
-                            Response.StatusCode = responseCode; //Server Error
-                            return Content(msg);
+                            Response.StatusCode = 500; //Server Error
+                            return Content("Server error occurred while verifying user: User is null.");
                         }
                     }
                     catch (Exception ex)
                     {
-                        int responseCode = 500;
-                        string msg = "Server error occurred while verifying user: " + ex.Message;
-                        Response.StatusCode = responseCode; //Server Error
-                        return Content(msg);
+                        Response.StatusCode = 500; //Server Error
+                        return Content("Server error occurred while verifying user: " + ex.Message);
                     }
 
+                    //Everything OK
                     return null;
                 }
                 if (result.RequiresTwoFactor)
                 {
-                    int responseCode = 412;
-                    return StatusCode(responseCode);
+                    return StatusCode(412);
                 }
                 if (result.IsLockedOut)
                 {
-                    int responseCode = 423;
-                    return StatusCode(responseCode);
+                    return StatusCode(423);
                 }
                 else
                 {
-                    int responseCode = 403;
-                    return StatusCode(responseCode);
+                    return StatusCode(403);
                 }
             }
             catch (Exception ex)
