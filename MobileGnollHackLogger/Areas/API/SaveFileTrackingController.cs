@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Formatters;
 using Microsoft.Build.Framework;
 using Microsoft.EntityFrameworkCore.SqlServer.Query.Internal;
 using MobileGnollHackLogger.Data;
@@ -17,6 +18,7 @@ namespace MobileGnollHackLogger.Areas.API
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly IConfiguration _configuration;
         private readonly ApplicationDbContext _dbContext;
+        private ApplicationUser? _user = null;
 
         public SaveFileTrackingController(SignInManager<ApplicationUser> signInManager, UserManager<ApplicationUser> userManager,
             IConfiguration configuration, ApplicationDbContext dbContext)
@@ -36,6 +38,13 @@ namespace MobileGnollHackLogger.Areas.API
             {
                 try
                 {
+                    var existingSft = _dbContext.SaveFileTrackings.FirstOrDefault(t => t.TimeStamp == model.TimeStamp && t.AspNetUserId == _user!.Id);
+                    if(existingSft != null)
+                    {
+                        Response.StatusCode = 409; //Conflict
+                        return Content($"User '{model.UserName}' already has Save File Tracking entry with Time Stamp {model.TimeStamp}.");
+                    }
+
                     SaveFileTracking sft = new SaveFileTracking(model!.UserName!, _dbContext);
                     sft.CreatedDate = DateTime.UtcNow;
                     sft.TimeStamp = model.TimeStamp;
@@ -44,11 +53,10 @@ namespace MobileGnollHackLogger.Areas.API
                     if (sft.Id == 0)
                     {
                         Response.StatusCode = 500;
-                        string msg = "Inserted Id is 0.";
-                        return Content(msg);
+                        return Content("Inserted Id is 0.");
                     }
 
-                    return Content(sft.Id.ToString(), "text/plain", Encoding.UTF8); //OK
+                    return Content(sft.Id.ToString()); //OK
                 }
                 catch (Exception ex)
                 {
@@ -71,6 +79,12 @@ namespace MobileGnollHackLogger.Areas.API
             {
                 try
                 {
+                    if(model.Id <= 0)
+                    {
+                        Response.StatusCode = 400;
+                        return Content($"Model Id is not greater than 0.");
+                    }
+
                     var sft = _dbContext.SaveFileTrackings.FirstOrDefault(t => t.Id == model.Id);
                     if (sft == null)
                     {
@@ -88,6 +102,33 @@ namespace MobileGnollHackLogger.Areas.API
                     {
                         Response.StatusCode = 401;
                         return Content($"SaveFileTracking with ID {model.Id} already used.");
+                    }
+
+                    if(string.IsNullOrEmpty(model.Sha256))
+                    {
+                        Response.StatusCode = 400;
+                        return Content($"Sha256 is empty.");
+                    }
+
+                    try
+                    {
+                        var bytes = Convert.FromBase64String(model.Sha256);
+                        if(bytes.Length != 32)
+                        {
+                            Response.StatusCode = 400;
+                            return Content($"Sha256 is not 32 bytes long.");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Response.StatusCode = 400;
+                        return Content($"Error parsing Sha256 from Base64 string. Message: " + ex.Message);
+                    }
+
+                    if(model.FileLength <= 0)
+                    {
+                        Response.StatusCode = 400;
+                        return Content($"File Length {model.FileLength} must be positive.");
                     }
 
                     sft.Sha256 = model.Sha256;
@@ -117,6 +158,12 @@ namespace MobileGnollHackLogger.Areas.API
             {
                 try
                 {
+                    if (model.Id <= 0)
+                    {
+                        Response.StatusCode = 400;
+                        return Content($"Model Id is not greater than 0.");
+                    }
+
                     var sft = _dbContext.SaveFileTrackings.FirstOrDefault(t => t.Id == model.Id);
                     if (sft == null)
                     {
@@ -142,10 +189,10 @@ namespace MobileGnollHackLogger.Areas.API
                         return Content($"FileLength not set in database.");
                     }
 
-                    if (model.FileLength == 0)
+                    if (model.FileLength <= 0)
                     {
                         Response.StatusCode = 400;
-                        return Content($"Model FileLength is 0.");
+                        return Content($"Model FileLength {model.FileLength} is not positive.");
                     }
 
                     if(sft.FileLength != model.FileLength)
@@ -249,10 +296,10 @@ namespace MobileGnollHackLogger.Areas.API
                     //Check next whether the user is not banned
                     try
                     {
-                        var user = await _userManager.FindByNameAsync(model.UserName);
-                        if (user != null)
+                        _user = await _userManager.FindByNameAsync(model.UserName);
+                        if (_user != null)
                         {
-                            if (user.IsBanned == true)
+                            if (_user.IsBanned == true)
                             {
                                 Response.StatusCode = 423; //Server Error
                                 return Content("User " + model.UserName + " is banned.");
@@ -275,15 +322,18 @@ namespace MobileGnollHackLogger.Areas.API
                 }
                 if (result.RequiresTwoFactor)
                 {
-                    return StatusCode(412);
+                    Response.StatusCode = 412;
+                    return Content($"User '{model.UserName}' requires two factor authentication.");
                 }
                 if (result.IsLockedOut)
                 {
-                    return StatusCode(423);
+                    Response.StatusCode = 423;
+                    return Content($"User '{model.UserName}' requires is locked out.");
                 }
                 else
                 {
-                    return StatusCode(403);
+                    Response.StatusCode = 403;
+                    return Content($"Login failed for user '{model.UserName}'.");
                 }
             }
             catch (Exception ex)

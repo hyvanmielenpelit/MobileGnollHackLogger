@@ -1,8 +1,10 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿using Microsoft.EntityFrameworkCore;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace MobileGnollHackLogger.Data
 {
+    [Index(nameof(TimeStamp), nameof(AspNetUserId))]
     public class SaveFileTracking
     {
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]

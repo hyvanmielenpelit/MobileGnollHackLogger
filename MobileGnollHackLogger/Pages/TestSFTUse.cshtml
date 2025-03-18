@@ -1,15 +1,15 @@
 ﻿@page
-@model MobileGnollHackLogger.Pages.TestSFTShaModel
+@model MobileGnollHackLogger.Pages.TestSFTUseModel
 @inject IConfiguration Configuration
 @inject IWebHostEnvironment WebHostEnvironment
 
 @{
-    ViewData["Title"] = "Test Save File Tracking Sha";
+    ViewData["Title"] = "Test Save File Tracking Use";
 }
 
 <div class="text-center">
-    <h1 class="display-4">Test Save File Tracking Sha</h1>
-    <form action="/api/savefiletracking/sha" method="post" enctype="multipart/form-data">
+    <h1 class="display-4">Test Save File Tracking Use</h1>
+    <form action="/api/savefiletracking/use" method="post" enctype="multipart/form-data">
         <h2>Send Post</h2>
         <hr />
         <div asp-validation-summary="ModelOnly" class="text-danger" role="alert"></div>
@@ -51,6 +51,6 @@
         {
             <input name="AntiForgeryToken" asp-for="Input.AntiForgeryToken" class="form-control" aria-required="true" type="hidden" value="@Configuration["AntiForgeryToken"]" />
         }
-        <button type="submit" value="submit">Test Sha</button>
+        <button type="submit" value="submit">Test Use</button>
     </form>
 </div>
