@@ -1,0 +1,38 @@
+﻿@page
+@model MobileGnollHackLogger.Pages.TestSFTCreateModel
+@inject IConfiguration Configuration
+@inject IWebHostEnvironment WebHostEnvironment
+
+@{
+    ViewData["Title"] = "Test Save File Tracking Create";
+}
+
+<div class="text-center">
+    <h1 class="display-4">Test Save File Tracking Create</h1>
+    <form action="/api/savefiletracking/create" method="post" enctype="multipart/form-data">
+        <h2>Send Post</h2>
+        <hr />
+        <div asp-validation-summary="ModelOnly" class="text-danger" role="alert"></div>
+        <div class="form-floating mb-3">
+            <input name="UserName" asp-for="Input.UserName" class="form-control" autocomplete="username" aria-required="true" placeholder="bob" />
+            <label asp-for="Input.UserName" class="form-label">User Name</label>
+            <span asp-validation-for="Input.UserName" class="text-danger"></span>
+        </div>
+        <div class="form-floating mb-3">
+            <input name="Password" type="password" asp-for="Input.Password" class="form-control" autocomplete="current-password" aria-required="true" placeholder="password" />
+            <label asp-for="Input.Password" class="form-label">Password</label>
+            <span asp-validation-for="Input.Password" class="text-danger"></span>
+        </div>
+        <div class="form-floating mb-3">
+            <input name="TimeStamp" asp-for="Input.TimeStamp" class="form-control" autocomplete="" aria-required="true" placeholder="TimeStamp"
+                   value="1742294245" /> @*DateTimeOffset.UtcNow.ToUnixTimeSeconds()*@
+            <label asp-for="Input.TimeStamp" class="form-label">Unix Time Stamp</label>
+            <span asp-validation-for="Input.TimeStamp" class="text-danger"></span>
+        </div>
+        @if (WebHostEnvironment.IsDevelopment())
+        {
+            <input name="AntiForgeryToken" asp-for="Input.AntiForgeryToken" class="form-control" aria-required="true" type="hidden" value="@Configuration["AntiForgeryToken"]" />
+        }
+        <button type="submit" value="submit">Test Create</button>
+    </form>
+</div>
