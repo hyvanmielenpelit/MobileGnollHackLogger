@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Http;
+﻿using Microsoft.AspNetCore.Connections.Features;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -6,6 +7,7 @@ using Microsoft.AspNetCore.Mvc.Formatters;
 using Microsoft.Build.Framework;
 using Microsoft.EntityFrameworkCore.SqlServer.Query.Internal;
 using MobileGnollHackLogger.Data;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace MobileGnollHackLogger.Areas.API
@@ -93,6 +95,7 @@ namespace MobileGnollHackLogger.Areas.API
                         return Content($"File Length {model.FileLength} must be positive.");
                     }
 
+
                     SaveFileTracking sft = new SaveFileTracking(model!.UserName!, _dbContext);
                     sft.CreatedDate = DateTime.UtcNow;
                     sft.TimeStamp = model.TimeStamp;
@@ -107,7 +110,15 @@ namespace MobileGnollHackLogger.Areas.API
                         return Content("Inserted Id is 0.");
                     }
 
-                    return Content(sft.Id.ToString()); //OK
+                    string? base64returnValue = null;
+                    var actionResult = Encrypt(sft.Id, out base64returnValue);
+
+                    if (actionResult != null)
+                    {
+                        return actionResult;
+                    }
+
+                    return Content(base64returnValue!); //OK
                 }
                 catch (Exception ex)
                 {
@@ -136,11 +147,25 @@ namespace MobileGnollHackLogger.Areas.API
                         return Content($"Model TimeStamp is not greater than 0.");
                     }
 
-                    var sft = _dbContext.SaveFileTrackings.FirstOrDefault(t => t.TimeStamp == model.TimeStamp && t.AspNetUserId == _user!.Id);
+                    if(string.IsNullOrEmpty(model.EncryptedId))
+                    {
+                        Response.StatusCode = 400;
+                        return Content($"EncryptedId is empty.");
+                    }
+
+                    long? idOut = null;
+                    var actionResult = Decrypt(model.EncryptedId, out idOut);
+                    if (actionResult != null)
+                    {
+                        return actionResult;
+                    }
+                    long id = idOut!.Value;
+
+                    var sft = _dbContext.SaveFileTrackings.FirstOrDefault(t => t.Id == id);
                     if (sft == null)
                     {
                         Response.StatusCode = 404;
-                        return Content($"SaveFileTracking with TimeStamp {model.TimeStamp} not found for user '{model.UserName}'.");
+                        return Content($"SaveFileTracking with the model Id not found.");
                     }
 
                     if(sft.TimeStamp!= model.TimeStamp)
@@ -314,6 +339,139 @@ namespace MobileGnollHackLogger.Areas.API
                 return Content("Exception: " + ex.Message);
             }
 
+        }
+
+        private IActionResult? Encrypt(long id, out string? encodedValue)
+        {
+            ICryptoTransform? encryptor = null;
+            var actionResult = GetEncryptor(out encryptor);
+            if(actionResult != null)
+            {
+                encodedValue = null;
+                return actionResult;
+            }
+            else
+            {
+                using MemoryStream msEncrypt = new();
+                using CryptoStream csEncrypt = new(msEncrypt, encryptor!, CryptoStreamMode.Write);
+                using (StreamWriter swEncrypt = new(csEncrypt))
+                {
+                    swEncrypt.Write(id.ToString());
+                }
+
+                encodedValue = Convert.ToBase64String(msEncrypt.ToArray());
+                return null;
+            }
+        }
+
+        private IActionResult? Decrypt(string base64EncodedId, out long? id)
+        {
+            id = null;
+            ICryptoTransform? decryptor = null;
+            var actionResult = GetDecryptor(out decryptor);
+            if (actionResult != null)
+            {
+                return actionResult;
+            }
+            else
+            {
+                var bytes = Convert.FromBase64String(base64EncodedId);
+
+                string? idString = null;
+                try
+                {
+                    using MemoryStream msDecrypt = new(bytes);
+                    using CryptoStream csDecrypt = new(msDecrypt, decryptor!, CryptoStreamMode.Read);
+                    using StreamReader srDecrypt = new(csDecrypt);
+
+                    idString = srDecrypt.ReadToEnd();
+                }
+                catch (Exception ex)
+                {
+                    Response.StatusCode = 500;
+                    return Content("Server Error in Decryption. Message: " + ex.Message);
+                }
+
+                long result = 0;
+                bool ok = long.TryParse(idString, out result);
+                if(!ok)
+                {
+                    Response.StatusCode = 400;
+                    return Content("Decrypted content is invalid.");
+                }
+
+                id = result;
+                return null;
+            }
+        }
+
+        private IActionResult? GetEncryptor(out ICryptoTransform? encryptor)
+        {
+            encryptor = null;
+            Aes? aes = null;
+            var actionResult = GetAes(out aes);
+            if (actionResult != null)
+            {
+                return actionResult;
+            }
+            encryptor = aes.CreateEncryptor(aes.Key, aes.IV);
+            return null;
+        }
+
+        private IActionResult? GetDecryptor(out ICryptoTransform? decryptor)
+        {
+            decryptor = null;
+            Aes? aes = null;
+            var actionResult = GetAes(out aes);
+            if (actionResult != null)
+            {
+                return actionResult;
+            }
+            decryptor = aes!.CreateDecryptor(aes.Key, aes.IV);
+            return null;
+        }
+
+        private IActionResult? GetAes(out Aes? aes)
+        {
+            aes = null;
+            var keySizeBits = 256;
+            var blockSizeBits = 128;
+            var encryptionKeyString = _configuration["EncryptionKeyString"];
+            if (string.IsNullOrEmpty(encryptionKeyString))
+            {
+                Response.StatusCode = 500;
+                return Content("Server Error. Encryption key string not found.");
+            }
+            var key = Encoding.UTF8.GetBytes(encryptionKeyString);
+            if (key.Length * 8 != keySizeBits)
+            {
+                Response.StatusCode = 500;
+                return Content("Server Error. Encryption key is of wrong size.");
+            }
+
+            var ivString = _configuration["EncryptionIVString"];
+            if (string.IsNullOrEmpty(ivString))
+            {
+                Response.StatusCode = 500;
+                return Content("Server Error. IV string not found.");
+            }
+            var iv = Encoding.UTF8.GetBytes(ivString);
+            if (iv.Length * 8 != blockSizeBits)
+            {
+                Response.StatusCode = 500;
+                return Content("Server Error. IV is of wrong size.");
+            }
+
+            var symmetricAlgorithm = Aes.Create();
+            symmetricAlgorithm.KeySize = keySizeBits;
+            symmetricAlgorithm.Key = key;
+            symmetricAlgorithm.BlockSize = blockSizeBits;
+            symmetricAlgorithm.IV = iv;
+            symmetricAlgorithm.Mode = CipherMode.CBC;
+            symmetricAlgorithm.Padding = PaddingMode.PKCS7;
+
+            aes = symmetricAlgorithm;
+            return null;
         }
     }
 }

@@ -24,6 +24,12 @@
             <span asp-validation-for="Input.Password" class="text-danger"></span>
         </div>
         <div class="form-floating mb-3">
+            <input name="EncryptedId" asp-for="Input.EncryptedId" class="form-control" autocomplete="" aria-required="true" placeholder="EncryptedId"
+                   value="" />
+            <label asp-for="Input.EncryptedId" class="form-label">Encrypted Id</label>
+            <span asp-validation-for="Input.EncryptedId" class="text-danger"></span>
+        </div>
+        <div class="form-floating mb-3">
             <input name="TimeStamp" asp-for="Input.TimeStamp" class="form-control" autocomplete="" aria-required="true" placeholder="TimeStamp"
                    value="1742294245" />
             <label asp-for="Input.TimeStamp" class="form-label">Unix Time Stamp</label>
