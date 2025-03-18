@@ -4,7 +4,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace MobileGnollHackLogger.Data
 {
-    [Index(nameof(TimeStamp), nameof(AspNetUserId))]
+    [Index(nameof(TimeStamp), nameof(AspNetUserId), IsUnique = true)]
     public class SaveFileTracking
     {
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]

@@ -45,9 +45,60 @@ namespace MobileGnollHackLogger.Areas.API
                         return Content($"User '{model.UserName}' already has Save File Tracking entry with Time Stamp {model.TimeStamp}.");
                     }
 
+                    if (string.IsNullOrEmpty(model.Sha256))
+                    {
+                        Response.StatusCode = 400;
+                        return Content($"Sha256 is empty.");
+                    }
+
+                    try
+                    {
+                        var bytes = Convert.FromBase64String(model.Sha256);
+                        if (bytes.Length != 32)
+                        {
+                            Response.StatusCode = 400;
+                            return Content($"Sha256 is not 32 bytes long.");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Response.StatusCode = 400;
+                        return Content($"Error parsing Sha256 from Base64 string. Message: " + ex.Message);
+                    }
+
+                    if (string.IsNullOrEmpty(model.Sha256))
+                    {
+                        Response.StatusCode = 400;
+                        return Content($"Sha256 is empty.");
+                    }
+
+                    try
+                    {
+                        var bytes = Convert.FromBase64String(model.Sha256);
+                        if (bytes.Length != 32)
+                        {
+                            Response.StatusCode = 400;
+                            return Content($"Sha256 is not 32 bytes long.");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Response.StatusCode = 400;
+                        return Content($"Error parsing Sha256 from Base64 string. Message: " + ex.Message);
+                    }
+
+                    if (model.FileLength <= 0)
+                    {
+                        Response.StatusCode = 400;
+                        return Content($"File Length {model.FileLength} must be positive.");
+                    }
+
                     SaveFileTracking sft = new SaveFileTracking(model!.UserName!, _dbContext);
                     sft.CreatedDate = DateTime.UtcNow;
                     sft.TimeStamp = model.TimeStamp;
+                    sft.Sha256 = model.Sha256;
+                    sft.FileLength = model.FileLength;
+
                     await _dbContext.SaveFileTrackings.AddAsync(sft);
                     await _dbContext.SaveChangesAsync();
                     if (sft.Id == 0)
@@ -70,85 +121,6 @@ namespace MobileGnollHackLogger.Areas.API
             }
         }
 
-        [Route("sha")]
-        [HttpPost]
-        public async Task<IActionResult> Sha([FromForm] SaveFileTrackingShaModel model)
-        {
-            IActionResult? result = await LogInAsync(model);
-            if (result == null)
-            {
-                try
-                {
-                    if(model.Id <= 0)
-                    {
-                        Response.StatusCode = 400;
-                        return Content($"Model Id is not greater than 0.");
-                    }
-
-                    var sft = _dbContext.SaveFileTrackings.FirstOrDefault(t => t.Id == model.Id);
-                    if (sft == null)
-                    {
-                        Response.StatusCode = 404;
-                        return Content($"SaveFileTracking with ID {model.Id} not found.");
-                    }
-
-                    if (sft.TimeStamp != model.TimeStamp)
-                    {
-                        Response.StatusCode = 403;
-                        return Content($"UniqueId {model.TimeStamp} is not correct.");
-                    }
-
-                    if (sft.UsedDate != null)
-                    {
-                        Response.StatusCode = 401;
-                        return Content($"SaveFileTracking with ID {model.Id} already used.");
-                    }
-
-                    if(string.IsNullOrEmpty(model.Sha256))
-                    {
-                        Response.StatusCode = 400;
-                        return Content($"Sha256 is empty.");
-                    }
-
-                    try
-                    {
-                        var bytes = Convert.FromBase64String(model.Sha256);
-                        if(bytes.Length != 32)
-                        {
-                            Response.StatusCode = 400;
-                            return Content($"Sha256 is not 32 bytes long.");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Response.StatusCode = 400;
-                        return Content($"Error parsing Sha256 from Base64 string. Message: " + ex.Message);
-                    }
-
-                    if(model.FileLength <= 0)
-                    {
-                        Response.StatusCode = 400;
-                        return Content($"File Length {model.FileLength} must be positive.");
-                    }
-
-                    sft.Sha256 = model.Sha256;
-                    sft.FileLength = model.FileLength;
-                    await _dbContext.SaveChangesAsync();
-
-                    return Ok(); //OK
-                }
-                catch (Exception ex)
-                {
-                    Response.StatusCode = 500; //Server Error
-                    return Content("Sha256 and file length update to database failed. Message: " + ex.Message);
-                }
-            }
-            else
-            {
-                return result;
-            }
-        }
-
         [Route("use")]
         [HttpPost]
         public async Task<IActionResult> Use([FromForm] SaveFileTrackingUseModel model)
@@ -158,17 +130,17 @@ namespace MobileGnollHackLogger.Areas.API
             {
                 try
                 {
-                    if (model.Id <= 0)
+                    if (model.TimeStamp <= 0)
                     {
                         Response.StatusCode = 400;
-                        return Content($"Model Id is not greater than 0.");
+                        return Content($"Model TimeStamp is not greater than 0.");
                     }
 
-                    var sft = _dbContext.SaveFileTrackings.FirstOrDefault(t => t.Id == model.Id);
+                    var sft = _dbContext.SaveFileTrackings.FirstOrDefault(t => t.TimeStamp == model.TimeStamp && t.AspNetUserId == _user!.Id);
                     if (sft == null)
                     {
                         Response.StatusCode = 404;
-                        return Content($"SaveFileTracking with ID {model.Id} not found.");
+                        return Content($"SaveFileTracking with TimeStamp {model.TimeStamp} not found for user '{model.UserName}'.");
                     }
 
                     if(sft.TimeStamp!= model.TimeStamp)
@@ -180,7 +152,7 @@ namespace MobileGnollHackLogger.Areas.API
                     if(sft.UsedDate != null)
                     {
                         Response.StatusCode = 410;
-                        return Content($"SaveFileTracking with ID {model.Id} already used.");
+                        return Content($"SaveFileTracking with TimeStamp {model.TimeStamp} and Id {sft.Id} already used.");
                     }
 
                     if(sft.FileLength == 0)

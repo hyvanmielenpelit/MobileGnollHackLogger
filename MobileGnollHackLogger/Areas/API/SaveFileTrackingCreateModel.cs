@@ -7,6 +7,12 @@ namespace MobileGnollHackLogger.Areas.API
         [Required]
         public long TimeStamp { get; set; }
 
+        [Required]
+        public string? Sha256 { get; set; }
+
+        [Required]
+        public long FileLength { get; set; }
+
         public SaveFileTrackingCreateModel()
         {
             

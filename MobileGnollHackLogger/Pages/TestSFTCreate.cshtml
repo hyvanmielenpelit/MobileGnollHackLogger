@@ -29,6 +29,19 @@
             <label asp-for="Input.TimeStamp" class="form-label">Unix Time Stamp</label>
             <span asp-validation-for="Input.TimeStamp" class="text-danger"></span>
         </div>
+        <div class="form-floating mb-3">
+            <input name="Sha256" asp-for="Input.Sha256" class="form-control" autocomplete="" aria-required="true" placeholder="Sha256"
+                   value="LPJNul+cvGvYwzKf+wTYYqTUI5TzAQH4h1jvH23Pj6U=" />
+            <label asp-for="Input.Sha256" class="form-label">Sha256 Base64 Encoded</label>
+            <span asp-validation-for="Input.Sha256" class="text-danger"></span>
+        </div>
+        <div class="form-floating mb-3">
+            <input name="FileLength" asp-for="Input.FileLength" class="form-control" autocomplete="" aria-required="true" placeholder="File Length"
+                   value="123456" />
+            <label asp-for="Input.Sha256" class="form-label">Sha256 Base64 Encoded</label>
+            <span asp-validation-for="Input.Sha256" class="text-danger"></span>
+        </div>
+
         @if (WebHostEnvironment.IsDevelopment())
         {
             <input name="AntiForgeryToken" asp-for="Input.AntiForgeryToken" class="form-control" aria-required="true" type="hidden" value="@Configuration["AntiForgeryToken"]" />

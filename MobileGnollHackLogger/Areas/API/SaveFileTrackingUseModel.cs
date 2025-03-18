@@ -5,9 +5,6 @@ namespace MobileGnollHackLogger.Areas.API
     public class SaveFileTrackingUseModel : LoginInfoModel
     {
         [Required]
-        public long Id { get; set; }
-
-        [Required]
         public long TimeStamp { get; set; }
 
         [Required]
