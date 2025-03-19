@@ -61,7 +61,8 @@ namespace MobileGnollHackLogger.Data
             "mode",
             "scoring",
             "tournament",
-            "collapse"
+            "collapse",
+            "seclvl"
         };
 
         
@@ -411,6 +412,8 @@ namespace MobileGnollHackLogger.Data
 
         public int DungeonCollapses { get; set; } //collapse
 
+        public int? SecurityLevel { get; set; }
+
         public XLogFileLine()
         {
 
@@ -574,6 +577,9 @@ namespace MobileGnollHackLogger.Data
                         case "collapse":
                             DungeonCollapses = int.Parse(value);
                             break;
+                        case "seclvl":
+                            SecurityLevel = int.Parse(value);
+                            break;
                         default:
                             break;
                     }
@@ -648,6 +654,14 @@ namespace MobileGnollHackLogger.Data
             AddField(sb, fieldNum++, ScoringText, outputMode);
             AddField(sb, fieldNum++, TournamentText, outputMode);
             AddField(sb, fieldNum++, DungeonCollapses, outputMode);
+
+            //Note 2025-03-19
+            //We are adding new fields only if they are non-null, not to break byte ranges in NetHack Scoreboard and Junethack
+            if (SecurityLevel != null)
+            {
+                AddField(sb, fieldNum, SecurityLevel, outputMode);
+            }
+            fieldNum++;
 
             return sb.ToString();
         }

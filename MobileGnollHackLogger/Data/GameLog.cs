@@ -70,6 +70,7 @@ namespace MobileGnollHackLogger.Data
             Scoring = line.Scoring;
             Tournament = line.Tournament;
             DungeonCollapses = line.DungeonCollapses;
+            SecurityLevel = line.SecurityLevel;
 
             var user = dbContext.Users.First(u => u.UserName == line.Name);
             AspNetUserId = user.Id;
