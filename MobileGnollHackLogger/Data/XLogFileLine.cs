@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Routing.Matching;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data.Migrations;
 using Newtonsoft.Json.Linq;
@@ -657,11 +658,7 @@ namespace MobileGnollHackLogger.Data
 
             //Note 2025-03-19
             //We are adding new fields only if they are non-null, not to break byte ranges in NetHack Scoreboard and Junethack
-            if (SecurityLevel != null)
-            {
-                AddField(sb, fieldNum, SecurityLevel, outputMode);
-            }
-            fieldNum++;
+            AddField(sb, fieldNum++, SecurityLevel, outputMode, true);
 
             return sb.ToString();
         }
@@ -686,6 +683,27 @@ namespace MobileGnollHackLogger.Data
             }
 
             AddField(sbBody, key, value);
+        }
+
+        private void AddField(StringBuilder sbBody, int fieldNum, string? value, OutputMode outputMode, bool skipIfNull)
+        {
+            if (skipIfNull && value == null)
+            {
+                if (outputMode == OutputMode.CSV)
+                {
+                    //Add empty cell to CSV
+                    AddField(sbBody, fieldNum, "", outputMode);
+                }
+                else
+                {
+                    //Do nothing
+                    return;
+                }
+            }
+            else
+            {
+                AddField(sbBody, fieldNum, value, outputMode);
+            }
         }
 
         private void AddField(StringBuilder sbBody, string key, string? value, OutputMode outputMode)
@@ -725,11 +743,25 @@ namespace MobileGnollHackLogger.Data
             AddField(sbBody, fieldNum, val2, outputMode);
         }
 
+        private void AddField(StringBuilder sbBody, int fieldNum, int? value, OutputMode outputMode, bool skipIfNull)
+        {
+            string? val2 = value.HasValue ? value.ToString() : null;
+
+            AddField(sbBody, fieldNum, val2, outputMode, skipIfNull);
+        }
+
         private void AddField(StringBuilder sbBody, int fieldNum, long? value, OutputMode outputMode)
         {
             string? val2 = value.HasValue ? value.ToString() : null;
 
             AddField(sbBody, fieldNum, val2, outputMode);
+        }
+
+        private void AddField(StringBuilder sbBody, int fieldNum, long? value, OutputMode outputMode, bool skipIfNull)
+        {
+            string? val2 = value.HasValue ? value.ToString() : null;
+
+            AddField(sbBody, fieldNum, val2, outputMode, skipIfNull);
         }
 
         public static string GetCsvHeader(bool hasIdColumn = false)
