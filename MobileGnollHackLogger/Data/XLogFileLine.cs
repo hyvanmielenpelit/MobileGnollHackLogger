@@ -63,7 +63,8 @@ namespace MobileGnollHackLogger.Data
             "scoring",
             "tournament",
             "collapse",
-            "seclvl"
+            "seclvl",
+            "store"
         };
 
         
@@ -415,6 +416,17 @@ namespace MobileGnollHackLogger.Data
 
         public int? SecurityLevel { get; set; }
 
+        [MaxLength(32)]
+        public string? Store { get; set; }
+
+        public string? StoreText
+        {
+            get
+            {
+                return ConvertStore(Store);
+            }
+        }
+
         public XLogFileLine()
         {
 
@@ -581,6 +593,9 @@ namespace MobileGnollHackLogger.Data
                         case "seclvl":
                             SecurityLevel = int.Parse(value);
                             break;
+                        case "store":
+                            Store = value;
+                            break;
                         default:
                             break;
                     }
@@ -659,6 +674,7 @@ namespace MobileGnollHackLogger.Data
             //Note 2025-03-19
             //We are adding new fields only if they are non-null, not to break byte ranges in NetHack Scoreboard and Junethack
             AddField(sb, fieldNum++, SecurityLevel, outputMode, true);
+            AddField(sb, fieldNum++, Store, outputMode, true);
 
             return sb.ToString();
         }
@@ -810,6 +826,27 @@ namespace MobileGnollHackLogger.Data
                     return "Chaotic";
                 default:
                     return alignmentCode;
+            }
+        }
+
+        private string? ConvertStore(string? storeCode)
+        {
+            switch (storeCode)
+            {
+                case "google":
+                    return "Google Play Store";
+                case "apple":
+                    return "Apple App Store";
+                case "microsoft":
+                    return "Microsoft Store";
+                case "steam":
+                    return "Steam";
+                case "steam-playtest":
+                    return "Steam Playtest";
+                case "none":
+                    return "None";
+                default:
+                    return storeCode;
             }
         }
     }
