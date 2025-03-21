@@ -16,7 +16,8 @@ namespace MobileGnollHackLogger.Data
     {
         Other = 0,
         GameLog = 1,
-        Bones = 2
+        Bones = 2,
+        SaveFileTracking = 3
     }
 
     public enum RequestLogSubType : int
@@ -26,7 +27,9 @@ namespace MobileGnollHackLogger.Data
         MainFunctionality = 2,
         TestConnection = 3,
         PartialDataError = 4,
-        MainFunctionality2 = 5
+        MainFunctionality2 = 5,
+        CreateSaveFileTracking = 6,
+        UseSaveFileTracking = 7
     }
 
     [PrimaryKey(nameof(Id))]
@@ -64,6 +67,7 @@ namespace MobileGnollHackLogger.Data
         public string? UserIPAddress { get; set; }
 
         public bool? LoginSucceeded { get; set; }
+        public bool? DecryptionSucceeded { get; set; }
 
         [ForeignKey("AspNetUser")]
         public string? AspNetUserId { get; set; }

@@ -20,5 +20,11 @@ namespace MobileGnollHackLogger.Areas.API
         {
             
         }
+
+        public string GetData()
+        {
+            return EncryptedId + "|" + TimeStamp.ToString() + "|" + Sha256 + "|" + FileLength.ToString();
+        }
+
     }
 }

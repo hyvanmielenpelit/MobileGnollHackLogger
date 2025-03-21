@@ -23,6 +23,7 @@ namespace MobileGnollHackLogger.Data
         public string? RequestUserName { get; set; }
         public string? RequestAntiForgeryToken { get; set; }
         public bool? LoginSucceeded { get; set; }
+        public bool? DecryptionSucceeded { get; set; }
 
         public LogLevel MinLogLevel { get; set; }
 
@@ -199,6 +200,7 @@ namespace MobileGnollHackLogger.Data
             req.LastRequestId = LastRequestId;
             req.UserIPAddress = UserIPAddress;
             req.LoginSucceeded = LoginSucceeded;
+            req.DecryptionSucceeded = DecryptionSucceeded;
 
             return req;
         }
