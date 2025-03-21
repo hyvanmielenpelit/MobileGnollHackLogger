@@ -44,8 +44,8 @@
         <div class="form-floating mb-3">
             <input name="FileLength" asp-for="Input.FileLength" class="form-control" autocomplete="" aria-required="true" placeholder="File Length"
                    value="123456" />
-            <label asp-for="Input.Sha256" class="form-label">Sha256 Base64 Encoded</label>
-            <span asp-validation-for="Input.Sha256" class="text-danger"></span>
+            <label asp-for="Input.FileLength" class="form-label">File Length</label>
+            <span asp-validation-for="Input.FileLength" class="text-danger"></span>
         </div>
         @if (WebHostEnvironment.IsDevelopment())
         {
