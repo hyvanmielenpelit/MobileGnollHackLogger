@@ -102,8 +102,7 @@ namespace MobileGnollHackLogger.Areas.API
                         return actionResult;
                     }
 
-                    await LogAndSetSuccessAsync($"SaveFileTracking insertion succeeded. Inserted id={sft.Id}, encrypted '{base64returnValue}'.");
-                    return Content(base64returnValue!); //OK
+                    return await LogAndSetSuccessAsync(200, base64returnValue!, $"SaveFileTracking insertion succeeded. Inserted id={sft.Id}, encrypted '{base64returnValue}'.");
                 }
                 catch (Exception ex)
                 {
@@ -213,8 +212,7 @@ namespace MobileGnollHackLogger.Areas.API
                     sft.UsedDate = DateTime.UtcNow;
                     await _dbContext.SaveChangesAsync();
 
-                    await LogAndSetSuccessAsync($"SaveFileTracking {sft.Id} use succeeded.");
-                    return Ok();
+                    return await LogAndSetSuccessAsync(200, "", $"SaveFileTracking {sft.Id} use succeeded.");
                 }
                 catch (Exception ex)
                 {
@@ -470,11 +468,20 @@ namespace MobileGnollHackLogger.Areas.API
             return Content(returnMessage);
         }
 
-        private async Task LogAndSetSuccessAsync(string logMessage)
+        private async Task<IActionResult> LogAndSetSuccessAsync(int statusCode, string responseText, string logMessage)
         {
-            var statusCode = 200;
             Response.StatusCode = statusCode;
-            await _dbLogger.LogRequestAsync(logMessage, Data.LogLevel.Info, statusCode);
+            string logMessage2 = logMessage; 
+            if(string.IsNullOrEmpty(responseText))
+            {
+                logMessage2 += " Response text is empty.";
+            }
+            else
+            {
+                logMessage2 += " Response Text: " + responseText;
+            }
+            await _dbLogger.LogRequestAsync(logMessage2, Data.LogLevel.Info, statusCode);
+            return Content(responseText);
         }
 
         private void SetDbLoggerInfo()
