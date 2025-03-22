@@ -80,10 +80,12 @@ namespace MobileGnollHackLogger.Data
 
         public RequestInfo(string userName, ApplicationDbContext dbContext)
         {
-            var user = dbContext.Users.First(u => u.UserName == userName);
-            AspNetUserId = user.Id;
-            AspNetUser = (ApplicationUser)user;
+            var user = dbContext.Users.FirstOrDefault(u => u.UserName == userName);
+            if(user != null)
+            {
+                AspNetUserId = user.Id;
+                AspNetUser = (ApplicationUser)user;
+            }
         }
-
     }
 }
