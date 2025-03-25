@@ -205,26 +205,26 @@ namespace MobileGnollHackLogger.Areas.API
             await Response.CompleteAsync();
         }
 
-        [Route("api/games/csv")]
-        [HttpGet]
-        public async Task<IActionResult> GetCsvAsync()
-        {
-            return await GetCsvAsync(0);
-        }
+        //[Route("api/games/csv")]
+        //[HttpGet]
+        //public async Task<IActionResult> GetCsvAsync()
+        //{
+        //    return await GetCsvAsync(0);
+        //}
 
-        [Route("api/games/csv/{lastId}")]
-        [HttpGet]
-        public async Task<IActionResult> GetCsvAsync(long? lastId)
-        {
-            var gameLogs = await _dbContext.GameLog.Where(gl => gl.Id > (lastId ?? 0)).ToListAsync();
-            StringBuilder sb = new StringBuilder();
-            sb.AppendLine(GameLog.GetCsvHeader(true));
-            foreach (var gameLog in gameLogs)
-            {
-                sb.AppendLine(gameLog.ToCsvString());
-            }
-            return Content(sb.ToString(), "text/plain", Encoding.UTF8);
-        }
+        //[Route("api/games/csv/{lastId}")]
+        //[HttpGet]
+        //public async Task<IActionResult> GetCsvAsync(long? lastId)
+        //{
+        //    var gameLogs = await _dbContext.GameLog.Where(gl => gl.Id > (lastId ?? 0)).ToListAsync();
+        //    StringBuilder sb = new StringBuilder();
+        //    sb.AppendLine(GameLog.GetCsvHeader(true));
+        //    foreach (var gameLog in gameLogs)
+        //    {
+        //        sb.AppendLine(gameLog.ToCsvString());
+        //    }
+        //    return Content(sb.ToString(), "text/plain", Encoding.UTF8);
+        //}
 
         [Route("xlogfile")]
         [HttpPost]
