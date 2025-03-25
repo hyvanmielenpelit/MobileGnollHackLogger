@@ -117,8 +117,12 @@ namespace MobileGnollHackLogger.Areas.API
                 }
             }
 
-            long lastIDWithDefault = lastId ?? 0;
-            var gameLogs = _dbContext.GameLog.Where(gl => gl.Id > lastIDWithDefault);
+            IQueryable<GameLog> gameLogs = _dbContext.GameLog;
+            if(lastId.HasValue && lastId.Value > 0)
+            {
+                gameLogs = gameLogs.Where(gl => gl.Id > lastId.Value);
+            }
+
             long currentCharIndex = 0;
             foreach(var gameLog in gameLogs)
             {
