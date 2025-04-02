@@ -35,13 +35,16 @@ namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
         private readonly IUserEmailStore<ApplicationUser> _emailStore;
         private readonly ILogger<RegisterModel> _logger;
         private readonly IEmailSender _emailSender;
+        private readonly IConfiguration _configuration;
+        private readonly LogFileLogger _fileLogger;
 
         public RegisterModel(
             UserManager<ApplicationUser> userManager,
             IUserStore<ApplicationUser> userStore,
             SignInManager<ApplicationUser> signInManager,
             ILogger<RegisterModel> logger,
-            IEmailSender emailSender)
+            IEmailSender emailSender,
+            IConfiguration configuration)
         {
             _userManager = userManager;
             _userStore = userStore;
@@ -49,6 +52,8 @@ namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
             _signInManager = signInManager;
             _logger = logger;
             _emailSender = emailSender;
+            _configuration = configuration;
+            _fileLogger = new LogFileLogger(_configuration);
         }
 
         /// <summary>
@@ -150,11 +155,14 @@ namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
 
                         var userId = await _userManager.GetUserIdAsync(user);
                         var code = await _userManager.GenerateEmailConfirmationTokenAsync(user);
-                        code = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(code));
+                        var encoded_code = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(code));
+                        //await _fileLogger.WriteLogAsync("Register: code: " + code);
+                        //await _fileLogger.WriteLogAsync("Register: encoded_code: " + encoded_code);
+
                         var callbackUrl = Url.Page(
                             "/Account/ConfirmEmail",
                             pageHandler: null,
-                            values: new { area = "Identity", userId = userId, code = code, returnUrl = returnUrl },
+                            values: new { area = "Identity", userId = userId, code = encoded_code, returnUrl = returnUrl },
                             protocol: Request.Scheme);
 
                         var htmlBody = EmailSender.ConfirmAccountEmailHtml
