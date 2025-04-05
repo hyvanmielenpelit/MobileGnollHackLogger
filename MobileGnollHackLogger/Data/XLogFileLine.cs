@@ -64,7 +64,8 @@ namespace MobileGnollHackLogger.Data
             "tournament",
             "collapse",
             "seclvl",
-            "store"
+            "store",
+            "portseclvl"
         };
 
         
@@ -427,6 +428,8 @@ namespace MobileGnollHackLogger.Data
             }
         }
 
+        public int? PortSecurityLevel { get; set; }
+
         public XLogFileLine()
         {
 
@@ -596,6 +599,9 @@ namespace MobileGnollHackLogger.Data
                         case "store":
                             Store = value;
                             break;
+                        case "portseclvl":
+                            PortSecurityLevel = int.Parse(value);
+                            break;
                         default:
                             break;
                     }
@@ -675,6 +681,7 @@ namespace MobileGnollHackLogger.Data
             //We are adding new fields only if they are non-null, not to break byte ranges in NetHack Scoreboard and Junethack
             AddField(sb, fieldNum++, SecurityLevel, outputMode, true);
             AddField(sb, fieldNum++, Store, outputMode, true);
+            AddField(sb, fieldNum++, PortSecurityLevel, outputMode, true);
 
             return sb.ToString();
         }
