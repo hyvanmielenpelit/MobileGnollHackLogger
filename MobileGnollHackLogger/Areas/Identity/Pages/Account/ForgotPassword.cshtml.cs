@@ -72,7 +72,8 @@ namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
                     protocol: Request.Scheme);
 
                 var htmlBody = EmailSender.ForgotPasswordEmailHtml
-                        .Replace(@"{CallbackUrl}", HtmlEncoder.Default.Encode(callbackUrl));
+                        .Replace(@"{CallbackUrl}", HtmlEncoder.Default.Encode(callbackUrl))
+                        .Replace(@"{UserName}", user.UserName);
 
                 try
                 {
