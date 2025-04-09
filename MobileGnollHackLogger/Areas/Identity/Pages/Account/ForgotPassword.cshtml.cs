@@ -77,7 +77,7 @@ namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
 
                 try
                 {
-                    await _emailSender.SendEmailAsync(Input.Email, "Reset GnollHack Account Password", htmlBody);
+                    await _emailSender.SendEmailAsync(Input.Email, "GnollHack Account Password and User Name Recovery", htmlBody);
 
                     return RedirectToPage("./ForgotPasswordConfirmation");
                 }
