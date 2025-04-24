@@ -428,6 +428,32 @@ namespace MobileGnollHackLogger.Data
             }
         }
 
+        public string? StoreLetter
+        {
+            get
+            {
+                switch (Store)
+                {
+                    case "apple":
+                        return "";
+                    case "google":
+                        return "";
+                    case "microsoft":
+                        return "";
+                    case "steam":
+                        return "s";
+                    case "steam-playtest":
+                        return "t";
+                    case null:
+                        return null;
+                    case "":
+                        return "";
+                    default:
+                        return "";
+                }
+            }
+        }
+
         public int? PortSecurityLevel { get; set; }
 
         public XLogFileLine()

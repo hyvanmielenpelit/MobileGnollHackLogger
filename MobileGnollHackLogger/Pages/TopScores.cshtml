@@ -101,7 +101,7 @@
                             }</td>
                         <td class="w-xxs">@(gameLog.Version)-@(gameLog.EditLevel)@if (!string.IsNullOrEmpty(gameLog.PortVersion) && !string.IsNullOrEmpty(gameLog.Platform))
                             {
-                                <text>, @(gameLog.PortVersion + gameLog.PlatformLetter)</text>
+                                <text>, @(gameLog.PortVersion + gameLog.PlatformLetter + gameLog.StoreLetter)</text>
                             }
                         </td>
                         <td class="w-ms">@gameLog.Name<br />@gameLog.CharacterName</td>
