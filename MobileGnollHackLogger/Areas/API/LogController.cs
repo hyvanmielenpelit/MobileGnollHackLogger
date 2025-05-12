@@ -431,7 +431,12 @@ namespace MobileGnollHackLogger.Areas.API
                     {
                         _dbLogger.LogSubType = RequestLogSubType.PartialDataError;
                         int responseCode = 400;
-                        await _dbLogger.LogRequestAsync("Login succeeded but there is missing data.", Data.LogLevel.Error, responseCode);
+
+                        string logMsg = string.IsNullOrEmpty(model.XLogEntry) ? "XLogEntry is empty." : "";
+                        logMsg += (!string.IsNullOrEmpty(logMsg) && model.PlainTextDumpLog == null ? " " : "") + (model.PlainTextDumpLog == null ? "PlainTextDumpLog is missing." : "");
+                        logMsg += (!string.IsNullOrEmpty(logMsg) && model.HtmlDumpLog == null ? " " : "") + (model.HtmlDumpLog == null ? "HtmlDumpLog is missing." : "");
+
+                        await _dbLogger.LogRequestAsync("Login succeeded but there is missing data: " + logMsg, Data.LogLevel.Error, responseCode);
                         return StatusCode(responseCode); //Bad Request
                     }
                 }
