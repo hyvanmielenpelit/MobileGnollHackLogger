@@ -450,6 +450,8 @@ namespace MobileGnollHackLogger.Data
                         return "p";
                     case "none":
                         return "n";
+                    case "unknown":
+                        return "?";
                     case null:
                         return null;
                     case "":
