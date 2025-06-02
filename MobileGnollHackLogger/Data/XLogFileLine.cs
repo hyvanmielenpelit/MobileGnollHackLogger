@@ -439,7 +439,7 @@ namespace MobileGnollHackLogger.Data
                     case "google":
                         return "";
                     case "microsoft":
-                        return "";
+                        return "m";
                     case "steam":
                         return "s";
                     case "steam-playtest":
