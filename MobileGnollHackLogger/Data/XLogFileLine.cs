@@ -444,6 +444,12 @@ namespace MobileGnollHackLogger.Data
                         return "s";
                     case "steam-playtest":
                         return "t";
+                    case "unpackaged":
+                        return "u";
+                    case "packaged":
+                        return "p";
+                    case "none":
+                        return "n";
                     case null:
                         return null;
                     case "":
