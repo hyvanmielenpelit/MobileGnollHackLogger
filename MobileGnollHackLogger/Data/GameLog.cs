@@ -73,6 +73,7 @@ namespace MobileGnollHackLogger.Data
             SecurityLevel = line.SecurityLevel;
             Store = line.Store;
             PortSecurityLevel = line.PortSecurityLevel;
+            ExperienceLevel = line.ExperienceLevel;
 
             var user = dbContext.Users.First(u => u.UserName == line.Name);
             AspNetUserId = user.Id;

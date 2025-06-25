@@ -65,7 +65,8 @@ namespace MobileGnollHackLogger.Data
             "collapse",
             "seclvl",
             "store",
-            "portseclvl"
+            "portseclvl",
+            "xplvl"
         };
 
         
@@ -464,6 +465,8 @@ namespace MobileGnollHackLogger.Data
 
         public int? PortSecurityLevel { get; set; }
 
+        public int? ExperienceLevel { get; set; }
+
         public XLogFileLine()
         {
 
@@ -636,6 +639,9 @@ namespace MobileGnollHackLogger.Data
                         case "portseclvl":
                             PortSecurityLevel = int.Parse(value);
                             break;
+                        case "xplvl":
+                            ExperienceLevel = int.Parse(value);
+                            break;
                         default:
                             break;
                     }
@@ -716,6 +722,7 @@ namespace MobileGnollHackLogger.Data
             AddField(sb, fieldNum++, SecurityLevel, outputMode, true);
             AddField(sb, fieldNum++, Store, outputMode, true);
             AddField(sb, fieldNum++, PortSecurityLevel, outputMode, true);
+            AddField(sb, fieldNum++, ExperienceLevel, outputMode, true);
 
             return sb.ToString();
         }
