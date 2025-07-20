@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text;
 
@@ -14,6 +15,9 @@ namespace MobileGnollHackLogger.Data
         public string? AspNetUserId { get; set; }
         public ApplicationUser? AspNetUser { get; set; }
         public DateTime? CreatedDate { get; set; }
+        public long? ByteStart { get; set; }
+        public long? ByteEnd { get; set; }
+        public long? ByteLength { get; set; }
 
         public GameLog()
         {

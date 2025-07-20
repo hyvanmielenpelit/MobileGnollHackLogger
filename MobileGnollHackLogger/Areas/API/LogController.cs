@@ -48,12 +48,10 @@ namespace MobileGnollHackLogger.Areas.API
         [HttpGet]
         public async Task GetAsync()
         {
-            await GetAsync(0);
+            await GetAsyncNew();
         }
-        
-        [Route("xlogfile/{lastId}")]
-        [HttpGet]
-        public async Task GetAsync(long? lastId)
+
+        private async Task GetAsyncNew()
         {
             long minRange = -1;
             long maxRange = -1;
@@ -71,7 +69,7 @@ namespace MobileGnollHackLogger.Areas.API
                     var bytesRangeValueSplit = bytesRangeValue.Split('-');
                     if (bytesRangeValueSplit != null && bytesRangeValueSplit.Length == 2)
                     {
-                        if(string.IsNullOrWhiteSpace(bytesRangeValueSplit[0]))
+                        if (string.IsNullOrWhiteSpace(bytesRangeValueSplit[0]))
                         {
                             //No min range
                         }
@@ -118,18 +116,60 @@ namespace MobileGnollHackLogger.Areas.API
             }
 
             IQueryable<GameLog> gameLogs = _dbContext.GameLog;
-            if(lastId.HasValue && lastId.Value > 0)
-            {
-                gameLogs = gameLogs.Where(gl => gl.Id > lastId.Value);
-            }
+            IQueryable<GameLog> gameLogs2 = _dbContext.GameLog;
 
             long currentCharIndex = 0;
-            foreach(var gameLog in gameLogs)
+
+            if (minRange > 0)
+            {
+                var gameLogsWithByteRanges = gameLogs
+                    .Where(gl => gl.ByteStart != null && gl.ByteEnd != null);
+                var gameLogHit = await gameLogsWithByteRanges
+                    .FirstOrDefaultAsync(gl => gl.ByteStart <= minRange && gl.ByteEnd >= minRange);
+
+                if (gameLogHit != null)
+                {
+                    //GameLog found
+                    gameLogs2 = gameLogs.Where(gl => gl.Id >= gameLogHit.Id);
+                    currentCharIndex = gameLogHit.ByteStart!.Value;
+                }
+                else
+                {
+                    //GameLog not found, search for last with byte ranges
+                    var lastGameLogWithByteRanges = await gameLogsWithByteRanges
+                        .OrderByDescending(gl => gl.Id)
+                        .FirstOrDefaultAsync();
+
+                    if (lastGameLogWithByteRanges != null)
+                    {
+                        currentCharIndex = lastGameLogWithByteRanges.ByteEnd!.Value + 1;
+                        gameLogs2 = gameLogs.Where(gl => gl.Id > lastGameLogWithByteRanges.Id);
+                    }
+                    else
+                    {
+                        //No GameLog with byte ranges found, start from the beginning
+                        gameLogs2 = gameLogs;
+                        currentCharIndex = 0;
+                    }
+                }
+            }
+
+            int updateCount = 0;
+
+            foreach (var gameLog in gameLogs2)
             {
                 var xlogLine = gameLog.ToXLogString() + _newLine;
                 long charIndexWithLogLine = currentCharIndex + xlogLine.Length;
 
-                if(minRange > -1 && charIndexWithLogLine <= minRange)
+                if (gameLog.ByteStart == null || gameLog.ByteEnd == null || gameLog.ByteLength == null)
+                {
+                    gameLog.ByteStart = currentCharIndex;
+                    gameLog.ByteEnd = currentCharIndex + xlogLine.Length - 1;
+                    gameLog.ByteLength = xlogLine.Length;
+                    updateCount++;
+                }
+
+                if (minRange > -1 && charIndexWithLogLine <= minRange)
                 {
                     //Skip, Min Range greater than
 
@@ -159,7 +199,7 @@ namespace MobileGnollHackLogger.Areas.API
                         await WriteStringToResponse(line);
                     }
                 }
-                else if(maxRange > -1 && maxRange < charIndexWithLogLine)
+                else if (maxRange > -1 && maxRange < charIndexWithLogLine)
                 {
                     //Min Range has happened before
                     //This time we have only max range inside the line
@@ -176,7 +216,7 @@ namespace MobileGnollHackLogger.Areas.API
                     await WriteStringToResponse(xlogLine);
                 }
 
-                if(charIndexWithLogLine - 1 == maxRange)
+                if (charIndexWithLogLine - 1 == maxRange)
                 {
                     break;
                 }
@@ -187,6 +227,87 @@ namespace MobileGnollHackLogger.Areas.API
                 Response.StatusCode = 416;
                 await WriteErrorStringToResponse("Range Header bytes min value is equal to or greater than the file size.");
                 return;
+            }
+
+            if(updateCount > 0)
+            {
+                //Update the game log entries with byte ranges
+                try
+                {
+                    await _dbContext.SaveChangesAsync();
+                }
+                catch (DbUpdateConcurrencyException)
+                {
+                    //Ignore concurrency exceptions, they are expected
+                }
+            }
+
+            await Response.CompleteAsync();
+        }
+
+        [Route("xlogfile/{id}")]
+        [HttpGet]
+        public async Task GetAsync(long id)
+        {
+            Response.ContentType = "text/plain";
+
+            IQueryable<GameLog> gameLogs = _dbContext.GameLog.Where(gl => gl.Id == id);
+
+            foreach (var gameLog in gameLogs)
+            {
+                var xlogLine = gameLog.ToXLogString() + _newLine;
+                await WriteStringToResponse(xlogLine);
+            }
+
+            await Response.CompleteAsync();
+        }
+
+        [Route("xlogfile/min/{minId}")]
+        [HttpGet]
+        public async Task GetAsyncMin(long minId)
+        {
+            Response.ContentType = "text/plain";
+
+            IQueryable<GameLog> gameLogs = _dbContext.GameLog.Where(gl => gl.Id >= minId);
+
+            foreach (var gameLog in gameLogs)
+            {
+                var xlogLine = gameLog.ToXLogString() + _newLine;
+                await WriteStringToResponse(xlogLine);
+            }
+
+            await Response.CompleteAsync();
+        }
+
+        [Route("xlogfile/max/{maxId}")]
+        [HttpGet]
+        public async Task GetAsyncMax(long maxId)
+        {
+            Response.ContentType = "text/plain";
+
+            IQueryable<GameLog> gameLogs = _dbContext.GameLog.Where(gl => gl.Id <= maxId);
+
+            foreach (var gameLog in gameLogs)
+            {
+                var xlogLine = gameLog.ToXLogString() + _newLine;
+                await WriteStringToResponse(xlogLine);
+            }
+
+            await Response.CompleteAsync();
+        }
+
+        [Route("xlogfile/minmax/{minId}/{maxId}")]
+        [HttpGet]
+        public async Task GetAsyncMinMax(long minId, long maxId)
+        {
+            Response.ContentType = "text/plain";
+
+            IQueryable<GameLog> gameLogs = _dbContext.GameLog.Where(gl => gl.Id >= minId && gl.Id <= maxId);
+
+            foreach (var gameLog in gameLogs)
+            {
+                var xlogLine = gameLog.ToXLogString() + _newLine;
+                await WriteStringToResponse(xlogLine);
             }
 
             await Response.CompleteAsync();
