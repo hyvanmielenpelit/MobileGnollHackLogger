@@ -49,6 +49,8 @@ namespace MobileGnollHackLogger.Data
             //modelBuilder.Entity<ApplicationUser>()
             //    .Property(u => u.IsGameLogBanned)
             //    .HasDefaultValue(0);
+            modelBuilder.Entity<GameLog>()
+                .HasIndex(gl => new { gl.ByteStart, gl.ByteEnd, gl.ByteLength });
         }
 
         public async Task<TopScoreNumberData> GetTopScoreNumberAsync(long databaseId, string? mode, string? death = null)
