@@ -222,12 +222,12 @@ namespace MobileGnollHackLogger.Areas.API
                 }
             }
 
-            if (minRange > -1 && minRange > currentCharIndex)
-            {
-                Response.StatusCode = 416;
-                await WriteErrorStringToResponse("Range Header bytes min value is equal to or greater than the file size.");
-                return;
-            }
+            //if (minRange > -1 && minRange > currentCharIndex)
+            //{
+            //    Response.StatusCode = 416;
+            //    await WriteErrorStringToResponse("Range Header bytes min value is equal to or greater than the file size.");
+            //    return;
+            //}
 
             if(updateCount > 0)
             {
