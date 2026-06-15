@@ -1,4 +1,4 @@
-﻿using Azure.Core;
+using Azure.Core;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Extensions;
@@ -44,6 +44,13 @@ namespace MobileGnollHackLogger.Areas.API
             }
         }
 
+        /// <summary>
+        /// Retrieves game log entries in plain text format, supporting HTTP Range requests.
+        /// </summary>
+        /// <returns>
+        /// A task representing the asynchronous operation. The response body is written to as "text/plain" 
+        /// and contains newline-separated game log entries in xlog format matching any requested byte ranges.
+        /// </returns>
         [Route("xlogfile")]
         [HttpGet]
         public async Task GetAsync()
@@ -245,6 +252,14 @@ namespace MobileGnollHackLogger.Areas.API
             await Response.CompleteAsync();
         }
 
+        /// <summary>
+        /// Retrieves a single game log entry by its database identifier.
+        /// </summary>
+        /// <param name="id">The unique identifier of the game log entry.</param>
+        /// <returns>
+        /// A task representing the asynchronous operation. The response body is written to as "text/plain" 
+        /// and contains the single game log entry in xlog format followed by a newline.
+        /// </returns>
         [Route("xlogfile/{id}")]
         [HttpGet]
         public async Task GetAsync(long id)
@@ -262,6 +277,14 @@ namespace MobileGnollHackLogger.Areas.API
             await Response.CompleteAsync();
         }
 
+        /// <summary>
+        /// Retrieves game log entries with a database identifier greater than or equal to the specified minimum identifier.
+        /// </summary>
+        /// <param name="minId">The minimum game log database identifier.</param>
+        /// <returns>
+        /// A task representing the asynchronous operation. The response body is written to as "text/plain" 
+        /// and contains newline-separated game log entries in xlog format starting from the specified minimum identifier.
+        /// </returns>
         [Route("xlogfile/min/{minId}")]
         [HttpGet]
         public async Task GetAsyncMin(long minId)
@@ -279,6 +302,14 @@ namespace MobileGnollHackLogger.Areas.API
             await Response.CompleteAsync();
         }
 
+        /// <summary>
+        /// Retrieves game log entries with a database identifier less than or equal to the specified maximum identifier.
+        /// </summary>
+        /// <param name="maxId">The maximum game log database identifier.</param>
+        /// <returns>
+        /// A task representing the asynchronous operation. The response body is written to as "text/plain" 
+        /// and contains newline-separated game log entries in xlog format up to the specified maximum identifier.
+        /// </returns>
         [Route("xlogfile/max/{maxId}")]
         [HttpGet]
         public async Task GetAsyncMax(long maxId)
@@ -296,6 +327,15 @@ namespace MobileGnollHackLogger.Areas.API
             await Response.CompleteAsync();
         }
 
+        /// <summary>
+        /// Retrieves game log entries within a range defined by minimum and maximum database identifiers.
+        /// </summary>
+        /// <param name="minId">The minimum game log database identifier.</param>
+        /// <param name="maxId">The maximum game log database identifier.</param>
+        /// <returns>
+        /// A task representing the asynchronous operation. The response body is written to as "text/plain" 
+        /// and contains newline-separated game log entries in xlog format within the specified identifier range.
+        /// </returns>
         [Route("xlogfile/minmax/{minId}/{maxId}")]
         [HttpGet]
         public async Task GetAsyncMinMax(long minId, long maxId)
@@ -347,6 +387,16 @@ namespace MobileGnollHackLogger.Areas.API
         //    return Content(sb.ToString(), "text/plain", Encoding.UTF8);
         //}
 
+        /// <summary>
+        /// Submits a new game log entry along with character dump logs, or verifies connection and credentials.
+        /// </summary>
+        /// <param name="model">The model containing the authentication data and log payloads.</param>
+        /// <returns>
+        /// An <see cref="IActionResult"/> indicating the result of the operation.
+        /// On success for a connection test, returns an empty 200 OK.
+        /// On success for a new log entry, writes a serialized <see cref="LogPostResponseInfo"/> JSON object to the response body as "text/plain".
+        /// On failure, returns a non-200 status code, potentially containing a plain text error message in the response body.
+        /// </returns>
         [Route("xlogfile")]
         [HttpPost]
         public async Task<IActionResult> Post([FromForm] LogModel model)
