@@ -1,11 +1,24 @@
-﻿@page
+@page
 @model MobileGnollHackLogger.Pages.BonesTransactionsModel
 @{
     ViewData["Title"] = Model.Title;
 }
 
 <h1 class="text-center">Bones Sharing</h1>
-<h2>Compatibility Version</h2>
+@if (Model.CompatibilityVersions != null && Model.CompatibilityVersions.Count > 0)
+{
+    <div id="divCompatibility" style="display: flex; justify-content: center; align-items: center; margin-bottom: 15px;">
+        <form method="get" id="compatibilityForm" style="display: flex; align-items: center; gap: 10px;">
+            <label style="margin-bottom: 0; white-space: nowrap; font-weight:bold;">Compatibility:</label>
+            <select name="compatibility" class="form-select" onchange="this.form.submit()" style="width: auto;">
+                @for (int i = 0; i < Model.CompatibilityVersions.Count; i++)
+                {
+                    <option value="@i" selected="@(Model.SelectedCompatibilityVersion == i ? "selected" : null)">@Model.CompatibilityVersions[i].Label</option>
+                }
+            </select>
+        </form>
+    </div>
+}
 
 <h5 class="text-center">By Difficulty</h5>
 
@@ -26,7 +39,16 @@
     <div class="tab-pane tab-padding fade show active" id="tab-pane-all" role="tabpanel" aria-labelledby="tab-all" tabindex="0">
         <h2 class="text-center">All Difficulties</h2>
         @{
-            var numBones = Model.DbContext.Bones.Count();                            
+            var bonesQuery = Model.DbContext.Bones.AsQueryable();
+            if (Model.MinVersion.HasValue)
+            {
+                bonesQuery = bonesQuery.Where(b => b.VersionNumber >= Model.MinVersion.Value);
+            }
+            if (Model.MaxVersion.HasValue)
+            {
+                bonesQuery = bonesQuery.Where(b => b.VersionNumber <= Model.MaxVersion.Value);
+            }
+            var numBones = bonesQuery.Count();
         }
         <h5 class="text-center">@numBones Bones Available</h5>
         <div class="table-responsive">
@@ -41,8 +63,18 @@
                 </thead>
                 <tbody>
                     @{
+                        var transactionsQuery = Model.DbContext.BonesTransactions.AsQueryable();
+                        if (Model.MinVersion.HasValue)
+                        {
+                            transactionsQuery = transactionsQuery.Where(bt => bt.VersionNumber >= Model.MinVersion.Value);
+                        }
+                        if (Model.MaxVersion.HasValue)
+                        {
+                            transactionsQuery = transactionsQuery.Where(bt => bt.VersionNumber <= Model.MaxVersion.Value);
+                        }
+
                         var queryAll = from u in Model.DbContext.Users
-                                    join bt in Model.DbContext.BonesTransactions
+                                    join bt in transactionsQuery
                                     on u.Id equals bt.AspNetUserId into g
                                     orderby u.NormalizedUserName
                                     select new
@@ -74,8 +106,18 @@
 {
     int btDifficulty = kvp.Key + 4;
 
+    var difficultyTransactionsQuery = Model.DbContext.BonesTransactions.AsQueryable();
+    if (Model.MinVersion.HasValue)
+    {
+        difficultyTransactionsQuery = difficultyTransactionsQuery.Where(bt => bt.VersionNumber >= Model.MinVersion.Value);
+    }
+    if (Model.MaxVersion.HasValue)
+    {
+        difficultyTransactionsQuery = difficultyTransactionsQuery.Where(bt => bt.VersionNumber <= Model.MaxVersion.Value);
+    }
+
     var query = from u in Model.DbContext.Users
-                join bt in Model.DbContext.BonesTransactions
+                join bt in difficultyTransactionsQuery
                 on u.Id equals bt.AspNetUserId into g
                 orderby u.NormalizedUserName
                 select new
@@ -89,7 +131,16 @@
         <div class="tab-pane tab-padding fade" id="tab-pane-@(btDifficulty)" role="tabpanel" aria-labelledby="tab-@(btDifficulty)" tabindex="0">
             <h2 class="text-center">@kvp.Value Difficulty</h2>
             @{
-                var numBonesDiff = Model.DbContext.Bones.Where(b => b.DifficultyLevel == btDifficulty).Count();
+                var bonesDiffQuery = Model.DbContext.Bones.Where(b => b.DifficultyLevel == btDifficulty);
+                if (Model.MinVersion.HasValue)
+                {
+                    bonesDiffQuery = bonesDiffQuery.Where(b => b.VersionNumber >= Model.MinVersion.Value);
+                }
+                if (Model.MaxVersion.HasValue)
+                {
+                    bonesDiffQuery = bonesDiffQuery.Where(b => b.VersionNumber <= Model.MaxVersion.Value);
+                }
+                var numBonesDiff = bonesDiffQuery.Count();
             }
             <h5 class="text-center">@numBonesDiff Bones Available</h5>
             <div class="table-responsive">

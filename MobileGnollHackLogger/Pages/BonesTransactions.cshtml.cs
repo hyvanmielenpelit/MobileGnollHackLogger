@@ -25,8 +25,11 @@ namespace MobileGnollHackLogger.Pages
 
         public string? Title { get; set; }
 
-        public List<BonesVersionCompatibilityInfoWithMax> CompatibilityVersions { get; }
-        public int? SelectedCompatibilityVersion { get; set;  }
+        public List<BonesVersionCompatibilityInfoWithMax> CompatibilityVersions { get; } = new List<BonesVersionCompatibilityInfoWithMax>();
+        public int? SelectedCompatibilityVersion { get; set; }
+
+        public uint? MinVersion { get; set; }
+        public uint? MaxVersion { get; set; }
 
         public BonesTransactionsModel(ApplicationDbContext dbContext)
         {
@@ -47,6 +50,7 @@ namespace MobileGnollHackLogger.Pages
                     {
                         bvciwm.MaxVersion = BonesHelper.VersionCompatibilityList[i + 1].Version - 1;
                     }
+                    CompatibilityVersions.Add(bvciwm);
                 }
                 SelectedCompatibilityVersion = 0;
             }
@@ -54,7 +58,24 @@ namespace MobileGnollHackLogger.Pages
 
         public void OnGet()
         {
+            if (BonesHelper.VersionCompatibilityList != null && BonesHelper.VersionCompatibilityList.Count > 0)
+            {
+                int index = 0;
+                if (Request.Query.ContainsKey("compatibility"))
+                {
+                    var queryVal = Request.Query["compatibility"].ToString();
+                    if (!int.TryParse(queryVal, out int parsedIndex) || parsedIndex < 0 || parsedIndex >= CompatibilityVersions.Count)
+                    {
+                        throw new ArgumentOutOfRangeException("compatibility", "Compatibility version index is out of bounds or invalid.");
+                    }
+                    index = parsedIndex;
+                }
 
+                SelectedCompatibilityVersion = index;
+                var selectedVersionInfo = CompatibilityVersions[index];
+                MinVersion = selectedVersionInfo.Version;
+                MaxVersion = selectedVersionInfo.MaxVersion;
+            }
         }
     }
 }
