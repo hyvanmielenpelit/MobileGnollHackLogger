@@ -1,4 +1,4 @@
-﻿using System.CodeDom;
+using System.CodeDom;
 
 namespace MobileGnollHackLogger.Data
 {
@@ -6,6 +6,10 @@ namespace MobileGnollHackLogger.Data
     {
         public uint Version { get; set; }
         public string? Label { get; set; }
+
+        public BonesVersionCompatibilityInfo()
+        {
+        }
 
         public BonesVersionCompatibilityInfo(uint version, string label)
         {
