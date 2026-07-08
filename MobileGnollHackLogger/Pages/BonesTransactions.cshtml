@@ -9,7 +9,7 @@
 {
     <div id="divCompatibility" style="display: flex; justify-content: center; align-items: center; margin-bottom: 15px;">
         <form method="get" id="compatibilityForm" style="display: flex; align-items: center; gap: 10px;">
-            <label style="margin-bottom: 0; white-space: nowrap; font-weight:bold;">Compatibility:</label>
+            <label style="margin-bottom: 0; white-space: nowrap; font-weight:bold;">Compatible With:</label>
             <select name="compatibility" class="form-select" onchange="this.form.submit()" style="width: auto;">
                 @for (int i = 0; i < Model.CompatibilityVersions.Count; i++)
                 {
