@@ -59,6 +59,8 @@ if(string.IsNullOrEmpty(EmailSender.ForgotPasswordEmailHtml))
     throw new Exception("EmailSender.ForgotPasswordEmailHtml is null or empty.");
 }
 
+BonesHelper.VersionCompatibilityList = builder.Configuration.Get<List<BonesVersionCompatibilityInfo>>("BonesVersionCompatibility");
+
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(connectionString));
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
