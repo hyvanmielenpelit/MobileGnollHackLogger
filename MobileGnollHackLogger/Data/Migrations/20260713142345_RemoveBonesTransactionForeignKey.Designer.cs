@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using MobileGnollHackLogger.Data;
 
@@ -11,9 +12,11 @@ using MobileGnollHackLogger.Data;
 namespace MobileGnollHackLogger.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260713142345_RemoveBonesTransactionForeignKey")]
+    partial class RemoveBonesTransactionForeignKey
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -347,6 +350,8 @@ namespace MobileGnollHackLogger.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("AspNetUserId");
+
+                    b.HasIndex("BonesId");
 
                     b.ToTable("BonesTransactions");
                 });
@@ -747,7 +752,15 @@ namespace MobileGnollHackLogger.Data.Migrations
                         .WithMany()
                         .HasForeignKey("AspNetUserId");
 
+                    b.HasOne("MobileGnollHackLogger.Data.Bones", "Bones")
+                        .WithMany()
+                        .HasForeignKey("BonesId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
                     b.Navigation("AspNetUser");
+
+                    b.Navigation("Bones");
                 });
 
             modelBuilder.Entity("MobileGnollHackLogger.Data.GameLog", b =>
