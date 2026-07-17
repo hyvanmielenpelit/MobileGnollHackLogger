@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.CodeAnalysis.Host.Mef;
 using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
+using MobileGnollHackLogger.Data.Migrations;
 
 namespace MobileGnollHackLogger.Pages
 {
@@ -9,6 +11,19 @@ namespace MobileGnollHackLogger.Pages
     {
         private const int _minTurns = 1000;
         public int MinTurns { get {  return _minTurns; } }
+
+        private const int _years = 1;
+        public int Years { get { return _years; } }
+        public string YearString
+        {
+            get
+            {
+                return _years + " Year" + ((_years == 1) ? "" : "s");
+            }
+        }
+
+        private DateTime _cutoffDate = DateTime.Now.AddYears(-1 * _years);
+        public DateTime CutOffDate {  get { return _cutoffDate; } }
 
         private ApplicationDbContext _dbContext;
 
@@ -42,7 +57,7 @@ namespace MobileGnollHackLogger.Pages
                     break;
             }
 
-            GameLogs = _dbContext.GameLog.Where(gl => (Mode == null || gl.Mode == Mode) && gl.Mode != "debug" && gl.Mode != "explore" && gl.Scoring == "yes" && gl.Turns >= MinTurns);
+            GameLogs = _dbContext.GameLog.Where(gl => (Mode == null || gl.Mode == Mode) && gl.Mode != "debug" && gl.Mode != "explore" && gl.Scoring == "yes" && gl.Turns >= MinTurns && gl.CreatedDate != null && gl.CreatedDate >= CutOffDate);
             GroupByRole = await GameLogs.GroupBy(gl => gl.Role).ToListAsync();
             GroupByRoleAscended = await GameLogs.Where(gl=>gl.DeathText == "ascended").GroupBy(gl => gl.Role).ToListAsync();
         }
