@@ -574,28 +574,51 @@ div.container.xxlMaxWidth {
         width: auto !important;
     }
 
-    .dataTables_paginate .paginate_button {
-        background: transparent !important;
-        border: 1px solid rgba(0, 240, 255, 0.2) !important;
-        color: #a0aec0 !important;
-        border-radius: 4px;
-        margin-left: 2px;
-
-        &.current, &.current:hover {
-            background: rgba(212, 160, 23, 0.2) !important;
-            border-color: $title-color !important;
-            color: $title-color !important;
+    .dataTables_paginate {
+        .paginate_button.page-item {
+            margin: 0 4px !important;
+            border: none !important;
+            background: transparent !important;
+            padding: 0 !important;
         }
 
-        &:hover {
-            background: rgba(0, 240, 255, 0.1) !important;
-            color: white !important;
-            border-color: rgba(0, 240, 255, 0.5) !important;
+        .paginate_button:not(.page-item), .page-item .page-link {
+            background: rgba(15, 20, 30, 0.6) !important;
+            border: 1px solid rgba(0, 240, 255, 0.2) !important;
+            color: #a0aec0 !important;
+            border-radius: 4px !important;
+            padding: 0.5rem 0.75rem !important;
+            margin: 0 !important;
+
+            &:hover {
+                background: rgba(0, 240, 255, 0.1) !important;
+                color: white !important;
+                border: 1px solid rgba(0, 240, 255, 0.5) !important;
+                position: relative !important;
+                z-index: 3 !important;
+            }
         }
         
-        &.disabled, &.disabled:hover {
+        .paginate_button:not(.page-item) {
+            margin: 0 4px !important;
+        }
+
+        .paginate_button.current, 
+        .paginate_button.current:hover,
+        .page-item.active .page-link {
+            background: rgba(212, 160, 23, 0.2) !important;
+            border: 1px solid $title-color !important;
+            color: $title-color !important;
+            position: relative !important;
+            z-index: 2 !important;
+        }
+
+        .paginate_button.disabled,
+        .paginate_button.disabled:hover,
+        .page-item.disabled .page-link {
             border: 1px solid transparent !important;
             color: #4a5568 !important;
+            background: transparent !important;
         }
     }
 }
