@@ -12,7 +12,7 @@ namespace MobileGnollHackLogger.Pages
         private const int _minTurns = 1000;
         public int MinTurns { get {  return _minTurns; } }
 
-        private const int _years = 1;
+        private const int _years = 2;
         public int Years { get { return _years; } }
         public string YearString
         {

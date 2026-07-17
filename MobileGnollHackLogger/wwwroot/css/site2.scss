@@ -13,6 +13,14 @@ body {
     background-size: contain;
     background-position-y: top;
     background-position-x: center;
+    font-family: "Lato", sans-serif;
+    font-style: normal;
+}
+
+h1, h2 {
+    font-family: "Cinzel", serif;
+    font-optical-sizing: auto;
+    font-style: normal;
 }
 
 nav {
@@ -36,6 +44,13 @@ nav {
         color: white !important;
         background: #111 !important;
         border-bottom-color: black !important;
+    }
+
+    & .navbar-brand {
+        font-family: "Cinzel", serif;
+        font-optical-sizing: auto;
+        font-style: normal;
+        font-weight: 600;
     }
 }
 
