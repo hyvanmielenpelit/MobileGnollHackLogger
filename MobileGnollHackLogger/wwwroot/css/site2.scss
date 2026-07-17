@@ -3,6 +3,7 @@ $link-color: #ded18b;
 $font-em-color: $link-color;
 $primary-color: lighten(gold, 10%);
 $nav-color: lighten(#626157, 40%);
+$title-color: #D4A017;
 
 body {
     margin-bottom: 60px;
@@ -17,10 +18,25 @@ body {
     font-style: normal;
 }
 
-h1, h2 {
+%common-heading {
     font-family: "Cinzel", serif;
     font-optical-sizing: auto;
     font-style: normal;
+}
+
+h1 {
+    @extend %common-heading;
+    color: $title-color;
+}
+
+h2 {
+    @extend %common-heading;
+    color: $title-color;
+}
+
+.title {
+    color: $title-color;
+    font-weight: 600;
 }
 
 nav {
@@ -32,11 +48,23 @@ nav {
         }
 
         &.text-primary {
-            color: $primary-color !important;
+            color: $title-color !important;
 
             &:hover {
-                color: lighten($primary-color, 15%) !important;
+                color: lighten($title-color, 15%) !important;
             }
+        }
+    }
+
+    &.navbar a.navbar-brand, &.navbar button.navbar-brand {
+        color: $title-color !important;
+        font-family: "Cinzel", serif;
+        font-optical-sizing: auto;
+        font-style: normal;
+        font-weight: 600;
+
+        &:hover {
+            color: lighten($title-color, 15%) !important;
         }
     }
 
@@ -44,13 +72,6 @@ nav {
         color: white !important;
         background: #111 !important;
         border-bottom-color: black !important;
-    }
-
-    & .navbar-brand {
-        font-family: "Cinzel", serif;
-        font-optical-sizing: auto;
-        font-style: normal;
-        font-weight: 600;
     }
 }
 
@@ -114,7 +135,6 @@ hr.separator {
 }
 
 .task-list {
-    font-weight: bold;
     text-align: left;
     max-width: 360px;
     margin: 0 auto;
