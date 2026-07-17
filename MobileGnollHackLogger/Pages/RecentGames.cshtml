@@ -1,4 +1,4 @@
-﻿@page
+@page
 @using System.Globalization
 @model MobileGnollHackLogger.Pages.RecentGamesModel
 
@@ -88,21 +88,21 @@
                 @foreach (var gameLog in Model.GameLogs)
                 {
                     <tr data-id="@gameLog.Id">
-                        <td class="w-xxs">
+                        <td class="w-xxs" data-label="Version">
                             @(gameLog.Version)-@(gameLog.EditLevel)@if (!string.IsNullOrEmpty(gameLog.PortVersion) && !string.IsNullOrEmpty(gameLog.Platform))
                             {
                                 <text>, @(gameLog.PortVersion + gameLog.PlatformLetter + gameLog.StoreLetter)</text>
                             }
                         </td>
-                        <td class="w-m">@gameLog.Name<br />@gameLog.CharacterName</td>
-                        <td class="w-ms">@(gameLog.RoleText), @(gameLog.RaceText), @(gameLog.GenderText), @(gameLog.AlignmentText)</td>
-                        <td class="w-s">@gameLog.DifficultyText, @(gameLog.ModeText)@if(gameLog.IsTournament){<text>, Tournament</text>}</td>
-                        <td class="w-xs">@gameLog.EndTimeUTCDate.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)</td>
-                        <td class="w-s">@gameLog.Points.ToString("N0", CultureInfo.InvariantCulture)</td>
-                        <td class="w-s">T: @(gameLog.Turns)<br />D: @gameLog.RealTimeSpan.ToString("c", CultureInfo.InvariantCulture)</td>
-                        <td class="w-s">DL: @(gameLog.DeathLevel)/@(gameLog.MaxLevel)<br />HP: @(gameLog.HitPoints)/@(gameLog.MaxHitPoints)</td>
-                        <td class="w-xxs">D: @(gameLog.Deaths)<br />C: @(gameLog.DungeonCollapses)</td>
-                        <td class="w-m">
+                        <td class="w-m" data-label="Account/Character">@gameLog.Name<br />@gameLog.CharacterName</td>
+                        <td class="w-ms" data-label="Character Details">@(gameLog.RoleText), @(gameLog.RaceText), @(gameLog.GenderText), @(gameLog.AlignmentText)</td>
+                        <td class="w-s" data-label="Difficulty/Mode">@gameLog.DifficultyText, @(gameLog.ModeText)@if(gameLog.IsTournament){<text>, Tournament</text>}</td>
+                        <td class="w-xs" data-label="End Time UTC">@gameLog.EndTimeUTCDate.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)</td>
+                        <td class="w-s" data-label="Points">@gameLog.Points.ToString("N0", CultureInfo.InvariantCulture)</td>
+                        <td class="w-s" data-label="Turns/Duration">T: @(gameLog.Turns)<br />D: @gameLog.RealTimeSpan.ToString("c", CultureInfo.InvariantCulture)</td>
+                        <td class="w-s" data-label="Dungeon/HP">DL: @(gameLog.DeathLevel)/@(gameLog.MaxLevel)<br />HP: @(gameLog.HitPoints)/@(gameLog.MaxHitPoints)</td>
+                        <td class="w-xxs" data-label="Deaths/Crashes">D: @(gameLog.Deaths)<br />C: @(gameLog.DungeonCollapses)</td>
+                        <td class="w-m" data-label="Death Reason">
                             @gameLog.DeathText
                             @if (!string.IsNullOrEmpty(gameLog.WhileText))
                             {

@@ -4,7 +4,7 @@
   background-color: black;
   background-image: url(/img/gnoll-illustration-darkened-bottom-w1920-q60.jpg);
   background-repeat: no-repeat;
-  background-size: contain;
+  background-size: cover;
   background-position-y: top;
   background-position-x: center;
   font-family: "Lato", sans-serif;
@@ -59,13 +59,16 @@ nav.border-bottom {
 }
 
 main {
-  background: #111;
-  border: white;
-  border-radius: 10px;
-  padding: 15px 15px 30px 15px;
+  background: rgba(17, 17, 17, 0.85) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(212, 160, 23, 0.25);
+  border-radius: 12px;
+  padding: 20px 20px 35px 20px;
   max-width: 1000px;
   margin: 30px auto;
-  box-shadow: 0px 0px 20px 20px black;
+  box-shadow: 0px 10px 30px rgba(0, 0, 0, 0.8);
+  transition: all 0.3s ease-in-out;
 }
 
 footer {
@@ -78,22 +81,101 @@ footer.border-top {
 
 a {
   color: #ded18b;
+  transition: color 0.2s ease;
 }
 a:hover {
-  color: rgb(199.4093959732, 177.5100671141, 59.5906040268);
+  color: rgb(238.9429530201, 232.6174496644, 198.5570469799);
+  text-decoration: underline;
 }
 
-input.form-control {
-  color: white;
-  background: #222;
+.card {
+  background-color: rgba(25, 25, 25, 0.5) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 10px !important;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
-input.form-control:focus {
+.card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(212, 160, 23, 0.25) !important;
+  box-shadow: 0 6px 20px rgba(212, 160, 23, 0.12) !important;
+}
+.card .card-title {
+  color: #D4A017;
+  font-family: "Cinzel", serif;
+  font-weight: bold;
+}
+.card ol {
+  padding-left: 20px;
+  margin: 0;
+}
+.card ol li {
+  margin-bottom: 8px;
+  color: #ccc;
+}
+.card ol li em {
+  color: #ded18b;
+  font-style: normal;
+  font-weight: bold;
+}
+
+input.form-control, select.form-select {
   color: white !important;
-  background: #222 !important;
+  background-color: rgba(30, 30, 30, 0.95) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  border-radius: 6px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
-input.form-control:disabled {
+input.form-control:focus, select.form-select:focus {
+  color: white !important;
+  border-color: #D4A017 !important;
+  box-shadow: 0 0 8px rgba(212, 160, 23, 0.25) !important;
+  background-color: rgba(30, 30, 30, 0.95) !important;
+}
+input.form-control:disabled, select.form-select:disabled {
   color: #ccc !important;
-  background: #444 !important;
+  background: #333 !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+.form-floating > label {
+  color: #888 !important;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, rgb(156.789787234, 118.3319148936, 17.010212766), #D4A017) !important;
+  border: 1px solid #ded18b !important;
+  color: black !important;
+  font-weight: bold;
+  font-family: "Cinzel", serif;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+.btn-primary:hover {
+  background: linear-gradient(135deg, #D4A017, rgb(233.0765957447, 183.5106382979, 52.9234042553)) !important;
+  box-shadow: 0 0 12px rgba(212, 160, 23, 0.25) !important;
+  transform: translateY(-1px);
+  color: black !important;
+}
+.btn-primary:active {
+  transform: translateY(1px);
+}
+
+.nav-pills .nav-link {
+  color: #ccc;
+  transition: all 0.2s ease;
+  border-radius: 6px;
+}
+.nav-pills .nav-link:hover {
+  color: white;
+  background-color: rgba(255, 255, 255, 0.05);
+}
+.nav-pills .nav-link.active {
+  background-color: rgba(212, 160, 23, 0.12) !important;
+  color: #D4A017 !important;
+  border-left: 3px solid #D4A017;
+  border-radius: 0 6px 6px 0;
 }
 
 .center-box {
@@ -110,27 +192,13 @@ a.nav-link:hover {
 
 hr.separator {
   margin: 30px 10px;
-}
-
-.task-list {
-  text-align: left;
-  max-width: 360px;
-  margin: 0 auto;
-}
-.task-list em {
-  /*text-decoration:underline;*/
-  /*font-variant:small-caps;*/
-  font-style: normal;
-  color: #ded18b;
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 .navbar-toggler-icon {
   font-size: 12px;
 }
 
-.page-item:active {
-  border-color: red !important;
-}
 .page-item a.page-link {
   color: white;
   background-color: rgb(33, 37, 41) !important;
@@ -142,12 +210,6 @@ hr.separator {
 }
 .page-item.active a.page-link:hover {
   cursor: default;
-}
-
-select.form-select {
-  background-color: rgb(33, 37, 41) !important;
-  color: white;
-  border-color: #ddd !important;
 }
 
 #topScoreTable > tbody > tr > td {
@@ -231,4 +293,69 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
 
 .tab-padding {
   padding-top: 15px;
+}
+
+.rank-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  font-weight: bold;
+  font-size: 0.9em;
+}
+.rank-badge.rank-1 {
+  background: radial-gradient(circle, #ffe066, #d4a017);
+  color: black;
+  box-shadow: 0 0 8px rgba(212, 160, 23, 0.6);
+}
+.rank-badge.rank-2 {
+  background: radial-gradient(circle, #f0f0f0, #a0a0a0);
+  color: black;
+}
+.rank-badge.rank-3 {
+  background: radial-gradient(circle, #d08040, #904010);
+  color: white;
+}
+
+@media (max-width: 768px) {
+  .nav-pills .nav-link.active {
+    border-left: none;
+    border-bottom: 3px solid #D4A017;
+    border-radius: 0;
+  }
+  #topScoreTable thead {
+    display: none;
+  }
+  #topScoreTable tbody, #topScoreTable tr, #topScoreTable td {
+    display: block;
+    width: 100% !important;
+  }
+  #topScoreTable tr {
+    margin-bottom: 20px;
+    border: 1px solid rgba(212, 160, 23, 0.25);
+    border-radius: 8px;
+    padding: 10px;
+    background: rgba(25, 25, 25, 0.6);
+  }
+  #topScoreTable td {
+    text-align: right;
+    padding: 8px 10px 8px 50%;
+    position: relative;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  }
+  #topScoreTable td:last-child {
+    border-bottom: none;
+  }
+  #topScoreTable td::before {
+    content: attr(data-label);
+    position: absolute;
+    left: 10px;
+    width: 45%;
+    text-align: left;
+    font-weight: bold;
+    color: #D4A017;
+    font-family: "Cinzel", serif;
+  }
 }

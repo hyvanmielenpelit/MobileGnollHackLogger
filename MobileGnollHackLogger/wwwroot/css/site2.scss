@@ -1,9 +1,13 @@
-﻿$font-color: white;
+$font-color: white;
 $link-color: #ded18b;
 $font-em-color: $link-color;
 $primary-color: lighten(gold, 10%);
 $nav-color: lighten(#626157, 40%);
 $title-color: #D4A017;
+$bg-glass: rgba(17, 17, 17, 0.85);
+$bg-input: rgba(30, 30, 30, 0.95);
+$border-glass: rgba(212, 160, 23, 0.25);
+$gold-glow: rgba(212, 160, 23, 0.25);
 
 body {
     margin-bottom: 60px;
@@ -11,7 +15,7 @@ body {
     background-color: black;
     background-image: url(/img/gnoll-illustration-darkened-bottom-w1920-q60.jpg);
     background-repeat: no-repeat;
-    background-size: contain;
+    background-size: cover;
     background-position-y: top;
     background-position-x: center;
     font-family: "Lato", sans-serif;
@@ -76,13 +80,16 @@ nav {
 }
 
 main {
-    background: #111;
-    border: white;
-    border-radius: 10px;
-    padding: 15px 15px 30px 15px;
+    background: $bg-glass !important;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid $border-glass;
+    border-radius: 12px;
+    padding: 20px 20px 35px 20px;
     max-width: 1000px;
     margin: 30px auto;
-    box-shadow: 0px 0px 20px 20px black;
+    box-shadow: 0px 10px 30px rgba(0, 0, 0, 0.8);
+    transition: all 0.3s ease-in-out;
 }
 
 footer {
@@ -96,24 +103,116 @@ footer {
 
 a {
     color: $link-color;
+    transition: color 0.2s ease;
 
     &:hover {
-        color: darken($link-color, 20%);
+        color: lighten($link-color, 15%);
+        text-decoration: underline;
     }
 }
 
-input.form-control {
-    color: white;
-    background: #222;
+// Custom Design System for Cards
+.card {
+    background-color: rgba(25, 25, 25, 0.5) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-radius: 10px !important;
+    transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+
+    &:hover {
+        transform: translateY(-3px);
+        border-color: $border-glass !important;
+        box-shadow: 0 6px 20px rgba(212, 160, 23, 0.12) !important;
+    }
+
+    .card-title {
+        color: $title-color;
+        font-family: "Cinzel", serif;
+        font-weight: bold;
+    }
+
+    ol {
+        padding-left: 20px;
+        margin: 0;
+        
+        li {
+            margin-bottom: 8px;
+            color: #ccc;
+            
+            em {
+                color: $link-color;
+                font-style: normal;
+                font-weight: bold;
+            }
+        }
+    }
+}
+
+// Form Inputs Modernization
+input.form-control, select.form-select {
+    color: white !important;
+    background-color: $bg-input !important;
+    border: 1px solid rgba(255, 255, 255, 0.15) !important;
+    border-radius: 6px;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
 
     &:focus {
         color: white !important;
-        background: #222 !important;
+        border-color: $title-color !important;
+        box-shadow: 0 0 8px $gold-glow !important;
+        background-color: $bg-input !important;
     }
 
     &:disabled {
         color: #ccc !important;
-        background: #444 !important;
+        background: #333 !important;
+        border-color: rgba(255, 255, 255, 0.08) !important;
+    }
+}
+
+.form-floating > label {
+    color: #888 !important;
+}
+
+// Fantasy Metallic Button Redesign
+.btn-primary {
+    background: linear-gradient(135deg, darken($title-color, 12%), $title-color) !important;
+    border: 1px solid $link-color !important;
+    color: black !important;
+    font-weight: bold;
+    font-family: "Cinzel", serif;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+
+    &:hover {
+        background: linear-gradient(135deg, $title-color, lighten($title-color, 10%)) !important;
+        box-shadow: 0 0 12px $gold-glow !important;
+        transform: translateY(-1px);
+        color: black !important;
+    }
+
+    &:active {
+        transform: translateY(1px);
+    }
+}
+
+// Nav Pills Styling (Used in User Manage account)
+.nav-pills .nav-link {
+    color: #ccc;
+    transition: all 0.2s ease;
+    border-radius: 6px;
+    
+    &:hover {
+        color: white;
+        background-color: rgba(255, 255, 255, 0.05);
+    }
+    
+    &.active {
+        background-color: rgba(212, 160, 23, 0.12) !important;
+        color: $title-color !important;
+        border-left: 3px solid $title-color;
+        border-radius: 0 6px 6px 0;
     }
 }
 
@@ -132,19 +231,7 @@ a.nav-link {
 
 hr.separator {
     margin: 30px 10px;
-}
-
-.task-list {
-    text-align: left;
-    max-width: 360px;
-    margin: 0 auto;
-
-    em {
-        /*text-decoration:underline;*/
-        /*font-variant:small-caps;*/
-        font-style: normal;
-        color: $font-em-color;
-    }
+    border-color: rgba(255, 255, 255, 0.1);
 }
 
 .navbar-toggler-icon {
@@ -154,18 +241,10 @@ hr.separator {
 $pagination-bg-color: rgb(33, 37, 41);
 
 .page-item {
-    &:active {
-        border-color: red !important;
-    }
-
     a.page-link {
         color: white;
         background-color: $pagination-bg-color !important;
         border-color: #444 !important;
-    }
-
-    &.disabled a.page-link {
-
     }
 
     &.active {
@@ -180,12 +259,6 @@ $pagination-bg-color: rgb(33, 37, 41);
     }
 }
 
-select.form-select {
-    background-color: rgb(33, 37, 41) !important;
-    color: white;
-    border-color: #ddd !important;
-}
-
 #topScoreTable {
     > tbody > tr > td {
         cursor: pointer;
@@ -194,70 +267,35 @@ select.form-select {
 
 div.container.lMaxWidth {
     max-width: 1500px;
-
-    main.lMaxWidth {
-        max-width: 1500px;
-    }
+    main.lMaxWidth { max-width: 1500px; }
 }
 
 div.container.xlMaxWidth {
     max-width: 1800px;
-
-    main.xlMaxWidth {
-        max-width: 1800px;
-    }
+    main.xlMaxWidth { max-width: 1800px; }
 }
 
 div.container.xxlMaxWidth {
     max-width: 2200px;
-
-    main.xxlMaxWidth {
-        max-width: 2200px;
-    }
+    main.xxlMaxWidth { max-width: 2200px; }
 }
 
-.w-xxs
-{
-    width:5%;
-}
-.w-xs {
-    width: 7.5%;
-}
-.w-s
-{
-    width:10%;
-}
-.w-ms {
-    width: 12.5%;
-}
-.w-m {
-    width: 15%;
-}
-.w-l {
-    width: 20%;
-}
-.w-xl {
-    width: 25%;
-}
+.w-xxs  { width: 5%; }
+.w-xs   { width: 7.5%; }
+.w-s    { width: 10%; }
+.w-ms   { width: 12.5%; }
+.w-m    { width: 15%; }
+.w-l    { width: 20%; }
+.w-xl   { width: 25%; }
+.w-diff { width: 6.62%; }
+.w-role { width: 6.67%; }
 
-.w-diff
-{
-    width: 6.62%;
-}
-
-.w-role
-{
-    width: 6.67%;
-}
-
-.h-line
-{
-    vertical-align:top;
+.h-line {
+    vertical-align: top;
     font-size: 0.9em;
 }
 
-.dropdown-menu
-{
+.dropdown-menu {
     --bs-dropdown-link-active-bg: #333;
 }
 
@@ -270,7 +308,84 @@ div.container.xxlMaxWidth {
     --bs-nav-link-hover-color: white;
 }
 
-.tab-padding
-{
+.tab-padding {
     padding-top: 15px;
+}
+
+// Leaderboard Ranks Styling
+.rank-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    font-weight: bold;
+    font-size: 0.9em;
+
+    &.rank-1 {
+        background: radial-gradient(circle, #ffe066, #d4a017);
+        color: black;
+        box-shadow: 0 0 8px rgba(212, 160, 23, 0.6);
+    }
+    &.rank-2 {
+        background: radial-gradient(circle, #f0f0f0, #a0a0a0);
+        color: black;
+    }
+    &.rank-3 {
+        background: radial-gradient(circle, #d08040, #904010);
+        color: white;
+    }
+}
+
+// Responsive Layout Rules
+@media (max-width: 768px) {
+    // 1. Convert Settings Nav Sidebar to Horizontal Scroll
+    .nav-pills .nav-link.active {
+        border-left: none;
+        border-bottom: 3px solid $title-color;
+        border-radius: 0;
+    }
+
+    // 2. Card-based Leaderboard Table Conversion
+    #topScoreTable {
+        thead {
+            display: none; // Hide headings
+        }
+
+        tbody, tr, td {
+            display: block;
+            width: 100% !important;
+        }
+
+        tr {
+            margin-bottom: 20px;
+            border: 1px solid $border-glass;
+            border-radius: 8px;
+            padding: 10px;
+            background: rgba(25, 25, 25, 0.6);
+        }
+
+        td {
+            text-align: right;
+            padding: 8px 10px 8px 50%;
+            position: relative;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+
+            &:last-child {
+                border-bottom: none;
+            }
+
+            &::before {
+                content: attr(data-label);
+                position: absolute;
+                left: 10px;
+                width: 45%;
+                text-align: left;
+                font-weight: bold;
+                color: $title-color;
+                font-family: "Cinzel", serif;
+            }
+        }
+    }
 }
