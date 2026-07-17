@@ -1,11 +1,33 @@
-﻿@page
+@page
 @model MobileGnollHackLogger.Pages.ContactModel
 @{
     ViewData["Title"] = "Contact Information";
 }
 <h1 class="text-center">@ViewData["Title"]</h1>
 <hr class="separator" />
-<h2 class="text-center">Email</h2>
-<p class="text-center"><a href="mailto:gnollhack@hyvanmielenpelit.fi">gnollhack@hyvanmielenpelit.fi</a></p>
-<h2 class="text-center">Discord</h2>
-<p class="text-center"><a href="https://discord.gg/cQuExnzUQy">https://discord.gg/cQuExnzUQy</a></p>
+<div class="row g-4 justify-content-center">
+    <div class="col-12 col-md-6">
+        <div class="card border-secondary h-100">
+            <div class="card-body text-center">
+                <h4 class="card-title mb-3">
+                    <i class="bi bi-envelope-fill me-2"></i>Email
+                </h4>
+                <p class="card-text">
+                    <a href="mailto:gnollhack@hyvanmielenpelit.fi">gnollhack@hyvanmielenpelit.fi</a>
+                </p>
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-md-6">
+        <div class="card border-secondary h-100">
+            <div class="card-body text-center">
+                <h4 class="card-title mb-3">
+                    <i class="bi bi-discord me-2"></i>Discord
+                </h4>
+                <p class="card-text">
+                    <a href="https://discord.gg/cQuExnzUQy">discord.gg/cQuExnzUQy</a>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>

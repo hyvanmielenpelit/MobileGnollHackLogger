@@ -1,16 +1,28 @@
+@use "sass:color";
+
 $font-color: white;
 $link-color: #ded18b;
 $font-em-color: $link-color;
-$primary-color: lighten(gold, 10%);
-$nav-color: lighten(#626157, 40%);
+$primary-color: #ffe14d; // was lighten(gold, 10%)
+$nav-color: #b5b3a3; // was lighten(#626157, 40%)
 $title-color: #D4A017;
 $bg-glass: rgba(17, 17, 17, 0.85);
 $bg-input: rgba(30, 30, 30, 0.95);
 $border-glass: rgba(212, 160, 23, 0.25);
 $gold-glow: rgba(212, 160, 23, 0.25);
 
+// Precomputed lighter/darker shades to avoid deprecated lighten()/darken()
+$nav-color-light: #cccbc0; // ~lighten($nav-color, 15%)
+$title-color-light: #e8be42; // ~lighten($title-color, 15%)
+$link-color-light: #e8dda8; // ~lighten($link-color, 15%)
+$title-color-dark: #a07a0a; // ~darken($title-color, 12%)
+$pagination-bg-light: #3d4349; // ~lighten(rgb(33,37,41), 10%)
+
 body {
-    margin-bottom: 60px;
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
     color: white;
     background-color: black;
     background-image: url(/img/gnoll-illustration-darkened-bottom-w1920-q60.jpg);
@@ -20,6 +32,11 @@ body {
     background-position-x: center;
     font-family: "Lato", sans-serif;
     font-style: normal;
+}
+
+// Push footer to bottom via flex
+.container:has(> main) {
+    flex: 1;
 }
 
 %common-heading {
@@ -48,14 +65,14 @@ nav {
         color: $nav-color !important;
 
         &:hover {
-            color: lighten($nav-color, 15%) !important;
+            color: $nav-color-light !important;
         }
 
         &.text-primary {
             color: $title-color !important;
 
             &:hover {
-                color: lighten($title-color, 15%) !important;
+                color: $title-color-light !important;
             }
         }
     }
@@ -68,7 +85,7 @@ nav {
         font-weight: 600;
 
         &:hover {
-            color: lighten($title-color, 15%) !important;
+            color: $title-color-light !important;
         }
     }
 
@@ -76,6 +93,22 @@ nav {
         color: white !important;
         background: #111 !important;
         border-bottom-color: black !important;
+    }
+}
+
+// Dropdown Menu Theming
+.dropdown-menu {
+    --bs-dropdown-link-active-bg: #333;
+    --bs-dropdown-bg: #1a1a1a;
+    --bs-dropdown-border-color: rgba(255, 255, 255, 0.1);
+
+    .dropdown-item {
+        color: #ccc !important;
+
+        &:hover, &:focus {
+            color: white !important;
+            background-color: rgba(255, 255, 255, 0.08) !important;
+        }
     }
 }
 
@@ -94,10 +127,11 @@ main {
 
 footer {
     background: #111;
+    margin-top: auto;
 
     &.border-top {
         color: $nav-color !important;
-        border-top-color: black !important;
+        border-top-color: rgba(255, 255, 255, 0.05) !important;
     }
 }
 
@@ -106,12 +140,12 @@ a {
     transition: color 0.2s ease;
 
     &:hover {
-        color: lighten($link-color, 15%);
+        color: $link-color-light;
         text-decoration: underline;
     }
 }
 
-// Custom Design System for Cards
+// Bootstrap Card Theming
 .card {
     background-color: rgba(25, 25, 25, 0.5) !important;
     border: 1px solid rgba(255, 255, 255, 0.08) !important;
@@ -133,11 +167,11 @@ a {
     ol {
         padding-left: 20px;
         margin: 0;
-        
+
         li {
             margin-bottom: 8px;
             color: #ccc;
-            
+
             em {
                 color: $link-color;
                 font-style: normal;
@@ -175,7 +209,7 @@ input.form-control, select.form-select {
 
 // Fantasy Metallic Button Redesign
 .btn-primary {
-    background: linear-gradient(135deg, darken($title-color, 12%), $title-color) !important;
+    background: linear-gradient(135deg, $title-color-dark, $title-color) !important;
     border: 1px solid $link-color !important;
     color: black !important;
     font-weight: bold;
@@ -186,7 +220,7 @@ input.form-control, select.form-select {
     transition: all 0.2s ease;
 
     &:hover {
-        background: linear-gradient(135deg, $title-color, lighten($title-color, 10%)) !important;
+        background: linear-gradient(135deg, $title-color, $title-color-light) !important;
         box-shadow: 0 0 12px $gold-glow !important;
         transform: translateY(-1px);
         color: black !important;
@@ -202,18 +236,25 @@ input.form-control, select.form-select {
     color: #ccc;
     transition: all 0.2s ease;
     border-radius: 6px;
-    
+
     &:hover {
         color: white;
         background-color: rgba(255, 255, 255, 0.05);
     }
-    
+
     &.active {
         background-color: rgba(212, 160, 23, 0.12) !important;
         color: $title-color !important;
         border-left: 3px solid $title-color;
         border-radius: 0 6px 6px 0;
     }
+}
+
+// Bootstrap Alert Theming
+.alert-info {
+    background-color: rgba(212, 160, 23, 0.1) !important;
+    border-color: $border-glass !important;
+    color: $link-color !important;
 }
 
 .center-box {
@@ -249,8 +290,8 @@ $pagination-bg-color: rgb(33, 37, 41);
 
     &.active {
         a.page-link {
-            background-color: lighten($pagination-bg-color, 10%) !important;
-            color: darken(white, 20%);
+            background-color: $pagination-bg-light !important;
+            color: #ccc;
 
             &:hover {
                 cursor: default;
@@ -295,10 +336,6 @@ div.container.xxlMaxWidth {
     font-size: 0.9em;
 }
 
-.dropdown-menu {
-    --bs-dropdown-link-active-bg: #333;
-}
-
 .bt-header {
     padding: 8px 0px 0px 0px;
 }
@@ -338,19 +375,32 @@ div.container.xxlMaxWidth {
     }
 }
 
+// Task list styling (kept for backward compat)
+.task-list {
+    text-align: left;
+    max-width: 360px;
+    margin: 0 auto;
+
+    em {
+        font-style: normal;
+        color: $font-em-color;
+    }
+}
+
 // Responsive Layout Rules
 @media (max-width: 768px) {
-    // 1. Convert Settings Nav Sidebar to Horizontal Scroll
+    // Settings Nav Pills: horizontal active indicator
     .nav-pills .nav-link.active {
         border-left: none;
         border-bottom: 3px solid $title-color;
         border-radius: 0;
     }
 
-    // 2. Card-based Leaderboard Table Conversion
-    #topScoreTable {
+    // Card-based Table Conversion (covers TopScores and Bones tables)
+    #topScoreTable,
+    .js-table {
         thead {
-            display: none; // Hide headings
+            display: none;
         }
 
         tbody, tr, td {

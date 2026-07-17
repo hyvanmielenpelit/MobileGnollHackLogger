@@ -1,4 +1,4 @@
-﻿@inject IWebHostEnvironment WebHostEnvironment
+@inject IWebHostEnvironment WebHostEnvironment
 @inject IConfiguration Configuration
 
 <!DOCTYPE html>
@@ -77,10 +77,10 @@
                             </a>
                             <ul class="dropdown-menu">
                                 <li>
-                                    <a class="dropdown-item text-dark" asp-area="" asp-page="/TopScores">Top Scores</a>
+                                    <a class="dropdown-item" asp-area="" asp-page="/TopScores">Top Scores</a>
                                 </li>
                                 <li>
-                                    <a class="dropdown-item text-dark" asp-area="" asp-page="/RecentGames">Recent Games</a>
+                                    <a class="dropdown-item" asp-area="" asp-page="/RecentGames">Recent Games</a>
                                 </li>
                             </ul>
                         </li>
@@ -90,10 +90,10 @@
                             </a>
                             <ul class="dropdown-menu">
                                 <li>
-                                    <a class="dropdown-item text-dark" asp-area="" asp-page="/Statistics">Win Rates</a>
+                                    <a class="dropdown-item" asp-area="" asp-page="/Statistics">Win Rates</a>
                                 </li>
                                 <li>
-                                    <a class="dropdown-item text-dark" asp-area="" asp-page="/BonesTransactions">Bones Sharing</a>
+                                    <a class="dropdown-item" asp-area="" asp-page="/BonesTransactions">Bones Sharing</a>
                                 </li>
                             </ul>
                         </li>
@@ -103,31 +103,31 @@
                             </a>
                             <ul class="dropdown-menu">
                                 <li>
-                                    <a class="dropdown-item text-dark" href="https://gnollhack.com/">
+                                    <a class="dropdown-item" href="https://gnollhack.com/">
                                         GnollHack.com
                                         <i class="bi bi-box-arrow-up-right h-line"></i>
                                     </a>
                                 </li>
                                 <li>
-                                    <a class="dropdown-item text-dark" href="https://wiki.gnollhack.com/">
+                                    <a class="dropdown-item" href="https://wiki.gnollhack.com/">
                                         GnollHack Wiki
                                         <i class="bi bi-box-arrow-up-right h-line"></i>
                                     </a>
                                 </li>
                                 <li>
-                                    <a class="dropdown-item text-dark" href="https://github.com/hyvanmielenpelit/GnollHack">
+                                    <a class="dropdown-item" href="https://github.com/hyvanmielenpelit/GnollHack">
                                         GnollHack GitHub Repository
                                         <i class="bi bi-box-arrow-up-right h-line"></i>
                                     </a>
                                 </li>
                                 <li>
-                                    <a class="dropdown-item text-dark" href="https://nethackscoreboard.org/">
+                                    <a class="dropdown-item" href="https://nethackscoreboard.org/">
                                         NetHack Scoreboard
                                         <i class="bi bi-box-arrow-up-right h-line"></i>
                                     </a>
                                 </li>
                                 <li>
-                                    <a class="dropdown-item text-dark" href="https://junethack.net/">
+                                    <a class="dropdown-item" href="https://junethack.net/">
                                         Junethack
                                         <i class="bi bi-box-arrow-up-right h-line"></i>
                                     </a>
@@ -135,7 +135,7 @@
                             </ul>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link text-dark" asp-area="" asp-page="/Contact">Contact</a>
+                            <a class="nav-link" asp-area="" asp-page="/Contact">Contact</a>
                         </li>
                     </ul>
                     <partial name="_LoginPartial" />
@@ -149,7 +149,7 @@
         </main>
     </div>
 
-    <footer class="footer text-muted">
+    <footer class="footer text-muted border-top">
         <div class="container">
                 &copy; @DateTime.Now.Year <i class="bi bi-dash"></i> GnollHack Account <i class="bi bi-dash"></i> @WebHostEnvironment.EnvironmentName <i class="bi bi-dash"></i> <a target="_blank" href="https://wiki.gnollhack.com/GnollHack%20Account%20Privacy%20Policy.md">Privacy</a>
         </div>
