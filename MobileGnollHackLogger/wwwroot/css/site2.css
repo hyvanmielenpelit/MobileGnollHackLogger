@@ -485,11 +485,6 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
   font-size: 1.2rem;
   margin-right: 1rem;
 }
-.char-avatar.gold-border {
-  border-color: #D4A017;
-  box-shadow: 0 0 10px rgba(212, 160, 23, 0.5);
-  color: #D4A017;
-}
 
 .score-text {
   color: #f6e27a;
