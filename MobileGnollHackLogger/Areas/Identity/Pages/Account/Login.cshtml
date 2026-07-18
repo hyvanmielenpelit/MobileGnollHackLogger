@@ -3,19 +3,21 @@
 
 @{
     ViewData["Title"] = "Log in";
+    ViewData["MainClass"] = "main-narrow";
 }
 
 <div class="row login-page-container">
     <div class="center-box login-box">
         <section>
             <div class="login-header text-center">
-                <h1 class="login-title">GNOLLHACK ACCOUNT</h1>
+                <h1 class="login-title">GNOLLHACK</h1>
                 <div class="ornament"></div>
                 <p class="login-subtitle">GET AN ACCOUNT FOR THE DUNGEONS OF DOOM</p>
             </div>
 
             <form id="account" method="post" class="login-form">
-                <div asp-validation-summary="ModelOnly" class="text-danger" role="alert"></div>
+                <div class="login-form-inner">
+                    <div asp-validation-summary="ModelOnly" class="text-danger" role="alert"></div>
                 
                 <div class="input-group mb-4 login-input-group">
                     <span class="input-group-text"><i class="bi bi-person-fill"></i></span>
@@ -34,8 +36,8 @@
                 </div>
 
                 <div class="login-button-container text-center mb-4">
-                    <button id="login-submit" type="submit" class="btn btn-fantasy-login">
-                        LOG IN
+                    <button id="login-submit" type="submit" class="btn btn-fantasy-login w-100">
+                        <span>LOG IN</span>
                     </button>
                 </div>
 
@@ -48,16 +50,17 @@
                     </div>
                 </div>
 
-                <div class="text-center mt-4">
+                <div class="text-center my-4">
                     <p class="signup-text">
                         Don't have an account? <a class="signup-link" asp-page="./Register" asp-route-returnUrl="@Model.ReturnUrl">Sign Up</a>
                     </p>
                 </div>
                 
-                <div class="text-center mt-2">
-                    <p>
-                        <a id="resend-confirmation" class="subtle-link" asp-page="./ResendEmailConfirmation">Resend email confirmation</a>
-                    </p>
+                    <div class="text-center mt-2">
+                        <p>
+                            <a id="resend-confirmation" class="subtle-link" asp-page="./ResendEmailConfirmation">Resend email confirmation</a>
+                        </p>
+                    </div>
                 </div>
             </form>
         </section>

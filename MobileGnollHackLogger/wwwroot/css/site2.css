@@ -90,6 +90,13 @@ main {
   box-shadow: 0px 10px 30px rgba(0, 0, 0, 0.8);
   transition: all 0.3s ease-in-out;
 }
+main.main-narrow {
+  max-width: 500px;
+}
+main.main-fit-content {
+  max-width: fit-content;
+  min-width: 400px;
+}
 
 footer {
   background: #111;
@@ -659,16 +666,20 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
 .login-box {
   padding: 2rem 1rem;
 }
+.login-box .login-form-inner {
+  max-width: 380px;
+  margin: 0 auto;
+}
 .login-box .login-header {
   margin-bottom: 2rem;
 }
 .login-box .login-header .login-title {
-  color: #D4A017;
+  color: #e0ba6d;
   font-family: "Cinzel", serif;
-  font-size: 2.5rem;
-  letter-spacing: 2px;
+  font-size: 3.5rem;
+  letter-spacing: 3px;
   margin-bottom: 0.5rem;
-  text-shadow: 0 0 10px rgba(212, 160, 23, 0.5);
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8), 0 0 10px rgba(212, 160, 23, 0.3);
 }
 .login-box .login-header .ornament {
   height: 1px;
@@ -726,52 +737,45 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
   border-color: #D4A017 !important;
 }
 .login-box .forgot-link {
-  color: #a0aec0;
+  color: #e0ba6d;
   font-size: 0.85rem;
   text-decoration: underline;
 }
 .login-box .forgot-link:hover {
-  color: #ded18b;
+  color: #fff;
 }
 .login-box .btn-fantasy-login {
   position: relative;
-  background: linear-gradient(180deg, #463412 0%, #2a1f0a 100%);
-  border: 2px solid #b38728;
-  color: #fdf5a9 !important;
-  font-family: "Cinzel", serif;
-  font-size: 1.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background-image: url("/img/decorativebutton-nobg-noglow.webp");
+  background-size: 100% 100%;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-color: transparent !important;
+  border: none !important;
+  color: #e0ba6d !important;
   font-weight: bold;
-  padding: 0.75rem 4rem;
+  font-family: "Cinzel", serif;
   text-transform: uppercase;
   letter-spacing: 2px;
-  border-radius: 4px;
-  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.8), 0 0 15px rgba(212, 160, 23, 0.3);
-  transition: all 0.2s ease;
-}
-.login-box .btn-fantasy-login::before, .login-box .btn-fantasy-login::after {
-  content: "";
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%) rotate(45deg);
-  width: 12px;
-  height: 12px;
-  background: #b38728;
-  box-shadow: 0 0 5px rgba(212, 160, 23, 0.25);
-}
-.login-box .btn-fantasy-login::before {
-  left: -6px;
-}
-.login-box .btn-fantasy-login::after {
-  right: -6px;
+  font-size: 1.25rem;
+  padding: 1rem 4rem;
+  transition: filter 0.3s ease;
+  text-decoration: none;
+  overflow: visible;
+  text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8), 0 0 8px rgba(212, 160, 23, 0.4);
 }
 .login-box .btn-fantasy-login:hover {
-  background: linear-gradient(180deg, #5c4518 0%, #3a2a0e 100%);
-  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.8), 0 0 20px rgba(212, 160, 23, 0.6);
-  border-color: #d4a017;
-  transform: translateY(-1px);
+  filter: drop-shadow(0 0 15px rgba(212, 160, 23, 0.6)) brightness(1.1);
 }
 .login-box .btn-fantasy-login:active {
-  transform: translateY(1px);
+  filter: drop-shadow(0 0 5px rgba(212, 160, 23, 0.4)) brightness(0.9);
+}
+.login-box .btn-fantasy-login span {
+  position: relative;
+  z-index: 2;
 }
 .login-box .login-checkbox {
   color: #a0aec0;
@@ -788,11 +792,11 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
   color: #a0aec0;
 }
 .login-box .signup-text .signup-link {
-  color: #ded18b;
+  color: #e0ba6d;
   font-weight: bold;
 }
 .login-box .signup-text .signup-link:hover {
-  color: #e8dda8;
+  color: #fff;
   text-decoration: underline !important;
 }
 .login-box .subtle-link {
