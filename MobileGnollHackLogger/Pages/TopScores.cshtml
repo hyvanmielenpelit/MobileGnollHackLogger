@@ -119,15 +119,10 @@
                             </td>
                             
                             <td data-label="Character" data-order="@gameLog.CharacterName">
-                                <div class="d-flex align-items-center">
-                                    <div class="char-avatar">
-                                        <i class="bi @GetClassIcon(gameLog.RoleText)"></i>
-                                    </div>
-                                    <div>
-                                        <div class="text-white fw-bold text-uppercase" style="letter-spacing: 0.5px; font-size: 1.05rem;">@gameLog.CharacterName</div>
-                                        <div class="text-muted-small">
-                                            Level @(gameLog.MaxLevel) | @(gameLog.Name)
-                                        </div>
+                                <div>
+                                    <div class="text-white fw-bold text-uppercase" style="letter-spacing: 0.5px; font-size: 1.05rem;">@gameLog.CharacterName</div>
+                                    <div class="text-muted-small">
+                                        Level @(gameLog.MaxLevel) | @(gameLog.Name)
                                     </div>
                                 </div>
                             </td>
@@ -172,27 +167,7 @@ else
     <h5 class="text-center">No Matching Data</h5>
 }
 
-@functions {
-    public string GetClassIcon(string? roleText)
-    {
-        if (string.IsNullOrEmpty(roleText)) return "bi-person-fill";
-        var role = roleText.ToLower();
-        if (role.Contains("arc")) return "bi-compass";
-        if (role.Contains("bar")) return "bi-fire";
-        if (role.Contains("cav")) return "bi-hammer";
-        if (role.Contains("hea")) return "bi-heart-pulse-fill";
-        if (role.Contains("kni")) return "bi-shield-fill-check";
-        if (role.Contains("mon")) return "bi-eye-fill";
-        if (role.Contains("pri")) return "bi-brightness-high-fill";
-        if (role.Contains("ran")) return "bi-bullseye";
-        if (role.Contains("rog")) return "bi-incognito";
-        if (role.Contains("sam")) return "bi-slash-circle";
-        if (role.Contains("tou")) return "bi-camera-fill";
-        if (role.Contains("val")) return "bi-shield-fill";
-        if (role.Contains("wiz")) return "bi-magic";
-        return "bi-person-fill";
-    }
-}
+
 
 @section Styles
 {
