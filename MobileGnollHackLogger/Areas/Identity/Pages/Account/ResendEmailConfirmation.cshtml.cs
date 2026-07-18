@@ -1,4 +1,4 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
+// Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 #nullable disable
 
@@ -36,6 +36,8 @@ namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
         [BindProperty]
         public InputModel Input { get; set; }
 
+        public bool IsSuccess { get; set; }
+
         /// <summary>
         ///     This API supports the ASP.NET Core Identity default UI infrastructure and is not intended to be used
         ///     directly from your code. This API may change or be removed in future releases.
@@ -53,6 +55,7 @@ namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
 
         public void OnGet()
         {
+            
         }
 
         public async Task<IActionResult> OnPostAsync()
@@ -65,7 +68,7 @@ namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
             var user = await _userManager.FindByEmailAsync(Input.Email);
             if (user == null)
             {
-                ModelState.AddModelError(string.Empty, "Verification email sent. Please check your email.");
+                IsSuccess = true;
                 return Page();
             }
 
@@ -84,7 +87,7 @@ namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
             try
             {
                 await _emailSender.SendEmailAsync(Input.Email, "Confirm Your Email - GnollHack Account", htmlBody);
-                ModelState.AddModelError(string.Empty, "Verification email sent. Please check your email.");
+                IsSuccess = true;
                 return Page();
             }
             catch (Exception ex)

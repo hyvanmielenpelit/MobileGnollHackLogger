@@ -14,29 +14,51 @@
                 <p class="login-subtitle">RESEND EMAIL CONFIRMATION</p>
             </div>
 
-            <form method="post" class="login-form">
-                <div class="login-form-inner">
-                    <div asp-validation-summary="All" class="text-danger" role="alert"></div>
-                
-                    <div class="input-group mb-4 login-input-group">
-                        <span class="input-group-text"><i class="bi bi-envelope-fill"></i></span>
-                        <input asp-for="Input.Email" class="form-control" aria-required="true" placeholder="Email" />
-                    </div>
-                    <span asp-validation-for="Input.Email" class="text-danger"></span>
-
-                    <div class="login-button-container text-center mb-3">
-                        <button type="submit" class="btn btn-fantasy-login w-100">
-                            <span>RESEND</span>
-                        </button>
-                    </div>
-
-                    <div class="text-center mb-3">
-                        <p class="signup-text mb-0">
-                            <a class="signup-link" asp-page="./Login">Back to Log in</a>
-                        </p>
+            @if (Model.IsSuccess)
+            {
+                <div class="login-form">
+                    <div class="login-form-inner">
+                        <div class="text-center mb-4">
+                            <i class="bi bi-check-circle-fill" style="color: #85e085; font-size: 3rem; margin-bottom: 15px; display: inline-block;"></i>
+                            <p style="color: #85e085; font-size: 1.1rem; font-weight: bold;">Verification email sent. Please check your email.</p>
+                        </div>
+                        <div class="text-center mb-3">
+                            <p class="signup-text mb-2">
+                                <a class="signup-link" asp-page="./Login">Back to Log in</a>
+                            </p>
+                            <p class="signup-text mb-0">
+                                <a class="signup-link" asp-page="./ResendEmailConfirmation">Resend Again</a>
+                            </p>
+                        </div>
                     </div>
                 </div>
-            </form>
+            }
+            else
+            {
+                <form method="post" class="login-form">
+                    <div class="login-form-inner">
+                        <div asp-validation-summary="All" class="text-danger" role="alert"></div>
+                    
+                        <div class="input-group mb-4 login-input-group">
+                            <span class="input-group-text"><i class="bi bi-envelope-fill"></i></span>
+                            <input asp-for="Input.Email" class="form-control" aria-required="true" placeholder="Email" />
+                        </div>
+                        <span asp-validation-for="Input.Email" class="text-danger"></span>
+
+                        <div class="login-button-container text-center mb-3">
+                            <button type="submit" class="btn btn-fantasy-login w-100">
+                                <span>RESEND</span>
+                            </button>
+                        </div>
+
+                        <div class="text-center mb-3">
+                            <p class="signup-text mb-0">
+                                <a class="signup-link" asp-page="./Login">Back to Log in</a>
+                            </p>
+                        </div>
+                    </div>
+                </form>
+            }
         </section>
     </div>
 </div>
