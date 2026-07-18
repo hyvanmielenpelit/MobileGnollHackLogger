@@ -12,9 +12,9 @@ $border-glass: rgba(212, 160, 23, 0.25);
 $gold-glow: rgba(212, 160, 23, 0.25);
 
 // Precomputed lighter/darker shades
-$nav-color-light: #ffffff;
-$title-color-light: #ffffff;
-$link-color-light: #ffffff;
+$nav-color-light: color.adjust($nav-color, $lightness: 15%);
+$title-color-light: color.adjust($title-color, $lightness: 15%);
+$link-color-light: color.adjust($link-color, $lightness: 15%);
 $title-color-dark: #b8934b;
 $pagination-bg-light: #3d4349; // ~lighten(rgb(33,37,41), 10%)
 
@@ -158,13 +158,12 @@ a {
 // Bootstrap Card Theming
 .card {
     background-color: rgba(25, 25, 25, 0.5) !important;
-    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border: 1px solid rgba(255, 255, 255, 0.15) !important;
     border-radius: 10px !important;
-    transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
 
     &:hover {
-        transform: translateY(-3px);
-        border-color: $border-glass !important;
+        border-color: rgba(212, 160, 23, 0.4) !important;
         box-shadow: 0 6px 20px rgba(212, 160, 23, 0.12) !important;
     }
 
@@ -756,7 +755,7 @@ div.container.xxlMaxWidth {
         .login-title {
             color: #e0ba6d;
             font-family: "Cinzel", serif;
-            font-size: 3.5rem;
+            font-size: 3.35rem;
             letter-spacing: 3px;
             margin-bottom: 0.5rem;
             text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8), 0 0 10px rgba(212, 160, 23, 0.3);
@@ -829,12 +828,12 @@ div.container.xxlMaxWidth {
     }
     
     .forgot-link {
-        color: #e0ba6d;
+        color: $link-color;
         font-size: 0.85rem;
-        text-decoration: underline;
+        text-decoration: none;
         
         &:hover {
-            color: #fff;
+            color: $link-color-light;
         }
     }
     
@@ -892,10 +891,10 @@ div.container.xxlMaxWidth {
     .signup-text {
         color: #a0aec0;
         .signup-link {
-            color: #e0ba6d;
+            color: $link-color;
             font-weight: bold;
             &:hover {
-                color: #fff;
+                color: $link-color-light;
                 text-decoration: underline !important;
             }
         }
@@ -905,7 +904,7 @@ div.container.xxlMaxWidth {
         color: #666;
         font-size: 0.8rem;
         &:hover {
-            color: #a0aec0;
+            color: color.adjust(#666, $lightness: 15%);
         }
     }
 }
