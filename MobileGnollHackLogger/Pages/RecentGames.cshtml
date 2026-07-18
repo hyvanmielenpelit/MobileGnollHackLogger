@@ -81,10 +81,9 @@
                         <th>Time & Version</th>
                         <th>Account</th>
                         <th>Class & Details</th>
-                        <th>Points</th>
-                        <th>Turns</th>
-                        <th>Status</th>
-                        <th>Death Reason</th>
+                        <th style="width: 12%;">Points</th>
+                        <th style="width: 8%;">Turns</th>
+                        <th style="width: 30%; min-width: 280px;">Result</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -137,22 +136,19 @@
                                 <div class="text-muted-small">@gameLog.RealTimeSpan.ToString("c", CultureInfo.InvariantCulture)</div>
                             </td>
                             
-                            <td data-label="Status">
-                                <div class="text-muted-small">
-                                    DL: @(gameLog.DeathLevel)/@(gameLog.MaxLevel) | HP: @(gameLog.HitPoints)/@(gameLog.MaxHitPoints)
-                                </div>
-                                <div class="text-muted-small">
-                                    Deaths: @(gameLog.Deaths) | Crashes: @(gameLog.DungeonCollapses)
-                                </div>
-                            </td>
-                            
-                            <td data-label="Death Reason" data-order="@gameLog.DeathText">
-                                <div class="text-uppercase" style="color: @(isAscended ? "#ffd700" : "#cbd5e0"); font-size: 0.9rem; @(isAscended ? "text-shadow: 0 0 5px rgba(255, 215, 0, 0.4);" : "")">
+                            <td data-label="Result" data-order="@gameLog.DeathText">
+                                <div class="text-uppercase fw-bold mb-1" style="color: @(isAscended ? "#ffd700" : "#ffffff"); font-size: 1.05rem; letter-spacing: 0.5px; @(isAscended ? "text-shadow: 0 0 5px rgba(255, 215, 0, 0.4);" : "")">
                                     @gameLog.DeathText
                                     @if (!string.IsNullOrEmpty(gameLog.WhileText))
                                     {
                                         <text>while </text> @gameLog.WhileText
                                     }
+                                </div>
+                                <div class="text-muted-small">
+                                    DL: @(gameLog.DeathLevel)/@(gameLog.MaxLevel) | HP: @(gameLog.HitPoints)/@(gameLog.MaxHitPoints)
+                                </div>
+                                <div class="text-muted-small">
+                                    Deaths: @(gameLog.Deaths) | Crashes: @(gameLog.DungeonCollapses)
                                 </div>
                             </td>
                         </tr>
@@ -191,7 +187,8 @@ else
             window.location.href = href;
         });
         $("#topScoreTable").dataTable({
-            order: []
+            order: [],
+            autoWidth: false
         }).show();
     </script>
 }
