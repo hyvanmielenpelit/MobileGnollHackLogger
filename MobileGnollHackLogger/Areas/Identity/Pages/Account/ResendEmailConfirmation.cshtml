@@ -2,22 +2,42 @@
 @model ResendEmailConfirmationModel
 @{
     ViewData["Title"] = "Resend email confirmation";
+    ViewData["MainClass"] = "main-narrow";
 }
 
-<h1 class="text-center">@ViewData["Title"]</h1>
-<div class="row">
-    <div class="center-box">
-        <h2 class="text-center">Enter your email</h2>
-        <hr />
-        <form method="post">
-            <div asp-validation-summary="All" class="text-danger" role="alert"></div>
-            <div class="form-floating mb-3">
-                <input asp-for="Input.Email" class="form-control" aria-required="true" placeholder="name@example.com" />
-                <label asp-for="Input.Email" class="form-label"></label>
-                <span asp-validation-for="Input.Email" class="text-danger"></span>
+<div class="row login-page-container">
+    <div class="center-box login-box">
+        <section>
+            <div class="login-header text-center">
+                <h1 class="hero-title">GNOLLHACK</h1>
+                <div class="ornament"></div>
+                <p class="login-subtitle">RESEND EMAIL CONFIRMATION</p>
             </div>
-            <button type="submit" class="w-100 btn btn-lg btn-primary">Resend</button>
-        </form>
+
+            <form method="post" class="login-form">
+                <div class="login-form-inner">
+                    <div asp-validation-summary="All" class="text-danger" role="alert"></div>
+                
+                    <div class="input-group mb-4 login-input-group">
+                        <span class="input-group-text"><i class="bi bi-envelope-fill"></i></span>
+                        <input asp-for="Input.Email" class="form-control" aria-required="true" placeholder="Email" />
+                    </div>
+                    <span asp-validation-for="Input.Email" class="text-danger"></span>
+
+                    <div class="login-button-container text-center mb-3">
+                        <button type="submit" class="btn btn-fantasy-login w-100">
+                            <span>RESEND</span>
+                        </button>
+                    </div>
+
+                    <div class="text-center mb-3">
+                        <p class="signup-text mb-0">
+                            <a class="signup-link" asp-page="./Login">Back to Log in</a>
+                        </p>
+                    </div>
+                </div>
+            </form>
+        </section>
     </div>
 </div>
 
