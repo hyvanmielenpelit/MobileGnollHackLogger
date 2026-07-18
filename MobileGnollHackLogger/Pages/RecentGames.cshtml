@@ -10,109 +10,156 @@
     }
 
     ViewData["Title"] = Model.Title;
-    ViewData["ContainerClass"] = "lMaxWidth";
-    ViewData["MainClass"] = "lMaxWidth";
+    ViewData["ContainerClass"] = "xlMaxWidth";
+    ViewData["MainClass"] = "xlMaxWidth";
 }
 
-<h1 class="text-center">Recent Games</h1>
+<div class="rpg-header mt-3">
+    <div class="ornament"></div>
+    <h1 class="mb-0" style="font-family: 'Cinzel', serif;">Recent Games</h1>
+    <div class="ornament"></div>
+</div>
+<div class="text-center rpg-subtitle">
+    @Model.Title.ToUpper() | @Model.SubTitle.ToUpper()
+</div>
 
-<h5 class="text-center">Gameplay Mode</h5>
-<p class="text-center">
-    @if (!string.IsNullOrEmpty(Model.Mode))
-    {
-        <a class="link-light" href="@Model.GetUrl(null, Model.Death)">All Modes</a>
-    }
-    else
-    {
-        <b>@modeText</b>
-    }
-    @foreach (var mode in Model.DisplayModes)
-    {
-        <span>|</span>
-        @if (Model.Mode != mode)
-        {
-            <a class="link-light" href="@Model.GetUrl(mode, Model.Death)">@GnollHackHelper.Modes[mode]</a>
-        }
-        else
-        {
-            <b>@GnollHackHelper.Modes[mode]</b>
-        }
-    }
-</p>
-
-<h5 class="text-center">Game Type</h5>
-<p class="text-center">
-    @if (Model.RecentGamesMode != RecentGamesMode.Ascensions)
-    {
-        <a class="link-light" href="@Model.GetUrl(Model.Mode, "ascended")">Ascensions</a>
-    }
-    else
-    {
-        <b>Ascensions</b>
-    }
-    <span>|</span>
-    @if (Model.RecentGamesMode != RecentGamesMode.Games)
-    {
-        <a class="link-light" href="@Model.GetUrl(Model.Mode, null)">Games</a>
-    }
-    else
-    {
-        <b>Games</b>
-    }
-</p>
-
-<hr />
-
-<h2 class="text-center">@Model.Title</h2>
-<h5 class="text-center">@Model.SubTitle</h5>
+<div class="d-flex flex-wrap justify-content-center gap-2 gap-md-4 mb-4 mt-3">
+    <div class="text-center p-2 rounded" style="background: rgba(15, 20, 30, 0.6); border: 1px solid rgba(0, 240, 255, 0.1);">
+        <h6 class="text-uppercase text-muted mb-2" style="font-size: 0.75rem; letter-spacing: 1px;"><i class="bi bi-controller me-1"></i>Gameplay Mode</h6>
+        <div class="btn-group" role="group">
+            @if (!string.IsNullOrEmpty(Model.Mode))
+            {
+                <a class="btn btn-sm btn-outline-secondary" style="border-color: rgba(255,255,255,0.2);" href="@Model.GetUrl(null, Model.Death)">All Modes</a>
+            }
+            else
+            {
+                <span class="btn btn-sm btn-primary active">All Modes</span>
+            }
+            @foreach (var mode in Model.DisplayModes)
+            {
+                @if (Model.Mode != mode)
+                {
+                    <a class="btn btn-sm btn-outline-secondary" style="border-color: rgba(255,255,255,0.2);" href="@Model.GetUrl(mode, Model.Death)">@GnollHackHelper.Modes[mode]</a>
+                }
+                else
+                {
+                    <span class="btn btn-sm btn-primary active">@GnollHackHelper.Modes[mode]</span>
+                }
+            }
+        </div>
+    </div>
+    <div class="text-center p-2 rounded" style="background: rgba(15, 20, 30, 0.6); border: 1px solid rgba(0, 240, 255, 0.1);">
+        <h6 class="text-uppercase text-muted mb-2" style="font-size: 0.75rem; letter-spacing: 1px;"><i class="bi bi-award me-1"></i>Game Type</h6>
+        <div class="btn-group" role="group">
+            @if (Model.RecentGamesMode != RecentGamesMode.Ascensions)
+            {
+                <a class="btn btn-sm btn-outline-secondary" style="border-color: rgba(255,255,255,0.2);" href="@Model.GetUrl(Model.Mode, "ascended")">Ascensions</a>
+            }
+            else
+            {
+                <span class="btn btn-sm btn-primary active">Ascensions</span>
+            }
+            @if (Model.RecentGamesMode != RecentGamesMode.Games)
+            {
+                <a class="btn btn-sm btn-outline-secondary" style="border-color: rgba(255,255,255,0.2);" href="@Model.GetUrl(Model.Mode, null)">Games</a>
+            }
+            else
+            {
+                <span class="btn btn-sm btn-primary active">Games</span>
+            }
+        </div>
+    </div>
+</div>
 
 @if (Model.GameLogs != null && Model.GameLogs.Count > 0)
 {
-    <div class="table-responsive">
-        <table id="topScoreTable" class="table table-dark table-striped table-hover" style="display:none;">
-            <thead>
-                <tr>
-                    <th>Version</th>
-                    <th>Account Name, Character Name</th>
-                    <th>Class, Race, Gender, Alignment</th>
-                    <th>Difficulty, Mode</th>
-                    <th>End Time UTC</th>
-                    <th>Points</th>
-                    <th>Turns, Duration</th>
-                    <th>Dungeon Level, Hit Points</th>
-                    <th>Deaths, Crashes</th>
-                    <th>Death Reason</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var gameLog in Model.GameLogs)
-                {
-                    <tr data-id="@gameLog.Id">
-                        <td class="w-xxs" data-label="Version">
-                            @(gameLog.Version)-@(gameLog.EditLevel)@if (!string.IsNullOrEmpty(gameLog.PortVersion) && !string.IsNullOrEmpty(gameLog.Platform))
-                            {
-                                <text>, @(gameLog.PortVersion + gameLog.PlatformLetter + gameLog.StoreLetter)</text>
-                            }
-                        </td>
-                        <td class="w-m" data-label="Account/Character">@gameLog.Name<br />@gameLog.CharacterName</td>
-                        <td class="w-ms" data-label="Character Details">@(gameLog.RoleText), @(gameLog.RaceText), @(gameLog.GenderText), @(gameLog.AlignmentText)</td>
-                        <td class="w-s" data-label="Difficulty/Mode">@gameLog.DifficultyText, @(gameLog.ModeText)@if(gameLog.IsTournament){<text>, Tournament</text>}</td>
-                        <td class="w-xs" data-label="End Time UTC">@gameLog.EndTimeUTCDate.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)</td>
-                        <td class="w-s" data-label="Points">@gameLog.Points.ToString("N0", CultureInfo.InvariantCulture)</td>
-                        <td class="w-s" data-label="Turns/Duration">T: @(gameLog.Turns)<br />D: @gameLog.RealTimeSpan.ToString("c", CultureInfo.InvariantCulture)</td>
-                        <td class="w-s" data-label="Dungeon/HP">DL: @(gameLog.DeathLevel)/@(gameLog.MaxLevel)<br />HP: @(gameLog.HitPoints)/@(gameLog.MaxHitPoints)</td>
-                        <td class="w-xxs" data-label="Deaths/Crashes">D: @(gameLog.Deaths)<br />C: @(gameLog.DungeonCollapses)</td>
-                        <td class="w-m" data-label="Death Reason">
-                            @gameLog.DeathText
-                            @if (!string.IsNullOrEmpty(gameLog.WhileText))
-                            {
-                                <text>while </text> @gameLog.WhileText
-                            }
-                        </td>
+    <div class="rpg-leaderboard-card">
+        <div class="table-responsive">
+            <table id="topScoreTable" class="rpg-table" style="display:none;">
+                <thead>
+                    <tr>
+                        <th>Time & Version</th>
+                        <th>Account</th>
+                        <th>Class & Details</th>
+                        <th>Points</th>
+                        <th>Turns</th>
+                        <th>Status</th>
+                        <th>Death Reason</th>
                     </tr>
-                }
-            </tbody>
-        </table>
+                </thead>
+                <tbody>
+                    @foreach (var gameLog in Model.GameLogs)
+                    {
+                        bool isAscended = !string.IsNullOrEmpty(gameLog.DeathText) && gameLog.DeathText.Equals("ascended", StringComparison.OrdinalIgnoreCase);
+                        <tr data-id="@gameLog.Id" class="@(isAscended ? "ascended-row" : "")">
+                            <td data-label="Time & Version" data-order="@gameLog.EndTimeUTCDate.Ticks">
+                                <div class="text-light">@gameLog.EndTimeUTCDate.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)</div>
+                                <div class="text-muted-small">
+                                    v@(gameLog.Version)-@(gameLog.EditLevel)
+                                    @if (!string.IsNullOrEmpty(gameLog.PortVersion) && !string.IsNullOrEmpty(gameLog.Platform))
+                                    {
+                                        <text>| @(gameLog.PortVersion + gameLog.PlatformLetter + gameLog.StoreLetter)</text>
+                                    }
+                                </div>
+                            </td>
+                            
+                            <td data-label="Account" data-order="@gameLog.Name">
+                                <div>
+                                    <div class="text-white fw-bold text-uppercase" style="letter-spacing: 0.5px; font-size: 1.05rem;">@gameLog.Name</div>
+                                    <div class="text-muted-small">
+                                        Character: @(gameLog.CharacterName)
+                                    </div>
+                                </div>
+                            </td>
+                            
+                            <td data-label="Class & Details" data-order="@gameLog.RoleText">
+                                <div class="text-uppercase text-light" style="letter-spacing: 0.5px;">@gameLog.RoleText</div>
+                                <div class="text-muted-small">
+                                    @(gameLog.RaceText), @(gameLog.GenderText), @(gameLog.AlignmentText)
+                                </div>
+                                <div class="text-muted-small">
+                                    @gameLog.DifficultyText, @(gameLog.ModeText)@if(gameLog.IsTournament){<text>, Tournament</text>}
+                                </div>
+                            </td>
+                            
+                            <td data-label="Points" data-order="@gameLog.Points">
+                                <div class="d-flex align-items-center">
+                                    <span class="score-text mb-0">@gameLog.Points.ToString("N0", CultureInfo.InvariantCulture)</span>
+                                    @if(isAscended)
+                                    {
+                                        <span class="ms-2 text-warning" title="Ascended" style="font-size: 1.25rem; text-shadow: 0 0 5px rgba(255,215,0,0.5); transform: translateY(-3px);">&#x1F451;</span>
+                                    }
+                                </div>
+                            </td>
+                            
+                            <td data-label="Turns" data-order="@gameLog.Turns">
+                                <div class="text-light">@gameLog.Turns</div>
+                                <div class="text-muted-small">@gameLog.RealTimeSpan.ToString("c", CultureInfo.InvariantCulture)</div>
+                            </td>
+                            
+                            <td data-label="Status">
+                                <div class="text-muted-small">
+                                    DL: @(gameLog.DeathLevel)/@(gameLog.MaxLevel) | HP: @(gameLog.HitPoints)/@(gameLog.MaxHitPoints)
+                                </div>
+                                <div class="text-muted-small">
+                                    Deaths: @(gameLog.Deaths) | Crashes: @(gameLog.DungeonCollapses)
+                                </div>
+                            </td>
+                            
+                            <td data-label="Death Reason" data-order="@gameLog.DeathText">
+                                <div class="text-uppercase" style="color: @(isAscended ? "#ffd700" : "#cbd5e0"); font-size: 0.9rem; @(isAscended ? "text-shadow: 0 0 5px rgba(255, 215, 0, 0.4);" : "")">
+                                    @gameLog.DeathText
+                                    @if (!string.IsNullOrEmpty(gameLog.WhileText))
+                                    {
+                                        <text>while </text> @gameLog.WhileText
+                                    }
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
     </div>
 }
 else
@@ -123,6 +170,15 @@ else
 @section Styles
 {
     <link rel="stylesheet" href="~/lib/datatables/dist/datatables.min.css" asp-append-version="true" />
+    <style>
+        .ascended-row > td {
+            background-color: rgba(255, 215, 0, 0.08) !important;
+            border-bottom-color: rgba(255, 215, 0, 0.2) !important;
+        }
+        .rpg-table tbody tr.ascended-row:hover > td {
+            background-color: rgba(255, 215, 0, 0.15) !important;
+        }
+    </style>
 }
 
 @section Scripts
