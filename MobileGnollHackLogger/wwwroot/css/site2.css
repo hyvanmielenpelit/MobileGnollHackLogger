@@ -1,4 +1,5 @@
-﻿body {
+﻿@charset "UTF-8";
+body {
   margin: 0;
   min-height: 100vh;
   display: flex;
@@ -96,7 +97,7 @@ main {
   border-radius: 12px;
   padding: 20px 20px 35px 20px;
   max-width: 1000px;
-  margin: 30px auto;
+  margin: 2px auto 30px;
   box-shadow: 0px 10px 30px rgba(0, 0, 0, 0.8);
   transition: all 0.3s ease-in-out;
 }
@@ -292,8 +293,27 @@ a.nav-link:hover {
 }
 
 hr.separator {
-  margin: 30px 10px;
-  border-color: rgba(255, 255, 255, 0.1);
+  border: 0;
+  height: 24px;
+  margin: 15px auto;
+  max-width: 700px;
+  width: 90%;
+  background-image: linear-gradient(to right, transparent, #ded18b 25%, #ded18b 100%), linear-gradient(to left, transparent, #ded18b 25%, #ded18b 100%);
+  background-position: left center, right center;
+  background-size: calc(50% - 25px) 2px;
+  background-repeat: no-repeat;
+  position: relative;
+  overflow: visible;
+}
+hr.separator::after {
+  content: "♦";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 24px;
+  color: #ded18b;
+  text-shadow: 0 0 10px rgba(222, 209, 139, 0.8);
 }
 
 .navbar-toggler-icon {
