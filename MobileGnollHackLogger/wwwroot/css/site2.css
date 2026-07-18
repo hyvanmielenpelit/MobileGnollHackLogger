@@ -1,4 +1,4 @@
-﻿@charset "UTF-8";
+@charset "UTF-8";
 body {
   margin: 0;
   min-height: 100vh;
@@ -745,7 +745,7 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
   font-family: "Lato", sans-serif;
   text-transform: uppercase;
   letter-spacing: 1px;
-  font-size: 0.85rem;
+  font-size: 1rem;
   margin-top: 1rem;
 }
 .login-box .login-input-group .input-group-text {
@@ -847,3 +847,5 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
 .login-box .subtle-link:hover {
   color: rgb(140.25, 140.25, 140.25);
 }
+
+/*# sourceMappingURL=site2.css.map */
