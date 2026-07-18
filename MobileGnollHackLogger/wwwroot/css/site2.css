@@ -180,6 +180,19 @@ a:hover {
   font-weight: bold;
 }
 
+.card-glass {
+  background-color: rgba(45, 45, 45, 0.65) !important;
+}
+
+.hero-step-title {
+  color: #e0e0e0 !important;
+  font-size: calc(1.4025rem + 0.33vw);
+}
+
+.hero-step-subtitle {
+  font-size: 1.375rem;
+}
+
 input.form-control, select.form-select {
   color: white !important;
   background-color: rgba(30, 30, 30, 0.95) !important;
