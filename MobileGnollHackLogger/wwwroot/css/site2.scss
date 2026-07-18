@@ -138,10 +138,11 @@ footer {
 a {
     color: $link-color;
     transition: color 0.2s ease;
+    text-decoration: none;
 
     &:hover {
         color: $link-color-light;
-        text-decoration: underline;
+        text-decoration: none !important;
     }
 }
 

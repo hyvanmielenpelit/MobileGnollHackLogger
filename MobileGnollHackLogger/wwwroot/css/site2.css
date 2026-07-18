@@ -103,10 +103,11 @@ footer.border-top {
 a {
   color: #ded18b;
   transition: color 0.2s ease;
+  text-decoration: none;
 }
 a:hover {
   color: #e8dda8;
-  text-decoration: underline;
+  text-decoration: none !important;
 }
 
 .card {
