@@ -125,7 +125,7 @@ a:hover {
 }
 .card:hover {
   border-color: rgba(212, 160, 23, 0.4) !important;
-  box-shadow: 0 6px 20px rgba(212, 160, 23, 0.12) !important;
+  box-shadow: 0 0 25px rgba(212, 160, 23, 0.35) !important;
 }
 .card .card-title {
   color: #e0ba6d;
