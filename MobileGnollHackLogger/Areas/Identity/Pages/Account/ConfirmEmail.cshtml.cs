@@ -1,17 +1,18 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
+// Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 #nullable disable
 
-using System;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.WebUtilities;
 using MobileGnollHackLogger.Data;
+using System;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using static Microsoft.CodeAnalysis.CSharp.SyntaxTokenParser;
 
 namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
 {
@@ -34,6 +35,8 @@ namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
         /// </summary>
         [TempData]
         public string StatusMessage { get; set; }
+
+        public bool IsSuccess { get; set; }
         public async Task<IActionResult> OnGetAsync(string userId, string code)
         {
             if (userId == null || code == null)
@@ -48,11 +51,10 @@ namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
             }
 
             string decoded_code = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(code));
-            //await _logger.WriteLogAsync("Confirm: code: " + code);
-            //await _logger.WriteLogAsync("Confirm: decoded_code: " + decoded_code);
             var result = await _userManager.ConfirmEmailAsync(user, decoded_code);
-            StatusMessage = result.Succeeded ? "Thank you for confirming your email." : "Error confirming your email.";
-            foreach(var error in result.Errors)
+            IsSuccess = result.Succeeded;
+            StatusMessage = IsSuccess ? "Thank you for confirming your email." : "Error confirming your email.";
+            foreach (var error in result.Errors)
             {
                 StatusMessage += " " + error.Description;
             }
