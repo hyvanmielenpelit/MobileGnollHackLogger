@@ -4,9 +4,9 @@ $font-color: white;
 $link-color: #e0ba6d;
 $font-em-color: $link-color;
 $primary-color: #e0ba6d;
-$nav-color: #a0aec0;
+$nav-color: #cccccc;
 $title-color: #e0ba6d;
-$bg-glass: rgba(17, 17, 17, 0.85);
+$bg-glass: rgba(17, 17, 17, 0.65);
 $bg-input: rgba(30, 30, 30, 0.95);
 $border-glass: rgba(212, 160, 23, 0.25);
 $gold-glow: rgba(212, 160, 23, 0.25);
@@ -58,6 +58,16 @@ h2 {
 .title {
     color: $title-color;
     font-weight: 600;
+}
+
+.hero-title {
+    color: $title-color;
+    font-family: "Cinzel", serif;
+    font-size: 3.35rem;
+    letter-spacing: 3px;
+    margin-bottom: 0.5rem;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8), 0 0 10px rgba(212, 160, 23, 0.3);
+    text-transform: uppercase;
 }
 
 nav {
@@ -174,12 +184,37 @@ a {
     }
 
     ol {
-        padding-left: 20px;
+        list-style: none;
+        counter-reset: card-list;
+        padding-left: 0;
         margin: 0;
 
         li {
-            margin-bottom: 8px;
+            counter-increment: card-list;
+            position: relative;
+            margin-bottom: 12px;
             color: #ccc;
+            padding-left: 35px;
+
+            &::before {
+                content: counter(card-list) ". ";
+                position: absolute;
+                left: 16px;
+                top: 0;
+                color: #ccc;
+            }
+
+            &::after {
+                content: '';
+                position: absolute;
+                left: 0;
+                top: 8px;
+                width: 8px;
+                height: 8px;
+                background-color: color.adjust($title-color, $lightness: 10%);
+                border-radius: 50%;
+                box-shadow: 0 0 5px color.adjust($title-color, $lightness: 10%), 0 0 12px rgba(212, 160, 23, 0.8);
+            }
 
             em {
                 color: $link-color;
@@ -751,15 +786,6 @@ div.container.xxlMaxWidth {
     
     .login-header {
         margin-bottom: 2rem;
-        
-        .login-title {
-            color: #e0ba6d;
-            font-family: "Cinzel", serif;
-            font-size: 3.35rem;
-            letter-spacing: 3px;
-            margin-bottom: 0.5rem;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8), 0 0 10px rgba(212, 160, 23, 0.3);
-        }
         
         .ornament {
             height: 1px;

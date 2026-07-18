@@ -1,4 +1,4 @@
-body {
+﻿body {
   margin: 0;
   min-height: 100vh;
   display: flex;
@@ -37,11 +37,21 @@ h2 {
   font-weight: 600;
 }
 
+.hero-title {
+  color: #e0ba6d;
+  font-family: "Cinzel", serif;
+  font-size: 3.35rem;
+  letter-spacing: 3px;
+  margin-bottom: 0.5rem;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8), 0 0 10px rgba(212, 160, 23, 0.3);
+  text-transform: uppercase;
+}
+
 nav.navbar a, nav.navbar button {
-  color: #a0aec0 !important;
+  color: #cccccc !important;
 }
 nav.navbar a:hover, nav.navbar button:hover {
-  color: rgb(205.996835443, 213.2183544304, 222.503164557) !important;
+  color: rgb(242.25, 242.25, 242.25) !important;
 }
 nav.navbar a.text-primary, nav.navbar button.text-primary {
   color: #e0ba6d !important;
@@ -79,7 +89,7 @@ nav.border-bottom {
 }
 
 main {
-  background: rgba(17, 17, 17, 0.85) !important;
+  background: rgba(17, 17, 17, 0.65) !important;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(212, 160, 23, 0.25);
@@ -103,7 +113,7 @@ footer {
   margin-top: auto;
 }
 footer.border-top {
-  color: #a0aec0 !important;
+  color: #cccccc !important;
   border-top-color: rgba(255, 255, 255, 0.05) !important;
 }
 
@@ -133,12 +143,35 @@ a:hover {
   font-weight: bold;
 }
 .card ol {
-  padding-left: 20px;
+  list-style: none;
+  counter-reset: card-list;
+  padding-left: 0;
   margin: 0;
 }
 .card ol li {
-  margin-bottom: 8px;
+  counter-increment: card-list;
+  position: relative;
+  margin-bottom: 12px;
   color: #ccc;
+  padding-left: 35px;
+}
+.card ol li::before {
+  content: counter(card-list) ". ";
+  position: absolute;
+  left: 16px;
+  top: 0;
+  color: #ccc;
+}
+.card ol li::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  width: 8px;
+  height: 8px;
+  background-color: rgb(232.9322033898, 205.8813559322, 151.0677966102);
+  border-radius: 50%;
+  box-shadow: 0 0 5px rgb(232.9322033898, 205.8813559322, 151.0677966102), 0 0 12px rgba(212, 160, 23, 0.8);
 }
 .card ol li em {
   color: #e0ba6d;
@@ -669,14 +702,6 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
 .login-box .login-header {
   margin-bottom: 2rem;
 }
-.login-box .login-header .login-title {
-  color: #e0ba6d;
-  font-family: "Cinzel", serif;
-  font-size: 3.35rem;
-  letter-spacing: 3px;
-  margin-bottom: 0.5rem;
-  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8), 0 0 10px rgba(212, 160, 23, 0.3);
-}
 .login-box .login-header .ornament {
   height: 1px;
   background: linear-gradient(90deg, transparent, #e0ba6d, transparent);
@@ -802,5 +827,3 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
 .login-box .subtle-link:hover {
   color: rgb(140.25, 140.25, 140.25);
 }
-
-/*# sourceMappingURL=site2.css.map */
