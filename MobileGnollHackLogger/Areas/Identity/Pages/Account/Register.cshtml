@@ -14,7 +14,7 @@
                 <p class="login-subtitle">CREATE A NEW ACCOUNT</p>
             </div>
 
-            <form id="registerForm" asp-route-returnUrl="@Model.ReturnUrl" method="post" class="login-form">
+            <form id="registerForm" asp-route-returnUrl="@Model.ReturnUrl" method="post" class="login-form disable-button-on-submit">
                 <div class="login-form-inner">
                     <div asp-validation-summary="ModelOnly" class="text-danger" role="alert"></div>
                 
