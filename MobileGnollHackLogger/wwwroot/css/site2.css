@@ -618,5 +618,151 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
     transform: translateY(-50%) !important;
   }
 }
+.login-box {
+  padding: 2rem 1rem;
+}
+.login-box .login-header {
+  margin-bottom: 2rem;
+}
+.login-box .login-header .login-title {
+  color: #D4A017;
+  font-family: "Cinzel", serif;
+  font-size: 2.5rem;
+  letter-spacing: 2px;
+  margin-bottom: 0.5rem;
+  text-shadow: 0 0 10px rgba(212, 160, 23, 0.5);
+}
+.login-box .login-header .ornament {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #D4A017, transparent);
+  margin: 10px auto;
+  max-width: 200px;
+  position: relative;
+}
+.login-box .login-header .ornament::after {
+  content: "";
+  position: absolute;
+  top: -3px;
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  width: 7px;
+  height: 7px;
+  background-color: #D4A017;
+  box-shadow: 0 0 5px rgba(212, 160, 23, 0.25);
+}
+.login-box .login-header .login-subtitle {
+  color: #a0aec0;
+  font-family: "Lato", sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 0.85rem;
+  margin-top: 1rem;
+}
+.login-box .login-input-group .input-group-text {
+  background-color: rgba(30, 30, 30, 0.95);
+  border: 1px solid rgba(212, 160, 23, 0.4);
+  border-right: none;
+  color: #D4A017;
+  border-radius: 8px 0 0 8px;
+}
+.login-box .login-input-group .form-control {
+  background-color: rgba(30, 30, 30, 0.95) !important;
+  border: 1px solid rgba(212, 160, 23, 0.4) !important;
+  border-left: none !important;
+  color: white !important;
+  border-radius: 0 8px 8px 0;
+  padding-left: 0;
+}
+.login-box .login-input-group .form-control:focus {
+  box-shadow: none !important;
+  border-color: rgba(212, 160, 23, 0.4) !important;
+}
+.login-box .login-input-group .form-control::placeholder {
+  color: #888;
+}
+.login-box .login-input-group:focus-within {
+  box-shadow: 0 0 8px rgba(212, 160, 23, 0.25);
+  border-radius: 8px;
+}
+.login-box .login-input-group:focus-within .input-group-text, .login-box .login-input-group:focus-within .form-control {
+  border-color: #D4A017 !important;
+}
+.login-box .forgot-link {
+  color: #a0aec0;
+  font-size: 0.85rem;
+  text-decoration: underline;
+}
+.login-box .forgot-link:hover {
+  color: #ded18b;
+}
+.login-box .btn-fantasy-login {
+  position: relative;
+  background: linear-gradient(180deg, #463412 0%, #2a1f0a 100%);
+  border: 2px solid #b38728;
+  color: #fdf5a9 !important;
+  font-family: "Cinzel", serif;
+  font-size: 1.25rem;
+  font-weight: bold;
+  padding: 0.75rem 4rem;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  border-radius: 4px;
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.8), 0 0 15px rgba(212, 160, 23, 0.3);
+  transition: all 0.2s ease;
+}
+.login-box .btn-fantasy-login::before, .login-box .btn-fantasy-login::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%) rotate(45deg);
+  width: 12px;
+  height: 12px;
+  background: #b38728;
+  box-shadow: 0 0 5px rgba(212, 160, 23, 0.25);
+}
+.login-box .btn-fantasy-login::before {
+  left: -6px;
+}
+.login-box .btn-fantasy-login::after {
+  right: -6px;
+}
+.login-box .btn-fantasy-login:hover {
+  background: linear-gradient(180deg, #5c4518 0%, #3a2a0e 100%);
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.8), 0 0 20px rgba(212, 160, 23, 0.6);
+  border-color: #d4a017;
+  transform: translateY(-1px);
+}
+.login-box .btn-fantasy-login:active {
+  transform: translateY(1px);
+}
+.login-box .login-checkbox {
+  color: #a0aec0;
+}
+.login-box .login-checkbox .form-check-input {
+  background-color: transparent;
+  border: 1px solid rgba(212, 160, 23, 0.4);
+}
+.login-box .login-checkbox .form-check-input:checked {
+  background-color: #D4A017;
+  border-color: #D4A017;
+}
+.login-box .signup-text {
+  color: #a0aec0;
+}
+.login-box .signup-text .signup-link {
+  color: #ded18b;
+  font-weight: bold;
+}
+.login-box .signup-text .signup-link:hover {
+  color: #e8dda8;
+  text-decoration: underline !important;
+}
+.login-box .subtle-link {
+  color: #666;
+  font-size: 0.8rem;
+}
+.login-box .subtle-link:hover {
+  color: #a0aec0;
+}
 
 /*# sourceMappingURL=site2.css.map */
