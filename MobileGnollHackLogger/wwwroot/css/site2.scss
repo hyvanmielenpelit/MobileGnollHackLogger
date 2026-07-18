@@ -223,7 +223,6 @@ input.form-control, select.form-select {
     &:hover {
         background: linear-gradient(135deg, $title-color, $title-color-light) !important;
         box-shadow: 0 0 12px $gold-glow !important;
-        transform: translateY(-1px);
         color: black !important;
     }
 
@@ -608,6 +607,21 @@ div.container.xxlMaxWidth {
             color: #4a5568 !important;
             background: transparent !important;
         }
+    }
+}
+
+// Hero Image Styling
+.hero-icon {
+    height: 160px;
+    width: auto;
+    object-fit: contain;
+    transition: transform 0.3s ease, filter 0.3s ease;
+    
+    // For high pixel density (retina) screens, the source image is larger.
+    // The glow is likely baked into the image, but we can add an extra effect on hover to make it feel alive.
+    &:hover {
+        transform: scale(1.05);
+        filter: drop-shadow(0 0 15px rgba(212, 160, 23, 0.4));
     }
 }
 

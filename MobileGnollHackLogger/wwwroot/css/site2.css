@@ -177,7 +177,6 @@ input.form-control:disabled, select.form-select:disabled {
 .btn-primary:hover {
   background: linear-gradient(135deg, #D4A017, #e8be42) !important;
   box-shadow: 0 0 12px rgba(212, 160, 23, 0.25) !important;
-  transform: translateY(-1px);
   color: black !important;
 }
 .btn-primary:active {
@@ -546,6 +545,17 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
   border: 1px solid transparent !important;
   color: #4a5568 !important;
   background: transparent !important;
+}
+
+.hero-icon {
+  height: 160px;
+  width: auto;
+  object-fit: contain;
+  transition: transform 0.3s ease, filter 0.3s ease;
+}
+.hero-icon:hover {
+  transform: scale(1.05);
+  filter: drop-shadow(0 0 15px rgba(212, 160, 23, 0.4));
 }
 
 @media (max-width: 768px) {
