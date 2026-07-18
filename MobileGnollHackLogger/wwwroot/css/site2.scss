@@ -1,21 +1,21 @@
 @use "sass:color";
 
 $font-color: white;
-$link-color: #ded18b;
+$link-color: #e0ba6d;
 $font-em-color: $link-color;
-$primary-color: #ffe14d; // was lighten(gold, 10%)
-$nav-color: #b5b3a3; // was lighten(#626157, 40%)
-$title-color: #D4A017;
+$primary-color: #e0ba6d;
+$nav-color: #a0aec0;
+$title-color: #e0ba6d;
 $bg-glass: rgba(17, 17, 17, 0.85);
 $bg-input: rgba(30, 30, 30, 0.95);
 $border-glass: rgba(212, 160, 23, 0.25);
 $gold-glow: rgba(212, 160, 23, 0.25);
 
-// Precomputed lighter/darker shades to avoid deprecated lighten()/darken()
-$nav-color-light: #cccbc0; // ~lighten($nav-color, 15%)
-$title-color-light: #e8be42; // ~lighten($title-color, 15%)
-$link-color-light: #e8dda8; // ~lighten($link-color, 15%)
-$title-color-dark: #a07a0a; // ~darken($title-color, 12%)
+// Precomputed lighter/darker shades
+$nav-color-light: #ffffff;
+$title-color-light: #ffffff;
+$link-color-light: #ffffff;
+$title-color-dark: #b8934b;
 $pagination-bg-light: #3d4349; // ~lighten(rgb(33,37,41), 10%)
 
 body {
@@ -246,20 +246,20 @@ input.form-control, select.form-select {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background-image: url('/img/light-button-nobg-glow.webp');
+    background-image: url('/img/light-button-nobg-noglow.webp');
     background-size: 100% 100%; // stretch to fill the button completely
     background-position: center;
     background-repeat: no-repeat;
     background-color: transparent !important;
     border: none !important;
-    padding: 1.25rem 2rem;
+    padding: 0.85rem 2rem;
     color: #3b2804 !important;
     font-weight: bold;
     font-family: "Cinzel", serif;
     text-transform: uppercase;
     letter-spacing: 1px;
     font-size: 1rem;
-    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), filter 0.3s ease;
+    transition: filter 0.3s ease, color 0.3s ease;
     text-decoration: none;
     overflow: visible; // Allows glow effects to overflow
     
@@ -267,20 +267,17 @@ input.form-control, select.form-select {
     text-shadow: 1px 1px 1px rgba(255, 255, 255, 0.5);
 
     &:hover {
-        transform: scale(1.05) translateY(-2px);
         color: #1a1102 !important;
         filter: drop-shadow(0 0 15px rgba(212, 160, 23, 0.6)) brightness(1.1);
     }
 
     &:active {
-        transform: scale(0.98) translateY(1px);
         filter: drop-shadow(0 0 5px rgba(212, 160, 23, 0.4)) brightness(0.9);
     }
 
     span {
         position: relative;
         z-index: 2;
-        padding: 0 0.5rem;
     }
 }
 
