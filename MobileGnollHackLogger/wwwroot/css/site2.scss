@@ -630,6 +630,7 @@ div.container.xxlMaxWidth {
         tbody, tr, td {
             display: block !important;
             width: 100% !important;
+            box-sizing: border-box !important;
         }
 
         tr {
@@ -639,7 +640,6 @@ div.container.xxlMaxWidth {
             padding: 10px !important;
             background: rgba(15, 20, 30, 0.9) !important;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.5) !important;
-            
         }
 
         td {
@@ -647,6 +647,13 @@ div.container.xxlMaxWidth {
             padding: 8px 10px 8px 45% !important;
             position: relative !important;
             border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+            min-height: 40px !important;
+            
+            /* Ensure inner flex boxes (if any) align right */
+            display: flex !important;
+            flex-direction: column;
+            justify-content: center;
+            align-items: flex-end;
 
             &:last-child {
                 border-bottom: none !important;

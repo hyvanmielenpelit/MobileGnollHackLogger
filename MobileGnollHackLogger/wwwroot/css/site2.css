@@ -564,6 +564,7 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
   .js-table td {
     display: block !important;
     width: 100% !important;
+    box-sizing: border-box !important;
   }
   #topScoreTable tr,
   .js-table tr {
@@ -580,6 +581,12 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
     padding: 8px 10px 8px 45% !important;
     position: relative !important;
     border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+    min-height: 40px !important;
+    /* Ensure inner flex boxes (if any) align right */
+    display: flex !important;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-end;
   }
   #topScoreTable td:last-child,
   .js-table td:last-child {
