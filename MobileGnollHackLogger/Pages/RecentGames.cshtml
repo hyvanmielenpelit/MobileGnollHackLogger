@@ -137,7 +137,7 @@
                             </td>
                             
                             <td data-label="Result" data-order="@gameLog.DeathText">
-                                <div class="text-uppercase fw-bold mb-1" style="color: @(isAscended ? "#ffd700" : "#ffffff"); font-size: 1.05rem; letter-spacing: 0.5px; @(isAscended ? "text-shadow: 0 0 5px rgba(255, 215, 0, 0.4);" : "")">
+                                <div class="text-uppercase mb-1 @(isAscended ? "fw-bold" : "")" style="color: @(isAscended ? "#ffd700" : "#ffffff"); font-size: 1.05rem; letter-spacing: 0.5px; @(isAscended ? "text-shadow: 0 0 5px rgba(255, 215, 0, 0.4);" : "")">
                                     @gameLog.DeathText
                                     @if (!string.IsNullOrEmpty(gameLog.WhileText))
                                     {
