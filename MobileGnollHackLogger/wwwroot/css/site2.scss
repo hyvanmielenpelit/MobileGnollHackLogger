@@ -231,6 +231,50 @@ input.form-control, select.form-select {
     }
 }
 
+// Hero Register Button with Glowing Background
+.btn-hero-register {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background-image: url('/img/light-button-nobg-glow.webp');
+    background-size: 100% 100%; // stretch to fill the button completely
+    background-position: center;
+    background-repeat: no-repeat;
+    background-color: transparent !important;
+    border: none !important;
+    padding: 1.25rem 2rem;
+    color: #3b2804 !important;
+    font-weight: bold;
+    font-family: "Cinzel", serif;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-size: 1rem;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), filter 0.3s ease;
+    text-decoration: none;
+    overflow: visible; // Allows glow effects to overflow
+    
+    // Add text shadow for embossed look
+    text-shadow: 1px 1px 1px rgba(255, 255, 255, 0.5);
+
+    &:hover {
+        transform: scale(1.05) translateY(-2px);
+        color: #1a1102 !important;
+        filter: drop-shadow(0 0 15px rgba(212, 160, 23, 0.6)) brightness(1.1);
+    }
+
+    &:active {
+        transform: scale(0.98) translateY(1px);
+        filter: drop-shadow(0 0 5px rgba(212, 160, 23, 0.4)) brightness(0.9);
+    }
+
+    span {
+        position: relative;
+        z-index: 2;
+        padding: 0 0.5rem;
+    }
+}
+
 // Nav Pills Styling (Used in User Manage account)
 .nav-pills .nav-link {
     color: #ccc;
