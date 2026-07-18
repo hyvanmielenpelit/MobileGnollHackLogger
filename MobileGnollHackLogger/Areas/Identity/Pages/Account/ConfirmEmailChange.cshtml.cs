@@ -30,6 +30,8 @@ public class ConfirmEmailChangeModel : PageModel
     [TempData]
     public string? StatusMessage { get; set; }
 
+    public bool IsSuccess { get; set; }
+
     public async Task<IActionResult> OnGetAsync(string userId, string email, string code)
     {
         if (userId == null || email == null || code == null)
@@ -47,6 +49,7 @@ public class ConfirmEmailChangeModel : PageModel
         var result = await _userManager.ChangeEmailAsync(user, email, code);
         if (!result.Succeeded)
         {
+            IsSuccess = false;
             StatusMessage = "Error changing email.";
             return Page();
         }
@@ -56,11 +59,13 @@ public class ConfirmEmailChangeModel : PageModel
         var setUserNameResult = await _userManager.SetUserNameAsync(user, email);
         if (!setUserNameResult.Succeeded)
         {
+            IsSuccess = false;
             StatusMessage = "Error changing user name.";
             return Page();
         }
 
         await _signInManager.RefreshSignInAsync(user);
+        IsSuccess = true;
         StatusMessage = "Thank you for confirming your email change.";
         return Page();
     }
