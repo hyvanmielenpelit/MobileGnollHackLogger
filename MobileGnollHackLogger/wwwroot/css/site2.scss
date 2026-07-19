@@ -390,7 +390,7 @@ hr.separator {
     overflow: visible;
 
     &::after {
-        content: '♦';
+        content: '\2666\FE0E';
         position: absolute;
         top: 50%;
         left: 50%;

@@ -34,7 +34,7 @@ namespace MobileGnollHackLogger.Pages
         public BonesTransactionsModel(ApplicationDbContext dbContext)
         {
             DbContext = dbContext;
-            Title = "Bones Sharing";
+            Title = "Bones";
 
             if(BonesHelper.VersionCompatibilityList != null && BonesHelper.VersionCompatibilityList.Count > 0)
             {
