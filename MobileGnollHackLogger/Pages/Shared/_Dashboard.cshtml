@@ -17,10 +17,10 @@
     </div>
 </div>
 
-<div class="card border-secondary card-glass p-3 mb-4 text-start">
-    <h2 class="text-center text-uppercase mb-2">Your Recent Games</h2>
+<div class="mb-4 mt-5 text-start">
+    <h2 class="text-center text-uppercase mb-3">Your Recent Games</h2>
     
-    @if (Model.RecentQuestLogs.Any())
+    @if (Model.RecentGameLogs.Any())
     {
         <div class="rpg-leaderboard-card mb-0">
             <div class="table-responsive">
@@ -36,7 +36,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach (var gameLog in Model.RecentQuestLogs)
+                        @foreach (var gameLog in Model.RecentGameLogs)
                         {
                             bool isAscended = !string.IsNullOrEmpty(gameLog.DeathText) && gameLog.DeathText.Equals("ascended", StringComparison.OrdinalIgnoreCase);
                             <tr data-id="@gameLog.Id" class="@(isAscended ? "ascended-row" : "")" style="cursor: pointer;" onclick="window.location.href='/dumplog/@gameLog.Id'">
@@ -107,67 +107,5 @@
     else
     {
         <div class="text-center text-muted my-4">No recent quest logs found.</div>
-    }
-</div>
-
-<div class="card border-secondary card-glass p-3 mb-4 text-start">
-    <h2 class="text-center text-uppercase mb-2">Bones File Transactions</h2>
-    
-    @if (Model.UploadedBonesFiles.Any())
-    {
-        <div class="rpg-leaderboard-card mb-0">
-            <div class="table-responsive">
-                <table id="bonesFilesTable" class="rpg-table" style="display:none;">
-                    <thead>
-                        <tr>
-                            <th>File Name</th>
-                            <th>Details</th>
-                            <th class="text-center">Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var bone in Model.UploadedBonesFiles)
-                        {
-                            <tr>
-                                <td>
-                                    <div class="d-flex align-items-center">
-                                        <span class="fs-4 me-2">💀</span>
-                                        <span class="fw-bold text-light" style="word-break: break-all;">@bone.OriginalFileName</span>
-                                    </div>
-                                </td>
-                                <td>
-                                    <div class="text-light text-uppercase" style="letter-spacing: 0.5px; font-size: 0.95rem;">
-                                        Lv @bone.DifficultyLevel | @bone.DifficultyText
-                                    </div>
-                                    <div class="text-muted-small">
-                                        @bone.Downloads Downloads
-                                    </div>
-                                </td>
-                                <td class="text-center" data-order="@(bone.IsActive ? 1 : 0)">
-                                    @if (bone.IsActive)
-                                    {
-                                        <div class="text-success fw-bold d-flex flex-column align-items-center justify-content-center" style="font-size: 0.85rem;">
-                                            <i class="bi bi-download fs-5 mb-1"></i>
-                                            Active
-                                        </div>
-                                    }
-                                    else
-                                    {
-                                        <div class="text-warning fw-bold d-flex flex-column align-items-center justify-content-center" style="font-size: 0.85rem; color: #fd7e14 !important;">
-                                            <i class="bi bi-archive fs-5 mb-1"></i>
-                                            Archived
-                                        </div>
-                                    }
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    }
-    else
-    {
-        <div class="text-center text-muted my-4">No uploaded bones files found.</div>
     }
 </div>

@@ -14,17 +14,7 @@ namespace MobileGnollHackLogger.Pages
         public string? LastActive { get; set; }
         public string? Joined { get; set; }
         public int GameLogCount { get; set; }
-        public IList<GameLog> RecentQuestLogs { get; set; } = new List<GameLog>();
-        public IList<BonesFileInfo> UploadedBonesFiles { get; set; } = new List<BonesFileInfo>();
-    }
-
-    public class BonesFileInfo
-    {
-        public string? OriginalFileName { get; set; }
-        public int DifficultyLevel { get; set; }
-        public string? DifficultyText { get; set; }
-        public int Downloads { get; set; }
-        public bool IsActive { get; set; }
+        public IList<GameLog> RecentGameLogs { get; set; } = new List<GameLog>();
     }
 
     public class IndexModel : PageModel
@@ -101,48 +91,12 @@ namespace MobileGnollHackLogger.Pages
 
                         Dashboard.Joined = joinedDate?.ToString("MMM yyyy", CultureInfo.InvariantCulture) ?? "Unknown";
 
-                        Dashboard.RecentQuestLogs = await _dbContext.GameLog
+                        Dashboard.RecentGameLogs = await _dbContext.GameLog
                             .Where(gl => gl.AspNetUserId == userId)
                             .OrderByDescending(gl => gl.EndTimeUTC)
                             .Take(100)
                             .ToListAsync();
 
-                        var uploadTransactions = await _dbContext.BonesTransactions
-                            .Where(bt => bt.AspNetUserId == userId && bt.Type == TransactionType.Upload)
-                            .OrderByDescending(bt => bt.Date)
-                            .Take(100)
-                            .ToListAsync();
-
-                        foreach (var tx in uploadTransactions)
-                        {
-                            bool isActive = await _dbContext.Bones.AnyAsync(b => b.Id == tx.BonesId);
-                            int downloads = await _dbContext.BonesTransactions.CountAsync(bt => bt.BonesId == tx.BonesId && bt.Type == TransactionType.Download);
-                            
-                            string fileName = $"BONE_{userName}_{tx.BonesId}.dth";
-                            if (isActive)
-                            {
-                                var originalName = await _dbContext.Bones.Where(b => b.Id == tx.BonesId).Select(b => b.OriginalFileName).FirstOrDefaultAsync();
-                                if (!string.IsNullOrEmpty(originalName))
-                                {
-                                    fileName = originalName;
-                                }
-                            }
-
-                            string diffText = "Unknown";
-                            if (GnollHackHelper.Difficulties.ContainsKey(tx.DifficultyLevel))
-                            {
-                                diffText = GnollHackHelper.Difficulties[tx.DifficultyLevel];
-                            }
-
-                            Dashboard.UploadedBonesFiles.Add(new BonesFileInfo
-                            {
-                                OriginalFileName = fileName,
-                                DifficultyLevel = tx.DifficultyLevel,
-                                DifficultyText = diffText,
-                                Downloads = downloads,
-                                IsActive = isActive
-                            });
-                        }
                     }
                 }
             }

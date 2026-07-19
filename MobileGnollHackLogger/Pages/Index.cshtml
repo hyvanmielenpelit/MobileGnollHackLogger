@@ -18,7 +18,7 @@
     }
     else
     {
-        <h1 class="hero-title">DASHBOARD</h1>
+        <h1 class="hero-title mb-0 pb-0">DASHBOARD</h1>
         <hr class="separator" />
     }
     
@@ -128,14 +128,6 @@
         $(document).ready(function () {
             if ($("#questLogsTable").length) {
                 $("#questLogsTable").dataTable({
-                    order: [],
-                    autoWidth: false,
-                    pageLength: 5,
-                    lengthMenu: [[5, 10, 25, 50, 100, -1], [5, 10, 25, 50, 100, "All"]]
-                }).show();
-            }
-            if ($("#bonesFilesTable").length) {
-                $("#bonesFilesTable").dataTable({
                     order: [],
                     autoWidth: false,
                     pageLength: 5,
