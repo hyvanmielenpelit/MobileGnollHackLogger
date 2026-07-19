@@ -524,6 +524,7 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
   margin: 0;
   font-size: 2.5rem;
   letter-spacing: 2px;
+  text-align: center;
 }
 
 .rpg-subtitle {
@@ -708,10 +709,18 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
     border-radius: 0;
   }
   #topScoreTable thead,
+  #questLogsTable thead,
+  #topScoresTable thead,
   .js-table thead {
     display: none !important;
   }
   #topScoreTable tbody, #topScoreTable tr, #topScoreTable td,
+  #questLogsTable tbody,
+  #questLogsTable tr,
+  #questLogsTable td,
+  #topScoresTable tbody,
+  #topScoresTable tr,
+  #topScoresTable td,
   .js-table tbody,
   .js-table tr,
   .js-table td {
@@ -720,6 +729,8 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
     box-sizing: border-box !important;
   }
   #topScoreTable tr,
+  #questLogsTable tr,
+  #topScoresTable tr,
   .js-table tr {
     margin-bottom: 20px !important;
     border: 1px solid rgba(0, 240, 255, 0.2) !important;
@@ -729,6 +740,8 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.5) !important;
   }
   #topScoreTable td,
+  #questLogsTable td,
+  #topScoresTable td,
   .js-table td {
     text-align: right !important;
     padding: 8px 10px 8px 45% !important;
@@ -742,10 +755,14 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
     align-items: flex-end;
   }
   #topScoreTable td:last-child,
+  #questLogsTable td:last-child,
+  #topScoresTable td:last-child,
   .js-table td:last-child {
     border-bottom: none !important;
   }
   #topScoreTable td::before,
+  #questLogsTable td::before,
+  #topScoresTable td::before,
   .js-table td::before {
     content: attr(data-label) !important;
     position: absolute !important;

@@ -581,6 +581,7 @@ div.container.xxlMaxWidth {
         margin: 0;
         font-size: 2.5rem;
         letter-spacing: 2px;
+        text-align: center;
     }
 }
 
@@ -798,6 +799,8 @@ div.container.xxlMaxWidth {
 
     // Card-based Table Conversion
     #topScoreTable,
+    #questLogsTable,
+    #topScoresTable,
     .js-table {
         thead {
             display: none !important;
