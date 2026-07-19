@@ -263,6 +263,16 @@
                     </div>
                 </td>
             </tr>
+            <tr class="rpg-bottom-header">
+                <th>
+                    Difficulty
+                </th>
+                @foreach(var role in GnollHackHelper.Roles)
+                {
+                    <th class="text-center">@GnollHackHelper.GetRoleText(role, "Mal")</th>
+                }
+                <th class="text-center matrix-border-start">All Roles</th>
+            </tr>
         </tfoot>
     </table>
     </div>
@@ -281,6 +291,17 @@
             padding: 0.75rem 1rem;
             vertical-align: middle;
             color: #cbd5e0;
+        }
+        .rpg-bottom-header th {
+            color: #81e6d9;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            letter-spacing: 1px;
+            border-bottom: none !important;
+            border-top: 1px solid rgba(0, 240, 255, 0.4) !important;
+            padding: 0.75rem 1rem;
+            box-shadow: 0 -1px 5px rgba(0, 240, 255, 0.1);
+            vertical-align: middle;
         }
         .rpg-table td h6, .rpg-table td h5 {
             color: #81e6d9;
