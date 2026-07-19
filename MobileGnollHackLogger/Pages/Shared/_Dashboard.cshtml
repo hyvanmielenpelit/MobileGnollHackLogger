@@ -4,7 +4,7 @@
 
 <div>
     <h1 class="mt-3 text-center text-uppercase" style="letter-spacing: 1.5px;">
-        <span class="text-warning">@Model.UserName</span> <span class="text-muted fw-light">| Dashboard</span>
+        <span class="text-warning">@Model.UserName</span> <span class="text-muted fw-light d-none d-md-inline">| Dashboard</span>
     </h1>
     <div class="text-center text-muted mt-2 dashboard-stats">
         @if (Model.Rank > 0)
@@ -201,7 +201,7 @@ else if (Model.ListMode == "top")
                         <table id="topScoresTable" class="rpg-table" style="display:none;">
                             <thead>
                                 <tr>
-                                    <th class="text-center" style="width: 60px;">Rank</th>
+                                    <th class="text-center" style="width: 50px;">Rank</th>
                                     <th>Time</th>
                                     <th>Character Name</th>
                                     <th>Class</th>
