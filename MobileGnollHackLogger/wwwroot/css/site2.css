@@ -1,4 +1,4 @@
-﻿@charset "UTF-8";
+@charset "UTF-8";
 body {
   margin: 0;
   min-height: 100vh;
@@ -764,6 +764,19 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
 .login-box {
   padding: 2rem 1rem;
 }
+.login-box.manage-login-box {
+  padding: 0;
+}
+.login-box.manage-login-box .login-form-inner {
+  max-width: 400px;
+  margin: 0;
+}
+.login-box.manage-login-box .login-header .hero-title {
+  font-size: 2rem;
+}
+.login-box.manage-login-box .login-header .ornament {
+  max-width: 250px;
+}
 .login-box .login-form-inner {
   max-width: 380px;
   margin: 0 auto;
@@ -796,6 +809,14 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
   letter-spacing: 1px;
   font-size: 1rem;
   margin-top: 1rem;
+}
+.login-box .login-input-group:has(input:disabled) .input-group-text {
+  border-color: rgba(212, 160, 23, 0.15) !important;
+  color: #a08850 !important;
+}
+.login-box .login-input-group:has(input:disabled) .form-control {
+  border-color: rgba(212, 160, 23, 0.15) !important;
+  color: #ccc !important;
 }
 .login-box .login-input-group .input-group-text {
   background-color: rgba(30, 30, 30, 0.95);
@@ -911,3 +932,5 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
   font-size: 1.1rem;
   font-weight: bold;
 }
+
+/*# sourceMappingURL=site2.css.map */

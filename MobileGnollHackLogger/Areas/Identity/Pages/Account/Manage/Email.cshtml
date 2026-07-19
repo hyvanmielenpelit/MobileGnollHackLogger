@@ -7,12 +7,12 @@
 
 <partial name="_StatusMessage" for="StatusMessage" />
 
-<div class="login-box" style="padding: 0;">
+<div class="login-box manage-login-box">
     <form id="email-form" method="post" class="login-form disable-button-on-submit">
-        <div class="login-form-inner" style="margin: 0; max-width: 400px;">
+        <div class="login-form-inner">
             <div class="login-header text-center">
-                <h3 class="hero-title" style="font-size: 2rem;">@ViewData["Title"]</h3>
-                <div class="ornament" style="margin: 10px auto; max-width: 250px;"></div>
+                <h3 class="hero-title">@ViewData["Title"]</h3>
+                <div class="ornament"></div>
             </div>
             
             <div asp-validation-summary="All" class="text-danger" role="alert"></div>
@@ -20,21 +20,21 @@
             @if (Model.IsEmailConfirmed)
             {
                 <div class="input-group mb-4 login-input-group">
-                    <span class="input-group-text"><i class="bi bi-envelope-check-fill text-success"></i></span>
-                    <input asp-for="Email" class="form-control" placeholder="Email" title="Email" style="color: #ccc !important;" disabled />
+                    <span class="input-group-text" title="Current email"><i class="bi bi-envelope-check-fill text-success"></i></span>
+                    <input asp-for="Email" class="form-control" placeholder="Current email" title="Current email" disabled />
                 </div>
             }
             else
             {
                 <div class="input-group mb-2 login-input-group">
-                    <span class="input-group-text"><i class="bi bi-envelope-fill"></i></span>
-                    <input asp-for="Email" class="form-control" placeholder="Email" title="Email" style="color: #ccc !important;" disabled />
+                    <span class="input-group-text" title="Current email"><i class="bi bi-envelope-fill"></i></span>
+                    <input asp-for="Email" class="form-control" placeholder="Current email" title="Current email" disabled />
                 </div>
                 <button id="email-verification" type="submit" asp-page-handler="SendVerificationEmail" class="btn btn-link p-0 mb-4 subtle-link text-start w-100">Send verification email</button>
             }
             
             <div class="input-group mb-4 login-input-group">
-                <span class="input-group-text"><i class="bi bi-envelope-plus-fill"></i></span>
+                <span class="input-group-text" title="New email"><i class="bi bi-envelope-plus-fill"></i></span>
                 <input asp-for="Input.NewEmail" class="form-control" autocomplete="email" aria-required="true" placeholder="New email" title="New email" />
             </div>
             <span asp-validation-for="Input.NewEmail" class="text-danger mb-3 d-block"></span>

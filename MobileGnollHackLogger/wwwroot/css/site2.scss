@@ -857,6 +857,25 @@ div.container.xxlMaxWidth {
 .login-box {
     padding: 2rem 1rem;
     
+    &.manage-login-box {
+        padding: 0;
+        
+        .login-form-inner {
+            max-width: 400px;
+            margin: 0;
+        }
+        
+        .login-header {
+            .hero-title {
+                font-size: 2rem;
+            }
+            
+            .ornament {
+                max-width: 250px;
+            }
+        }
+    }
+    
     .login-form-inner {
         max-width: 380px;
         margin: 0 auto;
@@ -896,6 +915,17 @@ div.container.xxlMaxWidth {
     }
     
     .login-input-group {
+        &:has(input:disabled) {
+            .input-group-text {
+                border-color: rgba(212, 160, 23, 0.15) !important;
+                color: #a08850 !important;
+            }
+            .form-control {
+                border-color: rgba(212, 160, 23, 0.15) !important;
+                color: #ccc !important;
+            }
+        }
+        
         .input-group-text {
             background-color: $bg-input;
             border: 1px solid rgba(212, 160, 23, 0.4);

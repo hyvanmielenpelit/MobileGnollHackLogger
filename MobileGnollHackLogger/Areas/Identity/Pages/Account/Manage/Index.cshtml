@@ -7,22 +7,22 @@
 
 <partial name="_StatusMessage" for="StatusMessage" />
 
-<div class="login-box" style="padding: 0;">
+<div class="login-box manage-login-box">
     <form id="profile-form" method="post" class="login-form disable-button-on-submit">
-        <div class="login-form-inner" style="margin: 0; max-width: 400px;">
+        <div class="login-form-inner">
             <div class="login-header text-center">
-                <h3 class="hero-title" style="font-size: 2rem;">@ViewData["Title"]</h3>
-                <div class="ornament" style="margin: 10px auto; max-width: 250px;"></div>
+                <h3 class="hero-title">@ViewData["Title"]</h3>
+                <div class="ornament"></div>
             </div>
             <div asp-validation-summary="ModelOnly" class="text-danger" role="alert"></div>
             
             <div class="input-group mb-4 login-input-group">
-                <span class="input-group-text"><i class="bi bi-person-fill"></i></span>
-                <input asp-for="Username" class="form-control" placeholder="Username" title="Username" style="color: #ccc !important;" disabled />
+                <span class="input-group-text" title="Username"><i class="bi bi-person-fill"></i></span>
+                <input asp-for="Username" class="form-control" placeholder="Username" title="Username" disabled />
             </div>
             
             <div class="input-group mb-4 login-input-group">
-                <span class="input-group-text"><i class="bi bi-telephone-fill"></i></span>
+                <span class="input-group-text" title="Phone number"><i class="bi bi-telephone-fill"></i></span>
                 <input asp-for="Input.PhoneNumber" class="form-control" placeholder="Phone number" title="Phone number" />
             </div>
             <span asp-validation-for="Input.PhoneNumber" class="text-danger mb-3 d-block"></span>
