@@ -1174,8 +1174,10 @@ div.container.xxlMaxWidth {
 }
 
 .crown-icon {
-    font-size: 1.25rem;
+    font-size: 1.05rem;
     text-shadow: 0 0 5px rgba(255, 215, 0, 0.5);
     transform: translateY(-2px);
     display: inline-block;
+    vertical-align: baseline;
+    line-height: 1;
 }
