@@ -54,7 +54,7 @@ public class ChangePasswordModel : PageModel
         /// </summary>
         [Required]
         [DataType(DataType.Password)]
-        [Display(Name = "Current password")]
+        [Display(Name = "Old password")]
         public string OldPassword { get; set; } = default!;
 
         /// <summary>

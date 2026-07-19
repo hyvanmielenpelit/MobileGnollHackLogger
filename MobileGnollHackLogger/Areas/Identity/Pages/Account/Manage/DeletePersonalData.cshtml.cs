@@ -79,6 +79,11 @@ public class DeletePersonalDataModel : PageModel
         RequirePassword = await _userManager.HasPasswordAsync(user);
         if (RequirePassword)
         {
+            if (!ModelState.IsValid)
+            {
+                return Page();
+            }
+
             if (!await _userManager.CheckPasswordAsync(user, Input.Password))
             {
                 ModelState.AddModelError(string.Empty, "Incorrect password.");

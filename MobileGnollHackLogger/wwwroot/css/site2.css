@@ -855,7 +855,7 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
 .login-box .forgot-link:hover {
   color: rgb(237.3983050847, 215.8220338983, 172.1016949153);
 }
-.login-box .btn-fantasy-login {
+.login-box .btn-fantasy-login, .login-box .btn-fantasy-danger {
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -878,15 +878,52 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
   overflow: visible;
   text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8), 0 0 8px rgba(212, 160, 23, 0.4);
 }
-.login-box .btn-fantasy-login:hover {
+.login-box .btn-fantasy-login:hover, .login-box .btn-fantasy-danger:hover {
   filter: drop-shadow(0 0 15px rgba(212, 160, 23, 0.6)) brightness(1.1);
 }
-.login-box .btn-fantasy-login:active {
+.login-box .btn-fantasy-login:active, .login-box .btn-fantasy-danger:active {
   filter: drop-shadow(0 0 5px rgba(212, 160, 23, 0.4)) brightness(0.9);
 }
-.login-box .btn-fantasy-login span {
+.login-box .btn-fantasy-login span, .login-box .btn-fantasy-danger span {
   position: relative;
   z-index: 2;
+}
+.login-box .btn-fantasy-danger {
+  color: #ffdada !important;
+  text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8), 0 0 8px rgba(255, 0, 0, 0.6);
+  background-image: none !important;
+  filter: none !important;
+}
+.login-box .btn-fantasy-danger::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: url("/img/decorativebutton-nobg-noglow.webp");
+  background-size: 100% 100%;
+  background-position: center;
+  background-repeat: no-repeat;
+  filter: hue-rotate(320deg) saturate(180%) brightness(0.65);
+  z-index: 1;
+  transition: filter 0.3s ease;
+}
+.login-box .btn-fantasy-danger span {
+  position: relative;
+  z-index: 2;
+}
+.login-box .btn-fantasy-danger:hover {
+  filter: none !important;
+}
+.login-box .btn-fantasy-danger:hover::before {
+  filter: hue-rotate(320deg) saturate(180%) drop-shadow(0 0 15px rgba(255, 0, 0, 0.8)) brightness(0.85);
+}
+.login-box .btn-fantasy-danger:active {
+  filter: none !important;
+}
+.login-box .btn-fantasy-danger:active::before {
+  filter: hue-rotate(320deg) saturate(180%) drop-shadow(0 0 5px rgba(255, 0, 0, 0.5)) brightness(0.5);
 }
 .login-box .login-checkbox {
   color: #a0aec0;
