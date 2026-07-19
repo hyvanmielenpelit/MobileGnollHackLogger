@@ -1,28 +1,40 @@
-﻿@page
+@page
 @model IndexModel
 @{
     ViewData["Title"] = "Profile";
     ViewData["ActivePage"] = ManageNavPages.Index;
 }
 
-<h3>@ViewData["Title"]</h3>
 <partial name="_StatusMessage" for="StatusMessage" />
-<div class="row">
-    <div class="col-md-6">
-        <form id="profile-form" method="post">
-            <div asp-validation-summary="ModelOnly" class="text-danger" role="alert"></div>
-            <div class="form-floating mb-3">
-                <input asp-for="Username" class="form-control" placeholder="Please choose your username." disabled />
-                <label asp-for="Username" class="form-label"></label>
-            </div>
-            <div class="form-floating mb-3">
-                <input asp-for="Input.PhoneNumber" class="form-control" placeholder="Please enter your phone number."/>
-                <label asp-for="Input.PhoneNumber" class="form-label"></label>
-                <span asp-validation-for="Input.PhoneNumber" class="text-danger"></span>
-            </div>
-            <button id="update-profile-button" type="submit" class="w-100 btn btn-lg btn-primary">Save</button>
-        </form>
+
+<div class="login-box" style="padding: 0;">
+    <div class="login-header">
+        <h3 class="hero-title" style="font-size: 2rem;">@ViewData["Title"]</h3>
+        <div class="ornament" style="margin: 10px 0; max-width: 250px;"></div>
     </div>
+
+    <form id="profile-form" method="post" class="login-form disable-button-on-submit">
+        <div class="login-form-inner" style="margin: 0; max-width: 400px;">
+            <div asp-validation-summary="ModelOnly" class="text-danger" role="alert"></div>
+            
+            <div class="input-group mb-4 login-input-group">
+                <span class="input-group-text"><i class="bi bi-person-fill"></i></span>
+                <input asp-for="Username" class="form-control" placeholder="Username" disabled />
+            </div>
+            
+            <div class="input-group mb-4 login-input-group">
+                <span class="input-group-text"><i class="bi bi-telephone-fill"></i></span>
+                <input asp-for="Input.PhoneNumber" class="form-control" placeholder="Phone number" />
+            </div>
+            <span asp-validation-for="Input.PhoneNumber" class="text-danger mb-3 d-block"></span>
+
+            <div class="login-button-container mb-3 mt-4">
+                <button id="update-profile-button" type="submit" class="btn btn-fantasy-login w-100">
+                    <span>SAVE</span>
+                </button>
+            </div>
+        </div>
+    </form>
 </div>
 
 @section Scripts {
