@@ -16,11 +16,6 @@
         <p class="fw-light">Top Score Recording &bull; Bones Sharing &bull; NetHack Scoreboard Support &bull; Junethack Support &bull; Statistics</p>
         <hr class="separator" />
     }
-    else
-    {
-        <h1 class="hero-title mb-0 pb-0">DASHBOARD</h1>
-        <hr class="separator" />
-    }
     
 @if (User?.Identity?.IsAuthenticated ?? false)
     {
@@ -134,6 +129,15 @@
                     lengthMenu: [[5, 10, 25, 50, 100, -1], [5, 10, 25, 50, 100, "All"]]
                 }).show();
             }
+            if ($("#topScoresTable").length) {
+                $("#topScoresTable").dataTable({
+                    order: [],
+                    autoWidth: false,
+                    pageLength: 5,
+                    lengthMenu: [[5, 10, 25, 50, 100, -1], [5, 10, 25, 50, 100, "All"]]
+                }).show();
+            }
+            
         });
     </script>
 }

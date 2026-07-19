@@ -2,11 +2,11 @@
 @using System.Globalization
 @model DashboardViewModel
 
-<div class="mb-4">
-    <h2 class="mt-3 text-center text-uppercase hero-step-title" style="letter-spacing: 1.5px;">
-        <span class="text-warning">@Model.UserName</span> <span class="text-muted fw-light">| Statistics</span>
-    </h2>
-    <div class="text-center text-muted mt-2 mb-4 dashboard-stats">
+<div>
+    <h1 class="mt-3 text-center text-uppercase" style="letter-spacing: 1.5px;">
+        <span class="text-warning">@Model.UserName</span> <span class="text-muted fw-light">| Dashboard</span>
+    </h1>
+    <div class="text-center text-muted mt-2 dashboard-stats">
         @if (Model.Rank > 0)
         {
             <span class="me-3">Rank <strong class="text-warning">#@Model.Rank</strong></span>
@@ -17,7 +17,78 @@
     </div>
 </div>
 
-<div class="mb-4 mt-5 text-start">
+<div class="mb-4 mt-4 text-start">
+    <div class="d-flex flex-wrap justify-content-center gap-2 gap-md-4 mb-4">
+        <div class="text-center p-2 rounded" style="background: rgba(15, 20, 30, 0.6); border: 1px solid rgba(0, 240, 255, 0.1);">
+            <h6 class="text-uppercase text-muted mb-2" style="font-size: 0.75rem; letter-spacing: 1px;"><i class="bi bi-list-ul me-1"></i>Listing</h6>
+            <div class="btn-group" role="group">
+                @if (Model.ListMode != "recent")
+                {
+                    <a class="btn btn-sm btn-outline-secondary" style="border-color: rgba(255,255,255,0.2);" href="@Model.GetUrl("recent", Model.Mode, Model.Death)">Recent Games</a>
+                }
+                else
+                {
+                    <span class="btn btn-sm btn-primary active">Recent Games</span>
+                }
+                @if (Model.ListMode != "top")
+                {
+                    <a class="btn btn-sm btn-outline-secondary" style="border-color: rgba(255,255,255,0.2);" href="@Model.GetUrl("top", Model.Mode, Model.Death)">Top Scores</a>
+                }
+                else
+                {
+                    <span class="btn btn-sm btn-primary active">Top Scores</span>
+                }
+            </div>
+        </div>
+        <div class="text-center p-2 rounded" style="background: rgba(15, 20, 30, 0.6); border: 1px solid rgba(0, 240, 255, 0.1);">
+            <h6 class="text-uppercase text-muted mb-2" style="font-size: 0.75rem; letter-spacing: 1px;"><i class="bi bi-controller me-1"></i>Gameplay Mode</h6>
+            <div class="btn-group" role="group">
+                @if (!string.IsNullOrEmpty(Model.Mode))
+                {
+                    <a class="btn btn-sm btn-outline-secondary" style="border-color: rgba(255,255,255,0.2);" href="@Model.GetUrl(Model.ListMode, null, Model.Death)">All Modes</a>
+                }
+                else
+                {
+                    <span class="btn btn-sm btn-primary active">All Modes</span>
+                }
+                @foreach (var mode in Model.DisplayModes)
+                {
+                    @if (Model.Mode != mode)
+                    {
+                        <a class="btn btn-sm btn-outline-secondary" style="border-color: rgba(255,255,255,0.2);" href="@Model.GetUrl(Model.ListMode, mode, Model.Death)">@GnollHackHelper.Modes[mode]</a>
+                    }
+                    else
+                    {
+                        <span class="btn btn-sm btn-primary active">@GnollHackHelper.Modes[mode]</span>
+                    }
+                }
+            </div>
+        </div>
+        <div class="text-center p-2 rounded" style="background: rgba(15, 20, 30, 0.6); border: 1px solid rgba(0, 240, 255, 0.1);">
+            <h6 class="text-uppercase text-muted mb-2" style="font-size: 0.75rem; letter-spacing: 1px;"><i class="bi bi-award me-1"></i>Game Type</h6>
+            <div class="btn-group" role="group">
+                @if (Model.TopScoreMode != TopScoreMode.Ascensions)
+                {
+                    <a class="btn btn-sm btn-outline-secondary" style="border-color: rgba(255,255,255,0.2);" href="@Model.GetUrl(Model.ListMode, Model.Mode, "ascended")">Ascensions</a>
+                }
+                else
+                {
+                    <span class="btn btn-sm btn-primary active">Ascensions</span>
+                }
+                @if (Model.TopScoreMode != TopScoreMode.Games)
+                {
+                    <a class="btn btn-sm btn-outline-secondary" style="border-color: rgba(255,255,255,0.2);" href="@Model.GetUrl(Model.ListMode, Model.Mode, null)">Games</a>
+                }
+                else
+                {
+                    <span class="btn btn-sm btn-primary active">Games</span>
+                }
+            </div>
+        </div>
+    </div>
+
+@if (Model.ListMode == "recent")
+{
     <h2 class="text-center text-uppercase mb-3">Your Recent Games</h2>
     
     @if (Model.RecentGameLogs.Any())
@@ -108,4 +179,112 @@
     {
         <div class="text-center text-muted my-4">No recent quest logs found.</div>
     }
+}
+else if (Model.ListMode == "top")
+{
+    <h2 class="text-center text-uppercase mb-3 mt-1">Your Top Scores</h2>
+    
+    @if (Model.TopScores != null && Model.TopScores.Count > 0)
+            {
+                <div class="rpg-leaderboard-card mb-0">
+                    <div class="table-responsive">
+                        <table id="topScoresTable" class="rpg-table" style="display:none;">
+                            <thead>
+                                <tr>
+                                    <th class="text-center" style="width: 60px;">Rank</th>
+                                    <th>Character Name</th>
+                                    <th>Class & Details</th>
+                                    <th style="width: 12%;">Points</th>
+                                    <th style="width: 8%;">Turns</th>
+                                    <th style="width: 30%; min-width: 280px;">Result</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var scoreData in Model.TopScores)
+                                {
+                                    var gameLog = scoreData.Log;
+                                    var displayRank = scoreData.GlobalRank;
+                                    bool isAscended = !string.IsNullOrEmpty(gameLog.DeathText) && gameLog.DeathText.Equals("ascended", StringComparison.OrdinalIgnoreCase);
+                                    
+                                    <tr data-id="@gameLog.Id" class="@(isAscended ? "ascended-row" : "")" style="cursor: pointer;" onclick="window.location.href='/dumplog/@gameLog.Id'">
+                                        <td class="text-center" data-label="Rank" data-order="@displayRank">
+                                            @if (displayRank == 1)
+                                            {
+                                                <div class="rank-1-wrapper"><span class="rank-shield shield-gold">@displayRank</span></div>
+                                            }
+                                            else if (displayRank == 2)
+                                            {
+                                                <span class="rank-shield shield-silver">@displayRank</span>
+                                            }
+                                            else if (displayRank == 3)
+                                            {
+                                                <span class="rank-shield shield-bronze">@displayRank</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="rank-shield shield-standard">@displayRank</span>
+                                            }
+                                        </td>
+                                        
+                                        <td data-label="Character Name" data-order="@gameLog.CharacterName">
+                                            <div>
+                                                <div class="text-white fw-bold text-uppercase" style="letter-spacing: 0.5px; font-size: 1.05rem;">@gameLog.CharacterName</div>
+                                                <div class="text-muted-small">
+                                                    v@(gameLog.Version)-@(gameLog.EditLevel)
+                                                </div>
+                                            </div>
+                                        </td>
+                                        
+                                        <td data-label="Class & Details" data-order="@gameLog.RoleText">
+                                            <div class="text-uppercase text-light" style="letter-spacing: 0.5px;">@gameLog.RoleText</div>
+                                            <div class="text-muted-small">
+                                                @(gameLog.RaceText), @(gameLog.GenderText), @(gameLog.AlignmentText)
+                                            </div>
+                                            <div class="text-muted-small">
+                                                @gameLog.DifficultyText, @(gameLog.ModeText)@if(gameLog.IsTournament){<text>, Tournament</text>}
+                                            </div>
+                                        </td>
+                                        
+                                        <td data-label="Points" data-order="@gameLog.Points">
+                                            <div class="d-flex align-items-center">
+                                                <span class="score-text mb-0">@gameLog.Points.ToString("N0", CultureInfo.InvariantCulture)</span>
+                                                @if(isAscended)
+                                                {
+                                                    <span class="ms-2 text-warning" title="Ascended" style="font-size: 1.25rem; text-shadow: 0 0 5px rgba(255,215,0,0.5); transform: translateY(-3px);">&#x1F451;</span>
+                                                }
+                                            </div>
+                                        </td>
+                                        
+                                        <td data-label="Turns" data-order="@gameLog.Turns">
+                                            <div class="text-light">@gameLog.Turns</div>
+                                            <div class="text-muted-small">@gameLog.RealTimeSpan.ToString("c", CultureInfo.InvariantCulture)</div>
+                                        </td>
+                                        
+                                        <td data-label="Result" data-order="@gameLog.DeathText">
+                                            <div class="text-uppercase mb-1 @(isAscended ? "fw-bold" : "")" style="color: @(isAscended ? "#ffd700" : "#ffffff"); font-size: 1.05rem; letter-spacing: 0.5px; @(isAscended ? "text-shadow: 0 0 5px rgba(255, 215, 0, 0.4);" : "")">
+                                                @gameLog.DeathText
+                                                @if (!string.IsNullOrEmpty(gameLog.WhileText))
+                                                {
+                                                    <text>while </text> @gameLog.WhileText
+                                                }
+                                            </div>
+                                            <div class="text-muted-small">
+                                                DL: @(gameLog.DeathLevel)/@(gameLog.MaxLevel) | HP: @(gameLog.HitPoints)/@(gameLog.MaxHitPoints)
+                                            </div>
+                                            <div class="text-muted-small">
+                                                Deaths: @(gameLog.Deaths) | Crashes: @(gameLog.DungeonCollapses)
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="text-center text-muted my-4">No top scores found.</div>
+            }
+}
 </div>
