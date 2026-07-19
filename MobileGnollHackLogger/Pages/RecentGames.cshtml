@@ -51,14 +51,6 @@
     <div class="text-center p-2 rounded" style="background: rgba(15, 20, 30, 0.6); border: 1px solid rgba(0, 240, 255, 0.1);">
         <h6 class="text-uppercase text-muted mb-2" style="font-size: 0.75rem; letter-spacing: 1px;"><i class="bi bi-award me-1"></i>Game Type</h6>
         <div class="btn-group" role="group">
-            @if (Model.RecentGamesMode != RecentGamesMode.Ascensions)
-            {
-                <a class="btn btn-sm btn-outline-secondary" style="border-color: rgba(255,255,255,0.2);" href="@Model.GetUrl(Model.Mode, "ascended")">Ascension</a>
-            }
-            else
-            {
-                <span class="btn btn-sm btn-primary active">Ascension</span>
-            }
             @if (Model.RecentGamesMode != RecentGamesMode.Games)
             {
                 <a class="btn btn-sm btn-outline-secondary" style="border-color: rgba(255,255,255,0.2);" href="@Model.GetUrl(Model.Mode, null)">All</a>
@@ -66,6 +58,14 @@
             else
             {
                 <span class="btn btn-sm btn-primary active">All</span>
+            }
+            @if (Model.RecentGamesMode != RecentGamesMode.Ascensions)
+            {
+                <a class="btn btn-sm btn-outline-secondary" style="border-color: rgba(255,255,255,0.2);" href="@Model.GetUrl(Model.Mode, "ascended")">Ascension</a>
+            }
+            else
+            {
+                <span class="btn btn-sm btn-primary active">Ascension</span>
             }
         </div>
     </div>
