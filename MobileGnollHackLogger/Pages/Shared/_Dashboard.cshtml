@@ -106,10 +106,10 @@
                 <table id="questLogsTable" class="rpg-table" style="display:none;">
                     <thead>
                         <tr>
-                            <th>Time & Version</th>
+                            <th>Time</th>
                             <th>Character Name</th>
                             <th>Class & Details</th>
-                            <th style="width: 12%;">Points</th>
+                            <th style="width: 12%;">Score</th>
                             <th style="width: 8%;">Turns</th>
                             <th style="width: 30%; min-width: 280px;">Result</th>
                         </tr>
@@ -119,8 +119,8 @@
                         {
                             bool isAscended = !string.IsNullOrEmpty(gameLog.DeathText) && gameLog.DeathText.Equals("ascended", StringComparison.OrdinalIgnoreCase);
                             <tr data-id="@gameLog.Id" class="@(isAscended ? "ascended-row" : "")" style="cursor: pointer;" onclick="window.location.href='/dumplog/@gameLog.Id'">
-                                <td data-label="Time & Version" data-order="@gameLog.EndTimeUTCDate.Ticks">
-                                    <div class="text-light">@gameLog.EndTimeUTCDate.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)</div>
+                                <td data-label="Time" data-order="@gameLog.EndTimeUTCDate.Ticks">
+                                    <div class="text-light">@gameLog.EndTimeUTCDate.ToString("d MMM yyyy HH:mm", CultureInfo.InvariantCulture)</div>
                                     <div class="text-muted-small">
                                         @(gameLog.Version)-@(gameLog.EditLevel)
                                         @if (!string.IsNullOrEmpty(gameLog.PortVersion) && !string.IsNullOrEmpty(gameLog.Platform))
@@ -130,9 +130,12 @@
                                     </div>
                                 </td>
                                 
-                                <td data-label="Character Name" data-order="@gameLog.CharacterName">
+                                <td data-label="Player" data-order="@gameLog.CharacterName">
                                     <div>
                                         <div class="text-white fw-bold text-uppercase" style="letter-spacing: 0.5px; font-size: 1.05rem;">@gameLog.CharacterName</div>
+                                        <div class="text-muted-small">
+                                            XL: @(gameLog.ExperienceLevel)
+                                        </div>
                                     </div>
                                 </td>
                                 
@@ -146,7 +149,7 @@
                                     </div>
                                 </td>
                                 
-                                <td data-label="Points" data-order="@gameLog.Points">
+                                <td data-label="Score" data-order="@gameLog.Points">
                                     <div class="d-flex align-items-center">
                                         <span class="score-text mb-0">@gameLog.Points.ToString("N0", CultureInfo.InvariantCulture)</span>
                                         @if(isAscended)

@@ -691,6 +691,17 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
   background: transparent !important;
 }
 
+.hero-icon {
+  height: 160px;
+  width: auto;
+  object-fit: contain;
+  transition: transform 0.3s ease, filter 0.3s ease;
+}
+.hero-icon:hover {
+  transform: scale(1.05);
+  filter: drop-shadow(0 0 15px rgba(212, 160, 23, 0.4));
+}
+
 #topScoreTable.force-card-view thead,
 #questLogsTable.force-card-view thead,
 #topScoresTable.force-card-view thead,
