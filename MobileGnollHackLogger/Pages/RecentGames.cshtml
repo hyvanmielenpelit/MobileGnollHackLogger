@@ -136,7 +136,10 @@
                             
                             <td data-label="Score" data-order="@gameLog.Points">
                                 <span class="score-text">@gameLog.Points.ToString("N0", CultureInfo.InvariantCulture)</span>
-                                <div class="text-muted-small">XL: @(gameLog.ExperienceLevel)</div>
+                                @if (gameLog.ExperienceLevel != null)
+                                {
+                                    <div class="text-muted-small">XL: @(gameLog.ExperienceLevel)</div>
+                                }
                             </td>
                             
                             <td data-label="Turns" data-order="@gameLog.Turns">
