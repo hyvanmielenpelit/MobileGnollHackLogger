@@ -1,4 +1,4 @@
-﻿@page
+@page
 @using System.Globalization
 @model MobileGnollHackLogger.Pages.StatisticsModel
 @{
@@ -15,39 +15,47 @@
     var allAscensionCount = Model.GameLogs != null ? Model.GameLogs.Where(gl => gl.DeathText == "ascended").Count() : 0;
 }
 
-<h1 class="text-center">Statistics</h1>
-<h5 class="text-center">Gameplay Mode</h5>
-<p class="text-center">
-    @if(!string.IsNullOrEmpty(Model.Mode))
-    {
-        <a class="link-light" href="/Statistics">All Modes</a>
-    }
-    else
-    {
-        <b>@modeText</b>
-    }
-    @foreach (var mode in Model.DisplayModes)
-    {
-        <span>|</span>
-        @if (Model.Mode != mode)
-        {
-            <a class="link-light" href="/Statistics?mode=@mode">@GnollHackHelper.Modes[mode]</a>
-        }
-        else
-        {
-            <b>@GnollHackHelper.Modes[mode]</b>
-        }
-    }
-</p>
+<div class="rpg-header mt-3">
+    <div class="ornament"></div>
+    <h1 class="mb-0" style="font-family: 'Cinzel', serif;">Statistics</h1>
+    <div class="ornament"></div>
+</div>
+<div class="text-center rpg-subtitle">
+    WIN RATE PER ROLE AND DIFFICULTY IN @modeText.ToUpper()
+</div>
 
-<hr />
+<div class="d-flex flex-wrap justify-content-center gap-2 gap-md-4 mb-4 mt-3">
+    <div class="text-center p-2 rounded" style="background: rgba(15, 20, 30, 0.6); border: 1px solid rgba(0, 240, 255, 0.1);">
+        <h6 class="text-uppercase text-muted mb-2" style="font-size: 0.75rem; letter-spacing: 1px;"><i class="bi bi-controller me-1"></i>Gameplay Mode</h6>
+        <div class="btn-group" role="group">
+            @if(!string.IsNullOrEmpty(Model.Mode))
+            {
+                <a class="btn btn-sm btn-outline-secondary" style="border-color: rgba(255,255,255,0.2);" href="/Statistics">All Modes</a>
+            }
+            else
+            {
+                <span class="btn btn-sm btn-primary active">All Modes</span>
+            }
+            @foreach (var mode in Model.DisplayModes)
+            {
+                @if (Model.Mode != mode)
+                {
+                    <a class="btn btn-sm btn-outline-secondary" style="border-color: rgba(255,255,255,0.2);" href="/Statistics?mode=@mode">@GnollHackHelper.Modes[mode]</a>
+                }
+                else
+                {
+                    <span class="btn btn-sm btn-primary active">@GnollHackHelper.Modes[mode]</span>
+                }
+            }
+        </div>
+    </div>
+</div>
 
-<h2 class="text-center pt-1">Win Rate per Role and Difficulty in Games in @modeText</h2>
+<h6 class="text-center text-muted-small pb-3">G = Games, A = Ascensions, Min @Model.MinTurns Turns, Less Than @Model.YearString Old</h6>
 
-<h6 class="text-center pb-3">G = Games, A = Ascensions, Min @Model.MinTurns Turns, Less Than @Model.YearString Old</h6>
-
-<div class="table-responsive">
-    <table id="statisticsTable" class="table table-dark table-striped">
+<div class="rpg-leaderboard-card">
+    <div class="table-responsive">
+        <table id="statisticsTable" class="rpg-table">
         <thead>
             <tr>
                 <th>
@@ -57,7 +65,7 @@
                 {
                     <th class="text-center">@GnollHackHelper.GetRoleText(role, "Mal")</th>
                 }
-                <th class="text-center border-start">All Roles</th>
+                <th class="text-center matrix-border-start">All Roles</th>
             </tr>
         </thead>
         <tbody>
@@ -116,7 +124,7 @@
                         string? darkeningClassTotal = allDiffGames > 0 ? null : "text-muted";
                     }
 
-                    <td class="w-role text-center border-start border-bottom-0 @darkeningClassTotal">
+                    <td class="w-role text-center matrix-border-start border-bottom-0 @darkeningClassTotal">
                         <div class="font-l"><h5>@(allDiffGames > 0 ? ((double)allDiffAscensions / (double)allDiffGames).ToPercentageString(true) : "N/A")</h5></div>
                         <div>
                             <span>G: @allDiffGames</span>
@@ -138,7 +146,7 @@
         </tbody>
         <tfoot>
             <tr>
-                <td class="w-diff border-top"><h6>All Difficulties</h6></td>
+                <td class="w-diff matrix-border-top"><h6>All Difficulties</h6></td>
                 @foreach (var role in GnollHackHelper.Roles)
                 {
                     long games = 0;
@@ -163,7 +171,7 @@
 
                     string? darkeningClass = games > 0 ? null : "text-muted";
 
-                <td class="w-role text-center border-top @darkeningClass">
+                <td class="w-role text-center matrix-border-top @darkeningClass">
                     <div class="font-l"><h5>@(games > 0 ? ((double)ascensions / (double)games).ToPercentageString(true) : "N/A")</h5></div>
                     <div>
                         <span>G: @games</span>
@@ -187,7 +195,7 @@
                 @{
                     string? darkeningClassAll = allGamesCount > 0 ? null : "text-muted";
                 }
-                <td class="w-role text-center border-start border-top @darkeningClassAll">
+                <td class="w-role text-center matrix-border-start matrix-border-top @darkeningClassAll">
                     <div class="font-l"><h5>@(allGamesCount > 0 ? ((double)allAscensionCount / (double)allGamesCount).ToPercentageString(true) : "N/A")</h5></div>
                     <div>G: @allGamesCount</div>
                     <div>A: @allAscensionCount</div>
@@ -195,4 +203,35 @@
             </tr>
         </tfoot>
     </table>
+    </div>
 </div>
+
+@section Styles
+{
+    <style>
+        .matrix-border-start {
+            border-left: 1px solid rgba(0, 240, 255, 0.2) !important;
+        }
+        .matrix-border-top {
+            border-top: 1px solid rgba(0, 240, 255, 0.2) !important;
+        }
+        .rpg-table tfoot td {
+            padding: 0.75rem 1rem;
+            vertical-align: middle;
+            color: #cbd5e0;
+        }
+        .rpg-table td h6, .rpg-table td h5 {
+            color: #81e6d9;
+            text-shadow: 0 0 5px rgba(0, 240, 255, 0.2);
+            margin: 0;
+            margin-bottom: 4px;
+        }
+        .rpg-table td.text-muted h6, .rpg-table td.text-muted h5, .rpg-table td.text-muted div, .rpg-table td.text-muted span {
+            color: #4a5568 !important;
+            text-shadow: none;
+        }
+        .rpg-table td div {
+            font-size: 0.85rem;
+        }
+    </style>
+}
