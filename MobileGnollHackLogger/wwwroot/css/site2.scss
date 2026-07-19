@@ -456,6 +456,7 @@ div.container.xxlMaxWidth {
 .w-xl   { width: 25%; }
 .w-diff { width: 6.62%; }
 .w-role { width: 6.67%; }
+.w-death { min-width: 220px; }
 
 .h-line {
     vertical-align: top;
@@ -631,6 +632,10 @@ div.container.xxlMaxWidth {
             border-bottom: 1px solid rgba(0, 240, 255, 0.1) !important;
             border-top: none !important;
             color: #cbd5e0;
+            
+            .time-text {
+                display: none;
+            }
         }
 
         &:hover {
@@ -839,6 +844,10 @@ div.container.xxlMaxWidth {
             font-size: 0.75rem !important;
             top: 50% !important;
             transform: translateY(-50%) !important;
+        }
+        
+        .time-text {
+            display: block !important;
         }
     }
 }

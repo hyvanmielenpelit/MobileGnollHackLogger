@@ -412,6 +412,10 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
   width: 6.67%;
 }
 
+.w-death {
+  min-width: 220px;
+}
+
 .h-line {
   vertical-align: top;
   font-size: 0.9em;
@@ -572,6 +576,9 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
   border-bottom: 1px solid rgba(0, 240, 255, 0.1) !important;
   border-top: none !important;
   color: #cbd5e0;
+}
+.rpg-table tbody tr td .time-text {
+  display: none;
 }
 .rpg-table tbody tr:hover {
   background-color: rgba(0, 240, 255, 0.05) !important;
@@ -771,6 +778,12 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
   top: 50% !important;
   transform: translateY(-50%) !important;
 }
+#topScoreTable.force-card-view td .time-text,
+#questLogsTable.force-card-view td .time-text,
+#topScoresTable.force-card-view td .time-text,
+.js-table.force-card-view td .time-text {
+  display: block !important;
+}
 
 @media (max-width: 768px) {
   .nav-pills .nav-link.active {
@@ -846,6 +859,12 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
     font-size: 0.75rem !important;
     top: 50% !important;
     transform: translateY(-50%) !important;
+  }
+  #topScoreTable:not(.force-table-view) td .time-text,
+  #questLogsTable:not(.force-table-view) td .time-text,
+  #topScoresTable:not(.force-table-view) td .time-text,
+  .js-table:not(.force-table-view) td .time-text {
+    display: block !important;
   }
   #topScoreTable.force-table-view thead,
   #questLogsTable.force-table-view thead,
