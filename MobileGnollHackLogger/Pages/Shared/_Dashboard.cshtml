@@ -122,7 +122,7 @@
                                 <td data-label="Time & Version" data-order="@gameLog.EndTimeUTCDate.Ticks">
                                     <div class="text-light">@gameLog.EndTimeUTCDate.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)</div>
                                     <div class="text-muted-small">
-                                        v@(gameLog.Version)-@(gameLog.EditLevel)
+                                        @(gameLog.Version)-@(gameLog.EditLevel)
                                         @if (!string.IsNullOrEmpty(gameLog.PortVersion) && !string.IsNullOrEmpty(gameLog.Platform))
                                         {
                                             <text>| @(gameLog.PortVersion + gameLog.PlatformLetter + gameLog.StoreLetter)</text>
