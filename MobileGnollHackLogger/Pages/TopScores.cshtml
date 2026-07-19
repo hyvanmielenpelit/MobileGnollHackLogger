@@ -88,12 +88,14 @@
             <table id="topScoreTable" class="rpg-table" style="display:none;">
                 <thead>
                     <tr>
-                        <th class="text-center" style="width: 60px;">Rank</th>
-                        <th>Character</th>
+                        <th class="text-center" style="width: 40px;">Rank</th>
+                        <th>Time</th>
+                        <th>Player</th>
                         <th>Class</th>
-                        <th>High Score</th>
-                        <th>Turns</th>
-                        <th>Death Reason</th>
+                        <th>Difficulty</th>
+                        <th style="width: 1%; white-space: nowrap;">Score</th>
+                        <th style="width: 1%; white-space: nowrap;">Turns</th>
+                        <th style="min-width: 160px;">Death Reason</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -106,7 +108,8 @@
                             lastPoints = gameLog.Points;
                         }
                         
-                        <tr data-id="@gameLog.Id">
+                        bool isAscended = !string.IsNullOrEmpty(gameLog.DeathText) && gameLog.DeathText.Equals("ascended", StringComparison.OrdinalIgnoreCase);
+                        <tr data-id="@gameLog.Id" class="@(isAscended ? "ascended-row" : "")">
                             <td class="text-center" data-label="Rank" data-order="@displayRank">
                                 @if (displayRank == 1)
                                 {
@@ -126,11 +129,23 @@
                                 }
                             </td>
                             
-                            <td data-label="Character" data-order="@gameLog.CharacterName">
+                            <td data-label="Time" data-order="@gameLog.EndTimeUTCDate.Ticks">
+                                <div class="text-light">@gameLog.EndTimeUTCDate.ToString("d MMM yyyy", CultureInfo.InvariantCulture)</div>
+                                <div class="text-muted-small">@gameLog.EndTimeUTCDate.ToString("HH:mm", CultureInfo.InvariantCulture)</div>
+                                <div class="text-muted-small">
+                                    @(gameLog.Version)-@(gameLog.EditLevel)
+                                    @if (!string.IsNullOrEmpty(gameLog.PortVersion) && !string.IsNullOrEmpty(gameLog.Platform))
+                                    {
+                                        <text>| @(gameLog.PortVersion + gameLog.PlatformLetter + gameLog.StoreLetter)</text>
+                                    }
+                                </div>
+                            </td>
+                            
+                            <td data-label="Player" data-order="@gameLog.Name">
                                 <div>
-                                    <div class="text-white fw-bold text-uppercase" style="letter-spacing: 0.5px; font-size: 1.05rem;">@gameLog.CharacterName</div>
+                                    <div class="text-white fw-bold text-uppercase" style="letter-spacing: 0.5px; font-size: 1.05rem;">@gameLog.Name</div>
                                     <div class="text-muted-small">
-                                        Level @(gameLog.MaxLevel) | @(gameLog.Name)
+                                        @(gameLog.CharacterName)
                                     </div>
                                 </div>
                             </td>
@@ -142,7 +157,14 @@
                                 </div>
                             </td>
                             
-                            <td data-label="High Score" data-order="@gameLog.Points">
+                            <td data-label="Difficulty" data-order="@gameLog.DifficultyText">
+                                <div class="text-white fw-bold text-uppercase" style="letter-spacing: 0.5px; font-size: 1.05rem;">@gameLog.DifficultyText</div>
+                                <div class="text-muted-small">
+                                    @(gameLog.ModeText)@if(gameLog.IsTournament){<text>, Tournament</text>}
+                                </div>
+                            </td>
+                            
+                            <td data-label="Score" data-order="@gameLog.Points">
                                 <span class="score-text">@gameLog.Points.ToString("N0", CultureInfo.InvariantCulture)</span>
                             </td>
                             
@@ -152,15 +174,22 @@
                             </td>
                             
                             <td data-label="Death Reason" data-order="@gameLog.DeathText">
-                                <div class="text-uppercase" style="color: #cbd5e0; font-size: 0.9rem;">
+                                <div class="text-uppercase mb-1 @(isAscended ? "fw-bold" : "")" style="color: @(isAscended ? "#ffd700" : "#ffffff"); font-size: 1.05rem; letter-spacing: 0.5px; @(isAscended ? "text-shadow: 0 0 5px rgba(255, 215, 0, 0.4);" : "")">
                                     @gameLog.DeathText
+                                    @if(isAscended)
+                                    {
+                                        <span class="text-warning crown-icon" title="Ascended">&#x1F451;</span>
+                                    }
                                     @if (!string.IsNullOrEmpty(gameLog.WhileText))
                                     {
                                         <text>while </text> @gameLog.WhileText
                                     }
                                 </div>
                                 <div class="text-muted-small">
-                                    DL: @(gameLog.DeathLevel)/@(gameLog.MaxLevel) | HP: @(gameLog.HitPoints)/@(gameLog.MaxHitPoints)
+                                XL: @(gameLog.ExperienceLevel) | DL: @(gameLog.DeathLevel)/@(gameLog.MaxLevel) | HP: @(gameLog.HitPoints)/@(gameLog.MaxHitPoints)
+                                </div>
+                                <div class="text-muted-small">
+                                    Deaths: @(gameLog.Deaths) | Crashes: @(gameLog.DungeonCollapses)
                                 </div>
                             </td>
                         </tr>
@@ -192,7 +221,8 @@ else
             window.location.href = href;
         });
         $("#topScoreTable").dataTable({
-            order: []
+            order: [],
+            autoWidth: false
         }).show();
     </script>
 }

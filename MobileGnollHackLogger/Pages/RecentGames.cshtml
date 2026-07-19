@@ -90,9 +90,9 @@
                         <th>Player</th>
                         <th>Class</th>
                         <th>Difficulty</th>
-                        <th style="width: 10%;">Score</th>
-                        <th style="width: 8%;">Turns</th>
-                        <th style="width: 25%; min-width: 240px;">Death Reason</th>
+                        <th style="width: 1%; white-space: nowrap;">Score</th>
+                        <th style="width: 1%; white-space: nowrap;">Turns</th>
+                        <th style="min-width: 160px;">Death Reason</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -136,13 +136,7 @@
                             </td>
                             
                             <td data-label="Score" data-order="@gameLog.Points">
-                                <div class="d-flex align-items-center">
-                                    <span class="score-text mb-0">@gameLog.Points.ToString("N0", CultureInfo.InvariantCulture)</span>
-                                    @if(isAscended)
-                                    {
-                                        <span class="ms-2 text-warning" title="Ascended" style="font-size: 1.25rem; text-shadow: 0 0 5px rgba(255,215,0,0.5); transform: translateY(-3px);">&#x1F451;</span>
-                                    }
-                                </div>
+                                <span class="score-text">@gameLog.Points.ToString("N0", CultureInfo.InvariantCulture)</span>
                             </td>
                             
                             <td data-label="Turns" data-order="@gameLog.Turns">
@@ -150,9 +144,13 @@
                                 <div class="text-muted-small">@gameLog.RealTimeSpan.ToString("c", CultureInfo.InvariantCulture)</div>
                             </td>
                             
-                            <td data-label="Death Reson" data-order="@gameLog.DeathText">
+                            <td data-label="Death Reason" data-order="@gameLog.DeathText">
                                 <div class="text-uppercase mb-1 @(isAscended ? "fw-bold" : "")" style="color: @(isAscended ? "#ffd700" : "#ffffff"); font-size: 1.05rem; letter-spacing: 0.5px; @(isAscended ? "text-shadow: 0 0 5px rgba(255, 215, 0, 0.4);" : "")">
                                     @gameLog.DeathText
+                                    @if(isAscended)
+                                    {
+                                        <span class="text-warning crown-icon" title="Ascended">&#x1F451;</span>
+                                    }
                                     @if (!string.IsNullOrEmpty(gameLog.WhileText))
                                     {
                                         <text>while </text> @gameLog.WhileText
@@ -180,15 +178,6 @@ else
 @section Styles
 {
     <link rel="stylesheet" href="~/lib/datatables/dist/datatables.min.css" asp-append-version="true" />
-    <style>
-        .ascended-row > td {
-            background-color: rgba(255, 215, 0, 0.08) !important;
-            border-bottom-color: rgba(255, 215, 0, 0.2) !important;
-        }
-        .rpg-table tbody tr.ascended-row:hover > td {
-            background-color: rgba(255, 215, 0, 0.15) !important;
-        }
-    </style>
 }
 
 @section Scripts
