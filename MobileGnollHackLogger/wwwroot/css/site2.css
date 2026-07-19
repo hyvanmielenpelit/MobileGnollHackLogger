@@ -568,7 +568,7 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
 }
 .rpg-table tbody tr td {
   padding: 0.75rem 1rem;
-  vertical-align: middle;
+  vertical-align: top;
   border-bottom: 1px solid rgba(0, 240, 255, 0.1) !important;
   border-top: none !important;
   color: #cbd5e0;
