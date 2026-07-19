@@ -1,24 +1,35 @@
-﻿@page
+@page
 @model JunetHackModel
 @{
-    ViewData["Title"] = "Junethack Settings";
+    ViewData["Title"] = "Junethack";
     ViewData["ActivePage"] = ManageNavPages.JunetHack;
 }
 
-<h3>@ViewData["Title"]</h3>
-<partial name="_StatusMessage" for="StatusMessage" />
-<div class="row">
-    <div class="col-md-6">
-        <form id="profile-form" method="post">
-            <div asp-validation-summary="ModelOnly" class="text-danger" role="alert"></div>
-            <div class="form-floating mb-3">
-                <input asp-for="Input.JunetHackUserName" class="form-control" placeholder="Please enter your JunetHack User Name."/>
-                <label asp-for="Input.JunetHackUserName" class="form-label"></label>
-                <span asp-validation-for="Input.JunetHackUserName" class="text-danger"></span>
+<div class="login-box manage-login-box">
+    <form id="profile-form" method="post" class="login-form disable-button-on-submit">
+        <div class="login-form-inner">
+            <div class="login-header text-center">
+                <h3 class="hero-title">@ViewData["Title"]</h3>
+                <div class="ornament"></div>
             </div>
-            <button id="update-profile-button" type="submit" class="w-100 btn btn-lg btn-primary">Save</button>
-        </form>
-    </div>
+
+            <partial name="_StatusMessage" for="StatusMessage" />
+
+            <div asp-validation-summary="ModelOnly" class="text-danger" role="alert"></div>
+            
+            <div class="input-group mb-4 login-input-group">
+                <span class="input-group-text" title="Junethack Username"><i class="bi bi-person-fill"></i></span>
+                <input asp-for="Input.JunetHackUserName" class="form-control" placeholder="Junethack Username" title="Junethack Username" />
+            </div>
+            <span asp-validation-for="Input.JunetHackUserName" class="text-danger mb-3 d-block"></span>
+
+            <div class="login-button-container mb-3 mt-4">
+                <button id="update-profile-button" type="submit" class="btn btn-fantasy-login w-100">
+                    <span>SAVE</span>
+                </button>
+            </div>
+        </div>
+    </form>
 </div>
 
 @section Scripts {

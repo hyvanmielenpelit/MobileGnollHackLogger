@@ -5,8 +5,6 @@
     ViewData["ActivePage"] = ManageNavPages.Email;
 }
 
-<partial name="_StatusMessage" for="StatusMessage" />
-
 <div class="login-box manage-login-box">
     <form id="email-form" method="post" class="login-form disable-button-on-submit">
         <div class="login-form-inner">
@@ -15,6 +13,8 @@
                 <div class="ornament"></div>
             </div>
             
+            <partial name="_StatusMessage" for="StatusMessage" />
+
             <div asp-validation-summary="All" class="text-danger" role="alert"></div>
             
             @if (Model.IsEmailConfirmed)
