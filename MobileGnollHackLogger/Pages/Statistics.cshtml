@@ -101,20 +101,36 @@
                         string? darkeningClass = games > 0 ? null : "text-muted";
 
                         <td class="w-role text-center border-bottom-0 @darkeningClass">
-                            <div class="font-l"><h5>@(games > 0 ? ((double)ascensions / (double)games).ToPercentageString(true) : "N/A")</h5></div>
-                            <div>
-                                <span>G: @games</span>
-                                @if (allDiffGames > 0)
-                                {
-                                    <span>(@(((double)games / (double)allDiffGames).ToPercentageString(true)))</span>
-                                }
-                            </div>
-                            <div>
-                                <span>A: @ascensions</span>
-                                @if (allDiffAscensions > 0)
-                                {
-                                    <span>(@(((double)ascensions / (double)allDiffAscensions).ToPercentageString(true)))</span>
-                                }
+                            <h5>@(games > 0 ? ((double)ascensions / (double)games).ToPercentageString(true) : "N/A")</h5>
+                            <div class="cell-stats mx-auto">
+                                <div class="stat-pill">
+                                    <div class="top-row">
+                                        <span class="label">G</span>
+                                        <span class="val">@games</span>
+                                    </div>
+                                    @if (allDiffGames > 0)
+                                    {
+                                        <span class="pct">@(((double)games / (double)allDiffGames).ToPercentageString(true))</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="pct">0 %</span>
+                                    }
+                                </div>
+                                <div class="stat-pill">
+                                    <div class="top-row">
+                                        <span class="label">A</span>
+                                        <span class="val">@ascensions</span>
+                                    </div>
+                                    @if (allDiffAscensions > 0)
+                                    {
+                                        <span class="pct">@(((double)ascensions / (double)allDiffAscensions).ToPercentageString(true))</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="pct">0 %</span>
+                                    }
+                                </div>
                             </div>
                         </td>
                         
@@ -125,20 +141,36 @@
                     }
 
                     <td class="w-role text-center matrix-border-start border-bottom-0 @darkeningClassTotal">
-                        <div class="font-l"><h5>@(allDiffGames > 0 ? ((double)allDiffAscensions / (double)allDiffGames).ToPercentageString(true) : "N/A")</h5></div>
-                        <div>
-                            <span>G: @allDiffGames</span>
-                            @if (allGamesCount > 0)
-                            {
-                                <span>(@(((double)allDiffGames / (double)allGamesCount).ToPercentageString(true)))</span>
-                            }
-                        </div>
-                        <div>
-                            <span>A: @allDiffAscensions</span>
-                            @if (allAscensionCount > 0)
-                            {
-                                <span>(@(((double)allDiffAscensions / (double)allAscensionCount).ToPercentageString(true)))</span>
-                            }
+                        <h5>@(allDiffGames > 0 ? ((double)allDiffAscensions / (double)allDiffGames).ToPercentageString(true) : "N/A")</h5>
+                        <div class="cell-stats mx-auto">
+                            <div class="stat-pill">
+                                <div class="top-row">
+                                    <span class="label">G</span>
+                                    <span class="val">@allDiffGames</span>
+                                </div>
+                                @if (allGamesCount > 0)
+                                {
+                                    <span class="pct">@(((double)allDiffGames / (double)allGamesCount).ToPercentageString(true))</span>
+                                }
+                                else
+                                {
+                                    <span class="pct">0 %</span>
+                                }
+                            </div>
+                            <div class="stat-pill">
+                                <div class="top-row">
+                                    <span class="label">A</span>
+                                    <span class="val">@allDiffAscensions</span>
+                                </div>
+                                @if (allAscensionCount > 0)
+                                {
+                                    <span class="pct">@(((double)allDiffAscensions / (double)allAscensionCount).ToPercentageString(true))</span>
+                                }
+                                else
+                                {
+                                    <span class="pct">0 %</span>
+                                }
+                            </div>
                         </div>
                     </td>
                 </tr>
@@ -172,20 +204,36 @@
                     string? darkeningClass = games > 0 ? null : "text-muted";
 
                 <td class="w-role text-center matrix-border-top @darkeningClass">
-                    <div class="font-l"><h5>@(games > 0 ? ((double)ascensions / (double)games).ToPercentageString(true) : "N/A")</h5></div>
-                    <div>
-                        <span>G: @games</span>
-                        @if (allGamesCount > 0)
-                        {
-                            <span>(@(((double)games / (double)allGamesCount).ToPercentageString(true)))</span>
-                        }
-                    </div>
-                    <div>
-                        <span>A: @ascensions</span>
-                        @if (allAscensionCount > 0)
-                        {
-                            <span>(@(((double)ascensions / (double)allAscensionCount).ToPercentageString(true)))</span>
-                        }
+                    <h5>@(games > 0 ? ((double)ascensions / (double)games).ToPercentageString(true) : "N/A")</h5>
+                    <div class="cell-stats mx-auto">
+                        <div class="stat-pill">
+                            <div class="top-row">
+                                <span class="label">G</span>
+                                <span class="val">@games</span>
+                            </div>
+                            @if (allGamesCount > 0)
+                            {
+                                <span class="pct">@(((double)games / (double)allGamesCount).ToPercentageString(true))</span>
+                            }
+                            else
+                            {
+                                <span class="pct">0 %</span>
+                            }
+                        </div>
+                        <div class="stat-pill">
+                            <div class="top-row">
+                                <span class="label">A</span>
+                                <span class="val">@ascensions</span>
+                            </div>
+                            @if (allAscensionCount > 0)
+                            {
+                                <span class="pct">@(((double)ascensions / (double)allAscensionCount).ToPercentageString(true))</span>
+                            }
+                            else
+                            {
+                                <span class="pct">0 %</span>
+                            }
+                        </div>
                     </div>
                 </td>
                     
@@ -196,9 +244,23 @@
                     string? darkeningClassAll = allGamesCount > 0 ? null : "text-muted";
                 }
                 <td class="w-role text-center matrix-border-start matrix-border-top @darkeningClassAll">
-                    <div class="font-l"><h5>@(allGamesCount > 0 ? ((double)allAscensionCount / (double)allGamesCount).ToPercentageString(true) : "N/A")</h5></div>
-                    <div>G: @allGamesCount</div>
-                    <div>A: @allAscensionCount</div>
+                    <h5>@(allGamesCount > 0 ? ((double)allAscensionCount / (double)allGamesCount).ToPercentageString(true) : "N/A")</h5>
+                    <div class="cell-stats mx-auto">
+                        <div class="stat-pill">
+                            <div class="top-row">
+                                <span class="label">G</span>
+                                <span class="val">@allGamesCount</span>
+                            </div>
+                            <span class="pct">@(allGamesCount > 0 ? "100 %" : "0 %")</span>
+                        </div>
+                        <div class="stat-pill">
+                            <div class="top-row">
+                                <span class="label">A</span>
+                                <span class="val">@allAscensionCount</span>
+                            </div>
+                            <span class="pct">@(allAscensionCount > 0 ? "100 %" : "0 %")</span>
+                        </div>
+                    </div>
                 </td>
             </tr>
         </tfoot>
@@ -224,14 +286,54 @@
             color: #81e6d9;
             text-shadow: 0 0 5px rgba(0, 240, 255, 0.2);
             margin: 0;
-            margin-bottom: 4px;
         }
-        .rpg-table td.text-muted h6, .rpg-table td.text-muted h5, .rpg-table td.text-muted div, .rpg-table td.text-muted span {
+        .rpg-table td.text-muted h6, .rpg-table td.text-muted h5 {
             color: #4a5568 !important;
             text-shadow: none;
         }
-        .rpg-table td div {
-            font-size: 0.85rem;
+        .cell-stats {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            margin-top: 8px;
+            max-width: 65px;
+        }
+        .stat-pill {
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(0, 240, 255, 0.1);
+            border-radius: 4px;
+            padding: 3px 2px;
+            font-size: 0.75rem;
+            line-height: 1.2;
+            text-align: center;
+            box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.5);
+        }
+        .stat-pill .top-row {
+            display: flex;
+            justify-content: center;
+            gap: 4px;
+        }
+        .stat-pill .label {
+            color: #a0aec0;
+            font-size: 0.7rem;
+        }
+        .stat-pill .val {
+            color: #e2e8f0;
+            font-weight: bold;
+        }
+        .stat-pill .pct {
+            display: block;
+            color: #4fd1c5;
+            font-size: 0.65rem;
+            margin-top: 1px;
+        }
+        .rpg-table td.text-muted .stat-pill {
+            opacity: 0.4;
+            border-color: transparent;
+            box-shadow: none;
+        }
+        .rpg-table td.text-muted .stat-pill .val {
+            color: #a0aec0;
         }
     </style>
 }
