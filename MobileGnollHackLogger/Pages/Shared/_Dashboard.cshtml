@@ -69,19 +69,19 @@
             <div class="btn-group" role="group">
                 @if (Model.TopScoreMode != TopScoreMode.Ascensions)
                 {
-                    <a class="btn btn-sm btn-outline-secondary" style="border-color: rgba(255,255,255,0.2);" href="@Model.GetUrl(Model.ListMode, Model.Mode, "ascended")">Ascensions</a>
+                    <a class="btn btn-sm btn-outline-secondary" style="border-color: rgba(255,255,255,0.2);" href="@Model.GetUrl(Model.ListMode, Model.Mode, "ascended")">Ascension</a>
                 }
                 else
                 {
-                    <span class="btn btn-sm btn-primary active">Ascensions</span>
+                    <span class="btn btn-sm btn-primary active">Ascension</span>
                 }
                 @if (Model.TopScoreMode != TopScoreMode.Games)
                 {
-                    <a class="btn btn-sm btn-outline-secondary" style="border-color: rgba(255,255,255,0.2);" href="@Model.GetUrl(Model.ListMode, Model.Mode, null)">Games</a>
+                    <a class="btn btn-sm btn-outline-secondary" style="border-color: rgba(255,255,255,0.2);" href="@Model.GetUrl(Model.ListMode, Model.Mode, null)">All</a>
                 }
                 else
                 {
-                    <span class="btn btn-sm btn-primary active">Games</span>
+                    <span class="btn btn-sm btn-primary active">All</span>
                 }
             </div>
         </div>
@@ -90,7 +90,7 @@
             <div class="btn-group" role="group">
                 <button type="button" class="btn btn-sm btn-primary active layout-toggle-btn" data-layout="auto"><i class="bi bi-display d-none d-sm-inline"></i> Auto</button>
                 <button type="button" class="btn btn-sm btn-outline-secondary layout-toggle-btn" style="border-color: rgba(255,255,255,0.2);" data-layout="table"><i class="bi bi-table d-none d-sm-inline"></i> Table</button>
-                <button type="button" class="btn btn-sm btn-outline-secondary layout-toggle-btn" style="border-color: rgba(255,255,255,0.2);" data-layout="card"><i class="bi bi-card-list d-none d-sm-inline"></i> Cards</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary layout-toggle-btn" style="border-color: rgba(255,255,255,0.2);" data-layout="card"><i class="bi bi-card-list d-none d-sm-inline"></i> Card</button>
             </div>
         </div>
     </div>
