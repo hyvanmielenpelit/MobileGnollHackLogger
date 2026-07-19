@@ -212,6 +212,11 @@ input.form-control:disabled, select.form-select:disabled {
   border-color: rgba(255, 255, 255, 0.08) !important;
 }
 
+select.form-select.rpg-select-cyan:focus {
+  border-color: rgba(0, 240, 255, 0.5) !important;
+  box-shadow: 0 0 8px rgba(0, 240, 255, 0.4) !important;
+}
+
 .form-floating > label {
   color: #888 !important;
 }
@@ -416,9 +421,40 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
   padding: 8px 0px 0px 0px;
 }
 
-.nav-tabs .nav-link {
-  --bs-nav-link-color: #ddd;
-  --bs-nav-link-hover-color: white;
+.rpg-tabs {
+  border-bottom: 1px solid rgba(0, 240, 255, 0.2);
+  margin-bottom: 1.5rem;
+  gap: 0.25rem;
+}
+.rpg-tabs .nav-item {
+  margin-bottom: -1px;
+}
+.rpg-tabs .nav-link {
+  color: #a0aec0;
+  background: rgba(15, 20, 30, 0.4);
+  border: 1px solid rgba(0, 240, 255, 0.1);
+  border-bottom-color: rgba(0, 240, 255, 0.2);
+  border-radius: 8px 8px 0 0;
+  padding: 0.75rem 1.25rem;
+  font-family: "Lato", sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 0.85rem;
+  transition: all 0.2s ease;
+}
+.rpg-tabs .nav-link:hover, .rpg-tabs .nav-link:focus {
+  color: white;
+  background: rgba(0, 240, 255, 0.1);
+  border-color: rgba(0, 240, 255, 0.3);
+  border-bottom-color: rgba(0, 240, 255, 0.2);
+}
+.rpg-tabs .nav-link.active {
+  color: #81e6d9;
+  background: rgba(15, 20, 30, 0.85);
+  border-color: rgba(0, 240, 255, 0.4);
+  border-bottom-color: rgba(15, 20, 30, 0.85) !important;
+  box-shadow: inset 0 2px 5px rgba(0, 240, 255, 0.15);
+  font-weight: bold;
 }
 
 .tab-padding {

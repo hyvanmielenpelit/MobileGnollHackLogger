@@ -2,27 +2,37 @@
 @model MobileGnollHackLogger.Pages.BonesTransactionsModel
 @{
     ViewData["Title"] = Model.Title;
+    ViewData["ContainerClass"] = "xlMaxWidth";
+    ViewData["MainClass"] = "xlMaxWidth";
 }
 
-<h1 class="text-center">Bones Sharing</h1>
+<div class="rpg-header mt-3">
+    <div class="ornament"></div>
+    <h1 class="mb-0" style="font-family: 'Cinzel', serif;">Bones Sharing</h1>
+    <div class="ornament"></div>
+</div>
 @if (Model.CompatibilityVersions != null && Model.CompatibilityVersions.Count > 0)
 {
-    <div id="divCompatibility" style="display: flex; justify-content: center; align-items: center; margin-bottom: 15px;">
-        <form method="get" id="compatibilityForm" style="display: flex; align-items: center; gap: 10px;">
-            <label style="margin-bottom: 0; white-space: nowrap; font-weight:bold;">Compatible With:</label>
-            <select name="compatibility" class="form-select" onchange="this.form.submit()" style="width: auto;">
-                @for (int i = 0; i < Model.CompatibilityVersions.Count; i++)
-                {
-                    <option value="@i" selected="@(Model.SelectedCompatibilityVersion == i ? "selected" : null)">@Model.CompatibilityVersions[i].Label</option>
-                }
-            </select>
-        </form>
+    <div id="divCompatibility" class="d-flex flex-wrap justify-content-center gap-2 gap-md-4 mb-4 mt-3">
+        <div class="text-center p-2 rounded" style="background: rgba(15, 20, 30, 0.6); border: 1px solid rgba(0, 240, 255, 0.1);">
+            <form method="get" id="compatibilityForm" style="display: flex; align-items: center; gap: 10px;">
+                <label class="text-uppercase text-muted mb-0" style="white-space: nowrap; font-size: 0.75rem; letter-spacing: 1px;"><i class="bi bi-filter-circle me-1"></i>Compatible With</label>
+                <select name="compatibility" class="form-select form-select-sm rpg-select-cyan" onchange="this.form.submit()" style="width: auto;">
+                    @for (int i = 0; i < Model.CompatibilityVersions.Count; i++)
+                    {
+                        <option value="@i" selected="@(Model.SelectedCompatibilityVersion == i ? "selected" : null)">@Model.CompatibilityVersions[i].Label</option>
+                    }
+                </select>
+            </form>
+        </div>
     </div>
 }
 
-<h5 class="text-center">By Difficulty</h5>
+<div class="text-center rpg-subtitle">
+    BY DIFFICULTY
+</div>
 
-<ul class="nav nav-tabs bt-header" id="bonesTab" role="tablist">
+<ul class="nav nav-tabs rpg-tabs" id="bonesTab" role="tablist">
     <li class="nav-item" role="presentation">
         <button class="nav-link active" id="tab-all" data-bs-toggle="tab" data-bs-target="#tab-pane-all" type="button" role="tab" aria-controls="tab-pane-all" aria-selected="true">All</button>
     </li>
@@ -50,9 +60,10 @@
             }
             var numBones = bonesQuery.Count();
         }
-        <h5 class="text-center">@numBones Bones Available</h5>
-        <div class="table-responsive">
-            <table id="btTableAll" class="table table-dark table-striped js-table">
+        <div class="rpg-leaderboard-card">
+            <h5 class="text-center mb-3 text-white">@numBones Bones Available</h5>
+            <div class="table-responsive">
+                <table id="btTableAll" class="rpg-table" style="display:none;">
                 <thead>
                     <tr>
                         <th>Account Name</th>
@@ -90,15 +101,24 @@
                         if (grouping.Uploads > 0 || grouping.Downloads > 0 || grouping.Deletions > 0)
                         {
                             <tr>
-                                <td data-label="Account Name">@grouping.User.UserName</td>
-                                <td class="text-center" data-label="Bones Uploaded">@grouping.Uploads</td>
-                                <td class="text-center" data-label="Bones Downloaded">@grouping.Downloads</td>
-                                <td class="text-center" data-label="Bones Shared">@grouping.Deletions</td>
+                                <td data-label="Account Name">
+                                    <div class="text-white fw-bold text-uppercase" style="letter-spacing: 0.5px; font-size: 1.05rem;">@grouping.User.UserName</div>
+                                </td>
+                                <td class="text-center" data-label="Bones Uploaded">
+                                    <span class="score-text">@grouping.Uploads</span>
+                                </td>
+                                <td class="text-center" data-label="Bones Downloaded">
+                                    <span class="score-text">@grouping.Downloads</span>
+                                </td>
+                                <td class="text-center" data-label="Bones Shared">
+                                    <span class="score-text">@grouping.Deletions</span>
+                                </td>
                             </tr>
                         }
                     }
                 </tbody>
             </table>
+        </div>
         </div>
     </div>
 
@@ -142,9 +162,10 @@
                 }
                 var numBonesDiff = bonesDiffQuery.Count();
             }
-            <h5 class="text-center">@numBonesDiff Bones Available</h5>
+            <div class="rpg-leaderboard-card">
+            <h5 class="text-center mb-3 text-white">@numBonesDiff Bones Available</h5>
             <div class="table-responsive">
-            <table id="btTable@(btDifficulty)" class="table table-dark table-striped js-table">
+            <table id="btTable@(btDifficulty)" class="rpg-table" style="display:none;">
                 <thead>
                     <tr>
                         <th>Account Name</th>
@@ -159,15 +180,24 @@
                         if (grouping.Uploads > 0 || grouping.Downloads > 0 || grouping.Deletions > 0)
                         {
                             <tr>
-                                <td data-label="Account Name">@grouping.User.UserName</td>
-                                <td class="text-center" data-label="Bones Uploaded">@grouping.Uploads</td>
-                                <td class="text-center" data-label="Bones Downloaded">@grouping.Downloads</td>
-                                <td class="text-center" data-label="Bones Shared">@grouping.Deletions</td>
+                                <td data-label="Account Name">
+                                    <div class="text-white fw-bold text-uppercase" style="letter-spacing: 0.5px; font-size: 1.05rem;">@grouping.User.UserName</div>
+                                </td>
+                                <td class="text-center" data-label="Bones Uploaded">
+                                    <span class="score-text">@grouping.Uploads</span>
+                                </td>
+                                <td class="text-center" data-label="Bones Downloaded">
+                                    <span class="score-text">@grouping.Downloads</span>
+                                </td>
+                                <td class="text-center" data-label="Bones Shared">
+                                    <span class="score-text">@grouping.Deletions</span>
+                                </td>
                             </tr>
                         }
                     }
                 </tbody>
             </table>
+            </div>
         </div>
     </div>
 }
@@ -182,8 +212,9 @@
 {
     <script src="~/lib/datatables/dist/datatables.min.js"></script>
     <script>
-        $(".js-table").dataTable({
-            order: []
+        $(".rpg-table").dataTable({
+            order: [],
+            autoWidth: false
         }).show();
     </script>
 }
