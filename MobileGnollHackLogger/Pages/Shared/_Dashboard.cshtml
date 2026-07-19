@@ -1,0 +1,175 @@
+@using MobileGnollHackLogger.Pages
+@using System.Globalization
+@model DashboardViewModel
+
+<div class="mb-4">
+    <h2 class="mt-3 text-center text-uppercase hero-step-title" style="letter-spacing: 1.5px;">
+        <span class="text-warning">@Model.UserName</span> <span class="text-muted fw-light">| Your GnollHack Statistics</span>
+    </h2>
+    <div class="text-center text-muted mt-2 mb-4 dashboard-stats">
+        @if (Model.Rank > 0)
+        {
+            <span class="me-3">Rank <strong class="text-warning">#@Model.Rank</strong></span>
+        }
+        <span class="me-3">Played Games: <strong class="text-white">@Model.GameLogCount</strong></span>
+        <span class="me-3">Last Active: <strong class="text-white">@Model.LastActive</strong></span>
+        <span>Joined: <strong class="text-white">@Model.Joined</strong></span>
+    </div>
+</div>
+
+<div class="card border-secondary card-glass p-3 mb-4 text-start">
+    <h4 class="text-center text-uppercase mb-2" style="font-family: 'Cinzel', serif;">Played Games</h4>
+    <div class="text-center text-muted text-uppercase mb-4" style="font-size: 0.8rem; letter-spacing: 1px;">Recent Quest Logs</div>
+    
+    @if (Model.RecentQuestLogs.Any())
+    {
+        <div class="rpg-leaderboard-card mb-0">
+            <div class="table-responsive">
+                <table id="questLogsTable" class="rpg-table" style="display:none;">
+                    <thead>
+                        <tr>
+                            <th>Time & Version</th>
+                            <th>Character Name</th>
+                            <th>Class & Details</th>
+                            <th style="width: 12%;">Points</th>
+                            <th style="width: 8%;">Turns</th>
+                            <th style="width: 30%; min-width: 280px;">Result</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var gameLog in Model.RecentQuestLogs)
+                        {
+                            bool isAscended = !string.IsNullOrEmpty(gameLog.DeathText) && gameLog.DeathText.Equals("ascended", StringComparison.OrdinalIgnoreCase);
+                            <tr data-id="@gameLog.Id" class="@(isAscended ? "ascended-row" : "")" style="cursor: pointer;" onclick="window.location.href='/dumplog/@gameLog.Id'">
+                                <td data-label="Time & Version" data-order="@gameLog.EndTimeUTCDate.Ticks">
+                                    <div class="text-light">@gameLog.EndTimeUTCDate.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)</div>
+                                    <div class="text-muted-small">
+                                        v@(gameLog.Version)-@(gameLog.EditLevel)
+                                        @if (!string.IsNullOrEmpty(gameLog.PortVersion) && !string.IsNullOrEmpty(gameLog.Platform))
+                                        {
+                                            <text>| @(gameLog.PortVersion + gameLog.PlatformLetter + gameLog.StoreLetter)</text>
+                                        }
+                                    </div>
+                                </td>
+                                
+                                <td data-label="Character Name" data-order="@gameLog.CharacterName">
+                                    <div>
+                                        <div class="text-white fw-bold text-uppercase" style="letter-spacing: 0.5px; font-size: 1.05rem;">@gameLog.CharacterName</div>
+                                    </div>
+                                </td>
+                                
+                                <td data-label="Class & Details" data-order="@gameLog.RoleText">
+                                    <div class="text-uppercase text-light" style="letter-spacing: 0.5px;">@gameLog.RoleText</div>
+                                    <div class="text-muted-small">
+                                        @(gameLog.RaceText), @(gameLog.GenderText), @(gameLog.AlignmentText)
+                                    </div>
+                                    <div class="text-muted-small">
+                                        @gameLog.DifficultyText, @(gameLog.ModeText)@if(gameLog.IsTournament){<text>, Tournament</text>}
+                                    </div>
+                                </td>
+                                
+                                <td data-label="Points" data-order="@gameLog.Points">
+                                    <div class="d-flex align-items-center">
+                                        <span class="score-text mb-0">@gameLog.Points.ToString("N0", CultureInfo.InvariantCulture)</span>
+                                        @if(isAscended)
+                                        {
+                                            <span class="ms-2 text-warning" title="Ascended" style="font-size: 1.25rem; text-shadow: 0 0 5px rgba(255,215,0,0.5); transform: translateY(-3px);">&#x1F451;</span>
+                                        }
+                                    </div>
+                                </td>
+                                
+                                <td data-label="Turns" data-order="@gameLog.Turns">
+                                    <div class="text-light">@gameLog.Turns</div>
+                                    <div class="text-muted-small">@gameLog.RealTimeSpan.ToString("c", CultureInfo.InvariantCulture)</div>
+                                </td>
+                                
+                                <td data-label="Result" data-order="@gameLog.DeathText">
+                                    <div class="text-uppercase mb-1 @(isAscended ? "fw-bold" : "")" style="color: @(isAscended ? "#ffd700" : "#ffffff"); font-size: 1.05rem; letter-spacing: 0.5px; @(isAscended ? "text-shadow: 0 0 5px rgba(255, 215, 0, 0.4);" : "")">
+                                        @gameLog.DeathText
+                                        @if (!string.IsNullOrEmpty(gameLog.WhileText))
+                                        {
+                                            <text>while </text> @gameLog.WhileText
+                                        }
+                                    </div>
+                                    <div class="text-muted-small">
+                                        DL: @(gameLog.DeathLevel)/@(gameLog.MaxLevel) | HP: @(gameLog.HitPoints)/@(gameLog.MaxHitPoints)
+                                    </div>
+                                    <div class="text-muted-small">
+                                        Deaths: @(gameLog.Deaths) | Crashes: @(gameLog.DungeonCollapses)
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="text-center text-muted my-4">No recent quest logs found.</div>
+    }
+</div>
+
+<div class="card border-secondary card-glass p-3 mb-4 text-start">
+    <h4 class="text-center text-uppercase mb-2" style="font-family: 'Cinzel', serif;">Uploaded Bones Files</h4>
+    <div class="text-center text-muted text-uppercase mb-4" style="font-size: 0.8rem; letter-spacing: 1px;">Shared Ghosts (Bones)</div>
+    
+    @if (Model.UploadedBonesFiles.Any())
+    {
+        <div class="rpg-leaderboard-card mb-0">
+            <div class="table-responsive">
+                <table id="bonesFilesTable" class="rpg-table" style="display:none;">
+                    <thead>
+                        <tr>
+                            <th>File Name</th>
+                            <th>Details</th>
+                            <th class="text-center">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var bone in Model.UploadedBonesFiles)
+                        {
+                            <tr>
+                                <td>
+                                    <div class="d-flex align-items-center">
+                                        <span class="fs-4 me-2">💀</span>
+                                        <span class="fw-bold text-light" style="word-break: break-all;">@bone.OriginalFileName</span>
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="text-light text-uppercase" style="letter-spacing: 0.5px; font-size: 0.95rem;">
+                                        Lv @bone.DifficultyLevel | @bone.DifficultyText
+                                    </div>
+                                    <div class="text-muted-small">
+                                        @bone.Downloads Downloads
+                                    </div>
+                                </td>
+                                <td class="text-center" data-order="@(bone.IsActive ? 1 : 0)">
+                                    @if (bone.IsActive)
+                                    {
+                                        <div class="text-success fw-bold d-flex flex-column align-items-center justify-content-center" style="font-size: 0.85rem;">
+                                            <i class="bi bi-download fs-5 mb-1"></i>
+                                            Active
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="text-warning fw-bold d-flex flex-column align-items-center justify-content-center" style="font-size: 0.85rem; color: #fd7e14 !important;">
+                                            <i class="bi bi-archive fs-5 mb-1"></i>
+                                            Archived
+                                        </div>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="text-center text-muted my-4">No uploaded bones files found.</div>
+    }
+</div>

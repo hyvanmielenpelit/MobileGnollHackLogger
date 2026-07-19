@@ -1,35 +1,32 @@
 @page
 @model IndexModel
 @{
-    ViewData["Title"] = "";
+    ViewData["Title"] = "Dashboard";
+    if ((User?.Identity?.IsAuthenticated ?? false) && Model.Dashboard != null)
+    {
+        ViewData["ContainerClass"] = "xlMaxWidth";
+        ViewData["MainClass"] = "xlMaxWidth";
+    }
 }
 
 <div class="text-center">
-    <h1 class="hero-title">GNOLLHACK</h1>
-    <p class="fw-light">Top Score Recording &bull; Bones Sharing &bull; NetHack Scoreboard Support &bull; Junethack Support &bull; Statistics</p>
-    <hr class="separator" />
+    @if(Model.Dashboard == null)
+    {
+        <h1 class="hero-title">GNOLLHACK</h1>
+        <p class="fw-light">Top Score Recording &bull; Bones Sharing &bull; NetHack Scoreboard Support &bull; Junethack Support &bull; Statistics</p>
+        <hr class="separator" />
+    }
+    else
+    {
+        <h1 class="hero-title">DASHBOARD</h1>
+        <hr class="separator" />
+    }
     
 @if (User?.Identity?.IsAuthenticated ?? false)
     {
-        if (Model.GameLogCount > 0)
+        if (Model.Dashboard != null)
         {
-            <div class="mb-4">
-                <h2 class="mt-3">Your GnollHack Statistics</h2>
-            </div>
-            
-            <div class="center-box text-start">
-                <div class="card border-secondary card-glass h-100">
-                    <div class="card-body text-center">
-                        <h4 class="card-title text-uppercase mb-3 hero-step-title">
-                            Played Games
-                        </h4>
-                        <div class="display-1 fw-bold mb-3 title">
-                            @Model.GameLogCount
-                        </div>
-                        <p class="text-muted">You have successfully posted @Model.GameLogCount game@(Model.GameLogCount == 1 ? "" : "s") to the server.</p>
-                    </div>
-                </div>
-            </div>
+            <partial name="_Dashboard" model="Model.Dashboard" />
         }
         else
         {
@@ -115,5 +112,36 @@
                 </div>
             </div>
         </div>
+
     }
 </div>
+
+@section Styles
+{
+    <link rel="stylesheet" href="~/lib/datatables/dist/datatables.min.css" asp-append-version="true" />
+}
+
+@section Scripts
+{
+    <script src="~/lib/datatables/dist/datatables.min.js"></script>
+    <script>
+        $(document).ready(function () {
+            if ($("#questLogsTable").length) {
+                $("#questLogsTable").dataTable({
+                    order: [],
+                    autoWidth: false,
+                    pageLength: 5,
+                    lengthMenu: [[5, 10, 25, 50, 100, -1], [5, 10, 25, 50, 100, "All"]]
+                }).show();
+            }
+            if ($("#bonesFilesTable").length) {
+                $("#bonesFilesTable").dataTable({
+                    order: [],
+                    autoWidth: false,
+                    pageLength: 5,
+                    lengthMenu: [[5, 10, 25, 50, 100, -1], [5, 10, 25, 50, 100, "All"]]
+                }).show();
+            }
+        });
+    </script>
+}
