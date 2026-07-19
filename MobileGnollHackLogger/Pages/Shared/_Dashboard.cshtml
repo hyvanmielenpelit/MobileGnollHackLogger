@@ -24,11 +24,11 @@
             <div class="btn-group" role="group">
                 @if (Model.ListMode != "recent")
                 {
-                    <a class="btn btn-sm btn-outline-secondary" style="border-color: rgba(255,255,255,0.2);" href="@Model.GetUrl("recent", Model.Mode, Model.Death)">Recent Games</a>
+                    <a class="btn btn-sm btn-outline-secondary" style="border-color: rgba(255,255,255,0.2);" href="@Model.GetUrl("recent", Model.Mode, Model.Death)">Recent</a>
                 }
                 else
                 {
-                    <span class="btn btn-sm btn-primary active">Recent Games</span>
+                    <span class="btn btn-sm btn-primary active">Recent</span>
                 }
                 @if (Model.ListMode != "top")
                 {
@@ -45,11 +45,11 @@
             <div class="btn-group" role="group">
                 @if (!string.IsNullOrEmpty(Model.Mode))
                 {
-                    <a class="btn btn-sm btn-outline-secondary" style="border-color: rgba(255,255,255,0.2);" href="@Model.GetUrl(Model.ListMode, null, Model.Death)">All Modes</a>
+                    <a class="btn btn-sm btn-outline-secondary" style="border-color: rgba(255,255,255,0.2);" href="@Model.GetUrl(Model.ListMode, null, Model.Death)">All</a>
                 }
                 else
                 {
-                    <span class="btn btn-sm btn-primary active">All Modes</span>
+                    <span class="btn btn-sm btn-primary active">All</span>
                 }
                 @foreach (var mode in Model.DisplayModes)
                 {
@@ -106,12 +106,12 @@
                 <table id="questLogsTable" class="rpg-table" style="display:none;">
                     <thead>
                         <tr>
-                            <th>Time</th>
+                            <th class="w-time">Time</th>
                             <th>Character</th>
                             <th>Class</th>
                             <th>Difficulty</th>
-                            <th style="width: 1%; white-space: nowrap;">Score</th>
-                            <th style="width: 1%; white-space: nowrap;">Turns</th>
+                            <th class="w-fit-nowrap">Score</th>
+                            <th class="w-fit-nowrap">Turns</th>
                             <th class="w-death">Death</th>
                         </tr>
                     </thead>
@@ -121,8 +121,7 @@
                             bool isAscended = !string.IsNullOrEmpty(gameLog.DeathText) && gameLog.DeathText.Equals("ascended", StringComparison.OrdinalIgnoreCase);
                             <tr data-id="@gameLog.Id" class="@(isAscended ? "ascended-row" : "")" style="cursor: pointer;" onclick="window.location.href='/dumplog/@gameLog.Id'">
                                 <td data-label="Time" data-order="@gameLog.EndTimeUTCDate.Ticks">
-                                    <div class="text-light" title="@gameLog.EndTimeUTCDate.ToString("d MMM yyyy HH:mm", CultureInfo.InvariantCulture)">@gameLog.EndTimeUTCDate.ToString("d MMM yyyy", CultureInfo.InvariantCulture)</div>
-                                    <div class="text-muted-small time-text">@gameLog.EndTimeUTCDate.ToString("HH:mm", CultureInfo.InvariantCulture)</div>
+                                    <div class="text-light" title="@gameLog.EndTimeUTCDate.ToString("d MMM yyyy HH:mm", CultureInfo.InvariantCulture)">@gameLog.EndTimeUTCDate.ToString("d MMM yyyy", CultureInfo.InvariantCulture) <span class="time-text">@gameLog.EndTimeUTCDate.ToString("HH:mm", CultureInfo.InvariantCulture)</span></div>
                                     <div class="text-muted-small">
                                         @(gameLog.Version)-@(gameLog.EditLevel)
                                         @if (!string.IsNullOrEmpty(gameLog.PortVersion) && !string.IsNullOrEmpty(gameLog.Platform))
@@ -172,7 +171,7 @@
                                             <text>while </text> @gameLog.WhileText
                                         }
                                     </div>
-                                    <div class="text-muted-small">
+                                    <div class="text-muted-small text-nowrap">
                                         DL: @(gameLog.DeathLevel)/@(gameLog.MaxLevel) | HP: @(gameLog.HitPoints)/@(gameLog.MaxHitPoints) | D: @(gameLog.Deaths) | C: @(gameLog.DungeonCollapses)
                                     </div>
                                 </td>
@@ -199,13 +198,13 @@ else if (Model.ListMode == "top")
                         <table id="topScoresTable" class="rpg-table" style="display:none;">
                             <thead>
                                 <tr>
-                                    <th class="text-center" style="width: 50px;">Rank</th>
-                                    <th>Time</th>
+                                    <th class="text-center w-rank">Rank</th>
+                                    <th class="w-time">Time</th>
                                     <th>Character</th>
                                     <th>Class</th>
                                     <th>Difficulty</th>
-                                    <th style="width: 1%; white-space: nowrap;">Score</th>
-                                    <th style="width: 1%; white-space: nowrap;">Turns</th>
+                                    <th class="w-fit-nowrap">Score</th>
+                                    <th class="w-fit-nowrap">Turns</th>
                                     <th class="w-death">Death</th>
                                 </tr>
                             </thead>
@@ -237,8 +236,7 @@ else if (Model.ListMode == "top")
                                         </td>
                                         
                                         <td data-label="Time" data-order="@gameLog.EndTimeUTCDate.Ticks">
-                                            <div class="text-light" title="@gameLog.EndTimeUTCDate.ToString("d MMM yyyy HH:mm", CultureInfo.InvariantCulture)">@gameLog.EndTimeUTCDate.ToString("d MMM yyyy", CultureInfo.InvariantCulture)</div>
-                                            <div class="text-muted-small time-text">@gameLog.EndTimeUTCDate.ToString("HH:mm", CultureInfo.InvariantCulture)</div>
+                                            <div class="text-light" title="@gameLog.EndTimeUTCDate.ToString("d MMM yyyy HH:mm", CultureInfo.InvariantCulture)">@gameLog.EndTimeUTCDate.ToString("d MMM yyyy", CultureInfo.InvariantCulture) <span class="time-text">@gameLog.EndTimeUTCDate.ToString("HH:mm", CultureInfo.InvariantCulture)</span></div>
                                             <div class="text-muted-small">
                                                 @(gameLog.Version)-@(gameLog.EditLevel)
                                                 @if (!string.IsNullOrEmpty(gameLog.PortVersion) && !string.IsNullOrEmpty(gameLog.Platform))
@@ -288,7 +286,7 @@ else if (Model.ListMode == "top")
                                                     <text>while </text> @gameLog.WhileText
                                                 }
                                             </div>
-                                            <div class="text-muted-small">
+                                            <div class="text-muted-small text-nowrap">
                                                 DL: @(gameLog.DeathLevel)/@(gameLog.MaxLevel) | HP: @(gameLog.HitPoints)/@(gameLog.MaxHitPoints) | D: @(gameLog.Deaths) | C: @(gameLog.DungeonCollapses)
                                             </div>
                                         </td>

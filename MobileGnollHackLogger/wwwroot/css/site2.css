@@ -413,7 +413,20 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
 }
 
 .w-death {
-  min-width: 220px;
+  min-width: 200px;
+}
+
+.w-time {
+  min-width: 80px;
+}
+
+.w-rank {
+  min-width: 30px;
+}
+
+.w-fit-nowrap {
+  width: 1%;
+  white-space: nowrap;
 }
 
 .h-line {
@@ -782,7 +795,7 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
 #questLogsTable.force-card-view td .time-text,
 #topScoresTable.force-card-view td .time-text,
 .js-table.force-card-view td .time-text {
-  display: block !important;
+  display: inline !important;
 }
 
 @media (max-width: 768px) {
@@ -864,7 +877,7 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
   #questLogsTable:not(.force-table-view) td .time-text,
   #topScoresTable:not(.force-table-view) td .time-text,
   .js-table:not(.force-table-view) td .time-text {
-    display: block !important;
+    display: inline !important;
   }
   #topScoreTable.force-table-view thead,
   #questLogsTable.force-table-view thead,
