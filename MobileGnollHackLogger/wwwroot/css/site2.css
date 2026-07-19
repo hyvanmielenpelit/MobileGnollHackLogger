@@ -421,7 +421,7 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
 }
 
 .w-rank {
-  min-width: 30px;
+  min-width: 48px;
 }
 
 .w-fit-nowrap {
@@ -605,7 +605,8 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
+  min-width: 36px;
+  padding: 0 6px;
   height: 42px;
   font-weight: bold;
   font-size: 1.1rem;
