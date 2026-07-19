@@ -691,15 +691,74 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
   background: transparent !important;
 }
 
-.hero-icon {
-  height: 160px;
-  width: auto;
-  object-fit: contain;
-  transition: transform 0.3s ease, filter 0.3s ease;
+#topScoreTable.force-card-view thead,
+#questLogsTable.force-card-view thead,
+#topScoresTable.force-card-view thead,
+.js-table.force-card-view thead {
+  display: none !important;
 }
-.hero-icon:hover {
-  transform: scale(1.05);
-  filter: drop-shadow(0 0 15px rgba(212, 160, 23, 0.4));
+#topScoreTable.force-card-view tbody, #topScoreTable.force-card-view tr, #topScoreTable.force-card-view td,
+#questLogsTable.force-card-view tbody,
+#questLogsTable.force-card-view tr,
+#questLogsTable.force-card-view td,
+#topScoresTable.force-card-view tbody,
+#topScoresTable.force-card-view tr,
+#topScoresTable.force-card-view td,
+.js-table.force-card-view tbody,
+.js-table.force-card-view tr,
+.js-table.force-card-view td {
+  display: block !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+#topScoreTable.force-card-view tr,
+#questLogsTable.force-card-view tr,
+#topScoresTable.force-card-view tr,
+.js-table.force-card-view tr {
+  margin-bottom: 20px !important;
+  border: 1px solid rgba(0, 240, 255, 0.2) !important;
+  border-radius: 8px !important;
+  padding: 10px !important;
+  background: rgba(15, 20, 30, 0.9) !important;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.5) !important;
+}
+#topScoreTable.force-card-view td,
+#questLogsTable.force-card-view td,
+#topScoresTable.force-card-view td,
+.js-table.force-card-view td {
+  text-align: right !important;
+  padding: 8px 10px 8px 45% !important;
+  position: relative !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+  min-height: 40px !important;
+  /* Ensure inner flex boxes (if any) align right */
+  display: flex !important;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-end;
+}
+#topScoreTable.force-card-view td:last-child,
+#questLogsTable.force-card-view td:last-child,
+#topScoresTable.force-card-view td:last-child,
+.js-table.force-card-view td:last-child {
+  border-bottom: none !important;
+}
+#topScoreTable.force-card-view td::before,
+#questLogsTable.force-card-view td::before,
+#topScoresTable.force-card-view td::before,
+.js-table.force-card-view td::before {
+  content: attr(data-label) !important;
+  position: absolute !important;
+  left: 10px !important;
+  width: 40% !important;
+  text-align: left !important;
+  font-weight: bold !important;
+  color: #81e6d9 !important;
+  font-family: "Lato", sans-serif !important;
+  text-transform: uppercase !important;
+  font-size: 0.75rem !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
 }
 
 @media (max-width: 768px) {
@@ -708,30 +767,30 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
     border-bottom: 3px solid #e0ba6d;
     border-radius: 0;
   }
-  #topScoreTable thead,
-  #questLogsTable thead,
-  #topScoresTable thead,
-  .js-table thead {
+  #topScoreTable:not(.force-table-view) thead,
+  #questLogsTable:not(.force-table-view) thead,
+  #topScoresTable:not(.force-table-view) thead,
+  .js-table:not(.force-table-view) thead {
     display: none !important;
   }
-  #topScoreTable tbody, #topScoreTable tr, #topScoreTable td,
-  #questLogsTable tbody,
-  #questLogsTable tr,
-  #questLogsTable td,
-  #topScoresTable tbody,
-  #topScoresTable tr,
-  #topScoresTable td,
-  .js-table tbody,
-  .js-table tr,
-  .js-table td {
+  #topScoreTable:not(.force-table-view) tbody, #topScoreTable:not(.force-table-view) tr, #topScoreTable:not(.force-table-view) td,
+  #questLogsTable:not(.force-table-view) tbody,
+  #questLogsTable:not(.force-table-view) tr,
+  #questLogsTable:not(.force-table-view) td,
+  #topScoresTable:not(.force-table-view) tbody,
+  #topScoresTable:not(.force-table-view) tr,
+  #topScoresTable:not(.force-table-view) td,
+  .js-table:not(.force-table-view) tbody,
+  .js-table:not(.force-table-view) tr,
+  .js-table:not(.force-table-view) td {
     display: block !important;
     width: 100% !important;
     box-sizing: border-box !important;
   }
-  #topScoreTable tr,
-  #questLogsTable tr,
-  #topScoresTable tr,
-  .js-table tr {
+  #topScoreTable:not(.force-table-view) tr,
+  #questLogsTable:not(.force-table-view) tr,
+  #topScoresTable:not(.force-table-view) tr,
+  .js-table:not(.force-table-view) tr {
     margin-bottom: 20px !important;
     border: 1px solid rgba(0, 240, 255, 0.2) !important;
     border-radius: 8px !important;
@@ -739,10 +798,10 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
     background: rgba(15, 20, 30, 0.9) !important;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.5) !important;
   }
-  #topScoreTable td,
-  #questLogsTable td,
-  #topScoresTable td,
-  .js-table td {
+  #topScoreTable:not(.force-table-view) td,
+  #questLogsTable:not(.force-table-view) td,
+  #topScoresTable:not(.force-table-view) td,
+  .js-table:not(.force-table-view) td {
     text-align: right !important;
     padding: 8px 10px 8px 45% !important;
     position: relative !important;
@@ -754,16 +813,16 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
     justify-content: center;
     align-items: flex-end;
   }
-  #topScoreTable td:last-child,
-  #questLogsTable td:last-child,
-  #topScoresTable td:last-child,
-  .js-table td:last-child {
+  #topScoreTable:not(.force-table-view) td:last-child,
+  #questLogsTable:not(.force-table-view) td:last-child,
+  #topScoresTable:not(.force-table-view) td:last-child,
+  .js-table:not(.force-table-view) td:last-child {
     border-bottom: none !important;
   }
-  #topScoreTable td::before,
-  #questLogsTable td::before,
-  #topScoresTable td::before,
-  .js-table td::before {
+  #topScoreTable:not(.force-table-view) td::before,
+  #questLogsTable:not(.force-table-view) td::before,
+  #topScoresTable:not(.force-table-view) td::before,
+  .js-table:not(.force-table-view) td::before {
     content: attr(data-label) !important;
     position: absolute !important;
     left: 10px !important;
@@ -776,6 +835,50 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
     font-size: 0.75rem !important;
     top: 50% !important;
     transform: translateY(-50%) !important;
+  }
+  #topScoreTable.force-table-view thead,
+  #questLogsTable.force-table-view thead,
+  #topScoresTable.force-table-view thead,
+  .js-table.force-table-view thead {
+    display: table-header-group !important;
+  }
+  #topScoreTable.force-table-view tbody,
+  #questLogsTable.force-table-view tbody,
+  #topScoresTable.force-table-view tbody,
+  .js-table.force-table-view tbody {
+    display: table-row-group !important;
+  }
+  #topScoreTable.force-table-view tr,
+  #questLogsTable.force-table-view tr,
+  #topScoresTable.force-table-view tr,
+  .js-table.force-table-view tr {
+    display: table-row !important;
+    margin-bottom: 0 !important;
+    border: none !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    background-color: transparent !important;
+    box-shadow: none !important;
+  }
+  #topScoreTable.force-table-view td,
+  #questLogsTable.force-table-view td,
+  #topScoresTable.force-table-view td,
+  .js-table.force-table-view td {
+    display: table-cell !important;
+    width: auto !important;
+    text-align: left !important;
+    padding: 0.75rem 1rem !important;
+    position: static !important;
+    border-bottom: 1px solid rgba(0, 240, 255, 0.1) !important;
+    min-height: auto !important;
+    flex-direction: row !important;
+  }
+  #topScoreTable.force-table-view td::before,
+  #questLogsTable.force-table-view td::before,
+  #topScoresTable.force-table-view td::before,
+  .js-table.force-table-view td::before {
+    display: none !important;
+    content: none !important;
   }
 }
 .login-box {

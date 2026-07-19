@@ -773,19 +773,103 @@ div.container.xxlMaxWidth {
     }
 }
 
-// Hero Image Styling
-.hero-icon {
-    height: 160px;
-    width: auto;
-    object-fit: contain;
-    transition: transform 0.3s ease, filter 0.3s ease;
-    
-    // For high pixel density (retina) screens, the source image is larger.
-    // The glow is likely baked into the image, but we can add an extra effect on hover to make it feel alive.
-    &:hover {
-        transform: scale(1.05);
-        filter: drop-shadow(0 0 15px rgba(212, 160, 23, 0.4));
+// Table Mixins for Layout Toggle
+@mixin table-card-view {
+    thead {
+        display: none !important;
     }
+
+    tbody, tr, td {
+        display: block !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+    }
+
+    tr {
+        margin-bottom: 20px !important;
+        border: 1px solid rgba(0, 240, 255, 0.2) !important;
+        border-radius: 8px !important;
+        padding: 10px !important;
+        background: rgba(15, 20, 30, 0.9) !important;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.5) !important;
+    }
+
+    td {
+        text-align: right !important;
+        padding: 8px 10px 8px 45% !important;
+        position: relative !important;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+        min-height: 40px !important;
+        
+        /* Ensure inner flex boxes (if any) align right */
+        display: flex !important;
+        flex-direction: column;
+        justify-content: center;
+        align-items: flex-end;
+
+        &:last-child {
+            border-bottom: none !important;
+        }
+
+        &::before {
+            content: attr(data-label) !important;
+            position: absolute !important;
+            left: 10px !important;
+            width: 40% !important;
+            text-align: left !important;
+            font-weight: bold !important;
+            color: #81e6d9 !important;
+            font-family: "Lato", sans-serif !important;
+            text-transform: uppercase !important;
+            font-size: 0.75rem !important;
+            top: 50% !important;
+            transform: translateY(-50%) !important;
+        }
+    }
+}
+
+@mixin table-standard-view {
+    thead {
+        display: table-header-group !important;
+    }
+
+    tbody {
+        display: table-row-group !important;
+    }
+
+    tr {
+        display: table-row !important;
+        margin-bottom: 0 !important;
+        border: none !important;
+        border-radius: 0 !important;
+        padding: 0 !important;
+        background-color: transparent !important;
+        box-shadow: none !important;
+    }
+
+    td {
+        display: table-cell !important;
+        width: auto !important;
+        text-align: left !important;
+        padding: 0.75rem 1rem !important;
+        position: static !important;
+        border-bottom: 1px solid rgba(0, 240, 255, 0.1) !important;
+        min-height: auto !important;
+        flex-direction: row !important;
+        
+        &::before {
+            display: none !important;
+            content: none !important;
+        }
+    }
+}
+
+// Force Card View globally
+#topScoreTable.force-card-view,
+#questLogsTable.force-card-view,
+#topScoresTable.force-card-view,
+.js-table.force-card-view {
+    @include table-card-view;
 }
 
 // Responsive Layout Rules
@@ -798,61 +882,19 @@ div.container.xxlMaxWidth {
     }
 
     // Card-based Table Conversion
-    #topScoreTable,
-    #questLogsTable,
-    #topScoresTable,
-    .js-table {
-        thead {
-            display: none !important;
-        }
+    #topScoreTable:not(.force-table-view),
+    #questLogsTable:not(.force-table-view),
+    #topScoresTable:not(.force-table-view),
+    .js-table:not(.force-table-view) {
+        @include table-card-view;
+    }
 
-        tbody, tr, td {
-            display: block !important;
-            width: 100% !important;
-            box-sizing: border-box !important;
-        }
-
-        tr {
-            margin-bottom: 20px !important;
-            border: 1px solid rgba(0, 240, 255, 0.2) !important;
-            border-radius: 8px !important;
-            padding: 10px !important;
-            background: rgba(15, 20, 30, 0.9) !important;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.5) !important;
-        }
-
-        td {
-            text-align: right !important;
-            padding: 8px 10px 8px 45% !important;
-            position: relative !important;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
-            min-height: 40px !important;
-            
-            /* Ensure inner flex boxes (if any) align right */
-            display: flex !important;
-            flex-direction: column;
-            justify-content: center;
-            align-items: flex-end;
-
-            &:last-child {
-                border-bottom: none !important;
-            }
-
-            &::before {
-                content: attr(data-label) !important;
-                position: absolute !important;
-                left: 10px !important;
-                width: 40% !important;
-                text-align: left !important;
-                font-weight: bold !important;
-                color: #81e6d9 !important;
-                font-family: "Lato", sans-serif !important;
-                text-transform: uppercase !important;
-                font-size: 0.75rem !important;
-                top: 50% !important;
-                transform: translateY(-50%) !important;
-            }
-        }
+    // Force Table View on Mobile
+    #topScoreTable.force-table-view,
+    #questLogsTable.force-table-view,
+    #topScoresTable.force-table-view,
+    .js-table.force-table-view {
+        @include table-standard-view;
     }
 }
 
