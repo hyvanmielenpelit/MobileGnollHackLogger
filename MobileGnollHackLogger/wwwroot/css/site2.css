@@ -429,6 +429,12 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
   white-space: nowrap;
 }
 
+.w-score {
+  min-width: 110px;
+  width: 1%;
+  white-space: nowrap;
+}
+
 .h-line {
   vertical-align: top;
   font-size: 0.9em;
@@ -784,6 +790,16 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
   flex-direction: column;
   justify-content: center;
   align-items: flex-end;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  max-width: 100%;
+}
+#topScoreTable.force-card-view td > div,
+#questLogsTable.force-card-view td > div,
+#topScoresTable.force-card-view td > div,
+.js-table.force-card-view td > div {
+  max-width: 100%;
+  white-space: normal;
 }
 #topScoreTable.force-card-view td:last-child,
 #questLogsTable.force-card-view td:last-child,
@@ -866,6 +882,16 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
     flex-direction: column;
     justify-content: center;
     align-items: flex-end;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    max-width: 100%;
+  }
+  #topScoreTable:not(.force-table-view) td > div,
+  #questLogsTable:not(.force-table-view) td > div,
+  #topScoresTable:not(.force-table-view) td > div,
+  .js-table:not(.force-table-view) td > div {
+    max-width: 100%;
+    white-space: normal;
   }
   #topScoreTable:not(.force-table-view) td:last-child,
   #questLogsTable:not(.force-table-view) td:last-child,

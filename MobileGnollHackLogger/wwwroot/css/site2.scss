@@ -460,6 +460,7 @@ div.container.xxlMaxWidth {
 .w-time { min-width: 80px; }
 .w-rank { min-width: 48px; }
 .w-fit-nowrap { width: 1%; white-space: nowrap; }
+.w-score { min-width: 110px; width: 1%; white-space: nowrap; }
 
 .h-line {
     vertical-align: top;
@@ -847,6 +848,14 @@ div.container.xxlMaxWidth {
         flex-direction: column;
         justify-content: center;
         align-items: flex-end;
+        word-break: break-word;
+        overflow-wrap: break-word;
+        max-width: 100%;
+
+        > div {
+            max-width: 100%;
+            white-space: normal;
+        }
 
         &:last-child {
             border-bottom: none !important;
