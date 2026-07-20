@@ -733,9 +733,26 @@ div.container.xxlMaxWidth {
         width: auto !important;
     }
 
+    .dataTables_info {
+        @media (max-width: 768px) {
+            margin-bottom: 15px !important;
+            text-align: center;
+        }
+    }
+
     .dataTables_paginate {
+        @media (max-width: 768px) {
+            margin-top: 15px !important;
+        }
+
+        .pagination {
+            flex-wrap: wrap;
+            justify-content: center;
+            row-gap: 8px;
+        }
+
         .paginate_button.page-item {
-            margin: 0 4px !important;
+            margin: 0 2px !important;
             border: none !important;
             background: transparent !important;
             padding: 0 !important;

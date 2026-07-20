@@ -671,8 +671,24 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
   padding-right: 2rem !important;
   width: auto !important;
 }
+@media (max-width: 768px) {
+  .dataTables_wrapper .dataTables_info {
+    margin-bottom: 15px !important;
+    text-align: center;
+  }
+}
+@media (max-width: 768px) {
+  .dataTables_wrapper .dataTables_paginate {
+    margin-top: 15px !important;
+  }
+}
+.dataTables_wrapper .dataTables_paginate .pagination {
+  flex-wrap: wrap;
+  justify-content: center;
+  row-gap: 8px;
+}
 .dataTables_wrapper .dataTables_paginate .paginate_button.page-item {
-  margin: 0 4px !important;
+  margin: 0 2px !important;
   border: none !important;
   background: transparent !important;
   padding: 0 !important;
