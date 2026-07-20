@@ -769,6 +769,15 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
   display: block !important;
   max-width: 100% !important;
 }
+#topScoreTable.force-card-view[style*="display: none"], #topScoreTable.force-card-view[style*="display:none"],
+#questLogsTable.force-card-view[style*="display: none"],
+#questLogsTable.force-card-view[style*="display:none"],
+#topScoresTable.force-card-view[style*="display: none"],
+#topScoresTable.force-card-view[style*="display:none"],
+.js-table.force-card-view[style*="display: none"],
+.js-table.force-card-view[style*="display:none"] {
+  display: none !important;
+}
 #topScoreTable.force-card-view thead,
 #questLogsTable.force-card-view thead,
 #topScoresTable.force-card-view thead,
@@ -867,6 +876,15 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
   .js-table:not(.force-table-view) {
     display: block !important;
     max-width: 100% !important;
+  }
+  #topScoreTable:not(.force-table-view)[style*="display: none"], #topScoreTable:not(.force-table-view)[style*="display:none"],
+  #questLogsTable:not(.force-table-view)[style*="display: none"],
+  #questLogsTable:not(.force-table-view)[style*="display:none"],
+  #topScoresTable:not(.force-table-view)[style*="display: none"],
+  #topScoresTable:not(.force-table-view)[style*="display:none"],
+  .js-table:not(.force-table-view)[style*="display: none"],
+  .js-table:not(.force-table-view)[style*="display:none"] {
+    display: none !important;
   }
   #topScoreTable:not(.force-table-view) thead,
   #questLogsTable:not(.force-table-view) thead,
