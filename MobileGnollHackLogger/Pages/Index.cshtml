@@ -1,9 +1,9 @@
 @page
 @model IndexModel
 @{
-    ViewData["Title"] = "Dashboard";
     if ((User?.Identity?.IsAuthenticated ?? false) && Model.Dashboard != null)
     {
+        ViewData["Title"] = "Dashboard";
         ViewData["ContainerClass"] = "xlMaxWidth";
         ViewData["MainClass"] = "xlMaxWidth";
     }
