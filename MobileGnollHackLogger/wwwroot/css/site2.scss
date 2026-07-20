@@ -724,29 +724,32 @@ div.container.xxlMaxWidth {
 
 /* DataTables Overrides */
 .dataTables_wrapper {
+    max-width: 100%;
+    overflow: hidden;
+
     .dataTables_length, .dataTables_filter, .dataTables_info, .dataTables_processing, .dataTables_paginate {
         color: #a0aec0 !important;
         font-size: 0.85rem;
     }
 
-    .dataTables_filter input, .dataTables_length select {
-        background-color: rgba(15, 20, 30, 0.8) !important;
-        border: 1px solid rgba(0, 240, 255, 0.2) !important;
-        color: white !important;
-        border-radius: 4px;
-        padding: 0.25rem 0.5rem;
-        
-        &:focus {
-            outline: none;
-            border-color: $title-color !important;
-            box-shadow: 0 0 5px rgba(212, 160, 23, 0.5) !important;
-        }
-    }
+        .dataTables_filter input, .dataTables_length select {
+            background-color: rgba(15, 20, 30, 0.8) !important;
+            border: 1px solid rgba(0, 240, 255, 0.2) !important;
+            color: white !important;
+            border-radius: 4px;
+            padding: 0.25rem 0.5rem;
 
-    .dataTables_length select {
-        padding-right: 2rem !important;
-        width: auto !important;
-    }
+            &:focus {
+                outline: none;
+                border-color: $title-color !important;
+                box-shadow: 0 0 5px rgba(212, 160, 23, 0.5) !important;
+            }
+        }
+
+        .dataTables_length select {
+            padding-right: 2rem !important;
+            width: auto !important;
+        }
 
     .dataTables_info {
         @media (max-width: 768px) {
@@ -756,6 +759,8 @@ div.container.xxlMaxWidth {
     }
 
     .dataTables_paginate {
+        white-space: normal !important;
+
         @media (max-width: 768px) {
             margin-top: 15px !important;
         }
@@ -789,12 +794,12 @@ div.container.xxlMaxWidth {
                 z-index: 3 !important;
             }
         }
-        
+
         .paginate_button:not(.page-item) {
             margin: 0 4px !important;
         }
 
-        .paginate_button.current, 
+        .paginate_button.current,
         .paginate_button.current:hover,
         .page-item.active .page-link {
             background: rgba(212, 160, 23, 0.2) !important;

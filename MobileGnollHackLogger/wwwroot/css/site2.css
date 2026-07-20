@@ -1,4 +1,4 @@
-@charset "UTF-8";
+﻿@charset "UTF-8";
 html, body {
   max-width: 100vw;
   overflow-x: hidden;
@@ -52,17 +52,15 @@ h2 {
   color: #e0ba6d;
   font-family: "Cinzel", serif;
   font-size: 3.35rem;
+  letter-spacing: 3px;
+  margin-bottom: 0.5rem;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8), 0 0 10px rgba(212, 160, 23, 0.3);
+  text-transform: uppercase;
 }
 @media (max-width: 768px) {
   .hero-title {
     font-size: 2.5rem;
   }
-}
-.hero-title {
-  letter-spacing: 3px;
-  margin-bottom: 0.5rem;
-  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8), 0 0 10px rgba(212, 160, 23, 0.3);
-  text-transform: uppercase;
 }
 
 nav.navbar a, nav.navbar button {
@@ -674,6 +672,10 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
 }
 
 /* DataTables Overrides */
+.dataTables_wrapper {
+  max-width: 100%;
+  overflow: hidden;
+}
 .dataTables_wrapper .dataTables_length, .dataTables_wrapper .dataTables_filter, .dataTables_wrapper .dataTables_info, .dataTables_wrapper .dataTables_processing, .dataTables_wrapper .dataTables_paginate {
   color: #a0aec0 !important;
   font-size: 0.85rem;
@@ -699,6 +701,9 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
     margin-bottom: 15px !important;
     text-align: center;
   }
+}
+.dataTables_wrapper .dataTables_paginate {
+  white-space: normal !important;
 }
 @media (max-width: 768px) {
   .dataTables_wrapper .dataTables_paginate {
@@ -1266,5 +1271,3 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
 .rpg-loading-indicator h5 {
   font-family: "Cinzel", serif;
 }
-
-/*# sourceMappingURL=site2.css.map */
