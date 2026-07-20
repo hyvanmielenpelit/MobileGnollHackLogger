@@ -108,7 +108,7 @@
                         <tr data-id="@gameLog.Id" class="@(isAscended ? "ascended-row" : "")">
                             <td data-label="Time" data-order="@gameLog.EndTimeUTCDate.Ticks">
                                 <div class="text-light" title="@(gameLog.EndTimeUTCDate.ToString("d MMM yyyy HH:mm", CultureInfo.InvariantCulture))">@gameLog.EndTimeUTCDate.ToString("d MMM yyyy", CultureInfo.InvariantCulture) <span class="time-text">@gameLog.EndTimeUTCDate.ToString("HH:mm", CultureInfo.InvariantCulture)</span></div>
-                                <div class="text-muted-small">
+                                <div class="text-muted-small text-nowrap">
                                     @(gameLog.Version)-@(gameLog.EditLevel)
                                     @if (!string.IsNullOrEmpty(gameLog.PortVersion) && !string.IsNullOrEmpty(gameLog.Platform))
                                     {
@@ -134,7 +134,7 @@
                             </td>
                             
                             <td data-label="Difficulty" data-order="@gameLog.DifficultyText">
-                                <div class="text-white text-uppercase" style="letter-spacing: 0.5px; font-size: 1.05rem;">@gameLog.DifficultyText</div>
+                                <div class="text-white text-uppercase text-nowrap" style="letter-spacing: 0.5px; font-size: 1.05rem;">@gameLog.DifficultyText</div>
                                 <div class="text-muted-small">
                                     @(gameLog.ModeText)@if(gameLog.IsTournament){<text>, Tournament</text>}
                                 </div>
