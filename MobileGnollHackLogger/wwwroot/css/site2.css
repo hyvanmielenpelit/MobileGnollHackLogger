@@ -1152,4 +1152,28 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
   line-height: 1;
 }
 
+.rpg-table-text-highlight {
+  letter-spacing: 0.5px;
+  font-size: 1.05rem;
+}
+
+.rpg-death-text {
+  font-size: 1.05rem;
+  letter-spacing: 0.5px;
+  color: #ffffff;
+}
+
+.ascended-row .rpg-death-text {
+  color: #ffd700;
+  text-shadow: 0 0 5px rgba(255, 215, 0, 0.4);
+  font-weight: bold;
+}
+
+.rpg-loading-indicator .spinner-border {
+  color: #00f0ff;
+}
+.rpg-loading-indicator h5 {
+  font-family: "Cinzel", serif;
+}
+
 /*# sourceMappingURL=site2.css.map */

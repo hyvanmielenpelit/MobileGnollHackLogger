@@ -1194,3 +1194,31 @@ div.container.xxlMaxWidth {
     vertical-align: baseline;
     line-height: 1;
 }
+
+// Table inline styles refactor
+.rpg-table-text-highlight {
+    letter-spacing: 0.5px;
+    font-size: 1.05rem;
+}
+
+.rpg-death-text {
+    font-size: 1.05rem;
+    letter-spacing: 0.5px;
+    color: #ffffff;
+}
+
+.ascended-row .rpg-death-text {
+    color: #ffd700;
+    text-shadow: 0 0 5px rgba(255, 215, 0, 0.4);
+    font-weight: bold;
+}
+
+.rpg-loading-indicator {
+    .spinner-border {
+        color: #00f0ff;
+    }
+    
+    h5 {
+        font-family: 'Cinzel', serif;
+    }
+}
