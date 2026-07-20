@@ -83,6 +83,12 @@
 {
     <div class="rpg-leaderboard-card">
         <div class="table-responsive">
+            <div id="loadingIndicator" class="text-center py-5">
+                <div class="spinner-border" style="color: #00f0ff;" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <h5 class="mt-3 text-muted" style="font-family: 'Cinzel', serif;">Please wait...</h5>
+            </div>
             <table id="topScoreTable" class="rpg-table" style="display:none;">
                 <thead>
                     <tr>
@@ -193,5 +199,6 @@ else
             order: [],
             autoWidth: false
         }).show();
+        $("#loadingIndicator").hide();
     </script>
 }
