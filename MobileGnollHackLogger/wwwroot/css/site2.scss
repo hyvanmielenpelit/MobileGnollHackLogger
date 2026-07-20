@@ -470,11 +470,11 @@ div.container.xxlMaxWidth {
 .w-xl   { width: 25%; }
 .w-diff { width: 6.62%; }
 .w-role { width: 6.67%; }
-.w-death { min-width: 200px; }
+.w-death { min-width: 120px; }
 .w-time { min-width: 80px; }
 .w-rank { min-width: 48px; }
 .w-fit-nowrap { width: 1%; white-space: nowrap; }
-.w-score { min-width: 110px; width: 1%; white-space: nowrap; }
+.w-score { min-width: 90px; }
 
 .h-line {
     vertical-align: top;
@@ -725,7 +725,6 @@ div.container.xxlMaxWidth {
 /* DataTables Overrides */
 .dataTables_wrapper {
     max-width: 100%;
-    overflow: hidden;
 
     .dataTables_length, .dataTables_filter, .dataTables_info, .dataTables_processing, .dataTables_paginate {
         color: #a0aec0 !important;

@@ -428,7 +428,7 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
 }
 
 .w-death {
-  min-width: 200px;
+  min-width: 120px;
 }
 
 .w-time {
@@ -445,9 +445,7 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
 }
 
 .w-score {
-  min-width: 110px;
-  width: 1%;
-  white-space: nowrap;
+  min-width: 90px;
 }
 
 .h-line {
@@ -674,7 +672,6 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
 /* DataTables Overrides */
 .dataTables_wrapper {
   max-width: 100%;
-  overflow: hidden;
 }
 .dataTables_wrapper .dataTables_length, .dataTables_wrapper .dataTables_filter, .dataTables_wrapper .dataTables_info, .dataTables_wrapper .dataTables_processing, .dataTables_wrapper .dataTables_paginate {
   color: #a0aec0 !important;
