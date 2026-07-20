@@ -827,6 +827,9 @@ div.container.xxlMaxWidth {
 
 // Table Mixins for Layout Toggle
 @mixin table-card-view {
+    display: block !important;
+    max-width: 100% !important;
+
     thead {
         display: none !important;
     }
@@ -848,11 +851,10 @@ div.container.xxlMaxWidth {
 
     td {
         text-align: right !important;
-        padding: 8px 10px 8px 35% !important;
+        padding: 8px 10px 8px 85px !important;
         position: relative !important;
         border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
         min-height: 40px !important;
-        
         /* Ensure inner flex boxes (if any) align right */
         display: flex !important;
         flex-direction: column;
@@ -875,7 +877,7 @@ div.container.xxlMaxWidth {
             content: attr(data-label) !important;
             position: absolute !important;
             left: 10px !important;
-            width: 30% !important;
+            width: 80px !important;
             text-align: left !important;
             font-weight: bold !important;
             color: #81e6d9 !important;
@@ -885,7 +887,7 @@ div.container.xxlMaxWidth {
             top: 50% !important;
             transform: translateY(-50%) !important;
         }
-        
+
         .time-text {
             display: inline !important;
         }
