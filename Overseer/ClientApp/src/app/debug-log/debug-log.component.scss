@@ -1,0 +1,50 @@
+.debug-container {
+  padding: 20px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+
+  .header-left {
+    display: flex;
+    align-items: center;
+  }
+
+  h2 {
+    margin: 0;
+  }
+}
+
+.log-viewer {
+  flex: 1;
+  background-color: #1e1e1e;
+  color: #d4d4d4;
+  padding: 10px;
+  border-radius: 5px;
+  overflow-y: auto;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 14px;
+  line-height: 1.4;
+
+  .empty {
+    color: #808080;
+    font-style: italic;
+  }
+
+  pre {
+    margin: 0 0 4px 0;
+    white-space: pre-wrap;
+    word-break: break-all;
+
+    .time {
+      color: #569cd6;
+    }
+  }
+}

@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ChatService, ChatSession, ChatMessage } from '../services/chat.service';
 import { AuthService } from '../services/auth.service';
+import { DebugService } from '../services/debug.service';
 import { Router, ActivatedRoute, RouterModule } from '@angular/router';
 import { MarkdownPipe } from './markdown.pipe';
 
@@ -22,6 +23,7 @@ import { MarkdownPipe } from './markdown.pipe';
           </li>
         </ul>
         <div class="bottom-links">
+          <a routerLink="/debug-log">Debug Log</a>
           <a routerLink="/settings">Settings</a>
           <a href="#" (click)="logout($event)">Logout</a>
         </div>
@@ -44,6 +46,14 @@ import { MarkdownPipe } from './markdown.pipe';
           </div>
         </div>
         <div class="input-area-container">
+          <!-- Progress Indicator at the top of the prompt box -->
+          <div class="progress-bar" *ngIf="isStreaming || currentStatusText">
+            <span class="status-icon spin" *ngIf="showSpinner">↻</span>
+            <span class="status-icon" *ngIf="!showSpinner && !isStreaming">✅</span>
+            <span class="status-text">{{ currentStatusText }}</span>
+            <button *ngIf="isStreaming" class="stop-btn" (click)="stopRequest()" title="Stop Request">■</button>
+          </div>
+
           <div class="attachments-preview" *ngIf="pendingAttachments.length > 0">
             <div class="attachment-chip" *ngFor="let att of pendingAttachments; let i = index">
               <span class="att-name">{{ att.name }}</span>
@@ -67,7 +77,8 @@ import { MarkdownPipe } from './markdown.pipe';
     .sidebar ul { list-style: none; padding: 0; flex-grow: 1; overflow-y: auto; }
     .sidebar li { padding: 10px; cursor: pointer; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between; }
     .sidebar li.active { background: #e0e0e0; font-weight: bold; }
-    .bottom-links a { display: block; margin-top: 10px; }
+    .bottom-links a { display: block; margin-top: 10px; text-decoration: none; color: #007bff; }
+    .bottom-links a:hover { text-decoration: underline; }
     .chat-area { flex-grow: 1; display: flex; flex-direction: column; }
     .messages { flex-grow: 1; padding: 20px; overflow-y: auto; background: #fff; }
     .messages div { margin-bottom: 15px; padding: 10px; border-radius: 8px; max-width: 80%; }
@@ -76,7 +87,39 @@ import { MarkdownPipe } from './markdown.pipe';
     ::ng-deep .markdown-body p { margin: 5px 0 10px; white-space: pre-wrap; }
     ::ng-deep .markdown-body ul, ::ng-deep .markdown-body ol { margin: 5px 0 10px; padding-left: 20px; }
     ::ng-deep .markdown-body h1, ::ng-deep .markdown-body h2, ::ng-deep .markdown-body h3 { margin: 10px 0 5px; }
-    .input-area-container { border-top: 1px solid #ddd; background: #fafafa; }
+    .input-area-container { border-top: 1px solid #ddd; background: #fafafa; display: flex; flex-direction: column; }
+    
+    .progress-bar {
+      display: flex;
+      align-items: center;
+      padding: 6px 20px;
+      background: #e8f5e9;
+      border-bottom: 1px solid #c8e6c9;
+      font-size: 12px;
+      color: #2e7d32;
+    }
+    .status-icon { margin-right: 8px; font-size: 14px; }
+    .status-icon.spin { animation: spin 1.5s linear infinite; display: inline-block; }
+    @keyframes spin { 100% { transform: rotate(360deg); } }
+    .status-text { flex-grow: 1; font-family: monospace; }
+    .stop-btn {
+      background: #dc3545;
+      color: white;
+      border: none;
+      width: 24px;
+      height: 24px;
+      border-radius: 4px;
+      font-size: 12px;
+      line-height: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      margin: 0;
+    }
+    .stop-btn:hover { background: #c82333; }
+
     .attachments-preview { display: flex; padding: 10px 20px 0; gap: 10px; flex-wrap: wrap; }
     .attachment-chip { background: #e0e0e0; padding: 5px 10px; border-radius: 15px; font-size: 12px; display: flex; align-items: center; }
     .attachment-chip button { margin-left: 5px; border: none; background: transparent; cursor: pointer; font-weight: bold; padding: 0; }
@@ -93,6 +136,7 @@ import { MarkdownPipe } from './markdown.pipe';
 export class ChatComponent implements OnInit {
   chatService = inject(ChatService);
   authService = inject(AuthService);
+  debugService = inject(DebugService);
   router = inject(Router);
   route = inject(ActivatedRoute);
   cdr = inject(ChangeDetectorRef);
@@ -105,6 +149,11 @@ export class ChatComponent implements OnInit {
   isStreaming = false;
   streamingMessage = '';
   pendingAttachments: { file: File, base64: string, name: string, type: string }[] = [];
+
+  currentStatusText = '';
+  showSpinner = false;
+  requestStartTime = 0;
+  abortController: AbortController | null = null;
 
   ngOnInit() {
     this.loadSessions();
@@ -139,6 +188,7 @@ export class ChatComponent implements OnInit {
   newSession() {
     this.currentSessionId = null;
     this.messages = [];
+    this.currentStatusText = '';
     this.loadDraft();
   }
 
@@ -146,6 +196,7 @@ export class ChatComponent implements OnInit {
     this.chatService.getSession(id).subscribe(s => {
       this.currentSessionId = s.id;
       this.messages = s.messages || [];
+      this.currentStatusText = '';
       this.loadDraft();
       
       if (!this.sessions.find(x => x.id === id)) {
@@ -162,6 +213,12 @@ export class ChatComponent implements OnInit {
     });
   }
 
+  stopRequest() {
+    if (this.abortController) {
+      this.abortController.abort();
+    }
+  }
+
   async sendMessage() {
     if ((!this.currentInput.trim() && this.pendingAttachments.length === 0) || this.isStreaming) return;
     
@@ -171,14 +228,12 @@ export class ChatComponent implements OnInit {
       contentType: a.type,
       base64Data: a.base64
     }));
-    
-    const sentAttachments = [...this.pendingAttachments]; // keep for local display if needed, but the server handles saving it
 
     this.messages.push({ 
       role: 'user', 
       content: message, 
       timestampUtc: new Date().toISOString(),
-      attachments: attachmentsPayload.map(a => ({ fileName: a.fileName, contentType: a.contentType, base64Data: a.base64Data })) // temporarily show without id
+      attachments: attachmentsPayload.map(a => ({ fileName: a.fileName, contentType: a.contentType, base64Data: a.base64Data }))
     });
     
     this.clearDraft();
@@ -187,20 +242,56 @@ export class ChatComponent implements OnInit {
     this.isStreaming = true;
     this.streamingMessage = '';
 
+    this.requestStartTime = performance.now();
+    this.currentStatusText = 'Connecting...';
+    this.showSpinner = true;
+    this.abortController = new AbortController();
+    this.debugService.log(`Starting UI Request to backend for chat message.`);
+
     try {
-      for await (const chunk of this.chatService.streamMessage(this.currentSessionId, message, attachmentsPayload)) {
-        this.streamingMessage += chunk;
-        this.cdr.detectChanges();
+      for await (const evt of this.chatService.streamMessage(this.currentSessionId, message, attachmentsPayload, this.abortController.signal)) {
+        if (evt.type === 'debug') {
+          this.debugService.log(`[Backend] ${evt.data}`);
+        } else if (evt.type === 'status') {
+          this.currentStatusText = evt.data;
+          this.cdr.detectChanges();
+        } else if (evt.type === 'chunk') {
+          if (this.showSpinner) {
+            this.showSpinner = false;
+            const ttfb = performance.now() - this.requestStartTime;
+            this.currentStatusText = `Receiving data (${Math.round(ttfb)}ms)...`;
+          }
+          this.streamingMessage += evt.data;
+          this.cdr.detectChanges();
+        } else if (evt.type === 'error') {
+          this.currentStatusText = `Error: ${evt.data}`;
+          this.debugService.log(`[Backend Error] ${evt.data}`);
+          this.streamingMessage += `\n\n**Error:** ${evt.data}`;
+          this.showSpinner = false;
+          this.cdr.detectChanges();
+        }
+      }
+      
+      const totalTimeMs = performance.now() - this.requestStartTime;
+      if (this.currentStatusText && !this.currentStatusText.startsWith('Error')) {
+          this.currentStatusText = `Request completed (${Math.round(totalTimeMs)}ms)`;
       }
       this.messages.push({ role: 'assistant', content: this.streamingMessage, timestampUtc: new Date().toISOString() });
-      this.cdr.detectChanges();
-    } catch (e) {
-      console.error(e);
-      this.messages.push({ role: 'assistant', content: 'Error: ' + e, timestampUtc: new Date().toISOString() });
-      this.cdr.detectChanges();
+    } catch (e: any) {
+      if (e.name === 'AbortError') {
+        this.currentStatusText = `Cancelled by user.`;
+        this.debugService.log(`Request aborted by user.`);
+      } else {
+        console.error(e);
+        this.currentStatusText = `Error: ${e.message}`;
+        this.messages.push({ role: 'assistant', content: 'Error: ' + e, timestampUtc: new Date().toISOString() });
+        this.debugService.log(`Frontend Error: ${e.message}`);
+      }
     } finally {
       this.streamingMessage = '';
       this.isStreaming = false;
+      this.showSpinner = false;
+      this.abortController = null;
       this.loadSessions(); // Refresh sessions list in case a new one was created
       this.cdr.detectChanges();
     }

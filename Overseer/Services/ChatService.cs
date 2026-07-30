@@ -26,7 +26,7 @@ public class ChatService
         _configuration = configuration;
     }
 
-    public async IAsyncEnumerable<string> StreamMessageAsync(long? sessionId, string message, List<SendMessageAttachment>? attachments, ClaimsPrincipal user, [EnumeratorCancellation] CancellationToken cancellationToken)
+    public async IAsyncEnumerable<ChatEvent> StreamMessageAsync(long? sessionId, string message, List<SendMessageAttachment>? attachments, ClaimsPrincipal user, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
         if (userId == null) yield break;
@@ -56,7 +56,7 @@ public class ChatService
 
             if (string.IsNullOrEmpty(apiKey))
             {
-                yield return "Error: API Key not configured. Please configure it in Settings.";
+                yield return new ChatEvent { Type = "error", Data = "Error: API Key not configured. Please configure it in Settings." };
                 yield break;
             }
 
@@ -66,7 +66,7 @@ public class ChatService
                 session = await dbContext.ChatSession.FindAsync(sessionId.Value);
                 if (session == null || session.AspNetUserId != userId)
                 {
-                    yield return "Error: Session not found.";
+                    yield return new ChatEvent { Type = "error", Data = "Error: Session not found." };
                     yield break;
                 }
                 currentSessionId = session.Id;
@@ -161,7 +161,7 @@ public class ChatService
                                 textAttachmentsContent.AppendLine($"--- End File ---");
                             }
                         }
-                        catch (Exception ex)
+                        catch (Exception)
                         {
                             // Ignore specific attachment failure
                         }
@@ -178,7 +178,6 @@ public class ChatService
 
             if (imageAttachments.Count > 0)
             {
-                // Multimodal format for the current message
                 if (provider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase))
                 {
                     var contentList = new List<object>();
@@ -207,7 +206,7 @@ public class ChatService
                     {
                         partsList.Add(new { inlineData = new { mimeType = img.ContentType, data = img.Base64Data } });
                     }
-                    messageHistory.Add(new { role = "user", parts = partsList }); // Wait, Gemini requires 'parts' inside 'content' but our history just has 'role' and 'content' right now?
+                    messageHistory.Add(new { role = "user", parts = partsList });
                 }
             }
             else
@@ -235,53 +234,21 @@ public class ChatService
                 requestBody["reasoning_effort"] = thinkingLevel;
             }
 
-            var requestContent = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
-            var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/chat/completions")
-            {
-                Content = requestContent
-            };
-
-            using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-            if (!response.IsSuccessStatusCode)
-            {
-                var error = await response.Content.ReadAsStringAsync(cancellationToken);
-                yield return $"API Error: {response.StatusCode} - {error}";
-                yield break;
-            }
-
-            using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-            using var reader = new StreamReader(stream);
-            string? line = null;
-            
-            while (!cancellationToken.IsCancellationRequested && (line = await reader.ReadLineAsync()) != null)
-            {
-                if (string.IsNullOrEmpty(line)) continue;
-                if (line.StartsWith("data: "))
+            await foreach (var evt in ExecuteApiWithRetriesAsync(
+                async ct =>
                 {
-                    var data = line.Substring(6);
-                    if (data == "[DONE]") break;
-
-                    string? chunk = null;
-                    try
+                    var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/chat/completions")
                     {
-                        var json = JsonSerializer.Deserialize<JsonElement>(data);
-                        if (json.TryGetProperty("choices", out var choices) && choices.GetArrayLength() > 0)
-                        {
-                            var delta = choices[0].GetProperty("delta");
-                            if (delta.TryGetProperty("content", out var content))
-                            {
-                                chunk = content.GetString();
-                            }
-                        }
-                    }
-                    catch { /* ignore */ }
-                    
-                    if (!string.IsNullOrEmpty(chunk))
-                    {
-                        fullResponse += chunk;
-                        yield return chunk;
-                    }
-                }
+                        Content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json")
+                    };
+                    return await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+                },
+                ParseOpenAIStream,
+                "OpenAI",
+                cancellationToken))
+            {
+                if (evt.Type == "chunk") fullResponse += evt.Data;
+                yield return evt;
             }
         }
         else if (provider.Equals("Anthropic", StringComparison.OrdinalIgnoreCase))
@@ -306,68 +273,35 @@ public class ChatService
 
             if (!string.IsNullOrEmpty(thinkingLevel))
             {
-                // Note: Anthropic's new thinking format might vary, passing as a top-level property for now
                 requestBody["thinking"] = new { type = "enabled", budget_tokens = 1024 }; 
             }
 
-            var requestContent = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
-            var request = new HttpRequestMessage(HttpMethod.Post, "https://api.anthropic.com/v1/messages")
-            {
-                Content = requestContent
-            };
-
-            using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-            if (!response.IsSuccessStatusCode)
-            {
-                var error = await response.Content.ReadAsStringAsync(cancellationToken);
-                yield return $"API Error: {response.StatusCode} - {error}";
-                yield break;
-            }
-
-            using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-            using var reader = new StreamReader(stream);
-            string? line = null;
-            
-            while (!cancellationToken.IsCancellationRequested && (line = await reader.ReadLineAsync()) != null)
-            {
-                if (string.IsNullOrEmpty(line)) continue;
-                if (line.StartsWith("data: "))
+            await foreach (var evt in ExecuteApiWithRetriesAsync(
+                async ct =>
                 {
-                    var data = line.Substring(6);
-                    string? chunk = null;
-                    try
+                    var request = new HttpRequestMessage(HttpMethod.Post, "https://api.anthropic.com/v1/messages")
                     {
-                        var json = JsonSerializer.Deserialize<JsonElement>(data);
-                        if (json.TryGetProperty("type", out var type) && type.GetString() == "content_block_delta")
-                        {
-                            var delta = json.GetProperty("delta");
-                            if (delta.TryGetProperty("text", out var text))
-                            {
-                                chunk = text.GetString();
-                            }
-                        }
-                    }
-                    catch { /* ignore */ }
-                    
-                    if (!string.IsNullOrEmpty(chunk))
-                    {
-                        fullResponse += chunk;
-                        yield return chunk;
-                    }
-                }
+                        Content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json")
+                    };
+                    return await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+                },
+                ParseAnthropicStream,
+                "Anthropic",
+                cancellationToken))
+            {
+                if (evt.Type == "chunk") fullResponse += evt.Data;
+                yield return evt;
             }
         }
         else if (provider.Equals("Google", StringComparison.OrdinalIgnoreCase))
         {
             var httpClient = _httpClientFactory.CreateClient();
-            
             var contents = new List<object>();
             string systemInstruction = "";
 
             foreach (var m in messageHistory)
             {
                 var role = ((dynamic)m).role;
-                
                 var dict = m as IDictionary<string, object>;
                 var hasParts = m.GetType().GetProperty("parts") != null;
                 
@@ -411,59 +345,26 @@ public class ChatService
                 };
             }
 
-            // Gemini does not yet officially support ThinkingLevel in the REST API generationConfig
-            // We'll skip sending it to prevent BadRequest errors, or if supported in the future, we'll map it here.
-
-            var requestContent = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
-            var request = new HttpRequestMessage(HttpMethod.Post, $"https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse&key={apiKey}")
-            {
-                Content = requestContent
-            };
-
-            using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-            if (!response.IsSuccessStatusCode)
-            {
-                var error = await response.Content.ReadAsStringAsync(cancellationToken);
-                yield return $"API Error: {response.StatusCode} - {error}";
-                yield break;
-            }
-
-            using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-            using var reader = new StreamReader(stream);
-            string? line = null;
-            
-            while (!cancellationToken.IsCancellationRequested && (line = await reader.ReadLineAsync()) != null)
-            {
-                if (string.IsNullOrEmpty(line)) continue;
-                if (line.StartsWith("data: "))
+            await foreach (var evt in ExecuteApiWithRetriesAsync(
+                async ct =>
                 {
-                    var data = line.Substring(6);
-                    string? chunk = null;
-                    try
+                    var request = new HttpRequestMessage(HttpMethod.Post, $"https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse&key={apiKey}")
                     {
-                        var json = JsonSerializer.Deserialize<JsonElement>(data);
-                        if (json.TryGetProperty("candidates", out var candidates) && candidates.GetArrayLength() > 0)
-                        {
-                            var parts = candidates[0].GetProperty("content").GetProperty("parts");
-                            if (parts.GetArrayLength() > 0 && parts[0].TryGetProperty("text", out var text))
-                            {
-                                chunk = text.GetString();
-                            }
-                        }
-                    }
-                    catch { /* ignore */ }
-                    
-                    if (!string.IsNullOrEmpty(chunk))
-                    {
-                        fullResponse += chunk;
-                        yield return chunk;
-                    }
-                }
+                        Content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json")
+                    };
+                    return await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+                },
+                ParseGeminiStream,
+                "Google",
+                cancellationToken))
+            {
+                if (evt.Type == "chunk") fullResponse += evt.Data;
+                yield return evt;
             }
         }
         else
         {
-            yield return $"Provider {provider} is not fully implemented yet in this demo.";
+            yield return new ChatEvent { Type = "error", Data = $"Provider {provider} is not fully implemented yet in this demo." };
             fullResponse = $"Provider {provider} is not fully implemented yet in this demo.";
         }
 
@@ -483,6 +384,210 @@ public class ChatService
                 dbContext.ChatMessage.Add(asstMsg);
                 session.LastMessageUtc = DateTime.UtcNow;
                 await dbContext.SaveChangesAsync(CancellationToken.None);
+            }
+        }
+    }
+
+    private async IAsyncEnumerable<ChatEvent> ExecuteApiWithRetriesAsync(
+        Func<CancellationToken, Task<HttpResponseMessage>> requestFactory,
+        Func<HttpResponseMessage, CancellationToken, IAsyncEnumerable<string>> streamParser,
+        string providerName,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        int[] retryDelays = { 1, 5, 10, 20, 30, 60 };
+        int attempt = 0;
+        bool success = false;
+        
+        while (!success && !cancellationToken.IsCancellationRequested)
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            yield return new ChatEvent { Type = "debug", Data = $"[{providerName}] Starting POST request (Attempt {attempt + 1})..." };
+            yield return new ChatEvent { Type = "status", Data = $"Waiting for {providerName}..." };
+
+            HttpResponseMessage? response = null;
+            Exception? requestException = null;
+            try
+            {
+                response = await requestFactory(cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                requestException = ex;
+            }
+
+            if (requestException != null)
+            {
+                sw.Stop();
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    yield return new ChatEvent { Type = "debug", Data = $"[{providerName}] Request canceled by user in {sw.ElapsedMilliseconds}ms" };
+                    yield return new ChatEvent { Type = "error", Data = "Request canceled." };
+                }
+                else
+                {
+                    yield return new ChatEvent { Type = "debug", Data = $"[{providerName}] Request failed in {sw.ElapsedMilliseconds}ms: {requestException.Message}" };
+                    yield return new ChatEvent { Type = "error", Data = $"Request failed: {requestException.Message}" };
+                }
+                yield break;
+            }
+
+            sw.Stop();
+            
+            if (response.IsSuccessStatusCode)
+            {
+                yield return new ChatEvent { Type = "debug", Data = $"[{providerName}] HTTP {(int)response.StatusCode} Received ({sw.ElapsedMilliseconds}ms)" };
+                yield return new ChatEvent { Type = "status", Data = $"Streaming response..." };
+                
+                await foreach (var chunk in streamParser(response, cancellationToken))
+                {
+                    yield return new ChatEvent { Type = "chunk", Data = chunk };
+                }
+                
+                yield return new ChatEvent { Type = "debug", Data = $"[{providerName}] Stream completed." };
+                success = true;
+            }
+            else
+            {
+                var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+                yield return new ChatEvent { Type = "debug", Data = $"[{providerName}] HTTP {(int)response.StatusCode} Received ({sw.ElapsedMilliseconds}ms)\nBody: {errorBody}" };
+
+                if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests) // 429
+                {
+                    yield return new ChatEvent { Type = "error", Data = "429 Rate Limited. Please try again later." };
+                    yield break;
+                }
+                else if (response.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable || response.StatusCode == System.Net.HttpStatusCode.BadGateway || response.StatusCode == System.Net.HttpStatusCode.InternalServerError) // 503, 502, 500
+                {
+                    if (attempt < retryDelays.Length)
+                    {
+                        int delaySeconds = retryDelays[attempt];
+                        yield return new ChatEvent { Type = "status", Data = $"503 Unavailable. Retrying in {delaySeconds}s..." };
+                        yield return new ChatEvent { Type = "debug", Data = $"[{providerName}] Sleeping for {delaySeconds}s before retry..." };
+                        
+                        try {
+                            await Task.Delay(delaySeconds * 1000, cancellationToken);
+                        } catch(TaskCanceledException) { yield break; }
+                        
+                        attempt++;
+                    }
+                    else
+                    {
+                        yield return new ChatEvent { Type = "error", Data = "503 Unavailable. Max retries exceeded." };
+                        yield break;
+                    }
+                }
+                else
+                {
+                    yield return new ChatEvent { Type = "error", Data = $"API Error: {(int)response.StatusCode} - {errorBody}" };
+                    yield break;
+                }
+            }
+        }
+    }
+
+    private async IAsyncEnumerable<string> ParseOpenAIStream(HttpResponseMessage response, [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var reader = new StreamReader(stream);
+        string? line = null;
+        
+        while (!cancellationToken.IsCancellationRequested && (line = await reader.ReadLineAsync()) != null)
+        {
+            if (string.IsNullOrEmpty(line)) continue;
+            if (line.StartsWith("data: "))
+            {
+                var data = line.Substring(6);
+                if (data == "[DONE]") break;
+
+                string? chunk = null;
+                try
+                {
+                    var json = JsonSerializer.Deserialize<JsonElement>(data);
+                    if (json.TryGetProperty("choices", out var choices) && choices.GetArrayLength() > 0)
+                    {
+                        var delta = choices[0].GetProperty("delta");
+                        if (delta.TryGetProperty("content", out var content))
+                        {
+                            chunk = content.GetString();
+                        }
+                    }
+                }
+                catch { /* ignore */ }
+                
+                if (!string.IsNullOrEmpty(chunk))
+                {
+                    yield return chunk;
+                }
+            }
+        }
+    }
+
+    private async IAsyncEnumerable<string> ParseAnthropicStream(HttpResponseMessage response, [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var reader = new StreamReader(stream);
+        string? line = null;
+        
+        while (!cancellationToken.IsCancellationRequested && (line = await reader.ReadLineAsync()) != null)
+        {
+            if (string.IsNullOrEmpty(line)) continue;
+            if (line.StartsWith("data: "))
+            {
+                var data = line.Substring(6);
+                string? chunk = null;
+                try
+                {
+                    var json = JsonSerializer.Deserialize<JsonElement>(data);
+                    if (json.TryGetProperty("type", out var type) && type.GetString() == "content_block_delta")
+                    {
+                        var delta = json.GetProperty("delta");
+                        if (delta.TryGetProperty("text", out var text))
+                        {
+                            chunk = text.GetString();
+                        }
+                    }
+                }
+                catch { /* ignore */ }
+                
+                if (!string.IsNullOrEmpty(chunk))
+                {
+                    yield return chunk;
+                }
+            }
+        }
+    }
+
+    private async IAsyncEnumerable<string> ParseGeminiStream(HttpResponseMessage response, [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var reader = new StreamReader(stream);
+        string? line = null;
+        
+        while (!cancellationToken.IsCancellationRequested && (line = await reader.ReadLineAsync()) != null)
+        {
+            if (string.IsNullOrEmpty(line)) continue;
+            if (line.StartsWith("data: "))
+            {
+                var data = line.Substring(6);
+                string? chunk = null;
+                try
+                {
+                    var json = JsonSerializer.Deserialize<JsonElement>(data);
+                    if (json.TryGetProperty("candidates", out var candidates) && candidates.GetArrayLength() > 0)
+                    {
+                        var parts = candidates[0].GetProperty("content").GetProperty("parts");
+                        if (parts.GetArrayLength() > 0 && parts[0].TryGetProperty("text", out var text))
+                        {
+                            chunk = text.GetString();
+                        }
+                    }
+                }
+                catch { /* ignore */ }
+                
+                if (!string.IsNullOrEmpty(chunk))
+                {
+                    yield return chunk;
+                }
             }
         }
     }

@@ -116,10 +116,18 @@ public class ChatController : ControllerBase
         
         try 
         {
-            await foreach (var chunk in _chatService.StreamMessageAsync(request.SessionId, request.Message, request.Attachments, User, cancellationToken))
+            await foreach (var chatEvent in _chatService.StreamMessageAsync(request.SessionId, request.Message, request.Attachments, User, cancellationToken))
             {
-                var formattedChunk = chunk.Replace("\n", "\ndata: ");
-                await Response.WriteAsync($"data: {formattedChunk}\n\n", cancellationToken);
+                if (chatEvent.Type == "chunk")
+                {
+                    var formattedChunk = chatEvent.Data.Replace("\n", "\ndata: ");
+                    await Response.WriteAsync($"data: {formattedChunk}\n\n", cancellationToken);
+                }
+                else
+                {
+                    var formattedData = chatEvent.Data.Replace("\n", " ");
+                    await Response.WriteAsync($"event: {chatEvent.Type}\ndata: {formattedData}\n\n", cancellationToken);
+                }
                 await Response.Body.FlushAsync(cancellationToken);
             }
         }
@@ -127,7 +135,7 @@ public class ChatController : ControllerBase
         {
             // Send SSE error event so the client doesn't hang
             var errorMessage = ex.Message.Replace("\n", " ");
-            await Response.WriteAsync($"event: error\ndata: {{\"message\": \"{errorMessage}\"}}\n\n");
+            await Response.WriteAsync($"event: error\ndata: {errorMessage}\n\n");
             await Response.Body.FlushAsync();
         }
     }

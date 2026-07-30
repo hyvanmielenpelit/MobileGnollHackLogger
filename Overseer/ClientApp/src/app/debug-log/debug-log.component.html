@@ -1,0 +1,13 @@
+<div class="debug-container">
+  <div class="header">
+    <div class="header-left">
+      <button (click)="goBack()" class="btn btn-secondary" style="margin-right: 15px;">&larr; Back</button>
+      <h2>Debug Log</h2>
+    </div>
+    <button (click)="clearLogs()" class="btn btn-danger">Clear</button>
+  </div>
+  <div class="log-viewer">
+    <div *ngIf="logs.length === 0" class="empty">No debug logs yet.</div>
+    <pre *ngFor="let log of logs"><span class="time">[{{ log.timestamp | date:'HH:mm:ss.SSS' }}]</span> {{ log.message }}</pre>
+  </div>
+</div>

@@ -21,6 +21,11 @@ export interface ChatMessage {
   attachments?: ChatMessageAttachment[];
 }
 
+export interface ChatStreamEvent {
+  type: 'chunk' | 'status' | 'debug' | 'error';
+  data: string;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -39,18 +44,15 @@ export class ChatService {
     return this.http.delete(`/api/chat/sessions/${id}`);
   }
 
-  // Note: For SSE streaming, we typically use fetch or EventSource directly 
-  // since HttpClient doesn't natively support text/event-stream well yet without custom parsing.
-  async *streamMessage(sessionId: number | null, message: string, attachments?: ChatMessageAttachment[]) {
+  async *streamMessage(sessionId: number | null, message: string, attachments?: ChatMessageAttachment[], abortSignal?: AbortSignal): AsyncGenerator<ChatStreamEvent, void, unknown> {
     const response = await fetch('/api/chat/send', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        // Get CSRF token from cookie if possible, but our HttpClientXsrfModule handles regular requests.
-        // For fetch, we need to manually read the cookie.
         'X-XSRF-TOKEN': this.getCookie('XSRF-TOKEN') || ''
       },
-      body: JSON.stringify({ sessionId, message, attachments: attachments || [] })
+      body: JSON.stringify({ sessionId, message, attachments: attachments || [] }),
+      signal: abortSignal
     });
 
     if (!response.ok) {
@@ -71,26 +73,24 @@ export class ChatService {
       
       let newlineIndex;
       while ((newlineIndex = buffer.indexOf('\n\n')) >= 0) {
-        const event = buffer.slice(0, newlineIndex);
+        const eventBlock = buffer.slice(0, newlineIndex);
         buffer = buffer.slice(newlineIndex + 2);
         
-        if (event.startsWith('event: error')) {
-            const dataLine = event.split('\n').find(l => l.startsWith('data: '));
-            if (dataLine) {
-                const errData = JSON.parse(dataLine.substring(6));
-                throw new Error(errData.message);
-            }
-        } else if (event.startsWith('data: ')) {
-            const lines = event.split('\n');
-            const dataContent = [];
-            for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                    dataContent.push(line.substring(6));
-                }
-            }
-            if (dataContent.length > 0) {
-                yield dataContent.join('\n');
-            }
+        let eventType = 'chunk';
+        let eventData = '';
+
+        const lines = eventBlock.split('\n');
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            eventType = line.substring(7);
+          } else if (line.startsWith('data: ')) {
+            if (eventData.length > 0) eventData += '\n';
+            eventData += line.substring(6);
+          }
+        }
+
+        if (eventData.length > 0) {
+          yield { type: eventType as any, data: eventData };
         }
       }
     }
