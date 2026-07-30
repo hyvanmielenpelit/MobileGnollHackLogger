@@ -8,6 +8,11 @@ export interface UserAiSettings {
   hasApiKey: boolean;
 }
 
+export interface ApiModelDto {
+  id: string;
+  createdAt: number;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -23,6 +28,6 @@ export class SettingsService {
   }
 
   getAvailableModels(provider: string, apiKey: string) {
-    return this.http.post<string[]>('/api/settings/models', { provider, apiKey });
+    return this.http.post<ApiModelDto[]>('/api/settings/models', { provider, apiKey });
   }
 }

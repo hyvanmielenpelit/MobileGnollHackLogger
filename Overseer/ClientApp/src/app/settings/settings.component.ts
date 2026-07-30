@@ -1,7 +1,7 @@
 import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { SettingsService, UserAiSettings } from '../services/settings.service';
+import { SettingsService, UserAiSettings, ApiModelDto } from '../services/settings.service';
 import { RouterModule } from '@angular/router';
 
 @Component({
@@ -72,8 +72,18 @@ import { RouterModule } from '@angular/router';
         </div>
 
         <div *ngIf="!modelError">
+          <div class="segmented-control">
+            <label>
+              <input type="radio" name="sortMode" value="alphabetical" [(ngModel)]="sortMode" (change)="onSortChange()">
+              <span>Alphabetical</span>
+            </label>
+            <label>
+              <input type="radio" name="sortMode" value="newest" [(ngModel)]="sortMode" (change)="onSortChange()">
+              <span>Newest</span>
+            </label>
+          </div>
           <select [(ngModel)]="selectedModel" size="10" class="model-listbox">
-            <option *ngFor="let m of availableModels" [value]="m">{{ m }}</option>
+            <option *ngFor="let m of sortedModels" [value]="m.id">{{ m.id }}</option>
           </select>
           <div class="modal-actions">
             <button type="button" class="btn-secondary" (click)="closeModal()">Cancel</button>
@@ -112,6 +122,32 @@ import { RouterModule } from '@angular/router';
     .btn-primary { background: #007bff; }
     .btn-secondary { background: #6c757d; }
     .modal-error { color: #dc3545; }
+    
+    .segmented-control {
+      display: inline-flex;
+      background: #f0f0f0;
+      border-radius: 20px;
+      padding: 3px;
+      margin-bottom: 15px;
+    }
+    .segmented-control label {
+      padding: 6px 16px;
+      cursor: pointer;
+      border-radius: 17px;
+      margin: 0;
+      font-size: 0.9em;
+      font-weight: 500;
+      color: #666;
+      transition: all 0.3s ease;
+    }
+    .segmented-control input[type="radio"] {
+      display: none;
+    }
+    .segmented-control label:has(input:checked) {
+      background: #fff;
+      color: #333;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
   `]
 })
 export class SettingsComponent implements OnInit {
@@ -130,9 +166,24 @@ export class SettingsComponent implements OnInit {
   // Model Picker State
   loadingModels = false;
   showModelModal = false;
-  availableModels: string[] = [];
+  availableModels: ApiModelDto[] = [];
   selectedModel = '';
   modelError = '';
+  sortMode: 'alphabetical' | 'newest' = 'alphabetical';
+
+  get sortedModels() {
+    if (this.sortMode === 'newest') {
+      return [...this.availableModels].sort((a, b) => {
+        if (b.createdAt !== a.createdAt) {
+          return b.createdAt - a.createdAt;
+        }
+        // Fallback for models with tied/zero createdAt (like Gemini)
+        // Reverse alphabetical with numeric sort will put newer versions first (e.g., 3.5 before 2.5)
+        return b.id.localeCompare(a.id, undefined, { numeric: true, sensitivity: 'base' });
+      });
+    }
+    return [...this.availableModels].sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }));
+  }
 
   ngOnInit() {
     this.settingsService.getSettings().subscribe(s => {
@@ -186,6 +237,9 @@ export class SettingsComponent implements OnInit {
       next: (models) => {
         this.availableModels = models;
         this.loadingModels = false;
+        if (this.sortedModels.length > 0) {
+          this.selectedModel = this.sortedModels[0].id;
+        }
       },
       error: (err) => {
         this.loadingModels = false;
@@ -198,6 +252,12 @@ export class SettingsComponent implements OnInit {
     this.showModelModal = false;
     this.modelError = '';
     this.availableModels = [];
+  }
+
+  onSortChange() {
+    if (this.sortedModels.length > 0) {
+      this.selectedModel = this.sortedModels[0].id;
+    }
   }
 
   applySelectedModel() {

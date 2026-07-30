@@ -81,7 +81,7 @@ public class SettingsController : ControllerBase
         try
         {
             var client = _httpClientFactory.CreateClient();
-            var models = new List<string>();
+            var models = new List<ApiModelDto>();
 
             if (provider == "OpenAI")
             {
@@ -105,14 +105,17 @@ public class SettingsController : ControllerBase
                                 // Specifically exclude audio/tts/dall-e if they ever accidentally get prefixed
                                 if (!name.Contains("audio") && !name.Contains("realtime"))
                                 {
-                                    models.Add(name);
+                                    long created = 0;
+                                    if (modelElement.TryGetProperty("created", out var createdElement) && createdElement.ValueKind == JsonValueKind.Number)
+                                    {
+                                        created = createdElement.GetInt64();
+                                    }
+                                    models.Add(new ApiModelDto { Id = name, CreatedAt = created });
                                 }
                             }
                         }
                     }
                 }
-                // Sort models alphabetically for better UX
-                models.Sort();
             }
             else if (provider == "Anthropic")
             {
@@ -134,12 +137,20 @@ public class SettingsController : ControllerBase
                             var name = idElement.GetString() ?? "";
                             if (name.StartsWith("claude-"))
                             {
-                                models.Add(name);
+                                long created = 0;
+                                if (modelElement.TryGetProperty("created_at", out var createdElement))
+                                {
+                                    var dateStr = createdElement.GetString();
+                                    if (!string.IsNullOrEmpty(dateStr) && DateTimeOffset.TryParse(dateStr, out var dto))
+                                    {
+                                        created = dto.ToUnixTimeSeconds();
+                                    }
+                                }
+                                models.Add(new ApiModelDto { Id = name, CreatedAt = created });
                             }
                         }
                     }
                 }
-                models.Sort();
             }
             else if (provider == "Google")
             {
@@ -162,12 +173,14 @@ public class SettingsController : ControllerBase
                             // Keep gemini models, exclude embedding, aqa, tunedModels unless they are gemini
                             if (name.StartsWith("gemini-") || name.StartsWith("learnlm-"))
                             {
-                                models.Add(name);
+                                if (!name.Contains("embedding") && !name.Contains("robotics") && !name.Contains("omni"))
+                                {
+                                    models.Add(new ApiModelDto { Id = name, CreatedAt = 0 });
+                                }
                             }
                         }
                     }
                 }
-                models.Sort();
             }
             else
             {
@@ -181,6 +194,12 @@ public class SettingsController : ControllerBase
             return StatusCode(500, new { message = $"Error fetching models: {ex.Message}" });
         }
     }
+}
+
+public class ApiModelDto
+{
+    public string Id { get; set; } = string.Empty;
+    public long CreatedAt { get; set; }
 }
 
 public class UpdateSettingsRequest
