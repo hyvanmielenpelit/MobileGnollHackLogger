@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, inject, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SettingsService, UserAiSettings, ApiModelDto } from '../services/settings.service';
@@ -60,7 +60,11 @@ import { RouterModule } from '@angular/router';
           </div>
         </div>
         
-        <button type="submit" class="btn-gh" [disabled]="loading">Save</button>
+        <button type="submit" class="btn-gh save-btn" [disabled]="loading">Save</button>
+        <div #successToast popover="manual" class="toast-success">
+          &#10004; Settings saved successfully!
+        </div>
+        <!-- Fallback if polyfill completely fails -->
         <span *ngIf="saved" class="success">Settings saved successfully!</span>
       </form>
     </div>
@@ -90,18 +94,17 @@ import { RouterModule } from '@angular/router';
             </label>
           </div>
           <select [(ngModel)]="selectedModel" (ngModelChange)="onModelSelect()" size="10" class="model-listbox gh-input">
-            <option *ngFor="let m of sortedModels" [value]="m.id">{{ m.id }}</option>
+            <option *ngFor="let m of sortedModels" [value]="m.id">{{ m.description }}</option>
           </select>
           
           <div *ngIf="selectedModelObj" class="model-meta">
-            <strong>Description:</strong> {{ selectedModelObj.description }}<br/>
-            <div *ngIf="selectedModelObj.supportedThinkingLevels && selectedModelObj.supportedThinkingLevels.length > 0" style="margin-top: 10px;">
+            <div *ngIf="selectedModelObj.supportedThinkingLevels && selectedModelObj.supportedThinkingLevels.length > 0">
               <strong>Supported Thinking:</strong>
               <select [(ngModel)]="modalThinkingLevel" class="gh-input" style="margin-top: 5px;">
                 <option *ngFor="let level of selectedModelObj.supportedThinkingLevels" [value]="level">{{ level }}</option>
               </select>
             </div>
-            <div *ngIf="!selectedModelObj.supportedThinkingLevels || selectedModelObj.supportedThinkingLevels.length === 0" style="margin-top: 10px;">
+            <div *ngIf="!selectedModelObj.supportedThinkingLevels || selectedModelObj.supportedThinkingLevels.length === 0">
               <strong>Supported Thinking:</strong> None
             </div>
           </div>
@@ -113,6 +116,17 @@ import { RouterModule } from '@angular/router';
         </div>
       </div>
     </div>
+    <!-- Unsaved Changes Dialog -->
+    <dialog #confirmDialog class="gh-dialog">
+      <form method="dialog">
+        <h3 style="margin-top: 0; color: var(--title-color);">Unsaved Changes</h3>
+        <p>You have unsaved changes. Are you sure you want to discard them and leave?</p>
+        <div class="modal-actions" style="margin-top: 20px;">
+          <button value="cancel" class="btn-gh btn-gh-cancel">Cancel</button>
+          <button value="discard" class="btn-gh">Discard</button>
+        </div>
+      </form>
+    </dialog>
   `,
   styles: [`
     .settings-container { max-width: 600px; margin: 50px auto; padding: 30px; }
@@ -121,6 +135,55 @@ import { RouterModule } from '@angular/router';
     .model-row { margin-bottom: 15px; }
     label { display: block; margin-bottom: 5px; font-weight: bold; }
     .success { color: #28a745; margin-left: 10px; font-weight: bold; }
+
+    /* Modern Toast Notification */
+    .save-btn {
+      anchor-name: --save-btn;
+    }
+    
+    .toast-success {
+      margin: 0;
+      border: 1px solid #28a745;
+      background-color: rgba(40, 167, 69, 0.1);
+      color: #28a745;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-weight: bold;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+
+      /* Top Layer transitions */
+      transition: display 0.3s allow-discrete, opacity 0.3s, transform 0.3s;
+      opacity: 0;
+      transform: translateY(5px);
+      
+      /* Anchor position */
+      position-anchor: --save-btn;
+      left: calc(anchor(right) + 15px);
+      top: anchor(center);
+      translate: 0 -50%;
+    }
+
+    /* Open state */
+    .toast-success:is(:popover-open, .\\:popover-open) {
+      opacity: 1;
+      transform: translateY(0);
+      
+      @starting-style {
+        opacity: 0;
+        transform: translateY(5px);
+      }
+    }
+
+    /* Fallback for lack of anchor positioning */
+    @supports not (anchor-name: --save-btn) {
+      .toast-success {
+        bottom: 30px;
+        right: 30px;
+        top: auto;
+        left: auto;
+        translate: 0 0;
+      }
+    }
 
     /* Modal Styles */
     .modal-overlay {
@@ -168,15 +231,39 @@ import { RouterModule } from '@angular/router';
       color: black;
       box-shadow: 0 0 5px var(--gold-glow);
     }
+    
+    .gh-dialog {
+      padding: 20px;
+      border: 1px solid var(--border-glass, #444);
+      border-radius: 8px;
+      background: rgba(20, 20, 20, 0.95);
+      color: var(--text-color, #fff);
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(5px);
+      -webkit-backdrop-filter: blur(5px);
+      max-width: 400px;
+    }
+    .gh-dialog::backdrop {
+      background: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(2px);
+      -webkit-backdrop-filter: blur(2px);
+    }
   `]
 })
 export class SettingsComponent implements OnInit {
   settingsService = inject(SettingsService);
+  
+  @ViewChild('successToast') successToast!: ElementRef<HTMLElement>;
+  @ViewChild('confirmDialog') confirmDialog!: ElementRef<HTMLDialogElement>;
 
   provider = 'OpenAI';
   model = 'gpt-4o-mini';
   thinkingLevel = 'high';
   thinkingLevelSelect = 'high';
+
+  initProvider = 'OpenAI';
+  initModel = 'gpt-4o-mini';
+  initThinkingLevel = 'high';
 
   apiKey = '';
   hasApiKey = false;
@@ -207,13 +294,40 @@ export class SettingsComponent implements OnInit {
     return [...this.availableModels].sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }));
   }
 
+  get isDirty(): boolean {
+    return this.provider !== this.initProvider ||
+           this.model !== this.initModel ||
+           this.thinkingLevel !== this.initThinkingLevel ||
+           this.apiKey.length > 0;
+  }
+
+  canDeactivate(): Promise<boolean> | boolean {
+    if (!this.isDirty) return true;
+    
+    const dialog = this.confirmDialog.nativeElement;
+    dialog.showModal();
+    
+    return new Promise<boolean>((resolve) => {
+      const onClose = () => {
+        dialog.removeEventListener('close', onClose);
+        resolve(dialog.returnValue === 'discard');
+      };
+      dialog.addEventListener('close', onClose);
+    });
+  }
+
   ngOnInit() {
+    if (!("popover" in HTMLElement.prototype)) {
+      import("@oddbird/popover-polyfill").catch(err => console.warn('Failed to load popover polyfill', err));
+    }
+
     this.settingsService.getSettings().subscribe(s => {
       if (s) {
-        if (s.provider) this.provider = s.provider;
-        if (s.model) this.model = s.model;
+        if (s.provider) { this.provider = s.provider; this.initProvider = s.provider; }
+        if (s.model) { this.model = s.model; this.initModel = s.model; }
         if (s.thinkingLevel !== undefined && s.thinkingLevel !== null) {
           this.thinkingLevel = s.thinkingLevel;
+          this.initThinkingLevel = s.thinkingLevel;
           const standardOptions = ['', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'pro'];
           if (standardOptions.includes(this.thinkingLevel)) {
             this.thinkingLevelSelect = this.thinkingLevel;
@@ -239,12 +353,25 @@ export class SettingsComponent implements OnInit {
     this.saved = false;
     this.settingsService.saveSettings(this.provider, this.model, this.apiKey, this.thinkingLevel).subscribe(() => {
       this.loading = false;
-      this.saved = true;
+      
+      const toast = this.successToast?.nativeElement as any;
+      if (toast && ("popover" in HTMLElement.prototype || toast.classList.contains('\\:popover-open') || 'showPopover' in toast)) {
+        toast.showPopover();
+        setTimeout(() => {
+          try { toast.hidePopover(); } catch(e) {}
+        }, 3000);
+      } else {
+        this.saved = true;
+        setTimeout(() => this.saved = false, 3000);
+      }
+
       if (this.apiKey) {
         this.hasApiKey = true;
         this.apiKey = '';
       }
-      setTimeout(() => this.saved = false, 3000);
+      this.initProvider = this.provider;
+      this.initModel = this.model;
+      this.initThinkingLevel = this.thinkingLevel;
     });
   }
 

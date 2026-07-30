@@ -45,19 +45,23 @@ public class ModelMetadataService
         }
 
         // Strict 2026 Model Pattern Matching for Google Gemini
-        // Matches e.g., gemini-3.6-flash, gemini-3.5-flash-lite, gemini-3.5-flash-cyber, gemini-3.1-pro
-        var googleRegex = new Regex(@"^gemini-3\.([1-6])-(pro|flash|flash-lite|flash-cyber)$");
+        var googleRegex = new Regex(@"^gemini-(2\.5|3(?:\.[1-6])?)-(pro|flash(?:-lite|-cyber|-tts)?)(?:-(.*))?$");
         var googleMatch = googleRegex.Match(modelId);
         if (googleMatch.Success)
         {
             var version = googleMatch.Groups[1].Value;
             var rawTier = googleMatch.Groups[2].Value;
+            var suffixes = googleMatch.Groups[3].Value;
             
             // Title case the tier parts (e.g. flash-lite -> Flash-Lite)
             var formattedTier = string.Join("-", rawTier.Split('-').Select(part => char.ToUpper(part[0]) + part.Substring(1)));
+            var formattedSuffixes = string.IsNullOrEmpty(suffixes) ? "" : " " + string.Join(" ", suffixes.Split('-').Select(part => char.ToUpper(part[0]) + part.Substring(1)));
             
-            metadata.Description = $"Gemini 3.{version} {formattedTier}";
-            metadata.SupportedThinkingLevels = new List<string> { "minimal", "low", "medium", "high" };
+            metadata.Description = $"Gemini {version} {formattedTier}{formattedSuffixes}";
+            if (version.StartsWith("3"))
+            {
+                metadata.SupportedThinkingLevels = new List<string> { "minimal", "low", "medium", "high" };
+            }
             return metadata;
         }
 

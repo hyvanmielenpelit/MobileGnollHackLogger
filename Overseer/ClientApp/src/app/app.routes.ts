@@ -53,6 +53,9 @@ export const routes: Routes = [
         }),
         catchError(() => of(router.createUrlTree(['/login'])))
       );
+    }],
+    canDeactivate: [(component: SettingsComponent) => {
+      return component.canDeactivate ? component.canDeactivate() : true;
     }]
   },
   { path: '', redirectTo: '/chat', pathMatch: 'full' }

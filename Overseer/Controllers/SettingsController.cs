@@ -202,7 +202,7 @@ public class SettingsController : ControllerBase
                             // Keep gemini models, exclude embedding, aqa, tunedModels unless they are gemini
                             if (name.StartsWith("gemini-") || name.StartsWith("learnlm-"))
                             {
-                                if (!name.Contains("embedding") && !name.Contains("robotics") && !name.Contains("omni"))
+                                if (!name.Contains("embedding") && !name.Contains("robotics") && !name.Contains("omni") && !name.EndsWith("-latest"))
                                 {
                                     var meta = _modelMetadataService.GetMetadata(name);
                                     // If strict pattern doesn't match, Description == Id. 
