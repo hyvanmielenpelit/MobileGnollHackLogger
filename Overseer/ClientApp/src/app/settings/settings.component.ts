@@ -27,6 +27,15 @@ import { RouterModule } from '@angular/router';
           <input type="text" [(ngModel)]="model" name="model" />
         </div>
         <div>
+          <label>Reasoning Effort/Level (o1/o3/Gemini Thinking)</label>
+          <select [(ngModel)]="thinkingLevel" name="thinkingLevel">
+            <option value="">Default (None)</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+          </select>
+        </div>
+        <div>
           <label>API Key (Leave blank to keep existing)</label>
           <input type="password" [(ngModel)]="apiKey" name="apiKey" />
           <small *ngIf="hasApiKey">An API key is currently saved.</small>
@@ -50,6 +59,7 @@ export class SettingsComponent implements OnInit {
 
   provider = 'OpenAI';
   model = 'gpt-4o-mini';
+  thinkingLevel = '';
   apiKey = '';
   hasApiKey = false;
   loading = false;
@@ -60,6 +70,7 @@ export class SettingsComponent implements OnInit {
       if (s) {
         if (s.provider) this.provider = s.provider;
         if (s.model) this.model = s.model;
+        if (s.thinkingLevel) this.thinkingLevel = s.thinkingLevel;
         this.hasApiKey = s.hasApiKey;
       }
     });
@@ -68,7 +79,7 @@ export class SettingsComponent implements OnInit {
   saveSettings() {
     this.loading = true;
     this.saved = false;
-    this.settingsService.saveSettings(this.provider, this.model, this.apiKey).subscribe(() => {
+    this.settingsService.saveSettings(this.provider, this.model, this.apiKey, this.thinkingLevel).subscribe(() => {
       this.loading = false;
       this.saved = true;
       if (this.apiKey) {

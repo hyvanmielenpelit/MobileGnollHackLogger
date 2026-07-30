@@ -29,6 +29,7 @@ public class SettingsController : ControllerBase
         {
             provider = settings?.DefaultProvider,
             model = settings?.DefaultModel,
+            thinkingLevel = settings?.ThinkingLevel,
             hasApiKey = !string.IsNullOrEmpty(settings?.EncryptedApiKey)
         });
     }
@@ -39,7 +40,7 @@ public class SettingsController : ControllerBase
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (userId == null) return Unauthorized();
 
-        await _settingsService.SaveSettingsAsync(userId, request.Provider, request.Model, request.ApiKey);
+        await _settingsService.SaveSettingsAsync(userId, request.Provider, request.Model, request.ApiKey, request.ThinkingLevel);
         
         return Ok();
     }
@@ -60,4 +61,5 @@ public class UpdateSettingsRequest
     public string? Provider { get; set; }
     public string? Model { get; set; }
     public string? ApiKey { get; set; }
+    public string? ThinkingLevel { get; set; }
 }

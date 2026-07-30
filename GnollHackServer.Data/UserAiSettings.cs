@@ -24,4 +24,7 @@ public class UserAiSettings
     
     [MaxLength(32)]
     public string? ApiKeyTag { get; set; }
+
+    [MaxLength(32)]
+    public string? ThinkingLevel { get; set; }
 }

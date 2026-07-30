@@ -1,12 +1,16 @@
-import { HttpInterceptorFn } from '@angular/common/http';
+import { HttpInterceptorFn, HttpErrorResponse } from '@angular/common/http';
 import { inject } from '@angular/core';
+import { Router } from '@angular/router';
+import { catchError, throwError } from 'rxjs';
 
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
-  // Angular's built-in HttpClientXsrfModule handles extracting XSRF-TOKEN from cookies 
-  // and sending X-XSRF-TOKEN header automatically, but since this is a standalone component setup,
-  // we can configure it using withXsrfConfiguration in app.config.ts.
+  const router = inject(Router);
+  const cloned = req.clone({ withCredentials: true });
   
-  // We can just rely on provideHttpClient(withXsrfConfiguration()) for CSRF.
-  // This interceptor can be used for logging or handling 401s if needed.
-  return next(req);
+  return next(cloned).pipe(
+    catchError((error: HttpErrorResponse) => {
+      if (error.status === 401) router.navigate(['/login']);
+      return throwError(() => error);
+    })
+  );
 };

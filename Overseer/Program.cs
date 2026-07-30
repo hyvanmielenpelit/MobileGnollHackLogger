@@ -43,7 +43,7 @@ builder.Services.AddAntiforgery(options =>
 });
 
 builder.Services.AddAuthorization();
-builder.Services.AddControllers(options => 
+builder.Services.AddControllersWithViews(options => 
 {
     options.Filters.Add(new Microsoft.AspNetCore.Mvc.AutoValidateAntiforgeryTokenAttribute()); // CRITICAL: Enforce CSRF validation globally
 });

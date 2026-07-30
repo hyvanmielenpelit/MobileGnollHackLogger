@@ -4,6 +4,7 @@ import { HttpClient } from '@angular/common/http';
 export interface UserAiSettings {
   provider: string;
   model: string;
+  thinkingLevel?: string;
   hasApiKey: boolean;
 }
 
@@ -17,7 +18,7 @@ export class SettingsService {
     return this.http.get<UserAiSettings>('/api/settings');
   }
 
-  saveSettings(provider: string, model: string, apiKey: string) {
-    return this.http.put('/api/settings', { provider, model, apiKey });
+  saveSettings(provider: string, model: string, apiKey: string, thinkingLevel?: string) {
+    return this.http.put('/api/settings', { provider, model, apiKey, thinkingLevel });
   }
 }

@@ -31,6 +31,7 @@ public class ChatService
         string? apiKey = null;
         string provider = "OpenAI";
         string model = "gpt-4o-mini";
+        string? thinkingLevel = null;
         List<object> messageHistory = new();
 
         using (var scope = _scopeFactory.CreateScope())
@@ -41,6 +42,7 @@ public class ChatService
             {
                 if (!string.IsNullOrEmpty(settings.DefaultProvider)) provider = settings.DefaultProvider;
                 if (!string.IsNullOrEmpty(settings.DefaultModel)) model = settings.DefaultModel;
+                if (!string.IsNullOrEmpty(settings.ThinkingLevel)) thinkingLevel = settings.ThinkingLevel;
 
                 if (!string.IsNullOrEmpty(settings.EncryptedApiKey) && !string.IsNullOrEmpty(settings.ApiKeyNonce) && !string.IsNullOrEmpty(settings.ApiKeyTag))
                 {
@@ -116,12 +118,17 @@ public class ChatService
             var httpClient = _httpClientFactory.CreateClient();
             httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
 
-            var requestBody = new
+            var requestBody = new Dictionary<string, object>
             {
-                model = model,
-                messages = messageHistory,
-                stream = true
+                { "model", model },
+                { "messages", messageHistory },
+                { "stream", true }
             };
+
+            if (!string.IsNullOrEmpty(thinkingLevel))
+            {
+                requestBody["reasoning_effort"] = thinkingLevel;
+            }
 
             var requestContent = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
             var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/chat/completions")
@@ -162,7 +169,169 @@ public class ChatService
                             }
                         }
                     }
-                    catch { /* ignore json parse errors for partial chunks */ }
+                    catch { /* ignore */ }
+                    
+                    if (!string.IsNullOrEmpty(chunk))
+                    {
+                        fullResponse += chunk;
+                        yield return chunk;
+                    }
+                }
+            }
+        }
+        else if (provider.Equals("Anthropic", StringComparison.OrdinalIgnoreCase))
+        {
+            var httpClient = _httpClientFactory.CreateClient();
+            httpClient.DefaultRequestHeaders.Add("x-api-key", apiKey);
+            httpClient.DefaultRequestHeaders.Add("anthropic-version", "2023-06-01");
+
+            var systemMessages = messageHistory.Where(m => ((dynamic)m).role == "system").Select(m => ((dynamic)m).content).Cast<string>().ToList();
+            string systemPrompt = string.Join("\n\n", systemMessages);
+            
+            var userAsstMessages = messageHistory.Where(m => ((dynamic)m).role != "system").ToList();
+
+            var requestBody = new Dictionary<string, object>
+            {
+                { "model", model },
+                { "system", systemPrompt },
+                { "messages", userAsstMessages },
+                { "stream", true },
+                { "max_tokens", 4096 }
+            };
+
+            if (!string.IsNullOrEmpty(thinkingLevel))
+            {
+                // Note: Anthropic's new thinking format might vary, passing as a top-level property for now
+                requestBody["thinking"] = new { type = "enabled", budget_tokens = 1024 }; 
+            }
+
+            var requestContent = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
+            var request = new HttpRequestMessage(HttpMethod.Post, "https://api.anthropic.com/v1/messages")
+            {
+                Content = requestContent
+            };
+
+            using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync(cancellationToken);
+                yield return $"API Error: {response.StatusCode} - {error}";
+                yield break;
+            }
+
+            using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var reader = new StreamReader(stream);
+            string? line = null;
+            
+            while (!cancellationToken.IsCancellationRequested && (line = await reader.ReadLineAsync()) != null)
+            {
+                if (string.IsNullOrEmpty(line)) continue;
+                if (line.StartsWith("data: "))
+                {
+                    var data = line.Substring(6);
+                    string? chunk = null;
+                    try
+                    {
+                        var json = JsonSerializer.Deserialize<JsonElement>(data);
+                        if (json.TryGetProperty("type", out var type) && type.GetString() == "content_block_delta")
+                        {
+                            var delta = json.GetProperty("delta");
+                            if (delta.TryGetProperty("text", out var text))
+                            {
+                                chunk = text.GetString();
+                            }
+                        }
+                    }
+                    catch { /* ignore */ }
+                    
+                    if (!string.IsNullOrEmpty(chunk))
+                    {
+                        fullResponse += chunk;
+                        yield return chunk;
+                    }
+                }
+            }
+        }
+        else if (provider.Equals("Google", StringComparison.OrdinalIgnoreCase))
+        {
+            var httpClient = _httpClientFactory.CreateClient();
+            
+            var contents = new List<object>();
+            string systemInstruction = "";
+
+            foreach (var m in messageHistory)
+            {
+                string role = ((dynamic)m).role;
+                string content = ((dynamic)m).content;
+                
+                if (role == "system")
+                {
+                    systemInstruction += content + "\n";
+                }
+                else
+                {
+                    contents.Add(new
+                    {
+                        role = role == "user" ? "user" : "model",
+                        parts = new[] { new { text = content } }
+                    });
+                }
+            }
+
+            var requestBody = new Dictionary<string, object>
+            {
+                { "contents", contents }
+            };
+
+            if (!string.IsNullOrEmpty(systemInstruction))
+            {
+                requestBody["systemInstruction"] = new
+                {
+                    parts = new[] { new { text = systemInstruction } }
+                };
+            }
+
+            // Gemini does not yet officially support ThinkingLevel in the REST API generationConfig
+            // We'll skip sending it to prevent BadRequest errors, or if supported in the future, we'll map it here.
+
+            var requestContent = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
+            var request = new HttpRequestMessage(HttpMethod.Post, $"https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse&key={apiKey}")
+            {
+                Content = requestContent
+            };
+
+            using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync(cancellationToken);
+                yield return $"API Error: {response.StatusCode} - {error}";
+                yield break;
+            }
+
+            using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var reader = new StreamReader(stream);
+            string? line = null;
+            
+            while (!cancellationToken.IsCancellationRequested && (line = await reader.ReadLineAsync()) != null)
+            {
+                if (string.IsNullOrEmpty(line)) continue;
+                if (line.StartsWith("data: "))
+                {
+                    var data = line.Substring(6);
+                    string? chunk = null;
+                    try
+                    {
+                        var json = JsonSerializer.Deserialize<JsonElement>(data);
+                        if (json.TryGetProperty("candidates", out var candidates) && candidates.GetArrayLength() > 0)
+                        {
+                            var parts = candidates[0].GetProperty("content").GetProperty("parts");
+                            if (parts.GetArrayLength() > 0 && parts[0].TryGetProperty("text", out var text))
+                            {
+                                chunk = text.GetString();
+                            }
+                        }
+                    }
+                    catch { /* ignore */ }
                     
                     if (!string.IsNullOrEmpty(chunk))
                     {
