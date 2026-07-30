@@ -1,14 +1,15 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, inject, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ChatService, ChatSession, ChatMessage } from '../services/chat.service';
 import { AuthService } from '../services/auth.service';
 import { Router, ActivatedRoute, RouterModule } from '@angular/router';
+import { MarkdownPipe } from './markdown.pipe';
 
 @Component({
   selector: 'app-chat',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule],
+  imports: [CommonModule, FormsModule, RouterModule, MarkdownPipe],
   template: `
     <div class="layout">
       <div class="sidebar">
@@ -29,11 +30,11 @@ import { Router, ActivatedRoute, RouterModule } from '@angular/router';
         <div class="messages">
           <div *ngFor="let msg of messages" [ngClass]="msg.role">
             <strong>{{ msg.role === 'user' ? 'You' : 'Overseer' }}</strong>
-            <p>{{ msg.content }}</p>
+            <div [innerHTML]="msg.content | markdown" class="markdown-body"></div>
           </div>
           <div *ngIf="streamingMessage" class="assistant">
             <strong>Overseer</strong>
-            <p>{{ streamingMessage }}</p>
+            <div [innerHTML]="streamingMessage | markdown" class="markdown-body"></div>
           </div>
         </div>
         <div class="input-area">
@@ -56,7 +57,9 @@ import { Router, ActivatedRoute, RouterModule } from '@angular/router';
     .messages div { margin-bottom: 15px; padding: 10px; border-radius: 8px; max-width: 80%; }
     .messages .user { background: #e3f2fd; align-self: flex-end; margin-left: auto; }
     .messages .assistant { background: #f5f5f5; align-self: flex-start; }
-    .messages p { margin: 5px 0 0; white-space: pre-wrap; }
+    ::ng-deep .markdown-body p { margin: 5px 0 10px; white-space: pre-wrap; }
+    ::ng-deep .markdown-body ul, ::ng-deep .markdown-body ol { margin: 5px 0 10px; padding-left: 20px; }
+    ::ng-deep .markdown-body h1, ::ng-deep .markdown-body h2, ::ng-deep .markdown-body h3 { margin: 10px 0 5px; }
     .input-area { padding: 20px; border-top: 1px solid #ddd; display: flex; background: #fafafa; }
     textarea { flex-grow: 1; padding: 10px; resize: none; height: 60px; }
     button { padding: 10px 20px; margin-left: 10px; cursor: pointer; }
@@ -67,6 +70,7 @@ export class ChatComponent implements OnInit {
   authService = inject(AuthService);
   router = inject(Router);
   route = inject(ActivatedRoute);
+  cdr = inject(ChangeDetectorRef);
 
   sessions: ChatSession[] = [];
   currentSessionId: number | null = null;
@@ -125,15 +129,19 @@ export class ChatComponent implements OnInit {
     try {
       for await (const chunk of this.chatService.streamMessage(this.currentSessionId, message)) {
         this.streamingMessage += chunk;
+        this.cdr.detectChanges();
       }
       this.messages.push({ role: 'assistant', content: this.streamingMessage, timestampUtc: new Date().toISOString() });
+      this.cdr.detectChanges();
     } catch (e) {
       console.error(e);
       this.messages.push({ role: 'assistant', content: 'Error: ' + e, timestampUtc: new Date().toISOString() });
+      this.cdr.detectChanges();
     } finally {
       this.streamingMessage = '';
       this.isStreaming = false;
       this.loadSessions(); // Refresh sessions list in case a new one was created
+      this.cdr.detectChanges();
     }
   }
 

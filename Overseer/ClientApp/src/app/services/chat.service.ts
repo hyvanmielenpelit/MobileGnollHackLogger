@@ -74,10 +74,14 @@ export class ChatService {
             }
         } else if (event.startsWith('data: ')) {
             const lines = event.split('\n');
+            const dataContent = [];
             for (const line of lines) {
                 if (line.startsWith('data: ')) {
-                    yield line.substring(6);
+                    dataContent.push(line.substring(6));
                 }
+            }
+            if (dataContent.length > 0) {
+                yield dataContent.join('\n');
             }
         }
       }
