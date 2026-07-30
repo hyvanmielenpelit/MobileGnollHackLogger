@@ -6,6 +6,7 @@ import { AuthService } from '../services/auth.service';
 import { DebugService } from '../services/debug.service';
 import { Router, ActivatedRoute, RouterModule } from '@angular/router';
 import { MarkdownPipe } from './markdown.pipe';
+import { SettingsService } from '../services/settings.service';
 
 @Component({
   selector: 'app-chat',
@@ -26,7 +27,7 @@ import { MarkdownPipe } from './markdown.pipe';
           </li>
           <li *ngFor="let s of sessions" [class.active]="s.id === currentSessionId" (click)="loadSession(s.id)">
             {{ s.title }}
-            <button (click)="deleteSession(s.id, $event)" title="Delete Session">X</button>
+            <button (click)="requestDeleteSession(s.id, $event)" title="Delete Session">X</button>
           </li>
         </ul>
         <div class="bottom-links">
@@ -88,6 +89,26 @@ import { MarkdownPipe } from './markdown.pipe';
             <button class="btn-gh" style="margin-left: 10px;" (click)="sendMessage()" [disabled]="isStreaming || (!currentInput.trim() && pendingAttachments.length === 0)">Send</button>
           </div>
         </div>
+      </div>
+    </div>
+    
+    <dialog #deleteConfirmDialog class="gh-dialog">
+      <h3>Delete Conversation</h3>
+      <p>Are you sure you want to delete this conversation? This action cannot be undone.</p>
+      <div class="dialog-actions">
+        <button class="btn-gh btn-gh-cancel" (click)="deleteConfirmDialog.close()">Cancel</button>
+        <button class="btn-gh btn-gh-delete" (click)="confirmDelete()">Delete</button>
+      </div>
+    </dialog>
+
+    <div #errorToast popover="manual" class="toast-error">
+      <div class="toast-content">
+        <span class="toast-icon">⚠️</span>
+        <div class="toast-body">
+          <strong>File Too Large</strong>
+          <p>{{ errorMessage }}</p>
+        </div>
+        <button class="toast-close" (click)="closeErrorToast()">×</button>
       </div>
     </div>
   `,
@@ -165,12 +186,72 @@ import { MarkdownPipe } from './markdown.pipe';
     .msg-attachments { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
     .msg-att-item img { max-width: 100%; border-radius: 4px; border: 1px solid var(--border-glass); }
     .msg-att-item div { background: rgba(255,255,255,0.1); padding: 5px 10px; border-radius: 4px; font-size: 12px; color: #ccc; }
+    
+    .gh-dialog {
+      background: rgba(20, 20, 20, 0.95);
+      border: 2px solid var(--primary-color);
+      border-radius: 8px;
+      color: white;
+      padding: 20px 30px;
+      box-shadow: 0 0 20px rgba(212, 175, 55, 0.2);
+      font-family: "Lato", sans-serif;
+    }
+    .gh-dialog::backdrop {
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(2px);
+    }
+    .gh-dialog h3 {
+      font-family: "Cinzel", serif;
+      color: var(--title-color);
+      margin-top: 0;
+    }
+    .dialog-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 20px;
+    }
+    
+    .toast-error {
+      inset: 20px 20px auto auto;
+      margin: 0;
+      background: rgba(220, 53, 69, 0.95);
+      border: 1px solid #ff6b6b;
+      border-radius: 8px;
+      color: white;
+      padding: 15px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+      font-family: "Lato", sans-serif;
+      transition: display 0.3s allow-discrete, opacity 0.3s, transform 0.3s;
+      opacity: 0;
+      transform: translateY(-20px);
+      z-index: 9999;
+    }
+    .toast-error:is(:popover-open, .\\:popover-open) {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    @starting-style {
+      .toast-error:is(:popover-open, .\\:popover-open) {
+        opacity: 0;
+        transform: translateY(-20px);
+      }
+    }
+    .toast-content { display: flex; align-items: flex-start; gap: 12px; }
+    .toast-icon { font-size: 24px; }
+    .toast-body { flex-grow: 1; }
+    .toast-body strong { display: block; margin-bottom: 4px; font-family: "Cinzel", serif; }
+    .toast-body p { margin: 0; font-size: 14px; }
+    .toast-close { background: transparent; border: none; color: white; font-size: 20px; cursor: pointer; padding: 0; line-height: 1; margin-top: -4px; }
   `]
 })
 export class ChatComponent implements OnInit {
   chatService = inject(ChatService);
+  settingsService = inject(SettingsService);
   
   @ViewChild('messagesContainer') messagesContainer!: ElementRef;
+  @ViewChild('deleteConfirmDialog') deleteConfirmDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('errorToast') errorToast!: ElementRef<HTMLElement>;
   autoScrollEnabled = true;
   authService = inject(AuthService);
   debugService = inject(DebugService);
@@ -181,6 +262,7 @@ export class ChatComponent implements OnInit {
   sessions: ChatSession[] = [];
   loadingSessions = false;
   currentSessionId: number | null = null;
+  sessionToDelete: number | null = null;
   messages: ChatMessage[] = [];
   
   copiedMsgIndex: number | null = null;
@@ -190,6 +272,9 @@ export class ChatComponent implements OnInit {
   isStreaming = false;
   streamingMessage = '';
   pendingAttachments: { file: File, base64: string, name: string, type: string }[] = [];
+  
+  maxAttachmentSize = 15728640; // default 15MB
+  errorMessage = '';
 
   currentStatusText = '';
   showSpinner = false;
@@ -238,6 +323,16 @@ export class ChatComponent implements OnInit {
   }
 
   ngOnInit() {
+    if (!("popover" in HTMLElement.prototype)) {
+      import("@oddbird/popover-polyfill").catch(err => console.warn('Failed to load popover polyfill', err));
+    }
+    
+    this.settingsService.getSettings().subscribe(settings => {
+      if (settings.maxAttachmentSize) {
+        this.maxAttachmentSize = settings.maxAttachmentSize;
+      }
+    });
+
     this.loadSessions();
     this.route.queryParams.subscribe(params => {
       if (params['sessionId']) {
@@ -297,11 +392,25 @@ export class ChatComponent implements OnInit {
     });
   }
 
-  deleteSession(id: number, event: Event) {
+  requestDeleteSession(id: number, event: Event) {
     event.stopPropagation();
+    this.sessionToDelete = id;
+    if (this.deleteConfirmDialog) {
+      this.deleteConfirmDialog.nativeElement.showModal();
+    }
+  }
+
+  confirmDelete() {
+    if (this.sessionToDelete === null) return;
+    const id = this.sessionToDelete;
+    
     this.chatService.deleteSession(id).subscribe(() => {
       if (this.currentSessionId === id) this.newSession();
       this.loadSessions();
+      if (this.deleteConfirmDialog) {
+        this.deleteConfirmDialog.nativeElement.close();
+      }
+      this.sessionToDelete = null;
     });
   }
 
@@ -433,6 +542,12 @@ export class ChatComponent implements OnInit {
       const ext = file.name.split('.').pop()?.toLowerCase();
       if (!['html', 'htm', 'txt', 'md', 'png', 'jpg', 'jpeg', 'webp'].includes(ext || '')) continue;
       
+      if (file.size > this.maxAttachmentSize) {
+        const sizeMb = (this.maxAttachmentSize / 1024 / 1024).toFixed(1);
+        this.showErrorToast(`The file "${file.name}" exceeds the maximum allowed size of ${sizeMb} MB.`);
+        continue;
+      }
+      
       const reader = new FileReader();
       reader.onload = (e: any) => {
         this.pendingAttachments.push({
@@ -449,6 +564,23 @@ export class ChatComponent implements OnInit {
   
   removeAttachment(index: number) {
     this.pendingAttachments.splice(index, 1);
+  }
+
+  showErrorToast(msg: string) {
+    this.errorMessage = msg;
+    this.cdr.detectChanges();
+    const toast = this.errorToast?.nativeElement as any;
+    if (toast && ("popover" in HTMLElement.prototype || toast.classList.contains('\\:popover-open') || 'showPopover' in toast)) {
+      toast.showPopover();
+      setTimeout(() => this.closeErrorToast(), 5000);
+    }
+  }
+
+  closeErrorToast() {
+    const toast = this.errorToast?.nativeElement as any;
+    if (toast) {
+      try { toast.hidePopover(); } catch(e) {}
+    }
   }
 
   async copyToClipboard(text: string, index: number | null) {

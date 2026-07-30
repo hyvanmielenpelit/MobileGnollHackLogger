@@ -38,7 +38,8 @@ public class SettingsController : ControllerBase
             provider = settings?.DefaultProvider,
             model = settings?.DefaultModel,
             thinkingLevel = settings?.ThinkingLevel,
-            hasApiKey = !string.IsNullOrEmpty(settings?.EncryptedApiKey)
+            hasApiKey = !string.IsNullOrEmpty(settings?.EncryptedApiKey),
+            maxAttachmentSize = _configuration.GetValue<long>("MaxAttachmentSize", 15728640)
         });
     }
 

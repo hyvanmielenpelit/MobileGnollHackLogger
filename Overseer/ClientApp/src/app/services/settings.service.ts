@@ -6,6 +6,7 @@ export interface UserAiSettings {
   model: string;
   thinkingLevel?: string;
   hasApiKey: boolean;
+  maxAttachmentSize?: number;
 }
 
 export interface ApiModelDto {

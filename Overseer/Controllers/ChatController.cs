@@ -78,6 +78,27 @@ public class ChatController : ControllerBase
         
         if (session == null) return NotFound();
 
+        var baseDir = _configuration["ConversationsDataLocation"];
+        if (!string.IsNullOrEmpty(baseDir))
+        {
+            var attachmentPaths = await _dbContext.ChatMessageAttachment
+                .Where(a => a.ChatMessage != null && a.ChatMessage.ChatSessionId == id)
+                .Select(a => a.RelativePath)
+                .ToListAsync();
+
+            foreach (var path in attachmentPaths)
+            {
+                if (!string.IsNullOrEmpty(path))
+                {
+                    var filePath = Path.Combine(baseDir, path);
+                    if (System.IO.File.Exists(filePath))
+                    {
+                        System.IO.File.Delete(filePath);
+                    }
+                }
+            }
+        }
+
         _dbContext.ChatSession.Remove(session);
         await _dbContext.SaveChangesAsync();
 
