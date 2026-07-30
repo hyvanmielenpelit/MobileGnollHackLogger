@@ -6,13 +6,14 @@ import { AuthService } from '../services/auth.service';
 import { DebugService } from '../services/debug.service';
 import { Router, ActivatedRoute, RouterModule } from '@angular/router';
 import { MarkdownPipe } from './markdown.pipe';
+import { RelativeTimePipe } from './relative-time.pipe';
 import { SettingsService } from '../services/settings.service';
 import * as signalR from '@microsoft/signalr';
 
 @Component({
   selector: 'app-chat',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, MarkdownPipe],
+  imports: [CommonModule, FormsModule, RouterModule, MarkdownPipe, RelativeTimePipe],
   template: `
     <div *ngIf="!isOffline" class="layout" [class.is-resizing]="isResizing">
       <div class="sidebar gh-main-container" #sidebar [style.width.px]="sidebarWidth">
@@ -27,8 +28,11 @@ import * as signalR from '@microsoft/signalr';
             No conversations yet.
           </li>
           <li *ngFor="let s of sessions" [class.active]="s.id === currentSessionId" (click)="loadSession(s.id)">
-            {{ s.title }}
-            <button (click)="requestDeleteSession(s.id, $event)" title="Delete Session">X</button>
+            <div class="session-info">
+              <div class="session-title" title="{{ s.title }}">{{ s.title }}</div>
+              <div class="session-time" *ngIf="s.lastMessageUtc">{{ s.lastMessageUtc | relativeTime }}</div>
+            </div>
+            <button class="session-delete-btn" (click)="requestDeleteSession(s.id, $event)" title="Delete Session">X</button>
           </li>
         </ul>
         <div class="bottom-links">
@@ -44,6 +48,7 @@ import * as signalR from '@microsoft/signalr';
             <div class="message-header">
               <img *ngIf="msg.role === 'assistant'" src="/img/gnoll-overseer-avatar-128x128-static.webp" class="overseer-avatar" alt="Overseer" width="64" height="64" />
               <strong>{{ msg.role === 'user' ? 'You' : 'Overseer' }}</strong>
+              <span class="msg-time" *ngIf="msg.timestampUtc">{{ msg.timestampUtc | relativeTime }}</span>
             </div>
             <div *ngIf="msg.attachments && msg.attachments.length > 0" class="msg-attachments">
               <a *ngFor="let att of msg.attachments" class="msg-att-item" [href]="'/api/chat/attachments/' + att.id" [download]="att.fileName" target="_blank" rel="noopener" title="Download {{ att.fileName }}">
@@ -61,6 +66,7 @@ import * as signalR from '@microsoft/signalr';
             <div class="message-header">
               <img src="/img/GnollOverseerAvatar-128x128-animated.webp" class="overseer-avatar" alt="Overseer" width="64" height="64" />
               <strong>Overseer</strong>
+              <span class="msg-time">just now</span>
             </div>
             <div [innerHTML]="streamingMessage | markdown" class="markdown-body"></div>
             <button class="copy-btn" (click)="copyToClipboard(streamingMessage, null)" title="Copy">
@@ -146,11 +152,14 @@ import * as signalR from '@microsoft/signalr';
     }
     .sidebar h3 { margin-top: 0; color: var(--title-color); border-bottom: 1px solid var(--border-glass); padding-bottom: 10px; }
     .sidebar ul { list-style: none; padding: 0; flex-grow: 1; overflow-y: auto; }
-    .sidebar li { padding: 10px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; color: #ccc; transition: background 0.2s; }
+    .sidebar li { padding: 10px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center; color: #ccc; transition: background 0.2s; }
     .sidebar li:hover { background: rgba(255,255,255,0.05); }
-    .sidebar li.active { background: rgba(212, 160, 23, 0.15); font-weight: bold; color: var(--title-color); border-left: 3px solid var(--primary-color); }
-    .sidebar li button { background: transparent; color: #ccc; border: none; cursor: pointer; font-weight: bold; }
-    .sidebar li button:hover { color: white; }
+    .sidebar li.active { background: rgba(212, 160, 23, 0.15); color: var(--title-color); border-left: 3px solid var(--primary-color); }
+    .session-info { flex-grow: 1; overflow: hidden; display: flex; flex-direction: column; justify-content: center; margin-right: 10px; }
+    .session-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14px; font-weight: bold; }
+    .session-time { font-size: 11px; color: #888; margin-top: 4px; }
+    .sidebar li button.session-delete-btn { background: transparent; color: #ccc; border: none; cursor: pointer; font-weight: bold; padding: 5px; flex-shrink: 0; }
+    .sidebar li button.session-delete-btn:hover { color: white; }
     .btn-new-chat { width: 100%; margin-bottom: 15px; }
     .sessions-loader { padding: 30px 10px; color: #aaa; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 0.9em; gap: 15px; }
     .sidebar-spinner { width: 36px; height: 36px; border: 4px solid rgba(212, 175, 55, 0.2); border-top-color: #d4af37; border-radius: 50%; animation: spin 1s linear infinite; }
@@ -166,6 +175,7 @@ import * as signalR from '@microsoft/signalr';
     .messages strong { color: var(--title-color); display: block; margin-bottom: 5px; font-family: "Cinzel", serif; }
     .message-header { display: flex; align-items: center; gap: 15px; margin-bottom: 10px; }
     .message-header strong { margin-bottom: 0 !important; }
+    .msg-time { font-size: 12px; color: #888; margin-left: 10px; font-family: "Lato", sans-serif; font-weight: normal; }
     .overseer-avatar { width: 64px; height: 64px; border-radius: 50%; border: 2px solid var(--primary-color); object-fit: cover; box-shadow: 0 0 10px rgba(212, 175, 55, 0.3); }
     ::ng-deep .markdown-body p { margin: 5px 0 10px; white-space: pre-wrap; }
     ::ng-deep .markdown-body ul, ::ng-deep .markdown-body ol { margin: 5px 0 10px; padding-left: 20px; }
