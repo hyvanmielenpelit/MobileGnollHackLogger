@@ -38,7 +38,10 @@ import { MarkdownPipe } from './markdown.pipe';
       <div class="chat-area gh-main-container">
         <div class="messages">
           <div *ngFor="let msg of messages; let i = index" class="message-box" [ngClass]="msg.role">
-            <strong>{{ msg.role === 'user' ? 'You' : 'Overseer' }}</strong>
+            <div class="message-header">
+              <img *ngIf="msg.role === 'assistant'" src="/img/gnoll-overseer-avatar-128x128-static.webp" class="overseer-avatar" alt="Overseer" width="64" height="64" />
+              <strong>{{ msg.role === 'user' ? 'You' : 'Overseer' }}</strong>
+            </div>
             <div *ngIf="msg.attachments && msg.attachments.length > 0" class="msg-attachments">
               <div *ngFor="let att of msg.attachments" class="msg-att-item">
                 <img *ngIf="att.contentType.startsWith('image/')" [src]="'/api/chat/attachments/' + att.id" width="200" />
@@ -52,7 +55,10 @@ import { MarkdownPipe } from './markdown.pipe';
             </button>
           </div>
           <div *ngIf="streamingMessage" class="message-box assistant">
-            <strong>Overseer</strong>
+            <div class="message-header">
+              <img src="/img/GnollOverseerAvatar-128x128-animated.webp" class="overseer-avatar" alt="Overseer" width="64" height="64" />
+              <strong>Overseer</strong>
+            </div>
             <div [innerHTML]="streamingMessage | markdown" class="markdown-body"></div>
             <button class="copy-btn" (click)="copyToClipboard(streamingMessage, null)" title="Copy">
               <span *ngIf="copiedStreamMsg">✅</span>
@@ -108,6 +114,9 @@ import { MarkdownPipe } from './markdown.pipe';
     .copy-btn { position: absolute; bottom: 5px; right: 5px; background: transparent; border: none; color: #888; cursor: pointer; padding: 4px; border-radius: 4px; display: flex; align-items: center; justify-content: center; transition: background 0.2s, color 0.2s; }
     .copy-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
     .messages strong { color: var(--title-color); display: block; margin-bottom: 5px; font-family: "Cinzel", serif; }
+    .message-header { display: flex; align-items: center; gap: 15px; margin-bottom: 10px; }
+    .message-header strong { margin-bottom: 0 !important; }
+    .overseer-avatar { width: 64px; height: 64px; border-radius: 50%; border: 2px solid var(--primary-color); object-fit: cover; box-shadow: 0 0 10px rgba(212, 175, 55, 0.3); }
     ::ng-deep .markdown-body p { margin: 5px 0 10px; white-space: pre-wrap; }
     ::ng-deep .markdown-body ul, ::ng-deep .markdown-body ol { margin: 5px 0 10px; padding-left: 20px; }
     ::ng-deep .markdown-body h1, ::ng-deep .markdown-body h2, ::ng-deep .markdown-body h3, ::ng-deep .markdown-body h4, ::ng-deep .markdown-body h5, ::ng-deep .markdown-body h6 { margin: 10px 0 5px; color: var(--title-color); font-family: "Cinzel", serif; }
