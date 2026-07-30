@@ -37,7 +37,7 @@ import { MarkdownPipe } from './markdown.pipe';
       </div>
       <div class="chat-area gh-main-container">
         <div class="messages">
-          <div *ngFor="let msg of messages" [ngClass]="msg.role">
+          <div *ngFor="let msg of messages; let i = index" class="message-box" [ngClass]="msg.role">
             <strong>{{ msg.role === 'user' ? 'You' : 'Overseer' }}</strong>
             <div *ngIf="msg.attachments && msg.attachments.length > 0" class="msg-attachments">
               <div *ngFor="let att of msg.attachments" class="msg-att-item">
@@ -46,10 +46,18 @@ import { MarkdownPipe } from './markdown.pipe';
               </div>
             </div>
             <div [innerHTML]="msg.content | markdown" class="markdown-body"></div>
+            <button class="copy-btn" (click)="copyToClipboard(msg.content, i)" title="Copy">
+              <span *ngIf="copiedMsgIndex === i">✅</span>
+              <svg *ngIf="copiedMsgIndex !== i" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            </button>
           </div>
-          <div *ngIf="streamingMessage" class="assistant">
+          <div *ngIf="streamingMessage" class="message-box assistant">
             <strong>Overseer</strong>
             <div [innerHTML]="streamingMessage | markdown" class="markdown-body"></div>
+            <button class="copy-btn" (click)="copyToClipboard(streamingMessage, null)" title="Copy">
+              <span *ngIf="copiedStreamMsg">✅</span>
+              <svg *ngIf="!copiedStreamMsg" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            </button>
           </div>
         </div>
         <div class="input-area-container">
@@ -93,10 +101,12 @@ import { MarkdownPipe } from './markdown.pipe';
     .bottom-links a { display: block; margin-top: 10px; text-decoration: none; color: var(--link-color); padding: 5px; }
     .bottom-links a:hover { background: rgba(255,255,255,0.05); border-radius: 4px; }
     .chat-area { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; }
-    .messages { flex-grow: 1; padding: 20px; overflow-y: auto; }
-    .messages div { margin-bottom: 15px; padding: 12px 18px; border-radius: 8px; max-width: 80%; line-height: 1.5; }
-    .messages .user { background: rgba(212, 160, 23, 0.15); align-self: flex-end; margin-left: auto; border: 1px solid var(--border-glass); }
-    .messages .assistant { background: rgba(255, 255, 255, 0.05); align-self: flex-start; border: 1px solid rgba(255,255,255,0.1); }
+    .messages { flex-grow: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; }
+    .message-box { margin-bottom: 15px; padding: 12px 18px 25px 18px; border-radius: 8px; max-width: 80%; line-height: 1.5; position: relative; }
+    .message-box.user { background: rgba(212, 160, 23, 0.15); align-self: flex-end; border: 1px solid var(--border-glass); }
+    .message-box.assistant { background: rgba(255, 255, 255, 0.05); align-self: flex-start; border: 1px solid rgba(255,255,255,0.1); }
+    .copy-btn { position: absolute; bottom: 5px; right: 5px; background: transparent; border: none; color: #888; cursor: pointer; padding: 4px; border-radius: 4px; display: flex; align-items: center; justify-content: center; transition: background 0.2s, color 0.2s; }
+    .copy-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
     .messages strong { color: var(--title-color); display: block; margin-bottom: 5px; font-family: "Cinzel", serif; }
     ::ng-deep .markdown-body p { margin: 5px 0 10px; white-space: pre-wrap; }
     ::ng-deep .markdown-body ul, ::ng-deep .markdown-body ol { margin: 5px 0 10px; padding-left: 20px; }
@@ -160,6 +170,9 @@ export class ChatComponent implements OnInit {
   loadingSessions = false;
   currentSessionId: number | null = null;
   messages: ChatMessage[] = [];
+  
+  copiedMsgIndex: number | null = null;
+  copiedStreamMsg = false;
   
   currentInput = '';
   isStreaming = false;
@@ -368,5 +381,26 @@ export class ChatComponent implements OnInit {
   
   removeAttachment(index: number) {
     this.pendingAttachments.splice(index, 1);
+  }
+
+  async copyToClipboard(text: string, index: number | null) {
+    try {
+      await navigator.clipboard.writeText(text);
+      if (index !== null) {
+        this.copiedMsgIndex = index;
+        setTimeout(() => {
+          if (this.copiedMsgIndex === index) this.copiedMsgIndex = null;
+          this.cdr.detectChanges();
+        }, 2000);
+      } else {
+        this.copiedStreamMsg = true;
+        setTimeout(() => {
+          this.copiedStreamMsg = false;
+          this.cdr.detectChanges();
+        }, 2000);
+      }
+    } catch (err) {
+      console.error('Failed to copy text: ', err);
+    }
   }
 }
