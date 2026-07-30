@@ -30,6 +30,12 @@ import { MarkdownPipe } from './markdown.pipe';
         <div class="messages">
           <div *ngFor="let msg of messages" [ngClass]="msg.role">
             <strong>{{ msg.role === 'user' ? 'You' : 'Overseer' }}</strong>
+            <div *ngIf="msg.attachments && msg.attachments.length > 0" class="msg-attachments">
+              <div *ngFor="let att of msg.attachments" class="msg-att-item">
+                <img *ngIf="att.contentType.startsWith('image/')" [src]="'/api/chat/attachments/' + att.id" width="200" />
+                <div *ngIf="!att.contentType.startsWith('image/')">📎 {{ att.fileName }}</div>
+              </div>
+            </div>
             <div [innerHTML]="msg.content | markdown" class="markdown-body"></div>
           </div>
           <div *ngIf="streamingMessage" class="assistant">
@@ -37,9 +43,19 @@ import { MarkdownPipe } from './markdown.pipe';
             <div [innerHTML]="streamingMessage | markdown" class="markdown-body"></div>
           </div>
         </div>
-        <div class="input-area">
-          <textarea [(ngModel)]="currentInput" (ngModelChange)="saveDraft()" (keyup.enter)="sendMessage()" [disabled]="isStreaming"></textarea>
-          <button (click)="sendMessage()" [disabled]="isStreaming || !currentInput.trim()">Send</button>
+        <div class="input-area-container">
+          <div class="attachments-preview" *ngIf="pendingAttachments.length > 0">
+            <div class="attachment-chip" *ngFor="let att of pendingAttachments; let i = index">
+              <span class="att-name">{{ att.name }}</span>
+              <button (click)="removeAttachment(i)">x</button>
+            </div>
+          </div>
+          <div class="input-area">
+            <button class="add-media-btn" (click)="triggerFileInput()" [disabled]="pendingAttachments.length >= 5">+</button>
+            <input type="file" id="fileInput" hidden multiple accept=".html,.htm,.txt,.md,.png,.jpg,.jpeg,.webp" (change)="onFileSelected($event)">
+            <textarea [(ngModel)]="currentInput" (ngModelChange)="saveDraft()" (keyup.enter)="sendMessage()" (paste)="onPaste($event)" [disabled]="isStreaming"></textarea>
+            <button (click)="sendMessage()" [disabled]="isStreaming || (!currentInput.trim() && pendingAttachments.length === 0)">Send</button>
+          </div>
         </div>
       </div>
     </div>
@@ -60,9 +76,18 @@ import { MarkdownPipe } from './markdown.pipe';
     ::ng-deep .markdown-body p { margin: 5px 0 10px; white-space: pre-wrap; }
     ::ng-deep .markdown-body ul, ::ng-deep .markdown-body ol { margin: 5px 0 10px; padding-left: 20px; }
     ::ng-deep .markdown-body h1, ::ng-deep .markdown-body h2, ::ng-deep .markdown-body h3 { margin: 10px 0 5px; }
-    .input-area { padding: 20px; border-top: 1px solid #ddd; display: flex; background: #fafafa; }
+    .input-area-container { border-top: 1px solid #ddd; background: #fafafa; }
+    .attachments-preview { display: flex; padding: 10px 20px 0; gap: 10px; flex-wrap: wrap; }
+    .attachment-chip { background: #e0e0e0; padding: 5px 10px; border-radius: 15px; font-size: 12px; display: flex; align-items: center; }
+    .attachment-chip button { margin-left: 5px; border: none; background: transparent; cursor: pointer; font-weight: bold; padding: 0; }
+    .add-media-btn { padding: 10px; cursor: pointer; font-size: 20px; font-weight: bold; width: 40px; height: 40px; border-radius: 50%; border: 1px solid #ccc; display: flex; align-items: center; justify-content: center; margin-right: 10px; align-self: center; background: #fff; }
+    .add-media-btn:disabled { color: #ccc; cursor: not-allowed; }
+    .input-area { padding: 20px; display: flex; align-items: center; }
     textarea { flex-grow: 1; padding: 10px; resize: none; height: 60px; }
     button { padding: 10px 20px; margin-left: 10px; cursor: pointer; }
+    .msg-attachments { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+    .msg-att-item img { max-width: 100%; border-radius: 4px; border: 1px solid #ddd; }
+    .msg-att-item div { background: #eee; padding: 5px 10px; border-radius: 4px; font-size: 12px; color: #555; }
   `]
 })
 export class ChatComponent implements OnInit {
@@ -79,6 +104,7 @@ export class ChatComponent implements OnInit {
   currentInput = '';
   isStreaming = false;
   streamingMessage = '';
+  pendingAttachments: { file: File, base64: string, name: string, type: string }[] = [];
 
   ngOnInit() {
     this.loadSessions();
@@ -137,17 +163,32 @@ export class ChatComponent implements OnInit {
   }
 
   async sendMessage() {
-    if (!this.currentInput.trim() || this.isStreaming) return;
+    if ((!this.currentInput.trim() && this.pendingAttachments.length === 0) || this.isStreaming) return;
     
     const message = this.currentInput;
-    this.messages.push({ role: 'user', content: message, timestampUtc: new Date().toISOString() });
+    const attachmentsPayload = this.pendingAttachments.map(a => ({
+      fileName: a.name,
+      contentType: a.type,
+      base64Data: a.base64
+    }));
+    
+    const sentAttachments = [...this.pendingAttachments]; // keep for local display if needed, but the server handles saving it
+
+    this.messages.push({ 
+      role: 'user', 
+      content: message, 
+      timestampUtc: new Date().toISOString(),
+      attachments: attachmentsPayload.map(a => ({ fileName: a.fileName, contentType: a.contentType, base64Data: a.base64Data })) // temporarily show without id
+    });
+    
     this.clearDraft();
     this.currentInput = '';
+    this.pendingAttachments = [];
     this.isStreaming = true;
     this.streamingMessage = '';
 
     try {
-      for await (const chunk of this.chatService.streamMessage(this.currentSessionId, message)) {
+      for await (const chunk of this.chatService.streamMessage(this.currentSessionId, message, attachmentsPayload)) {
         this.streamingMessage += chunk;
         this.cdr.detectChanges();
       }
@@ -168,5 +209,47 @@ export class ChatComponent implements OnInit {
   logout(event: Event) {
     event.preventDefault();
     this.authService.logout().subscribe(() => this.router.navigate(['/login']));
+  }
+
+  triggerFileInput() {
+    const el = document.getElementById('fileInput') as HTMLInputElement;
+    if (el) el.click();
+  }
+
+  onFileSelected(event: any) {
+    const files = event.target.files;
+    this.addFiles(files);
+    event.target.value = '';
+  }
+
+  onPaste(event: ClipboardEvent) {
+    if (event.clipboardData && event.clipboardData.files && event.clipboardData.files.length > 0) {
+      this.addFiles(event.clipboardData.files);
+    }
+  }
+
+  addFiles(files: FileList | File[]) {
+    for (let i = 0; i < files.length; i++) {
+      if (this.pendingAttachments.length >= 5) break;
+      const file = files[i];
+      const ext = file.name.split('.').pop()?.toLowerCase();
+      if (!['html', 'htm', 'txt', 'md', 'png', 'jpg', 'jpeg', 'webp'].includes(ext || '')) continue;
+      
+      const reader = new FileReader();
+      reader.onload = (e: any) => {
+        this.pendingAttachments.push({
+          file: file,
+          base64: e.target.result,
+          name: file.name,
+          type: file.type || 'application/octet-stream' // fallback
+        });
+        this.cdr.detectChanges();
+      };
+      reader.readAsDataURL(file);
+    }
+  }
+  
+  removeAttachment(index: number) {
+    this.pendingAttachments.splice(index, 1);
   }
 }

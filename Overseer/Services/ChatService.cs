@@ -3,7 +3,9 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
 using MobileGnollHackLogger.Data;
+using Overseer.Controllers;
 
 namespace Overseer.Services;
 
@@ -13,16 +15,18 @@ public class ChatService
     private readonly WikiService _wikiService;
     private readonly CryptoService _cryptoService;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IConfiguration _configuration;
 
-    public ChatService(IServiceScopeFactory scopeFactory, WikiService wikiService, CryptoService cryptoService, IHttpClientFactory httpClientFactory)
+    public ChatService(IServiceScopeFactory scopeFactory, WikiService wikiService, CryptoService cryptoService, IHttpClientFactory httpClientFactory, IConfiguration configuration)
     {
         _scopeFactory = scopeFactory;
         _wikiService = wikiService;
         _cryptoService = cryptoService;
         _httpClientFactory = httpClientFactory;
+        _configuration = configuration;
     }
 
-    public async IAsyncEnumerable<string> StreamMessageAsync(long? sessionId, string message, ClaimsPrincipal user, [EnumeratorCancellation] CancellationToken cancellationToken)
+    public async IAsyncEnumerable<string> StreamMessageAsync(long? sessionId, string message, List<SendMessageAttachment>? attachments, ClaimsPrincipal user, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
         if (userId == null) yield break;
@@ -108,7 +112,108 @@ public class ChatService
             session.LastMessageUtc = DateTime.UtcNow;
             await dbContext.SaveChangesAsync(cancellationToken);
             
-            messageHistory.Add(new { role = "user", content = message });
+            var textAttachmentsContent = new StringBuilder();
+            List<SendMessageAttachment> imageAttachments = new();
+
+            if (attachments != null && attachments.Count > 0)
+            {
+                var baseDir = _configuration["ConversationsDataLocation"];
+                if (!string.IsNullOrEmpty(baseDir))
+                {
+                    var sessionDir = Path.Combine(baseDir, currentSessionId.ToString());
+                    if (!Directory.Exists(sessionDir)) Directory.CreateDirectory(sessionDir);
+                    
+                    foreach (var att in attachments)
+                    {
+                        try 
+                        {
+                            var ext = Path.GetExtension(att.FileName);
+                            var newFileName = $"{Path.GetFileNameWithoutExtension(att.FileName)}_{Guid.NewGuid()}{ext}";
+                            var relPath = Path.Combine(currentSessionId.ToString(), newFileName);
+                            var fullPath = Path.Combine(baseDir, relPath);
+                            
+                            var base64Data = att.Base64Data.Contains(',') ? att.Base64Data.Split(',')[1] : att.Base64Data;
+                            var bytes = Convert.FromBase64String(base64Data);
+                            await System.IO.File.WriteAllBytesAsync(fullPath, bytes, cancellationToken);
+                            
+                            var dbAtt = new ChatMessageAttachment
+                            {
+                                ChatMessageId = userMsg.Id,
+                                FileName = att.FileName,
+                                ContentType = att.ContentType,
+                                RelativePath = relPath
+                            };
+                            dbContext.ChatMessageAttachment.Add(dbAtt);
+
+                            if (att.ContentType.StartsWith("image/"))
+                            {
+                                imageAttachments.Add(new SendMessageAttachment { 
+                                    FileName = att.FileName, 
+                                    ContentType = att.ContentType, 
+                                    Base64Data = base64Data 
+                                });
+                            }
+                            else
+                            {
+                                var textContent = Encoding.UTF8.GetString(bytes);
+                                textAttachmentsContent.AppendLine($"\n--- File: {att.FileName} ---");
+                                textAttachmentsContent.AppendLine(textContent);
+                                textAttachmentsContent.AppendLine($"--- End File ---");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            // Ignore specific attachment failure
+                        }
+                    }
+                    await dbContext.SaveChangesAsync(cancellationToken);
+                }
+            }
+
+            string finalMessageText = message;
+            if (textAttachmentsContent.Length > 0)
+            {
+                finalMessageText += "\n\n" + textAttachmentsContent.ToString();
+            }
+
+            if (imageAttachments.Count > 0)
+            {
+                // Multimodal format for the current message
+                if (provider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase))
+                {
+                    var contentList = new List<object>();
+                    contentList.Add(new { type = "text", text = finalMessageText });
+                    foreach(var img in imageAttachments)
+                    {
+                        contentList.Add(new { type = "image_url", image_url = new { url = $"data:{img.ContentType};base64,{img.Base64Data}" } });
+                    }
+                    messageHistory.Add(new { role = "user", content = contentList });
+                }
+                else if (provider.Equals("Anthropic", StringComparison.OrdinalIgnoreCase))
+                {
+                    var contentList = new List<object>();
+                    foreach(var img in imageAttachments)
+                    {
+                        contentList.Add(new { type = "image", source = new { type = "base64", media_type = img.ContentType, data = img.Base64Data } });
+                    }
+                    contentList.Add(new { type = "text", text = finalMessageText });
+                    messageHistory.Add(new { role = "user", content = contentList });
+                }
+                else // Google
+                {
+                    var partsList = new List<object>();
+                    partsList.Add(new { text = finalMessageText });
+                    foreach(var img in imageAttachments)
+                    {
+                        partsList.Add(new { inlineData = new { mimeType = img.ContentType, data = img.Base64Data } });
+                    }
+                    messageHistory.Add(new { role = "user", parts = partsList }); // Wait, Gemini requires 'parts' inside 'content' but our history just has 'role' and 'content' right now?
+                }
+            }
+            else
+            {
+                messageHistory.Add(new { role = "user", content = finalMessageText });
+            }
         }
 
         string fullResponse = "";
@@ -261,20 +366,35 @@ public class ChatService
 
             foreach (var m in messageHistory)
             {
-                string role = ((dynamic)m).role;
-                string content = ((dynamic)m).content;
+                var role = ((dynamic)m).role;
+                
+                var dict = m as IDictionary<string, object>;
+                var hasParts = m.GetType().GetProperty("parts") != null;
                 
                 if (role == "system")
                 {
+                    var content = ((dynamic)m).content;
                     systemInstruction += content + "\n";
                 }
                 else
                 {
-                    contents.Add(new
+                    if (hasParts)
                     {
-                        role = role == "user" ? "user" : "model",
-                        parts = new[] { new { text = content } }
-                    });
+                        contents.Add(new
+                        {
+                            role = role == "user" ? "user" : "model",
+                            parts = ((dynamic)m).parts
+                        });
+                    }
+                    else
+                    {
+                        var content = ((dynamic)m).content;
+                        contents.Add(new
+                        {
+                            role = role == "user" ? "user" : "model",
+                            parts = new[] { new { text = content } }
+                        });
+                    }
                 }
             }
 

@@ -7,10 +7,18 @@ export interface ChatSession {
   lastMessageUtc: string;
 }
 
+export interface ChatMessageAttachment {
+  id?: number;
+  fileName: string;
+  contentType: string;
+  base64Data?: string;
+}
+
 export interface ChatMessage {
   role: string;
   content: string;
   timestampUtc: string;
+  attachments?: ChatMessageAttachment[];
 }
 
 @Injectable({
@@ -33,7 +41,7 @@ export class ChatService {
 
   // Note: For SSE streaming, we typically use fetch or EventSource directly 
   // since HttpClient doesn't natively support text/event-stream well yet without custom parsing.
-  async *streamMessage(sessionId: number | null, message: string) {
+  async *streamMessage(sessionId: number | null, message: string, attachments?: ChatMessageAttachment[]) {
     const response = await fetch('/api/chat/send', {
       method: 'POST',
       headers: {
@@ -42,7 +50,7 @@ export class ChatService {
         // For fetch, we need to manually read the cookie.
         'X-XSRF-TOKEN': this.getCookie('XSRF-TOKEN') || ''
       },
-      body: JSON.stringify({ sessionId, message })
+      body: JSON.stringify({ sessionId, message, attachments: attachments || [] })
     });
 
     if (!response.ok) {

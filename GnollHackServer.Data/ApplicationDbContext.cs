@@ -19,6 +19,7 @@ namespace MobileGnollHackLogger.Data
         public DbSet<SaveFileTracking> SaveFileTrackings { get; set; } = null!;
         public DbSet<ChatSession> ChatSession { get; set; } = null!;
         public DbSet<ChatMessage> ChatMessage { get; set; } = null!;
+        public DbSet<ChatMessageAttachment> ChatMessageAttachment { get; set; } = null!;
         public DbSet<UserAiSettings> UserAiSettings { get; set; } = null!;
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)

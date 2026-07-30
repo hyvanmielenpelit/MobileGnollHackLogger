@@ -4,6 +4,8 @@ using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
 using Overseer.Services;
 using System.Security.Claims;
+using Microsoft.Extensions.Configuration;
+using System.IO;
 
 namespace Overseer.Controllers;
 
@@ -14,11 +16,13 @@ public class ChatController : ControllerBase
 {
     private readonly ApplicationDbContext _dbContext;
     private readonly ChatService _chatService;
+    private readonly IConfiguration _configuration;
 
-    public ChatController(ApplicationDbContext dbContext, ChatService chatService)
+    public ChatController(ApplicationDbContext dbContext, ChatService chatService, IConfiguration configuration)
     {
         _dbContext = dbContext;
         _chatService = chatService;
+        _configuration = configuration;
     }
 
     [HttpGet("sessions")]
@@ -44,9 +48,18 @@ public class ChatController : ControllerBase
         if (session == null) return NotFound();
         
         var messages = await _dbContext.ChatMessage
-            .Where(m => m.ChatSessionId == session.Id)
+            .Where(m => m.ChatSessionId == id)
             .OrderBy(m => m.TimestampUtc)
-            .Select(m => new { m.Role, m.Content, m.TimestampUtc })
+            .Select(m => new { 
+                m.Id, 
+                m.Role, 
+                m.Content, 
+                m.TimestampUtc,
+                Attachments = _dbContext.ChatMessageAttachment
+                    .Where(a => a.ChatMessageId == m.Id)
+                    .Select(a => new { a.Id, a.FileName, a.ContentType })
+                    .ToList()
+            })
             .ToListAsync();
 
         return Ok(new
@@ -71,6 +84,29 @@ public class ChatController : ControllerBase
         return Ok();
     }
 
+    [HttpGet("attachments/{id}")]
+    public async Task<IActionResult> GetAttachment(long id)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var attachment = await _dbContext.ChatMessageAttachment
+            .Include(a => a.ChatMessage)
+            .ThenInclude(m => m.ChatSession)
+            .FirstOrDefaultAsync(a => a.Id == id);
+            
+        if (attachment == null || attachment.ChatMessage?.ChatSession?.AspNetUserId != userId)
+            return NotFound();
+            
+        var baseDir = _configuration["ConversationsDataLocation"];
+        if (string.IsNullOrEmpty(baseDir) || string.IsNullOrEmpty(attachment.RelativePath))
+            return NotFound();
+            
+        var filePath = Path.Combine(baseDir, attachment.RelativePath);
+        if (!System.IO.File.Exists(filePath))
+            return NotFound();
+            
+        return PhysicalFile(filePath, attachment.ContentType ?? "application/octet-stream");
+    }
+
     [HttpPost("send")]
     public async Task Send([FromBody] SendMessageRequest request, CancellationToken cancellationToken)
     {
@@ -80,7 +116,7 @@ public class ChatController : ControllerBase
         
         try 
         {
-            await foreach (var chunk in _chatService.StreamMessageAsync(request.SessionId, request.Message, User, cancellationToken))
+            await foreach (var chunk in _chatService.StreamMessageAsync(request.SessionId, request.Message, request.Attachments, User, cancellationToken))
             {
                 var formattedChunk = chunk.Replace("\n", "\ndata: ");
                 await Response.WriteAsync($"data: {formattedChunk}\n\n", cancellationToken);
@@ -97,8 +133,16 @@ public class ChatController : ControllerBase
     }
 }
 
+public class SendMessageAttachment
+{
+    public string FileName { get; set; } = string.Empty;
+    public string ContentType { get; set; } = string.Empty;
+    public string Base64Data { get; set; } = string.Empty;
+}
+
 public class SendMessageRequest
 {
     public long? SessionId { get; set; }
     public string Message { get; set; } = string.Empty;
+    public List<SendMessageAttachment>? Attachments { get; set; }
 }
