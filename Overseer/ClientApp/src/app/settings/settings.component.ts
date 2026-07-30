@@ -60,6 +60,13 @@ import { RouterModule } from '@angular/router';
           </div>
         </div>
         
+        <div style="margin-top: 20px; margin-bottom: 20px;">
+          <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+            <input type="checkbox" [(ngModel)]="spoilerFreeMode" name="spoilerFreeMode" style="width: auto; margin: 0;" />
+            <span>Spoiler-Free Mode (Limit hints to avoid spoiling secrets)</span>
+          </label>
+        </div>
+
         <button type="submit" class="btn-gh save-btn" [disabled]="loading">Save</button>
         <div #successToast popover="manual" class="toast-success">
           &#10004; Settings saved successfully!
@@ -265,6 +272,9 @@ export class SettingsComponent implements OnInit {
   initModel = 'gpt-4o-mini';
   initThinkingLevel = 'high';
 
+  spoilerFreeMode = false;
+  initSpoilerFreeMode = false;
+
   apiKey = '';
   hasApiKey = false;
   loading = false;
@@ -298,6 +308,7 @@ export class SettingsComponent implements OnInit {
     return this.provider !== this.initProvider ||
            this.model !== this.initModel ||
            this.thinkingLevel !== this.initThinkingLevel ||
+           this.spoilerFreeMode !== this.initSpoilerFreeMode ||
            this.apiKey.length > 0;
   }
 
@@ -336,6 +347,10 @@ export class SettingsComponent implements OnInit {
           }
         }
         this.hasApiKey = s.hasApiKey;
+        if (s.spoilerFreeMode !== undefined) {
+          this.spoilerFreeMode = s.spoilerFreeMode;
+          this.initSpoilerFreeMode = s.spoilerFreeMode;
+        }
       }
     });
   }
@@ -351,7 +366,7 @@ export class SettingsComponent implements OnInit {
   saveSettings() {
     this.loading = true;
     this.saved = false;
-    this.settingsService.saveSettings(this.provider, this.model, this.apiKey, this.thinkingLevel).subscribe(() => {
+    this.settingsService.saveSettings(this.provider, this.model, this.apiKey, this.thinkingLevel, this.spoilerFreeMode).subscribe(() => {
       this.loading = false;
       
       const toast = this.successToast?.nativeElement as any;
@@ -372,6 +387,7 @@ export class SettingsComponent implements OnInit {
       this.initProvider = this.provider;
       this.initModel = this.model;
       this.initThinkingLevel = this.thinkingLevel;
+      this.initSpoilerFreeMode = this.spoilerFreeMode;
     });
   }
 

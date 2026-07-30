@@ -37,6 +37,7 @@ public class ChatService
         string model = "gpt-4o-mini";
         string? thinkingLevel = null;
         List<object> messageHistory = new();
+        bool spoilerFreeMode = false;
 
         using (var scope = _scopeFactory.CreateScope())
         {
@@ -47,6 +48,7 @@ public class ChatService
                 if (!string.IsNullOrEmpty(settings.DefaultProvider)) provider = settings.DefaultProvider;
                 if (!string.IsNullOrEmpty(settings.DefaultModel)) model = settings.DefaultModel;
                 if (!string.IsNullOrEmpty(settings.ThinkingLevel)) thinkingLevel = settings.ThinkingLevel;
+                spoilerFreeMode = settings.SpoilerFreeMode;
 
                 if (!string.IsNullOrEmpty(settings.EncryptedApiKey) && !string.IsNullOrEmpty(settings.ApiKeyNonce) && !string.IsNullOrEmpty(settings.ApiKeyTag))
                 {
@@ -59,6 +61,11 @@ public class ChatService
                 yield return new ChatEvent { Type = "error", Data = "Error: API Key not configured. Please configure it in Settings." };
                 yield break;
             }
+
+            bool hasGameSnapshot = false;
+            bool hasDebugData = false;
+            bool hasDirectoryManifest = false;
+            bool hasMessageHistory = false;
 
             ChatSession? session = null;
             if (sessionId.HasValue && sessionId.Value > 0)
@@ -76,6 +83,18 @@ public class ChatService
                 {
                     messageHistory.Add(new { role = pm.Role, content = pm.Content });
                 }
+
+                // Detect context types from system messages
+                foreach (var pm in pastMessages)
+                {
+                    if (pm.Role == "system" && pm.Content != null)
+                    {
+                        if (pm.Content.StartsWith("Game Context Snapshot:")) hasGameSnapshot = true;
+                        if (pm.Content.StartsWith("Developer Debug Data:")) hasDebugData = true;
+                        if (pm.Content.StartsWith("Game Directory Manifest:")) hasDirectoryManifest = true;
+                        if (pm.Content.StartsWith("Full Message History")) hasMessageHistory = true;
+                    }
+                }
             }
             else
             {
@@ -92,8 +111,7 @@ public class ChatService
             }
 
             var contextDocs = _wikiService.GetRelevantContext(message);
-            string systemPrompt = "You are the Gnoll Overseer, a helpful AI assistant for the roguelike game GnollHack. " +
-                                  "Answer questions based on the provided context if available.\n\nContext:\n" + string.Join("\n", contextDocs);
+            string systemPrompt = BuildSystemPrompt(contextDocs, spoilerFreeMode, hasGameSnapshot, hasDebugData, hasDirectoryManifest, hasMessageHistory);
 
             if (!messageHistory.Any(m => ((dynamic)m).role == "system"))
             {
@@ -590,5 +608,75 @@ public class ChatService
                 }
             }
         }
+    }
+
+    private static string BuildSystemPrompt(
+        IEnumerable<string> wikiContext,
+        bool spoilerFreeMode,
+        bool hasGameSnapshot,
+        bool hasDebugData,
+        bool hasDirectoryManifest,
+        bool hasMessageHistory)
+    {
+        var sb = new StringBuilder();
+
+        sb.AppendLine("You are the Gnoll Overseer, an expert AI assistant for GnollHack — a modern roguelike game derived from NetHack 3.6.2 with extensive new features including tile graphics, sound, music, voiceovers, and a .NET MAUI mobile/desktop frontend.");
+        sb.AppendLine();
+
+        // --- Capabilities ---
+        sb.AppendLine("## Your Capabilities");
+        sb.AppendLine("- **Player Assistance**: Tactical advice, item identification, strategy tips, monster info, spell recommendations, dungeon navigation");
+        sb.AppendLine("- **Technical Support**: Save file troubleshooting, app issues, file recovery guidance, configuration help");
+        if (hasDebugData)
+        {
+            sb.AppendLine("- **Developer Assistance**: This session includes runtime debug data. You can help diagnose crashes, runtime errors, save corruption, pending task issues, and provide code-level guidance for the GnollHack C core and .NET MAUI frontend.");
+        }
+        sb.AppendLine();
+
+        // --- Available Context ---
+        sb.AppendLine("## Available Context in This Session");
+        if (hasGameSnapshot) sb.AppendLine("- ✅ Game snapshot (current map, stats, inventory, recent messages, spells, skills, attributes)");
+        if (hasMessageHistory) sb.AppendLine("- ✅ Full message history (up to 16384 in-game messages) — reference when the player asks about earlier events");
+        if (hasDirectoryManifest) sb.AppendLine("- ✅ Game directory file listing — use for diagnosing file-related issues (corrupt saves, orphaned files, missing data)");
+        if (hasDebugData) sb.AppendLine("- ✅ Runtime debug data (memory usage, thread state, pending tasks, developer settings)");
+        if (!hasGameSnapshot && !hasMessageHistory && !hasDirectoryManifest && !hasDebugData)
+        {
+            sb.AppendLine("- No game context was provided for this session. Answer based on general GnollHack knowledge and wiki content.");
+        }
+        sb.AppendLine();
+
+        // --- Important Rules ---
+        sb.AppendLine("## Important Rules");
+        sb.AppendLine("- GnollHack inherits many mechanics from NetHack 3.6.2 but has significant differences (new monsters, items, spells, UI, multi-layered tile rendering, FMOD audio, etc.). Always note when you are referencing NetHack mechanics that may differ in GnollHack.");
+        sb.AppendLine("- The GnollHack Wiki at wiki.gnollhack.com is the authoritative source for GnollHack-specific information.");
+        sb.AppendLine("- For inherited NetHack mechanics not yet documented on the GnollHack Wiki, the NetHack Wiki (nethackwiki.com) can be referenced as a secondary source, but always caveat that mechanics may differ.");
+
+        // --- Spoiler Control ---
+        if (spoilerFreeMode)
+        {
+            sb.AppendLine();
+            sb.AppendLine("## ⚠️ SPOILER-FREE MODE IS ACTIVE");
+            sb.AppendLine("The player has enabled spoiler-free mode. You MUST follow these rules:");
+            sb.AppendLine("- Give hints and guidance WITHOUT revealing specific solutions, item identities, or optimal strategies directly.");
+            sb.AppendLine("- Help the player discover things on their own. Use phrases like \"you might want to try...\" or \"there's something interesting about that item...\" instead of direct answers.");
+            sb.AppendLine("- Do NOT reveal: specific artifact names/powers, optimal ascension kit items, fountain/altar interaction outcomes, or puzzle solutions.");
+            sb.AppendLine("- You CAN: explain general mechanics, warn about immediate dangers visible in the snapshot, clarify UI elements, and help with technical issues (these are not spoilers).");
+        }
+        sb.AppendLine();
+
+        // --- Wiki Context ---
+        var contextList = wikiContext.ToList();
+        if (contextList.Count > 0)
+        {
+            sb.AppendLine("## Wiki Knowledge Base");
+            sb.AppendLine("The following wiki articles are relevant to this conversation:");
+            sb.AppendLine();
+            foreach (var doc in contextList)
+            {
+                sb.AppendLine(doc);
+            }
+        }
+
+        return sb.ToString();
     }
 }

@@ -102,9 +102,9 @@ namespace Overseer.Tests
             {
                 await foreach (var chunk in chatService.StreamMessageAsync(null, "Say hello in exactly one sentence.", null, claimsPrincipal, cts.Token))
                 {
-                    _output.WriteLine(chunk);
-                    fullResponse += chunk;
-                    if (chunk.StartsWith("Error:") || chunk.StartsWith("API Error:"))
+                    _output.WriteLine(chunk.Data);
+                    fullResponse += chunk.Data;
+                    if (chunk.Data != null && (chunk.Data.StartsWith("Error:") || chunk.Data.StartsWith("API Error:")))
                     {
                         errorOccurred = true;
                     }

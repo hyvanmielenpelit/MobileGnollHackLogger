@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, ChangeDetectorRef, ViewChild, ElementRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject, ChangeDetectorRef, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ChatService, ChatSession, ChatMessage } from '../services/chat.service';
@@ -13,7 +13,7 @@ import { SettingsService } from '../services/settings.service';
   standalone: true,
   imports: [CommonModule, FormsModule, RouterModule, MarkdownPipe],
   template: `
-    <div class="layout">
+    <div *ngIf="!isOffline" class="layout">
       <div class="sidebar gh-main-container">
         <h3>Sessions</h3>
         <button class="btn-gh btn-new-chat" (click)="newSession()">New Chat</button>
@@ -92,6 +92,11 @@ import { SettingsService } from '../services/settings.service';
       </div>
     </div>
     
+    <div *ngIf="isOffline" class="offline-notice">
+      <h2>Overseer requires an internet connection</h2>
+      <p>Please check your connection and try again.</p>
+    </div>
+
     <dialog #deleteConfirmDialog class="gh-dialog">
       <h3>Delete Conversation</h3>
       <p>Are you sure you want to delete this conversation? This action cannot be undone.</p>
@@ -196,6 +201,19 @@ import { SettingsService } from '../services/settings.service';
       box-shadow: 0 0 20px rgba(212, 175, 55, 0.2);
       font-family: "Lato", sans-serif;
     }
+    .offline-notice {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 60vh;
+      text-align: center;
+      color: #aaa;
+    }
+    .offline-notice h2 {
+      color: var(--primary-color, #d4a847);
+      margin-bottom: 10px;
+    }
     .gh-dialog::backdrop {
       background: rgba(0, 0, 0, 0.7);
       backdrop-filter: blur(2px);
@@ -245,7 +263,7 @@ import { SettingsService } from '../services/settings.service';
     .toast-close { background: transparent; border: none; color: white; font-size: 20px; cursor: pointer; padding: 0; line-height: 1; margin-top: -4px; }
   `]
 })
-export class ChatComponent implements OnInit {
+export class ChatComponent implements OnInit, OnDestroy {
   chatService = inject(ChatService);
   settingsService = inject(SettingsService);
   
@@ -258,6 +276,10 @@ export class ChatComponent implements OnInit {
   router = inject(Router);
   route = inject(ActivatedRoute);
   cdr = inject(ChangeDetectorRef);
+
+  isOffline = !navigator.onLine;
+  private onlineHandler = () => { this.isOffline = false; this.cdr.detectChanges(); this.loadSessions(); };
+  private offlineHandler = () => { this.isOffline = true; this.cdr.detectChanges(); };
 
   sessions: ChatSession[] = [];
   loadingSessions = false;
@@ -302,6 +324,11 @@ export class ChatComponent implements OnInit {
     }
   }
 
+  ngOnDestroy() {
+    window.removeEventListener('online', this.onlineHandler);
+    window.removeEventListener('offline', this.offlineHandler);
+  }
+
   scrollToBottomClamped(smooth: boolean = false) {
     if (!this.autoScrollEnabled || !this.messagesContainer) return;
     const container = this.messagesContainer.nativeElement;
@@ -323,6 +350,9 @@ export class ChatComponent implements OnInit {
   }
 
   ngOnInit() {
+    window.addEventListener('online', this.onlineHandler);
+    window.addEventListener('offline', this.offlineHandler);
+
     if (!("popover" in HTMLElement.prototype)) {
       import("@oddbird/popover-polyfill").catch(err => console.warn('Failed to load popover polyfill', err));
     }

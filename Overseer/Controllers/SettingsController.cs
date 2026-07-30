@@ -39,7 +39,8 @@ public class SettingsController : ControllerBase
             model = settings?.DefaultModel,
             thinkingLevel = settings?.ThinkingLevel,
             hasApiKey = !string.IsNullOrEmpty(settings?.EncryptedApiKey),
-            maxAttachmentSize = _configuration.GetValue<long>("MaxAttachmentSize", 15728640)
+            maxAttachmentSize = _configuration.GetValue<long>("MaxAttachmentSize", 15728640),
+            spoilerFreeMode = settings?.SpoilerFreeMode ?? false
         });
     }
 
@@ -49,7 +50,7 @@ public class SettingsController : ControllerBase
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (userId == null) return Unauthorized();
 
-        await _settingsService.SaveSettingsAsync(userId, request.Provider, request.Model, request.ApiKey, request.ThinkingLevel);
+        await _settingsService.SaveSettingsAsync(userId, request.Provider, request.Model, request.ApiKey, request.ThinkingLevel, request.SpoilerFreeMode);
         
         return Ok();
     }
@@ -247,4 +248,5 @@ public class UpdateSettingsRequest
     public string? Model { get; set; }
     public string? ApiKey { get; set; }
     public string? ThinkingLevel { get; set; }
+    public bool? SpoilerFreeMode { get; set; }
 }

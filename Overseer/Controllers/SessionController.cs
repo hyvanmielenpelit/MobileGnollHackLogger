@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
 using MobileGnollHackLogger.Data;
+using System.IO;
 
 namespace Overseer.Controllers;
 
@@ -26,7 +27,7 @@ public class SessionController : ControllerBase
     [IgnoreAntiforgeryToken] // CRITICAL: Called by a native client without standard CSRF tokens
     public async Task<IActionResult> Create([FromForm] CreateSessionRequest request)
     {
-        var expectedSecret = _configuration["MauiClientSecret"];
+        var expectedSecret = _configuration["AntiForgeryToken"];
         if (string.IsNullOrEmpty(expectedSecret) || request.AntiForgeryToken != expectedSecret)
         {
             return Unauthorized();
@@ -72,6 +73,96 @@ public class SessionController : ControllerBase
             await _dbContext.SaveChangesAsync();
         }
 
+        // Save additional context channels to disk and/or as system messages
+        var baseDir = _configuration["ConversationsDataLocation"];
+        if (!string.IsNullOrEmpty(baseDir))
+        {
+            var sessionDir = Path.Combine(baseDir, session.Id.ToString());
+            if (!Directory.Exists(sessionDir))
+                Directory.CreateDirectory(sessionDir);
+
+            if (!string.IsNullOrWhiteSpace(request.MessageHistory))
+            {
+                // Save full history to disk (can be very large)
+                await System.IO.File.WriteAllTextAsync(
+                    Path.Combine(sessionDir, "message_history.txt"),
+                    request.MessageHistory);
+
+                // Insert a truncated summary as a system message so the AI knows it's available
+                var preview = request.MessageHistory.Length > 2000
+                    ? request.MessageHistory.Substring(0, 2000) + "\n\n[... truncated — full history available in session files ...]"
+                    : request.MessageHistory;
+
+                var msg = new ChatMessage
+                {
+                    ChatSessionId = session.Id,
+                    Role = "system",
+                    Content = "Full Message History (last messages shown):\n" + preview,
+                    TimestampUtc = DateTime.UtcNow
+                };
+                _dbContext.ChatMessage.Add(msg);
+                
+                // IMPORTANT: Register as an attachment so it gets deleted when the session is deleted
+                _dbContext.ChatMessageAttachment.Add(new ChatMessageAttachment
+                {
+                    ChatMessage = msg,
+                    FileName = "message_history.txt",
+                    ContentType = "text/plain",
+                    RelativePath = Path.Combine(session.Id.ToString(), "message_history.txt")
+                });
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.DirectoryManifest))
+            {
+                await System.IO.File.WriteAllTextAsync(
+                    Path.Combine(sessionDir, "directory_manifest.txt"),
+                    request.DirectoryManifest);
+
+                var msg = new ChatMessage
+                {
+                    ChatSessionId = session.Id,
+                    Role = "system",
+                    Content = "Game Directory Manifest:\n" + request.DirectoryManifest,
+                    TimestampUtc = DateTime.UtcNow
+                };
+                _dbContext.ChatMessage.Add(msg);
+
+                _dbContext.ChatMessageAttachment.Add(new ChatMessageAttachment
+                {
+                    ChatMessage = msg,
+                    FileName = "directory_manifest.txt",
+                    ContentType = "text/plain",
+                    RelativePath = Path.Combine(session.Id.ToString(), "directory_manifest.txt")
+                });
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.DebugData))
+            {
+                await System.IO.File.WriteAllTextAsync(
+                    Path.Combine(sessionDir, "debug_data.json"),
+                    request.DebugData);
+
+                var msg = new ChatMessage
+                {
+                    ChatSessionId = session.Id,
+                    Role = "system",
+                    Content = "Developer Debug Data:\n" + request.DebugData,
+                    TimestampUtc = DateTime.UtcNow
+                };
+                _dbContext.ChatMessage.Add(msg);
+
+                _dbContext.ChatMessageAttachment.Add(new ChatMessageAttachment
+                {
+                    ChatMessage = msg,
+                    FileName = "debug_data.json",
+                    ContentType = "application/json",
+                    RelativePath = Path.Combine(session.Id.ToString(), "debug_data.json")
+                });
+            }
+
+            await _dbContext.SaveChangesAsync();
+        }
+
         var token = Guid.NewGuid().ToString("N");
         var cacheKey = $"handoff_{token}";
         _cache.Set(cacheKey, new HandoffData { UserId = user.Id, SessionId = session.Id }, new MemoryCacheEntryOptions
@@ -94,4 +185,7 @@ public class CreateSessionRequest
     public string Password { get; set; } = string.Empty;
     public string AntiForgeryToken { get; set; } = string.Empty;
     public string? SnapshotHtml { get; set; }
+    public string? MessageHistory { get; set; }        // NEW: Full 16384-message history (plain text)
+    public string? DirectoryManifest { get; set; }     // NEW: Game directory file listing (tab-separated)
+    public string? DebugData { get; set; }             // NEW: Runtime debug JSON (only when DeveloperMode is on)
 }

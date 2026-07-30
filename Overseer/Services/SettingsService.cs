@@ -19,7 +19,7 @@ public class SettingsService
         return await _dbContext.UserAiSettings.FindAsync(userId);
     }
 
-    public async Task SaveSettingsAsync(string userId, string? defaultProvider, string? defaultModel, string? apiKey, string? thinkingLevel = null)
+    public async Task SaveSettingsAsync(string userId, string? defaultProvider, string? defaultModel, string? apiKey, string? thinkingLevel = null, bool? spoilerFreeMode = null)
     {
         var settings = await _dbContext.UserAiSettings.FindAsync(userId);
         if (settings == null)
@@ -31,6 +31,7 @@ public class SettingsService
         if (defaultProvider != null) settings.DefaultProvider = defaultProvider;
         if (defaultModel != null) settings.DefaultModel = defaultModel;
         if (thinkingLevel != null) settings.ThinkingLevel = thinkingLevel;
+        if (spoilerFreeMode.HasValue) settings.SpoilerFreeMode = spoilerFreeMode.Value;
 
         if (!string.IsNullOrEmpty(apiKey))
         {
