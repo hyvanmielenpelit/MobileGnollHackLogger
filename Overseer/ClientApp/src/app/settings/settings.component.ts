@@ -23,8 +23,18 @@ import { RouterModule } from '@angular/router';
           </select>
         </div>
         <div>
+          <label>API Key (Leave blank to keep existing)</label>
+          <input type="password" [(ngModel)]="apiKey" name="apiKey" />
+          <small *ngIf="hasApiKey">An API key is currently saved.</small>
+        </div>
+        <div class="model-row">
           <label>Model</label>
-          <input type="text" [(ngModel)]="model" name="model" />
+          <div style="display: flex; gap: 10px;">
+            <input type="text" [(ngModel)]="model" name="model" style="flex: 1;" />
+            <button type="button" class="btn-check-models" (click)="checkModels()" [disabled]="loadingModels">
+              {{ loadingModels ? 'Checking...' : 'Check Models' }}
+            </button>
+          </div>
         </div>
         <div>
           <label>Thinking Level</label>
@@ -43,23 +53,65 @@ import { RouterModule } from '@angular/router';
             <input *ngIf="thinkingLevelSelect === 'custom'" type="text" [(ngModel)]="thinkingLevel" name="thinkingLevel" placeholder="Enter custom value..." style="flex: 1;" />
           </div>
         </div>
-        <div>
-          <label>API Key (Leave blank to keep existing)</label>
-          <input type="password" [(ngModel)]="apiKey" name="apiKey" />
-          <small *ngIf="hasApiKey">An API key is currently saved.</small>
-        </div>
+        
         <button type="submit" [disabled]="loading">Save</button>
         <span *ngIf="saved" class="success">Settings saved successfully!</span>
       </form>
+    </div>
+
+    <!-- Modal for picking models -->
+    <div class="modal-overlay" *ngIf="showModelModal">
+      <div class="modal-content">
+        <h3>Available Models</h3>
+        
+        <div *ngIf="modelError" class="modal-error">
+          <p>{{ modelError }}</p>
+          <div class="modal-actions">
+            <button type="button" class="btn-primary" (click)="closeModal()">OK</button>
+          </div>
+        </div>
+
+        <div *ngIf="!modelError">
+          <select [(ngModel)]="selectedModel" size="10" class="model-listbox">
+            <option *ngFor="let m of availableModels" [value]="m">{{ m }}</option>
+          </select>
+          <div class="modal-actions">
+            <button type="button" class="btn-secondary" (click)="closeModal()">Cancel</button>
+            <button type="button" class="btn-primary" (click)="applySelectedModel()" [disabled]="!selectedModel">OK</button>
+          </div>
+        </div>
+      </div>
     </div>
   `,
   styles: [`
     .settings-container { max-width: 600px; margin: 50px auto; padding: 20px; border: 1px solid #ccc; border-radius: 8px; }
     form div { margin-bottom: 15px; }
+    .model-row { margin-bottom: 15px; }
     label { display: block; margin-bottom: 5px; font-weight: bold; }
     input, select { width: 100%; padding: 8px; box-sizing: border-box; }
     button { padding: 10px 20px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    .btn-check-models { background: #007bff; white-space: nowrap; }
+    .btn-check-models:disabled { background: #6c757d; cursor: not-allowed; }
     .success { color: green; margin-left: 10px; }
+
+    /* Modal Styles */
+    .modal-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex; justify-content: center; align-items: center;
+      z-index: 1000;
+    }
+    .modal-content {
+      background: white; padding: 20px; border-radius: 8px;
+      width: 400px; max-width: 90%;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    .modal-content h3 { margin-top: 0; }
+    .model-listbox { width: 100%; padding: 5px; margin-bottom: 15px; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 15px; }
+    .btn-primary { background: #007bff; }
+    .btn-secondary { background: #6c757d; }
+    .modal-error { color: #dc3545; }
   `]
 })
 export class SettingsComponent implements OnInit {
@@ -70,17 +122,17 @@ export class SettingsComponent implements OnInit {
   thinkingLevel = 'high';
   thinkingLevelSelect = 'high';
 
-  onSelectChange() {
-    if (this.thinkingLevelSelect !== 'custom') {
-      this.thinkingLevel = this.thinkingLevelSelect;
-    } else {
-      this.thinkingLevel = ''; // Clear for user to type
-    }
-  }
   apiKey = '';
   hasApiKey = false;
   loading = false;
   saved = false;
+
+  // Model Picker State
+  loadingModels = false;
+  showModelModal = false;
+  availableModels: string[] = [];
+  selectedModel = '';
+  modelError = '';
 
   ngOnInit() {
     this.settingsService.getSettings().subscribe(s => {
@@ -101,6 +153,14 @@ export class SettingsComponent implements OnInit {
     });
   }
 
+  onSelectChange() {
+    if (this.thinkingLevelSelect !== 'custom') {
+      this.thinkingLevel = this.thinkingLevelSelect;
+    } else {
+      this.thinkingLevel = ''; // Clear for user to type
+    }
+  }
+
   saveSettings() {
     this.loading = true;
     this.saved = false;
@@ -113,5 +173,37 @@ export class SettingsComponent implements OnInit {
       }
       setTimeout(() => this.saved = false, 3000);
     });
+  }
+
+  checkModels() {
+    this.loadingModels = true;
+    this.modelError = '';
+    this.availableModels = [];
+    this.selectedModel = '';
+    this.showModelModal = true;
+
+    this.settingsService.getAvailableModels(this.provider, this.apiKey).subscribe({
+      next: (models) => {
+        this.availableModels = models;
+        this.loadingModels = false;
+      },
+      error: (err) => {
+        this.loadingModels = false;
+        this.modelError = err.error?.message || err.message || 'An unknown error occurred while fetching models.';
+      }
+    });
+  }
+
+  closeModal() {
+    this.showModelModal = false;
+    this.modelError = '';
+    this.availableModels = [];
+  }
+
+  applySelectedModel() {
+    if (this.selectedModel) {
+      this.model = this.selectedModel;
+    }
+    this.closeModal();
   }
 }

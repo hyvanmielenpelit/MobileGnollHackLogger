@@ -21,4 +21,8 @@ export class SettingsService {
   saveSettings(provider: string, model: string, apiKey: string, thinkingLevel?: string) {
     return this.http.put('/api/settings', { provider, model, apiKey, thinkingLevel });
   }
+
+  getAvailableModels(provider: string, apiKey: string) {
+    return this.http.post<string[]>('/api/settings/models', { provider, apiKey });
+  }
 }
