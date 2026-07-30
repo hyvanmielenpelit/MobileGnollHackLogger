@@ -17,6 +17,13 @@ import { MarkdownPipe } from './markdown.pipe';
         <h3>Sessions</h3>
         <button class="btn-gh btn-new-chat" (click)="newSession()">New Chat</button>
         <ul>
+          <div *ngIf="loadingSessions" class="sessions-loader">
+            <div class="sidebar-spinner"></div>
+            <span>Loading Conversations...</span>
+          </div>
+          <li *ngIf="!loadingSessions && sessions.length === 0" style="color: #666; text-align: center; margin-top: 10px;">
+            No conversations yet.
+          </li>
           <li *ngFor="let s of sessions" [class.active]="s.id === currentSessionId" (click)="loadSession(s.id)">
             {{ s.title }}
             <button (click)="deleteSession(s.id, $event)" title="Delete Session">X</button>
@@ -78,9 +85,11 @@ import { MarkdownPipe } from './markdown.pipe';
     .sidebar li { padding: 10px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; color: #ccc; transition: background 0.2s; }
     .sidebar li:hover { background: rgba(255,255,255,0.05); }
     .sidebar li.active { background: rgba(212, 160, 23, 0.15); font-weight: bold; color: var(--title-color); border-left: 3px solid var(--primary-color); }
-    .sidebar button { background: transparent; color: #ccc; border: none; cursor: pointer; }
-    .sidebar button:hover { color: white; }
+    .sidebar li button { background: transparent; color: #ccc; border: none; cursor: pointer; font-weight: bold; }
+    .sidebar li button:hover { color: white; }
     .btn-new-chat { width: 100%; margin-bottom: 15px; }
+    .sessions-loader { padding: 30px 10px; color: #aaa; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 0.9em; gap: 15px; }
+    .sidebar-spinner { width: 36px; height: 36px; border: 4px solid rgba(212, 175, 55, 0.2); border-top-color: #d4af37; border-radius: 50%; animation: spin 1s linear infinite; }
     .bottom-links a { display: block; margin-top: 10px; text-decoration: none; color: var(--link-color); padding: 5px; }
     .bottom-links a:hover { background: rgba(255,255,255,0.05); border-radius: 4px; }
     .chat-area { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; }
@@ -148,6 +157,7 @@ export class ChatComponent implements OnInit {
   cdr = inject(ChangeDetectorRef);
 
   sessions: ChatSession[] = [];
+  loadingSessions = false;
   currentSessionId: number | null = null;
   messages: ChatMessage[] = [];
   
@@ -188,7 +198,17 @@ export class ChatComponent implements OnInit {
   }
 
   loadSessions() {
-    this.chatService.getSessions().subscribe(s => this.sessions = s);
+    this.loadingSessions = true;
+    this.chatService.getSessions().subscribe({
+      next: (s) => {
+        this.sessions = s;
+        this.loadingSessions = false;
+      },
+      error: (err) => {
+        console.error('Failed to load sessions', err);
+        this.loadingSessions = false;
+      }
+    });
   }
 
   newSession() {
