@@ -45,10 +45,10 @@ import { SettingsService } from '../services/settings.service';
               <strong>{{ msg.role === 'user' ? 'You' : 'Overseer' }}</strong>
             </div>
             <div *ngIf="msg.attachments && msg.attachments.length > 0" class="msg-attachments">
-              <div *ngFor="let att of msg.attachments" class="msg-att-item">
-                <img *ngIf="att.contentType.startsWith('image/')" [src]="'/api/chat/attachments/' + att.id" width="200" />
+              <a *ngFor="let att of msg.attachments" class="msg-att-item" [href]="'/api/chat/attachments/' + att.id" [download]="att.fileName" target="_blank" rel="noopener" title="Download {{ att.fileName }}">
+                <img *ngIf="att.contentType.startsWith('image/')" [src]="'/api/chat/attachments/' + att.id" width="200" alt="{{ att.fileName }}" />
                 <div *ngIf="!att.contentType.startsWith('image/')">📎 {{ att.fileName }}</div>
-              </div>
+              </a>
             </div>
             <div [innerHTML]="msg.content | markdown" class="markdown-body"></div>
             <button class="copy-btn" (click)="copyToClipboard(msg.content, i)" title="Copy">
@@ -212,7 +212,10 @@ import { SettingsService } from '../services/settings.service';
     textarea { flex-grow: 1; padding: 10px; resize: none; height: 60px; background: var(--bg-input); border: 1px solid var(--border-glass); color: white; border-radius: 4px; font-family: "Lato", sans-serif; }
     textarea:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 5px var(--gold-glow); }
     .msg-attachments { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
-    .msg-att-item img { max-width: 100%; border-radius: 4px; border: 1px solid var(--border-glass); }
+    .msg-att-item { text-decoration: none; display: block; transition: transform 0.2s ease, opacity 0.2s ease; outline: none; }
+    .msg-att-item:hover, .msg-att-item:focus-visible { transform: scale(1.02); opacity: 0.9; cursor: pointer; }
+    .msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); border-radius: 4px; }
+    .msg-att-item img { max-width: 100%; border-radius: 4px; border: 1px solid var(--border-glass); display: block; }
     .msg-att-item div { background: rgba(255,255,255,0.1); padding: 5px 10px; border-radius: 4px; font-size: 12px; color: #ccc; }
     
     .gh-dialog {
