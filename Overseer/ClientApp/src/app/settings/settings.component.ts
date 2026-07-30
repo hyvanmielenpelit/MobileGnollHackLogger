@@ -27,13 +27,21 @@ import { RouterModule } from '@angular/router';
           <input type="text" [(ngModel)]="model" name="model" />
         </div>
         <div>
-          <label>Reasoning Effort/Level (o1/o3/Gemini Thinking)</label>
-          <select [(ngModel)]="thinkingLevel" name="thinkingLevel">
-            <option value="">Default (None)</option>
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
-          </select>
+          <label>Thinking Level</label>
+          <div style="display: flex; gap: 10px;">
+            <select [(ngModel)]="thinkingLevelSelect" (ngModelChange)="onSelectChange()" name="thinkingLevelSelect" style="flex: 1;">
+              <option value="">None</option>
+              <option value="minimal">Minimal</option>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="xhigh">Xhigh</option>
+              <option value="max">Max</option>
+              <option value="pro">Pro</option>
+              <option value="custom">Custom...</option>
+            </select>
+            <input *ngIf="thinkingLevelSelect === 'custom'" type="text" [(ngModel)]="thinkingLevel" name="thinkingLevel" placeholder="Enter custom value..." style="flex: 1;" />
+          </div>
         </div>
         <div>
           <label>API Key (Leave blank to keep existing)</label>
@@ -59,7 +67,16 @@ export class SettingsComponent implements OnInit {
 
   provider = 'OpenAI';
   model = 'gpt-4o-mini';
-  thinkingLevel = '';
+  thinkingLevel = 'high';
+  thinkingLevelSelect = 'high';
+
+  onSelectChange() {
+    if (this.thinkingLevelSelect !== 'custom') {
+      this.thinkingLevel = this.thinkingLevelSelect;
+    } else {
+      this.thinkingLevel = ''; // Clear for user to type
+    }
+  }
   apiKey = '';
   hasApiKey = false;
   loading = false;
@@ -70,7 +87,15 @@ export class SettingsComponent implements OnInit {
       if (s) {
         if (s.provider) this.provider = s.provider;
         if (s.model) this.model = s.model;
-        if (s.thinkingLevel) this.thinkingLevel = s.thinkingLevel;
+        if (s.thinkingLevel !== undefined && s.thinkingLevel !== null) {
+          this.thinkingLevel = s.thinkingLevel;
+          const standardOptions = ['', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'pro'];
+          if (standardOptions.includes(this.thinkingLevel)) {
+            this.thinkingLevelSelect = this.thinkingLevel;
+          } else {
+            this.thinkingLevelSelect = 'custom';
+          }
+        }
         this.hasApiKey = s.hasApiKey;
       }
     });
