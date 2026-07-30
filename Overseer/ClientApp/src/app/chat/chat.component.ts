@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, inject, ChangeDetectorRef, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ChatService, ChatSession, ChatMessage } from '../services/chat.service';
@@ -36,7 +36,7 @@ import { MarkdownPipe } from './markdown.pipe';
         </div>
       </div>
       <div class="chat-area gh-main-container">
-        <div class="messages">
+        <div class="messages" #messagesContainer (wheel)="onUserInteraction()" (touchstart)="onUserInteraction()" (scroll)="onScroll()">
           <div *ngFor="let msg of messages; let i = index" class="message-box" [ngClass]="msg.role">
             <div class="message-header">
               <img *ngIf="msg.role === 'assistant'" src="/img/gnoll-overseer-avatar-128x128-static.webp" class="overseer-avatar" alt="Overseer" width="64" height="64" />
@@ -169,6 +169,9 @@ import { MarkdownPipe } from './markdown.pipe';
 })
 export class ChatComponent implements OnInit {
   chatService = inject(ChatService);
+  
+  @ViewChild('messagesContainer') messagesContainer!: ElementRef;
+  autoScrollEnabled = true;
   authService = inject(AuthService);
   debugService = inject(DebugService);
   router = inject(Router);
@@ -192,6 +195,47 @@ export class ChatComponent implements OnInit {
   showSpinner = false;
   requestStartTime = 0;
   abortController: AbortController | null = null;
+
+  onUserInteraction() {
+    this.autoScrollEnabled = false;
+  }
+
+  onScroll() {
+    if (!this.messagesContainer) return;
+    const container = this.messagesContainer.nativeElement;
+    const targetScrollTop = container.scrollHeight - container.clientHeight;
+    const streamingEl = container.querySelector('.message-box.assistant:last-child');
+    
+    let clampedScrollTop = targetScrollTop;
+    if (streamingEl && this.isStreaming) {
+      clampedScrollTop = Math.min(targetScrollTop, Math.max(0, (streamingEl as HTMLElement).offsetTop - 20));
+    }
+    
+    // Re-engage auto-scroll if user manually scrolls back to the target position
+    if (Math.abs(container.scrollTop - clampedScrollTop) < 10) {
+      this.autoScrollEnabled = true;
+    }
+  }
+
+  scrollToBottomClamped(smooth: boolean = false) {
+    if (!this.autoScrollEnabled || !this.messagesContainer) return;
+    const container = this.messagesContainer.nativeElement;
+    const targetScrollTop = container.scrollHeight - container.clientHeight;
+    const streamingEl = container.querySelector('.message-box.assistant:last-child');
+    
+    let finalScrollTop = targetScrollTop;
+    if (streamingEl && this.isStreaming) {
+      const maxScroll = Math.max(0, (streamingEl as HTMLElement).offsetTop - 20);
+      finalScrollTop = Math.min(targetScrollTop, maxScroll);
+    }
+    
+    if (container.scrollTop !== finalScrollTop) {
+      container.scrollTo({
+        top: finalScrollTop,
+        behavior: smooth ? 'smooth' : 'auto'
+      });
+    }
+  }
 
   ngOnInit() {
     this.loadSessions();
@@ -284,6 +328,20 @@ export class ChatComponent implements OnInit {
       attachments: attachmentsPayload.map(a => ({ fileName: a.fileName, contentType: a.contentType, base64Data: a.base64Data }))
     });
     
+    this.autoScrollEnabled = true;
+    
+    // Wait for angular to render the new user message, then scroll it into view
+    setTimeout(() => {
+      if (this.messagesContainer) {
+        const container = this.messagesContainer.nativeElement;
+        const msgEls = container.querySelectorAll('.message-box.user');
+        const lastUserMsg = msgEls[msgEls.length - 1];
+        if (lastUserMsg) {
+          lastUserMsg.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }
+    }, 0);
+    
     this.clearDraft();
     this.currentInput = '';
     this.pendingAttachments = [];
@@ -311,6 +369,7 @@ export class ChatComponent implements OnInit {
           }
           this.streamingMessage += evt.data;
           this.cdr.detectChanges();
+          this.scrollToBottomClamped(false);
         } else if (evt.type === 'error') {
           this.currentStatusText = `Error: ${evt.data}`;
           this.debugService.log(`[Backend Error] ${evt.data}`);
