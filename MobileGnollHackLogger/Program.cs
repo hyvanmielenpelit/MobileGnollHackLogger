@@ -62,7 +62,7 @@ if(string.IsNullOrEmpty(EmailSender.ForgotPasswordEmailHtml))
 BonesHelper.VersionCompatibilityList = builder.Configuration.GetSection("BonesVersionCompatibilityInfo").Get<List<BonesVersionCompatibilityInfo>>();
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlServer(connectionString));
+    options.UseSqlServer(connectionString, b => b.MigrationsAssembly("MobileGnollHackLogger")));
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 
 builder.Services.AddDefaultIdentity<ApplicationUser>(options =>

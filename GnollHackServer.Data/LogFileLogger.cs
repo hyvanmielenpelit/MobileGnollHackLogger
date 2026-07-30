@@ -1,4 +1,6 @@
-﻿namespace MobileGnollHackLogger.Data
+using Microsoft.Extensions.Configuration;
+
+namespace MobileGnollHackLogger.Data
 {
     public class LogFileLogger
     {

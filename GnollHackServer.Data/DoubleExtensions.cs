@@ -1,4 +1,3 @@
-﻿using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System;
 using System.Globalization;
 

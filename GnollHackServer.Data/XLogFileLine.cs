@@ -1,7 +1,4 @@
-﻿using Microsoft.AspNetCore.Routing.Matching;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.EntityFrameworkCore;
-using MobileGnollHackLogger.Data.Migrations;
 using Newtonsoft.Json.Linq;
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;

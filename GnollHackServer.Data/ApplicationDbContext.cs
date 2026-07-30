@@ -1,6 +1,5 @@
-﻿using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
-using MobileGnollHackLogger.Pages;
 using System.Reflection.Metadata;
 
 namespace MobileGnollHackLogger.Data
@@ -18,6 +17,9 @@ namespace MobileGnollHackLogger.Data
         public DbSet<RequestInfo> RequestLogs { get; set; } = null!;
         public DbSet<BonesTransaction> BonesTransactions { get; set; } = null!;
         public DbSet<SaveFileTracking> SaveFileTrackings { get; set; } = null!;
+        public DbSet<ChatSession> ChatSession { get; set; } = null!;
+        public DbSet<ChatMessage> ChatMessage { get; set; } = null!;
+        public DbSet<UserAiSettings> UserAiSettings { get; set; } = null!;
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)

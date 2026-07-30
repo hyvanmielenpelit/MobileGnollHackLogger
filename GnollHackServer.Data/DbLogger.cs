@@ -1,4 +1,3 @@
-﻿using Azure.Core;
 using System.Data;
 
 namespace MobileGnollHackLogger.Data
