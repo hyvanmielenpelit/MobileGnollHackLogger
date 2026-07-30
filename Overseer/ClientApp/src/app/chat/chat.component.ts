@@ -38,7 +38,7 @@ import { MarkdownPipe } from './markdown.pipe';
           </div>
         </div>
         <div class="input-area">
-          <textarea [(ngModel)]="currentInput" (keyup.enter)="sendMessage()" [disabled]="isStreaming"></textarea>
+          <textarea [(ngModel)]="currentInput" (ngModelChange)="saveDraft()" (keyup.enter)="sendMessage()" [disabled]="isStreaming"></textarea>
           <button (click)="sendMessage()" [disabled]="isStreaming || !currentInput.trim()">Send</button>
         </div>
       </div>
@@ -85,8 +85,25 @@ export class ChatComponent implements OnInit {
     this.route.queryParams.subscribe(params => {
       if (params['sessionId']) {
         this.loadSession(Number(params['sessionId']));
+      } else {
+        this.loadDraft();
       }
     });
+  }
+
+  loadDraft() {
+    const key = this.currentSessionId ? `chat_draft_${this.currentSessionId}` : 'chat_draft_new';
+    this.currentInput = localStorage.getItem(key) || '';
+  }
+
+  saveDraft() {
+    const key = this.currentSessionId ? `chat_draft_${this.currentSessionId}` : 'chat_draft_new';
+    localStorage.setItem(key, this.currentInput);
+  }
+
+  clearDraft() {
+    const key = this.currentSessionId ? `chat_draft_${this.currentSessionId}` : 'chat_draft_new';
+    localStorage.removeItem(key);
   }
 
   loadSessions() {
@@ -96,12 +113,14 @@ export class ChatComponent implements OnInit {
   newSession() {
     this.currentSessionId = null;
     this.messages = [];
+    this.loadDraft();
   }
 
   loadSession(id: number) {
     this.chatService.getSession(id).subscribe(s => {
       this.currentSessionId = s.id;
       this.messages = s.messages || [];
+      this.loadDraft();
       
       if (!this.sessions.find(x => x.id === id)) {
          this.loadSessions();
@@ -122,6 +141,7 @@ export class ChatComponent implements OnInit {
     
     const message = this.currentInput;
     this.messages.push({ role: 'user', content: message, timestampUtc: new Date().toISOString() });
+    this.clearDraft();
     this.currentInput = '';
     this.isStreaming = true;
     this.streamingMessage = '';
