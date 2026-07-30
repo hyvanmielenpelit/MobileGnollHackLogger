@@ -14,11 +14,15 @@ public class SettingsController : ControllerBase
 {
     private readonly SettingsService _settingsService;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IConfiguration _configuration;
+    private readonly ModelMetadataService _modelMetadataService;
 
-    public SettingsController(SettingsService settingsService, IHttpClientFactory httpClientFactory)
+    public SettingsController(SettingsService settingsService, IHttpClientFactory httpClientFactory, IConfiguration configuration, ModelMetadataService modelMetadataService)
     {
         _settingsService = settingsService;
         _httpClientFactory = httpClientFactory;
+        _configuration = configuration;
+        _modelMetadataService = modelMetadataService;
     }
 
     [HttpGet]
@@ -59,6 +63,16 @@ public class SettingsController : ControllerBase
         return Ok(new { success = true, message = "Test successful (mock)" });
     }
 
+    [HttpDelete("apikey")]
+    public async Task<IActionResult> DeleteApiKey()
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId == null) return Unauthorized();
+
+        await _settingsService.DeleteApiKeyAsync(userId);
+        return Ok();
+    }
+
     [HttpPost("models")]
     public async Task<IActionResult> GetModels([FromBody] UpdateSettingsRequest request)
     {
@@ -82,6 +96,13 @@ public class SettingsController : ControllerBase
         {
             var client = _httpClientFactory.CreateClient();
             var models = new List<ApiModelDto>();
+
+            var cutoffStr = _configuration["ModelCutoffDate"] ?? "2026-01-01";
+            long cutoffTimestamp = 0;
+            if (DateTimeOffset.TryParse(cutoffStr, out var cutoffDto))
+            {
+                cutoffTimestamp = cutoffDto.ToUnixTimeSeconds();
+            }
 
             if (provider == "OpenAI")
             {
@@ -110,7 +131,11 @@ public class SettingsController : ControllerBase
                                     {
                                         created = createdElement.GetInt64();
                                     }
-                                    models.Add(new ApiModelDto { Id = name, CreatedAt = created });
+                                    if (created >= cutoffTimestamp)
+                                    {
+                                        var meta = _modelMetadataService.GetMetadata(name);
+                                        models.Add(new ApiModelDto { Id = name, CreatedAt = created, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels });
+                                    }
                                 }
                             }
                         }
@@ -146,7 +171,11 @@ public class SettingsController : ControllerBase
                                         created = dto.ToUnixTimeSeconds();
                                     }
                                 }
-                                models.Add(new ApiModelDto { Id = name, CreatedAt = created });
+                                if (created >= cutoffTimestamp)
+                                {
+                                    var meta = _modelMetadataService.GetMetadata(name);
+                                    models.Add(new ApiModelDto { Id = name, CreatedAt = created, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels });
+                                }
                             }
                         }
                     }
@@ -175,7 +204,14 @@ public class SettingsController : ControllerBase
                             {
                                 if (!name.Contains("embedding") && !name.Contains("robotics") && !name.Contains("omni"))
                                 {
-                                    models.Add(new ApiModelDto { Id = name, CreatedAt = 0 });
+                                    var meta = _modelMetadataService.GetMetadata(name);
+                                    // If strict pattern doesn't match, Description == Id. 
+                                    // For Google, we'll exclude if it's older than Jan 1, 2026 (gemini-1.0, gemini-1.5, gemini-2.0, gemini-2.5) by manually filtering based on name prefix
+                                    bool isOldModel = name.StartsWith("gemini-1.") || name.StartsWith("gemini-2.");
+                                    if (!isOldModel)
+                                    {
+                                        models.Add(new ApiModelDto { Id = name, CreatedAt = 0, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels });
+                                    }
                                 }
                             }
                         }
@@ -200,6 +236,8 @@ public class ApiModelDto
 {
     public string Id { get; set; } = string.Empty;
     public long CreatedAt { get; set; }
+    public string Description { get; set; } = string.Empty;
+    public List<string> SupportedThinkingLevels { get; set; } = new List<string>();
 }
 
 public class UpdateSettingsRequest

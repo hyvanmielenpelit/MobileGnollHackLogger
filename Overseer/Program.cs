@@ -55,6 +55,7 @@ builder.Services.AddSingleton<WikiService>();
 builder.Services.AddSingleton<CryptoService>();
 builder.Services.AddScoped<ChatService>();
 builder.Services.AddScoped<SettingsService>();
+builder.Services.AddSingleton<ModelMetadataService>();
 
 var app = builder.Build();
 

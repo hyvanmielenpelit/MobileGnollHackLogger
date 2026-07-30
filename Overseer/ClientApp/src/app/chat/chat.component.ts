@@ -13,13 +13,13 @@ import { MarkdownPipe } from './markdown.pipe';
   imports: [CommonModule, FormsModule, RouterModule, MarkdownPipe],
   template: `
     <div class="layout">
-      <div class="sidebar">
+      <div class="sidebar gh-main-container">
         <h3>Sessions</h3>
-        <button (click)="newSession()">New Chat</button>
+        <button class="btn-gh btn-new-chat" (click)="newSession()">New Chat</button>
         <ul>
           <li *ngFor="let s of sessions" [class.active]="s.id === currentSessionId" (click)="loadSession(s.id)">
             {{ s.title }}
-            <button (click)="deleteSession(s.id, $event)">X</button>
+            <button (click)="deleteSession(s.id, $event)" title="Delete Session">X</button>
           </li>
         </ul>
         <div class="bottom-links">
@@ -28,7 +28,7 @@ import { MarkdownPipe } from './markdown.pipe';
           <a href="#" (click)="logout($event)">Logout</a>
         </div>
       </div>
-      <div class="chat-area">
+      <div class="chat-area gh-main-container">
         <div class="messages">
           <div *ngFor="let msg of messages" [ngClass]="msg.role">
             <strong>{{ msg.role === 'user' ? 'You' : 'Overseer' }}</strong>
@@ -64,39 +64,44 @@ import { MarkdownPipe } from './markdown.pipe';
             <button class="add-media-btn" (click)="triggerFileInput()" [disabled]="pendingAttachments.length >= 5">+</button>
             <input type="file" id="fileInput" hidden multiple accept=".html,.htm,.txt,.md,.png,.jpg,.jpeg,.webp" (change)="onFileSelected($event)">
             <textarea [(ngModel)]="currentInput" (ngModelChange)="saveDraft()" (keyup.enter)="sendMessage()" (paste)="onPaste($event)" [disabled]="isStreaming"></textarea>
-            <button (click)="sendMessage()" [disabled]="isStreaming || (!currentInput.trim() && pendingAttachments.length === 0)">Send</button>
+            <button class="btn-gh" style="margin-left: 10px;" (click)="sendMessage()" [disabled]="isStreaming || (!currentInput.trim() && pendingAttachments.length === 0)">Send</button>
           </div>
         </div>
       </div>
     </div>
   `,
   styles: [`
-    .layout { display: flex; height: 100vh; }
-    .sidebar { width: 250px; background: #f4f4f4; padding: 20px; display: flex; flex-direction: column; }
-    .sidebar h3 { margin-top: 0; }
+    .layout { display: flex; height: 100vh; padding: 20px; box-sizing: border-box; gap: 20px; }
+    .sidebar { width: 250px; padding: 20px; display: flex; flex-direction: column; }
+    .sidebar h3 { margin-top: 0; color: var(--title-color); border-bottom: 1px solid var(--border-glass); padding-bottom: 10px; }
     .sidebar ul { list-style: none; padding: 0; flex-grow: 1; overflow-y: auto; }
-    .sidebar li { padding: 10px; cursor: pointer; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between; }
-    .sidebar li.active { background: #e0e0e0; font-weight: bold; }
-    .bottom-links a { display: block; margin-top: 10px; text-decoration: none; color: #007bff; }
-    .bottom-links a:hover { text-decoration: underline; }
-    .chat-area { flex-grow: 1; display: flex; flex-direction: column; }
-    .messages { flex-grow: 1; padding: 20px; overflow-y: auto; background: #fff; }
-    .messages div { margin-bottom: 15px; padding: 10px; border-radius: 8px; max-width: 80%; }
-    .messages .user { background: #e3f2fd; align-self: flex-end; margin-left: auto; }
-    .messages .assistant { background: #f5f5f5; align-self: flex-start; }
+    .sidebar li { padding: 10px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; color: #ccc; transition: background 0.2s; }
+    .sidebar li:hover { background: rgba(255,255,255,0.05); }
+    .sidebar li.active { background: rgba(212, 160, 23, 0.15); font-weight: bold; color: var(--title-color); border-left: 3px solid var(--primary-color); }
+    .sidebar button { background: transparent; color: #ccc; border: none; cursor: pointer; }
+    .sidebar button:hover { color: white; }
+    .btn-new-chat { width: 100%; margin-bottom: 15px; }
+    .bottom-links a { display: block; margin-top: 10px; text-decoration: none; color: var(--link-color); padding: 5px; }
+    .bottom-links a:hover { background: rgba(255,255,255,0.05); border-radius: 4px; }
+    .chat-area { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .messages { flex-grow: 1; padding: 20px; overflow-y: auto; }
+    .messages div { margin-bottom: 15px; padding: 12px 18px; border-radius: 8px; max-width: 80%; line-height: 1.5; }
+    .messages .user { background: rgba(212, 160, 23, 0.15); align-self: flex-end; margin-left: auto; border: 1px solid var(--border-glass); }
+    .messages .assistant { background: rgba(255, 255, 255, 0.05); align-self: flex-start; border: 1px solid rgba(255,255,255,0.1); }
+    .messages strong { color: var(--title-color); display: block; margin-bottom: 5px; font-family: "Cinzel", serif; }
     ::ng-deep .markdown-body p { margin: 5px 0 10px; white-space: pre-wrap; }
     ::ng-deep .markdown-body ul, ::ng-deep .markdown-body ol { margin: 5px 0 10px; padding-left: 20px; }
-    ::ng-deep .markdown-body h1, ::ng-deep .markdown-body h2, ::ng-deep .markdown-body h3 { margin: 10px 0 5px; }
-    .input-area-container { border-top: 1px solid #ddd; background: #fafafa; display: flex; flex-direction: column; }
+    ::ng-deep .markdown-body h1, ::ng-deep .markdown-body h2, ::ng-deep .markdown-body h3 { margin: 10px 0 5px; color: var(--title-color); font-family: "Cinzel", serif; }
+    .input-area-container { border-top: 1px solid var(--border-glass); background: rgba(0,0,0,0.3); display: flex; flex-direction: column; }
     
     .progress-bar {
       display: flex;
       align-items: center;
       padding: 6px 20px;
-      background: #e8f5e9;
-      border-bottom: 1px solid #c8e6c9;
+      background: rgba(212, 160, 23, 0.1);
+      border-bottom: 1px solid var(--border-glass);
       font-size: 12px;
-      color: #2e7d32;
+      color: #e0ba6d;
     }
     .status-icon { margin-right: 8px; font-size: 14px; }
     .status-icon.spin { animation: spin 1.5s linear infinite; display: inline-block; }
@@ -121,16 +126,17 @@ import { MarkdownPipe } from './markdown.pipe';
     .stop-btn:hover { background: #c82333; }
 
     .attachments-preview { display: flex; padding: 10px 20px 0; gap: 10px; flex-wrap: wrap; }
-    .attachment-chip { background: #e0e0e0; padding: 5px 10px; border-radius: 15px; font-size: 12px; display: flex; align-items: center; }
-    .attachment-chip button { margin-left: 5px; border: none; background: transparent; cursor: pointer; font-weight: bold; padding: 0; }
-    .add-media-btn { padding: 10px; cursor: pointer; font-size: 20px; font-weight: bold; width: 40px; height: 40px; border-radius: 50%; border: 1px solid #ccc; display: flex; align-items: center; justify-content: center; margin-right: 10px; align-self: center; background: #fff; }
-    .add-media-btn:disabled { color: #ccc; cursor: not-allowed; }
+    .attachment-chip { background: rgba(255,255,255,0.1); padding: 5px 10px; border-radius: 15px; font-size: 12px; display: flex; align-items: center; border: 1px solid rgba(255,255,255,0.2); }
+    .attachment-chip button { margin-left: 5px; border: none; background: transparent; cursor: pointer; font-weight: bold; padding: 0; color: #ff6b6b; }
+    .add-media-btn { padding: 10px; cursor: pointer; font-size: 20px; font-weight: bold; width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--border-glass); display: flex; align-items: center; justify-content: center; margin-right: 10px; align-self: center; background: rgba(255,255,255,0.05); color: var(--primary-color); transition: background 0.2s; }
+    .add-media-btn:hover { background: rgba(255,255,255,0.1); }
+    .add-media-btn:disabled { color: #555; border-color: #555; cursor: not-allowed; }
     .input-area { padding: 20px; display: flex; align-items: center; }
-    textarea { flex-grow: 1; padding: 10px; resize: none; height: 60px; }
-    button { padding: 10px 20px; margin-left: 10px; cursor: pointer; }
+    textarea { flex-grow: 1; padding: 10px; resize: none; height: 60px; background: var(--bg-input); border: 1px solid var(--border-glass); color: white; border-radius: 4px; font-family: "Lato", sans-serif; }
+    textarea:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 5px var(--gold-glow); }
     .msg-attachments { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
-    .msg-att-item img { max-width: 100%; border-radius: 4px; border: 1px solid #ddd; }
-    .msg-att-item div { background: #eee; padding: 5px 10px; border-radius: 4px; font-size: 12px; color: #555; }
+    .msg-att-item img { max-width: 100%; border-radius: 4px; border: 1px solid var(--border-glass); }
+    .msg-att-item div { background: rgba(255,255,255,0.1); padding: 5px 10px; border-radius: 4px; font-size: 12px; color: #ccc; }
   `]
 })
 export class ChatComponent implements OnInit {

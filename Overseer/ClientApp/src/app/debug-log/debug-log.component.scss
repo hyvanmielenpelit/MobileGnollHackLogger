@@ -24,14 +24,12 @@
 
 .log-viewer {
   flex: 1;
-  background-color: #1e1e1e;
-  color: #d4d4d4;
   padding: 10px;
-  border-radius: 5px;
   overflow-y: auto;
   font-family: 'Courier New', Courier, monospace;
   font-size: 14px;
   line-height: 1.4;
+  color: white;
 
   .empty {
     color: #808080;

@@ -11,6 +11,8 @@ export interface UserAiSettings {
 export interface ApiModelDto {
   id: string;
   createdAt: number;
+  description: string;
+  supportedThinkingLevels: string[];
 }
 
 @Injectable({
@@ -25,6 +27,10 @@ export class SettingsService {
 
   saveSettings(provider: string, model: string, apiKey: string, thinkingLevel?: string) {
     return this.http.put('/api/settings', { provider, model, apiKey, thinkingLevel });
+  }
+
+  deleteApiKey() {
+    return this.http.delete('/api/settings/apikey');
   }
 
   getAvailableModels(provider: string, apiKey: string) {

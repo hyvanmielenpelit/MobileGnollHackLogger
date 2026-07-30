@@ -9,14 +9,15 @@ import { RouterModule } from '@angular/router';
   standalone: true,
   imports: [CommonModule, FormsModule, RouterModule],
   template: `
-    <div class="settings-container">
-      <h2>AI Provider Settings</h2>
-      <a routerLink="/chat">Back to Chat</a>
-      <hr>
+    <div class="settings-container gh-main-container">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h2>AI Provider Settings</h2>
+        <a routerLink="/chat" class="nav-back-link">&larr; Back to Chat</a>
+      </div>
       <form (ngSubmit)="saveSettings()">
         <div>
           <label>Provider</label>
-          <select [(ngModel)]="provider" name="provider">
+          <select [(ngModel)]="provider" name="provider" class="gh-input">
             <option value="OpenAI">OpenAI</option>
             <option value="Anthropic">Anthropic</option>
             <option value="Google">Google</option>
@@ -24,14 +25,19 @@ import { RouterModule } from '@angular/router';
         </div>
         <div>
           <label>API Key (Leave blank to keep existing)</label>
-          <input type="password" [(ngModel)]="apiKey" name="apiKey" />
-          <small *ngIf="hasApiKey">An API key is currently saved.</small>
+          <div style="display: flex; gap: 10px; align-items: center;">
+            <input type="password" [(ngModel)]="apiKey" name="apiKey" class="gh-input" style="flex: 1;" />
+            <span *ngIf="apiKey.length > 0" title="API key set but not saved yet." style="color: #ffc107; font-size: 1.5em; flex-shrink: 0; margin-left: 10px;">&#10004;</span>
+            <span *ngIf="apiKey.length === 0 && hasApiKey" title="An API key is currently saved." style="color: #28a745; font-size: 1.5em; flex-shrink: 0; margin-left: 10px;">&#10004;</span>
+            <span *ngIf="apiKey.length === 0 && !hasApiKey" title="No API key saved." style="color: #dc3545; font-size: 1.5em; flex-shrink: 0; margin-left: 10px;">&#9888;</span>
+            <button *ngIf="hasApiKey" type="button" class="btn-gh btn-gh-delete" style="min-width: 100px; min-height: 36px; padding: 5px 10px;" (click)="deleteApiKey()" [disabled]="loading">Delete</button>
+          </div>
         </div>
         <div class="model-row">
           <label>Model</label>
           <div style="display: flex; gap: 10px;">
-            <input type="text" [(ngModel)]="model" name="model" style="flex: 1;" />
-            <button type="button" class="btn-check-models" (click)="checkModels()" [disabled]="loadingModels">
+            <input type="text" [(ngModel)]="model" name="model" style="flex: 1;" class="gh-input" />
+            <button type="button" class="btn-gh" (click)="checkModels()" [disabled]="loadingModels">
               {{ loadingModels ? 'Checking...' : 'Check Models' }}
             </button>
           </div>
@@ -39,7 +45,7 @@ import { RouterModule } from '@angular/router';
         <div>
           <label>Thinking Level</label>
           <div style="display: flex; gap: 10px;">
-            <select [(ngModel)]="thinkingLevelSelect" (ngModelChange)="onSelectChange()" name="thinkingLevelSelect" style="flex: 1;">
+            <select [(ngModel)]="thinkingLevelSelect" (ngModelChange)="onSelectChange()" name="thinkingLevelSelect" style="flex: 1;" class="gh-input">
               <option value="">None</option>
               <option value="minimal">Minimal</option>
               <option value="low">Low</option>
@@ -50,24 +56,25 @@ import { RouterModule } from '@angular/router';
               <option value="pro">Pro</option>
               <option value="custom">Custom...</option>
             </select>
-            <input *ngIf="thinkingLevelSelect === 'custom'" type="text" [(ngModel)]="thinkingLevel" name="thinkingLevel" placeholder="Enter custom value..." style="flex: 1;" />
+            <input *ngIf="thinkingLevelSelect === 'custom'" type="text" [(ngModel)]="thinkingLevel" name="thinkingLevel" placeholder="Enter custom value..." style="flex: 1;" class="gh-input" />
           </div>
         </div>
         
-        <button type="submit" [disabled]="loading">Save</button>
+        <button type="submit" class="btn-gh" [disabled]="loading">Save</button>
         <span *ngIf="saved" class="success">Settings saved successfully!</span>
       </form>
     </div>
 
     <!-- Modal for picking models -->
     <div class="modal-overlay" *ngIf="showModelModal">
-      <div class="modal-content">
-        <h3>Available Models</h3>
+      <div class="modal-content gh-main-container">
+        <h3 style="color: var(--title-color);">Available Models</h3>
+        <p style="font-size: 0.8em; color: #aaa; margin-top: -10px; margin-bottom: 15px;">Showing models released after 1 Jan, 2026</p>
         
         <div *ngIf="modelError" class="modal-error">
           <p>{{ modelError }}</p>
           <div class="modal-actions">
-            <button type="button" class="btn-primary" (click)="closeModal()">OK</button>
+            <button type="button" class="btn-gh" (click)="closeModal()">OK</button>
           </div>
         </div>
 
@@ -82,27 +89,38 @@ import { RouterModule } from '@angular/router';
               <span>Newest</span>
             </label>
           </div>
-          <select [(ngModel)]="selectedModel" size="10" class="model-listbox">
+          <select [(ngModel)]="selectedModel" (ngModelChange)="onModelSelect()" size="10" class="model-listbox gh-input">
             <option *ngFor="let m of sortedModels" [value]="m.id">{{ m.id }}</option>
           </select>
+          
+          <div *ngIf="selectedModelObj" class="model-meta">
+            <strong>Description:</strong> {{ selectedModelObj.description }}<br/>
+            <div *ngIf="selectedModelObj.supportedThinkingLevels && selectedModelObj.supportedThinkingLevels.length > 0" style="margin-top: 10px;">
+              <strong>Supported Thinking:</strong>
+              <select [(ngModel)]="modalThinkingLevel" class="gh-input" style="margin-top: 5px;">
+                <option *ngFor="let level of selectedModelObj.supportedThinkingLevels" [value]="level">{{ level }}</option>
+              </select>
+            </div>
+            <div *ngIf="!selectedModelObj.supportedThinkingLevels || selectedModelObj.supportedThinkingLevels.length === 0" style="margin-top: 10px;">
+              <strong>Supported Thinking:</strong> None
+            </div>
+          </div>
+
           <div class="modal-actions">
-            <button type="button" class="btn-secondary" (click)="closeModal()">Cancel</button>
-            <button type="button" class="btn-primary" (click)="applySelectedModel()" [disabled]="!selectedModel">OK</button>
+            <button type="button" class="btn-gh btn-gh-cancel" (click)="closeModal()">Cancel</button>
+            <button type="button" class="btn-gh" (click)="applySelectedModel()" [disabled]="!selectedModel">OK</button>
           </div>
         </div>
       </div>
     </div>
   `,
   styles: [`
-    .settings-container { max-width: 600px; margin: 50px auto; padding: 20px; border: 1px solid #ccc; border-radius: 8px; }
+    .settings-container { max-width: 600px; margin: 50px auto; padding: 30px; }
+    h2 { margin-top: 0; }
     form div { margin-bottom: 15px; }
     .model-row { margin-bottom: 15px; }
     label { display: block; margin-bottom: 5px; font-weight: bold; }
-    input, select { width: 100%; padding: 8px; box-sizing: border-box; }
-    button { padding: 10px 20px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; }
-    .btn-check-models { background: #007bff; white-space: nowrap; }
-    .btn-check-models:disabled { background: #6c757d; cursor: not-allowed; }
-    .success { color: green; margin-left: 10px; }
+    .success { color: #28a745; margin-left: 10px; font-weight: bold; }
 
     /* Modal Styles */
     .modal-overlay {
@@ -112,9 +130,8 @@ import { RouterModule } from '@angular/router';
       z-index: 1000;
     }
     .modal-content {
-      background: white; padding: 20px; border-radius: 8px;
+      padding: 20px; border-radius: 8px;
       width: 400px; max-width: 90%;
-      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
     .modal-content h3 { margin-top: 0; }
     .model-listbox { width: 100%; padding: 5px; margin-bottom: 15px; }
@@ -125,7 +142,8 @@ import { RouterModule } from '@angular/router';
     
     .segmented-control {
       display: inline-flex;
-      background: #f0f0f0;
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid var(--border-glass);
       border-radius: 20px;
       padding: 3px;
       margin-bottom: 15px;
@@ -137,16 +155,16 @@ import { RouterModule } from '@angular/router';
       margin: 0;
       font-size: 0.9em;
       font-weight: 500;
-      color: #666;
+      color: #aaa;
       transition: all 0.3s ease;
     }
     .segmented-control input[type="radio"] {
       display: none;
     }
     .segmented-control label:has(input:checked) {
-      background: #fff;
-      color: #333;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      background: var(--primary-color);
+      color: black;
+      box-shadow: 0 0 5px var(--gold-glow);
     }
   `]
 })
@@ -168,6 +186,8 @@ export class SettingsComponent implements OnInit {
   showModelModal = false;
   availableModels: ApiModelDto[] = [];
   selectedModel = '';
+  selectedModelObj: ApiModelDto | null = null;
+  modalThinkingLevel = '';
   modelError = '';
   sortMode: 'alphabetical' | 'newest' = 'alphabetical';
 
@@ -226,11 +246,30 @@ export class SettingsComponent implements OnInit {
     });
   }
 
+  deleteApiKey() {
+    if (confirm("Are you sure you want to delete your saved API key?")) {
+      this.loading = true;
+      this.settingsService.deleteApiKey().subscribe({
+        next: () => {
+          this.loading = false;
+          this.hasApiKey = false;
+          this.apiKey = '';
+        },
+        error: (err) => {
+          this.loading = false;
+          console.error("Failed to delete API key", err);
+        }
+      });
+    }
+  }
+
   checkModels() {
     this.loadingModels = true;
     this.modelError = '';
     this.availableModels = [];
     this.selectedModel = '';
+    this.selectedModelObj = null;
+    this.modalThinkingLevel = '';
     this.showModelModal = true;
 
     this.settingsService.getAvailableModels(this.provider, this.apiKey).subscribe({
@@ -239,6 +278,7 @@ export class SettingsComponent implements OnInit {
         this.loadingModels = false;
         if (this.sortedModels.length > 0) {
           this.selectedModel = this.sortedModels[0].id;
+          this.onModelSelect();
         }
       },
       error: (err) => {
@@ -248,21 +288,49 @@ export class SettingsComponent implements OnInit {
     });
   }
 
+  onModelSelect() {
+    this.selectedModelObj = this.availableModels.find(m => m.id === this.selectedModel) || null;
+    if (this.selectedModelObj && this.selectedModelObj.supportedThinkingLevels && this.selectedModelObj.supportedThinkingLevels.length > 0) {
+      // Pick a default if available, e.g. medium or the first one
+      this.modalThinkingLevel = this.selectedModelObj.supportedThinkingLevels.includes('medium') 
+        ? 'medium' 
+        : this.selectedModelObj.supportedThinkingLevels[0];
+    } else {
+      this.modalThinkingLevel = '';
+    }
+  }
+
   closeModal() {
     this.showModelModal = false;
     this.modelError = '';
     this.availableModels = [];
+    this.selectedModelObj = null;
   }
 
   onSortChange() {
     if (this.sortedModels.length > 0) {
       this.selectedModel = this.sortedModels[0].id;
+      this.onModelSelect();
     }
   }
 
   applySelectedModel() {
     if (this.selectedModel) {
       this.model = this.selectedModel;
+      
+      // Map the thinking level back to the main form
+      if (this.modalThinkingLevel) {
+        this.thinkingLevel = this.modalThinkingLevel;
+        const standardOptions = ['', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'pro'];
+        if (standardOptions.includes(this.thinkingLevel)) {
+          this.thinkingLevelSelect = this.thinkingLevel;
+        } else {
+          this.thinkingLevelSelect = 'custom';
+        }
+      } else {
+        this.thinkingLevel = '';
+        this.thinkingLevelSelect = '';
+      }
     }
     this.closeModal();
   }

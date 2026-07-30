@@ -53,4 +53,16 @@ public class SettingsService
 
         return _cryptoService.Decrypt(settings.EncryptedApiKey, settings.ApiKeyNonce, settings.ApiKeyTag, userId);
     }
+
+    public async Task DeleteApiKeyAsync(string userId)
+    {
+        var settings = await _dbContext.UserAiSettings.FindAsync(userId);
+        if (settings != null)
+        {
+            settings.EncryptedApiKey = null;
+            settings.ApiKeyNonce = null;
+            settings.ApiKeyTag = null;
+            await _dbContext.SaveChangesAsync();
+        }
+    }
 }
