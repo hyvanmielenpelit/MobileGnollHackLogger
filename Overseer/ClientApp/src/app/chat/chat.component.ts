@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, inject, ChangeDetectorRef, ViewChild, ElementRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject, ChangeDetectorRef, ViewChild, ElementRef, HostListener, NgZone } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ChatService, ChatSession, ChatMessage } from '../services/chat.service';
@@ -13,8 +13,8 @@ import { SettingsService } from '../services/settings.service';
   standalone: true,
   imports: [CommonModule, FormsModule, RouterModule, MarkdownPipe],
   template: `
-    <div *ngIf="!isOffline" class="layout">
-      <div class="sidebar gh-main-container">
+    <div *ngIf="!isOffline" class="layout" [class.is-resizing]="isResizing">
+      <div class="sidebar gh-main-container" #sidebar [style.width.px]="sidebarWidth">
         <h3>Sessions</h3>
         <button class="btn-gh btn-new-chat" (click)="newSession()">New Chat</button>
         <ul>
@@ -36,6 +36,7 @@ import { SettingsService } from '../services/settings.service';
           <a href="#" (click)="logout($event)">Logout</a>
         </div>
       </div>
+      <div class="resizer" (mousedown)="startResize($event)" (touchstart)="startResize($event)"></div>
       <div class="chat-area gh-main-container">
         <div class="messages" #messagesContainer (wheel)="onUserInteraction()" (touchstart)="onUserInteraction()" (scroll)="onScroll()">
           <div *ngFor="let msg of messages; let i = index" class="message-box" [ngClass]="msg.role">
@@ -119,7 +120,29 @@ import { SettingsService } from '../services/settings.service';
   `,
   styles: [`
     .layout { display: flex; height: 100vh; padding: 20px; box-sizing: border-box; gap: 20px; }
-    .sidebar { width: 250px; padding: 20px; display: flex; flex-direction: column; }
+    .layout.is-resizing .chat-area, .layout.is-resizing .sidebar { pointer-events: none; }
+    .sidebar { padding: 20px; display: flex; flex-direction: column; flex-shrink: 0; }
+    .resizer {
+      width: 10px;
+      flex-shrink: 0;
+      cursor: col-resize;
+      margin: 0 -15px;
+      z-index: 10;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    .resizer::after {
+      content: '';
+      width: 4px;
+      height: 40px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 2px;
+      transition: background 0.2s;
+    }
+    .resizer:hover::after, .resizer:active::after {
+      background: var(--primary-color, #d4a847);
+    }
     .sidebar h3 { margin-top: 0; color: var(--title-color); border-bottom: 1px solid var(--border-glass); padding-bottom: 10px; }
     .sidebar ul { list-style: none; padding: 0; flex-grow: 1; overflow-y: auto; }
     .sidebar li { padding: 10px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; color: #ccc; transition: background 0.2s; }
@@ -271,6 +294,17 @@ export class ChatComponent implements OnInit, OnDestroy {
   @ViewChild('deleteConfirmDialog') deleteConfirmDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('errorToast') errorToast!: ElementRef<HTMLElement>;
   autoScrollEnabled = true;
+
+  sidebarWidth = 250;
+  isResizing = false;
+  private resizeStartX = 0;
+  private resizeStartWidth = 0;
+  private mouseMoveListener: ((e: MouseEvent | TouchEvent) => void) | null = null;
+  private mouseUpListener: (() => void) | null = null;
+  private animationFrameId: number | null = null;
+  
+  @ViewChild('sidebar') sidebarEl!: ElementRef<HTMLElement>;
+  ngZone = inject(NgZone);
   authService = inject(AuthService);
   debugService = inject(DebugService);
   router = inject(Router);
@@ -362,6 +396,14 @@ export class ChatComponent implements OnInit, OnDestroy {
         this.maxAttachmentSize = settings.maxAttachmentSize;
       }
     });
+
+    const savedWidth = localStorage.getItem('overseer_sidebar_width');
+    if (savedWidth) {
+      const parsed = parseInt(savedWidth, 10);
+      if (!isNaN(parsed) && parsed >= 150 && parsed <= 600) {
+        this.sidebarWidth = parsed;
+      }
+    }
 
     this.loadSessions();
     this.route.queryParams.subscribe(params => {
@@ -631,6 +673,72 @@ export class ChatComponent implements OnInit, OnDestroy {
       }
     } catch (err) {
       console.error('Failed to copy text: ', err);
+    }
+  }
+
+  startResize(event: MouseEvent | TouchEvent) {
+    event.preventDefault();
+    this.isResizing = true;
+    this.resizeStartX = event instanceof MouseEvent ? event.clientX : event.touches[0].clientX;
+    this.resizeStartWidth = this.sidebarWidth;
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+
+    this.ngZone.runOutsideAngular(() => {
+      this.mouseMoveListener = (e: MouseEvent | TouchEvent) => this.onMouseMove(e);
+      this.mouseUpListener = () => this.stopResize();
+      
+      window.addEventListener('mousemove', this.mouseMoveListener);
+      window.addEventListener('touchmove', this.mouseMoveListener);
+      window.addEventListener('mouseup', this.mouseUpListener);
+      window.addEventListener('touchend', this.mouseUpListener);
+    });
+  }
+
+  onMouseMove(event: MouseEvent | TouchEvent) {
+    if (!this.isResizing) return;
+    const clientX = event instanceof MouseEvent ? event.clientX : event.touches[0].clientX;
+    const delta = clientX - this.resizeStartX;
+    let newWidth = this.resizeStartWidth + delta;
+    newWidth = Math.max(150, Math.min(newWidth, 600));
+    
+    if (this.animationFrameId === null) {
+      this.animationFrameId = requestAnimationFrame(() => {
+        // Update the native element directly for performance to avoid triggering Angular change detection on every pixel move
+        if (this.sidebarEl) {
+          this.sidebarEl.nativeElement.style.width = `${newWidth}px`;
+        }
+        this.sidebarWidth = newWidth;
+        this.animationFrameId = null;
+      });
+    }
+  }
+
+  stopResize() {
+    if (this.isResizing) {
+      this.ngZone.run(() => {
+        this.isResizing = false;
+      });
+      
+      if (this.animationFrameId !== null) {
+        cancelAnimationFrame(this.animationFrameId);
+        this.animationFrameId = null;
+      }
+      
+      localStorage.setItem('overseer_sidebar_width', this.sidebarWidth.toString());
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      
+      if (this.mouseMoveListener) {
+        window.removeEventListener('mousemove', this.mouseMoveListener);
+        window.removeEventListener('touchmove', this.mouseMoveListener);
+        this.mouseMoveListener = null;
+      }
+      if (this.mouseUpListener) {
+        window.removeEventListener('mouseup', this.mouseUpListener);
+        window.removeEventListener('touchend', this.mouseUpListener);
+        this.mouseUpListener = null;
+      }
     }
   }
 }
