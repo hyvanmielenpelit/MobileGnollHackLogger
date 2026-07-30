@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
 using MobileGnollHackLogger.Data;
 using System.IO;
+using Overseer.Services;
 
 namespace Overseer.Controllers;
 
@@ -14,13 +15,15 @@ public class SessionController : ControllerBase
     private readonly ApplicationDbContext _dbContext;
     private readonly IMemoryCache _cache;
     private readonly IConfiguration _configuration;
+    private readonly IServiceScopeFactory _scopeFactory;
 
-    public SessionController(SignInManager<ApplicationUser> signInManager, ApplicationDbContext dbContext, IMemoryCache cache, IConfiguration configuration)
+    public SessionController(SignInManager<ApplicationUser> signInManager, ApplicationDbContext dbContext, IMemoryCache cache, IConfiguration configuration, IServiceScopeFactory scopeFactory)
     {
         _signInManager = signInManager;
         _dbContext = dbContext;
         _cache = cache;
         _configuration = configuration;
+        _scopeFactory = scopeFactory;
     }
 
     [HttpPost("create")]
@@ -171,6 +174,20 @@ public class SessionController : ControllerBase
             AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(2)
         });
 
+        if (!string.IsNullOrWhiteSpace(request.InitialPrompt))
+        {
+            var userId = user.Id;
+            var sessionId = session.Id;
+            var initialPrompt = request.InitialPrompt;
+
+            _ = Task.Run(async () =>
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var chatService = scope.ServiceProvider.GetRequiredService<ChatService>();
+                await chatService.GenerateAndBroadcastMessageAsync(sessionId, initialPrompt, null, userId, CancellationToken.None);
+            });
+        }
+
         return Ok(new
         {
             sessionId = session.Id,
@@ -188,4 +205,5 @@ public class CreateSessionRequest
     public string? MessageHistory { get; set; }        // NEW: Full 16384-message history (plain text)
     public string? DirectoryManifest { get; set; }     // NEW: Game directory file listing (tab-separated)
     public string? DebugData { get; set; }             // NEW: Runtime debug JSON (only when DeveloperMode is on)
+    public string? InitialPrompt { get; set; }         // NEW: Prompt to immediately start AI generation
 }

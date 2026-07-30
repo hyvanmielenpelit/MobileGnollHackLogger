@@ -4,6 +4,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using MobileGnollHackLogger.Data;
 using Overseer.Services;
+using Overseer.Hubs;
+using Microsoft.AspNetCore.SignalR;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -100,7 +102,7 @@ namespace Overseer.Tests
             
             try
             {
-                await foreach (var chunk in chatService.StreamMessageAsync(null, "Say hello in exactly one sentence.", null, claimsPrincipal, cts.Token))
+                await foreach (var chunk in chatService.StreamMessageAsync(null, "Say hello in exactly one sentence.", null, claimsPrincipal.FindFirstValue(ClaimTypes.NameIdentifier), cts.Token))
                 {
                     _output.WriteLine(chunk.Data);
                     fullResponse += chunk.Data;

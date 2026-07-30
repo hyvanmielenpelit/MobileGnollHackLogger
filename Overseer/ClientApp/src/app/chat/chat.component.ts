@@ -7,6 +7,7 @@ import { DebugService } from '../services/debug.service';
 import { Router, ActivatedRoute, RouterModule } from '@angular/router';
 import { MarkdownPipe } from './markdown.pipe';
 import { SettingsService } from '../services/settings.service';
+import * as signalR from '@microsoft/signalr';
 
 @Component({
   selector: 'app-chat',
@@ -298,6 +299,8 @@ export class ChatComponent implements OnInit, OnDestroy {
   @ViewChild('errorToast') errorToast!: ElementRef<HTMLElement>;
   autoScrollEnabled = true;
 
+  private hubConnection: signalR.HubConnection | null = null;
+
   sidebarWidth = 250;
   isResizing = false;
   private resizeStartX = 0;
@@ -364,6 +367,9 @@ export class ChatComponent implements OnInit, OnDestroy {
   ngOnDestroy() {
     window.removeEventListener('online', this.onlineHandler);
     window.removeEventListener('offline', this.offlineHandler);
+    if (this.hubConnection) {
+      this.hubConnection.stop();
+    }
   }
 
   scrollToBottomClamped(smooth: boolean = false) {
@@ -416,6 +422,57 @@ export class ChatComponent implements OnInit, OnDestroy {
         this.loadDraft();
       }
     });
+
+    this.setupSignalR();
+  }
+
+  setupSignalR() {
+    this.hubConnection = new signalR.HubConnectionBuilder()
+      .withUrl('/chathub')
+      .withAutomaticReconnect()
+      .build();
+
+    this.hubConnection.on('ReceiveChatEvent', (evt: any) => {
+      this.ngZone.run(() => {
+        if (evt.type === 'debug') {
+          this.debugService.log(`[Backend] ${evt.data}`);
+        } else if (evt.type === 'status') {
+          this.currentStatusText = evt.data;
+          this.cdr.detectChanges();
+        } else if (evt.type === 'chunk') {
+          if (!this.isStreaming) {
+            this.isStreaming = true;
+            this.showSpinner = false;
+            this.currentStatusText = 'Receiving data (background task)...';
+          }
+          this.streamingMessage += evt.data;
+          this.cdr.detectChanges();
+          this.scrollToBottomClamped(false);
+        } else if (evt.type === 'error') {
+          this.currentStatusText = `Error: ${evt.data}`;
+          this.debugService.log(`[Backend Error] ${evt.data}`);
+          this.streamingMessage += `\n\n**Error:** ${evt.data}`;
+          this.showSpinner = false;
+          this.cdr.detectChanges();
+        } else if (evt.type === 'done') {
+          if (this.isStreaming) {
+            this.messages.push({ role: 'assistant', content: this.streamingMessage, timestampUtc: new Date().toISOString() });
+            this.streamingMessage = '';
+            this.isStreaming = false;
+            this.showSpinner = false;
+            this.currentStatusText = 'Generation complete.';
+            this.cdr.detectChanges();
+            this.loadSessions();
+          }
+        }
+      });
+    });
+
+    this.hubConnection.start().then(() => {
+      if (this.currentSessionId) {
+        this.hubConnection?.invoke("JoinSession", this.currentSessionId).catch(console.error);
+      }
+    }).catch(err => console.error('SignalR connection error: ', err));
   }
 
   loadDraft() {
@@ -456,6 +513,13 @@ export class ChatComponent implements OnInit, OnDestroy {
 
   loadSession(id: number) {
     this.chatService.getSession(id).subscribe(s => {
+      if (this.hubConnection?.state === signalR.HubConnectionState.Connected) {
+        if (this.currentSessionId && this.currentSessionId !== id) {
+          this.hubConnection.invoke("LeaveSession", this.currentSessionId).catch(console.error);
+        }
+        this.hubConnection.invoke("JoinSession", id).catch(console.error);
+      }
+
       this.currentSessionId = s.id;
       this.messages = s.messages || [];
       this.currentStatusText = '';

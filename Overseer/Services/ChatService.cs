@@ -6,6 +6,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
 using MobileGnollHackLogger.Data;
 using Overseer.Controllers;
+using Microsoft.AspNetCore.SignalR;
+using Overseer.Hubs;
 
 namespace Overseer.Services;
 
@@ -16,20 +18,37 @@ public class ChatService
     private readonly CryptoService _cryptoService;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConfiguration _configuration;
+    private readonly IHubContext<ChatHub> _hubContext;
 
-    public ChatService(IServiceScopeFactory scopeFactory, WikiService wikiService, CryptoService cryptoService, IHttpClientFactory httpClientFactory, IConfiguration configuration)
+    public ChatService(IServiceScopeFactory scopeFactory, WikiService wikiService, CryptoService cryptoService, IHttpClientFactory httpClientFactory, IConfiguration configuration, IHubContext<ChatHub> hubContext)
     {
         _scopeFactory = scopeFactory;
         _wikiService = wikiService;
         _cryptoService = cryptoService;
         _httpClientFactory = httpClientFactory;
         _configuration = configuration;
+        _hubContext = hubContext;
     }
 
-    public async IAsyncEnumerable<ChatEvent> StreamMessageAsync(long? sessionId, string message, List<SendMessageAttachment>? attachments, ClaimsPrincipal user, [EnumeratorCancellation] CancellationToken cancellationToken)
+    public async Task GenerateAndBroadcastMessageAsync(long sessionId, string message, List<SendMessageAttachment>? attachments, string userId, CancellationToken cancellationToken)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (userId == null) yield break;
+        try
+        {
+            await foreach (var evt in StreamMessageAsync(sessionId, message, attachments, userId, cancellationToken))
+            {
+                await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", evt, cancellationToken);
+            }
+            await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "done", Data = "" }, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "error", Data = ex.Message }, cancellationToken);
+        }
+    }
+
+    public async IAsyncEnumerable<ChatEvent> StreamMessageAsync(long? sessionId, string message, List<SendMessageAttachment>? attachments, string userId, [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrEmpty(userId)) yield break;
 
         long currentSessionId = 0;
         string? apiKey = null;

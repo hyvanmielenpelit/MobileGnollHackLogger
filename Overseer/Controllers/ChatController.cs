@@ -137,7 +137,8 @@ public class ChatController : ControllerBase
         
         try 
         {
-            await foreach (var chatEvent in _chatService.StreamMessageAsync(request.SessionId, request.Message, request.Attachments, User, cancellationToken))
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+            await foreach (var chatEvent in _chatService.StreamMessageAsync(request.SessionId, request.Message, request.Attachments, userId, cancellationToken))
             {
                 if (chatEvent.Type == "chunk")
                 {

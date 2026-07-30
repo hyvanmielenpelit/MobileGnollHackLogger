@@ -56,6 +56,7 @@ builder.Services.AddSingleton<CryptoService>();
 builder.Services.AddScoped<ChatService>();
 builder.Services.AddScoped<SettingsService>();
 builder.Services.AddSingleton<ModelMetadataService>();
+builder.Services.AddSignalR();
 
 var app = builder.Build();
 
@@ -83,6 +84,7 @@ app.Use((context, next) =>
 });
 
 app.MapControllers();
+app.MapHub<Overseer.Hubs.ChatHub>("/chathub");
 
 // SPA Fallback to Angular index.html
 app.MapFallbackToFile("index.html");

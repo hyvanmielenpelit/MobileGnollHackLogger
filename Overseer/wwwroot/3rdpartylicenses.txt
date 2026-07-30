@@ -609,6 +609,11 @@ License: "(MPL-2.0 OR Apache-2.0)"
    limitations under the License.
 
 --------------------------------------------------------------------------------
+Package: @microsoft/signalr
+License: "MIT"
+
+
+--------------------------------------------------------------------------------
 Package: @oddbird/popover-polyfill
 License: "BSD-3-Clause"
 

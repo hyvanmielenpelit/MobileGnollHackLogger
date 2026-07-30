@@ -2,7 +2,7 @@ import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../services/auth.service';
-import { Router } from '@angular/router';
+import { Router, ActivatedRoute } from '@angular/router';
 
 @Component({
   selector: 'app-login',
@@ -37,6 +37,7 @@ import { Router } from '@angular/router';
 export class LoginComponent {
   authService = inject(AuthService);
   router = inject(Router);
+  route = inject(ActivatedRoute);
 
   username = '';
   password = '';
@@ -48,7 +49,8 @@ export class LoginComponent {
     this.error = '';
     this.authService.login(this.username, this.password).subscribe({
       next: () => {
-        this.router.navigate(['/chat']);
+        const returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/chat';
+        this.router.navigateByUrl(returnUrl);
       },
       error: () => {
         this.error = 'Invalid credentials';

@@ -13,45 +13,45 @@ export const routes: Routes = [
   { 
     path: 'debug-log', 
     component: DebugLogComponent,
-    canActivate: [() => {
+    canActivate: [(route: any, state: any) => {
       const auth = inject(AuthService);
       const router = inject(Router);
       return auth.checkAuth().pipe(
         map(user => {
           if (user) return true;
-          return router.createUrlTree(['/login']);
+          return router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } });
         }),
-        catchError(() => of(router.createUrlTree(['/login'])))
+        catchError(() => of(router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } })))
       );
     }]
   },
   { 
     path: 'chat', 
     component: ChatComponent,
-    canActivate: [() => {
+    canActivate: [(route: any, state: any) => {
       const auth = inject(AuthService);
       const router = inject(Router);
       return auth.checkAuth().pipe(
         map(user => {
           if (user) return true;
-          return router.createUrlTree(['/login']);
+          return router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } });
         }),
-        catchError(() => of(router.createUrlTree(['/login'])))
+        catchError(() => of(router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } })))
       );
     }]
   },
   { 
     path: 'settings', 
     component: SettingsComponent,
-    canActivate: [() => {
+    canActivate: [(route: any, state: any) => {
       const auth = inject(AuthService);
       const router = inject(Router);
       return auth.checkAuth().pipe(
         map(user => {
           if (user) return true;
-          return router.createUrlTree(['/login']);
+          return router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } });
         }),
-        catchError(() => of(router.createUrlTree(['/login'])))
+        catchError(() => of(router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } })))
       );
     }],
     canDeactivate: [(component: SettingsComponent) => {
