@@ -10,17 +10,17 @@ public class CryptoService
 
     public CryptoService(IConfiguration configuration)
     {
-        var keyBase64 = configuration["Overseer:AesEncryptionKey"];
+        var keyBase64 = configuration["AesEncryptionKey"];
         if (string.IsNullOrEmpty(keyBase64))
         {
             // Fallback for development if not provided, though it's dangerous for prod
             // In a real app, you'd throw an exception. We'll throw one here to ensure it's configured.
-            throw new InvalidOperationException("Overseer:AesEncryptionKey is not configured.");
+            throw new InvalidOperationException("AesEncryptionKey is not configured.");
         }
         _masterKey = Convert.FromBase64String(keyBase64);
         if (_masterKey.Length != 32)
         {
-            throw new InvalidOperationException("Overseer:AesEncryptionKey must be a 256-bit (32 bytes) key.");
+            throw new InvalidOperationException("AesEncryptionKey must be a 256-bit (32 bytes) key.");
         }
     }
 

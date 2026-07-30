@@ -36,8 +36,8 @@ namespace Overseer.Tests
             Assert.False(string.IsNullOrEmpty(testApiKey), "AI:APIKey is not configured in User Secrets.");
 
             // Also need AesEncryptionKey for CryptoService
-            var aesKey = config["Overseer:AesEncryptionKey"];
-            Assert.False(string.IsNullOrEmpty(aesKey), "Overseer:AesEncryptionKey is not configured in User Secrets.");
+            var aesKey = config["AesEncryptionKey"];
+            Assert.False(string.IsNullOrEmpty(aesKey), "AesEncryptionKey is not configured in User Secrets.");
 
             // 2. Setup Dependency Injection
             var services = new ServiceCollection();

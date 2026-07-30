@@ -11,9 +11,9 @@ public class WikiService
 
     public WikiService(IConfiguration configuration)
     {
-        _wikiPath = configuration["Overseer:WikiPath"] ?? "c:\\wiki";
-        _maxFiles = int.TryParse(configuration["Overseer:MaxWikiFilesToInclude"], out var maxFiles) ? maxFiles : 5;
-        _maxFileSizeKB = int.TryParse(configuration["Overseer:MaxWikiFileSizeKB"], out var maxFileSize) ? maxFileSize : 100;
+        _wikiPath = configuration["WikiPath"] ?? "c:\\wiki";
+        _maxFiles = int.TryParse(configuration["MaxWikiFilesToInclude"], out var maxFiles) ? maxFiles : 5;
+        _maxFileSizeKB = int.TryParse(configuration["MaxWikiFileSizeKB"], out var maxFileSize) ? maxFileSize : 100;
 
         IndexWikiFiles();
     }
