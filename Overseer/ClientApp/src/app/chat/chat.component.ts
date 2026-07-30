@@ -100,7 +100,7 @@ import { MarkdownPipe } from './markdown.pipe';
     .messages strong { color: var(--title-color); display: block; margin-bottom: 5px; font-family: "Cinzel", serif; }
     ::ng-deep .markdown-body p { margin: 5px 0 10px; white-space: pre-wrap; }
     ::ng-deep .markdown-body ul, ::ng-deep .markdown-body ol { margin: 5px 0 10px; padding-left: 20px; }
-    ::ng-deep .markdown-body h1, ::ng-deep .markdown-body h2, ::ng-deep .markdown-body h3 { margin: 10px 0 5px; color: var(--title-color); font-family: "Cinzel", serif; }
+    ::ng-deep .markdown-body h1, ::ng-deep .markdown-body h2, ::ng-deep .markdown-body h3, ::ng-deep .markdown-body h4, ::ng-deep .markdown-body h5, ::ng-deep .markdown-body h6 { margin: 10px 0 5px; color: var(--title-color); font-family: "Cinzel", serif; }
     .input-area-container { border-top: 1px solid var(--border-glass); background: rgba(0,0,0,0.3); display: flex; flex-direction: column; }
     
     .progress-bar {
