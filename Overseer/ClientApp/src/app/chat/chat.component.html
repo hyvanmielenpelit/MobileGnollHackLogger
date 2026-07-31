@@ -1,5 +1,8 @@
 <div *ngIf="!isOffline" class="layout" [class.is-resizing]="isResizing" [class.sidebar-open]="isSidebarOpen">
   <div class="sidebar gh-main-container" #sidebar [style.width.px]="sidebarWidth">
+    <button class="sidebar-close-btn" (click)="closeSidebar()" title="Close Sidebar" aria-label="Close sidebar">
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+    </button>
     <h3>Sessions</h3>
     <button class="btn-gh btn-new-chat" (click)="navigateToNewSession()">New Chat</button>
     <ul>

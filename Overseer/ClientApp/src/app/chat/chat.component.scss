@@ -270,6 +270,9 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
 .sidebar-backdrop {
   display: none;
 }
+.sidebar-close-btn {
+  display: none;
+}
 
 @media (max-width: 768px) {
   .layout {
@@ -310,6 +313,27 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
     padding: 10px;
     border-block-end: 1px solid var(--border-glass);
     background: rgba(0, 0, 0, 0.3);
+  }
+  
+  .sidebar-close-btn {
+    display: flex;
+    position: absolute;
+    top: 15px;
+    inset-inline-end: 15px;
+    background: transparent;
+    border: none;
+    color: #888;
+    width: 32px;
+    height: 32px;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    border-radius: 50%;
+    transition: background 0.2s, color 0.2s;
+  }
+  .sidebar-close-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
   }
   
   .sidebar-toggle {
