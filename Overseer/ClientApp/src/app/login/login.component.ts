@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../services/auth.service';
@@ -9,16 +9,9 @@ import { Router, ActivatedRoute } from '@angular/router';
   standalone: true,
   imports: [CommonModule, FormsModule],
   templateUrl: './login.component.html',
-  styles: [`
-    .login-container { max-width: 400px; margin: 100px auto; padding: 20px; border: 1px solid #ccc; border-radius: 8px; }
-    form div { margin-bottom: 15px; }
-    label { display: block; margin-bottom: 5px; }
-    input { width: 100%; padding: 8px; box-sizing: border-box; }
-    button { width: 100%; padding: 10px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
-    .error { color: red; }
-  `]
+  styleUrl: './login.component.scss'
 })
-export class LoginComponent {
+export class LoginComponent implements OnInit, OnDestroy {
   authService = inject(AuthService);
   router = inject(Router);
   route = inject(ActivatedRoute);
@@ -28,7 +21,34 @@ export class LoginComponent {
   loading = false;
   error = '';
 
+  private boundSyncAriaBlur: any;
+  private boundSyncAriaInput: any;
+
+  ngOnInit() {
+    const syncAria = (el: any) => {
+      if (el && el.setAttribute && el.matches) {
+        el.setAttribute('aria-invalid', el.matches(':user-invalid') ? 'true' : 'false');
+      }
+    };
+    this.boundSyncAriaBlur = (e: any) => syncAria(e.target);
+    this.boundSyncAriaInput = (e: any) => {
+      if (e.target && e.target.hasAttribute && e.target.hasAttribute('aria-invalid')) syncAria(e.target);
+    };
+    
+    document.addEventListener('blur', this.boundSyncAriaBlur, true);
+    document.addEventListener('input', this.boundSyncAriaInput);
+  }
+
+  ngOnDestroy() {
+    document.removeEventListener('blur', this.boundSyncAriaBlur, true);
+    document.removeEventListener('input', this.boundSyncAriaInput);
+  }
+
   onSubmit() {
+    if (!this.username || !this.password) {
+      return; // Prevent empty submission
+    }
+
     this.loading = true;
     this.error = '';
     this.authService.login(this.username, this.password).subscribe({
