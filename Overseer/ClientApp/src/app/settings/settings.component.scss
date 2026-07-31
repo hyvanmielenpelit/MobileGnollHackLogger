@@ -23,18 +23,39 @@ label { display: block; margin-bottom: 5px; font-weight: bold; }
 }
 
 .api-key-grid {
-  display: grid;
-  grid-template-columns: 1fr 40px 140px;
+  display: flex;
   gap: 10px;
   align-items: center;
   margin-top: 5px;
 }
 
+.api-key-grid > .gh-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.api-key-grid > .info-icon-wrapper {
+  flex: 0 0 40px;
+}
+
+.api-key-grid > .btn-delete-api {
+  flex: 0 0 140px;
+}
+
 .model-grid {
-  display: grid;
-  grid-template-columns: 1fr 40px 140px;
+  display: flex;
   gap: 10px;
   align-items: center;
+}
+
+.model-grid > .gh-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.model-grid > .btn-check-models {
+  flex: 0 0 190px;
+  margin: 0;
 }
 
 .m-0 { margin: 0; }
@@ -179,14 +200,6 @@ label { display: block; margin-bottom: 5px; font-weight: bold; }
     flex-direction: column;
     align-items: flex-start;
     gap: 10px;
-  }
-  
-  .api-key-grid, .model-grid {
-    grid-template-columns: 1fr;
-  }
-  
-  .btn-check-models {
-    grid-column: auto;
   }
   
   .token-row {
