@@ -1,6 +1,6 @@
 .debug-container {
   padding: 20px;
-  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -54,5 +54,15 @@
     .time {
       color: #569cd6;
     }
+  }
+}
+
+@media (max-width: 600px) {
+  .debug-container {
+    padding: 10px;
+  }
+  .header {
+    flex-wrap: wrap;
+    gap: 8px;
   }
 }

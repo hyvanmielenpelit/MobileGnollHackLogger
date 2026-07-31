@@ -1,4 +1,4 @@
-<div *ngIf="!isOffline" class="layout" [class.is-resizing]="isResizing">
+<div *ngIf="!isOffline" class="layout" [class.is-resizing]="isResizing" [class.sidebar-open]="isSidebarOpen">
   <div class="sidebar gh-main-container" #sidebar [style.width.px]="sidebarWidth">
     <h3>Sessions</h3>
     <button class="btn-gh btn-new-chat" (click)="navigateToNewSession()">New Chat</button>
@@ -25,7 +25,12 @@
     </div>
   </div>
   <div class="resizer" (mousedown)="startResize($event)" (touchstart)="startResize($event)"></div>
+  <div class="sidebar-backdrop" [class.visible]="isSidebarOpen" (click)="closeSidebar()"></div>
   <div class="chat-area gh-main-container">
+    <div class="mobile-header">
+      <button class="sidebar-toggle" (click)="toggleSidebar()">☰</button>
+      <span class="mobile-title">Overseer</span>
+    </div>
     <div class="messages" #messagesContainer (wheel)="onUserInteraction()" (touchstart)="onUserInteraction()" (scroll)="onScroll()">
       <div *ngIf="messages.length === 0 && (!hasApiKey || !hasModel)" class="chat-alert-box gh-main-container">
         <div class="alert-icon">⚠️</div>

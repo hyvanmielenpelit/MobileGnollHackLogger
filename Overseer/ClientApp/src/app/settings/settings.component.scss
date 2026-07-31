@@ -160,3 +160,41 @@ label { display: block; margin-bottom: 5px; font-weight: bold; }
   -webkit-backdrop-filter: blur(5px);
   white-space: nowrap;
 }
+
+.model-picker-body {
+  overflow-y: auto;
+  max-height: 60dvh;
+  margin-top: 15px;
+  padding-right: 5px;
+}
+
+@media (max-width: 600px) {
+  .settings-container {
+    margin: 20px 10px;
+    padding: 15px;
+  }
+  
+  .header-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  
+  .api-key-grid, .model-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .btn-check-models {
+    grid-column: auto;
+  }
+  
+  .token-row {
+    flex-direction: column;
+    gap: 15px;
+  }
+  
+  .gh-tooltip {
+    max-width: calc(100vw - 40px);
+    white-space: normal;
+  }
+}

@@ -17,6 +17,7 @@ export class SettingsComponent implements OnInit {
   @ViewChild('successToast') successToast!: ElementRef<HTMLElement>;
   @ViewChild('confirmDialog') confirmDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('apiKeyInfoDialog') apiKeyInfoDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('modelPickerDialog') modelPickerDialog!: ElementRef<HTMLDialogElement>;
 
   provider = 'OpenAI';
   model = 'gpt-4o-mini';
@@ -42,7 +43,6 @@ export class SettingsComponent implements OnInit {
 
   // Model Picker State
   loadingModels = false;
-  showModelModal = false;
   availableModels: ApiModelDto[] = [];
   selectedModel = '';
   selectedModelObj: ApiModelDto | null = null;
@@ -195,7 +195,7 @@ export class SettingsComponent implements OnInit {
     this.selectedModel = '';
     this.selectedModelObj = null;
     this.modalThinkingLevel = '';
-    this.showModelModal = true;
+    this.modelPickerDialog?.nativeElement.showModal();
 
     this.settingsService.getAvailableModels(this.provider, this.apiKey).subscribe({
       next: (models) => {
@@ -226,7 +226,7 @@ export class SettingsComponent implements OnInit {
   }
 
   closeModal() {
-    this.showModelModal = false;
+    this.modelPickerDialog?.nativeElement.close();
     this.modelError = '';
     this.availableModels = [];
     this.selectedModelObj = null;

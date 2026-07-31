@@ -1,4 +1,4 @@
-.layout { display: flex; height: 100vh; padding: 20px; box-sizing: border-box; gap: 20px; }
+.layout { display: flex; height: 100dvh; padding: 20px; box-sizing: border-box; gap: 20px; }
 .layout.is-resizing .chat-area, .layout.is-resizing .sidebar { pointer-events: none; }
 .sidebar { padding: 20px; display: flex; flex-direction: column; flex-shrink: 0; }
 .resizer {
@@ -30,7 +30,7 @@
 .session-info { flex-grow: 1; overflow: hidden; display: flex; flex-direction: column; justify-content: center; margin-inline-end: 10px; }
 .session-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14px; font-weight: bold; }
 .session-time { font-size: 11px; color: #888; margin-block-start: 4px; }
-.sidebar li button.session-delete-btn { background: transparent; color: #ccc; border: none; cursor: pointer; font-weight: bold; padding: 5px; flex-shrink: 0; }
+.sidebar li button.session-delete-btn { background: transparent; color: #ccc; border: none; cursor: pointer; font-weight: bold; padding: 5px; flex-shrink: 0; min-width: 32px; min-height: 32px; }
 .sidebar li button.session-delete-btn:hover { color: white; }
 .btn-new-chat { width: 100%; margin-block-end: 15px; }
 .sessions-loader { padding: 30px 10px; color: #aaa; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 0.9em; gap: 15px; }
@@ -42,7 +42,7 @@
 .message-box { margin-block-end: 15px; padding: 12px 18px 25px 18px; border-radius: 8px; max-width: 80%; line-height: 1.5; position: relative; }
 .message-box.user { background: rgba(212, 160, 23, 0.15); align-self: flex-end; border: 1px solid var(--border-glass); }
 .message-box.assistant { background: rgba(255, 255, 255, 0.05); align-self: flex-start; border: 1px solid rgba(255,255,255,0.1); }
-.copy-btn { position: absolute; inset-block-end: 5px; inset-inline-end: 5px; background: transparent; border: none; color: #888; cursor: pointer; padding: 4px; border-radius: 4px; display: flex; align-items: center; justify-content: center; transition: background 0.2s, color 0.2s; }
+.copy-btn { position: absolute; inset-block-end: 5px; inset-inline-end: 5px; background: transparent; border: none; color: #888; cursor: pointer; padding: 4px; border-radius: 4px; display: flex; align-items: center; justify-content: center; transition: background 0.2s, color 0.2s; min-width: 32px; min-height: 32px; }
 .copy-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
 .messages strong { color: var(--title-color); display: block; margin-block-end: 5px; font-family: "Cinzel", serif; }
 .message-header { display: flex; align-items: center; gap: 15px; margin-block-end: 10px; }
@@ -87,7 +87,7 @@
 
 .attachments-preview { display: flex; padding-block-start: 10px; padding-inline: 20px 0; gap: 10px; flex-wrap: wrap; }
 .attachment-chip { background: rgba(255,255,255,0.1); padding: 5px 10px; border-radius: 15px; font-size: 12px; display: flex; align-items: center; border: 1px solid rgba(255,255,255,0.2); }
-.attachment-chip button { margin-inline-start: 5px; border: none; background: transparent; cursor: pointer; font-weight: bold; padding: 0; color: var(--color-error); }
+.attachment-chip button { margin-inline-start: 5px; border: none; background: transparent; cursor: pointer; font-weight: bold; padding: 0; color: var(--color-error); min-width: 24px; min-height: 24px; }
 .add-media-btn { padding: 10px; cursor: pointer; font-size: 20px; font-weight: bold; width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--border-glass); display: flex; align-items: center; justify-content: center; margin-inline-end: 10px; align-self: center; background: rgba(255,255,255,0.05); color: var(--primary-color); transition: background 0.2s; }
 .add-media-btn:hover { background: rgba(255,255,255,0.1); }
 .add-media-btn:disabled { color: #555; border-color: #555; cursor: not-allowed; }
@@ -132,7 +132,7 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 60vh;
+  height: 60dvh;
   text-align: center;
   color: #aaa;
 }
@@ -189,7 +189,7 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
   border: none;
   background: transparent;
   max-width: 90vw;
-  max-height: 90vh;
+  max-height: 90dvh;
   padding: 0;
   border-radius: 8px;
   overflow: visible; /* To allow backdrop click to work correctly if content is smaller */
@@ -258,8 +258,97 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
 
 .image-preview-dialog .image-container img {
   max-width: 100%;
-  max-height: calc(90vh - 100px);
+  max-height: calc(90dvh - 100px);
   object-fit: contain;
   border-radius: 4px;
   box-shadow: 0 0 10px rgba(0,0,0,0.5);
+}
+
+.mobile-header {
+  display: none;
+}
+.sidebar-backdrop {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .layout {
+    padding: 0;
+    gap: 0;
+  }
+  .sidebar {
+    position: fixed;
+    inset-block: 0;
+    inset-inline-start: 0;
+    width: 80vw !important;
+    max-width: 320px;
+    z-index: 100;
+    transform: translateX(-100%);
+    transition: transform 0.3s ease;
+  }
+  .layout.sidebar-open .sidebar {
+    transform: translateX(0);
+  }
+  .resizer {
+    display: none;
+  }
+  .message-box {
+    max-width: 95%;
+  }
+  .input-area, .messages {
+    padding: 10px;
+  }
+  .overseer-avatar {
+    width: 40px;
+    height: 40px;
+  }
+  
+  .mobile-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    border-block-end: 1px solid var(--border-glass);
+    background: rgba(0, 0, 0, 0.3);
+  }
+  
+  .sidebar-toggle {
+    background: transparent;
+    border: 1px solid var(--border-glass);
+    color: var(--primary-color);
+    font-size: 1.4em;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+  }
+  .sidebar-toggle:hover {
+    background: rgba(212, 160, 23, 0.15);
+  }
+
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 99;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+  }
+  .sidebar-backdrop.visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+@media (pointer: coarse) {
+  .stop-btn {
+    width: 32px;
+    height: 32px;
+  }
 }

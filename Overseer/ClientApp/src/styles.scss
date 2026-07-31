@@ -23,7 +23,7 @@ html, body {
 
 body {
   margin: 0;
-  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   color: white;
@@ -219,6 +219,13 @@ a:hover {
   transform: translateY(-20px);
   z-index: 9999;
 }
+
+@media (max-width: 600px) {
+  .toast-error {
+    max-width: calc(100vw - 40px);
+  }
+}
+
 .toast-error:is(:popover-open, .\:popover-open) {
   opacity: 1;
   transform: translateY(0);
@@ -235,23 +242,6 @@ a:hover {
 .toast-body strong { display: block; margin-bottom: 4px; font-family: "Cinzel", serif; }
 .toast-body p { margin: 0; font-size: 14px; }
 .toast-close { background: transparent; border: none; color: white; font-size: 20px; cursor: pointer; padding: 0; line-height: 1; margin-top: -4px; }
-
-/* Modal Styles */
-.modal-overlay {
-  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-  background: rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
-  display: flex; justify-content: center; align-items: center;
-  z-index: 1000;
-}
-.modal-content {
-  padding: 20px; border-radius: 8px;
-  width: 400px; max-width: 90%;
-}
-.modal-content h3 { margin-top: 0; }
-.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 15px; }
-.modal-error { color: var(--color-error); }
 
 /* Segmented Control */
 .segmented-control {
@@ -293,6 +283,14 @@ a:hover {
   -webkit-backdrop-filter: blur(5px);
   max-width: 400px;
 }
+
+@media (max-width: 600px) {
+  .gh-dialog {
+    max-width: 95vw;
+    padding: 15px 20px;
+  }
+}
+
 .gh-dialog::backdrop {
   background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(2px);

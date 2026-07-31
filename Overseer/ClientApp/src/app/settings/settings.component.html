@@ -86,19 +86,19 @@
 </div>
 
 <!-- Modal for picking models -->
-<div class="modal-overlay" *ngIf="showModelModal">
-  <div class="modal-content gh-main-container">
-    <h3 class="modal-title">Available Models</h3>
-    <p class="modal-subtitle">Showing models released after 1 Jan, 2026</p>
-    
-    <div *ngIf="modelError" class="modal-error">
-      <p>{{ modelError }}</p>
-      <div class="modal-actions">
-        <button type="button" class="btn-gh" (click)="closeModal()">OK</button>
-      </div>
+<dialog #modelPickerDialog class="gh-dialog">
+  <h3 class="modal-title">Available Models</h3>
+  <p class="modal-subtitle">Showing models released after 1 Jan, 2026</p>
+  
+  <div *ngIf="modelError" class="modal-error">
+    <p>{{ modelError }}</p>
+    <div class="modal-actions">
+      <button type="button" class="btn-gh" (click)="closeModal()">OK</button>
     </div>
+  </div>
 
-    <div *ngIf="!modelError">
+  <div *ngIf="!modelError">
+    <div class="model-picker-body">
       <div class="segmented-control">
         <label>
           <input type="radio" name="sortMode" value="alphabetical" [(ngModel)]="sortMode" (change)="onSortChange()">
@@ -135,14 +135,14 @@
           </ng-template>
         </div>
       </div>
+    </div>
 
-      <div class="modal-actions">
-        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeModal()">Cancel</button>
-        <button type="button" class="btn-gh" (click)="applySelectedModel()" [disabled]="!selectedModel">OK</button>
-      </div>
+    <div class="modal-actions">
+      <button type="button" class="btn-gh btn-gh-cancel" (click)="closeModal()">Cancel</button>
+      <button type="button" class="btn-gh" (click)="applySelectedModel()" [disabled]="!selectedModel">OK</button>
     </div>
   </div>
-</div>
+</dialog>
 <!-- Unsaved Changes Dialog -->
 <dialog #confirmDialog class="gh-dialog">
   <form method="dialog">

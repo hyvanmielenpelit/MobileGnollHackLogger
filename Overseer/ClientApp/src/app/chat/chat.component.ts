@@ -31,6 +31,7 @@ export class ChatComponent implements OnInit, OnDestroy {
 
   sidebarWidth = 250;
   isResizing = false;
+  isSidebarOpen = false;
   private resizeStartX = 0;
   private resizeStartWidth = 0;
   private mouseMoveListener: ((e: MouseEvent | TouchEvent) => void) | null = null;
@@ -102,6 +103,18 @@ export class ChatComponent implements OnInit, OnDestroy {
     if (this.hubConnection) {
       this.hubConnection.stop();
     }
+  }
+
+  getHubConnection() {
+    return this.hubConnection;
+  }
+
+  toggleSidebar() {
+    this.isSidebarOpen = !this.isSidebarOpen;
+  }
+
+  closeSidebar() {
+    this.isSidebarOpen = false;
   }
 
   scrollToBottomClamped(smooth: boolean = false) {
@@ -253,6 +266,9 @@ export class ChatComponent implements OnInit, OnDestroy {
   }
 
   navigateToNewSession() {
+    if (window.innerWidth <= 768) {
+      this.closeSidebar();
+    }
     this.router.navigate([], {
       relativeTo: this.route,
       queryParams: { sessionId: null },
@@ -261,6 +277,9 @@ export class ChatComponent implements OnInit, OnDestroy {
   }
 
   navigateToSession(id: number) {
+    if (window.innerWidth <= 768) {
+      this.closeSidebar();
+    }
     if (this.currentSessionId === id) return;
     this.router.navigate([], {
       relativeTo: this.route,
@@ -562,6 +581,7 @@ export class ChatComponent implements OnInit, OnDestroy {
   }
 
   startResize(event: MouseEvent | TouchEvent) {
+    if (window.innerWidth <= 768) return;
     event.preventDefault();
     this.isResizing = true;
     this.resizeStartX = event instanceof MouseEvent ? event.clientX : event.touches[0].clientX;

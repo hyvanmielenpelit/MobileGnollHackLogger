@@ -1,6 +1,6 @@
 .login-container { 
   max-width: 450px; 
-  margin: 10vh auto; 
+  margin: 10dvh auto; 
   padding: 40px 30px;
   background: rgba(25, 25, 25, 0.9);
 }
@@ -197,4 +197,27 @@ input:required:user-valid {
   border-color: var(--color-success);
 }
 
-
+@media (max-width: 480px) {
+  .login-container {
+    padding: 25px 15px;
+    margin: 5dvh 10px;
+    box-sizing: border-box;
+  }
+  
+  .logo-title {
+    font-size: clamp(1.8rem, 8vw, 2.9rem);
+  }
+  
+  .overseer-avatar {
+    width: 96px;
+    height: 96px;
+  }
+  
+  .divider::before, .divider::after {
+    width: min(130px, 30vw);
+  }
+  
+  .login-btn {
+    letter-spacing: 1px;
+  }
+}
