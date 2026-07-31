@@ -8,9 +8,10 @@ import { RouterModule } from '@angular/router';
   selector: 'app-settings',
   standalone: true,
   imports: [CommonModule, FormsModule, RouterModule],
+  styleUrl: './settings.component.scss',
   template: `
     <div class="settings-container gh-main-container">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+      <div class="header-row">
         <h2>AI Provider Settings</h2>
         <a routerLink="/chat" class="nav-back-link">&larr; Back to Chat</a>
       </div>
@@ -26,29 +27,29 @@ import { RouterModule } from '@angular/router';
         <div>
           <label for="apiKeyInput">API Key</label>
           <span id="apiKeyHint" class="form-hint">Leave blank to keep existing</span>
-          <div style="display: grid; grid-template-columns: 1fr 40px 140px; gap: 10px; align-items: center; margin-top: 5px;">
-            <input type="password" id="apiKeyInput" [(ngModel)]="apiKey" name="apiKey" class="gh-input" aria-describedby="apiKeyHint" style="margin: 0;" />
-            <div style="display: flex; justify-content: center; align-items: center;">
-              <span *ngIf="apiKey.length > 0" title="API key set but not saved yet." style="color: #ffc107; font-size: 1.5em; transform: translateY(5px); display: inline-block;">&#10004;</span>
-              <span *ngIf="apiKey.length === 0 && hasApiKey" title="An API key is currently saved." style="color: #28a745; font-size: 1.5em; transform: translateY(5px); display: inline-block;">&#10004;</span>
-              <span *ngIf="apiKey.length === 0 && !hasApiKey" title="No API key saved." style="color: #dc3545; font-size: 1.5em; transform: translateY(5px); display: inline-block;">&#9888;</span>
+          <div class="api-key-grid">
+            <input type="password" id="apiKeyInput" [(ngModel)]="apiKey" name="apiKey" class="gh-input m-0" aria-describedby="apiKeyHint" />
+            <div class="flex-center">
+              <span *ngIf="apiKey.length > 0" title="API key set but not saved yet." class="status-icon status-warning">&#10004;</span>
+              <span *ngIf="apiKey.length === 0 && hasApiKey" title="An API key is currently saved." class="status-icon status-success">&#10004;</span>
+              <span *ngIf="apiKey.length === 0 && !hasApiKey" title="No API key saved." class="status-icon status-error">&#9888;</span>
             </div>
-            <button *ngIf="hasApiKey" type="button" class="btn-gh btn-gh-delete" style="width: 140px; min-width: 140px; min-height: 36px; padding: 5px 10px; margin: 0;" (click)="deleteApiKey()" [disabled]="loading">Delete</button>
+            <button *ngIf="hasApiKey" type="button" class="btn-gh btn-gh-delete btn-delete-api" (click)="deleteApiKey()" [disabled]="loading">Delete</button>
           </div>
         </div>
         <div class="model-row">
           <label>Model</label>
-          <div style="display: grid; grid-template-columns: 1fr 40px 140px; gap: 10px; align-items: center;">
-            <input type="text" [(ngModel)]="model" name="model" class="gh-input" style="margin: 0;" />
-            <button type="button" class="btn-gh" style="grid-column: 2 / span 2; width: 100%; margin: 0;" (click)="checkModels()" [disabled]="loadingModels">
+          <div class="model-grid">
+            <input type="text" [(ngModel)]="model" name="model" class="gh-input m-0" />
+            <button type="button" class="btn-gh btn-check-models" (click)="checkModels()" [disabled]="loadingModels">
               {{ loadingModels ? 'Checking...' : 'Check Models' }}
             </button>
           </div>
         </div>
         <div>
           <label>Thinking Level</label>
-          <div style="display: flex; gap: 10px;">
-            <select [(ngModel)]="thinkingLevelSelect" (ngModelChange)="onSelectChange()" name="thinkingLevelSelect" style="flex: 1;" class="gh-input">
+          <div class="flex-gap-10">
+            <select [(ngModel)]="thinkingLevelSelect" (ngModelChange)="onSelectChange()" name="thinkingLevelSelect" class="gh-input flex-1">
               <option value="">None</option>
               <option value="minimal">Minimal</option>
               <option value="low">Low</option>
@@ -59,28 +60,28 @@ import { RouterModule } from '@angular/router';
               <option value="pro">Pro</option>
               <option value="custom">Custom...</option>
             </select>
-            <input *ngIf="thinkingLevelSelect === 'custom'" type="text" [(ngModel)]="thinkingLevel" name="thinkingLevel" placeholder="Enter custom value..." style="flex: 1;" class="gh-input" />
+            <input *ngIf="thinkingLevelSelect === 'custom'" type="text" [(ngModel)]="thinkingLevel" name="thinkingLevel" placeholder="Enter custom value..." class="gh-input flex-1" />
           </div>
         </div>
         
-        <div style="margin-top: 20px; margin-bottom: 20px;">
-          <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
-            <input type="checkbox" [(ngModel)]="spoilerFreeMode" name="spoilerFreeMode" style="width: auto; margin: 0;" aria-describedby="spoilerFreeHint" />
+        <div class="margin-y-20">
+          <label class="checkbox-label">
+            <input type="checkbox" [(ngModel)]="spoilerFreeMode" name="spoilerFreeMode" class="w-auto m-0" aria-describedby="spoilerFreeHint" />
             <span>Spoiler-Free Mode</span>
           </label>
-          <span id="spoilerFreeHint" class="form-hint" style="margin-left: 28px; margin-top: 4px;">Limit hints to avoid spoiling secrets</span>
+          <span id="spoilerFreeHint" class="form-hint hint-indent">Limit hints to avoid spoiling secrets</span>
         </div>
 
-        <div style="display: flex; gap: 30px; margin-bottom: 20px;">
-          <div style="flex: 1;">
+        <div class="token-row">
+          <div class="flex-1">
             <label for="maxInputTokensInput">Max Input Tokens</label>
             <span id="maxInputHint" class="form-hint">Leave blank for no limit</span>
-            <input type="number" id="maxInputTokensInput" [(ngModel)]="maxInputTokens" name="maxInputTokens" class="gh-input" style="width: 100%; margin-top: 5px;" aria-describedby="maxInputHint" />
+            <input type="number" id="maxInputTokensInput" [(ngModel)]="maxInputTokens" name="maxInputTokens" class="gh-input w-100 mt-5" aria-describedby="maxInputHint" />
           </div>
-          <div style="flex: 1;">
+          <div class="flex-1">
             <label for="maxOutputTokensInput">Max Output Tokens</label>
             <span id="maxOutputHint" class="form-hint">Leave blank for default</span>
-            <input type="number" id="maxOutputTokensInput" [(ngModel)]="maxOutputTokens" name="maxOutputTokens" class="gh-input" style="width: 100%; margin-top: 5px;" aria-describedby="maxOutputHint" />
+            <input type="number" id="maxOutputTokensInput" [(ngModel)]="maxOutputTokens" name="maxOutputTokens" class="gh-input w-100 mt-5" aria-describedby="maxOutputHint" />
           </div>
         </div>
 
@@ -96,8 +97,8 @@ import { RouterModule } from '@angular/router';
     <!-- Modal for picking models -->
     <div class="modal-overlay" *ngIf="showModelModal">
       <div class="modal-content gh-main-container">
-        <h3 style="color: var(--title-color);">Available Models</h3>
-        <p style="font-size: 0.8em; color: #aaa; margin-top: -10px; margin-bottom: 15px;">Showing models released after 1 Jan, 2026</p>
+        <h3 class="modal-title">Available Models</h3>
+        <p class="modal-subtitle">Showing models released after 1 Jan, 2026</p>
         
         <div *ngIf="modelError" class="modal-error">
           <p>{{ modelError }}</p>
@@ -122,7 +123,7 @@ import { RouterModule } from '@angular/router';
           </select>
           
           <div *ngIf="selectedModelObj" class="model-meta">
-            <div style="display: grid; grid-template-columns: max-content 1fr; gap: 10px 15px; align-items: center;">
+            <div class="meta-grid">
               <strong>Context Window:</strong> 
               <span>{{ selectedModelObj.contextWindowSize | number }} tokens</span>
               
@@ -134,7 +135,7 @@ import { RouterModule } from '@angular/router';
               
               <strong>Supported Thinking:</strong>
               <ng-container *ngIf="selectedModelObj.supportedThinkingLevels && selectedModelObj.supportedThinkingLevels.length > 0; else noThinking">
-                <select [(ngModel)]="modalThinkingLevel" class="gh-input" style="margin: 0; width: 100%;">
+                <select [(ngModel)]="modalThinkingLevel" class="gh-input m-0 w-100">
                   <option *ngFor="let level of selectedModelObj.supportedThinkingLevels" [value]="level">{{ level }}</option>
                 </select>
               </ng-container>
@@ -154,137 +155,15 @@ import { RouterModule } from '@angular/router';
     <!-- Unsaved Changes Dialog -->
     <dialog #confirmDialog class="gh-dialog">
       <form method="dialog">
-        <h3 style="margin-top: 0; color: var(--title-color);">Unsaved Changes</h3>
+        <h3 class="modal-title">Unsaved Changes</h3>
         <p>You have unsaved changes. Are you sure you want to discard them and leave?</p>
-        <div class="modal-actions" style="margin-top: 20px;">
+        <div class="modal-actions mt-20">
           <button value="cancel" class="btn-gh btn-gh-cancel">Cancel</button>
           <button value="discard" class="btn-gh">Discard</button>
         </div>
       </form>
     </dialog>
-  `,
-  styles: [`
-    .settings-container { max-width: 600px; margin: 50px auto; padding: 30px; }
-    h2 { margin-top: 0; }
-    form div { margin-bottom: 15px; }
-    .model-row { margin-bottom: 15px; }
-    label { display: block; margin-bottom: 5px; font-weight: bold; }
-    .form-hint { font-size: 0.85em; color: #aaa; font-weight: normal; display: block; }
-    .success { color: #28a745; margin-left: 10px; font-weight: bold; }
-
-    /* Modern Toast Notification */
-    .save-btn {
-      anchor-name: --save-btn;
-    }
-    
-    .toast-success {
-      margin: 0;
-      border: 1px solid #28a745;
-      background-color: rgba(40, 167, 69, 0.1);
-      color: #28a745;
-      padding: 10px 20px;
-      border-radius: 8px;
-      font-weight: bold;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-
-      /* Top Layer transitions */
-      transition: display 0.3s allow-discrete, opacity 0.3s, transform 0.3s;
-      opacity: 0;
-      transform: translateY(5px);
-      
-      /* Anchor position */
-      position-anchor: --save-btn;
-      left: calc(anchor(right) + 15px);
-      top: anchor(center);
-      translate: 0 -50%;
-    }
-
-    /* Open state */
-    .toast-success:is(:popover-open, .\\:popover-open) {
-      opacity: 1;
-      transform: translateY(0);
-      
-      @starting-style {
-        opacity: 0;
-        transform: translateY(5px);
-      }
-    }
-
-    /* Fallback for lack of anchor positioning */
-    @supports not (anchor-name: --save-btn) {
-      .toast-success {
-        bottom: 30px;
-        right: 30px;
-        top: auto;
-        left: auto;
-        translate: 0 0;
-      }
-    }
-
-    /* Modal Styles */
-    .modal-overlay {
-      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-      background: rgba(0, 0, 0, 0.35);
-      backdrop-filter: blur(2px);
-      -webkit-backdrop-filter: blur(2px);
-      display: flex; justify-content: center; align-items: center;
-      z-index: 1000;
-    }
-    .modal-content {
-      padding: 20px; border-radius: 8px;
-      width: 400px; max-width: 90%;
-    }
-    .modal-content h3 { margin-top: 0; }
-    .model-listbox { width: 100%; padding: 5px; margin-bottom: 15px; }
-    .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 15px; }
-    .btn-primary { background: #007bff; }
-    .btn-secondary { background: #6c757d; }
-    .modal-error { color: #dc3545; }
-    
-    .segmented-control {
-      display: inline-flex;
-      background: rgba(0, 0, 0, 0.4);
-      border: 1px solid var(--border-glass);
-      border-radius: 20px;
-      padding: 3px;
-      margin-bottom: 15px;
-    }
-    .segmented-control label {
-      padding: 6px 16px;
-      cursor: pointer;
-      border-radius: 17px;
-      margin: 0;
-      font-size: 0.9em;
-      font-weight: 500;
-      color: #aaa;
-      transition: all 0.3s ease;
-    }
-    .segmented-control input[type="radio"] {
-      display: none;
-    }
-    .segmented-control label:has(input:checked) {
-      background: var(--primary-color);
-      color: black;
-      box-shadow: 0 0 5px var(--gold-glow);
-    }
-    
-    .gh-dialog {
-      padding: 20px;
-      border: 1px solid var(--border-glass, #444);
-      border-radius: 8px;
-      background: rgba(20, 20, 20, 0.95);
-      color: var(--text-color, #fff);
-      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
-      backdrop-filter: blur(5px);
-      -webkit-backdrop-filter: blur(5px);
-      max-width: 400px;
-    }
-    .gh-dialog::backdrop {
-      background: rgba(0, 0, 0, 0.6);
-      backdrop-filter: blur(2px);
-      -webkit-backdrop-filter: blur(2px);
-    }
-  `]
+  `
 })
 export class SettingsComponent implements OnInit {
   settingsService = inject(SettingsService);

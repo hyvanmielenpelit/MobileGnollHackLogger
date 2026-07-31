@@ -1,0 +1,108 @@
+.settings-container {
+  max-width: 600px;
+  margin: 50px auto;
+  padding: 30px;
+}
+h2 { margin-top: 0; }
+form div { margin-bottom: 15px; }
+.model-row { margin-bottom: 15px; }
+label { display: block; margin-bottom: 5px; font-weight: bold; }
+.form-hint { font-size: 0.85em; color: #aaa; font-weight: normal; display: block; }
+.success { color: var(--color-success); margin-inline-start: 10px; font-weight: bold; }
+
+.save-btn {
+  anchor-name: --save-btn;
+}
+
+/* Layout Utilities replaced from inline styles */
+.header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.api-key-grid {
+  display: grid;
+  grid-template-columns: 1fr 40px 140px;
+  gap: 10px;
+  align-items: center;
+  margin-top: 5px;
+}
+
+.model-grid {
+  display: grid;
+  grid-template-columns: 1fr 40px 140px;
+  gap: 10px;
+  align-items: center;
+}
+
+.m-0 { margin: 0; }
+.mt-5 { margin-top: 5px; }
+.mt-20 { margin-top: 20px; }
+.margin-y-20 { margin-block: 20px; }
+.w-100 { width: 100%; }
+.w-auto { width: auto; }
+.flex-1 { flex: 1; }
+.flex-gap-10 { display: flex; gap: 10px; }
+.flex-center { display: flex; justify-content: center; align-items: center; }
+
+.status-icon {
+  font-size: 1.5em;
+  transform: translateY(5px);
+  display: inline-block;
+}
+.status-warning { color: var(--color-warning); }
+.status-success { color: var(--color-success); }
+.status-error { color: var(--color-error); }
+
+.btn-delete-api {
+  width: 140px;
+  min-width: 140px;
+  min-height: 36px;
+  padding: 5px 10px;
+  margin: 0;
+}
+
+.btn-check-models {
+  grid-column: 2 / span 2;
+  width: 100%;
+  margin: 0;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.hint-indent {
+  margin-inline-start: 28px;
+  margin-top: 4px;
+}
+
+.token-row {
+  display: flex;
+  gap: 30px;
+  margin-bottom: 20px;
+}
+
+.modal-title {
+  color: var(--title-color);
+  margin-top: 0;
+}
+
+.modal-subtitle {
+  font-size: 0.8em;
+  color: #aaa;
+  margin-top: -10px;
+  margin-bottom: 15px;
+}
+
+.meta-grid {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 10px 15px;
+  align-items: center;
+}

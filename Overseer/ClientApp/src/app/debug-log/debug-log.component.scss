@@ -10,15 +10,25 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 10px;
+  margin-block-end: 10px;
 
   .header-left {
     display: flex;
     align-items: center;
+    gap: 15px; /* Use gap instead of margin on button */
   }
 
   h2 {
     margin: 0;
+  }
+
+  .btn-clear {
+    color: var(--color-error);
+    border-color: var(--color-error);
+    
+    &:hover {
+      background-color: rgba(220, 53, 69, 0.1);
+    }
   }
 }
 

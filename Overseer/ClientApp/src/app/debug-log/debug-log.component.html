@@ -1,10 +1,10 @@
 <div class="debug-container">
   <div class="header">
     <div class="header-left">
-      <button (click)="goBack()" class="nav-back-link" style="margin-right: 15px;">&larr; Back</button>
+      <button (click)="goBack()" class="nav-back-link">&larr; Back</button>
       <h2>Debug Log</h2>
     </div>
-    <button (click)="clearLogs()" class="nav-back-link" style="color: #ff6b6b; border-color: #ff6b6b;">Clear</button>
+    <button (click)="clearLogs()" class="nav-back-link btn-clear">Clear</button>
   </div>
   <div class="log-viewer gh-main-container">
     <div *ngIf="logs.length === 0" class="empty">No debug logs yet.</div>

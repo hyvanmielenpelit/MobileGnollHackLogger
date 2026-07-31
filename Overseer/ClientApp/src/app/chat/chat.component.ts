@@ -14,6 +14,7 @@ import * as signalR from '@microsoft/signalr';
   selector: 'app-chat',
   standalone: true,
   imports: [CommonModule, FormsModule, RouterModule, MarkdownPipe, RelativeTimePipe],
+  styleUrl: './chat.component.scss',
   template: `
     <div *ngIf="!isOffline" class="layout" [class.is-resizing]="isResizing">
       <div class="sidebar gh-main-container" #sidebar [style.width.px]="sidebarWidth">
@@ -24,7 +25,7 @@ import * as signalR from '@microsoft/signalr';
             <div class="sidebar-spinner"></div>
             <span>Loading Conversations...</span>
           </div>
-          <li *ngIf="!loadingSessions && sessions.length === 0" style="color: #666; text-align: center; margin-top: 10px;">
+          <li *ngIf="!loadingSessions && sessions.length === 0" class="empty-sessions-msg">
             No conversations yet.
           </li>
           <li *ngFor="let s of sessions" [class.active]="s.id === currentSessionId" (click)="loadSession(s.id)">
@@ -94,7 +95,7 @@ import * as signalR from '@microsoft/signalr';
             <button class="add-media-btn" (click)="triggerFileInput()" [disabled]="pendingAttachments.length >= 5">+</button>
             <input type="file" id="fileInput" hidden multiple accept=".html,.htm,.txt,.md,.png,.jpg,.jpeg,.webp" (change)="onFileSelected($event)">
             <textarea [(ngModel)]="currentInput" (ngModelChange)="saveDraft()" (keyup.enter)="sendMessage()" (paste)="onPaste($event)" [disabled]="isStreaming"></textarea>
-            <button class="btn-gh" style="margin-left: 10px;" (click)="sendMessage()" [disabled]="isStreaming || (!currentInput.trim() && pendingAttachments.length === 0)">Send</button>
+            <button class="btn-gh ms-10" (click)="sendMessage()" [disabled]="isStreaming || (!currentInput.trim() && pendingAttachments.length === 0)">Send</button>
           </div>
         </div>
       </div>
@@ -124,181 +125,7 @@ import * as signalR from '@microsoft/signalr';
         <button class="toast-close" (click)="closeErrorToast()">×</button>
       </div>
     </div>
-  `,
-  styles: [`
-    .layout { display: flex; height: 100vh; padding: 20px; box-sizing: border-box; gap: 20px; }
-    .layout.is-resizing .chat-area, .layout.is-resizing .sidebar { pointer-events: none; }
-    .sidebar { padding: 20px; display: flex; flex-direction: column; flex-shrink: 0; }
-    .resizer {
-      width: 10px;
-      flex-shrink: 0;
-      cursor: col-resize;
-      margin: 0 -15px;
-      z-index: 10;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-    }
-    .resizer::after {
-      content: '';
-      width: 4px;
-      height: 40px;
-      background: rgba(255,255,255,0.2);
-      border-radius: 2px;
-      transition: background 0.2s;
-    }
-    .resizer:hover::after, .resizer:active::after {
-      background: var(--primary-color, #d4a847);
-    }
-    .sidebar h3 { margin-top: 0; color: var(--title-color); border-bottom: 1px solid var(--border-glass); padding-bottom: 10px; }
-    .sidebar ul { list-style: none; padding: 0; flex-grow: 1; overflow-y: auto; }
-    .sidebar li { padding: 10px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center; color: #ccc; transition: background 0.2s; }
-    .sidebar li:hover { background: rgba(255,255,255,0.05); }
-    .sidebar li.active { background: rgba(212, 160, 23, 0.15); color: var(--title-color); border-left: 3px solid var(--primary-color); }
-    .session-info { flex-grow: 1; overflow: hidden; display: flex; flex-direction: column; justify-content: center; margin-right: 10px; }
-    .session-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14px; font-weight: bold; }
-    .session-time { font-size: 11px; color: #888; margin-top: 4px; }
-    .sidebar li button.session-delete-btn { background: transparent; color: #ccc; border: none; cursor: pointer; font-weight: bold; padding: 5px; flex-shrink: 0; }
-    .sidebar li button.session-delete-btn:hover { color: white; }
-    .btn-new-chat { width: 100%; margin-bottom: 15px; }
-    .sessions-loader { padding: 30px 10px; color: #aaa; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 0.9em; gap: 15px; }
-    .sidebar-spinner { width: 36px; height: 36px; border: 4px solid rgba(212, 175, 55, 0.2); border-top-color: #d4af37; border-radius: 50%; animation: spin 1s linear infinite; }
-    .bottom-links a { display: block; margin-top: 10px; text-decoration: none; color: var(--link-color); padding: 5px; }
-    .bottom-links a:hover { background: rgba(255,255,255,0.05); border-radius: 4px; }
-    .chat-area { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; }
-    .messages { flex-grow: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; }
-    .message-box { margin-bottom: 15px; padding: 12px 18px 25px 18px; border-radius: 8px; max-width: 80%; line-height: 1.5; position: relative; }
-    .message-box.user { background: rgba(212, 160, 23, 0.15); align-self: flex-end; border: 1px solid var(--border-glass); }
-    .message-box.assistant { background: rgba(255, 255, 255, 0.05); align-self: flex-start; border: 1px solid rgba(255,255,255,0.1); }
-    .copy-btn { position: absolute; bottom: 5px; right: 5px; background: transparent; border: none; color: #888; cursor: pointer; padding: 4px; border-radius: 4px; display: flex; align-items: center; justify-content: center; transition: background 0.2s, color 0.2s; }
-    .copy-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
-    .messages strong { color: var(--title-color); display: block; margin-bottom: 5px; font-family: "Cinzel", serif; }
-    .message-header { display: flex; align-items: center; gap: 15px; margin-bottom: 10px; }
-    .message-header strong { margin-bottom: 0 !important; }
-    .msg-time { font-size: 12px; color: #888; margin-left: 10px; font-family: "Lato", sans-serif; font-weight: normal; }
-    .overseer-avatar { width: 64px; height: 64px; border-radius: 50%; border: 2px solid var(--primary-color); object-fit: cover; box-shadow: 0 0 10px rgba(212, 175, 55, 0.3); }
-    ::ng-deep .markdown-body p { margin: 5px 0 10px; white-space: pre-wrap; }
-    ::ng-deep .markdown-body ul, ::ng-deep .markdown-body ol { margin: 5px 0 10px; padding-left: 20px; }
-    ::ng-deep .markdown-body h1, ::ng-deep .markdown-body h2, ::ng-deep .markdown-body h3, ::ng-deep .markdown-body h4, ::ng-deep .markdown-body h5, ::ng-deep .markdown-body h6 { margin: 10px 0 5px; color: var(--title-color); font-family: "Cinzel", serif; }
-    .input-area-container { border-top: 1px solid var(--border-glass); background: rgba(0,0,0,0.3); display: flex; flex-direction: column; }
-    
-    .progress-bar {
-      display: flex;
-      align-items: center;
-      padding: 6px 20px;
-      background: rgba(212, 160, 23, 0.1);
-      border-bottom: 1px solid var(--border-glass);
-      font-size: 12px;
-      color: #e0ba6d;
-    }
-    .status-icon { margin-right: 8px; font-size: 14px; }
-    .status-icon.spin { animation: spin 1.5s linear infinite; display: inline-block; }
-    @keyframes spin { 100% { transform: rotate(360deg); } }
-    .status-text { flex-grow: 1; font-family: monospace; }
-    .stop-btn {
-      background: #dc3545;
-      color: white;
-      border: none;
-      width: 24px;
-      height: 24px;
-      border-radius: 4px;
-      font-size: 12px;
-      line-height: 12px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 0;
-      margin: 0;
-    }
-    .stop-btn:hover { background: #c82333; }
-
-    .attachments-preview { display: flex; padding: 10px 20px 0; gap: 10px; flex-wrap: wrap; }
-    .attachment-chip { background: rgba(255,255,255,0.1); padding: 5px 10px; border-radius: 15px; font-size: 12px; display: flex; align-items: center; border: 1px solid rgba(255,255,255,0.2); }
-    .attachment-chip button { margin-left: 5px; border: none; background: transparent; cursor: pointer; font-weight: bold; padding: 0; color: #ff6b6b; }
-    .add-media-btn { padding: 10px; cursor: pointer; font-size: 20px; font-weight: bold; width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--border-glass); display: flex; align-items: center; justify-content: center; margin-right: 10px; align-self: center; background: rgba(255,255,255,0.05); color: var(--primary-color); transition: background 0.2s; }
-    .add-media-btn:hover { background: rgba(255,255,255,0.1); }
-    .add-media-btn:disabled { color: #555; border-color: #555; cursor: not-allowed; }
-    .input-area { padding: 20px; display: flex; align-items: center; }
-    textarea { flex-grow: 1; padding: 10px; resize: none; height: 60px; background: var(--bg-input); border: 1px solid var(--border-glass); color: white; border-radius: 4px; font-family: "Lato", sans-serif; }
-    textarea:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 5px var(--gold-glow); }
-    .msg-attachments { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
-    .msg-att-item { text-decoration: none; display: block; transition: transform 0.2s ease, opacity 0.2s ease; outline: none; }
-    .msg-att-item:hover, .msg-att-item:focus-visible { transform: scale(1.02); opacity: 0.9; cursor: pointer; }
-    .msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); border-radius: 4px; }
-    .msg-att-item img { max-width: 100%; border-radius: 4px; border: 1px solid var(--border-glass); display: block; }
-    .msg-att-item div { background: rgba(255,255,255,0.1); padding: 5px 10px; border-radius: 4px; font-size: 12px; color: #ccc; }
-    
-    .gh-dialog {
-      background: rgba(20, 20, 20, 0.95);
-      border: 2px solid var(--primary-color);
-      border-radius: 8px;
-      color: white;
-      padding: 20px 30px;
-      box-shadow: 0 0 20px rgba(212, 175, 55, 0.2);
-      font-family: "Lato", sans-serif;
-    }
-    .offline-notice {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 60vh;
-      text-align: center;
-      color: #aaa;
-    }
-    .offline-notice h2 {
-      color: var(--primary-color, #d4a847);
-      margin-bottom: 10px;
-    }
-    .gh-dialog::backdrop {
-      background: rgba(0, 0, 0, 0.7);
-      backdrop-filter: blur(2px);
-    }
-    .gh-dialog h3 {
-      font-family: "Cinzel", serif;
-      color: var(--title-color);
-      margin-top: 0;
-    }
-    .dialog-actions {
-      display: flex;
-      justify-content: flex-end;
-      gap: 10px;
-      margin-top: 20px;
-    }
-    
-    .toast-error {
-      inset: 20px 20px auto auto;
-      margin: 0;
-      background: rgba(220, 53, 69, 0.95);
-      border: 1px solid #ff6b6b;
-      border-radius: 8px;
-      color: white;
-      padding: 15px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-      font-family: "Lato", sans-serif;
-      transition: display 0.3s allow-discrete, opacity 0.3s, transform 0.3s;
-      opacity: 0;
-      transform: translateY(-20px);
-      z-index: 9999;
-    }
-    .toast-error:is(:popover-open, .\\:popover-open) {
-      opacity: 1;
-      transform: translateY(0);
-    }
-    @starting-style {
-      .toast-error:is(:popover-open, .\\:popover-open) {
-        opacity: 0;
-        transform: translateY(-20px);
-      }
-    }
-    .toast-content { display: flex; align-items: flex-start; gap: 12px; }
-    .toast-icon { font-size: 24px; }
-    .toast-body { flex-grow: 1; }
-    .toast-body strong { display: block; margin-bottom: 4px; font-family: "Cinzel", serif; }
-    .toast-body p { margin: 0; font-size: 14px; }
-    .toast-close { background: transparent; border: none; color: white; font-size: 20px; cursor: pointer; padding: 0; line-height: 1; margin-top: -4px; }
-  `]
+  `
 })
 export class ChatComponent implements OnInit, OnDestroy {
   chatService = inject(ChatService);
