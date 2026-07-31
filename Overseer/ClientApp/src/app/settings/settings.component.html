@@ -113,25 +113,31 @@
         <option *ngFor="let m of sortedModels" [value]="m.id">{{ m.description }}</option>
       </select>
       
-      <div *ngIf="selectedModelObj" class="model-meta">
+      <div class="model-meta">
         <div class="meta-grid">
           <strong>Context Window:</strong> 
-          <span>{{ selectedModelObj.contextWindowSize | number }} tokens</span>
+          <span *ngIf="selectedModelObj">{{ selectedModelObj.contextWindowSize | number }} tokens</span>
+          <span *ngIf="!selectedModelObj">—</span>
           
           <strong>Max Input Tokens:</strong> 
-          <span>{{ selectedModelObj.maxInputTokens | number }} tokens</span>
+          <span *ngIf="selectedModelObj">{{ selectedModelObj.maxInputTokens | number }} tokens</span>
+          <span *ngIf="!selectedModelObj">—</span>
           
           <strong>Max Output Tokens:</strong> 
-          <span>{{ selectedModelObj.maxOutputTokens | number }} tokens</span>
+          <span *ngIf="selectedModelObj">{{ selectedModelObj.maxOutputTokens | number }} tokens</span>
+          <span *ngIf="!selectedModelObj">—</span>
           
           <strong>Supported Thinking:</strong>
-          <ng-container *ngIf="selectedModelObj.supportedThinkingLevels && selectedModelObj.supportedThinkingLevels.length > 0; else noThinking">
+          <ng-container *ngIf="selectedModelObj && selectedModelObj.supportedThinkingLevels && selectedModelObj.supportedThinkingLevels.length > 0; else noThinking">
             <select [(ngModel)]="modalThinkingLevel" class="gh-input m-0 w-100">
               <option *ngFor="let level of selectedModelObj.supportedThinkingLevels" [value]="level">{{ level }}</option>
             </select>
           </ng-container>
           <ng-template #noThinking>
-            <span>None</span>
+            <select class="gh-input m-0 w-100" disabled>
+              <option *ngIf="selectedModelObj" value="">None</option>
+              <option *ngIf="!selectedModelObj" value="">—</option>
+            </select>
           </ng-template>
         </div>
       </div>
