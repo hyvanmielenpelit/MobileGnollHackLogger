@@ -88,7 +88,6 @@ public class ChatService
             }
 
             bool hasGameSnapshot = false;
-            bool hasDebugData = false;
             bool hasDirectoryManifest = false;
             bool hasMessageHistory = false;
 
@@ -141,7 +140,6 @@ public class ChatService
                     if (pm.Role == "system" && pm.Content != null)
                     {
                         if (pm.Content.StartsWith("Game Context Snapshot:")) hasGameSnapshot = true;
-                        if (pm.Content.StartsWith("Developer Debug Data:")) hasDebugData = true;
                         if (pm.Content.StartsWith("Game Directory Manifest:")) hasDirectoryManifest = true;
                         if (pm.Content.StartsWith("Full Message History")) hasMessageHistory = true;
                     }
@@ -178,27 +176,27 @@ public class ChatService
                     var clientSettings = JsonDocument.Parse(session.ClientSettings);
                     var root = clientSettings.RootElement;
 
-                    if (root.TryGetProperty("boolSettings", out var boolSettings))
+                    if (root.TryGetProperty("BoolData", out var boolData))
                     {
-                        if (boolSettings.TryGetProperty("allowSpoilers", out var spoilerVal))
+                        if (boolData.TryGetProperty("allowSpoilers", out var spoilerVal))
                             spoilerFreeMode = !spoilerVal.GetBoolean();
 
-                        if (boolSettings.TryGetProperty("verboseResponses", out var verboseVal))
+                        if (boolData.TryGetProperty("verboseResponses", out var verboseVal))
                             verboseMode = verboseVal.GetBoolean();
 
-                        if (boolSettings.TryGetProperty("isGameOn", out var gameOnVal))
+                        if (boolData.TryGetProperty("isGameOn", out var gameOnVal))
                             isGameOn = gameOnVal.GetBoolean();
 
-                        if (boolSettings.TryGetProperty("developerMode", out var devVal))
+                        if (boolData.TryGetProperty("DeveloperMode", out var devVal))
                             developerMode = devVal.GetBoolean();
 
-                        if (boolSettings.TryGetProperty("debugLogMessages", out var debugLogVal))
+                        if (boolData.TryGetProperty("DebugLogMessages", out var debugLogVal))
                             debugLogMessages = debugLogVal.GetBoolean();
                     }
 
-                    if (root.TryGetProperty("intSettings", out var intSettings))
+                    if (root.TryGetProperty("IntData", out var intData))
                     {
-                        if (intSettings.TryGetProperty("overseerMode", out var modeVal))
+                        if (intData.TryGetProperty("overseerMode", out var modeVal))
                             overseerMode = modeVal.GetInt32();
                     }
                 }
@@ -211,7 +209,7 @@ public class ChatService
                 overseerMode = isGameOn ? 0 : 1;
             }
 
-            string systemPrompt = BuildSystemPrompt(contextDocs, spoilerFreeMode, verboseMode, isGameOn, developerMode, overseerMode, hasGameSnapshot, hasDebugData, hasDirectoryManifest, hasMessageHistory);
+            string systemPrompt = BuildSystemPrompt(contextDocs, spoilerFreeMode, verboseMode, isGameOn, developerMode, overseerMode, hasGameSnapshot, hasDirectoryManifest, hasMessageHistory, session?.ClientSettings);
 
             var userMsg = new ChatMessage
             {
@@ -793,9 +791,9 @@ public class ChatService
         bool developerMode,
         int overseerMode,
         bool hasGameSnapshot,
-        bool hasDebugData,
         bool hasDirectoryManifest,
-        bool hasMessageHistory)
+        bool hasMessageHistory,
+        string? clientSettings)
     {
         var sb = new StringBuilder();
 
@@ -825,7 +823,7 @@ public class ChatService
                 sb.AppendLine("## Mode: Technical Support");
                 sb.AppendLine("The user needs help with app issues, save files, configuration, or installation.");
                 sb.AppendLine("Be precise and diagnostic. Ask clarifying questions about the user's platform, app version, and error messages.");
-                sb.AppendLine("Focus on actionable troubleshooting steps rather than gameplay advice.");
+                sb.AppendLine("Focus on game mechanics, strategy, and game-related troubleshooting in addition to app problems. Feel empowered to explain complex NetHack/GnollHack mechanics (e.g., armor class, spellcasting penalties, weapon skills) when asked about how the game works.");
                 sb.AppendLine("When greeting the player, briefly introduce yourself and mention that you can help with technical issues such as save files, installation, app configuration, and troubleshooting.");
                 break;
             case 2: // Developer / Debugging — only when DeveloperMode AND DebugLogMessages are both ON
@@ -835,7 +833,7 @@ public class ChatService
                 sb.AppendLine("The GnollHack C core is in src/ and include/, the .NET MAUI frontend in win/win32/xpl/.");
                 sb.AppendLine("Analyze debug data, crash logs, and runtime state when available.");
                 sb.AppendLine("Developer Mode and Debug Logging are both ON. The user has access to Wizard Mode (#wizmode) for testing.");
-                if (hasDebugData)
+                if (developerMode)
                     sb.AppendLine("Debug data has been collected and is available in the session context.");
                 sb.AppendLine("When greeting the player, briefly introduce yourself as running in debug analysis mode and mention that you can help analyze crash logs, runtime state, debug data, and provide code-level guidance.");
                 break;
@@ -906,7 +904,7 @@ public class ChatService
         sb.AppendLine("## Your Capabilities");
         sb.AppendLine("- **Player Assistance**: Tactical advice, item identification, strategy tips, monster info, spell recommendations, dungeon navigation");
         sb.AppendLine("- **Technical Support**: Save file troubleshooting, app issues, file recovery guidance, configuration help");
-        if (hasDebugData)
+        if (developerMode)
         {
             sb.AppendLine("- **Developer Assistance**: This session includes runtime debug data. You can help diagnose crashes, runtime errors, save corruption, pending task issues, and provide code-level guidance for the GnollHack C core and .NET MAUI frontend.");
         }
@@ -919,8 +917,8 @@ public class ChatService
         if (hasGameSnapshot) sb.AppendLine("- ✅ Game snapshot (current map, stats, inventory, recent messages, spells, skills, attributes)");
         if (hasMessageHistory) sb.AppendLine("- ✅ Full message history (up to 16384 in-game messages) — reference when the player asks about earlier events");
         if (hasDirectoryManifest) sb.AppendLine("- ✅ Game directory file listing — use for diagnosing file-related issues (corrupt saves, orphaned files, missing data)");
-        if (hasDebugData) sb.AppendLine("- ✅ Runtime debug data (memory usage, thread state, pending tasks, developer settings)");
-        if (!hasGameSnapshot && !hasMessageHistory && !hasDirectoryManifest && !hasDebugData)
+        if (developerMode) sb.AppendLine("- ✅ Runtime debug data (memory usage, thread state, pending tasks, developer settings) via Client Environment Settings");
+        if (!hasGameSnapshot && !hasMessageHistory && !hasDirectoryManifest && !developerMode)
         {
             sb.AppendLine("- No game context was provided for this session. Answer based on general GnollHack knowledge and wiki content.");
         }
@@ -1014,6 +1012,28 @@ public class ChatService
             sb.AppendLine("- Lead with the recommendation, then explain.");
             sb.AppendLine("- Use bullet lists only when comparing 2+ options.");
             sb.AppendLine("- Do not add preambles like \"Great question!\" or \"Here's an extensive overview...\".");
+        }
+
+        if (!string.IsNullOrWhiteSpace(clientSettings))
+        {
+            try
+            {
+                var doc = JsonDocument.Parse(clientSettings);
+                sb.AppendLine("## Client Environment");
+                var props = new string[] { "BoolData", "IntData", "LongData", "DoubleData", "StringData" };
+                foreach (var prop in props)
+                {
+                    if (doc.RootElement.TryGetProperty(prop, out var el))
+                    {
+                        foreach (var kvp in el.EnumerateObject())
+                        {
+                            sb.AppendLine($"- {kvp.Name}: {kvp.Value}");
+                        }
+                    }
+                }
+                sb.AppendLine();
+            }
+            catch { }
         }
 
         // ──────────────────────────────────────────────

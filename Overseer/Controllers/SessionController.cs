@@ -140,29 +140,7 @@ public class SessionController : ControllerBase
                 });
             }
 
-            if (!string.IsNullOrWhiteSpace(request.DebugData))
-            {
-                await System.IO.File.WriteAllTextAsync(
-                    Path.Combine(sessionDir, "debug_data.json"),
-                    request.DebugData);
 
-                var msg = new ChatMessage
-                {
-                    ChatSessionId = session.Id,
-                    Role = "system",
-                    Content = "Developer Debug Data:\n" + request.DebugData,
-                    TimestampUtc = DateTime.UtcNow
-                };
-                _dbContext.ChatMessage.Add(msg);
-
-                _dbContext.ChatMessageAttachment.Add(new ChatMessageAttachment
-                {
-                    ChatMessage = msg,
-                    FileName = "debug_data.json",
-                    ContentType = "application/json",
-                    RelativePath = Path.Combine(session.Id.ToString(), "debug_data.json")
-                });
-            }
 
             await _dbContext.SaveChangesAsync();
         }
@@ -205,7 +183,7 @@ public class CreateSessionRequest
     public string? SnapshotHtml { get; set; }
     public string? MessageHistory { get; set; }        // NEW: Full 16384-message history (plain text)
     public string? DirectoryManifest { get; set; }     // NEW: Game directory file listing (tab-separated)
-    public string? DebugData { get; set; }             // NEW: Runtime debug JSON (only when DeveloperMode is on)
+
     public string? InitialPrompt { get; set; }         // NEW: Prompt to immediately start AI generation
     public string? OverseerSettings { get; set; }
     public string? Title { get; set; }                 // NEW: Contextual title for the session
