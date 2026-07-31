@@ -84,7 +84,7 @@ export class ChatComponent implements OnInit, OnDestroy {
     if (this.isStreaming || this.showSpinner || this.currentStatusText) return true;
     
     const currentSession = this.sessions.find(s => s.id === this.currentSessionId);
-    if (currentSession && currentSession.title === 'MAUI Client Handoff') return true;
+    if (currentSession && (currentSession.title === 'MAUI Client Handoff' || currentSession.title.startsWith('GnollHack'))) return true;
     
     return false;
   }

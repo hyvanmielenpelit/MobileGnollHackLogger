@@ -56,7 +56,7 @@ public class SessionController : ControllerBase
         var session = new ChatSession
         {
             AspNetUserId = user.Id,
-            Title = "MAUI Client Handoff",
+            Title = string.IsNullOrWhiteSpace(request.Title) ? "GnollHack Session" : request.Title,
             CreatedUtc = DateTime.UtcNow,
             LastMessageUtc = DateTime.UtcNow,
             ClientSettings = request.OverseerSettings
@@ -208,4 +208,5 @@ public class CreateSessionRequest
     public string? DebugData { get; set; }             // NEW: Runtime debug JSON (only when DeveloperMode is on)
     public string? InitialPrompt { get; set; }         // NEW: Prompt to immediately start AI generation
     public string? OverseerSettings { get; set; }
+    public string? Title { get; set; }                 // NEW: Contextual title for the session
 }
