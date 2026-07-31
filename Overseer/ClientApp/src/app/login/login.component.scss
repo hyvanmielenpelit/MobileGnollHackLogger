@@ -169,6 +169,12 @@
   font-weight: 500;
 }
 
+.info-text {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.4);
+  margin-top: 5px;
+}
+
 .error { color: var(--color-error); text-align: center; margin-top: 15px; }
 
 .error-msg {
