@@ -21,6 +21,10 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
 builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme)
     .AddCookie(IdentityConstants.ApplicationScheme, options =>
     {
+        // Explicitly configure session lifetime
+        options.ExpireTimeSpan = TimeSpan.FromDays(14);
+        options.SlidingExpiration = true; // Refresh the cookie if accessed past halfway point
+
         options.Events.OnValidatePrincipal = SecurityStampValidator.ValidatePrincipalAsync; // CRITICAL: Prevent stale cookies
         // Override default cookie behavior for SPA — return 401/403 instead of HTML redirects
         options.Events.OnRedirectToLogin = context =>
