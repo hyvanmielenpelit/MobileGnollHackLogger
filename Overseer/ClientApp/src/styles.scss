@@ -28,16 +28,29 @@ body {
   flex-direction: column;
   color: white;
   background-color: black;
-  /* Assumes we can access the image if it's served by the host, or we use absolute path.
-     Since Overseer is served by the same ASP.NET app (or under it), it should be able to reach /img/
-     If not, we might need to proxy it or rely on the host serving wwwroot. */
+  font-family: "Lato", sans-serif;
+  font-style: normal;
+}
+
+/* Assumes we can access the image if it's served by the host, or we use absolute path.
+   Since Overseer is served by the same ASP.NET app (or under it), it should be able to reach /img/
+   If not, we might need to proxy it or rely on the host serving wwwroot. */
+body::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  z-index: -1;
+  pointer-events: none;
   background-image: url(/img/gnoll-illustration-darkened-bottom-w1920-q60.webp);
   background-repeat: no-repeat;
   background-size: cover;
   background-position-y: top;
   background-position-x: center;
-  font-family: "Lato", sans-serif;
-  font-style: normal;
+  will-change: transform; 
 }
 
 h1, h2, h3, .title {

@@ -87,10 +87,10 @@
 
 .form-group { 
   margin-bottom: 20px; 
-  position: relative;
 }
 
 .input-wrapper {
+  position: relative;
   align-items: center;
 }
 
@@ -189,7 +189,7 @@ input:user-invalid {
   background-color: rgba(220, 53, 69, 0.1);
 }
 
-input:user-invalid + .error-msg {
+.form-group:has(input:user-invalid) .error-msg {
   display: block;
 }
 
