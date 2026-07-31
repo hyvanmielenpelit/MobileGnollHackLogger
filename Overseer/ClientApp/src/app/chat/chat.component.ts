@@ -64,6 +64,8 @@ export class ChatComponent implements OnInit, OnDestroy {
   
   maxAttachmentSize = 15728640; // default 15MB
   errorMessage = '';
+  hasApiKey = true;
+  hasModel = true;
 
   currentStatusText = '';
   showSpinner = false;
@@ -128,8 +130,12 @@ export class ChatComponent implements OnInit, OnDestroy {
     }
     
     this.settingsService.getSettings().subscribe(settings => {
-      if (settings.maxAttachmentSize) {
-        this.maxAttachmentSize = settings.maxAttachmentSize;
+      if (settings) {
+        if (settings.maxAttachmentSize) {
+          this.maxAttachmentSize = settings.maxAttachmentSize;
+        }
+        this.hasApiKey = settings.hasApiKey;
+        this.hasModel = !!settings.model;
       }
     });
 

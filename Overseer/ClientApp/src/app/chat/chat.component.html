@@ -27,6 +27,16 @@
   <div class="resizer" (mousedown)="startResize($event)" (touchstart)="startResize($event)"></div>
   <div class="chat-area gh-main-container">
     <div class="messages" #messagesContainer (wheel)="onUserInteraction()" (touchstart)="onUserInteraction()" (scroll)="onScroll()">
+      <div *ngIf="messages.length === 0 && (!hasApiKey || !hasModel)" class="chat-alert-box gh-main-container">
+        <div class="alert-icon">⚠️</div>
+        <h3>Settings Missing</h3>
+        <p>Please configure your AI Provider settings to start chatting.</p>
+        <ul class="missing-settings-list">
+           <li *ngIf="!hasApiKey">API Key is not set.</li>
+           <li *ngIf="!hasModel">Model is not set.</li>
+        </ul>
+        <a routerLink="/settings" queryParamsHandling="preserve" class="btn-gh mt-10">Go to Settings</a>
+      </div>
       <div *ngFor="let msg of messages; let i = index" class="message-box" [ngClass]="msg.role">
         <div class="message-header">
           <img *ngIf="msg.role === 'assistant'" src="/img/gnoll-overseer-avatar-128x128-static.webp" class="overseer-avatar" alt="Overseer" width="64" height="64" />

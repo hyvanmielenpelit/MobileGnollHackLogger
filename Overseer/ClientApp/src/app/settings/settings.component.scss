@@ -4,7 +4,7 @@
   padding: 30px;
 }
 h2 { margin-top: 0; }
-form div { margin-bottom: 15px; }
+form > div { margin-bottom: 15px; }
 .model-row { margin-bottom: 15px; }
 label { display: block; margin-bottom: 5px; font-weight: bold; }
 .form-hint { font-size: 0.85em; color: #aaa; font-weight: normal; display: block; }
@@ -46,6 +46,7 @@ label { display: block; margin-bottom: 5px; font-weight: bold; }
 .flex-1 { flex: 1; }
 .flex-gap-10 { display: flex; gap: 10px; }
 .flex-center { display: flex; justify-content: center; align-items: center; }
+.info-icon-wrapper { margin-bottom: 0px; }
 
 .status-icon {
   font-size: 1.5em;
@@ -109,4 +110,53 @@ label { display: block; margin-bottom: 5px; font-weight: bold; }
   grid-template-columns: max-content 1fr;
   gap: 10px 15px;
   align-items: center;
+}
+
+.btn-info {
+  background: transparent;
+  color: var(--primary-color);
+  border: 1px solid var(--border-glass);
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  font-size: 1.2em;
+  transition: all 0.2s;
+  padding: 0;
+}
+.btn-info:hover {
+  background: rgba(212, 160, 23, 0.2);
+  border-color: var(--primary-color);
+  box-shadow: 0 0 8px var(--gold-glow);
+}
+
+.api-instructions {
+  margin-top: 15px;
+  padding-left: 20px;
+  color: #ccc;
+  li {
+    margin-bottom: 10px;
+  }
+}
+
+.gh-tooltip {
+  position-anchor: --btn-info;
+  top: calc(anchor(bottom) + 8px);
+  left: anchor(center);
+  transform: translateX(-50%);
+  position-try: flip-block;
+  margin: unset;
+  background: rgba(20, 20, 20, 0.95);
+  color: #ddd;
+  border: 1px solid var(--border-glass);
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.85em;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  white-space: nowrap;
 }

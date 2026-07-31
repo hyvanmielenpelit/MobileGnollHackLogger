@@ -37,20 +37,23 @@
             "styles": [
               "src/styles.scss"
             ],
-            "scripts": []
+            "scripts": [],
+            "allowedCommonJsDependencies": [
+              "interestfor"
+            ]
           },
           "configurations": {
             "production": {
               "budgets": [
                 {
                   "type": "initial",
-                  "maximumWarning": "500kB",
-                  "maximumError": "1MB"
+                  "maximumWarning": "750kB",
+                  "maximumError": "1.5MB"
                 },
                 {
                   "type": "anyComponentStyle",
-                  "maximumWarning": "5kB",
-                  "maximumError": "10kB"
+                  "maximumWarning": "10kB",
+                  "maximumError": "20kB"
                 }
               ],
               "outputHashing": "all"

@@ -16,6 +16,7 @@ export class SettingsComponent implements OnInit {
   
   @ViewChild('successToast') successToast!: ElementRef<HTMLElement>;
   @ViewChild('confirmDialog') confirmDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('apiKeyInfoDialog') apiKeyInfoDialog!: ElementRef<HTMLDialogElement>;
 
   provider = 'OpenAI';
   model = 'gpt-4o-mini';
@@ -91,6 +92,14 @@ export class SettingsComponent implements OnInit {
   ngOnInit() {
     if (!("popover" in HTMLElement.prototype)) {
       import("@oddbird/popover-polyfill").catch(err => console.warn('Failed to load popover polyfill', err));
+    }
+    if (!('interestForElement' in HTMLButtonElement.prototype)) {
+      // @ts-ignore
+      import("interestfor").catch(err => console.warn('Failed to load interestfor polyfill', err));
+    }
+    if (!("anchorName" in document.documentElement.style)) {
+      // @ts-ignore
+      import("@oddbird/css-anchor-positioning").catch(err => console.warn('Failed to load anchor positioning polyfill', err));
     }
 
     this.settingsService.getSettings().subscribe(s => {
@@ -252,5 +261,13 @@ export class SettingsComponent implements OnInit {
       this.maxOutputTokens = this.selectedModelObj?.maxOutputTokens ?? null;
     }
     this.closeModal();
+  }
+
+  openApiKeyInfo() {
+    this.apiKeyInfoDialog?.nativeElement.showModal();
+  }
+
+  closeApiKeyInfo() {
+    this.apiKeyInfoDialog?.nativeElement.close();
   }
 }
