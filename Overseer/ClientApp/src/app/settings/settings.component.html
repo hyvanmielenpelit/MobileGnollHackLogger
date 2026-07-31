@@ -53,11 +53,13 @@
     </div>
     
     <div class="margin-y-20">
-      <label class="checkbox-label">
-        <input type="checkbox" [(ngModel)]="spoilerFreeMode" name="spoilerFreeMode" class="w-auto m-0" aria-describedby="spoilerFreeHint" />
-        <span>Spoiler-Free Mode</span>
+      <label class="checkbox-label align-start">
+        <input type="checkbox" [(ngModel)]="spoilerFreeMode" name="spoilerFreeMode" class="w-auto m-0 mt-5" aria-describedby="spoilerFreeHint" />
+        <div>
+          <span>Spoiler-Free Mode</span>
+          <span id="spoilerFreeHint" class="form-hint mt-5">Limit hints to avoid spoiling secrets</span>
+        </div>
       </label>
-      <span id="spoilerFreeHint" class="form-hint hint-indent">Limit hints to avoid spoiling secrets</span>
     </div>
 
     <div class="token-row">

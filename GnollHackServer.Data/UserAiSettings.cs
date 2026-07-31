@@ -28,7 +28,7 @@ public class UserAiSettings
     [MaxLength(32)]
     public string? ThinkingLevel { get; set; }
 
-    public bool SpoilerFreeMode { get; set; } = false;
+    public bool SpoilerFreeMode { get; set; } = true;
 
     public int? MaxInputTokens { get; set; }
     public int? MaxOutputTokens { get; set; }

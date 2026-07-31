@@ -40,7 +40,7 @@ public class SettingsController : ControllerBase
             thinkingLevel = settings?.ThinkingLevel,
             hasApiKey = !string.IsNullOrEmpty(settings?.EncryptedApiKey),
             maxAttachmentSize = _configuration.GetValue<long>("MaxAttachmentSize", 15728640),
-            spoilerFreeMode = settings?.SpoilerFreeMode ?? false,
+            spoilerFreeMode = settings?.SpoilerFreeMode ?? true,
             maxInputTokens = settings?.MaxInputTokens,
             maxOutputTokens = settings?.MaxOutputTokens
         });

@@ -26,8 +26,8 @@ export class SettingsComponent implements OnInit {
   initModel = 'gpt-4o-mini';
   initThinkingLevel = 'high';
 
-  spoilerFreeMode = false;
-  initSpoilerFreeMode = false;
+  spoilerFreeMode = true;
+  initSpoilerFreeMode = true;
 
   maxInputTokens: number | null = null;
   maxOutputTokens: number | null = null;
