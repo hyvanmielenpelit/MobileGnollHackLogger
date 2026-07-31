@@ -44,10 +44,17 @@
           <span class="msg-time" *ngIf="msg.timestampUtc">{{ msg.timestampUtc | relativeTime }}</span>
         </div>
         <div *ngIf="msg.attachments && msg.attachments.length > 0" class="msg-attachments">
-          <a *ngFor="let att of msg.attachments" class="msg-att-item" [href]="'/api/chat/attachments/' + att.id" [download]="att.fileName" target="_blank" rel="noopener" title="Download {{ att.fileName }}">
-            <img *ngIf="att.contentType.startsWith('image/')" [src]="'/api/chat/attachments/' + att.id" width="200" alt="{{ att.fileName }}" />
-            <div *ngIf="!att.contentType.startsWith('image/')">📎 {{ att.fileName }}</div>
-          </a>
+          <ng-container *ngFor="let att of msg.attachments">
+            <a *ngIf="att.id && isImage(att.fileName)" class="msg-att-item" (click)="openImagePreview(att, $event)" href="javascript:void(0)" title="Preview {{ att.fileName }}">
+              <div><span class="file-type-badge">{{ getFileExtension(att.fileName) }}</span><span class="file-name-text">{{ att.fileName }}</span></div>
+            </a>
+            <a *ngIf="att.id && !isImage(att.fileName)" class="msg-att-item" [href]="'/api/chat/attachments/' + att.id" [download]="att.fileName" rel="noopener" title="Download {{ att.fileName }}">
+              <div><span class="file-type-badge">{{ getFileExtension(att.fileName) }}</span><span class="file-name-text">{{ att.fileName }}</span></div>
+            </a>
+            <span *ngIf="!att.id" class="msg-att-item msg-att-pending" title="Uploading {{ att.fileName }}...">
+              <div><span class="file-type-badge">{{ getFileExtension(att.fileName) }}</span><span class="file-name-text">{{ att.fileName }}</span></div>
+            </span>
+          </ng-container>
         </div>
         <div [innerHTML]="msg.content | markdown" class="markdown-body"></div>
         <button class="copy-btn" (click)="copyToClipboard(msg.content, i)" title="Copy">
@@ -104,6 +111,24 @@
   <div class="dialog-actions">
     <button class="btn-gh btn-gh-cancel" (click)="deleteConfirmDialog.close()">Cancel</button>
     <button class="btn-gh btn-gh-delete" (click)="confirmDelete()">Delete</button>
+  </div>
+</dialog>
+
+<dialog #imagePreviewDialog class="gh-dialog image-preview-dialog" (click)="onDialogClick($event)">
+  <div class="dialog-content" *ngIf="previewAttachment">
+    <div class="dialog-header">
+      <div class="preview-title-container">
+        <span class="file-type-badge">{{ getFileExtension(previewAttachment.fileName) }}</span>
+        <span class="preview-title">{{ previewAttachment.fileName }}</span>
+      </div>
+      <div class="preview-actions">
+        <a class="btn-gh btn-gh-download" [href]="'/api/chat/attachments/' + previewAttachment.id" [download]="previewAttachment.fileName">Download</a>
+        <button class="btn-gh btn-gh-close" (click)="closeImagePreview()">Close</button>
+      </div>
+    </div>
+    <div class="image-container">
+      <img [src]="'/api/chat/attachments/' + previewAttachment.id + '?inline=true'" alt="{{ previewAttachment.fileName }}" />
+    </div>
   </div>
 </dialog>
 

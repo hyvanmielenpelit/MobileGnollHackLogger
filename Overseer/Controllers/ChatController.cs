@@ -109,7 +109,7 @@ public class ChatController : ControllerBase
     }
 
     [HttpGet("attachments/{id}")]
-    public async Task<IActionResult> GetAttachment(long id)
+    public async Task<IActionResult> GetAttachment(long id, [FromQuery] bool inline = false)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
@@ -129,7 +129,10 @@ public class ChatController : ControllerBase
         if (!System.IO.File.Exists(filePath))
             return NotFound();
             
-        return PhysicalFile(filePath, attachment.ContentType ?? "application/octet-stream");
+        if (inline)
+            return PhysicalFile(filePath, attachment.ContentType ?? "application/octet-stream");
+        else
+            return PhysicalFile(filePath, attachment.ContentType ?? "application/octet-stream", attachment.FileName);
     }
 
     [HttpPost("send")]

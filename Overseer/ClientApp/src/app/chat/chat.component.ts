@@ -23,6 +23,7 @@ export class ChatComponent implements OnInit, OnDestroy {
   
   @ViewChild('messagesContainer') messagesContainer!: ElementRef;
   @ViewChild('deleteConfirmDialog') deleteConfirmDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('imagePreviewDialog') imagePreviewDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('errorToast') errorToast!: ElementRef<HTMLElement>;
   autoScrollEnabled = true;
 
@@ -56,6 +57,8 @@ export class ChatComponent implements OnInit, OnDestroy {
   
   copiedMsgIndex: number | null = null;
   copiedStreamMsg = false;
+  
+  previewAttachment: any = null;
   
   currentInput = '';
   isStreaming = false;
@@ -495,6 +498,45 @@ export class ChatComponent implements OnInit, OnDestroy {
     const toast = this.errorToast?.nativeElement as any;
     if (toast) {
       try { toast.hidePopover(); } catch(e) {}
+    }
+  }
+
+  isImage(fileName: string): boolean {
+    if (!fileName) return false;
+    const ext = fileName.split('.').pop()?.toLowerCase();
+    return ['png', 'jpg', 'jpeg', 'webp'].includes(ext || '');
+  }
+
+  getFileExtension(fileName: string): string {
+    if (!fileName || !fileName.includes('.')) return 'NONE';
+    const ext = fileName.split('.').pop()?.toUpperCase() || 'NONE';
+    return ext;
+  }
+
+  openImagePreview(att: any, event: Event) {
+    event.preventDefault();
+    this.previewAttachment = att;
+    if (this.imagePreviewDialog) {
+      this.imagePreviewDialog.nativeElement.showModal();
+    }
+  }
+
+  closeImagePreview() {
+    if (this.imagePreviewDialog) {
+      this.imagePreviewDialog.nativeElement.close();
+    }
+    this.previewAttachment = null;
+  }
+
+  onDialogClick(event: MouseEvent) {
+    if (this.imagePreviewDialog) {
+      const dialog = this.imagePreviewDialog.nativeElement;
+      const rect = dialog.getBoundingClientRect();
+      const isInDialog = (rect.top <= event.clientY && event.clientY <= rect.top + rect.height
+        && rect.left <= event.clientX && event.clientX <= rect.left + rect.width);
+      if (!isInDialog) {
+        this.closeImagePreview();
+      }
     }
   }
 
