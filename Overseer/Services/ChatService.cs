@@ -164,7 +164,44 @@ public class ChatService
             }
 
             var contextDocs = _wikiService.GetRelevantContext(message);
-            string systemPrompt = BuildSystemPrompt(contextDocs, spoilerFreeMode, hasGameSnapshot, hasDebugData, hasDirectoryManifest, hasMessageHistory);
+
+            bool verboseMode = false;
+            bool isGameOn = false;
+            bool developerMode = false;
+            int overseerMode = 0; // 0=gameplay, 1=technical, 2=developer
+
+            if (!string.IsNullOrEmpty(session?.ClientSettings))
+            {
+                try
+                {
+                    var clientSettings = JsonDocument.Parse(session.ClientSettings);
+                    var root = clientSettings.RootElement;
+
+                    if (root.TryGetProperty("boolSettings", out var boolSettings))
+                    {
+                        if (boolSettings.TryGetProperty("allowSpoilers", out var spoilerVal))
+                            spoilerFreeMode = !spoilerVal.GetBoolean();
+
+                        if (boolSettings.TryGetProperty("verboseResponses", out var verboseVal))
+                            verboseMode = verboseVal.GetBoolean();
+
+                        if (boolSettings.TryGetProperty("isGameOn", out var gameOnVal))
+                            isGameOn = gameOnVal.GetBoolean();
+
+                        if (boolSettings.TryGetProperty("developerMode", out var devVal))
+                            developerMode = devVal.GetBoolean();
+                    }
+
+                    if (root.TryGetProperty("intSettings", out var intSettings))
+                    {
+                        if (intSettings.TryGetProperty("overseerMode", out var modeVal))
+                            overseerMode = modeVal.GetInt32();
+                    }
+                }
+                catch (JsonException) { }
+            }
+
+            string systemPrompt = BuildSystemPrompt(contextDocs, spoilerFreeMode, verboseMode, isGameOn, developerMode, overseerMode, hasGameSnapshot, hasDebugData, hasDirectoryManifest, hasMessageHistory);
 
             var userMsg = new ChatMessage
             {
@@ -740,6 +777,10 @@ public class ChatService
     private static string BuildSystemPrompt(
         IEnumerable<string> wikiContext,
         bool spoilerFreeMode,
+        bool verboseMode,
+        bool isGameOn,
+        bool developerMode,
+        int overseerMode,
         bool hasGameSnapshot,
         bool hasDebugData,
         bool hasDirectoryManifest,
@@ -749,6 +790,34 @@ public class ChatService
 
         sb.AppendLine("You are the Gnoll Overseer, an expert AI assistant for GnollHack — a modern roguelike game derived from NetHack 3.6.2 with extensive new features including tile graphics, sound, music, voiceovers, and a .NET MAUI mobile/desktop frontend.");
         sb.AppendLine();
+
+        // --- Overseer Mode ---
+        switch (overseerMode)
+        {
+            case 1: // Technical Help
+                sb.AppendLine();
+                sb.AppendLine("## Mode: Technical Support");
+                sb.AppendLine("The user needs help with app issues, save files, configuration, or installation.");
+                sb.AppendLine("Be precise and diagnostic. Ask clarifying questions about the user's platform, app version, and error messages.");
+                sb.AppendLine("Focus on actionable troubleshooting steps rather than gameplay advice.");
+                break;
+            case 2: // Developer / Debugging
+                sb.AppendLine();
+                sb.AppendLine("## Mode: Developer / Debugging");
+                sb.AppendLine("The user is a GnollHack developer or power user debugging the game.");
+                sb.AppendLine("Be technical and terse. Reference source code files, function names, and data structures.");
+                sb.AppendLine("The GnollHack C core is in src/ and include/, the .NET MAUI frontend in win/win32/xpl/.");
+                sb.AppendLine("Analyze debug data, crash logs, and runtime state when available.");
+                if (developerMode)
+                    sb.AppendLine("Developer Mode is ON — the user has access to Wizard Mode (#wizmode) for testing.");
+                break;
+            default: // 0 = Gameplay Help
+                sb.AppendLine();
+                sb.AppendLine("## Mode: Gameplay Help");
+                sb.AppendLine("The user is playing GnollHack and needs gameplay assistance.");
+                sb.AppendLine("Be friendly and encouraging. Provide tactical advice, item identification help, strategy tips, and dungeon navigation guidance.");
+                break;
+        }
 
         // --- Capabilities ---
         sb.AppendLine("## Your Capabilities");
@@ -772,6 +841,13 @@ public class ChatService
         }
         sb.AppendLine();
 
+        // --- Session Context ---
+        if (!isGameOn && !hasGameSnapshot)
+        {
+            sb.AppendLine("## Session Context");
+            sb.AppendLine("This session was started from the main menu (no active game). The player may be asking general questions about GnollHack, seeking help with the app, or browsing dumplogs from previous games.");
+        }
+
         // --- Important Rules ---
         sb.AppendLine("## Important Rules");
         sb.AppendLine("- GnollHack inherits many mechanics from NetHack 3.6.2 but has significant differences (new monsters, items, spells, UI, multi-layered tile rendering, FMOD audio, etc.). Always note when you are referencing NetHack mechanics that may differ in GnollHack.");
@@ -790,6 +866,18 @@ public class ChatService
             sb.AppendLine("- You CAN: explain general mechanics, warn about immediate dangers visible in the snapshot, clarify UI elements, and help with technical issues (these are not spoilers).");
         }
         sb.AppendLine();
+
+        // --- Verbose Mode ---
+        if (verboseMode)
+        {
+            sb.AppendLine("## Verbose Mode");
+            sb.AppendLine("The player has enabled verbose responses. Provide detailed explanations, include relevant background information, and elaborate on game mechanics when applicable.");
+        }
+        else
+        {
+            sb.AppendLine("## Response Style");
+            sb.AppendLine("Keep responses concise and action-oriented. Provide direct answers without excessive elaboration.");
+        }
 
         // --- Wiki Context ---
         var contextList = wikiContext.ToList();

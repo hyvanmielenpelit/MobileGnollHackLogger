@@ -16,4 +16,7 @@ public class ChatSession
     public DateTime CreatedUtc { get; set; }
     
     public DateTime LastMessageUtc { get; set; }
+
+    [MaxLength(4096)]
+    public string? ClientSettings { get; set; }
 }

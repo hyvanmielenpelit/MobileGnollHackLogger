@@ -58,7 +58,8 @@ public class SessionController : ControllerBase
             AspNetUserId = user.Id,
             Title = "MAUI Client Handoff",
             CreatedUtc = DateTime.UtcNow,
-            LastMessageUtc = DateTime.UtcNow
+            LastMessageUtc = DateTime.UtcNow,
+            ClientSettings = request.OverseerSettings
         };
         _dbContext.ChatSession.Add(session);
         await _dbContext.SaveChangesAsync();
@@ -206,4 +207,5 @@ public class CreateSessionRequest
     public string? DirectoryManifest { get; set; }     // NEW: Game directory file listing (tab-separated)
     public string? DebugData { get; set; }             // NEW: Runtime debug JSON (only when DeveloperMode is on)
     public string? InitialPrompt { get; set; }         // NEW: Prompt to immediately start AI generation
+    public string? OverseerSettings { get; set; }
 }
