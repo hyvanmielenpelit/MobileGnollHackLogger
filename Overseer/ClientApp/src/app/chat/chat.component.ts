@@ -143,10 +143,22 @@ export class ChatComponent implements OnInit, OnDestroy {
 
     this.loadSessions();
     this.route.queryParams.subscribe(params => {
-      if (params['sessionId']) {
-        this.loadSession(Number(params['sessionId']));
+      const idParam = params['sessionId'];
+      if (idParam) {
+        const id = Number(idParam);
+        if (isNaN(id)) {
+          this.navigateToNewSession();
+        } else if (this.currentSessionId !== id) {
+          if (this.isStreaming) this.stopRequest();
+          this.loadSession(id);
+        }
       } else {
-        this.loadDraft();
+        if (this.currentSessionId !== null || this.messages.length > 0) {
+          if (this.isStreaming) this.stopRequest();
+          this.newSession();
+        } else {
+          this.loadDraft();
+        }
       }
     });
 
@@ -231,6 +243,23 @@ export class ChatComponent implements OnInit, OnDestroy {
     });
   }
 
+  navigateToNewSession() {
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { sessionId: null },
+      queryParamsHandling: 'merge'
+    });
+  }
+
+  navigateToSession(id: number) {
+    if (this.currentSessionId === id) return;
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { sessionId: id },
+      queryParamsHandling: 'merge'
+    });
+  }
+
   newSession() {
     this.currentSessionId = null;
     this.messages = [];
@@ -239,21 +268,27 @@ export class ChatComponent implements OnInit, OnDestroy {
   }
 
   loadSession(id: number) {
-    this.chatService.getSession(id).subscribe(s => {
-      if (this.hubConnection?.state === signalR.HubConnectionState.Connected) {
-        if (this.currentSessionId && this.currentSessionId !== id) {
-          this.hubConnection.invoke("LeaveSession", this.currentSessionId).catch(console.error);
+    this.chatService.getSession(id).subscribe({
+      next: (s) => {
+        if (this.hubConnection?.state === signalR.HubConnectionState.Connected) {
+          if (this.currentSessionId && this.currentSessionId !== id) {
+            this.hubConnection.invoke("LeaveSession", this.currentSessionId).catch(console.error);
+          }
+          this.hubConnection.invoke("JoinSession", id).catch(console.error);
         }
-        this.hubConnection.invoke("JoinSession", id).catch(console.error);
-      }
 
-      this.currentSessionId = s.id;
-      this.messages = s.messages || [];
-      this.currentStatusText = '';
-      this.loadDraft();
-      
-      if (!this.sessions.find(x => x.id === id)) {
-         this.loadSessions();
+        this.currentSessionId = s.id;
+        this.messages = s.messages || [];
+        this.currentStatusText = '';
+        this.loadDraft();
+        
+        if (!this.sessions.find(x => x.id === id)) {
+           this.loadSessions();
+        }
+      },
+      error: (err) => {
+        console.warn(`Failed to load session ${id}. Bouncing to new chat.`, err);
+        this.navigateToNewSession();
       }
     });
   }
@@ -271,7 +306,7 @@ export class ChatComponent implements OnInit, OnDestroy {
     const id = this.sessionToDelete;
     
     this.chatService.deleteSession(id).subscribe(() => {
-      if (this.currentSessionId === id) this.newSession();
+      if (this.currentSessionId === id) this.navigateToNewSession();
       this.loadSessions();
       if (this.deleteConfirmDialog) {
         this.deleteConfirmDialog.nativeElement.close();
@@ -331,7 +366,15 @@ export class ChatComponent implements OnInit, OnDestroy {
 
     try {
       for await (const evt of this.chatService.streamMessage(this.currentSessionId, message, attachmentsPayload, this.abortController.signal)) {
-        if (evt.type === 'debug') {
+        if (evt.type === 'sessionId') {
+          this.currentSessionId = Number(evt.data);
+          const urlTree = this.router.createUrlTree([], {
+            relativeTo: this.route,
+            queryParams: { sessionId: this.currentSessionId },
+            queryParamsHandling: 'merge'
+          });
+          this.router.navigateByUrl(urlTree, { replaceUrl: true });
+        } else if (evt.type === 'debug') {
           this.debugService.log(`[Backend] ${evt.data}`);
         } else if (evt.type === 'status') {
           this.currentStatusText = evt.data;

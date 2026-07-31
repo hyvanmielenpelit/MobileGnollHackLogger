@@ -1,7 +1,7 @@
 <div *ngIf="!isOffline" class="layout" [class.is-resizing]="isResizing">
   <div class="sidebar gh-main-container" #sidebar [style.width.px]="sidebarWidth">
     <h3>Sessions</h3>
-    <button class="btn-gh btn-new-chat" (click)="newSession()">New Chat</button>
+    <button class="btn-gh btn-new-chat" (click)="navigateToNewSession()">New Chat</button>
     <ul>
       <div *ngIf="loadingSessions" class="sessions-loader">
         <div class="sidebar-spinner"></div>
@@ -10,7 +10,7 @@
       <li *ngIf="!loadingSessions && sessions.length === 0" class="empty-sessions-msg">
         No conversations yet.
       </li>
-      <li *ngFor="let s of sessions" [class.active]="s.id === currentSessionId" (click)="loadSession(s.id)">
+      <li *ngFor="let s of sessions" [class.active]="s.id === currentSessionId" (click)="navigateToSession(s.id)">
         <div class="session-info">
           <div class="session-title" title="{{ s.title }}">{{ s.title }}</div>
           <div class="session-time" *ngIf="s.lastMessageUtc">{{ s.lastMessageUtc | relativeTime }}</div>
@@ -19,8 +19,8 @@
       </li>
     </ul>
     <div class="bottom-links">
-      <a routerLink="/debug-log">Debug Log</a>
-      <a routerLink="/settings">Settings</a>
+      <a routerLink="/debug-log" queryParamsHandling="preserve">Debug Log</a>
+      <a routerLink="/settings" queryParamsHandling="preserve">Settings</a>
       <a href="#" (click)="logout($event)">Logout</a>
     </div>
   </div>

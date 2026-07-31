@@ -159,6 +159,8 @@ public class ChatService
                 dbContext.ChatSession.Add(session);
                 await dbContext.SaveChangesAsync(cancellationToken);
                 currentSessionId = session.Id;
+                
+                yield return new ChatEvent { Type = "sessionId", Data = currentSessionId.ToString() };
             }
 
             var contextDocs = _wikiService.GetRelevantContext(message);

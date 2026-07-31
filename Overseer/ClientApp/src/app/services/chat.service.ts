@@ -22,7 +22,7 @@ export interface ChatMessage {
 }
 
 export interface ChatStreamEvent {
-  type: 'chunk' | 'status' | 'debug' | 'error';
+  type: 'chunk' | 'status' | 'debug' | 'error' | 'sessionId';
   data: string;
 }
 
