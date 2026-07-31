@@ -49,8 +49,10 @@ namespace Overseer.Tests
 
             services.AddSingleton<IConfiguration>(config);
             services.AddHttpClient();
+            services.AddSignalR(); // Adds IHubContext<ChatHub>
             services.AddScoped<CryptoService>();
             services.AddScoped<WikiService>();
+            services.AddScoped<ModelMetadataService>();
             services.AddScoped<ChatService>();
 
             var serviceProvider = services.BuildServiceProvider();

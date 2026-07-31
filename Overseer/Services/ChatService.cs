@@ -19,8 +19,9 @@ public class ChatService
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConfiguration _configuration;
     private readonly IHubContext<ChatHub> _hubContext;
+    private readonly ModelMetadataService _modelMetadataService;
 
-    public ChatService(IServiceScopeFactory scopeFactory, WikiService wikiService, CryptoService cryptoService, IHttpClientFactory httpClientFactory, IConfiguration configuration, IHubContext<ChatHub> hubContext)
+    public ChatService(IServiceScopeFactory scopeFactory, WikiService wikiService, CryptoService cryptoService, IHttpClientFactory httpClientFactory, IConfiguration configuration, IHubContext<ChatHub> hubContext, ModelMetadataService modelMetadataService)
     {
         _scopeFactory = scopeFactory;
         _wikiService = wikiService;
@@ -28,6 +29,7 @@ public class ChatService
         _httpClientFactory = httpClientFactory;
         _configuration = configuration;
         _hubContext = hubContext;
+        _modelMetadataService = modelMetadataService;
     }
 
     public async Task GenerateAndBroadcastMessageAsync(long sessionId, string message, List<SendMessageAttachment>? attachments, string userId, CancellationToken cancellationToken)
@@ -57,6 +59,8 @@ public class ChatService
         string? thinkingLevel = null;
         List<object> messageHistory = new();
         bool spoilerFreeMode = false;
+        int? maxInputTokens = null;
+        int? maxOutputTokens = null;
 
         using (var scope = _scopeFactory.CreateScope())
         {
@@ -68,6 +72,8 @@ public class ChatService
                 if (!string.IsNullOrEmpty(settings.DefaultModel)) model = settings.DefaultModel;
                 if (!string.IsNullOrEmpty(settings.ThinkingLevel)) thinkingLevel = settings.ThinkingLevel;
                 spoilerFreeMode = settings.SpoilerFreeMode;
+                maxInputTokens = settings.MaxInputTokens;
+                maxOutputTokens = settings.MaxOutputTokens;
 
                 if (!string.IsNullOrEmpty(settings.EncryptedApiKey) && !string.IsNullOrEmpty(settings.ApiKeyNonce) && !string.IsNullOrEmpty(settings.ApiKeyTag))
                 {
@@ -98,8 +104,34 @@ public class ChatService
                 currentSessionId = session.Id;
                 
                 var pastMessages = dbContext.ChatMessage.Where(m => m.ChatSessionId == currentSessionId).OrderBy(m => m.TimestampUtc).ToList();
+                var recentMessageIds = pastMessages.OrderByDescending(m => m.TimestampUtc).Take(5).Select(m => m.Id).ToHashSet();
+                
+                var pastAttachments = dbContext.ChatMessageAttachment.Where(a => pastMessages.Select(m => m.Id).Contains(a.ChatMessageId)).ToList();
+                var baseDir = _configuration["ConversationsDataLocation"];
+                
                 foreach (var pm in pastMessages)
                 {
+                    var msgAtts = pastAttachments.Where(a => a.ChatMessageId == pm.Id && a.ContentType.StartsWith("image/")).ToList();
+                    if (msgAtts.Count > 0 && recentMessageIds.Contains(pm.Id) && !string.IsNullOrEmpty(baseDir))
+                    {
+                        var msgImageAttachments = new List<SendMessageAttachment>();
+                        foreach (var att in msgAtts)
+                        {
+                            var fullPath = Path.Combine(baseDir, att.RelativePath);
+                            if (System.IO.File.Exists(fullPath))
+                            {
+                                var bytes = System.IO.File.ReadAllBytes(fullPath);
+                                msgImageAttachments.Add(new SendMessageAttachment { ContentType = att.ContentType, Base64Data = Convert.ToBase64String(bytes) });
+                            }
+                        }
+                        
+                        if (msgImageAttachments.Count > 0)
+                        {
+                            messageHistory.Add(FormatMessage(provider, pm.Role, pm.Content ?? "", msgImageAttachments));
+                            continue;
+                        }
+                    }
+                    
                     messageHistory.Add(new { role = pm.Role, content = pm.Content });
                 }
 
@@ -131,11 +163,6 @@ public class ChatService
 
             var contextDocs = _wikiService.GetRelevantContext(message);
             string systemPrompt = BuildSystemPrompt(contextDocs, spoilerFreeMode, hasGameSnapshot, hasDebugData, hasDirectoryManifest, hasMessageHistory);
-
-            if (!messageHistory.Any(m => ((dynamic)m).role == "system"))
-            {
-                messageHistory.Insert(0, new { role = "system", content = systemPrompt });
-            }
 
             var userMsg = new ChatMessage
             {
@@ -213,43 +240,45 @@ public class ChatService
                 finalMessageText += "\n\n" + textAttachmentsContent.ToString();
             }
 
-            if (imageAttachments.Count > 0)
+            messageHistory.Add(FormatMessage(provider, "user", finalMessageText, imageAttachments));
+            
+            // Truncation logic
+            var meta = _modelMetadataService.GetMetadata(model);
+            int effectiveInputLimit = maxInputTokens ?? meta.MaxInputTokens;
+            if (effectiveInputLimit <= 0) effectiveInputLimit = 100000;
+            
+            int EstimateTokens(object msg)
             {
-                if (provider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase))
-                {
-                    var contentList = new List<object>();
-                    contentList.Add(new { type = "text", text = finalMessageText });
-                    foreach(var img in imageAttachments)
-                    {
-                        contentList.Add(new { type = "image_url", image_url = new { url = $"data:{img.ContentType};base64,{img.Base64Data}" } });
-                    }
-                    messageHistory.Add(new { role = "user", content = contentList });
-                }
-                else if (provider.Equals("Anthropic", StringComparison.OrdinalIgnoreCase))
-                {
-                    var contentList = new List<object>();
-                    foreach(var img in imageAttachments)
-                    {
-                        contentList.Add(new { type = "image", source = new { type = "base64", media_type = img.ContentType, data = img.Base64Data } });
-                    }
-                    contentList.Add(new { type = "text", text = finalMessageText });
-                    messageHistory.Add(new { role = "user", content = contentList });
-                }
-                else // Google
-                {
-                    var partsList = new List<object>();
-                    partsList.Add(new { text = finalMessageText });
-                    foreach(var img in imageAttachments)
-                    {
-                        partsList.Add(new { inlineData = new { mimeType = img.ContentType, data = img.Base64Data } });
-                    }
-                    messageHistory.Add(new { role = "user", parts = partsList });
-                }
+                return JsonSerializer.Serialize(msg).Length / 4;
             }
-            else
+            
+            int totalTokens = EstimateTokens(systemPrompt);
+            var truncatedHistory = new List<object>();
+            
+            for (int i = messageHistory.Count - 1; i >= 0; i--)
             {
-                messageHistory.Add(new { role = "user", content = finalMessageText });
+                int msgTokens = EstimateTokens(messageHistory[i]);
+                if (totalTokens + msgTokens > effectiveInputLimit && truncatedHistory.Count > 0)
+                {
+                    // Always keep the current user message (last one added) and system prompt, truncate others
+                    break;
+                }
+                totalTokens += msgTokens;
+                truncatedHistory.Insert(0, messageHistory[i]);
             }
+            messageHistory = truncatedHistory;
+            
+            // Always Insert System Prompt
+            messageHistory.Insert(0, new { role = "system", content = systemPrompt });
+            
+            // Format Anthropic alternating
+            if (provider.Equals("Anthropic", StringComparison.OrdinalIgnoreCase))
+            {
+                messageHistory = AlternateAnthropicMessages(messageHistory);
+            }
+            
+            // Note: maxOutputTokens is handled later
+
         }
 
         string fullResponse = "";
@@ -265,6 +294,8 @@ public class ChatService
                 { "messages", messageHistory },
                 { "stream", true }
             };
+            if (maxOutputTokens.HasValue) requestBody["max_tokens"] = maxOutputTokens.Value;
+
 
             if (!string.IsNullOrEmpty(thinkingLevel))
             {
@@ -305,7 +336,7 @@ public class ChatService
                 { "system", systemPrompt },
                 { "messages", userAsstMessages },
                 { "stream", true },
-                { "max_tokens", 4096 }
+                { "max_tokens", maxOutputTokens ?? 4096 }
             };
 
             if (!string.IsNullOrEmpty(thinkingLevel))
@@ -380,6 +411,11 @@ public class ChatService
                 {
                     parts = new[] { new { text = systemInstruction } }
                 };
+            }
+            
+            if (maxOutputTokens.HasValue)
+            {
+                requestBody["generationConfig"] = new { maxOutputTokens = maxOutputTokens.Value };
             }
 
             await foreach (var evt in ExecuteApiWithRetriesAsync(
@@ -627,6 +663,74 @@ public class ChatService
                 }
             }
         }
+    }
+
+    
+    private object FormatMessage(string provider, string role, string text, List<SendMessageAttachment>? imageAttachments)
+    {
+        if (imageAttachments == null || imageAttachments.Count == 0) return new { role = role, content = text };
+        
+        if (provider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase))
+        {
+            var contentList = new List<object>();
+            contentList.Add(new { type = "text", text = text });
+            foreach(var img in imageAttachments)
+            {
+                contentList.Add(new { type = "image_url", image_url = new { url = $"data:{img.ContentType};base64,{img.Base64Data}" } });
+            }
+            return new { role = role, content = contentList };
+        }
+        else if (provider.Equals("Anthropic", StringComparison.OrdinalIgnoreCase))
+        {
+            var contentList = new List<object>();
+            foreach(var img in imageAttachments)
+            {
+                contentList.Add(new { type = "image", source = new { type = "base64", media_type = img.ContentType, data = img.Base64Data } });
+            }
+            contentList.Add(new { type = "text", text = text });
+            return new { role = role, content = contentList };
+        }
+        else // Google
+        {
+            var partsList = new List<object>();
+            partsList.Add(new { text = text });
+            foreach(var img in imageAttachments)
+            {
+                partsList.Add(new { inlineData = new { mimeType = img.ContentType, data = img.Base64Data } });
+            }
+            return new { role = role, parts = partsList };
+        }
+    }
+    
+    private List<object> AlternateAnthropicMessages(List<object> messages)
+    {
+        var combined = new List<object>();
+        object? lastMsg = null;
+        foreach (var msg in messages)
+        {
+            if (lastMsg != null && ((dynamic)lastMsg).role == ((dynamic)msg).role && ((dynamic)msg).role != "system")
+            {
+                var role = ((dynamic)msg).role;
+                var c1 = ((dynamic)lastMsg).content;
+                var c2 = ((dynamic)msg).content;
+                
+                var list = new List<object>();
+                if (c1 is string s1) list.Add(new { type = "text", text = s1 });
+                else if (c1 is IEnumerable<object> e1) list.AddRange(e1);
+                
+                if (c2 is string s2) list.Add(new { type = "text", text = "\n\n" + s2 });
+                else if (c2 is IEnumerable<object> e2) list.AddRange(e2);
+                
+                lastMsg = new { role = role, content = list };
+                combined[combined.Count - 1] = lastMsg;
+            }
+            else
+            {
+                combined.Add(msg);
+                lastMsg = msg;
+            }
+        }
+        return combined;
     }
 
     private static string BuildSystemPrompt(

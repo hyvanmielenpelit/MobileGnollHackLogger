@@ -13,8 +13,6 @@ public class ModelMetadataService
             SupportedThinkingLevels = new List<string>()
         };
 
-        // Strict 2026 Model Pattern Matching for OpenAI
-        // Matches e.g., gpt-5.6-sol, gpt-5.5, gpt-5.4-mini
         var openaiRegex = new Regex(@"^gpt-5\.([4-6])(?:-(sol|terra|luna|mini|nano|pro))?$");
         var openaiMatch = openaiRegex.Match(modelId);
         if (openaiMatch.Success)
@@ -23,11 +21,24 @@ public class ModelMetadataService
             var tier = openaiMatch.Groups[2].Success ? char.ToUpper(openaiMatch.Groups[2].Value[0]) + openaiMatch.Groups[2].Value.Substring(1) : "";
             metadata.Description = string.IsNullOrWhiteSpace(tier) ? $"OpenAI GPT-5.{version} Model" : $"OpenAI GPT-5.{version} {tier}";
             metadata.SupportedThinkingLevels = new List<string> { "low", "medium", "high" };
+            metadata.ContextWindowSize = 1048576;
+            metadata.MaxOutputTokens = 128000;
+            metadata.MaxInputTokens = metadata.ContextWindowSize - metadata.MaxOutputTokens;
             return metadata;
         }
 
-        // Strict 2026 Model Pattern Matching for Anthropic
-        // Matches e.g., claude-5-opus, claude-sonnet-5, claude-4.6, claude-4.8-sonnet
+        var openai4Regex = new Regex(@"^gpt-4o(?:-(mini))?$");
+        var openai4Match = openai4Regex.Match(modelId);
+        if (openai4Match.Success)
+        {
+            var isMini = openai4Match.Groups[1].Success;
+            metadata.Description = isMini ? "OpenAI GPT-4o Mini" : "OpenAI GPT-4o";
+            metadata.ContextWindowSize = 128000;
+            metadata.MaxOutputTokens = 16384;
+            metadata.MaxInputTokens = metadata.ContextWindowSize - metadata.MaxOutputTokens;
+            return metadata;
+        }
+
         var anthropicRegex = new Regex(@"^claude-(?:(opus|sonnet|fable|mythos)-)?(5|4\.[6-8])(?:-(opus|sonnet|fable|mythos))?$");
         var anthropicMatch = anthropicRegex.Match(modelId);
         if (anthropicMatch.Success)
@@ -41,10 +52,25 @@ public class ModelMetadataService
             
             metadata.Description = $"Claude {version} {formattedTier}";
             metadata.SupportedThinkingLevels = new List<string> { "minimal", "low", "medium", "high", "max" };
+            metadata.ContextWindowSize = 1000000;
+            metadata.MaxOutputTokens = 128000;
+            metadata.MaxInputTokens = metadata.ContextWindowSize - metadata.MaxOutputTokens;
             return metadata;
         }
 
-        // Strict 2026 Model Pattern Matching for Google Gemini
+        var anthropic3Regex = new Regex(@"^claude-3-5-(sonnet|haiku).*$");
+        var anthropic3Match = anthropic3Regex.Match(modelId);
+        if (anthropic3Match.Success)
+        {
+            var tierStr = anthropic3Match.Groups[1].Value;
+            var formattedTier = !string.IsNullOrEmpty(tierStr) ? char.ToUpper(tierStr[0]) + tierStr.Substring(1) : "Model";
+            metadata.Description = $"Claude 3.5 {formattedTier}";
+            metadata.ContextWindowSize = 200000;
+            metadata.MaxOutputTokens = 8192;
+            metadata.MaxInputTokens = metadata.ContextWindowSize - metadata.MaxOutputTokens;
+            return metadata;
+        }
+
         var googleRegex = new Regex(@"^gemini-(2\.5|3(?:\.[1-6])?)-(pro|flash(?:-lite|-cyber|-tts)?)(?:-(.*))?$");
         var googleMatch = googleRegex.Match(modelId);
         if (googleMatch.Success)
@@ -62,6 +88,18 @@ public class ModelMetadataService
             {
                 metadata.SupportedThinkingLevels = new List<string> { "minimal", "low", "medium", "high" };
             }
+            
+            if (version == "3.5")
+            {
+                metadata.ContextWindowSize = 2097152;
+            }
+            else
+            {
+                metadata.ContextWindowSize = 1048576;
+            }
+            metadata.MaxOutputTokens = 65536;
+            metadata.MaxInputTokens = metadata.ContextWindowSize - metadata.MaxOutputTokens;
+            
             return metadata;
         }
 
@@ -74,4 +112,8 @@ public class ModelMetadata
     public string Id { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public List<string> SupportedThinkingLevels { get; set; } = new List<string>();
+    
+    public int ContextWindowSize { get; set; }
+    public int MaxInputTokens { get; set; }
+    public int MaxOutputTokens { get; set; }
 }

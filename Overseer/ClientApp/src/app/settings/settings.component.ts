@@ -24,20 +24,23 @@ import { RouterModule } from '@angular/router';
           </select>
         </div>
         <div>
-          <label>API Key (Leave blank to keep existing)</label>
-          <div style="display: flex; gap: 10px; align-items: center;">
-            <input type="password" [(ngModel)]="apiKey" name="apiKey" class="gh-input" style="flex: 1;" />
-            <span *ngIf="apiKey.length > 0" title="API key set but not saved yet." style="color: #ffc107; font-size: 1.5em; flex-shrink: 0; margin-left: 10px;">&#10004;</span>
-            <span *ngIf="apiKey.length === 0 && hasApiKey" title="An API key is currently saved." style="color: #28a745; font-size: 1.5em; flex-shrink: 0; margin-left: 10px;">&#10004;</span>
-            <span *ngIf="apiKey.length === 0 && !hasApiKey" title="No API key saved." style="color: #dc3545; font-size: 1.5em; flex-shrink: 0; margin-left: 10px;">&#9888;</span>
-            <button *ngIf="hasApiKey" type="button" class="btn-gh btn-gh-delete" style="min-width: 100px; min-height: 36px; padding: 5px 10px;" (click)="deleteApiKey()" [disabled]="loading">Delete</button>
+          <label for="apiKeyInput">API Key</label>
+          <span id="apiKeyHint" class="form-hint">Leave blank to keep existing</span>
+          <div style="display: grid; grid-template-columns: 1fr 40px 140px; gap: 10px; align-items: center; margin-top: 5px;">
+            <input type="password" id="apiKeyInput" [(ngModel)]="apiKey" name="apiKey" class="gh-input" aria-describedby="apiKeyHint" style="margin: 0;" />
+            <div style="display: flex; justify-content: center; align-items: center;">
+              <span *ngIf="apiKey.length > 0" title="API key set but not saved yet." style="color: #ffc107; font-size: 1.5em; transform: translateY(5px); display: inline-block;">&#10004;</span>
+              <span *ngIf="apiKey.length === 0 && hasApiKey" title="An API key is currently saved." style="color: #28a745; font-size: 1.5em; transform: translateY(5px); display: inline-block;">&#10004;</span>
+              <span *ngIf="apiKey.length === 0 && !hasApiKey" title="No API key saved." style="color: #dc3545; font-size: 1.5em; transform: translateY(5px); display: inline-block;">&#9888;</span>
+            </div>
+            <button *ngIf="hasApiKey" type="button" class="btn-gh btn-gh-delete" style="width: 140px; min-width: 140px; min-height: 36px; padding: 5px 10px; margin: 0;" (click)="deleteApiKey()" [disabled]="loading">Delete</button>
           </div>
         </div>
         <div class="model-row">
           <label>Model</label>
-          <div style="display: flex; gap: 10px;">
-            <input type="text" [(ngModel)]="model" name="model" style="flex: 1;" class="gh-input" />
-            <button type="button" class="btn-gh" (click)="checkModels()" [disabled]="loadingModels">
+          <div style="display: grid; grid-template-columns: 1fr 40px 140px; gap: 10px; align-items: center;">
+            <input type="text" [(ngModel)]="model" name="model" class="gh-input" style="margin: 0;" />
+            <button type="button" class="btn-gh" style="grid-column: 2 / span 2; width: 100%; margin: 0;" (click)="checkModels()" [disabled]="loadingModels">
               {{ loadingModels ? 'Checking...' : 'Check Models' }}
             </button>
           </div>
@@ -62,9 +65,23 @@ import { RouterModule } from '@angular/router';
         
         <div style="margin-top: 20px; margin-bottom: 20px;">
           <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
-            <input type="checkbox" [(ngModel)]="spoilerFreeMode" name="spoilerFreeMode" style="width: auto; margin: 0;" />
-            <span>Spoiler-Free Mode (Limit hints to avoid spoiling secrets)</span>
+            <input type="checkbox" [(ngModel)]="spoilerFreeMode" name="spoilerFreeMode" style="width: auto; margin: 0;" aria-describedby="spoilerFreeHint" />
+            <span>Spoiler-Free Mode</span>
           </label>
+          <span id="spoilerFreeHint" class="form-hint" style="margin-left: 28px; margin-top: 4px;">Limit hints to avoid spoiling secrets</span>
+        </div>
+
+        <div style="display: flex; gap: 30px; margin-bottom: 20px;">
+          <div style="flex: 1;">
+            <label for="maxInputTokensInput">Max Input Tokens</label>
+            <span id="maxInputHint" class="form-hint">Leave blank for no limit</span>
+            <input type="number" id="maxInputTokensInput" [(ngModel)]="maxInputTokens" name="maxInputTokens" class="gh-input" style="width: 100%; margin-top: 5px;" aria-describedby="maxInputHint" />
+          </div>
+          <div style="flex: 1;">
+            <label for="maxOutputTokensInput">Max Output Tokens</label>
+            <span id="maxOutputHint" class="form-hint">Leave blank for default</span>
+            <input type="number" id="maxOutputTokensInput" [(ngModel)]="maxOutputTokens" name="maxOutputTokens" class="gh-input" style="width: 100%; margin-top: 5px;" aria-describedby="maxOutputHint" />
+          </div>
         </div>
 
         <button type="submit" class="btn-gh save-btn" [disabled]="loading">Save</button>
@@ -105,14 +122,25 @@ import { RouterModule } from '@angular/router';
           </select>
           
           <div *ngIf="selectedModelObj" class="model-meta">
-            <div *ngIf="selectedModelObj.supportedThinkingLevels && selectedModelObj.supportedThinkingLevels.length > 0">
+            <div style="display: grid; grid-template-columns: max-content 1fr; gap: 10px 15px; align-items: center;">
+              <strong>Context Window:</strong> 
+              <span>{{ selectedModelObj.contextWindowSize | number }} tokens</span>
+              
+              <strong>Max Input Tokens:</strong> 
+              <span>{{ selectedModelObj.maxInputTokens | number }} tokens</span>
+              
+              <strong>Max Output Tokens:</strong> 
+              <span>{{ selectedModelObj.maxOutputTokens | number }} tokens</span>
+              
               <strong>Supported Thinking:</strong>
-              <select [(ngModel)]="modalThinkingLevel" class="gh-input" style="margin-top: 5px;">
-                <option *ngFor="let level of selectedModelObj.supportedThinkingLevels" [value]="level">{{ level }}</option>
-              </select>
-            </div>
-            <div *ngIf="!selectedModelObj.supportedThinkingLevels || selectedModelObj.supportedThinkingLevels.length === 0">
-              <strong>Supported Thinking:</strong> None
+              <ng-container *ngIf="selectedModelObj.supportedThinkingLevels && selectedModelObj.supportedThinkingLevels.length > 0; else noThinking">
+                <select [(ngModel)]="modalThinkingLevel" class="gh-input" style="margin: 0; width: 100%;">
+                  <option *ngFor="let level of selectedModelObj.supportedThinkingLevels" [value]="level">{{ level }}</option>
+                </select>
+              </ng-container>
+              <ng-template #noThinking>
+                <span>None</span>
+              </ng-template>
             </div>
           </div>
 
@@ -141,6 +169,7 @@ import { RouterModule } from '@angular/router';
     form div { margin-bottom: 15px; }
     .model-row { margin-bottom: 15px; }
     label { display: block; margin-bottom: 5px; font-weight: bold; }
+    .form-hint { font-size: 0.85em; color: #aaa; font-weight: normal; display: block; }
     .success { color: #28a745; margin-left: 10px; font-weight: bold; }
 
     /* Modern Toast Notification */
@@ -275,6 +304,11 @@ export class SettingsComponent implements OnInit {
   spoilerFreeMode = false;
   initSpoilerFreeMode = false;
 
+  maxInputTokens: number | null = null;
+  maxOutputTokens: number | null = null;
+  initMaxInputTokens: number | null = null;
+  initMaxOutputTokens: number | null = null;
+
   apiKey = '';
   hasApiKey = false;
   loading = false;
@@ -309,6 +343,8 @@ export class SettingsComponent implements OnInit {
            this.model !== this.initModel ||
            this.thinkingLevel !== this.initThinkingLevel ||
            this.spoilerFreeMode !== this.initSpoilerFreeMode ||
+           this.maxInputTokens !== this.initMaxInputTokens ||
+           this.maxOutputTokens !== this.initMaxOutputTokens ||
            this.apiKey.length > 0;
   }
 
@@ -351,6 +387,14 @@ export class SettingsComponent implements OnInit {
           this.spoilerFreeMode = s.spoilerFreeMode;
           this.initSpoilerFreeMode = s.spoilerFreeMode;
         }
+        if (s.maxInputTokens !== undefined) {
+          this.maxInputTokens = s.maxInputTokens;
+          this.initMaxInputTokens = s.maxInputTokens;
+        }
+        if (s.maxOutputTokens !== undefined) {
+          this.maxOutputTokens = s.maxOutputTokens;
+          this.initMaxOutputTokens = s.maxOutputTokens;
+        }
       }
     });
   }
@@ -366,7 +410,7 @@ export class SettingsComponent implements OnInit {
   saveSettings() {
     this.loading = true;
     this.saved = false;
-    this.settingsService.saveSettings(this.provider, this.model, this.apiKey, this.thinkingLevel, this.spoilerFreeMode).subscribe(() => {
+    this.settingsService.saveSettings(this.provider, this.model, this.apiKey, this.thinkingLevel, this.spoilerFreeMode, this.maxInputTokens, this.maxOutputTokens).subscribe(() => {
       this.loading = false;
       
       const toast = this.successToast?.nativeElement as any;
@@ -388,6 +432,8 @@ export class SettingsComponent implements OnInit {
       this.initModel = this.model;
       this.initThinkingLevel = this.thinkingLevel;
       this.initSpoilerFreeMode = this.spoilerFreeMode;
+      this.initMaxInputTokens = this.maxInputTokens;
+      this.initMaxOutputTokens = this.maxOutputTokens;
     });
   }
 
@@ -476,6 +522,9 @@ export class SettingsComponent implements OnInit {
         this.thinkingLevel = '';
         this.thinkingLevelSelect = '';
       }
+      
+      this.maxInputTokens = this.selectedModelObj?.maxInputTokens ?? null;
+      this.maxOutputTokens = this.selectedModelObj?.maxOutputTokens ?? null;
     }
     this.closeModal();
   }

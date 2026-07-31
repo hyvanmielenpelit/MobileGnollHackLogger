@@ -40,7 +40,9 @@ public class SettingsController : ControllerBase
             thinkingLevel = settings?.ThinkingLevel,
             hasApiKey = !string.IsNullOrEmpty(settings?.EncryptedApiKey),
             maxAttachmentSize = _configuration.GetValue<long>("MaxAttachmentSize", 15728640),
-            spoilerFreeMode = settings?.SpoilerFreeMode ?? false
+            spoilerFreeMode = settings?.SpoilerFreeMode ?? false,
+            maxInputTokens = settings?.MaxInputTokens,
+            maxOutputTokens = settings?.MaxOutputTokens
         });
     }
 
@@ -50,7 +52,7 @@ public class SettingsController : ControllerBase
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (userId == null) return Unauthorized();
 
-        await _settingsService.SaveSettingsAsync(userId, request.Provider, request.Model, request.ApiKey, request.ThinkingLevel, request.SpoilerFreeMode);
+        await _settingsService.SaveSettingsAsync(userId, request.Provider, request.Model, request.ApiKey, request.ThinkingLevel, request.SpoilerFreeMode, request.MaxInputTokens, request.MaxOutputTokens);
         
         return Ok();
     }
@@ -136,7 +138,7 @@ public class SettingsController : ControllerBase
                                     if (created >= cutoffTimestamp)
                                     {
                                         var meta = _modelMetadataService.GetMetadata(name);
-                                        models.Add(new ApiModelDto { Id = name, CreatedAt = created, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels });
+                                        models.Add(new ApiModelDto { Id = name, CreatedAt = created, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels, ContextWindowSize = meta.ContextWindowSize, MaxInputTokens = meta.MaxInputTokens, MaxOutputTokens = meta.MaxOutputTokens });
                                     }
                                 }
                             }
@@ -176,7 +178,7 @@ public class SettingsController : ControllerBase
                                 if (created >= cutoffTimestamp)
                                 {
                                     var meta = _modelMetadataService.GetMetadata(name);
-                                    models.Add(new ApiModelDto { Id = name, CreatedAt = created, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels });
+                                    models.Add(new ApiModelDto { Id = name, CreatedAt = created, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels, ContextWindowSize = meta.ContextWindowSize, MaxInputTokens = meta.MaxInputTokens, MaxOutputTokens = meta.MaxOutputTokens });
                                 }
                             }
                         }
@@ -212,7 +214,7 @@ public class SettingsController : ControllerBase
                                     bool isOldModel = name.StartsWith("gemini-1.") || name.StartsWith("gemini-2.");
                                     if (!isOldModel)
                                     {
-                                        models.Add(new ApiModelDto { Id = name, CreatedAt = 0, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels });
+                                        models.Add(new ApiModelDto { Id = name, CreatedAt = 0, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels, ContextWindowSize = meta.ContextWindowSize, MaxInputTokens = meta.MaxInputTokens, MaxOutputTokens = meta.MaxOutputTokens });
                                     }
                                 }
                             }
@@ -240,6 +242,10 @@ public class ApiModelDto
     public long CreatedAt { get; set; }
     public string Description { get; set; } = string.Empty;
     public List<string> SupportedThinkingLevels { get; set; } = new List<string>();
+    
+    public int ContextWindowSize { get; set; }
+    public int MaxInputTokens { get; set; }
+    public int MaxOutputTokens { get; set; }
 }
 
 public class UpdateSettingsRequest
@@ -249,4 +255,6 @@ public class UpdateSettingsRequest
     public string? ApiKey { get; set; }
     public string? ThinkingLevel { get; set; }
     public bool? SpoilerFreeMode { get; set; }
+    public int? MaxInputTokens { get; set; }
+    public int? MaxOutputTokens { get; set; }
 }

@@ -29,4 +29,7 @@ public class UserAiSettings
     public string? ThinkingLevel { get; set; }
 
     public bool SpoilerFreeMode { get; set; } = false;
+
+    public int? MaxInputTokens { get; set; }
+    public int? MaxOutputTokens { get; set; }
 }

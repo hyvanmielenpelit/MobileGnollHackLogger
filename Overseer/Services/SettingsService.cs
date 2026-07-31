@@ -19,7 +19,7 @@ public class SettingsService
         return await _dbContext.UserAiSettings.FindAsync(userId);
     }
 
-    public async Task SaveSettingsAsync(string userId, string? defaultProvider, string? defaultModel, string? apiKey, string? thinkingLevel = null, bool? spoilerFreeMode = null)
+    public async Task SaveSettingsAsync(string userId, string? defaultProvider, string? defaultModel, string? apiKey, string? thinkingLevel = null, bool? spoilerFreeMode = null, int? maxInputTokens = null, int? maxOutputTokens = null)
     {
         var settings = await _dbContext.UserAiSettings.FindAsync(userId);
         if (settings == null)
@@ -32,6 +32,12 @@ public class SettingsService
         if (defaultModel != null) settings.DefaultModel = defaultModel;
         if (thinkingLevel != null) settings.ThinkingLevel = thinkingLevel;
         if (spoilerFreeMode.HasValue) settings.SpoilerFreeMode = spoilerFreeMode.Value;
+        
+        // Always update token limits if provided; allow nulling them out if -1 or something? 
+        // We'll just overwrite. We should probably clear them if null is sent, but the UI might just not send them.
+        // Wait, the UI sends null when the user clears the input box. So we should set the DB value to the passed value.
+        settings.MaxInputTokens = maxInputTokens;
+        settings.MaxOutputTokens = maxOutputTokens;
 
         if (!string.IsNullOrEmpty(apiKey))
         {
