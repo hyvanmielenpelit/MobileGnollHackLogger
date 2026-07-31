@@ -73,12 +73,11 @@ app.UseHttpsRedirection();
 app.UseStaticFiles();
 app.UseRouting();
 app.UseAuthentication();
-app.UseAuthorization();
 
 // Middleware to issue CSRF cookie to SPA (skip APIs)
 app.Use((context, next) =>
 {
-    if (!context.Request.Path.Value!.StartsWith("/api", StringComparison.OrdinalIgnoreCase))
+    if (context.Request.Method == "GET" || !context.Request.Path.Value!.StartsWith("/api", StringComparison.OrdinalIgnoreCase))
     {
         var antiforgery = context.RequestServices.GetRequiredService<Microsoft.AspNetCore.Antiforgery.IAntiforgery>();
         var tokens = antiforgery.GetAndStoreTokens(context);
@@ -86,6 +85,8 @@ app.Use((context, next) =>
     }
     return next(context);
 });
+
+app.UseAuthorization();
 
 app.MapControllers();
 app.MapHub<Overseer.Hubs.ChatHub>("/chathub");

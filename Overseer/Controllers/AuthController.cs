@@ -35,13 +35,14 @@ public class AuthController : ControllerBase
             return Ok(new { userName = user.UserName, email = user.Email });
         }
 
-        return Unauthorized("Invalid credentials.");
+        return Unauthorized(new { message = "Invalid credentials.", result = result });
     }
 
     [HttpPost("logout")]
     public async Task<IActionResult> Logout()
     {
         await _signInManager.SignOutAsync();
+        Response.Cookies.Delete("XSRF-TOKEN");
         return Ok();
     }
 

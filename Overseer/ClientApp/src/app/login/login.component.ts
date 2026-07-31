@@ -25,6 +25,9 @@ export class LoginComponent implements OnInit, OnDestroy {
   private boundSyncAriaInput: any;
 
   ngOnInit() {
+    // Call checkAuth to refresh the CSRF token (useful if we just logged out, so the token resets to anonymous)
+    this.authService.checkAuth().subscribe();
+
     const syncAria = (el: any) => {
       if (el && el.setAttribute && el.matches) {
         el.setAttribute('aria-invalid', el.matches(':user-invalid') ? 'true' : 'false');
