@@ -184,6 +184,58 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
   }
 }
 
+.handoff-loading-box {
+  margin: 60px auto;
+  padding: 40px;
+  max-width: 450px;
+  text-align: center;
+  border: 1px solid rgba(212, 175, 55, 0.3);
+  box-shadow: 0 0 30px rgba(212, 175, 55, 0.15);
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  
+  .handoff-avatar-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+  
+  .overseer-avatar-large {
+    width: 128px;
+    height: 128px;
+    border-radius: 50%;
+    border: 2px solid var(--primary-color);
+    object-fit: cover;
+    box-shadow: 0 0 15px rgba(212, 175, 55, 0.4);
+  }
+  
+  .handoff-loading-title {
+    color: var(--primary-color);
+    margin: 0;
+    font-family: "Cinzel", serif;
+    font-size: 24px;
+    font-weight: 600;
+  }
+  
+  .handoff-spinner-container {
+    display: flex;
+    justify-content: center;
+    margin-top: 10px;
+  }
+  
+  .handoff-spinner {
+    width: 48px;
+    height: 48px;
+    border-width: 5px;
+  }
+}
+
 /* Image Preview Dialog */
 .image-preview-dialog {
   border: none;

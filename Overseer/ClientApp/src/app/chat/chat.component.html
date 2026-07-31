@@ -45,6 +45,15 @@
         </ul>
         <a routerLink="/settings" queryParamsHandling="preserve" class="btn-gh mt-10">Go to Settings</a>
       </div>
+      <div *ngIf="isHandoffWaiting && hasApiKey && hasModel" class="handoff-loading-box gh-main-container">
+        <div class="handoff-avatar-container">
+          <img src="/img/gnoll-overseer-avatar-256x256-static.webp" alt="Gnoll Overseer" class="overseer-avatar-large" width="128" height="128" />
+        </div>
+        <h3 class="handoff-loading-title">Consulting the Overseer...</h3>
+        <div class="handoff-spinner-container">
+          <div class="sidebar-spinner handoff-spinner"></div>
+        </div>
+      </div>
       <div *ngFor="let msg of messages; let i = index" class="message-box" [ngClass]="msg.role">
         <div class="message-header">
           <img *ngIf="msg.role === 'assistant'" src="/img/gnoll-overseer-avatar-128x128-static.webp" class="overseer-avatar" alt="Overseer" width="64" height="64" />

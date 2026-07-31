@@ -76,6 +76,19 @@ export class ChatComponent implements OnInit, OnDestroy {
   requestStartTime = 0;
   abortController: AbortController | null = null;
 
+  get isHandoffWaiting(): boolean {
+    if (this.messages.length > 0) return false;
+    if (this.streamingMessage) return false;
+    if (this.currentStatusText.startsWith('Error')) return false;
+    
+    if (this.isStreaming || this.showSpinner || this.currentStatusText) return true;
+    
+    const currentSession = this.sessions.find(s => s.id === this.currentSessionId);
+    if (currentSession && currentSession.title === 'MAUI Client Handoff') return true;
+    
+    return false;
+  }
+
   onUserInteraction() {
     this.autoScrollEnabled = false;
   }
