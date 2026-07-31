@@ -330,13 +330,15 @@ public class ChatService
             
             var userAsstMessages = messageHistory.Where(m => ((dynamic)m).role != "system").ToList();
 
+            int defaultAnthropicTokens = _configuration.GetValue<int?>("DefaultMaxOutputTokens:Anthropic") ?? 8192;
+
             var requestBody = new Dictionary<string, object>
             {
                 { "model", model },
                 { "system", systemPrompt },
                 { "messages", userAsstMessages },
                 { "stream", true },
-                { "max_tokens", maxOutputTokens ?? 4096 }
+                { "max_tokens", maxOutputTokens ?? defaultAnthropicTokens }
             };
 
             if (!string.IsNullOrEmpty(thinkingLevel))
