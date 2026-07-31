@@ -30,6 +30,11 @@ To compile SCSS files:
 - **WebP format**: Convert JPG and PNG images to WebP to optimize web asset performance.
 - **Conversion quality**: When converting images to WebP, always use a compression quality of **85** (e.g., `quality=85` in Pillow or `-q 85` in cwebp).
 
+## Temporary and Guidance Files
+
+- **NEVER** store temporary files, scratch scripts, or guidance files in the repository root, in a scratch directory under the repository root, or anywhere else within the repository.
+- Always save temporary files and guidance files directly to the agent's dedicated scratch directory: `<appDataDir>\brain\<conversation-id>\scratch\` as specified in the global agent rules.
+
 ## File Organization
 
 | Area | Location |

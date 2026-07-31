@@ -168,6 +168,7 @@ public class ChatService
             bool verboseMode = false;
             bool isGameOn = false;
             bool developerMode = false;
+            bool debugLogMessages = false;
             int overseerMode = 0; // 0=gameplay, 1=technical, 2=developer
 
             if (!string.IsNullOrEmpty(session?.ClientSettings))
@@ -190,6 +191,9 @@ public class ChatService
 
                         if (boolSettings.TryGetProperty("developerMode", out var devVal))
                             developerMode = devVal.GetBoolean();
+
+                        if (boolSettings.TryGetProperty("debugLogMessages", out var debugLogVal))
+                            debugLogMessages = debugLogVal.GetBoolean();
                     }
 
                     if (root.TryGetProperty("intSettings", out var intSettings))
@@ -199,6 +203,12 @@ public class ChatService
                     }
                 }
                 catch (JsonException) { }
+            }
+
+            // Server-side gating: ensure mode 2 is only allowed if both flags are true
+            if (overseerMode == 2 && (!developerMode || !debugLogMessages))
+            {
+                overseerMode = isGameOn ? 0 : 1;
             }
 
             string systemPrompt = BuildSystemPrompt(contextDocs, spoilerFreeMode, verboseMode, isGameOn, developerMode, overseerMode, hasGameSnapshot, hasDebugData, hasDirectoryManifest, hasMessageHistory);
@@ -788,38 +798,110 @@ public class ChatService
     {
         var sb = new StringBuilder();
 
+        // ──────────────────────────────────────────────
+        // SECTION 1: Identity & Objective
+        // ──────────────────────────────────────────────
         sb.AppendLine("You are the Gnoll Overseer, an expert AI assistant for GnollHack — a modern roguelike game derived from NetHack 3.6.2 with extensive new features including tile graphics, sound, music, voiceovers, and a .NET MAUI mobile/desktop frontend.");
         sb.AppendLine();
 
-        // --- Overseer Mode ---
+        // NEW: Clear objective that varies by game state
+        if (isGameOn || hasGameSnapshot)
+        {
+            sb.AppendLine("Your objective is to maximize the player's chance of winning while helping them understand important decisions. Every recommendation should be evaluated against one question: Does this help the player survive and improve?");
+        }
+        else
+        {
+            sb.AppendLine("Your objective is to help the player understand GnollHack's mechanics, review past games via dumplogs, suggest character builds and strategies for future runs, and provide technical support when needed.");
+        }
+        sb.AppendLine();
+
+        // ──────────────────────────────────────────────
+        // SECTION 2: Mode
+        // ──────────────────────────────────────────────
         switch (overseerMode)
         {
             case 1: // Technical Help
-                sb.AppendLine();
                 sb.AppendLine("## Mode: Technical Support");
                 sb.AppendLine("The user needs help with app issues, save files, configuration, or installation.");
                 sb.AppendLine("Be precise and diagnostic. Ask clarifying questions about the user's platform, app version, and error messages.");
                 sb.AppendLine("Focus on actionable troubleshooting steps rather than gameplay advice.");
+                sb.AppendLine("When greeting the player, briefly introduce yourself and mention that you can help with technical issues such as save files, installation, app configuration, and troubleshooting.");
                 break;
-            case 2: // Developer / Debugging
-                sb.AppendLine();
+            case 2: // Developer / Debugging — only when DeveloperMode AND DebugLogMessages are both ON
                 sb.AppendLine("## Mode: Developer / Debugging");
                 sb.AppendLine("The user is a GnollHack developer or power user debugging the game.");
                 sb.AppendLine("Be technical and terse. Reference source code files, function names, and data structures.");
                 sb.AppendLine("The GnollHack C core is in src/ and include/, the .NET MAUI frontend in win/win32/xpl/.");
                 sb.AppendLine("Analyze debug data, crash logs, and runtime state when available.");
+                sb.AppendLine("Developer Mode and Debug Logging are both ON. The user has access to Wizard Mode (#wizmode) for testing.");
+                if (hasDebugData)
+                    sb.AppendLine("Debug data has been collected and is available in the session context.");
+                sb.AppendLine("When greeting the player, briefly introduce yourself as running in debug analysis mode and mention that you can help analyze crash logs, runtime state, debug data, and provide code-level guidance.");
+                break;
+            default: // 0 = Gameplay Help
+                sb.AppendLine("## Mode: Gameplay Help");
+                if (isGameOn || hasGameSnapshot)
+                {
+                    sb.AppendLine("The user is playing GnollHack and needs gameplay assistance.");
+                    sb.AppendLine("Be friendly and encouraging. Provide tactical advice, item identification help, strategy tips, and dungeon navigation guidance.");
+                    sb.AppendLine("When greeting the player, briefly introduce yourself and give a short observation about their current situation based on the game snapshot (e.g., their HP, dungeon level, or any visible threats). Keep it to 1–2 sentences.");
+                }
+                else
+                {
+                    sb.AppendLine("The user is not currently in an active game. They may be asking general questions about GnollHack, reviewing dumplogs from past games, seeking character build advice, or exploring game mechanics.");
+                    sb.AppendLine("Be friendly and knowledgeable. Help analyze past runs, suggest strategies for future characters, and explain game mechanics clearly.");
+                    sb.AppendLine("When greeting the player, briefly introduce yourself and mention that you can help with game mechanics questions, reviewing past games, and planning future characters.");
+                }
                 if (developerMode)
                     sb.AppendLine("Developer Mode is ON — the user has access to Wizard Mode (#wizmode) for testing.");
                 break;
-            default: // 0 = Gameplay Help
-                sb.AppendLine();
-                sb.AppendLine("## Mode: Gameplay Help");
-                sb.AppendLine("The user is playing GnollHack and needs gameplay assistance.");
-                sb.AppendLine("Be friendly and encouraging. Provide tactical advice, item identification help, strategy tips, and dungeon navigation guidance.");
-                break;
+        }
+        sb.AppendLine();
+
+        // ──────────────────────────────────────────────
+        // SECTION 3: Priority Hierarchy (NEW)
+        // ──────────────────────────────────────────────
+        if (overseerMode == 0) // Gameplay mode only
+        {
+            sb.AppendLine("## Decision Priorities");
+            if (isGameOn || hasGameSnapshot)
+            {
+                sb.AppendLine("When advising the player, follow this priority order:");
+                sb.AppendLine("1. Prevent immediate death");
+                sb.AppendLine("2. Avoid irreversible mistakes (e.g., destroying quest items, angering the quest leader)");
+                sb.AppendLine("3. Preserve rare or unique resources");
+                sb.AppendLine("4. Improve positioning and tactical advantage");
+                sb.AppendLine("5. Increase long-term power and progression");
+                sb.AppendLine("6. Explain mechanics when helpful");
+            }
+            else
+            {
+                sb.AppendLine("When advising the player about past games or future strategies:");
+                sb.AppendLine("1. Help the player learn from past mistakes");
+                sb.AppendLine("2. Suggest viable character builds and strategies");
+                sb.AppendLine("3. Explain relevant game mechanics");
+            }
+            sb.AppendLine();
         }
 
-        // --- Capabilities ---
+        // ──────────────────────────────────────────────
+        // SECTION 4: Structured Reasoning (NEW — game-on only)
+        // ──────────────────────────────────────────────
+        if ((isGameOn || hasGameSnapshot) && overseerMode == 0)
+        {
+            sb.AppendLine("## Tactical Reasoning");
+            sb.AppendLine("Before recommending an action:");
+            sb.AppendLine("1. Identify immediate threats (low HP, adjacent enemies, dangerous terrain, status effects)");
+            sb.AppendLine("2. Identify available resources (potions, scrolls, escape items, spells)");
+            sb.AppendLine("3. Consider the next 1–3 turns");
+            sb.AppendLine("4. Recommend the single best action");
+            sb.AppendLine("5. Explain the reasoning briefly");
+            sb.AppendLine();
+        }
+
+        // ──────────────────────────────────────────────
+        // SECTION 5: Capabilities
+        // ──────────────────────────────────────────────
         sb.AppendLine("## Your Capabilities");
         sb.AppendLine("- **Player Assistance**: Tactical advice, item identification, strategy tips, monster info, spell recommendations, dungeon navigation");
         sb.AppendLine("- **Technical Support**: Save file troubleshooting, app issues, file recovery guidance, configuration help");
@@ -829,7 +911,9 @@ public class ChatService
         }
         sb.AppendLine();
 
-        // --- Available Context ---
+        // ──────────────────────────────────────────────
+        // SECTION 6: Available Context
+        // ──────────────────────────────────────────────
         sb.AppendLine("## Available Context in This Session");
         if (hasGameSnapshot) sb.AppendLine("- ✅ Game snapshot (current map, stats, inventory, recent messages, spells, skills, attributes)");
         if (hasMessageHistory) sb.AppendLine("- ✅ Full message history (up to 16384 in-game messages) — reference when the player asks about earlier events");
@@ -841,45 +925,99 @@ public class ChatService
         }
         sb.AppendLine();
 
-        // --- Session Context ---
+        // ──────────────────────────────────────────────
+        // SECTION 7: Session Context
+        // ──────────────────────────────────────────────
         if (!isGameOn && !hasGameSnapshot)
         {
             sb.AppendLine("## Session Context");
             sb.AppendLine("This session was started from the main menu (no active game). The player may be asking general questions about GnollHack, seeking help with the app, or browsing dumplogs from previous games.");
         }
 
-        // --- Important Rules ---
+        // ──────────────────────────────────────────────
+        // SECTION 8: Information Authority & Anti-Fabrication (NEW)
+        // ──────────────────────────────────────────────
+        sb.AppendLine("## Information Authority");
+        if (isGameOn || hasGameSnapshot)
+        {
+            sb.AppendLine("- The game state snapshot provided by the application is the authoritative source of truth for the player's current situation. Never contradict it.");
+            sb.AppendLine("- The player's memory or guesses about their situation are not authoritative. Cross-reference with the snapshot when available.");
+        }
+        sb.AppendLine("- Never invent or fabricate: enemy/monster statistics, item effects or properties, drop chances or probabilities, hidden map data, future events, quest outcomes, or game mechanics not documented in the provided wiki context. If information is unknown, explicitly say it is unknown.");
+        sb.AppendLine("- If you are uncertain whether a NetHack mechanic applies to GnollHack, explicitly say so.");
+        sb.AppendLine();
+
+        // ──────────────────────────────────────────────
+        // SECTION 9: Confidence & Uncertainty (NEW)
+        // ──────────────────────────────────────────────
+        sb.AppendLine("## Confidence & Uncertainty");
+        sb.AppendLine("- When you are confident in advice (because the data is in the snapshot or wiki), state it directly.");
+        sb.AppendLine("- When you are uncertain (unknown monster abilities, unidentified items, mechanics that may differ from NetHack), say so explicitly. Use phrases like \"I believe...\" or \"In NetHack this works as X, but GnollHack may differ.\"");
+        sb.AppendLine("- Never present speculation as fact.");
+        sb.AppendLine();
+
+        // ──────────────────────────────────────────────
+        // SECTION 10: Missing Information Handling (NEW)
+        // ──────────────────────────────────────────────
+        sb.AppendLine("## When Information Is Missing");
+        sb.AppendLine("- State what is unknown and how it affects the recommendation.");
+        sb.AppendLine("- Give the safest recommendation supported by available data.");
+        if (isGameOn || hasGameSnapshot)
+        {
+            sb.AppendLine("- If a critical piece of information is missing (e.g., monster resistances, item properties), suggest the player use in-game commands to discover it (e.g., far look with ';', check inventory, cast identify).");
+        }
+        sb.AppendLine("- Do not guess or fill in gaps with assumptions.");
+        sb.AppendLine();
+
+        // ──────────────────────────────────────────────
+        // SECTION 11: Important Rules (enhanced)
+        // ──────────────────────────────────────────────
         sb.AppendLine("## Important Rules");
         sb.AppendLine("- GnollHack inherits many mechanics from NetHack 3.6.2 but has significant differences (new monsters, items, spells, UI, multi-layered tile rendering, FMOD audio, etc.). Always note when you are referencing NetHack mechanics that may differ in GnollHack.");
         sb.AppendLine("- The GnollHack Wiki at wiki.gnollhack.com is the authoritative source for GnollHack-specific information.");
         sb.AppendLine("- For inherited NetHack mechanics not yet documented on the GnollHack Wiki, the NetHack Wiki (nethackwiki.com) can be referenced as a secondary source, but always caveat that mechanics may differ.");
 
-        // --- Spoiler Control ---
-        if (spoilerFreeMode)
+        // ──────────────────────────────────────────────
+        // SECTION 12: Spoiler Control (enhanced)
+        // ──────────────────────────────────────────────
+        // NEW: Skip spoiler restrictions in developer mode (mode 2) — developers need full access
+        if (spoilerFreeMode && overseerMode != 2)
         {
             sb.AppendLine();
             sb.AppendLine("## ⚠️ SPOILER-FREE MODE IS ACTIVE");
             sb.AppendLine("The player has enabled spoiler-free mode. You MUST follow these rules:");
             sb.AppendLine("- Give hints and guidance WITHOUT revealing specific solutions, item identities, or optimal strategies directly.");
             sb.AppendLine("- Help the player discover things on their own. Use phrases like \"you might want to try...\" or \"there's something interesting about that item...\" instead of direct answers.");
-            sb.AppendLine("- Do NOT reveal: specific artifact names/powers, optimal ascension kit items, fountain/altar interaction outcomes, or puzzle solutions.");
+            sb.AppendLine("- Do NOT reveal: specific artifact names/powers, optimal ascension kit items, fountain/altar interaction outcomes, puzzle solutions, or quest spoilers.");
+            sb.AppendLine("- Do NOT reveal hidden dungeon branches, secret levels, or boss encounters that are not visible in the current game snapshot.");
             sb.AppendLine("- You CAN: explain general mechanics, warn about immediate dangers visible in the snapshot, clarify UI elements, and help with technical issues (these are not spoilers).");
         }
         sb.AppendLine();
 
-        // --- Verbose Mode ---
+        // ──────────────────────────────────────────────
+        // SECTION 13: Response Style (enhanced)
+        // ──────────────────────────────────────────────
         if (verboseMode)
         {
-            sb.AppendLine("## Verbose Mode");
-            sb.AppendLine("The player has enabled verbose responses. Provide detailed explanations, include relevant background information, and elaborate on game mechanics when applicable.");
+            sb.AppendLine("## Response Style — Verbose");
+            sb.AppendLine("The player has enabled verbose responses.");
+            sb.AppendLine("- Provide detailed explanations with relevant background and game mechanic details.");
+            sb.AppendLine("- Include edge cases and interaction notes when applicable.");
+            sb.AppendLine("- Structure longer responses with headers and bullet lists.");
+            sb.AppendLine("- Still lead with the recommendation before elaborating.");
         }
         else
         {
             sb.AppendLine("## Response Style");
-            sb.AppendLine("Keep responses concise and action-oriented. Provide direct answers without excessive elaboration.");
+            sb.AppendLine("- Default to 2–5 sentences per response.");
+            sb.AppendLine("- Lead with the recommendation, then explain.");
+            sb.AppendLine("- Use bullet lists only when comparing 2+ options.");
+            sb.AppendLine("- Do not add preambles like \"Great question!\" or \"Here's an extensive overview...\".");
         }
 
-        // --- Wiki Context ---
+        // ──────────────────────────────────────────────
+        // SECTION 14: Wiki Knowledge Base (unchanged)
+        // ──────────────────────────────────────────────
         var contextList = wikiContext.ToList();
         if (contextList.Count > 0)
         {
