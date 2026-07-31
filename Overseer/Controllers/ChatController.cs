@@ -29,6 +29,7 @@ public class ChatController : ControllerBase
     public async Task<IActionResult> GetSessions()
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
         var sessions = await _dbContext.ChatSession
             .Where(s => s.AspNetUserId == userId)
             .OrderByDescending(s => s.LastMessageUtc)
@@ -42,6 +43,7 @@ public class ChatController : ControllerBase
     public async Task<IActionResult> GetSession(long id)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
         var session = await _dbContext.ChatSession
             .FirstOrDefaultAsync(s => s.Id == id && s.AspNetUserId == userId);
 
@@ -74,6 +76,7 @@ public class ChatController : ControllerBase
     public async Task<IActionResult> DeleteSession(long id)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
         var session = await _dbContext.ChatSession.FirstOrDefaultAsync(s => s.Id == id && s.AspNetUserId == userId);
         
         if (session == null) return NotFound();
@@ -109,6 +112,7 @@ public class ChatController : ControllerBase
     public async Task<IActionResult> GetAttachment(long id)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
         var attachment = await _dbContext.ChatMessageAttachment
             .Include(a => a.ChatMessage)
             .ThenInclude(m => m.ChatSession)
@@ -137,7 +141,12 @@ public class ChatController : ControllerBase
         
         try 
         {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId))
+            {
+                Response.StatusCode = 401;
+                return;
+            }
             await foreach (var chatEvent in _chatService.StreamMessageAsync(request.SessionId, request.Message, request.Attachments, userId, cancellationToken))
             {
                 if (chatEvent.Type == "chunk")
