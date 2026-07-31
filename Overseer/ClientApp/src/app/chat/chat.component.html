@@ -1,0 +1,109 @@
+<div *ngIf="!isOffline" class="layout" [class.is-resizing]="isResizing">
+  <div class="sidebar gh-main-container" #sidebar [style.width.px]="sidebarWidth">
+    <h3>Sessions</h3>
+    <button class="btn-gh btn-new-chat" (click)="newSession()">New Chat</button>
+    <ul>
+      <div *ngIf="loadingSessions" class="sessions-loader">
+        <div class="sidebar-spinner"></div>
+        <span>Loading Conversations...</span>
+      </div>
+      <li *ngIf="!loadingSessions && sessions.length === 0" class="empty-sessions-msg">
+        No conversations yet.
+      </li>
+      <li *ngFor="let s of sessions" [class.active]="s.id === currentSessionId" (click)="loadSession(s.id)">
+        <div class="session-info">
+          <div class="session-title" title="{{ s.title }}">{{ s.title }}</div>
+          <div class="session-time" *ngIf="s.lastMessageUtc">{{ s.lastMessageUtc | relativeTime }}</div>
+        </div>
+        <button class="session-delete-btn" (click)="requestDeleteSession(s.id, $event)" title="Delete Session">X</button>
+      </li>
+    </ul>
+    <div class="bottom-links">
+      <a routerLink="/debug-log">Debug Log</a>
+      <a routerLink="/settings">Settings</a>
+      <a href="#" (click)="logout($event)">Logout</a>
+    </div>
+  </div>
+  <div class="resizer" (mousedown)="startResize($event)" (touchstart)="startResize($event)"></div>
+  <div class="chat-area gh-main-container">
+    <div class="messages" #messagesContainer (wheel)="onUserInteraction()" (touchstart)="onUserInteraction()" (scroll)="onScroll()">
+      <div *ngFor="let msg of messages; let i = index" class="message-box" [ngClass]="msg.role">
+        <div class="message-header">
+          <img *ngIf="msg.role === 'assistant'" src="/img/gnoll-overseer-avatar-128x128-static.webp" class="overseer-avatar" alt="Overseer" width="64" height="64" />
+          <strong>{{ msg.role === 'user' ? 'You' : 'Overseer' }}</strong>
+          <span class="msg-time" *ngIf="msg.timestampUtc">{{ msg.timestampUtc | relativeTime }}</span>
+        </div>
+        <div *ngIf="msg.attachments && msg.attachments.length > 0" class="msg-attachments">
+          <a *ngFor="let att of msg.attachments" class="msg-att-item" [href]="'/api/chat/attachments/' + att.id" [download]="att.fileName" target="_blank" rel="noopener" title="Download {{ att.fileName }}">
+            <img *ngIf="att.contentType.startsWith('image/')" [src]="'/api/chat/attachments/' + att.id" width="200" alt="{{ att.fileName }}" />
+            <div *ngIf="!att.contentType.startsWith('image/')">📎 {{ att.fileName }}</div>
+          </a>
+        </div>
+        <div [innerHTML]="msg.content | markdown" class="markdown-body"></div>
+        <button class="copy-btn" (click)="copyToClipboard(msg.content, i)" title="Copy">
+          <span *ngIf="copiedMsgIndex === i">✅</span>
+          <svg *ngIf="copiedMsgIndex !== i" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+        </button>
+      </div>
+      <div *ngIf="streamingMessage" class="message-box assistant">
+        <div class="message-header">
+          <img src="/img/GnollOverseerAvatar-128x128-animated.webp" class="overseer-avatar" alt="Overseer" width="64" height="64" />
+          <strong>Overseer</strong>
+          <span class="msg-time">just now</span>
+        </div>
+        <div [innerHTML]="streamingMessage | markdown" class="markdown-body"></div>
+        <button class="copy-btn" (click)="copyToClipboard(streamingMessage, null)" title="Copy">
+          <span *ngIf="copiedStreamMsg">✅</span>
+          <svg *ngIf="!copiedStreamMsg" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+        </button>
+      </div>
+    </div>
+    <div class="input-area-container">
+      <!-- Progress Indicator at the top of the prompt box -->
+      <div class="progress-bar" *ngIf="isStreaming || currentStatusText">
+        <span class="status-icon spin" *ngIf="showSpinner">↻</span>
+        <span class="status-icon" *ngIf="!showSpinner && !isStreaming">✅</span>
+        <span class="status-text">{{ currentStatusText }}</span>
+        <button *ngIf="isStreaming" class="stop-btn" (click)="stopRequest()" title="Stop Request">■</button>
+      </div>
+
+      <div class="attachments-preview" *ngIf="pendingAttachments.length > 0">
+        <div class="attachment-chip" *ngFor="let att of pendingAttachments; let i = index">
+          <span class="att-name">{{ att.name }}</span>
+          <button (click)="removeAttachment(i)">x</button>
+        </div>
+      </div>
+      <div class="input-area">
+        <button class="add-media-btn" (click)="triggerFileInput()" [disabled]="pendingAttachments.length >= 5">+</button>
+        <input type="file" id="fileInput" hidden multiple accept=".html,.htm,.txt,.md,.png,.jpg,.jpeg,.webp" (change)="onFileSelected($event)">
+        <textarea [(ngModel)]="currentInput" (ngModelChange)="saveDraft()" (keyup.enter)="sendMessage()" (paste)="onPaste($event)" [disabled]="isStreaming"></textarea>
+        <button class="btn-gh ms-10" (click)="sendMessage()" [disabled]="isStreaming || (!currentInput.trim() && pendingAttachments.length === 0)">Send</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div *ngIf="isOffline" class="offline-notice">
+  <h2>Overseer requires an internet connection</h2>
+  <p>Please check your connection and try again.</p>
+</div>
+
+<dialog #deleteConfirmDialog class="gh-dialog">
+  <h3>Delete Conversation</h3>
+  <p>Are you sure you want to delete this conversation? This action cannot be undone.</p>
+  <div class="dialog-actions">
+    <button class="btn-gh btn-gh-cancel" (click)="deleteConfirmDialog.close()">Cancel</button>
+    <button class="btn-gh btn-gh-delete" (click)="confirmDelete()">Delete</button>
+  </div>
+</dialog>
+
+<div #errorToast popover="manual" class="toast-error">
+  <div class="toast-content">
+    <span class="toast-icon">⚠️</span>
+    <div class="toast-body">
+      <strong>File Too Large</strong>
+      <p>{{ errorMessage }}</p>
+    </div>
+    <button class="toast-close" (click)="closeErrorToast()">×</button>
+  </div>
+</div>

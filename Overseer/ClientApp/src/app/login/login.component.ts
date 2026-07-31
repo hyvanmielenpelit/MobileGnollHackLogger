@@ -8,23 +8,7 @@ import { Router, ActivatedRoute } from '@angular/router';
   selector: 'app-login',
   standalone: true,
   imports: [CommonModule, FormsModule],
-  template: `
-    <div class="login-container">
-      <h2>GnollHack Overseer</h2>
-      <form (ngSubmit)="onSubmit()">
-        <div>
-          <label>Username</label>
-          <input type="text" [(ngModel)]="username" name="username" required />
-        </div>
-        <div>
-          <label>Password</label>
-          <input type="password" [(ngModel)]="password" name="password" required />
-        </div>
-        <button type="submit" [disabled]="loading">Login</button>
-        <p *ngIf="error" class="error">{{ error }}</p>
-      </form>
-    </div>
-  `,
+  templateUrl: './login.component.html',
   styles: [`
     .login-container { max-width: 400px; margin: 100px auto; padding: 20px; border: 1px solid #ccc; border-radius: 8px; }
     form div { margin-bottom: 15px; }
