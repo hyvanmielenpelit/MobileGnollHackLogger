@@ -1,5 +1,8 @@
 <div class="login-container gh-main-container">
   <div class="login-header">
+    <div class="avatar-container">
+      <img src="/img/gnoll-overseer-avatar-256x256-static.webp" alt="Gnoll Overseer Avatar" class="overseer-avatar" width="128" height="128" />
+    </div>
     <h1 class="logo-title">Gnoll Overseer</h1>
     <div class="divider">
       <span>♦</span>
@@ -9,24 +12,28 @@
 
   <form (ngSubmit)="onSubmit()" ngNativeValidate>
     <div class="form-group">
-      <div class="input-icon">
-        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+      <div class="input-wrapper">
+        <div class="input-icon">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" /></svg>
+        </div>
+        <input type="text" id="username" class="gh-input" [(ngModel)]="username" name="username" placeholder="User Name" required aria-errormessage="username-error" aria-label="Username" />
       </div>
-      <input type="text" id="username" class="gh-input" [(ngModel)]="username" name="username" placeholder="User Name" required aria-errormessage="username-error" aria-label="Username" />
       <div id="username-error" class="error-msg">
         <span aria-hidden="true">❌</span> Username is required.
       </div>
     </div>
     <div class="form-group">
-      <div class="input-icon">
-        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>
+      <div class="input-wrapper">
+        <div class="input-icon">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z" /></svg>
+        </div>
+        <input type="password" id="password" class="gh-input" [(ngModel)]="password" name="password" placeholder="Password" required aria-errormessage="password-error" aria-label="Password" />
       </div>
-      <input type="password" id="password" class="gh-input" [(ngModel)]="password" name="password" placeholder="Password" required aria-errormessage="password-error" aria-label="Password" />
-      <div id="password-error" class="error-msg">
-        <span aria-hidden="true">❌</span> Password is required.
+        <div id="password-error" class="error-msg">
+          <span aria-hidden="true">❌</span> Password is required.
       </div>
     </div>
-    
+
     <div class="forgot-password">
       <a href="https://account.gnollhack.com/Identity/Account/ForgotPassword">Forgot Password?</a>
     </div>
@@ -34,11 +41,11 @@
     <div class="actions">
       <button type="submit" class="btn-gh login-btn" [disabled]="loading">LOG IN</button>
     </div>
-    
+
     <div class="register-link">
-      <a href="https://account.gnollhack.com/">Don't have an account? Sign Up</a>
+      <a href="https://account.gnollhack.com/Identity/Account/Register">Don't have an account? Sign Up</a>
     </div>
-    
+
     <p *ngIf="error" class="error">{{ error }}</p>
-  </form>
+</form>
 </div>

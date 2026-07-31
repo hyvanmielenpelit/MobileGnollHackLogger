@@ -9,9 +9,38 @@
   margin-bottom: 30px;
 }
 
+.avatar-container {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.overseer-avatar {
+  width: 128px;
+  height: 128px;
+  border-radius: 50%;
+  background: radial-gradient(circle at center, #2a241b 0%, #0d0b09 100%);
+  border: 2px solid rgba(212, 160, 23, 0.7);
+  box-shadow: 
+    0 8px 15px rgba(0, 0, 0, 0.6), 
+    0 0 20px rgba(212, 160, 23, 0.25),
+    inset 0 0 20px rgba(0, 0, 0, 0.8);
+  object-fit: cover;
+  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.overseer-avatar:hover {
+  transform: translateY(-4px) scale(1.05);
+  box-shadow: 
+    0 12px 20px rgba(0, 0, 0, 0.8), 
+    0 0 25px rgba(212, 160, 23, 0.5),
+    inset 0 0 15px rgba(0, 0, 0, 0.6);
+  border-color: rgba(224, 186, 109, 1);
+}
+
 .logo-title {
   text-align: center;
-  font-size: 2.8rem;
+  font-size: 2.9rem;
   margin: 0;
   color: #e0ba6d;
   letter-spacing: 2px;
@@ -59,6 +88,10 @@
 .form-group { 
   margin-bottom: 20px; 
   position: relative;
+}
+
+.input-wrapper {
+  align-items: center;
 }
 
 .input-icon {
