@@ -32,11 +32,11 @@ public class ChatService
         _modelMetadataService = modelMetadataService;
     }
 
-    public async Task GenerateAndBroadcastMessageAsync(long sessionId, string message, List<SendMessageAttachment>? attachments, string userId, CancellationToken cancellationToken)
+    public async Task GenerateAndBroadcastMessageAsync(long sessionId, string message, List<SendMessageAttachment>? attachments, string userId, bool isHidden, CancellationToken cancellationToken)
     {
         try
         {
-            await foreach (var evt in StreamMessageAsync(sessionId, message, attachments, userId, cancellationToken))
+            await foreach (var evt in StreamMessageAsync(sessionId, message, attachments, userId, isHidden, cancellationToken))
             {
                 await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", evt, cancellationToken);
             }
@@ -48,7 +48,7 @@ public class ChatService
         }
     }
 
-    public async IAsyncEnumerable<ChatEvent> StreamMessageAsync(long? sessionId, string message, List<SendMessageAttachment>? attachments, string userId, [EnumeratorCancellation] CancellationToken cancellationToken)
+    public async IAsyncEnumerable<ChatEvent> StreamMessageAsync(long? sessionId, string message, List<SendMessageAttachment>? attachments, string userId, bool isHidden, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         if (string.IsNullOrEmpty(userId)) yield break;
 
@@ -217,6 +217,7 @@ public class ChatService
             {
                 ChatSessionId = currentSessionId,
                 Role = "user",
+                IsHidden = isHidden,
                 Content = message,
                 TimestampUtc = DateTime.UtcNow
             };

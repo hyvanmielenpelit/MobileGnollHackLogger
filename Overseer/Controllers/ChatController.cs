@@ -50,7 +50,7 @@ public class ChatController : ControllerBase
         if (session == null) return NotFound();
         
         var messages = await _dbContext.ChatMessage
-            .Where(m => m.ChatSessionId == id)
+            .Where(m => m.ChatSessionId == id && m.Role != "system" && !m.IsHidden)
             .OrderBy(m => m.TimestampUtc)
             .Select(m => new { 
                 m.Id, 
@@ -150,7 +150,7 @@ public class ChatController : ControllerBase
                 Response.StatusCode = 401;
                 return;
             }
-            await foreach (var chatEvent in _chatService.StreamMessageAsync(request.SessionId, request.Message, request.Attachments, userId, cancellationToken))
+            await foreach (var chatEvent in _chatService.StreamMessageAsync(request.SessionId, request.Message, request.Attachments, userId, false, cancellationToken))
             {
                 if (chatEvent.Type == "chunk")
                 {

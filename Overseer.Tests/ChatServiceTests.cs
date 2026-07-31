@@ -104,7 +104,7 @@ namespace Overseer.Tests
             
             try
             {
-                await foreach (var chunk in chatService.StreamMessageAsync(null, "Say hello in exactly one sentence.", null, claimsPrincipal.FindFirstValue(ClaimTypes.NameIdentifier), cts.Token))
+                await foreach (var chunk in chatService.StreamMessageAsync(null, "Say hello in exactly one sentence.", null, claimsPrincipal.FindFirstValue(ClaimTypes.NameIdentifier), false, cts.Token))
                 {
                     _output.WriteLine(chunk.Data);
                     fullResponse += chunk.Data;

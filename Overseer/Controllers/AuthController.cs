@@ -81,7 +81,7 @@ public class AuthController : ControllerBase
                 cache.Remove(cacheKey); // Single-use
                 
                 // Return a client-side meta refresh instead of HTTP 302 to preserve the cookie in iOS WKWebView
-                var html = $@"<!DOCTYPE html><html><head><meta http-equiv=""refresh"" content=""0;url=/?sessionId={sessionId}""></head><body>Redirecting...</body></html>";
+                var html = $@"<!DOCTYPE html><html><head><meta http-equiv=""refresh"" content=""0;url=/chat?sessionId={sessionId}""></head><body>Redirecting...</body></html>";
                 return Content(html, "text/html");
             }
         }

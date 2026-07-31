@@ -18,4 +18,6 @@ public class ChatMessage
     public DateTime TimestampUtc { get; set; }
     
     public int? TokensUsed { get; set; }
+    
+    public bool IsHidden { get; set; } = false;
 }
