@@ -14,15 +14,24 @@ export interface ChatMessageAttachment {
   base64Data?: string;
 }
 
+export interface ChatMessageToolCall {
+  name: string;
+  parameters?: string;
+  result?: string;
+  error?: string;
+  status: 'running' | 'completed' | 'error';
+}
+
 export interface ChatMessage {
   role: string;
   content: string;
   timestampUtc: string;
   attachments?: ChatMessageAttachment[];
+  toolCalls?: ChatMessageToolCall[];
 }
 
 export interface ChatStreamEvent {
-  type: 'chunk' | 'status' | 'debug' | 'error' | 'sessionId';
+  type: 'chunk' | 'status' | 'debug' | 'error' | 'sessionId' | 'tool_start' | 'tool_result' | 'tool_error';
   data: string;
 }
 

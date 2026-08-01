@@ -66,11 +66,12 @@ public class SessionController : ControllerBase
 
         if (!string.IsNullOrWhiteSpace(request.SnapshotHtml))
         {
+            var sanitized = Overseer.Services.ChatService.SanitizeSnapshotForLlm(request.SnapshotHtml);
             var systemMsg = new ChatMessage
             {
                 ChatSessionId = session.Id,
                 Role = "system",
-                Content = "Game Context Snapshot:\n" + request.SnapshotHtml,
+                Content = "Game Context Snapshot:\n" + sanitized,
                 TimestampUtc = DateTime.UtcNow
             };
             _dbContext.ChatMessage.Add(systemMsg);

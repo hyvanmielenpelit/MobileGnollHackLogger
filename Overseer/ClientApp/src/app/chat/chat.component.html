@@ -73,6 +73,29 @@
             </span>
           </ng-container>
         </div>
+        <div *ngIf="msg.toolCalls && msg.toolCalls.length > 0" class="tool-calls-container">
+          <div *ngFor="let tc of msg.toolCalls" class="tool-call" [ngClass]="tc.status">
+            <div class="tool-call-header">
+              <span class="tool-icon">🛠️</span>
+              <span class="tool-name">{{ tc.name }}</span>
+              <span class="tool-status" *ngIf="tc.status === 'running'"><span class="sidebar-spinner small-spinner"></span></span>
+              <span class="tool-status" *ngIf="tc.status === 'completed'">✅</span>
+              <span class="tool-status" *ngIf="tc.status === 'error'">❌</span>
+            </div>
+            <div class="tool-call-result" *ngIf="tc.status === 'completed'">
+              <details>
+                <summary>Result</summary>
+                <pre>{{ tc.result }}</pre>
+              </details>
+            </div>
+            <div class="tool-call-result error" *ngIf="tc.status === 'error'">
+              <details>
+                <summary>Error</summary>
+                <pre>{{ tc.error }}</pre>
+              </details>
+            </div>
+          </div>
+        </div>
         <div [innerHTML]="msg.content | markdown" class="markdown-body"></div>
         <button class="copy-btn" (click)="copyToClipboard(msg.content, i)" title="Copy">
           <span *ngIf="copiedMsgIndex === i">✅</span>
@@ -84,6 +107,29 @@
           <img src="/img/GnollOverseerAvatar-128x128-animated.webp" class="overseer-avatar" alt="Overseer" width="64" height="64" />
           <strong>Overseer</strong>
           <span class="msg-time">just now</span>
+        </div>
+        <div *ngIf="streamingToolCalls.length > 0" class="tool-calls-container">
+          <div *ngFor="let tc of streamingToolCalls" class="tool-call" [ngClass]="tc.status">
+            <div class="tool-call-header">
+              <span class="tool-icon">🛠️</span>
+              <span class="tool-name">{{ tc.name }}</span>
+              <span class="tool-status" *ngIf="tc.status === 'running'"><span class="sidebar-spinner small-spinner"></span></span>
+              <span class="tool-status" *ngIf="tc.status === 'completed'">✅</span>
+              <span class="tool-status" *ngIf="tc.status === 'error'">❌</span>
+            </div>
+            <div class="tool-call-result" *ngIf="tc.status === 'completed'">
+              <details>
+                <summary>Result</summary>
+                <pre>{{ tc.result }}</pre>
+              </details>
+            </div>
+            <div class="tool-call-result error" *ngIf="tc.status === 'error'">
+              <details>
+                <summary>Error</summary>
+                <pre>{{ tc.error }}</pre>
+              </details>
+            </div>
+          </div>
         </div>
         <div [innerHTML]="streamingMessage | markdown" class="markdown-body"></div>
         <button class="copy-btn" (click)="copyToClipboard(streamingMessage, null)" title="Copy">

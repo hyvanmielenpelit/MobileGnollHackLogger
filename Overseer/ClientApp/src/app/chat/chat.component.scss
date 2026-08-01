@@ -429,3 +429,61 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
     height: 32px;
   }
 }
+
+.tool-calls-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-block-end: 15px;
+}
+.tool-call {
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-family: monospace;
+}
+.tool-call-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tool-icon { font-size: 14px; }
+.tool-name { font-weight: bold; color: var(--primary-color); }
+.tool-status { margin-inline-start: auto; display: flex; align-items: center; }
+.small-spinner {
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
+  display: inline-block;
+  margin: 0;
+}
+.tool-call-result {
+  margin-block-start: 8px;
+  font-size: 12px;
+  color: #ccc;
+  
+  details summary {
+    cursor: pointer;
+    user-select: none;
+    color: #888;
+  }
+  details summary:hover { color: #fff; }
+  
+  pre {
+    background: rgba(0,0,0,0.3);
+    padding: 8px;
+    border-radius: 4px;
+    overflow-x: auto;
+    max-height: 200px;
+    overflow-y: auto;
+    margin-block: 5px 0;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+}
+.tool-call-result.error pre {
+  color: #ff6b6b;
+  border-left: 3px solid #ff6b6b;
+}
+

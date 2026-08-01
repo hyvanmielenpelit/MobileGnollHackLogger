@@ -42,7 +42,11 @@ public class SettingsController : ControllerBase
             maxAttachmentSize = _configuration.GetValue<long>("MaxAttachmentSize", 15728640),
             spoilerFreeMode = settings?.SpoilerFreeMode ?? true,
             maxInputTokens = settings?.MaxInputTokens,
-            maxOutputTokens = settings?.MaxOutputTokens
+            maxOutputTokens = settings?.MaxOutputTokens,
+            enableWebSearch = settings?.EnableWebSearch ?? true,
+            enableToolUse = settings?.EnableToolUse ?? true,
+            enableClientTools = settings?.EnableClientTools ?? true,
+            enableGameActions = settings?.EnableGameActions ?? false
         });
     }
 
@@ -52,7 +56,7 @@ public class SettingsController : ControllerBase
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (userId == null) return Unauthorized();
 
-        await _settingsService.SaveSettingsAsync(userId, request.Provider, request.Model, request.ApiKey, request.ThinkingLevel, request.SpoilerFreeMode, request.MaxInputTokens, request.MaxOutputTokens);
+        await _settingsService.SaveSettingsAsync(userId, request.Provider, request.Model, request.ApiKey, request.ThinkingLevel, request.SpoilerFreeMode, request.MaxInputTokens, request.MaxOutputTokens, request.EnableWebSearch, request.EnableToolUse, request.EnableClientTools, request.EnableGameActions);
         
         return Ok();
     }
@@ -257,4 +261,8 @@ public class UpdateSettingsRequest
     public bool? SpoilerFreeMode { get; set; }
     public int? MaxInputTokens { get; set; }
     public int? MaxOutputTokens { get; set; }
+    public bool? EnableWebSearch { get; set; }
+    public bool? EnableToolUse { get; set; }
+    public bool? EnableClientTools { get; set; }
+    public bool? EnableGameActions { get; set; }
 }

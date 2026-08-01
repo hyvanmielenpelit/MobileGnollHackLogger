@@ -32,4 +32,9 @@ public class UserAiSettings
 
     public int? MaxInputTokens { get; set; }
     public int? MaxOutputTokens { get; set; }
+
+    public bool EnableWebSearch { get; set; } = true;
+    public bool EnableToolUse { get; set; } = true;
+    public bool EnableClientTools { get; set; } = true;
+    public bool EnableGameActions { get; set; } = false;
 }

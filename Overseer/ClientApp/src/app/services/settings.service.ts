@@ -10,6 +10,10 @@ export interface UserAiSettings {
   spoilerFreeMode: boolean;
   maxInputTokens?: number | null;
   maxOutputTokens?: number | null;
+  enableWebSearch?: boolean;
+  enableToolUse?: boolean;
+  enableClientTools?: boolean;
+  enableGameActions?: boolean;
 }
 
 export interface ApiModelDto {
@@ -32,8 +36,8 @@ export class SettingsService {
     return this.http.get<UserAiSettings>('/api/settings');
   }
 
-  saveSettings(provider: string, model: string, apiKey: string, thinkingLevel?: string, spoilerFreeMode: boolean = false, maxInputTokens: number | null = null, maxOutputTokens: number | null = null) {
-    return this.http.put('/api/settings', { provider, model, apiKey, thinkingLevel, spoilerFreeMode, maxInputTokens, maxOutputTokens });
+  saveSettings(provider: string, model: string, apiKey: string, thinkingLevel?: string, spoilerFreeMode: boolean = false, maxInputTokens: number | null = null, maxOutputTokens: number | null = null, enableWebSearch: boolean = true, enableToolUse: boolean = true, enableClientTools: boolean = true, enableGameActions: boolean = false) {
+    return this.http.put('/api/settings', { provider, model, apiKey, thinkingLevel, spoilerFreeMode, maxInputTokens, maxOutputTokens, enableWebSearch, enableToolUse, enableClientTools, enableGameActions });
   }
 
   deleteApiKey() {

@@ -1,7 +1,7 @@
 import { Component, OnInit, OnDestroy, inject, ChangeDetectorRef, ViewChild, ElementRef, HostListener, NgZone } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ChatService, ChatSession, ChatMessage } from '../services/chat.service';
+import { ChatService, ChatSession, ChatMessage, ChatMessageToolCall } from '../services/chat.service';
 import { AuthService } from '../services/auth.service';
 import { DebugService } from '../services/debug.service';
 import { Router, ActivatedRoute, RouterModule } from '@angular/router';
@@ -64,6 +64,7 @@ export class ChatComponent implements OnInit, OnDestroy {
   currentInput = '';
   isStreaming = false;
   streamingMessage = '';
+  streamingToolCalls: ChatMessageToolCall[] = [];
   pendingAttachments: { file: File, base64: string, name: string, type: string }[] = [];
   
   maxAttachmentSize = 15728640; // default 15MB
@@ -228,10 +229,40 @@ export class ChatComponent implements OnInit, OnDestroy {
           this.streamingMessage += `\n\n**Error:** ${evt.data}`;
           this.showSpinner = false;
           this.cdr.detectChanges();
+        } else if (evt.type === 'tool_start') {
+          try {
+            const toolInfo = JSON.parse(evt.data);
+            this.streamingToolCalls.push({ name: toolInfo.name, status: 'running' });
+            this.cdr.detectChanges();
+            this.scrollToBottomClamped(false);
+          } catch(e) {}
+        } else if (evt.type === 'tool_result') {
+          try {
+            const toolInfo = JSON.parse(evt.data);
+            const tc = this.streamingToolCalls.find(t => t.name === toolInfo.name && t.status === 'running');
+            if (tc) {
+              tc.status = 'completed';
+              tc.result = toolInfo.result;
+            }
+            this.cdr.detectChanges();
+            this.scrollToBottomClamped(false);
+          } catch(e) {}
+        } else if (evt.type === 'tool_error') {
+          try {
+            const toolInfo = JSON.parse(evt.data);
+            const tc = this.streamingToolCalls.find(t => t.name === toolInfo.name && t.status === 'running');
+            if (tc) {
+              tc.status = 'error';
+              tc.error = toolInfo.error;
+            }
+            this.cdr.detectChanges();
+            this.scrollToBottomClamped(false);
+          } catch(e) {}
         } else if (evt.type === 'done') {
           if (this.isStreaming) {
-            this.messages.push({ role: 'assistant', content: this.streamingMessage, timestampUtc: new Date().toISOString() });
+            this.messages.push({ role: 'assistant', content: this.streamingMessage, timestampUtc: new Date().toISOString(), toolCalls: [...this.streamingToolCalls] });
             this.streamingMessage = '';
+            this.streamingToolCalls = [];
             this.isStreaming = false;
             this.showSpinner = false;
             this.currentStatusText = 'Generation complete.';
@@ -304,6 +335,7 @@ export class ChatComponent implements OnInit, OnDestroy {
   newSession() {
     this.currentSessionId = null;
     this.messages = [];
+    this.streamingToolCalls = [];
     this.currentStatusText = '';
     this.loadDraft();
   }
@@ -398,6 +430,7 @@ export class ChatComponent implements OnInit, OnDestroy {
     this.pendingAttachments = [];
     this.isStreaming = true;
     this.streamingMessage = '';
+    this.streamingToolCalls = [];
 
     this.requestStartTime = performance.now();
     this.currentStatusText = 'Connecting...';
@@ -435,6 +468,35 @@ export class ChatComponent implements OnInit, OnDestroy {
           this.streamingMessage += `\n\n**Error:** ${evt.data}`;
           this.showSpinner = false;
           this.cdr.detectChanges();
+        } else if (evt.type === 'tool_start') {
+          try {
+            const toolInfo = JSON.parse(evt.data);
+            this.streamingToolCalls.push({ name: toolInfo.name, status: 'running' });
+            this.cdr.detectChanges();
+            this.scrollToBottomClamped(false);
+          } catch(e) {}
+        } else if (evt.type === 'tool_result') {
+          try {
+            const toolInfo = JSON.parse(evt.data);
+            const tc = this.streamingToolCalls.find(t => t.name === toolInfo.name && t.status === 'running');
+            if (tc) {
+              tc.status = 'completed';
+              tc.result = toolInfo.result;
+            }
+            this.cdr.detectChanges();
+            this.scrollToBottomClamped(false);
+          } catch(e) {}
+        } else if (evt.type === 'tool_error') {
+          try {
+            const toolInfo = JSON.parse(evt.data);
+            const tc = this.streamingToolCalls.find(t => t.name === toolInfo.name && t.status === 'running');
+            if (tc) {
+              tc.status = 'error';
+              tc.error = toolInfo.error;
+            }
+            this.cdr.detectChanges();
+            this.scrollToBottomClamped(false);
+          } catch(e) {}
         }
       }
       
@@ -442,7 +504,7 @@ export class ChatComponent implements OnInit, OnDestroy {
       if (this.currentStatusText && !this.currentStatusText.startsWith('Error')) {
           this.currentStatusText = `Request completed (${Math.round(totalTimeMs)}ms)`;
       }
-      this.messages.push({ role: 'assistant', content: this.streamingMessage, timestampUtc: new Date().toISOString() });
+      this.messages.push({ role: 'assistant', content: this.streamingMessage, timestampUtc: new Date().toISOString(), toolCalls: [...this.streamingToolCalls] });
     } catch (e: any) {
       if (e.name === 'AbortError') {
         this.currentStatusText = `Cancelled by user.`;
@@ -455,6 +517,7 @@ export class ChatComponent implements OnInit, OnDestroy {
       }
     } finally {
       this.streamingMessage = '';
+      this.streamingToolCalls = [];
       this.isStreaming = false;
       this.showSpinner = false;
       this.abortController = null;

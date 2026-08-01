@@ -62,6 +62,19 @@ builder.Services.AddScoped<SettingsService>();
 builder.Services.AddSingleton<ModelMetadataService>();
 builder.Services.AddSignalR();
 
+// Tool Services
+builder.Services.AddSingleton<Overseer.Services.Tools.IClientToolBridge, Overseer.Services.Tools.NullClientToolBridge>();
+builder.Services.AddSingleton<Overseer.Services.Tools.ToolRegistry>();
+builder.Services.AddSingleton<Overseer.Services.Tools.ToolExecutor>();
+builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.WikiSearchTool>();
+builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.NetHackWikiSearchTool>();
+builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.MonsterLookupTool>();
+builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.ItemLookupTool>();
+builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.GetFullMessageHistoryTool>();
+builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.GetDirectoryListingTool>();
+builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.RefreshSnapshotTool>();
+builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.GetSaveInfoTool>();
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())

@@ -19,7 +19,7 @@ public class SettingsService
         return await _dbContext.UserAiSettings.FindAsync(userId);
     }
 
-    public async Task SaveSettingsAsync(string userId, string? defaultProvider, string? defaultModel, string? apiKey, string? thinkingLevel = null, bool? spoilerFreeMode = null, int? maxInputTokens = null, int? maxOutputTokens = null)
+    public async Task SaveSettingsAsync(string userId, string? defaultProvider, string? defaultModel, string? apiKey, string? thinkingLevel = null, bool? spoilerFreeMode = null, int? maxInputTokens = null, int? maxOutputTokens = null, bool? enableWebSearch = null, bool? enableToolUse = null, bool? enableClientTools = null, bool? enableGameActions = null)
     {
         var settings = await _dbContext.UserAiSettings.FindAsync(userId);
         if (settings == null)
@@ -38,6 +38,11 @@ public class SettingsService
         // Wait, the UI sends null when the user clears the input box. So we should set the DB value to the passed value.
         settings.MaxInputTokens = maxInputTokens;
         settings.MaxOutputTokens = maxOutputTokens;
+
+        if (enableWebSearch.HasValue) settings.EnableWebSearch = enableWebSearch.Value;
+        if (enableToolUse.HasValue) settings.EnableToolUse = enableToolUse.Value;
+        if (enableClientTools.HasValue) settings.EnableClientTools = enableClientTools.Value;
+        if (enableGameActions.HasValue) settings.EnableGameActions = enableGameActions.Value;
 
         if (!string.IsNullOrEmpty(apiKey))
         {

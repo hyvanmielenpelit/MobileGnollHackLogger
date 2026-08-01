@@ -36,6 +36,15 @@ export class SettingsComponent implements OnInit {
   initMaxInputTokens: number | null = null;
   initMaxOutputTokens: number | null = null;
 
+  enableWebSearch = true;
+  initEnableWebSearch = true;
+  enableToolUse = true;
+  initEnableToolUse = true;
+  enableClientTools = true;
+  initEnableClientTools = true;
+  enableGameActions = false;
+  initEnableGameActions = false;
+
   apiKey = '';
   hasApiKey = false;
   loading = false;
@@ -71,6 +80,10 @@ export class SettingsComponent implements OnInit {
            this.spoilerFreeMode !== this.initSpoilerFreeMode ||
            this.maxInputTokens !== this.initMaxInputTokens ||
            this.maxOutputTokens !== this.initMaxOutputTokens ||
+           this.enableWebSearch !== this.initEnableWebSearch ||
+           this.enableToolUse !== this.initEnableToolUse ||
+           this.enableClientTools !== this.initEnableClientTools ||
+           this.enableGameActions !== this.initEnableGameActions ||
            this.apiKey.length > 0;
   }
 
@@ -129,6 +142,22 @@ export class SettingsComponent implements OnInit {
           this.maxOutputTokens = s.maxOutputTokens;
           this.initMaxOutputTokens = s.maxOutputTokens;
         }
+        if (s.enableWebSearch !== undefined) {
+          this.enableWebSearch = s.enableWebSearch;
+          this.initEnableWebSearch = s.enableWebSearch;
+        }
+        if (s.enableToolUse !== undefined) {
+          this.enableToolUse = s.enableToolUse;
+          this.initEnableToolUse = s.enableToolUse;
+        }
+        if (s.enableClientTools !== undefined) {
+          this.enableClientTools = s.enableClientTools;
+          this.initEnableClientTools = s.enableClientTools;
+        }
+        if (s.enableGameActions !== undefined) {
+          this.enableGameActions = s.enableGameActions;
+          this.initEnableGameActions = s.enableGameActions;
+        }
       }
     });
   }
@@ -144,11 +173,11 @@ export class SettingsComponent implements OnInit {
   saveSettings() {
     this.loading = true;
     this.saved = false;
-    this.settingsService.saveSettings(this.provider, this.model, this.apiKey, this.thinkingLevel, this.spoilerFreeMode, this.maxInputTokens, this.maxOutputTokens).subscribe(() => {
+    this.settingsService.saveSettings(this.provider, this.model, this.apiKey, this.thinkingLevel, this.spoilerFreeMode, this.maxInputTokens, this.maxOutputTokens, this.enableWebSearch, this.enableToolUse, this.enableClientTools, this.enableGameActions).subscribe(() => {
       this.loading = false;
       
       const toast = this.successToast?.nativeElement as any;
-      if (toast && ("popover" in HTMLElement.prototype || toast.classList.contains('\\:popover-open') || 'showPopover' in toast)) {
+      if (toast && ("popover" in HTMLElement.prototype || toast.classList.contains('\:popover-open') || 'showPopover' in toast)) {
         toast.showPopover();
         setTimeout(() => {
           try { toast.hidePopover(); } catch(e) {}
@@ -168,6 +197,10 @@ export class SettingsComponent implements OnInit {
       this.initSpoilerFreeMode = this.spoilerFreeMode;
       this.initMaxInputTokens = this.maxInputTokens;
       this.initMaxOutputTokens = this.maxOutputTokens;
+      this.initEnableWebSearch = this.enableWebSearch;
+      this.initEnableToolUse = this.enableToolUse;
+      this.initEnableClientTools = this.enableClientTools;
+      this.initEnableGameActions = this.enableGameActions;
     });
   }
 
