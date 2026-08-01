@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, inject, ChangeDetectorRef, ViewChild, ElementRef, HostListener, NgZone } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject, ChangeDetectorRef, ViewChild, ElementRef, HostListener, NgZone, AfterViewInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ChatService, ChatSession, ChatMessage, ChatMessageToolCall } from '../services/chat.service';
@@ -31,7 +31,7 @@ export interface ToolResponse {
   styleUrl: './chat.component.scss',
   templateUrl: './chat.component.html'
 })
-export class ChatComponent implements OnInit, OnDestroy {
+export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   chatService = inject(ChatService);
   settingsService = inject(SettingsService);
   
@@ -40,6 +40,7 @@ export class ChatComponent implements OnInit, OnDestroy {
   @ViewChild('reportConfirmDialog') reportConfirmDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('imagePreviewDialog') imagePreviewDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('errorToast') errorToast!: ElementRef<HTMLElement>;
+  @ViewChild('promptInput') promptInput!: ElementRef<HTMLTextAreaElement>;
   autoScrollEnabled = true;
 
   private hubConnection: signalR.HubConnection | null = null;
@@ -178,6 +179,18 @@ export class ChatComponent implements OnInit, OnDestroy {
         behavior: smooth ? 'smooth' : 'auto'
       });
     }
+  }
+
+  ngAfterViewInit() {
+    this.focusPromptInput();
+  }
+
+  private focusPromptInput() {
+    setTimeout(() => {
+      if (this.promptInput && this.promptInput.nativeElement) {
+        this.promptInput.nativeElement.focus();
+      }
+    }, 100);
   }
 
   ngOnInit() {
@@ -395,6 +408,7 @@ export class ChatComponent implements OnInit, OnDestroy {
     this.streamingToolCalls = [];
     this.currentStatusText = '';
     this.loadDraft();
+    this.focusPromptInput();
   }
 
   loadSession(id: number) {
@@ -415,6 +429,7 @@ export class ChatComponent implements OnInit, OnDestroy {
         if (!this.sessions.find(x => x.id === id)) {
            this.loadSessions();
         }
+        this.focusPromptInput();
       },
       error: (err) => {
         console.warn(`Failed to load session ${id}. Bouncing to new chat.`, err);
@@ -545,6 +560,8 @@ export class ChatComponent implements OnInit, OnDestroy {
     this.streamingMessage = '';
     this.streamingToolCalls = [];
 
+    this.focusPromptInput();
+
     this.requestStartTime = performance.now();
     this.currentStatusText = 'Connecting...';
     this.showSpinner = true;
@@ -636,6 +653,8 @@ export class ChatComponent implements OnInit, OnDestroy {
       this.abortController = null;
       this.loadSessions(); // Refresh sessions list in case a new one was created
       this.cdr.detectChanges();
+      
+      this.focusPromptInput();
     }
   }
 
