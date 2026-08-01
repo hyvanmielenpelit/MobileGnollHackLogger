@@ -23,6 +23,7 @@ export class ChatComponent implements OnInit, OnDestroy {
   
   @ViewChild('messagesContainer') messagesContainer!: ElementRef;
   @ViewChild('deleteConfirmDialog') deleteConfirmDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('reportConfirmDialog') reportConfirmDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('imagePreviewDialog') imagePreviewDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('errorToast') errorToast!: ElementRef<HTMLElement>;
   autoScrollEnabled = true;
@@ -71,6 +72,13 @@ export class ChatComponent implements OnInit, OnDestroy {
   errorMessage = '';
   hasApiKey = true;
   hasModel = true;
+
+  isReporting = false;
+  reportingMessageId: number | null = null;
+  reportedMsgIndex: number | null = null;
+  reportSuccessIndex: number | null = null;
+  reportError = '';
+  isProduction = false;
 
   currentStatusText = '';
   showSpinner = false;
@@ -166,6 +174,7 @@ export class ChatComponent implements OnInit, OnDestroy {
         }
         this.hasApiKey = settings.hasApiKey;
         this.hasModel = !!settings.model;
+        this.isProduction = settings.isProduction ?? false;
       }
     });
 
@@ -385,6 +394,62 @@ export class ChatComponent implements OnInit, OnDestroy {
         this.deleteConfirmDialog.nativeElement.close();
       }
       this.sessionToDelete = null;
+    });
+  }
+
+  requestReportMessage(messageId: number, index: number) {
+    this.reportingMessageId = messageId;
+    this.reportedMsgIndex = index;
+    this.reportError = '';
+    this.isReporting = false;
+    if (this.reportConfirmDialog) {
+      this.reportConfirmDialog.nativeElement.showModal();
+    }
+  }
+
+  closeReportConfirm() {
+    if (this.reportConfirmDialog) {
+      this.reportConfirmDialog.nativeElement.close();
+    }
+    this.reportingMessageId = null;
+    this.reportedMsgIndex = null;
+    this.reportError = '';
+    this.isReporting = false;
+  }
+
+  confirmReport() {
+    if (this.reportingMessageId === null) return;
+    this.isReporting = true;
+    this.reportError = '';
+    
+    this.chatService.reportMessage(this.reportingMessageId).subscribe({
+      next: (res: any) => {
+        if (res?.debugLogs) {
+           res.debugLogs.forEach((l: string) => this.debugService.log(l));
+        }
+        this.reportSuccessIndex = this.reportedMsgIndex;
+        setTimeout(() => {
+           this.reportSuccessIndex = null;
+           this.cdr.detectChanges();
+        }, 3000);
+        this.closeReportConfirm();
+      },
+      error: (err) => {
+        this.isReporting = false;
+        if (err.error?.debugLogs) {
+           err.error.debugLogs.forEach((l: string) => this.debugService.log(l));
+        }
+        this.debugService.log(`Report error: ${JSON.stringify(err)}`);
+        
+        if (err.error?.message && typeof err.error.message === 'string') {
+          this.reportError = err.error.message;
+        } else if (err.error && typeof err.error === 'string') {
+          this.reportError = err.error;
+        } else {
+          this.reportError = 'Failed to report message. Please try again later.';
+        }
+        this.cdr.detectChanges();
+      }
     });
   }
 

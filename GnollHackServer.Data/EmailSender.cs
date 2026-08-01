@@ -1,6 +1,6 @@
-﻿using Microsoft.AspNetCore.Identity.UI.Services;
+using Microsoft.AspNetCore.Identity.UI.Services;
 
-namespace MobileGnollHackLogger.Data
+namespace GnollHackServer.Data
 {
     public class EmailSender : Azure.Communication.Email.EmailClient, IEmailSender
     {

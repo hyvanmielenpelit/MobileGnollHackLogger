@@ -1,4 +1,4 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
+// Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 #nullable disable
 
@@ -23,6 +23,7 @@ using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Hosting.Internal;
 using Microsoft.Extensions.Logging;
 using MobileGnollHackLogger.Data;
+using GnollHackServer.Data;
 using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace MobileGnollHackLogger.Areas.Identity.Pages.Account

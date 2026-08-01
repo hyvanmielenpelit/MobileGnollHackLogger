@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Azure;
 using MobileGnollHackLogger.Data;
+using GnollHackServer.Data;
 using System.Configuration;
 using Azure.Communication.Email;
 using Azure.Core.Extensions;

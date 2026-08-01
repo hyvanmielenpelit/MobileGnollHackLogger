@@ -16,13 +16,15 @@ public class SettingsController : ControllerBase
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConfiguration _configuration;
     private readonly ModelMetadataService _modelMetadataService;
+    private readonly IWebHostEnvironment _env;
 
-    public SettingsController(SettingsService settingsService, IHttpClientFactory httpClientFactory, IConfiguration configuration, ModelMetadataService modelMetadataService)
+    public SettingsController(SettingsService settingsService, IHttpClientFactory httpClientFactory, IConfiguration configuration, ModelMetadataService modelMetadataService, IWebHostEnvironment env)
     {
         _settingsService = settingsService;
         _httpClientFactory = httpClientFactory;
         _configuration = configuration;
         _modelMetadataService = modelMetadataService;
+        _env = env;
     }
 
     [HttpGet]
@@ -46,7 +48,8 @@ public class SettingsController : ControllerBase
             enableWebSearch = settings?.EnableWebSearch ?? true,
             enableToolUse = settings?.EnableToolUse ?? true,
             enableClientTools = settings?.EnableClientTools ?? true,
-            enableGameActions = settings?.EnableGameActions ?? false
+            enableGameActions = settings?.EnableGameActions ?? false,
+            isProduction = _env.IsProduction()
         });
     }
 

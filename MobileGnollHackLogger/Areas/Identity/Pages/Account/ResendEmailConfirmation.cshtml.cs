@@ -14,6 +14,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.WebUtilities;
 using MobileGnollHackLogger.Data;
+using GnollHackServer.Data;
 
 namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
 {

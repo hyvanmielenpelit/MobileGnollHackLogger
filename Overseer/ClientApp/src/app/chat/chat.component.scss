@@ -42,8 +42,10 @@
 .message-box { margin-block-end: 15px; padding: 12px 18px 25px 18px; border-radius: 8px; max-width: 80%; line-height: 1.5; position: relative; }
 .message-box.user { background: rgba(212, 160, 23, 0.15); align-self: flex-end; border: 1px solid var(--border-glass); }
 .message-box.assistant { background: rgba(255, 255, 255, 0.05); align-self: flex-start; border: 1px solid rgba(255,255,255,0.1); }
-.copy-btn { position: absolute; inset-block-end: 5px; inset-inline-end: 5px; background: transparent; border: none; color: #888; cursor: pointer; padding: 4px; border-radius: 4px; display: flex; align-items: center; justify-content: center; transition: background 0.2s, color 0.2s; min-width: 32px; min-height: 32px; }
-.copy-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
+.copy-btn, .report-btn { position: absolute; inset-block-end: 5px; background: transparent; border: none; color: #888; cursor: pointer; padding: 4px; border-radius: 4px; display: flex; align-items: center; justify-content: center; transition: background 0.2s, color 0.2s; min-width: 32px; min-height: 32px; }
+.copy-btn { inset-inline-end: 5px; }
+.report-btn { inset-inline-end: 40px; }
+.copy-btn:hover, .report-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
 .messages strong { color: var(--title-color); display: block; margin-block-end: 5px; font-family: "Cinzel", serif; }
 .message-header { display: flex; align-items: center; gap: 15px; margin-block-end: 10px; }
 .message-header strong { margin-block-end: 0 !important; }
@@ -485,5 +487,21 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
 .tool-call-result.error pre {
   color: #ff6b6b;
   border-left: 3px solid #ff6b6b;
+}
+
+.report-dialog {
+  text-align: center;
+}
+.report-icon-container {
+  margin: 15px 0;
+  display: flex;
+  justify-content: center;
+}
+.report-error-msg {
+  color: #ff6b6b;
+  margin-top: 15px;
+  background: rgba(255,0,0,0.1);
+  padding: 10px;
+  border-radius: 4px;
 }
 

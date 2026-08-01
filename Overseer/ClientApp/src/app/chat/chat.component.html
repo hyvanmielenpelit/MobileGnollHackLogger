@@ -22,7 +22,7 @@
       </li>
     </ul>
     <div class="bottom-links">
-      <a routerLink="/debug-log" queryParamsHandling="preserve">Debug Log</a>
+      <a *ngIf="!isProduction" routerLink="/debug-log" queryParamsHandling="preserve">Debug Log</a>
       <a routerLink="/settings" queryParamsHandling="preserve">Settings</a>
       <a href="#" (click)="logout($event)">Logout</a>
     </div>
@@ -97,6 +97,10 @@
           </div>
         </div>
         <div [innerHTML]="msg.content | markdown" class="markdown-body"></div>
+        <button *ngIf="msg.role === 'assistant' && msg.id" class="report-btn" (click)="requestReportMessage(msg.id, i)" title="Report message">
+          <span *ngIf="reportSuccessIndex === i">✅</span>
+          <svg *ngIf="reportSuccessIndex !== i" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>
+        </button>
         <button class="copy-btn" (click)="copyToClipboard(msg.content, i)" title="Copy">
           <span *ngIf="copiedMsgIndex === i">✅</span>
           <svg *ngIf="copiedMsgIndex !== i" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
@@ -205,3 +209,22 @@
     <button class="toast-close" (click)="closeErrorToast()">×</button>
   </div>
 </div>
+
+<dialog #reportConfirmDialog class="gh-dialog report-dialog">
+  <h3>Report Message</h3>
+  <div class="report-icon-container">
+    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--color-warning)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+  </div>
+  <p>Are you sure you want to report this message to the developer?</p>
+  <div class="dialog-actions">
+    <button class="btn-gh btn-gh-cancel" (click)="closeReportConfirm()" [disabled]="isReporting">Cancel</button>
+    <button class="btn-gh" (click)="confirmReport()" [disabled]="isReporting">
+      <span *ngIf="isReporting" class="sidebar-spinner small-spinner"></span>
+      <span *ngIf="isReporting" class="ms-10">Sending...</span>
+      <span *ngIf="!isReporting">OK</span>
+    </button>
+  </div>
+  <div *ngIf="reportError" class="report-error-msg">
+    {{ reportError }}
+  </div>
+</dialog>

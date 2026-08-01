@@ -24,6 +24,7 @@ export interface ChatMessageToolCall {
 }
 
 export interface ChatMessage {
+  id?: number;
   role: string;
   content: string;
   timestampUtc: string;
@@ -52,6 +53,10 @@ export class ChatService {
 
   deleteSession(id: number) {
     return this.http.delete(`/api/chat/sessions/${id}`);
+  }
+
+  reportMessage(messageId: number) {
+    return this.http.post('/api/chat/report', { messageId });
   }
 
   async *streamMessage(sessionId: number | null, message: string, attachments?: ChatMessageAttachment[], abortSignal?: AbortSignal): AsyncGenerator<ChatStreamEvent, void, unknown> {

@@ -2,9 +2,17 @@ using MobileGnollHackLogger.Data;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Overseer.Services;
+using GnollHackServer.Data;
+using Microsoft.AspNetCore.Identity.UI.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 string? connectionString = builder.Configuration["ConnectionStrings:SqlDatabaseConnection"];
+
+string? emailConnectionString = builder.Configuration["ConnectionStrings:EmailConnection"];
+if (!string.IsNullOrEmpty(emailConnectionString))
+{
+    EmailSender.ConnectionString = emailConnectionString;
+}
 
 // NOTE: No MigrationsAssembly needed — Overseer does not run migrations
 builder.Services.AddDbContext<ApplicationDbContext>(options => options.UseSqlServer(connectionString));
@@ -61,6 +69,8 @@ builder.Services.AddScoped<ChatService>();
 builder.Services.AddScoped<SettingsService>();
 builder.Services.AddSingleton<ModelMetadataService>();
 builder.Services.AddSignalR();
+builder.Services.AddTransient<IEmailSender, EmailSender>();
+builder.Services.AddTransient<EmailSender>();
 
 // Tool Services
 builder.Services.AddSingleton<Overseer.Services.Tools.IClientToolBridge, Overseer.Services.Tools.NullClientToolBridge>();
