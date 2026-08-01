@@ -116,6 +116,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     return false;
   }
 
+  @HostListener('window:focus', ['$event'])
+  onWindowFocus() {
+    this.focusPromptInput();
+  }
+
   onUserInteraction() {
     this.autoScrollEnabled = false;
   }
@@ -191,6 +196,16 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.promptInput.nativeElement.focus();
       }
     }, 100);
+    setTimeout(() => {
+      if (this.promptInput && this.promptInput.nativeElement) {
+        this.promptInput.nativeElement.focus();
+      }
+    }, 500);
+    setTimeout(() => {
+      if (this.promptInput && this.promptInput.nativeElement) {
+        this.promptInput.nativeElement.focus();
+      }
+    }, 1000);
   }
 
   ngOnInit() {
@@ -338,6 +353,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
             this.currentStatusText = 'Generation complete.';
             this.cdr.detectChanges();
             this.loadSessions();
+            this.focusPromptInput();
           }
         }
       });
