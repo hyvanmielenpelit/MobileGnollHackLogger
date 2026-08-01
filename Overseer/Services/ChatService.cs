@@ -460,7 +460,7 @@ public class ChatService
                         var tId = tc.GetProperty("id").GetString();
                         var tName = tc.GetProperty("name").GetString() ?? "";
                         var tArgsStr = tc.GetProperty("arguments").GetString() ?? "{}";
-                        JsonElement tArgs = default;
+                        JsonElement tArgs = JsonDocument.Parse("{}").RootElement;
                         try { tArgs = JsonSerializer.Deserialize<JsonElement>(tArgsStr); } catch { }
                         
                         var res = await _toolExecutor.ExecuteAsync(tName, tArgs, execContext);
@@ -468,8 +468,16 @@ public class ChatService
                         
                         messageHistory.Add(new { role = "tool", tool_call_id = tId, content = resContent });
                         
-                        var resObj = new { id = tId, name = tName, result = resContent };
-                        yield return new ChatEvent { Type = "tool_result", Data = JsonSerializer.Serialize(resObj) };
+                        if (res.Success)
+                        {
+                            var resObj = new { id = tId, name = tName, result = resContent };
+                            yield return new ChatEvent { Type = "tool_result", Data = JsonSerializer.Serialize(resObj) };
+                        }
+                        else
+                        {
+                            var errObj = new { id = tId, name = tName, error = resContent };
+                            yield return new ChatEvent { Type = "tool_error", Data = JsonSerializer.Serialize(errObj) };
+                        }
                     }
                 }
             }
@@ -566,7 +574,7 @@ public class ChatService
                         var tId = tc.GetProperty("id").GetString();
                         var tName = tc.GetProperty("name").GetString() ?? "";
                         var tArgsStr = tc.GetProperty("arguments").GetString() ?? "{}";
-                        JsonElement tArgs = default;
+                        JsonElement tArgs = JsonDocument.Parse("{}").RootElement;
                         try { tArgs = JsonSerializer.Deserialize<JsonElement>(tArgsStr); } catch { }
                         
                         var res = await _toolExecutor.ExecuteAsync(tName, tArgs, execContext);
@@ -578,8 +586,16 @@ public class ChatService
                             content = resContent
                         });
                         
-                        var resObj = new { id = tId, name = tName, result = resContent };
-                        yield return new ChatEvent { Type = "tool_result", Data = JsonSerializer.Serialize(resObj) };
+                        if (res.Success)
+                        {
+                            var resObj = new { id = tId, name = tName, result = resContent };
+                            yield return new ChatEvent { Type = "tool_result", Data = JsonSerializer.Serialize(resObj) };
+                        }
+                        else
+                        {
+                            var errObj = new { id = tId, name = tName, error = resContent };
+                            yield return new ChatEvent { Type = "tool_error", Data = JsonSerializer.Serialize(errObj) };
+                        }
                     }
                     messageHistory.Add(new { role = "user", content = userToolResults });
                     messageHistory = AlternateAnthropicMessages(messageHistory);
@@ -690,7 +706,7 @@ public class ChatService
                     foreach (var tc in currentIterationToolCalls)
                     {
                         var argsStr = tc.GetProperty("arguments").GetString() ?? "{}";
-                        JsonElement argJson = default;
+                        JsonElement argJson = JsonDocument.Parse("{}").RootElement;
                         try { argJson = JsonSerializer.Deserialize<JsonElement>(argsStr); } catch { }
                         
                         modelParts.Add(new {
@@ -714,7 +730,7 @@ public class ChatService
                         var tId = tc.GetProperty("id").GetString();
                         var tName = tc.GetProperty("name").GetString() ?? "";
                         var tArgsStr = tc.GetProperty("arguments").GetString() ?? "{}";
-                        JsonElement tArgs = default;
+                        JsonElement tArgs = JsonDocument.Parse("{}").RootElement;
                         try { tArgs = JsonSerializer.Deserialize<JsonElement>(tArgsStr); } catch { }
                         
                         var res = await _toolExecutor.ExecuteAsync(tName, tArgs, execContext);
@@ -730,10 +746,18 @@ public class ChatService
                             }
                         });
                         
-                        var resObj = new { id = tId, name = tName, result = resContent };
-                        yield return new ChatEvent { Type = "tool_result", Data = JsonSerializer.Serialize(resObj) };
+                        if (res.Success)
+                        {
+                            var resObj = new { id = tId, name = tName, result = resContent };
+                            yield return new ChatEvent { Type = "tool_result", Data = JsonSerializer.Serialize(resObj) };
+                        }
+                        else
+                        {
+                            var errObj = new { id = tId, name = tName, error = resContent };
+                            yield return new ChatEvent { Type = "tool_error", Data = JsonSerializer.Serialize(errObj) };
+                        }
                     }
-                    messageHistory.Add(new { role = "tool", parts = userParts });
+                    messageHistory.Add(new { role = "user", parts = userParts });
                 }
             }
             else

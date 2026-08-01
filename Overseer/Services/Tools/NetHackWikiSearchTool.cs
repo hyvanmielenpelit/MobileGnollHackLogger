@@ -108,16 +108,12 @@ namespace Overseer.Services.Tools
                             textObj.TryGetProperty("*", out var htmlElem))
                         {
                             var html = htmlElem.GetString() ?? "";
-                            var text = Regex.Replace(html, "<.*?>", String.Empty);
+                            var text = Regex.Replace(html, @"<(script|style)[^>]*>.*?</\1>", "", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+                            text = Regex.Replace(text, "<[^>]*>", " ");
                             text = System.Net.WebUtility.HtmlDecode(text);
                             
                             // Remove extra newlines and spaces
                             text = Regex.Replace(text, @"\n{3,}", "\n\n");
-                            
-                            if (text.Length > 4000)
-                            {
-                                text = text.Substring(0, 4000) + "... [Truncated]";
-                            }
                             
                             var resultContent = $"Title: {title}\nContent:\n{text}";
                             

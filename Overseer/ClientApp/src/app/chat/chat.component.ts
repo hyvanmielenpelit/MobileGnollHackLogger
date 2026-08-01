@@ -232,14 +232,14 @@ export class ChatComponent implements OnInit, OnDestroy {
         } else if (evt.type === 'tool_start') {
           try {
             const toolInfo = JSON.parse(evt.data);
-            this.streamingToolCalls.push({ name: toolInfo.name, status: 'running' });
+            this.streamingToolCalls.push({ id: toolInfo.id, name: toolInfo.name, status: 'running' });
             this.cdr.detectChanges();
             this.scrollToBottomClamped(false);
           } catch(e) {}
         } else if (evt.type === 'tool_result') {
           try {
             const toolInfo = JSON.parse(evt.data);
-            const tc = this.streamingToolCalls.find(t => t.name === toolInfo.name && t.status === 'running');
+            const tc = this.streamingToolCalls.find(t => t.id === toolInfo.id && t.status === 'running');
             if (tc) {
               tc.status = 'completed';
               tc.result = toolInfo.result;
@@ -250,7 +250,7 @@ export class ChatComponent implements OnInit, OnDestroy {
         } else if (evt.type === 'tool_error') {
           try {
             const toolInfo = JSON.parse(evt.data);
-            const tc = this.streamingToolCalls.find(t => t.name === toolInfo.name && t.status === 'running');
+            const tc = this.streamingToolCalls.find(t => t.id === toolInfo.id && t.status === 'running');
             if (tc) {
               tc.status = 'error';
               tc.error = toolInfo.error;
@@ -471,14 +471,14 @@ export class ChatComponent implements OnInit, OnDestroy {
         } else if (evt.type === 'tool_start') {
           try {
             const toolInfo = JSON.parse(evt.data);
-            this.streamingToolCalls.push({ name: toolInfo.name, status: 'running' });
+            this.streamingToolCalls.push({ id: toolInfo.id, name: toolInfo.name, status: 'running' });
             this.cdr.detectChanges();
             this.scrollToBottomClamped(false);
           } catch(e) {}
         } else if (evt.type === 'tool_result') {
           try {
             const toolInfo = JSON.parse(evt.data);
-            const tc = this.streamingToolCalls.find(t => t.name === toolInfo.name && t.status === 'running');
+            const tc = this.streamingToolCalls.find(t => t.id === toolInfo.id && t.status === 'running');
             if (tc) {
               tc.status = 'completed';
               tc.result = toolInfo.result;
@@ -489,7 +489,7 @@ export class ChatComponent implements OnInit, OnDestroy {
         } else if (evt.type === 'tool_error') {
           try {
             const toolInfo = JSON.parse(evt.data);
-            const tc = this.streamingToolCalls.find(t => t.name === toolInfo.name && t.status === 'running');
+            const tc = this.streamingToolCalls.find(t => t.id === toolInfo.id && t.status === 'running');
             if (tc) {
               tc.status = 'error';
               tc.error = toolInfo.error;
