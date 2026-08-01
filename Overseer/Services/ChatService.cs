@@ -658,6 +658,17 @@ public class ChatService
                     requestBody["generationConfig"] = new { maxOutputTokens = maxOutputTokens.Value };
                 }
                 
+                var geminiSafetySettings = _configuration.GetSection("SafetySettings:Gemini").GetChildren().Select(c => new
+                {
+                    category = c.Key,
+                    threshold = c.Value
+                }).ToList();
+
+                if (geminiSafetySettings.Any())
+                {
+                    requestBody["safetySettings"] = geminiSafetySettings;
+                }
+                
                 if (requestTools.HasTools)
                 {
                     var allTools = new List<object>();
