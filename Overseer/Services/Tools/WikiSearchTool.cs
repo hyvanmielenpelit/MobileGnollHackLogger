@@ -24,7 +24,8 @@ namespace Overseer.Services.Tools
             {
                 ""type"": ""object"",
                 ""properties"": {
-                    ""query"": { ""type"": ""string"", ""description"": ""The search terms to look up in the wiki"" }
+                    ""query"": { ""type"": ""string"", ""description"": ""The search terms to look up in the wiki"" },
+                    ""max_results"": { ""type"": ""integer"", ""description"": ""Maximum number of wiki articles to return (default 3)"" }
                 },
                 ""required"": [""query""]
             }").RootElement;
@@ -43,7 +44,13 @@ namespace Overseer.Services.Tools
                 return Task.FromResult(new ToolResult { Success = false, ErrorMessage = "Missing query parameter" });
             }
 
-            var results = _wikiService.GetRelevantContext(query);
+            int maxResults = 3;
+            if (parameters.TryGetProperty("max_results", out var maxResElem) && maxResElem.ValueKind == JsonValueKind.Number)
+            {
+                maxResults = maxResElem.GetInt32();
+            }
+
+            var results = _wikiService.GetRelevantContext(query, null, maxResults);
             var content = string.Join("\n\n", results);
 
             if (string.IsNullOrWhiteSpace(content))
@@ -51,7 +58,21 @@ namespace Overseer.Services.Tools
                 return Task.FromResult(new ToolResult { Success = true, Content = "No relevant information found in the GnollHack wiki." });
             }
 
+            if (context.SpoilerFreeMode)
+            {
+                content = ApplySpoilerFreeMode(content);
+            }
+
             return Task.FromResult(new ToolResult { Success = true, Content = content });
+        }
+        
+        private string ApplySpoilerFreeMode(string content)
+        {
+            if (content.Length > 500)
+            {
+                return content.Substring(0, 500) + "...\n\n[SPOILER FREE MODE: Remainder of wiki article has been redacted.]";
+            }
+            return content;
         }
     }
 }

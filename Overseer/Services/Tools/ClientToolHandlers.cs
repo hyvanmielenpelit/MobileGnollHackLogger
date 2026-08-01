@@ -12,7 +12,7 @@ namespace Overseer.Services.Tools
         public ToolExecutionLocation ExecutionLocation => ToolExecutionLocation.Client;
         public virtual ToolCategory Category => ToolCategory.ClientStateQuery;
 
-        public JsonElement ParameterSchema { get; } = JsonDocument.Parse(@"{
+        public virtual JsonElement ParameterSchema { get; } = JsonDocument.Parse(@"{
             ""type"": ""object"",
             ""properties"": {}
         }").RootElement;
@@ -26,6 +26,14 @@ namespace Overseer.Services.Tools
     public class GetFullMessageHistoryTool : ClientToolHandlerBase
     {
         public override string ToolName => "get_full_message_history";
+
+        public override JsonElement ParameterSchema { get; } = JsonDocument.Parse(@"{
+            ""type"": ""object"",
+            ""properties"": {
+                ""search_term"": { ""type"": ""string"", ""description"": ""Optional substring to filter messages"" },
+                ""last_n"": { ""type"": ""integer"", ""description"": ""Limit to the last N messages. Max 16384."" }
+            }
+        }").RootElement;
     }
 
     public class GetDirectoryListingTool : ClientToolHandlerBase

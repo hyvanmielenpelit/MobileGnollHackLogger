@@ -56,6 +56,12 @@ public class SettingsController : ControllerBase
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (userId == null) return Unauthorized();
 
+        // Enforce Tier 3 -> Tier 4 dependency
+        if (request.EnableClientTools.HasValue && !request.EnableClientTools.Value)
+        {
+            request.EnableGameActions = false;
+        }
+
         await _settingsService.SaveSettingsAsync(userId, request.Provider, request.Model, request.ApiKey, request.ThinkingLevel, request.SpoilerFreeMode, request.MaxInputTokens, request.MaxOutputTokens, request.EnableWebSearch, request.EnableToolUse, request.EnableClientTools, request.EnableGameActions);
         
         return Ok();

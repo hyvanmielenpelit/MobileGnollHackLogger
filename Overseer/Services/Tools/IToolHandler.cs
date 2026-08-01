@@ -11,6 +11,9 @@ namespace Overseer.Services.Tools
         ToolExecutionLocation ExecutionLocation { get; }
         ToolCategory Category { get; }
         JsonElement ParameterSchema { get; }
+        
+        bool RequiresConfirmation => false;
+        int TimeoutSeconds => 15;
 
         Task<ToolResult> ExecuteAsync(JsonElement parameters,
                                       ToolExecutionContext context,

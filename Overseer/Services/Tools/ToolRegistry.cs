@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Microsoft.Extensions.Logging;
 
 namespace Overseer.Services.Tools
 {
@@ -20,13 +21,15 @@ namespace Overseer.Services.Tools
     {
         private readonly IEnumerable<IToolHandler> _handlers;
         private readonly IClientToolBridge _clientBridge;
+        private readonly ILogger<ToolRegistry> _logger;
         private readonly string _guidesPath;
         private string _policyText = string.Empty;
 
-        public ToolRegistry(IEnumerable<IToolHandler> handlers, IClientToolBridge clientBridge)
+        public ToolRegistry(IEnumerable<IToolHandler> handlers, IClientToolBridge clientBridge, ILogger<ToolRegistry> logger)
         {
             _handlers = handlers;
             _clientBridge = clientBridge;
+            _logger = logger;
             
             // Assume ToolGuides is at the root of the application
             _guidesPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ToolGuides");
@@ -53,6 +56,10 @@ namespace Overseer.Services.Tools
                 if (File.Exists(guideFile))
                 {
                     handler.Description = File.ReadAllText(guideFile);
+                }
+                else
+                {
+                    _logger.LogWarning("Missing tool guide for {ToolName}. Using fallback description.", handler.ToolName);
                 }
             }
         }

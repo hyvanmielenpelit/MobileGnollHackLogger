@@ -62,7 +62,7 @@ public class WikiService
         "should", "through", "does", "into"
     };
 
-    public IEnumerable<string> GetRelevantContext(string query, string? categoryFilter = null)
+    public IEnumerable<string> GetRelevantContext(string query, string? categoryFilter = null, int? maxResults = null)
     {
         if (string.IsNullOrWhiteSpace(query)) return Enumerable.Empty<string>();
 
@@ -82,7 +82,7 @@ public class WikiService
         })
         .Where(x => x.Score > 0 && (string.IsNullOrEmpty(categoryFilter) || x.Document.FilePath.Contains(categoryFilter, StringComparison.OrdinalIgnoreCase)))
         .OrderByDescending(x => x.Score)
-        .Take(_maxFiles)
+        .Take(maxResults ?? _maxFiles)
         .Select(x => $"--- {x.Document.FileName} ---\n{x.Document.Content}")
         .ToList();
 

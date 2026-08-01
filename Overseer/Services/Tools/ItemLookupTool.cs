@@ -69,10 +69,16 @@ namespace Overseer.Services.Tools
         
         private string ApplySpoilerFreeMode(string content)
         {
-            // Truncate or remove detailed stats in spoiler-free mode.
             if (content.Length > 250)
             {
-                return content.Substring(0, 250) + "...\n\n[SPOILER FREE MODE: Detailed stats, weight, and price have been redacted.]";
+                var summary = content.Substring(0, 250);
+                var nextNewline = content.IndexOf('\n', 250);
+                if (nextNewline > 250 && nextNewline < 500)
+                {
+                    summary = content.Substring(0, nextNewline);
+                }
+                
+                return summary + "\n\n[SPOILER FREE MODE: Detailed stats, weight, price, and magical properties have been redacted. The player must discover these in-game.]";
             }
             return content;
         }

@@ -111,7 +111,6 @@ public class ChatService
             }
 
             bool hasGameSnapshot = false;
-            bool hasDirectoryManifest = false;
             bool hasMessageHistory = false;
 
             ChatSession? session = null;
@@ -162,8 +161,7 @@ public class ChatService
                 {
                     if (pm.Role == "system" && pm.Content != null)
                     {
-                        if (pm.Content.StartsWith("Game Context Snapshot:")) hasGameSnapshot = true;
-                        if (pm.Content.StartsWith("Game Directory Manifest:")) hasDirectoryManifest = true;
+                        if (pm.Content.StartsWith("Game Snapshot:")) hasGameSnapshot = true;
                         if (pm.Content.StartsWith("Full Message History")) hasMessageHistory = true;
                     }
                 }
@@ -239,9 +237,7 @@ public class ChatService
             }
             
             // enableToolUse handled above
-            // enableClientTools handled above
-
-            string systemPrompt = BuildSystemPrompt(contextDocs, spoilerFreeMode, verboseMode, isGameOn, developerMode, overseerMode, hasGameSnapshot, hasDirectoryManifest, hasMessageHistory, session?.ClientSettings, enableToolUse, enableClientTools);
+            string systemPrompt = BuildSystemPrompt(contextDocs, spoilerFreeMode, verboseMode, isGameOn, developerMode, overseerMode, hasGameSnapshot, hasMessageHistory, session?.ClientSettings, enableToolUse, enableWebSearch);
 
             var userMsg = new ChatMessage
             {
@@ -368,9 +364,19 @@ public class ChatService
         
         var execContext = new ToolExecutionContext { SessionId = currentSessionId, IsGameOn = isGameOn, SpoilerFreeMode = spoilerFreeMode };
         
-        while (toolIterations < 5 && hasToolsToRun && !cancellationToken.IsCancellationRequested)
+        while (toolIterations <= 5 && hasToolsToRun && !cancellationToken.IsCancellationRequested)
         {
+            if (toolIterations == 5 && hasToolsToRun)
+            {
+                yield return new ChatEvent { Type = "tool_error", Data = "Tool call limit reached. Forcing final response." };
+                enableToolUse = false;
+                enableWebSearch = false;
+                enableClientTools = false;
+                enableGameActions = false;
+            }
+            
             hasToolsToRun = false;
+            string iterationText = "";
             var requestTools = _toolRegistry.BuildToolsForRequest(provider, execContext, enableWebSearch, enableToolUse, enableClientTools, enableGameActions);
             var currentIterationToolCalls = new List<JsonElement>();
             
@@ -394,7 +400,10 @@ public class ChatService
                 
                 if (requestTools.HasTools)
                 {
-                    requestBody["tools"] = requestTools.FunctionDeclarations;
+                    var allTools = new List<object>();
+                    allTools.AddRange(requestTools.ProviderTools);
+                    allTools.AddRange(requestTools.FunctionDeclarations);
+                    requestBody["tools"] = allTools;
                 }
 
                 await foreach (var evt in ExecuteApiWithRetriesAsync(
@@ -410,7 +419,11 @@ public class ChatService
                     "OpenAI",
                     cancellationToken))
                 {
-                    if (evt.Type == "chunk") fullResponse += evt.Data;
+                    if (evt.Type == "chunk")
+                    {
+                        fullResponse += evt.Data;
+                        iterationText += evt.Data;
+                    }
                     
                     if (evt.Type == "tool_call_complete")
                     {
@@ -439,7 +452,7 @@ public class ChatService
                             }
                         });
                     }
-                    messageHistory.Add(new { role = "assistant", content = "", tool_calls = toolCallsForHistory });
+                    messageHistory.Add(new { role = "assistant", content = iterationText, tool_calls = toolCallsForHistory });
                     
                     // Execute tools
                     foreach (var tc in currentIterationToolCalls)
@@ -455,7 +468,7 @@ public class ChatService
                         
                         messageHistory.Add(new { role = "tool", tool_call_id = tId, content = resContent });
                         
-                        var resObj = new { id = tId, result = resContent };
+                        var resObj = new { id = tId, name = tName, result = resContent };
                         yield return new ChatEvent { Type = "tool_result", Data = JsonSerializer.Serialize(resObj) };
                     }
                 }
@@ -489,7 +502,10 @@ public class ChatService
                 
                 if (requestTools.HasTools)
                 {
-                    requestBody["tools"] = requestTools.FunctionDeclarations;
+                    var allTools = new List<object>();
+                    allTools.AddRange(requestTools.ProviderTools);
+                    allTools.AddRange(requestTools.FunctionDeclarations);
+                    requestBody["tools"] = allTools;
                 }
 
                 await foreach (var evt in ExecuteApiWithRetriesAsync(
@@ -505,7 +521,11 @@ public class ChatService
                     "Anthropic",
                     cancellationToken))
                 {
-                    if (evt.Type == "chunk") fullResponse += evt.Data;
+                    if (evt.Type == "chunk")
+                    {
+                        fullResponse += evt.Data;
+                        iterationText += evt.Data;
+                    }
                     
                     if (evt.Type == "tool_call_complete")
                     {
@@ -531,6 +551,12 @@ public class ChatService
                             input = JsonSerializer.Deserialize<JsonElement>(tc.GetProperty("arguments").GetString() ?? "{}")
                         });
                     }
+                    
+                    if (!string.IsNullOrEmpty(iterationText))
+                    {
+                        asstContent.Insert(0, new { type = "text", text = iterationText });
+                    }
+                    
                     messageHistory.Add(new { role = "assistant", content = asstContent });
                     messageHistory = AlternateAnthropicMessages(messageHistory);
                     
@@ -552,7 +578,7 @@ public class ChatService
                             content = resContent
                         });
                         
-                        var resObj = new { id = tId, result = resContent };
+                        var resObj = new { id = tId, name = tName, result = resContent };
                         yield return new ChatEvent { Type = "tool_result", Data = JsonSerializer.Serialize(resObj) };
                     }
                     messageHistory.Add(new { role = "user", content = userToolResults });
@@ -618,7 +644,13 @@ public class ChatService
                 
                 if (requestTools.HasTools)
                 {
-                    requestBody["tools"] = new[] { new { functionDeclarations = requestTools.FunctionDeclarations } };
+                    var allTools = new List<object>();
+                    allTools.AddRange(requestTools.ProviderTools);
+                    if (requestTools.FunctionDeclarations.Any())
+                    {
+                        allTools.Add(new { functionDeclarations = requestTools.FunctionDeclarations });
+                    }
+                    requestBody["tools"] = allTools;
                 }
 
                 await foreach (var evt in ExecuteApiWithRetriesAsync(
@@ -634,7 +666,11 @@ public class ChatService
                     "Google",
                     cancellationToken))
                 {
-                    if (evt.Type == "chunk") fullResponse += evt.Data;
+                    if (evt.Type == "chunk")
+                    {
+                        fullResponse += evt.Data;
+                        iterationText += evt.Data;
+                    }
                     
                     if (evt.Type == "tool_call_complete")
                     {
@@ -664,6 +700,12 @@ public class ChatService
                             }
                         });
                     }
+                    
+                    if (!string.IsNullOrEmpty(iterationText))
+                    {
+                        modelParts.Insert(0, new { text = iterationText });
+                    }
+                    
                     messageHistory.Add(new { role = "model", parts = modelParts });
                     
                     var userParts = new List<object>();
@@ -682,15 +724,16 @@ public class ChatService
                             functionResponse = new {
                                 name = tName,
                                 response = new {
-                                    result = resContent
+                                    name = tName,
+                                    content = resContent
                                 }
                             }
                         });
                         
-                        var resObj = new { id = tId, result = resContent };
+                        var resObj = new { id = tId, name = tName, result = resContent };
                         yield return new ChatEvent { Type = "tool_result", Data = JsonSerializer.Serialize(resObj) };
                     }
-                    messageHistory.Add(new { role = "user", parts = userParts });
+                    messageHistory.Add(new { role = "tool", parts = userParts });
                 }
             }
             else
@@ -1082,11 +1125,10 @@ public class ChatService
         bool developerMode,
         int overseerMode,
         bool hasGameSnapshot,
-        bool hasDirectoryManifest,
         bool hasMessageHistory,
         string? clientSettings,
         bool enableToolUse,
-        bool enableClientTools)
+        bool enableWebSearch)
     {
         var sb = new StringBuilder();
 
@@ -1209,9 +1251,8 @@ public class ChatService
         sb.AppendLine("## Available Context in This Session");
         if (hasGameSnapshot) sb.AppendLine("- ✅ Game snapshot (current map, stats, inventory, recent messages, spells, skills, attributes)");
         if (hasMessageHistory) sb.AppendLine("- ✅ Full message history (up to 16384 in-game messages) — reference when the player asks about earlier events");
-        if (hasDirectoryManifest) sb.AppendLine("- ✅ Game directory file listing — use for diagnosing file-related issues (corrupt saves, orphaned files, missing data)");
         if (developerMode) sb.AppendLine("- ✅ Runtime debug data (memory usage, thread state, pending tasks, developer settings) via Client Environment Settings");
-        if (!hasGameSnapshot && !hasMessageHistory && !hasDirectoryManifest && !developerMode)
+        if (!hasGameSnapshot && !hasMessageHistory && !developerMode)
         {
             sb.AppendLine("- No game context was provided for this session. Answer based on general GnollHack knowledge and wiki content.");
         }
@@ -1347,7 +1388,7 @@ public class ChatService
         // ──────────────────────────────────────────────
         // SECTION 15: Tool Use Policy
         // ──────────────────────────────────────────────
-        if (enableToolUse || enableClientTools)
+        if (enableToolUse || enableWebSearch)
         {
             var policy = _toolRegistry.GetPolicyText();
             if (!string.IsNullOrWhiteSpace(policy))

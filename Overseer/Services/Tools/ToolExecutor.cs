@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace Overseer.Services.Tools
 {
@@ -14,17 +15,17 @@ namespace Overseer.Services.Tools
         private readonly IEnumerable<IToolHandler> _handlers;
         private readonly IClientToolBridge _clientBridge;
         private readonly ILogger<ToolExecutor> _logger;
+        private readonly Microsoft.Extensions.Caching.Memory.IMemoryCache _cache;
 
-        // Simple in-memory session rate limiter
-        private static readonly ConcurrentDictionary<long, int> _sessionCallCounts = new ConcurrentDictionary<long, int>();
         private const int MaxCallsPerSession = 50;
         private const int MaxResultLength = 3000;
 
-        public ToolExecutor(IEnumerable<IToolHandler> handlers, IClientToolBridge clientBridge, ILogger<ToolExecutor> logger)
+        public ToolExecutor(IEnumerable<IToolHandler> handlers, IClientToolBridge clientBridge, ILogger<ToolExecutor> logger, Microsoft.Extensions.Caching.Memory.IMemoryCache cache)
         {
             _handlers = handlers;
             _clientBridge = clientBridge;
             _logger = logger;
+            _cache = cache;
         }
 
         public async Task<ToolResult> ExecuteAsync(string toolName, JsonElement parameters, ToolExecutionContext context)
@@ -32,12 +33,29 @@ namespace Overseer.Services.Tools
             _logger.LogInformation("Executing tool {ToolName} for Session {SessionId}", toolName, context.SessionId);
 
             // 1. Session Rate Limiting
-            int count = _sessionCallCounts.AddOrUpdate(context.SessionId, 1, (key, oldValue) => oldValue + 1);
+            var rateLimitKey = $"tool_calls_session_{context.SessionId}";
+            var count = _cache.GetOrCreate(rateLimitKey, entry =>
+            {
+                entry.Size = 1;
+                entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(4);
+                return 0;
+            });
+            
             if (count > MaxCallsPerSession)
             {
                 _logger.LogWarning("Rate limit exceeded for Session {SessionId}", context.SessionId);
                 return new ToolResult { Success = false, ErrorMessage = "Maximum tool calls per session exceeded." };
             }
+            
+            _cache.Set(rateLimitKey, count + 1, new Microsoft.Extensions.Caching.Memory.MemoryCacheEntryOptions
+            {
+                Size = 1,
+                AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(4)
+            });
+
+            // Enhanced Audit Logging
+            _logger.LogInformation("Tool Execution Audit - Session: {SessionId}, Tool: {ToolName}, Parameters: {Parameters}", 
+                context.SessionId, toolName, parameters.GetRawText());
 
             // 2. Find Handler
             var handler = _handlers.FirstOrDefault(h => string.Equals(h.ToolName, toolName, StringComparison.OrdinalIgnoreCase));
@@ -49,7 +67,7 @@ namespace Overseer.Services.Tools
             }
 
             // 3. Execution
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(handler.TimeoutSeconds));
             ToolResult result;
 
             try
@@ -60,7 +78,7 @@ namespace Overseer.Services.Tools
                 }
                 else if (handler.ExecutionLocation == ToolExecutionLocation.Client)
                 {
-                    result = await _clientBridge.SendToolRequestAsync(toolName, parameters, TimeSpan.FromSeconds(15), cts.Token);
+                    result = await _clientBridge.SendToolRequestAsync(toolName, parameters, TimeSpan.FromSeconds(handler.TimeoutSeconds), cts.Token);
                 }
                 else
                 {
@@ -84,19 +102,13 @@ namespace Overseer.Services.Tools
                 if (result.Content.Length > MaxResultLength)
                 {
                     // As noted in plan, if it's JSON, blindly truncating the string will break it.
-                    // If it's a plain string, we can truncate.
                     if (result.Content.TrimStart().StartsWith("{") || result.Content.TrimStart().StartsWith("["))
                     {
-                        // It's likely JSON. For v1, handlers should probably return plain text or we truncate fields individually inside the handler.
-                        // Here, we'll try to parse and truncate strings, or if it fails, just truncate the raw string.
                         try
                         {
                             var doc = JsonDocument.Parse(result.Content);
-                            // Complex to generically truncate JSON fields. For now, we assume handlers output plain text or handle their own JSON truncation.
-                            // We will enforce the hard limit though to protect LLM context, even if it risks malformed JSON, 
-                            // but we log a warning.
-                            _logger.LogWarning("Truncating JSON string which may cause malformed JSON. Handlers should truncate internally.");
-                            result.Content = result.Content.Substring(0, MaxResultLength) + "... [Result truncated for length]";
+                            _logger.LogWarning("Tool {ToolName} returned large JSON ({Length} bytes). Returning error to force narrower query.", toolName, result.Content.Length);
+                            result = new ToolResult { Success = false, ErrorMessage = $"Result too large ({result.Content.Length} chars). Please use a narrower search query to get fewer results." };
                         }
                         catch
                         {
@@ -109,6 +121,9 @@ namespace Overseer.Services.Tools
                     }
                 }
             }
+
+            _logger.LogInformation("Tool Execution Audit - Session: {SessionId}, Tool: {ToolName}, Success: {Success}", 
+                context.SessionId, toolName, result.Success);
 
             return result;
         }

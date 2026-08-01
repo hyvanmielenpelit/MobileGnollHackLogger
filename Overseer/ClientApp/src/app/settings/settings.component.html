@@ -67,8 +67,8 @@
       <label class="checkbox-label align-start">
         <input type="checkbox" [(ngModel)]="enableWebSearch" name="enableWebSearch" class="w-auto m-0 mt-5" aria-describedby="webSearchHint" />
         <div>
-          <span>Enable Web Search</span>
-          <span id="webSearchHint" class="form-hint mt-5">Allow the AI to search the web for external information</span>
+          <span>Enable Web Search (Tier 1)</span>
+          <span id="webSearchHint" class="form-hint mt-5">Allow the AI to search the public internet for external information. Lowest risk.</span>
         </div>
       </label>
     </div>
@@ -77,8 +77,8 @@
       <label class="checkbox-label align-start">
         <input type="checkbox" [(ngModel)]="enableToolUse" name="enableToolUse" class="w-auto m-0 mt-5" aria-describedby="toolUseHint" />
         <div>
-          <span>Enable Server Tools</span>
-          <span id="toolUseHint" class="form-hint mt-5">Allow the AI to use server-side tools (e.g., Wiki search)</span>
+          <span>Enable Server Tools (Tier 2)</span>
+          <span id="toolUseHint" class="form-hint mt-5">Allow the AI to use internal Overseer server tools (e.g., GnollHack Wiki search). No game client access.</span>
         </div>
       </label>
     </div>
@@ -87,8 +87,8 @@
       <label class="checkbox-label align-start">
         <input type="checkbox" [(ngModel)]="enableClientTools" name="enableClientTools" class="w-auto m-0 mt-5" aria-describedby="clientToolsHint" (change)="!enableClientTools ? enableGameActions = false : null" />
         <div>
-          <span>Enable Client Data Access</span>
-          <span id="clientToolsHint" class="form-hint mt-5">Allow the AI to read your game state and device data</span>
+          <span>Enable Client Data Access (Tier 3)</span>
+          <span id="clientToolsHint" class="form-hint mt-5">Allow the AI to read your live game state, inventory, and device logs.</span>
         </div>
       </label>
     </div>
@@ -97,8 +97,8 @@
       <label class="checkbox-label align-start">
         <input type="checkbox" [(ngModel)]="enableGameActions" name="enableGameActions" class="w-auto m-0 mt-5" aria-describedby="gameActionsHint" [disabled]="!enableClientTools" />
         <div>
-          <span>Enable Game Actions</span>
-          <span id="gameActionsHint" class="form-hint mt-5">Allow the AI to execute commands in your game (Requires Client Data Access)</span>
+          <span>Enable Game Actions (Tier 4)</span>
+          <span id="gameActionsHint" class="form-hint mt-5">Allow the AI to execute commands in your game (e.g., movement, attacks). Requires Tier 3. Highest risk.</span>
         </div>
       </label>
     </div>
