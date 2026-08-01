@@ -73,7 +73,8 @@ builder.Services.AddTransient<IEmailSender, EmailSender>();
 builder.Services.AddTransient<EmailSender>();
 
 // Tool Services
-builder.Services.AddSingleton<Overseer.Services.Tools.IClientToolBridge, Overseer.Services.Tools.NullClientToolBridge>();
+builder.Services.AddSingleton<Overseer.Services.Tools.SignalRClientToolBridge>();
+builder.Services.AddSingleton<Overseer.Services.Tools.IClientToolBridge>(sp => sp.GetRequiredService<Overseer.Services.Tools.SignalRClientToolBridge>());
 builder.Services.AddSingleton<Overseer.Services.Tools.ToolRegistry>();
 builder.Services.AddSingleton<Overseer.Services.Tools.ToolExecutor>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.WikiSearchTool>();

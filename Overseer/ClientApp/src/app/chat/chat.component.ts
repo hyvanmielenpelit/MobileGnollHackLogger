@@ -9,6 +9,20 @@ import { MarkdownPipe } from './markdown.pipe';
 import { RelativeTimePipe } from './relative-time.pipe';
 import { SettingsService } from '../services/settings.service';
 import * as signalR from '@microsoft/signalr';
+export interface ToolClientRequest {
+    type: string;
+    requestId: string;
+    toolName: string;
+    parameters: any;
+}
+
+export interface ToolResponse {
+    type: string;
+    requestId: string;
+    success: boolean;
+    content: string;
+    errorMessage: string | null;
+}
 
 @Component({
   selector: 'app-chat',
@@ -46,6 +60,9 @@ export class ChatComponent implements OnInit, OnDestroy {
   router = inject(Router);
   route = inject(ActivatedRoute);
   cdr = inject(ChangeDetectorRef);
+  
+  readonly CLIENT_TOOL_TIMEOUT_MS = 14000;
+  pendingRequests = new Map<string, ReturnType<typeof setTimeout>>();
 
   isOffline = !navigator.onLine;
   private onlineHandler = () => { this.isOffline = false; this.cdr.detectChanges(); this.loadSessions(); };
@@ -207,6 +224,26 @@ export class ChatComponent implements OnInit, OnDestroy {
       }
     });
 
+    (window as any).onGnollHackToolResponse = (jsonString: string) => {
+      try {
+          const response: ToolResponse = JSON.parse(jsonString);
+
+          if (response.type !== 'tool_response') {
+              return;
+          }
+
+          const timer = this.pendingRequests.get(response.requestId);
+          if (timer) {
+              clearTimeout(timer);
+              this.pendingRequests.delete(response.requestId);
+          }
+
+          this.sendToolResult(response.requestId, response.success, response.content, response.errorMessage);
+      } catch (e) {
+          console.error('Failed to parse tool response:', e);
+      }
+    };
+
     this.setupSignalR();
   }
 
@@ -267,6 +304,13 @@ export class ChatComponent implements OnInit, OnDestroy {
             this.cdr.detectChanges();
             this.scrollToBottomClamped(false);
           } catch(e) {}
+        } else if (evt.type === 'tool_client_request') {
+          try {
+            const request: ToolClientRequest = JSON.parse(evt.data);
+            this.forwardToolRequest(request);
+          } catch (e) {
+            console.error('Failed to parse tool_client_request:', e);
+          }
         } else if (evt.type === 'done') {
           if (this.isStreaming) {
             this.messages.push({ role: 'assistant', content: this.streamingMessage, timestampUtc: new Date().toISOString(), toolCalls: [...this.streamingToolCalls] });
@@ -787,4 +831,65 @@ export class ChatComponent implements OnInit, OnDestroy {
       }
     }
   }
+
+  getClientBridge(): 'webview2' | 'android' | 'ios' | null {
+    if ((window as any).chrome?.webview) {
+        return 'webview2';
+    }
+    if ((window as any).GnollHackBridge?.onToolRequest) {
+        return 'android';
+    }
+    if ((window as any).webkit?.messageHandlers?.gnollhackBridge) {
+        return 'ios';
+    }
+    return null;
+  }
+
+  forwardToolRequest(request: ToolClientRequest): void {
+    const bridge = this.getClientBridge();
+
+    if (!bridge) {
+        console.error('No client bridge available');
+        this.sendToolResult(request.requestId, false, null, 'Client bridge not available');
+        return;
+    }
+
+    switch (bridge) {
+        case 'webview2':
+            (window as any).chrome.webview.postMessage(request);
+            break;
+        case 'android':
+            (window as any).GnollHackBridge.onToolRequest(JSON.stringify(request));
+            break;
+        case 'ios':
+            (window as any).webkit.messageHandlers.gnollhackBridge.postMessage(JSON.stringify(request));
+            break;
+    }
+
+    const timer = setTimeout(() => {
+        this.pendingRequests.delete(request.requestId);
+        this.sendToolResult(request.requestId, false, null, 'Client tool timed out');
+    }, this.CLIENT_TOOL_TIMEOUT_MS);
+
+    this.pendingRequests.set(request.requestId, timer);
+  }
+
+  async sendToolResult(requestId: string, success: boolean, content: string | null, errorMessage: string | null): Promise<void> {
+    try {
+        if (!this.hubConnection || this.hubConnection.state !== signalR.HubConnectionState.Connected) {
+            console.error('SignalR not connected, cannot send tool result');
+            return;
+        }
+        
+        await this.hubConnection.invoke('SubmitToolResult', 
+            requestId, 
+            this.currentSessionId || 0,
+            success, 
+            success ? content : (errorMessage || 'Tool execution failed')
+        );
+    } catch (e) {
+        console.error('Failed to send tool result:', e);
+    }
+  }
+
 }

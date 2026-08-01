@@ -49,5 +49,13 @@ namespace Overseer.Services.Tools
     public class GetSaveInfoTool : ClientToolHandlerBase
     {
         public override string ToolName => "get_save_info";
+
+        public override JsonElement ParameterSchema { get; } = JsonDocument.Parse(@"{
+            ""type"": ""object"",
+            ""properties"": {
+                ""filename"": { ""type"": ""string"", ""description"": ""Full path to the save file"" }
+            },
+            ""required"": [""filename""]
+        }").RootElement;
     }
 }

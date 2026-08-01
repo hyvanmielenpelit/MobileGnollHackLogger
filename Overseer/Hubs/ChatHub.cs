@@ -34,5 +34,16 @@ namespace Overseer.Hubs
         {
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, sessionId.ToString());
         }
+
+        public Task SubmitToolResult(string requestId, long sessionId, bool success, string content)
+        {
+            // Resolve the client tool bridge from the service provider
+            var clientToolBridge = (Overseer.Services.Tools.SignalRClientToolBridge)Context.GetHttpContext()!.RequestServices.GetService(typeof(Overseer.Services.Tools.SignalRClientToolBridge))!;
+            if (clientToolBridge != null)
+            {
+                clientToolBridge.SubmitToolResult(requestId, success, content);
+            }
+            return Task.CompletedTask;
+        }
     }
 }

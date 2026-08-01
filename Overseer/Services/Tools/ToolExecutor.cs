@@ -78,7 +78,7 @@ namespace Overseer.Services.Tools
                 }
                 else if (handler.ExecutionLocation == ToolExecutionLocation.Client)
                 {
-                    result = await _clientBridge.SendToolRequestAsync(toolName, parameters, TimeSpan.FromSeconds(handler.TimeoutSeconds), cts.Token);
+                    result = await _clientBridge.SendToolRequestAsync(context.SessionId, toolName, parameters, TimeSpan.FromSeconds(handler.TimeoutSeconds), cts.Token);
                 }
                 else
                 {

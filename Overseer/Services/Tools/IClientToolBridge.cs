@@ -13,7 +13,7 @@ namespace Overseer.Services.Tools
     public interface IClientToolBridge
     {
         bool IsClientConnected { get; }
-        Task<ToolResult> SendToolRequestAsync(string toolName, JsonElement parameters,
+        Task<ToolResult> SendToolRequestAsync(long sessionId, string toolName, JsonElement parameters,
                                               TimeSpan timeout, CancellationToken ct);
     }
 }
