@@ -9,7 +9,7 @@ namespace Overseer.Services.Tools
     {
         public bool IsClientConnected => false;
 
-        public Task<ToolResult> SendToolRequestAsync(long sessionId, string toolName, JsonElement parameters, TimeSpan timeout, CancellationToken ct)
+        public Task<ToolResult> SendToolRequestAsync(long sessionId, string toolName, JsonElement parameters, CancellationToken ct)
         {
             return Task.FromResult(new ToolResult
             {

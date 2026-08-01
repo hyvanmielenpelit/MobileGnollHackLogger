@@ -204,12 +204,12 @@ async function sendToolResult(
 ): Promise<void> {
     try {
         // hubConnection is the existing SignalR connection from chat.component.ts
-        await hubConnection.invoke('SubmitToolResult', {
-            requestId: requestId,
-            sessionId: currentSessionId,
-            success: success,
-            content: success ? content : (errorMessage || 'Tool execution failed')
-        });
+        await hubConnection.invoke('SubmitToolResult', 
+            requestId,
+            currentSessionId,
+            success,
+            success ? content : (errorMessage || 'Tool execution failed')
+        );
     } catch (e) {
         console.error('Failed to send tool result:', e);
     }

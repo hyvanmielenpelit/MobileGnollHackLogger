@@ -142,6 +142,10 @@ export class ChatComponent implements OnInit, OnDestroy {
     if (this.hubConnection) {
       this.hubConnection.stop();
     }
+    
+    (window as any).onGnollHackToolResponse = undefined;
+    this.pendingRequests.forEach(timer => clearTimeout(timer));
+    this.pendingRequests.clear();
   }
 
   getHubConnection() {

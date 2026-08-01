@@ -14,6 +14,6 @@ namespace Overseer.Services.Tools
     {
         bool IsClientConnected { get; }
         Task<ToolResult> SendToolRequestAsync(long sessionId, string toolName, JsonElement parameters,
-                                              TimeSpan timeout, CancellationToken ct);
+                                              CancellationToken ct);
     }
 }

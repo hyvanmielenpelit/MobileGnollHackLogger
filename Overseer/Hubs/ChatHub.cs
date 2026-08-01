@@ -11,10 +11,12 @@ namespace Overseer.Hubs
     public class ChatHub : Hub
     {
         private readonly ApplicationDbContext _dbContext;
+        private readonly Overseer.Services.Tools.SignalRClientToolBridge _clientToolBridge;
 
-        public ChatHub(ApplicationDbContext dbContext)
+        public ChatHub(ApplicationDbContext dbContext, Overseer.Services.Tools.SignalRClientToolBridge clientToolBridge)
         {
             _dbContext = dbContext;
+            _clientToolBridge = clientToolBridge;
         }
 
         public async Task JoinSession(long sessionId)
@@ -35,15 +37,17 @@ namespace Overseer.Hubs
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, sessionId.ToString());
         }
 
-        public Task SubmitToolResult(string requestId, long sessionId, bool success, string content)
+        public async Task SubmitToolResult(string requestId, long sessionId, bool success, string content)
         {
-            // Resolve the client tool bridge from the service provider
-            var clientToolBridge = (Overseer.Services.Tools.SignalRClientToolBridge)Context.GetHttpContext()!.RequestServices.GetService(typeof(Overseer.Services.Tools.SignalRClientToolBridge))!;
-            if (clientToolBridge != null)
+            var userId = Context.UserIdentifier ?? Context.User?.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (userId != null)
             {
-                clientToolBridge.SubmitToolResult(requestId, success, content);
+                var session = await _dbContext.ChatSession.FirstOrDefaultAsync(s => s.Id == sessionId && s.AspNetUserId == userId);
+                if (session != null)
+                {
+                    _clientToolBridge.SubmitToolResult(requestId, success, content);
+                }
             }
-            return Task.CompletedTask;
         }
     }
 }
