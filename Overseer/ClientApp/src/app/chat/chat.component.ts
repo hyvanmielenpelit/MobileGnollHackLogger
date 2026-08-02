@@ -95,6 +95,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   userModels: import('../services/settings.service').UserAiModel[] = [];
   selectedUserModelId: number | null = null;
   isModelDropdownOpen = false;
+  singleModelInfo: any = null;
 
   get selectedModel() {
     return this.userModels.find(m => m.id === this.selectedUserModelId);
@@ -299,6 +300,13 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           });
         } else {
           this.hasModel = !!settings.model;
+          if (this.hasModel) {
+            this.singleModelInfo = {
+               modelId: settings.model,
+               provider: settings.provider,
+               thinkingLevel: settings.thinkingLevel
+            };
+          }
         }
       }
     });

@@ -162,21 +162,30 @@
         </div>
       </div>
       <div class="input-area">
-        <div *ngIf="allowMultipleModels && userModels.length > 0" class="custom-model-selector" style="align-self: flex-start; margin-left: 36px; margin-bottom: 5px;">
-          <button class="selector-trigger" (click)="toggleModelDropdown($event)" [class.open]="isModelDropdownOpen">
-            <span class="model-name">{{ selectedModel?.displayName || selectedModel?.modelId || 'Select Model' }}</span>
-            <span class="thinking-badge" *ngIf="selectedModel?.thinkingLevel">{{ formatThinkingLevel(selectedModel?.thinkingLevel) }}</span>
-            <span class="provider-badge">{{ selectedModel?.provider }}</span>
-            <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-          </button>
-          
-          <div class="selector-dropdown" *ngIf="isModelDropdownOpen">
-            <div class="model-option" *ngFor="let model of userModels" (click)="selectModel(model.id)" [class.selected]="model.id === selectedUserModelId">
-              <span class="model-name">{{ model.displayName || model.modelId }}</span>
-              <span class="thinking-badge" *ngIf="model.thinkingLevel">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
-              <span class="provider-badge">{{ model.provider }}</span>
+        <div *ngIf="hasModel" class="custom-model-selector" style="align-self: flex-start; margin-left: 50px; margin-bottom: 5px;">
+          <ng-container *ngIf="allowMultipleModels && userModels.length > 1; else singleModelView">
+            <button class="selector-trigger" (click)="toggleModelDropdown($event)" [class.open]="isModelDropdownOpen">
+              <span class="model-name">{{ selectedModel?.displayName || selectedModel?.modelId || 'Select Model' }}</span>
+              <span class="thinking-badge" *ngIf="selectedModel?.thinkingLevel">{{ formatThinkingLevel(selectedModel?.thinkingLevel) }}</span>
+              <span class="provider-badge">{{ selectedModel?.provider }}</span>
+              <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </button>
+            
+            <div class="selector-dropdown" *ngIf="isModelDropdownOpen">
+              <div class="model-option" *ngFor="let model of userModels" (click)="selectModel(model.id)" [class.selected]="model.id === selectedUserModelId">
+                <span class="model-name">{{ model.displayName || model.modelId }}</span>
+                <span class="thinking-badge" *ngIf="model.thinkingLevel">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
+                <span class="provider-badge">{{ model.provider }}</span>
+              </div>
             </div>
-          </div>
+          </ng-container>
+          <ng-template #singleModelView>
+            <div class="single-model-display">
+              <span class="model-name">{{ selectedModel?.displayName || selectedModel?.modelId || singleModelInfo?.modelId || 'Model' }}</span>
+              <span class="thinking-badge" *ngIf="selectedModel?.thinkingLevel || singleModelInfo?.thinkingLevel">{{ formatThinkingLevel(selectedModel?.thinkingLevel || singleModelInfo?.thinkingLevel) }}</span>
+              <span class="provider-badge">{{ selectedModel?.provider || singleModelInfo?.provider }}</span>
+            </div>
+          </ng-template>
         </div>
         
         <div class="input-row">

@@ -617,3 +617,15 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
   padding: 1px 5px;
   border-radius: 4px;
 }
+
+.single-model-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.85rem;
+  min-height: 28px;
+}
+
