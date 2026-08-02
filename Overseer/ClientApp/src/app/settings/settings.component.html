@@ -26,9 +26,12 @@
       </label>
     </div>
 
-    <div class="margin-y-20">
-      <label class="checkbox-label align-start">
-        <input type="checkbox" [(ngModel)]="enableWebSearch" name="enableWebSearch" class="w-auto m-0 mt-5" aria-describedby="webSearchHint" />
+    <fieldset class="permissions-fieldset">
+      <legend>AI Permissions</legend>
+
+      <div class="margin-y-20 mt-5">
+        <label class="checkbox-label align-start">
+          <input type="checkbox" [(ngModel)]="enableWebSearch" name="enableWebSearch" class="w-auto m-0 mt-5" aria-describedby="webSearchHint" />
         <div>
           <span>Enable Web Search <span class="tier-badge tier-1">Tier 1</span></span>
           <span id="webSearchHint" class="form-hint mt-5">Allow the AI to search the public internet for external information. Lowest risk.</span>
@@ -56,7 +59,7 @@
       </label>
     </div>
 
-    <div class="margin-y-20">
+    <div class="margin-y-20 mb-5">
       <label class="checkbox-label align-start">
         <input type="checkbox" [(ngModel)]="enableGameActions" name="enableGameActions" class="w-auto m-0 mt-5" aria-describedby="gameActionsHint" [disabled]="!enableClientTools" />
         <div>
@@ -66,7 +69,7 @@
       </label>
     </div>
 
-
+    </fieldset>
 
     </div>
     <div class="form-footer">
