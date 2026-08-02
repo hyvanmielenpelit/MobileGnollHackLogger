@@ -30,6 +30,7 @@ export const routes: Routes = [
   { 
     path: 'chat', 
     component: ChatComponent,
+    data: { reuse: true },
     canActivate: [(route: any, state: any) => {
       const auth = inject(AuthService);
       const router = inject(Router);

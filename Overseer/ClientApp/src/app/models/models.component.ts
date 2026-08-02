@@ -66,9 +66,12 @@ export class ModelsComponent implements OnInit {
     });
   }
 
+  allowMultipleModels = false;
+
   ngOnInit() {
     this.settingsService.getSettings().subscribe({
       next: (settings) => {
+        this.allowMultipleModels = settings.allowMultipleModels ?? false;
         if (settings.configuredProviders && settings.configuredProviders.length > 0) {
           this.providers = settings.configuredProviders;
           this.pickerProvider = this.providers[0];

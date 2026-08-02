@@ -103,7 +103,7 @@ public class ChatService
                 allowMultipleModels = settings.AllowMultipleModels;
             }
 
-            if (userModelId.HasValue && allowMultipleModels)
+            if (userModelId.HasValue)
             {
                 var userModel = await dbContext.UserAiModels.FirstOrDefaultAsync(m => m.Id == userModelId.Value && m.AspNetUserId == userId);
                 if (userModel != null)

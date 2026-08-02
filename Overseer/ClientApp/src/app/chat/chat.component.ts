@@ -118,7 +118,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   applySavedModelPreference() {
-    if (!this.allowMultipleModels || this.userModels.length === 0) return;
+    if (this.userModels.length === 0) return;
 
     let targetId: number | null = null;
 
@@ -288,26 +288,13 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.isProduction = settings.isProduction ?? false;
         this.allowMultipleModels = settings.allowMultipleModels ?? false;
 
-        if (this.allowMultipleModels) {
-          // Temporarily assume true to prevent the error popup from flashing while loading
-          this.hasModel = true;
-          this.settingsService.getUserModels().subscribe(models => {
-            this.userModels = models;
-            this.hasModel = this.userModels.length > 0;
-            if (this.userModels.length > 0) {
-              this.applySavedModelPreference();
-            }
-          });
-        } else {
-          this.hasModel = !!settings.model;
-          if (this.hasModel) {
-            this.singleModelInfo = {
-               modelId: settings.model,
-               provider: settings.provider,
-               thinkingLevel: settings.thinkingLevel
-            };
+        this.settingsService.getUserModels().subscribe(models => {
+          this.userModels = models;
+          this.hasModel = this.userModels.length > 0;
+          if (this.userModels.length > 0) {
+            this.applySavedModelPreference();
           }
-        }
+        });
       }
     });
 

@@ -8,7 +8,7 @@
   </p>
 
   <div class="actions-header">
-    <button class="btn-gh" (click)="openModelPicker()">Add Model</button>
+    <button class="btn-gh" (click)="openModelPicker()" [disabled]="!allowMultipleModels && userModels.length > 0">Add Model</button>
   </div>
 
   <div *ngIf="loading" class="loading-state">
