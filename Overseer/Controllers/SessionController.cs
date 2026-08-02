@@ -59,7 +59,8 @@ public class SessionController : ControllerBase
             Title = string.IsNullOrWhiteSpace(request.Title) ? "GnollHack Session" : request.Title,
             CreatedUtc = DateTime.UtcNow,
             LastMessageUtc = DateTime.UtcNow,
-            ClientSettings = request.OverseerSettings
+            ClientSettings = request.OverseerSettings,
+            IsGnollHackSession = request.IsGnollHackSession
         };
         _dbContext.ChatSession.Add(session);
         await _dbContext.SaveChangesAsync();
@@ -188,4 +189,5 @@ public class CreateSessionRequest
     public string? InitialPrompt { get; set; }         // NEW: Prompt to immediately start AI generation
     public string? OverseerSettings { get; set; }
     public string? Title { get; set; }                 // NEW: Contextual title for the session
+    public bool IsGnollHackSession { get; set; }
 }

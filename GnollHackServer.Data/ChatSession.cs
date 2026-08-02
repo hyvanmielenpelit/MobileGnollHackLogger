@@ -19,4 +19,6 @@ public class ChatSession
 
     [MaxLength(4096)]
     public string? ClientSettings { get; set; }
+    
+    public bool IsGnollHackSession { get; set; }
 }

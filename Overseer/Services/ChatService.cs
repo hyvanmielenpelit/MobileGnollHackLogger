@@ -104,6 +104,15 @@ public class ChatService
                 allowMultipleModels = settings.AllowMultipleModels;
             }
 
+            if (sessionId.HasValue)
+            {
+                var tempSession = await dbContext.ChatSession.FindAsync(sessionId.Value);
+                if (tempSession != null && tempSession.IsGnollHackSession)
+                {
+                    userModelId = null; // force first model because GnollHack doesn't support model selection
+                }
+            }
+
             if (userModelId.HasValue)
             {
                 var userModel = await dbContext.UserAiModels.FirstOrDefaultAsync(m => m.Id == userModelId.Value && m.AspNetUserId == userId);
@@ -721,6 +730,7 @@ public class ChatService
                         allTools.Add(new { functionDeclarations = requestTools.FunctionDeclarations });
                     }
                     requestBody["tools"] = allTools;
+                    requestBody["toolConfig"] = new { includeServerSideToolInvocations = true };
                 }
 
                 await foreach (var evt in ExecuteApiWithRetriesAsync(
