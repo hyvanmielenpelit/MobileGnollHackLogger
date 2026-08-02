@@ -68,11 +68,9 @@ namespace Overseer.Services.Tools
         
         private string ApplySpoilerFreeMode(string content)
         {
-            if (content.Length > 500)
-            {
-                return content.Substring(0, 500) + "...\n\n[SPOILER FREE MODE: Remainder of wiki article has been redacted.]";
-            }
-            return content;
+            // In spoiler-free mode, return full content but add a reminder.
+            // The LLM's spoiler policy (from spoiler_policy.md) handles what to share.
+            return content + "\n\n[SPOILER-FREE MODE ACTIVE: Review the spoiler_policy before sharing this information. Only share mechanics, not unrevealed content.]";
         }
     }
 }

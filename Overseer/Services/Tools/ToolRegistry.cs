@@ -24,6 +24,7 @@ namespace Overseer.Services.Tools
         private readonly ILogger<ToolRegistry> _logger;
         private readonly string _guidesPath;
         private string _policyText = string.Empty;
+        private string _spoilerPolicyText = string.Empty;
 
         public ToolRegistry(IEnumerable<IToolHandler> handlers, IClientToolBridge clientBridge, ILogger<ToolRegistry> logger)
         {
@@ -50,6 +51,12 @@ namespace Overseer.Services.Tools
                 _policyText = File.ReadAllText(policyFile);
             }
 
+            var spoilerPolicyFile = Path.Combine(_guidesPath, "spoiler_policy.md");
+            if (File.Exists(spoilerPolicyFile))
+            {
+                _spoilerPolicyText = File.ReadAllText(spoilerPolicyFile);
+            }
+
             foreach (var handler in _handlers)
             {
                 var guideFile = Path.Combine(_guidesPath, $"{handler.ToolName}.md");
@@ -67,6 +74,11 @@ namespace Overseer.Services.Tools
         public string GetPolicyText()
         {
             return _policyText;
+        }
+
+        public string GetSpoilerPolicyText()
+        {
+            return _spoilerPolicyText;
         }
 
         public ToolsForRequest BuildToolsForRequest(string provider, ToolExecutionContext context, bool enableWebSearch, bool enableToolUse, bool enableClientTools, bool enableGameActions)
@@ -150,7 +162,7 @@ namespace Overseer.Services.Tools
             var desc = handler.Description;
             if (context.SpoilerFreeMode)
             {
-                desc += "\n[Spoiler Free Mode Active: This tool will return limited information.]";
+                desc += "\n[Spoiler Free Mode Active: Evaluate returned information against the spoiler policy before sharing with the player.]";
             }
             return desc;
         }

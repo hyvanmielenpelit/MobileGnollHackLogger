@@ -58,4 +58,53 @@ namespace Overseer.Services.Tools
             ""required"": [""filename""]
         }").RootElement;
     }
+
+    public class GetPlayerLibraryTool : ClientToolHandlerBase
+    {
+        public override string ToolName => "get_player_library";
+
+        public override JsonElement ParameterSchema { get; } = JsonDocument.Parse(@"{
+            ""type"": ""object"",
+            ""properties"": {
+                ""item_id"": { ""type"": ""integer"", ""description"": ""ID of a specific manual to read in full. If omitted, returns a list of all discovered manuals with just their names and IDs (no text content)."" }
+            }
+        }").RootElement;
+    }
+
+    public class GetOracleConsultationsTool : ClientToolHandlerBase
+    {
+        public override string ToolName => "get_oracle_consultations";
+
+        public override JsonElement ParameterSchema { get; } = JsonDocument.Parse(@"{
+            ""type"": ""object"",
+            ""properties"": {
+                ""item_id"": { ""type"": ""integer"", ""description"": ""ID of a specific consultation to read in full. If omitted, returns a list of all received consultations with just their names and IDs (no text content)."" }
+            }
+        }").RootElement;
+    }
+
+    public class GetPlayerXlogTool : ClientToolHandlerBase
+    {
+        public override string ToolName => "get_player_xlog";
+
+        public override JsonElement ParameterSchema { get; } = JsonDocument.Parse(@"{
+            ""type"": ""object"",
+            ""properties"": {
+                ""limit"": { ""type"": ""integer"", ""description"": ""Maximum number of entries to return. Defaults to 50."" },
+                ""offset"": { ""type"": ""integer"", ""description"": ""Number of newest entries to skip. Defaults to 0."" }
+            }
+        }").RootElement;
+    }
+
+    public class GetPlayerDumplogsTool : ClientToolHandlerBase
+    {
+        public override string ToolName => "get_player_dumplogs";
+
+        public override JsonElement ParameterSchema { get; } = JsonDocument.Parse(@"{
+            ""type"": ""object"",
+            ""properties"": {
+                ""filename"": { ""type"": ""string"", ""description"": ""Filename of a specific dumplog to read (e.g. gnollhack.Gandalf.20260801100000.txt). Get filenames from the list mode or from get_player_xlog's dumplog_filename field. If omitted, returns a list of all existing dumplog files on the device."" }
+            }
+        }").RootElement;
+    }
 }

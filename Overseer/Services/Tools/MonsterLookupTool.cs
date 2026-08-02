@@ -69,18 +69,7 @@ namespace Overseer.Services.Tools
         
         private string ApplySpoilerFreeMode(string content)
         {
-            if (content.Length > 250)
-            {
-                var summary = content.Substring(0, 250);
-                var nextNewline = content.IndexOf('\n', 250);
-                if (nextNewline > 250 && nextNewline < 500)
-                {
-                    summary = content.Substring(0, nextNewline);
-                }
-                
-                return summary + "\n\n[SPOILER FREE MODE: Detailed stats, resistances, and drop tables have been redacted. The player must discover these in-game.]";
-            }
-            return content;
+            return content + "\n\n[SPOILER-FREE MODE ACTIVE: Review the spoiler_policy before sharing this information. Only share mechanics, not unrevealed content.]";
         }
     }
 }

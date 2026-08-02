@@ -86,6 +86,11 @@ builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Ser
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.GetDirectoryListingTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.RefreshSnapshotTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.GetSaveInfoTool>();
+builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.GetPlayerLibraryTool>();
+builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.GetOracleConsultationsTool>();
+builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.GetPlayerXlogTool>();
+builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.GetPlayerDumplogsTool>();
+builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.SearchServerDumplogsTool>();
 
 var app = builder.Build();
 

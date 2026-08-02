@@ -81,6 +81,7 @@ public class ChatService
         bool enableGameActions = false;
         int? maxInputTokens = null;
         int? maxOutputTokens = null;
+        int overseerMode = 0;
 
         using (var scope = _scopeFactory.CreateScope())
         {
@@ -224,7 +225,7 @@ public class ChatService
             // isGameOn declared above
             bool developerMode = false;
             bool debugLogMessages = false;
-            int overseerMode = 0; // 0=gameplay, 1=technical, 2=developer
+            overseerMode = 0; // 0=gameplay, 1=technical, 2=developer
 
             if (!string.IsNullOrEmpty(session?.ClientSettings))
             {
@@ -403,7 +404,7 @@ public class ChatService
         int toolIterations = 0;
         bool hasToolsToRun = true;
         
-        var execContext = new ToolExecutionContext { SessionId = currentSessionId, IsGameOn = isGameOn, SpoilerFreeMode = spoilerFreeMode };
+        var execContext = new ToolExecutionContext { SessionId = currentSessionId, IsGameOn = isGameOn, SpoilerFreeMode = spoilerFreeMode, OverseerMode = overseerMode };
         
         while (toolIterations <= 5 && hasToolsToRun && !cancellationToken.IsCancellationRequested)
         {
@@ -1396,19 +1397,42 @@ public class ChatService
         sb.AppendLine("- For inherited NetHack mechanics not yet documented on the GnollHack Wiki, the NetHack Wiki (nethackwiki.com) can be referenced as a secondary source, but always caveat that mechanics may differ.");
 
         // ──────────────────────────────────────────────
-        // SECTION 12: Spoiler Control (enhanced)
+        // SECTION 12: Spoiler Control (comprehensive)
         // ──────────────────────────────────────────────
-        // NEW: Skip spoiler restrictions in developer mode (mode 2) — developers need full access
         if (spoilerFreeMode && overseerMode != 2)
         {
             sb.AppendLine();
             sb.AppendLine("## ⚠️ SPOILER-FREE MODE IS ACTIVE");
-            sb.AppendLine("The player has enabled spoiler-free mode. You MUST follow these rules:");
-            sb.AppendLine("- Give hints and guidance WITHOUT revealing specific solutions, item identities, or optimal strategies directly.");
-            sb.AppendLine("- Help the player discover things on their own. Use phrases like \"you might want to try...\" or \"there's something interesting about that item...\" instead of direct answers.");
-            sb.AppendLine("- Do NOT reveal: specific artifact names/powers, optimal ascension kit items, fountain/altar interaction outcomes, puzzle solutions, or quest spoilers.");
-            sb.AppendLine("- Do NOT reveal hidden dungeon branches, secret levels, or boss encounters that are not visible in the current game snapshot.");
-            sb.AppendLine("- You CAN: explain general mechanics, warn about immediate dangers visible in the snapshot, clarify UI elements, and help with technical issues (these are not spoilers).");
+            sb.AppendLine();
+            sb.AppendLine("The player has enabled spoiler-free mode. You must carefully evaluate");
+            sb.AppendLine("every piece of information before sharing it.");
+            sb.AppendLine();
+            sb.AppendLine("### The Core Rule");
+            sb.AppendLine("- **NOT a spoiler**: Explaining HOW game mechanics work — formulas, probabilities, damage calculations, skill effects.");
+            sb.AppendLine("- **IS a spoiler**: Revealing WHAT the player has not yet encountered — future dungeon branches, unmet bosses, undiscovered item identities.");
+            sb.AppendLine();
+            sb.AppendLine("### Tools for Spoiler Checking");
+            sb.AppendLine("Before revealing conditional information, use these tools to check what the player already knows:");
+            sb.AppendLine("- The game snapshot — check what's visible on the current map, in inventory, and in messages");
+            sb.AppendLine("- `get_player_library` — check what manuals/catalogues the player has read");
+            sb.AppendLine("- `get_oracle_consultations` — check what Oracle hints the player has received");
+            sb.AppendLine("Do NOT scan dumplogs for spoiler checking. Only use `get_player_dumplogs` when the player explicitly asks about a past game.");
+            sb.AppendLine();
+            sb.AppendLine("### Quick Reference");
+            sb.AppendLine("✅ SAFE: Combat formulas, probability tables, general mechanics, status effects, UI help, visible threats");
+            sb.AppendLine("⚠️ CHECK FIRST: Specific item identities, monster abilities, artifact powers, level features");
+            sb.AppendLine("🚫 NEVER: Future branches, hidden levels, boss encounters, quest details, optimal strategies, endgame content");
+            sb.AppendLine();
+
+            // Append cached spoiler policy from ToolRegistry (loaded at startup)
+            var spoilerPolicy = _toolRegistry.GetSpoilerPolicyText();
+            if (!string.IsNullOrWhiteSpace(spoilerPolicy))
+            {
+                sb.AppendLine("### Detailed Spoiler Policy");
+                sb.AppendLine(spoilerPolicy);
+            }
+
+            sb.AppendLine("When uncertain, err on the side of caution — give hints rather than direct answers.");
         }
         sb.AppendLine();
 
