@@ -60,17 +60,21 @@ export class SettingsComponent implements OnInit {
   sortMode: 'alphabetical' | 'newest' = 'alphabetical';
 
   get sortedModels() {
-    if (this.sortMode === 'newest') {
-      return [...this.availableModels].sort((a, b) => {
+    return [...this.availableModels].sort((a, b) => {
+      if (a.isRecommended && !b.isRecommended) return -1;
+      if (!a.isRecommended && b.isRecommended) return 1;
+      if (a.isRecommended && b.isRecommended) {
+        return (a.recommendationRank || 0) - (b.recommendationRank || 0);
+      }
+
+      if (this.sortMode === 'newest') {
         if (b.createdAt !== a.createdAt) {
           return b.createdAt - a.createdAt;
         }
-        // Fallback for models with tied/zero createdAt (like Gemini)
-        // Reverse alphabetical with numeric sort will put newer versions first (e.g., 3.5 before 2.5)
         return b.id.localeCompare(a.id, undefined, { numeric: true, sensitivity: 'base' });
-      });
-    }
-    return [...this.availableModels].sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }));
+      }
+      return a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' });
+    });
   }
 
   get isDirty(): boolean {
@@ -249,10 +253,13 @@ export class SettingsComponent implements OnInit {
   onModelSelect() {
     this.selectedModelObj = this.availableModels.find(m => m.id === this.selectedModel) || null;
     if (this.selectedModelObj && this.selectedModelObj.supportedThinkingLevels && this.selectedModelObj.supportedThinkingLevels.length > 0) {
-      // Pick a default if available, e.g. medium or the first one
-      this.modalThinkingLevel = this.selectedModelObj.supportedThinkingLevels.includes('medium') 
-        ? 'medium' 
-        : this.selectedModelObj.supportedThinkingLevels[0];
+      if (this.selectedModelObj.isRecommended && this.selectedModelObj.recommendedThinkingLevel && this.selectedModelObj.supportedThinkingLevels.includes(this.selectedModelObj.recommendedThinkingLevel)) {
+        this.modalThinkingLevel = this.selectedModelObj.recommendedThinkingLevel;
+      } else {
+        this.modalThinkingLevel = this.selectedModelObj.supportedThinkingLevels.includes('medium') 
+          ? 'medium' 
+          : this.selectedModelObj.supportedThinkingLevels[0];
+      }
     } else {
       this.modalThinkingLevel = '';
     }

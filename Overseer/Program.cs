@@ -68,6 +68,7 @@ builder.Services.AddSingleton<CryptoService>();
 builder.Services.AddScoped<ChatService>();
 builder.Services.AddScoped<SettingsService>();
 builder.Services.AddSingleton<ModelMetadataService>();
+builder.Services.AddSingleton<RecommendedModelService>();
 builder.Services.AddSignalR();
 builder.Services.AddTransient<IEmailSender, EmailSender>();
 builder.Services.AddTransient<EmailSender>();

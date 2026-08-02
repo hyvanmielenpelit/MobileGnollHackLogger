@@ -17,14 +17,16 @@ public class SettingsController : ControllerBase
     private readonly IConfiguration _configuration;
     private readonly ModelMetadataService _modelMetadataService;
     private readonly IWebHostEnvironment _env;
+    private readonly RecommendedModelService _recommendedModelService;
 
-    public SettingsController(SettingsService settingsService, IHttpClientFactory httpClientFactory, IConfiguration configuration, ModelMetadataService modelMetadataService, IWebHostEnvironment env)
+    public SettingsController(SettingsService settingsService, IHttpClientFactory httpClientFactory, IConfiguration configuration, ModelMetadataService modelMetadataService, IWebHostEnvironment env, RecommendedModelService recommendedModelService)
     {
         _settingsService = settingsService;
         _httpClientFactory = httpClientFactory;
         _configuration = configuration;
         _modelMetadataService = modelMetadataService;
         _env = env;
+        _recommendedModelService = recommendedModelService;
     }
 
     [HttpGet]
@@ -240,6 +242,20 @@ public class SettingsController : ControllerBase
                 return BadRequest(new { message = $"Unsupported provider: {provider}" });
             }
 
+            // Apply recommendation flags
+            var recommended = _recommendedModelService.GetRecommendedModels(provider);
+            for (int i = 0; i < recommended.Count; i++)
+            {
+                var rec = recommended[i];
+                var model = models.FirstOrDefault(m => m.Id == rec.Model);
+                if (model != null)
+                {
+                    model.IsRecommended = true;
+                    model.RecommendationRank = i + 1;
+                    model.RecommendedThinkingLevel = rec.ThinkingLevel;
+                }
+            }
+
             return Ok(models);
         }
         catch (Exception ex)
@@ -259,6 +275,10 @@ public class ApiModelDto
     public int ContextWindowSize { get; set; }
     public int MaxInputTokens { get; set; }
     public int MaxOutputTokens { get; set; }
+    
+    public bool IsRecommended { get; set; }
+    public int RecommendationRank { get; set; }
+    public string? RecommendedThinkingLevel { get; set; }
 }
 
 public class UpdateSettingsRequest

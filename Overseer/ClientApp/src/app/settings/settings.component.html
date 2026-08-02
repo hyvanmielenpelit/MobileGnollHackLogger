@@ -154,7 +154,7 @@
         </label>
       </div>
       <select [(ngModel)]="selectedModel" (ngModelChange)="onModelSelect()" size="10" class="model-listbox gh-input">
-        <option *ngFor="let m of sortedModels" [value]="m.id">{{ m.description }}</option>
+        <option *ngFor="let m of sortedModels" [value]="m.id">{{ m.description }}{{ m.isRecommended ? ' ⭐' : '' }}</option>
       </select>
       
       <div class="model-meta">
@@ -174,7 +174,7 @@
           <strong>Supported Thinking:</strong>
           <ng-container *ngIf="selectedModelObj && selectedModelObj.supportedThinkingLevels && selectedModelObj.supportedThinkingLevels.length > 0; else noThinking">
             <select [(ngModel)]="modalThinkingLevel" class="gh-input m-0 w-100">
-              <option *ngFor="let level of selectedModelObj.supportedThinkingLevels" [value]="level">{{ level }}</option>
+              <option *ngFor="let level of selectedModelObj.supportedThinkingLevels" [value]="level">{{ level }}{{ selectedModelObj.isRecommended && selectedModelObj.recommendedThinkingLevel === level ? ' ⭐' : '' }}</option>
             </select>
           </ng-container>
           <ng-template #noThinking>

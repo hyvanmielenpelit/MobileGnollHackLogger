@@ -25,6 +25,9 @@ export interface ApiModelDto {
   contextWindowSize: number;
   maxInputTokens: number;
   maxOutputTokens: number;
+  isRecommended?: boolean;
+  recommendationRank?: number;
+  recommendedThinkingLevel?: string;
 }
 
 @Injectable({
