@@ -183,6 +183,16 @@ label { display: block; margin-bottom: 5px; font-weight: bold; }
   box-shadow: 0 0 8px var(--gold-glow);
 }
 
+.btn-warning {
+  color: var(--color-error);
+  border-color: var(--color-error);
+}
+.btn-warning:hover {
+  background: rgba(255, 60, 60, 0.1);
+  border-color: var(--color-error);
+  box-shadow: 0 0 8px var(--color-error);
+}
+
 .api-instructions {
   margin-top: 15px;
   padding-left: 20px;

@@ -7,11 +7,15 @@
     <div class="form-content">
     <div>
       <label>Provider</label>
-      <select [(ngModel)]="provider" name="provider" class="gh-input">
-        <option value="OpenAI">OpenAI</option>
-        <option value="Anthropic">Anthropic</option>
-        <option value="Google">Google</option>
-      </select>
+      <div style="display: flex; gap: 10px; align-items: center;">
+        <select [(ngModel)]="provider" name="provider" class="gh-input m-0 w-auto">
+          <option value="Anthropic">Anthropic</option>
+          <option value="Google">Google</option>
+          <option value="OpenAI">OpenAI</option>
+        </select>
+        <button type="button" class="btn-info m-0" (click)="openApiKeyInfo()" interestfor="apiKeyTooltip" style="anchor-name: --btn-info;">ℹ️</button>
+        <div popover="hint" id="apiKeyTooltip" class="gh-tooltip">Click for instructions on how to get an API key</div>
+      </div>
     </div>
     <div>
       <label for="apiKeyInput">API Key</label>
@@ -21,8 +25,7 @@
         <div class="flex-center info-icon-wrapper">
           <span *ngIf="apiKey.length > 0" title="API key set but not saved yet." class="status-icon status-warning">&#10004;</span>
           <span *ngIf="apiKey.length === 0 && hasApiKey" title="An API key is currently saved." class="status-icon status-success">&#10004;</span>
-          <button *ngIf="apiKey.length === 0 && !hasApiKey" type="button" class="btn-info" (click)="openApiKeyInfo()" interestfor="apiKeyTooltip" style="anchor-name: --btn-info;">ℹ️</button>
-          <div popover="hint" id="apiKeyTooltip" class="gh-tooltip">Click for instructions on how to get an API key</div>
+          <span *ngIf="apiKey.length === 0 && !hasApiKey" title="API Key is not set." class="status-icon status-error">⚠️</span>
         </div>
         <button *ngIf="hasApiKey" type="button" class="btn-gh btn-gh-delete btn-delete-api" (click)="deleteApiKey()" [disabled]="loading">Delete</button>
       </div>
