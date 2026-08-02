@@ -154,13 +154,9 @@
       <label for="editThinkingLevelSelect">Thinking Level (Optional)</label>
       <select id="editThinkingLevelSelect" [(ngModel)]="editThinkingLevelSelect" (change)="onEditThinkingLevelChange()" class="gh-input w-100">
         <option value="">None</option>
-        <option value="minimal">Minimal</option>
-        <option value="low">Low</option>
-        <option value="medium">Medium</option>
-        <option value="high">High</option>
-        <option value="xhigh">Extra High</option>
-        <option value="max">Max</option>
-        <option value="pro">Pro</option>
+        <option *ngFor="let level of editSupportedThinkingLevels" [value]="level">
+          {{ formatThinkingLevel(level) }}
+        </option>
         <option value="custom">Custom...</option>
       </select>
     </div>

@@ -40,7 +40,8 @@ export class ModelsComponent implements OnInit {
   editingModel: UserAiModel | null = null;
   editDisplayName = '';
   editThinkingLevel = '';
-  editThinkingLevelSelect = '';
+  editThinkingLevelSelect: string = '';
+  editSupportedThinkingLevels: string[] = [];
   editMaxInputTokens: number | null = null;
   editMaxOutputTokens: number | null = null;
 
@@ -353,15 +354,30 @@ export class ModelsComponent implements OnInit {
     this.editDisplayName = model.displayName || model.modelId;
     this.editThinkingLevel = model.thinkingLevel || '';
     
-    const standardOptions = ['', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'pro'];
-    if (standardOptions.includes(this.editThinkingLevel)) {
-      this.editThinkingLevelSelect = this.editThinkingLevel;
-    } else {
-      this.editThinkingLevelSelect = 'custom';
-    }
-
     this.editMaxInputTokens = model.maxInputTokens || null;
     this.editMaxOutputTokens = model.maxOutputTokens || null;
+    
+    this.editSupportedThinkingLevels = [];
+    if (this.editThinkingLevel) {
+      this.editThinkingLevelSelect = 'custom';
+    } else {
+      this.editThinkingLevelSelect = '';
+    }
+
+    this.settingsService.getAvailableModels(model.provider, '').subscribe({
+      next: (models) => {
+        const meta = models.find(m => m.id === model.modelId);
+        if (meta) {
+          this.editSupportedThinkingLevels = meta.supportedThinkingLevels || [];
+          if (this.editThinkingLevel && !this.editSupportedThinkingLevels.includes(this.editThinkingLevel)) {
+            this.editThinkingLevelSelect = 'custom';
+          } else {
+            this.editThinkingLevelSelect = this.editThinkingLevel;
+          }
+        }
+      },
+      error: (err) => console.error("Failed to fetch models for edit", err)
+    });
 
     this.editModelDialog?.nativeElement.showModal();
   }
