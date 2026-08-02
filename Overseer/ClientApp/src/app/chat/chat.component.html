@@ -23,6 +23,8 @@
     </ul>
     <div class="bottom-links">
       <a *ngIf="!isProduction" routerLink="/debug-log" queryParamsHandling="preserve">Debug Log</a>
+      <a routerLink="/api-keys" queryParamsHandling="preserve">API Keys</a>
+      <a routerLink="/models" queryParamsHandling="preserve">Models</a>
       <a routerLink="/settings" queryParamsHandling="preserve">Settings</a>
       <a href="#" (click)="logout($event)">Logout</a>
     </div>
@@ -57,7 +59,7 @@
       <div *ngFor="let msg of messages; let i = index" class="message-box" [ngClass]="msg.role">
         <div class="message-header">
           <img *ngIf="msg.role === 'assistant'" src="/img/gnoll-overseer-avatar-128x128-static.webp" class="overseer-avatar" alt="Overseer" width="64" height="64" />
-          <strong>{{ msg.role === 'user' ? 'You' : 'Overseer' }}</strong>
+          <strong>{{ msg.role === 'user' ? 'You' : (msg.modelDisplayName ? msg.modelDisplayName : 'Overseer') }}</strong>
           <span class="msg-time" *ngIf="msg.timestampUtc">{{ msg.timestampUtc | relativeTime }}</span>
         </div>
         <div *ngIf="msg.attachments && msg.attachments.length > 0" class="msg-attachments">
@@ -160,7 +162,16 @@
       <div class="input-area">
         <button class="add-media-btn" (click)="triggerFileInput()" [disabled]="pendingAttachments.length >= 5">+</button>
         <input type="file" id="fileInput" hidden multiple accept=".html,.htm,.txt,.md,.png,.jpg,.jpeg,.webp" (change)="onFileSelected($event)">
-        <textarea #promptInput [(ngModel)]="currentInput" (ngModelChange)="saveDraft()" (keyup.enter)="sendMessage()" (paste)="onPaste($event)" placeholder="Ask the Overseer" autofocus></textarea>
+        
+        <div style="flex-grow: 1; display: flex; flex-direction: column;">
+          <div *ngIf="allowMultipleModels && userModels.length > 0" style="margin-bottom: 5px;">
+            <select [(ngModel)]="selectedUserModelId" class="gh-input m-0 w-auto" style="padding: 2px 8px; font-size: 0.85em; height: auto;">
+              <option *ngFor="let model of userModels" [value]="model.id">{{ model.displayName }}</option>
+            </select>
+          </div>
+          <textarea #promptInput [(ngModel)]="currentInput" (ngModelChange)="saveDraft()" (keyup.enter)="sendMessage()" (paste)="onPaste($event)" placeholder="Ask the Overseer" autofocus></textarea>
+        </div>
+        
         <button class="btn-gh ms-10" (click)="sendMessage()" [disabled]="isStreaming || (!currentInput.trim() && pendingAttachments.length === 0)">Send</button>
       </div>
     </div>

@@ -30,6 +30,7 @@ export interface ChatMessage {
   timestampUtc: string;
   attachments?: ChatMessageAttachment[];
   toolCalls?: ChatMessageToolCall[];
+  modelDisplayName?: string;
 }
 
 export interface ChatStreamEvent {
@@ -59,14 +60,14 @@ export class ChatService {
     return this.http.post('/api/chat/report', { messageId });
   }
 
-  async *streamMessage(sessionId: number | null, message: string, attachments?: ChatMessageAttachment[], abortSignal?: AbortSignal): AsyncGenerator<ChatStreamEvent, void, unknown> {
+  async *streamMessage(sessionId: number | null, message: string, attachments?: ChatMessageAttachment[], userModelId?: number, abortSignal?: AbortSignal): AsyncGenerator<ChatStreamEvent, void, unknown> {
     const response = await fetch('/api/chat/send', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-XSRF-TOKEN': this.getCookie('XSRF-TOKEN') || ''
       },
-      body: JSON.stringify({ sessionId, message, attachments: attachments || [] }),
+      body: JSON.stringify({ sessionId, message, attachments: attachments || [], userModelId }),
       signal: abortSignal
     });
 

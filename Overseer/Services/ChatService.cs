@@ -5,6 +5,7 @@ using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
 using MobileGnollHackLogger.Data;
+using Microsoft.EntityFrameworkCore;
 using Overseer.Controllers;
 using Microsoft.AspNetCore.SignalR;
 using Overseer.Hubs;
@@ -46,11 +47,11 @@ public class ChatService
         return text.Trim();
     }
 
-    public async Task GenerateAndBroadcastMessageAsync(long sessionId, string message, List<SendMessageAttachment>? attachments, string userId, bool isHidden, CancellationToken cancellationToken)
+    public async Task GenerateAndBroadcastMessageAsync(long sessionId, string message, List<SendMessageAttachment>? attachments, string userId, bool isHidden, CancellationToken cancellationToken, long? userModelId = null)
     {
         try
         {
-            await foreach (var evt in StreamMessageAsync(sessionId, message, attachments, userId, isHidden, cancellationToken))
+            await foreach (var evt in StreamMessageAsync(sessionId, message, attachments, userId, isHidden, cancellationToken, userModelId))
             {
                 await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", evt, cancellationToken);
             }
@@ -62,7 +63,7 @@ public class ChatService
         }
     }
 
-    public async IAsyncEnumerable<ChatEvent> StreamMessageAsync(long? sessionId, string message, List<SendMessageAttachment>? attachments, string userId, bool isHidden, [EnumeratorCancellation] CancellationToken cancellationToken)
+    public async IAsyncEnumerable<ChatEvent> StreamMessageAsync(long? sessionId, string message, List<SendMessageAttachment>? attachments, string userId, bool isHidden, [EnumeratorCancellation] CancellationToken cancellationToken, long? userModelId = null)
     {
         if (string.IsNullOrEmpty(userId)) yield break;
 
@@ -85,6 +86,8 @@ public class ChatService
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var settings = await dbContext.UserAiSettings.FindAsync(userId);
+            bool allowMultipleModels = false;
+            
             if (settings != null)
             {
                 if (!string.IsNullOrEmpty(settings.DefaultProvider)) provider = settings.DefaultProvider;
@@ -97,16 +100,47 @@ public class ChatService
                 enableToolUse = settings.EnableToolUse;
                 enableClientTools = settings.EnableClientTools;
                 enableGameActions = settings.EnableGameActions;
+                allowMultipleModels = settings.AllowMultipleModels;
+            }
 
-                if (!string.IsNullOrEmpty(settings.EncryptedApiKey) && !string.IsNullOrEmpty(settings.ApiKeyNonce) && !string.IsNullOrEmpty(settings.ApiKeyTag))
+            if (userModelId.HasValue && allowMultipleModels)
+            {
+                var userModel = await dbContext.UserAiModels.FirstOrDefaultAsync(m => m.Id == userModelId.Value && m.AspNetUserId == userId);
+                if (userModel != null)
                 {
-                    apiKey = _cryptoService.Decrypt(settings.EncryptedApiKey, settings.ApiKeyNonce, settings.ApiKeyTag, userId);
+                    provider = userModel.Provider;
+                    model = userModel.ModelId;
+                    thinkingLevel = userModel.ThinkingLevel;
                 }
+            }
+            else if (!userModelId.HasValue || !allowMultipleModels)
+            {
+                var firstModel = await dbContext.UserAiModels
+                    .Where(m => m.AspNetUserId == userId)
+                    .OrderBy(m => m.OrderIndex)
+                    .FirstOrDefaultAsync();
+                
+                if (firstModel != null)
+                {
+                    provider = firstModel.Provider;
+                    model = firstModel.ModelId;
+                    thinkingLevel = firstModel.ThinkingLevel;
+                }
+            }
+
+            var providerKey = await dbContext.UserAiApiKeys.FirstOrDefaultAsync(k => k.AspNetUserId == userId && k.Provider == provider);
+            if (providerKey != null && !string.IsNullOrEmpty(providerKey.EncryptedApiKey) && !string.IsNullOrEmpty(providerKey.ApiKeyNonce) && !string.IsNullOrEmpty(providerKey.ApiKeyTag))
+            {
+                apiKey = _cryptoService.Decrypt(providerKey.EncryptedApiKey, providerKey.ApiKeyNonce, providerKey.ApiKeyTag, userId);
+            }
+            else if (settings != null && settings.DefaultProvider == provider && !string.IsNullOrEmpty(settings.EncryptedApiKey) && !string.IsNullOrEmpty(settings.ApiKeyNonce) && !string.IsNullOrEmpty(settings.ApiKeyTag))
+            {
+                apiKey = _cryptoService.Decrypt(settings.EncryptedApiKey, settings.ApiKeyNonce, settings.ApiKeyTag, userId);
             }
 
             if (string.IsNullOrEmpty(apiKey))
             {
-                yield return new ChatEvent { Type = "error", Data = "Error: API Key not configured. Please configure it in Settings." };
+                yield return new ChatEvent { Type = "error", Data = $"Error: API Key not configured for {provider}. Please configure it in the API Keys page." };
                 yield break;
             }
 
@@ -793,7 +827,10 @@ public class ChatService
                     ChatSessionId = currentSessionId,
                     Role = "assistant",
                     Content = fullResponse,
-                    TimestampUtc = DateTime.UtcNow
+                    TimestampUtc = DateTime.UtcNow,
+                    ProviderUsed = provider,
+                    ModelUsed = model,
+                    ThinkingLevelUsed = thinkingLevel
                 };
                 dbContext.ChatMessage.Add(asstMsg);
                 session.LastMessageUtc = DateTime.UtcNow;

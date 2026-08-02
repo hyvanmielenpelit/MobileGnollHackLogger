@@ -16,17 +16,8 @@ export class SettingsComponent implements OnInit {
   
   @ViewChild('successToast') successToast!: ElementRef<HTMLElement>;
   @ViewChild('confirmDialog') confirmDialog!: ElementRef<HTMLDialogElement>;
-  @ViewChild('apiKeyInfoDialog') apiKeyInfoDialog!: ElementRef<HTMLDialogElement>;
-  @ViewChild('modelPickerDialog') modelPickerDialog!: ElementRef<HTMLDialogElement>;
-
-  provider = 'OpenAI';
-  model = '';
-  thinkingLevel = '';
-  thinkingLevelSelect = '';
-
-  initProvider = 'OpenAI';
-  initModel = '';
-  initThinkingLevel = '';
+  allowMultipleModels = false;
+  initAllowMultipleModels = false;
 
   spoilerFreeMode = true;
   initSpoilerFreeMode = true;
@@ -45,50 +36,18 @@ export class SettingsComponent implements OnInit {
   enableGameActions = false;
   initEnableGameActions = false;
 
-  apiKey = '';
-  hasApiKey = false;
   loading = false;
   saved = false;
 
-  // Model Picker State
-  loadingModels = false;
-  availableModels: ApiModelDto[] = [];
-  selectedModel = '';
-  selectedModelObj: ApiModelDto | null = null;
-  modalThinkingLevel = '';
-  modelError = '';
-  sortMode: 'alphabetical' | 'newest' = 'alphabetical';
-
-  get sortedModels() {
-    return [...this.availableModels].sort((a, b) => {
-      if (a.isRecommended && !b.isRecommended) return -1;
-      if (!a.isRecommended && b.isRecommended) return 1;
-      if (a.isRecommended && b.isRecommended) {
-        return (a.recommendationRank || 0) - (b.recommendationRank || 0);
-      }
-
-      if (this.sortMode === 'newest') {
-        if (b.createdAt !== a.createdAt) {
-          return b.createdAt - a.createdAt;
-        }
-        return b.id.localeCompare(a.id, undefined, { numeric: true, sensitivity: 'base' });
-      }
-      return a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' });
-    });
-  }
-
   get isDirty(): boolean {
-    return this.provider !== this.initProvider ||
-           this.model !== this.initModel ||
-           this.thinkingLevel !== this.initThinkingLevel ||
+    return this.allowMultipleModels !== this.initAllowMultipleModels ||
            this.spoilerFreeMode !== this.initSpoilerFreeMode ||
            this.maxInputTokens !== this.initMaxInputTokens ||
            this.maxOutputTokens !== this.initMaxOutputTokens ||
            this.enableWebSearch !== this.initEnableWebSearch ||
            this.enableToolUse !== this.initEnableToolUse ||
            this.enableClientTools !== this.initEnableClientTools ||
-           this.enableGameActions !== this.initEnableGameActions ||
-           this.apiKey.length > 0;
+           this.enableGameActions !== this.initEnableGameActions;
   }
 
   canDeactivate(): Promise<boolean> | boolean {
@@ -121,19 +80,10 @@ export class SettingsComponent implements OnInit {
 
     this.settingsService.getSettings().subscribe(s => {
       if (s) {
-        if (s.provider !== undefined && s.provider !== null) { this.provider = s.provider; this.initProvider = s.provider; }
-        if (s.model !== undefined && s.model !== null) { this.model = s.model; this.initModel = s.model; }
-        if (s.thinkingLevel !== undefined && s.thinkingLevel !== null) {
-          this.thinkingLevel = s.thinkingLevel;
-          this.initThinkingLevel = s.thinkingLevel;
-          const standardOptions = ['', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'pro'];
-          if (standardOptions.includes(this.thinkingLevel)) {
-            this.thinkingLevelSelect = this.thinkingLevel;
-          } else {
-            this.thinkingLevelSelect = 'custom';
-          }
+        if (s.allowMultipleModels !== undefined) {
+          this.allowMultipleModels = s.allowMultipleModels;
+          this.initAllowMultipleModels = s.allowMultipleModels;
         }
-        this.hasApiKey = s.hasApiKey;
         if (s.spoilerFreeMode !== undefined) {
           this.spoilerFreeMode = s.spoilerFreeMode;
           this.initSpoilerFreeMode = s.spoilerFreeMode;
@@ -166,18 +116,12 @@ export class SettingsComponent implements OnInit {
     });
   }
 
-  onSelectChange() {
-    if (this.thinkingLevelSelect !== 'custom') {
-      this.thinkingLevel = this.thinkingLevelSelect;
-    } else {
-      this.thinkingLevel = ''; // Clear for user to type
-    }
-  }
-
   saveSettings() {
     this.loading = true;
     this.saved = false;
-    this.settingsService.saveSettings(this.provider, this.model, this.apiKey, this.thinkingLevel, this.spoilerFreeMode, this.maxInputTokens, this.maxOutputTokens, this.enableWebSearch, this.enableToolUse, this.enableClientTools, this.enableGameActions).subscribe(() => {
+    // We send empty strings for the legacy provider/model/apiKey fields 
+    // since the API might still require them in the body, but they are now managed in other tabs.
+    this.settingsService.saveSettings('', '', '', undefined, this.spoilerFreeMode, this.maxInputTokens, this.maxOutputTokens, this.enableWebSearch, this.enableToolUse, this.enableClientTools, this.enableGameActions, this.allowMultipleModels).subscribe(() => {
       this.loading = false;
       
       const toast = this.successToast?.nativeElement as any;
@@ -191,13 +135,7 @@ export class SettingsComponent implements OnInit {
         setTimeout(() => this.saved = false, 3000);
       }
 
-      if (this.apiKey) {
-        this.hasApiKey = true;
-        this.apiKey = '';
-      }
-      this.initProvider = this.provider;
-      this.initModel = this.model;
-      this.initThinkingLevel = this.thinkingLevel;
+      this.initAllowMultipleModels = this.allowMultipleModels;
       this.initSpoilerFreeMode = this.spoilerFreeMode;
       this.initMaxInputTokens = this.maxInputTokens;
       this.initMaxOutputTokens = this.maxOutputTokens;
@@ -206,123 +144,5 @@ export class SettingsComponent implements OnInit {
       this.initEnableClientTools = this.enableClientTools;
       this.initEnableGameActions = this.enableGameActions;
     });
-  }
-
-  deleteApiKey() {
-    if (confirm("Are you sure you want to delete your saved API key?")) {
-      this.loading = true;
-      this.settingsService.deleteApiKey().subscribe({
-        next: () => {
-          this.loading = false;
-          this.hasApiKey = false;
-          this.apiKey = '';
-        },
-        error: (err) => {
-          this.loading = false;
-          console.error("Failed to delete API key", err);
-        }
-      });
-    }
-  }
-
-  checkModels() {
-    this.loadingModels = true;
-    this.modelError = '';
-    this.availableModels = [];
-    this.selectedModel = '';
-    this.selectedModelObj = null;
-    this.modalThinkingLevel = '';
-    this.modelPickerDialog?.nativeElement.showModal();
-
-    this.settingsService.getAvailableModels(this.provider, this.apiKey).subscribe({
-      next: (models) => {
-        this.availableModels = models;
-        this.loadingModels = false;
-        if (this.availableModels.length === 0) {
-          this.modelError = 'No models are currently available for this provider.';
-          return;
-        }
-
-        // Try to find the existing active model
-        let targetModel = this.availableModels.find(m => m.id === this.model);
-        
-        // If not found, use the first sorted model (which will be the most recommended, or just the first)
-        if (!targetModel && this.sortedModels.length > 0) {
-          targetModel = this.sortedModels[0];
-        }
-
-        if (targetModel) {
-          this.selectedModel = targetModel.id;
-          this.onModelSelect();
-        }
-      },
-      error: (err) => {
-        this.loadingModels = false;
-        this.modelError = err.error?.message || err.message || 'An unknown error occurred while fetching models.';
-      }
-    });
-  }
-
-  onModelSelect() {
-    this.selectedModelObj = this.availableModels.find(m => m.id === this.selectedModel) || null;
-    if (this.selectedModelObj && this.selectedModelObj.supportedThinkingLevels && this.selectedModelObj.supportedThinkingLevels.length > 0) {
-      if (this.selectedModel === this.model && this.thinkingLevel && this.selectedModelObj.supportedThinkingLevels.includes(this.thinkingLevel)) {
-        this.modalThinkingLevel = this.thinkingLevel;
-      } else if (this.selectedModelObj.isRecommended && this.selectedModelObj.recommendedThinkingLevel && this.selectedModelObj.supportedThinkingLevels.includes(this.selectedModelObj.recommendedThinkingLevel)) {
-        this.modalThinkingLevel = this.selectedModelObj.recommendedThinkingLevel;
-      } else {
-        this.modalThinkingLevel = this.selectedModelObj.supportedThinkingLevels.includes('medium') 
-          ? 'medium' 
-          : this.selectedModelObj.supportedThinkingLevels[0];
-      }
-    } else {
-      this.modalThinkingLevel = '';
-    }
-  }
-
-  closeModal() {
-    this.modelPickerDialog?.nativeElement.close();
-    this.modelError = '';
-    this.availableModels = [];
-    this.selectedModelObj = null;
-  }
-
-  onSortChange() {
-    if (this.sortedModels.length > 0) {
-      this.selectedModel = this.sortedModels[0].id;
-      this.onModelSelect();
-    }
-  }
-
-  applySelectedModel() {
-    if (this.selectedModel) {
-      this.model = this.selectedModel;
-      
-      // Map the thinking level back to the main form
-      if (this.modalThinkingLevel) {
-        this.thinkingLevel = this.modalThinkingLevel;
-        const standardOptions = ['', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'pro'];
-        if (standardOptions.includes(this.thinkingLevel)) {
-          this.thinkingLevelSelect = this.thinkingLevel;
-        } else {
-          this.thinkingLevelSelect = 'custom';
-        }
-      } else {
-        this.thinkingLevel = '';
-        this.thinkingLevelSelect = '';
-      }
-      
-      this.maxInputTokens = this.selectedModelObj?.maxInputTokens ?? null;
-      this.maxOutputTokens = this.selectedModelObj?.maxOutputTokens ?? null;
-    }
-    this.closeModal();
-  }
-
-  openApiKeyInfo() {
-    this.apiKeyInfoDialog?.nativeElement.showModal();
-  }
-
-  closeApiKeyInfo() {
-    this.apiKeyInfoDialog?.nativeElement.close();
   }
 }

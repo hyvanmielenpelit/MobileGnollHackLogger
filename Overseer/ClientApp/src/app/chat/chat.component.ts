@@ -90,6 +90,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   errorMessage = '';
   hasApiKey = true;
   hasModel = true;
+  allowMultipleModels = false;
+
+  userModels: import('../services/settings.service').UserAiModel[] = [];
+  selectedUserModelId: number | null = null;
 
   isReporting = false;
   reportingMessageId: number | null = null;
@@ -224,6 +228,16 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.hasApiKey = settings.hasApiKey;
         this.hasModel = !!settings.model;
         this.isProduction = settings.isProduction ?? false;
+        this.allowMultipleModels = settings.allowMultipleModels ?? false;
+
+        if (this.allowMultipleModels) {
+          this.settingsService.getUserModels().subscribe(models => {
+            this.userModels = models;
+            if (this.userModels.length > 0 && !this.selectedUserModelId) {
+              this.selectedUserModelId = this.userModels[0].id ?? null;
+            }
+          });
+        }
       }
     });
 
@@ -585,7 +599,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.debugService.log(`Starting UI Request to backend for chat message.`);
 
     try {
-      for await (const evt of this.chatService.streamMessage(this.currentSessionId, message, attachmentsPayload, this.abortController.signal)) {
+      const modelIdToUse = this.allowMultipleModels && this.selectedUserModelId ? this.selectedUserModelId : undefined;
+      for await (const evt of this.chatService.streamMessage(this.currentSessionId, message, attachmentsPayload, modelIdToUse, this.abortController.signal)) {
         if (evt.type === 'sessionId') {
           this.currentSessionId = Number(evt.data);
           const urlTree = this.router.createUrlTree([], {

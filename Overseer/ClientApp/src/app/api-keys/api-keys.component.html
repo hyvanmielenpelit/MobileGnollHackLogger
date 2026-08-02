@@ -1,0 +1,42 @@
+<div class="settings-container">
+  <h2>API Keys</h2>
+  <p class="settings-description">
+    Manage your API keys for different AI providers. Keys are encrypted before being stored in the database.
+  </p>
+
+  <div *ngIf="loading" class="loading-state">
+    <span class="spinner"></span> Loading API Keys...
+  </div>
+
+  <div *ngIf="!loading" class="api-keys-list">
+    <div *ngFor="let provider of providers" class="provider-card">
+      <div class="provider-header">
+        <h3>{{ provider }}</h3>
+        <span class="status-badge" [class.has-key]="keyStatuses[provider]">
+          {{ keyStatuses[provider] ? 'Key Saved' : 'No Key' }}
+        </span>
+      </div>
+
+      <div class="provider-body">
+        <div *ngIf="keyStatuses[provider]" class="key-actions">
+          <p class="key-info-text">You have a saved API key for this provider.</p>
+          <button class="btn-danger" (click)="deleteKey(provider)" [disabled]="savingProvider === provider">
+            <span *ngIf="savingProvider === provider" class="spinner-small"></span>
+            Delete Key
+          </button>
+        </div>
+
+        <div *ngIf="!keyStatuses[provider]" class="key-actions">
+          <div class="form-group">
+            <label [for]="'key-' + provider">API Key</label>
+            <input type="password" [id]="'key-' + provider" [(ngModel)]="newKeys[provider]" placeholder="Enter API Key" class="form-control">
+          </div>
+          <button class="btn-primary" (click)="saveKey(provider)" [disabled]="!newKeys[provider] || savingProvider === provider">
+            <span *ngIf="savingProvider === provider" class="spinner-small"></span>
+            Save Key
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

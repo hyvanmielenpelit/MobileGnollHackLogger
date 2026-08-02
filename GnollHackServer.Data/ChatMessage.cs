@@ -20,4 +20,13 @@ public class ChatMessage
     public int? TokensUsed { get; set; }
     
     public bool IsHidden { get; set; } = false;
+
+    [MaxLength(64)]
+    public string? ProviderUsed { get; set; }
+
+    [MaxLength(128)]
+    public string? ModelUsed { get; set; }
+
+    [MaxLength(32)]
+    public string? ThinkingLevelUsed { get; set; }
 }

@@ -5,58 +5,17 @@
   </div>
   <form (ngSubmit)="saveSettings()" class="settings-form">
     <div class="form-content">
-    <div>
-      <label>Provider</label>
-      <div style="display: flex; gap: 10px; align-items: center;">
-        <select [(ngModel)]="provider" name="provider" class="gh-input m-0 w-auto">
-          <option value="Anthropic">Anthropic</option>
-          <option value="Google">Google</option>
-          <option value="OpenAI">OpenAI</option>
-        </select>
-        <button type="button" class="btn-info m-0" (click)="openApiKeyInfo()" interestfor="apiKeyTooltip" style="anchor-name: --btn-info;">ℹ️</button>
-        <div popover="hint" id="apiKeyTooltip" class="gh-tooltip">Click for instructions on how to get an API key</div>
-      </div>
-    </div>
-    <div>
-      <label for="apiKeyInput">API Key</label>
-      <span id="apiKeyHint" class="form-hint">Leave blank to keep existing</span>
-      <div class="api-key-grid">
-        <input type="password" id="apiKeyInput" [(ngModel)]="apiKey" name="apiKey" class="gh-input m-0" aria-describedby="apiKeyHint" />
-        <div class="flex-center info-icon-wrapper">
-          <span *ngIf="apiKey.length > 0" title="API key set but not saved yet." class="status-icon status-warning">&#10004;</span>
-          <span *ngIf="apiKey.length === 0 && hasApiKey" title="An API key is currently saved." class="status-icon status-success">&#10004;</span>
-          <span *ngIf="apiKey.length === 0 && !hasApiKey" title="API Key is not set." class="status-icon status-error">⚠️</span>
+      
+    <div class="margin-y-20">
+      <label class="checkbox-label align-start">
+        <input type="checkbox" [(ngModel)]="allowMultipleModels" name="allowMultipleModels" class="w-auto m-0 mt-5" aria-describedby="allowMultipleModelsHint" />
+        <div>
+          <span>Allow Multiple Models</span>
+          <span id="allowMultipleModelsHint" class="form-hint mt-5">Enable support for multiple AI models from different providers</span>
         </div>
-        <button *ngIf="hasApiKey" type="button" class="btn-gh btn-gh-delete btn-delete-api" (click)="deleteApiKey()" [disabled]="loading">Delete</button>
-      </div>
+      </label>
     </div>
-    <div class="model-row">
-      <label>Model</label>
-      <div class="model-grid">
-        <input type="text" [(ngModel)]="model" name="model" class="gh-input m-0" />
-        <button type="button" class="btn-gh btn-check-models" (click)="checkModels()" [disabled]="loadingModels">
-          {{ loadingModels ? 'Checking...' : 'Check Models' }}
-        </button>
-      </div>
-    </div>
-    <div>
-      <label>Thinking Level</label>
-      <div class="flex-gap-10">
-        <select [(ngModel)]="thinkingLevelSelect" (ngModelChange)="onSelectChange()" name="thinkingLevelSelect" class="gh-input flex-1">
-          <option value="">None</option>
-          <option value="minimal">Minimal</option>
-          <option value="low">Low</option>
-          <option value="medium">Medium</option>
-          <option value="high">High</option>
-          <option value="xhigh">Xhigh</option>
-          <option value="max">Max</option>
-          <option value="pro">Pro</option>
-          <option value="custom">Custom...</option>
-        </select>
-        <input *ngIf="thinkingLevelSelect === 'custom'" type="text" [(ngModel)]="thinkingLevel" name="thinkingLevel" placeholder="Enter custom value..." class="gh-input flex-1" />
-      </div>
-    </div>
-    
+
     <div class="margin-y-20">
       <label class="checkbox-label align-start">
         <input type="checkbox" [(ngModel)]="spoilerFreeMode" name="spoilerFreeMode" class="w-auto m-0 mt-5" aria-describedby="spoilerFreeHint" />
@@ -132,77 +91,6 @@
   </form>
 </div>
 
-<!-- Modal for picking models -->
-<dialog #modelPickerDialog class="gh-dialog">
-  <h3 class="modal-title">Available Models</h3>
-  <p class="modal-subtitle">Showing models released after 1 Jan, 2026.</p>
-  <p class="modal-subtitle">
-    Models marked with <span tabindex="0" interestfor="recommended-star-tooltip" class="star-icon-trigger" style="cursor: help;">⭐</span> are highly recommended.
-  </p>
-  
-  <div popover="hint" id="recommended-star-tooltip" class="gh-tooltip recommended-tooltip">
-    ⭐ indicates a highly recommended model or optimal thinking level.
-  </div>
-  
-  <div *ngIf="modelError" class="modal-error" role="alert">
-    <p>{{ modelError }}</p>
-    <div class="modal-actions">
-      <button type="button" class="btn-gh" (click)="closeModal()">OK</button>
-    </div>
-  </div>
-
-  <div *ngIf="!modelError">
-    <div class="model-picker-body">
-      <div class="segmented-control">
-        <label>
-          <input type="radio" name="sortMode" value="alphabetical" [(ngModel)]="sortMode" (change)="onSortChange()">
-          <span>Alphabetical</span>
-        </label>
-        <label>
-          <input type="radio" name="sortMode" value="newest" [(ngModel)]="sortMode" (change)="onSortChange()">
-          <span>Newest</span>
-        </label>
-      </div>
-      <select [(ngModel)]="selectedModel" (ngModelChange)="onModelSelect()" size="10" class="model-listbox gh-input">
-        <option *ngFor="let m of sortedModels" [value]="m.id">{{ m.description }}{{ m.isRecommended ? ' ⭐' : '' }}</option>
-      </select>
-      
-      <div class="model-meta">
-        <div class="meta-grid">
-          <strong>Context Window:</strong> 
-          <span *ngIf="selectedModelObj">{{ selectedModelObj.contextWindowSize | number }} tokens</span>
-          <span *ngIf="!selectedModelObj">—</span>
-          
-          <strong>Max Input Tokens:</strong> 
-          <span *ngIf="selectedModelObj">{{ selectedModelObj.maxInputTokens | number }} tokens</span>
-          <span *ngIf="!selectedModelObj">—</span>
-          
-          <strong>Max Output Tokens:</strong> 
-          <span *ngIf="selectedModelObj">{{ selectedModelObj.maxOutputTokens | number }} tokens</span>
-          <span *ngIf="!selectedModelObj">—</span>
-          
-          <strong>Supported Thinking:</strong>
-          <ng-container *ngIf="selectedModelObj && selectedModelObj.supportedThinkingLevels && selectedModelObj.supportedThinkingLevels.length > 0; else noThinking">
-            <select [(ngModel)]="modalThinkingLevel" class="gh-input m-0 w-100">
-              <option *ngFor="let level of selectedModelObj.supportedThinkingLevels" [value]="level">{{ level }}{{ selectedModelObj.isRecommended && selectedModelObj.recommendedThinkingLevel === level ? ' ⭐' : '' }}</option>
-            </select>
-          </ng-container>
-          <ng-template #noThinking>
-            <select class="gh-input m-0 w-100" disabled>
-              <option *ngIf="selectedModelObj" value="">None</option>
-              <option *ngIf="!selectedModelObj" value="">—</option>
-            </select>
-          </ng-template>
-        </div>
-      </div>
-    </div>
-
-    <div class="modal-actions">
-      <button type="button" class="btn-gh btn-gh-cancel" (click)="closeModal()">Cancel</button>
-      <button type="button" class="btn-gh" (click)="applySelectedModel()" [disabled]="!selectedModel">OK</button>
-    </div>
-  </div>
-</dialog>
 <!-- Unsaved Changes Dialog -->
 <dialog #confirmDialog class="gh-dialog">
   <form method="dialog">
@@ -213,43 +101,4 @@
       <button value="discard" class="btn-gh">Discard</button>
     </div>
   </form>
-</dialog>
-
-<!-- API Key Info Dialog -->
-<dialog #apiKeyInfoDialog class="gh-dialog">
-  <h3 class="modal-title">How to get an API Key</h3>
-  
-  <div *ngIf="provider === 'OpenAI'">
-    <p>To use OpenAI models, you need an API key from your OpenAI account.</p>
-    <ol class="api-instructions">
-      <li>Go to <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com/api-keys</a></li>
-      <li>Log in or sign up.</li>
-      <li>Click <strong>Create new secret key</strong>.</li>
-      <li>Copy the key and paste it here.</li>
-    </ol>
-  </div>
-  
-  <div *ngIf="provider === 'Anthropic'">
-    <p>To use Anthropic models, you need an API key from the Anthropic Console.</p>
-    <ol class="api-instructions">
-      <li>Go to <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com/settings/keys</a></li>
-      <li>Log in or sign up.</li>
-      <li>Click <strong>Create Key</strong>.</li>
-      <li>Copy the key and paste it here.</li>
-    </ol>
-  </div>
-  
-  <div *ngIf="provider === 'Google'">
-    <p>To use Google Gemini models, you need an API key from Google AI Studio.</p>
-    <ol class="api-instructions">
-      <li>Go to <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">aistudio.google.com/app/apikey</a></li>
-      <li>Log in with your Google account.</li>
-      <li>Click <strong>Create API key</strong>.</li>
-      <li>Copy the key and paste it here.</li>
-    </ol>
-  </div>
-  
-  <div class="modal-actions mt-20">
-    <button type="button" class="btn-gh" (click)="closeApiKeyInfo()">Close</button>
-  </div>
 </dialog>

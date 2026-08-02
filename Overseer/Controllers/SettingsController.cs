@@ -37,12 +37,23 @@ public class SettingsController : ControllerBase
 
         var settings = await _settingsService.GetSettingsAsync(userId);
         
+        var apiKeysStatus = await _settingsService.GetApiKeysStatusAsync(userId);
+        var userModels = await _settingsService.GetUserModelsAsync(userId);
+        
+        bool hasLegacyKey = !string.IsNullOrEmpty(settings?.EncryptedApiKey);
+        bool hasAnyNewKey = apiKeysStatus.Any(s => (bool)((dynamic)s).HasKey);
+        
+        bool hasLegacyModel = !string.IsNullOrEmpty(settings?.DefaultModel);
+        bool hasAnyNewModel = userModels.Any();
+        
         return Ok(new
         {
             provider = settings?.DefaultProvider,
             model = settings?.DefaultModel,
             thinkingLevel = settings?.ThinkingLevel,
-            hasApiKey = !string.IsNullOrEmpty(settings?.EncryptedApiKey),
+            hasApiKey = hasLegacyKey || hasAnyNewKey,
+            hasModel = hasLegacyModel || hasAnyNewModel,
+            allowMultipleModels = settings?.AllowMultipleModels ?? false,
             maxAttachmentSize = _configuration.GetValue<long>("MaxAttachmentSize", 15728640),
             spoilerFreeMode = settings?.SpoilerFreeMode ?? true,
             maxInputTokens = settings?.MaxInputTokens,
@@ -67,7 +78,7 @@ public class SettingsController : ControllerBase
             request.EnableGameActions = false;
         }
 
-        await _settingsService.SaveSettingsAsync(userId, request.Provider, request.Model, request.ApiKey, request.ThinkingLevel, request.SpoilerFreeMode, request.MaxInputTokens, request.MaxOutputTokens, request.EnableWebSearch, request.EnableToolUse, request.EnableClientTools, request.EnableGameActions);
+        await _settingsService.SaveSettingsAsync(userId, request.Provider, request.Model, request.ApiKey, request.ThinkingLevel, request.SpoilerFreeMode, request.MaxInputTokens, request.MaxOutputTokens, request.EnableWebSearch, request.EnableToolUse, request.EnableClientTools, request.EnableGameActions, request.AllowMultipleModels);
         
         return Ok();
     }
@@ -92,8 +103,106 @@ public class SettingsController : ControllerBase
         return Ok();
     }
 
+    [HttpGet("apikeys")]
+    public async Task<IActionResult> GetApiKeys()
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId == null) return Unauthorized();
+
+        var statuses = await _settingsService.GetApiKeysStatusAsync(userId);
+        return Ok(statuses);
+    }
+
+    [HttpPut("apikeys")]
+    public async Task<IActionResult> SaveApiKey([FromBody] SaveApiKeyRequest request)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId == null) return Unauthorized();
+        if (string.IsNullOrEmpty(request.Provider) || string.IsNullOrEmpty(request.ApiKey)) return BadRequest();
+
+        await _settingsService.SaveApiKeyForProviderAsync(userId, request.Provider, request.ApiKey);
+        return Ok();
+    }
+
+    [HttpDelete("apikeys/{provider}")]
+    public async Task<IActionResult> DeleteApiKeyForProvider(string provider)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId == null) return Unauthorized();
+
+        await _settingsService.DeleteApiKeyForProviderAsync(userId, provider);
+        return Ok();
+    }
+
+    [HttpGet("usermodels")]
+    public async Task<IActionResult> GetUserModels()
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId == null) return Unauthorized();
+
+        var models = await _settingsService.GetUserModelsAsync(userId);
+        var dtos = models.Select(m => new {
+            m.Id,
+            m.Provider,
+            m.ModelId,
+            m.DisplayName,
+            m.ThinkingLevel,
+            m.OrderIndex
+        });
+        return Ok(dtos);
+    }
+
+    [HttpPost("usermodels")]
+    public async Task<IActionResult> AddUserModel([FromBody] AddUserModelRequest request)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId == null) return Unauthorized();
+        if (string.IsNullOrEmpty(request.Provider) || string.IsNullOrEmpty(request.ModelId)) return BadRequest();
+
+        var model = new MobileGnollHackLogger.Data.UserAiModel
+        {
+            Provider = request.Provider,
+            ModelId = request.ModelId,
+            DisplayName = request.DisplayName,
+            ThinkingLevel = request.ThinkingLevel
+        };
+        await _settingsService.AddUserModelAsync(userId, model);
+        return Ok(new { model.Id });
+    }
+
+    [HttpPut("usermodels/{id}")]
+    public async Task<IActionResult> UpdateUserModel(long id, [FromBody] UpdateUserModelRequest request)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId == null) return Unauthorized();
+
+        await _settingsService.UpdateUserModelAsync(userId, id, request.DisplayName, request.ThinkingLevel);
+        return Ok();
+    }
+
+    [HttpDelete("usermodels/{id}")]
+    public async Task<IActionResult> DeleteUserModel(long id)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId == null) return Unauthorized();
+
+        await _settingsService.DeleteUserModelAsync(userId, id);
+        return Ok();
+    }
+
+    [HttpPut("usermodels/reorder")]
+    public async Task<IActionResult> ReorderUserModels([FromBody] ReorderModelsRequest request)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId == null) return Unauthorized();
+        if (request.OrderedIds == null) return BadRequest();
+
+        await _settingsService.ReorderUserModelsAsync(userId, request.OrderedIds);
+        return Ok();
+    }
+
     [HttpPost("models")]
-    public async Task<IActionResult> GetModels([FromBody] UpdateSettingsRequest request)
+    public async Task<IActionResult> GetModels([FromBody] GetModelsRequest request)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (userId == null) return Unauthorized();
@@ -103,7 +212,7 @@ public class SettingsController : ControllerBase
 
         if (string.IsNullOrEmpty(apiKey))
         {
-            apiKey = await _settingsService.GetDecryptedApiKeyAsync(userId);
+            apiKey = await _settingsService.GetDecryptedApiKeyForProviderAsync(userId, provider);
         }
 
         if (string.IsNullOrEmpty(apiKey))
@@ -294,4 +403,36 @@ public class UpdateSettingsRequest
     public bool? EnableToolUse { get; set; }
     public bool? EnableClientTools { get; set; }
     public bool? EnableGameActions { get; set; }
+    public bool? AllowMultipleModels { get; set; }
+}
+
+public class SaveApiKeyRequest
+{
+    public string Provider { get; set; } = string.Empty;
+    public string ApiKey { get; set; } = string.Empty;
+}
+
+public class AddUserModelRequest
+{
+    public string Provider { get; set; } = string.Empty;
+    public string ModelId { get; set; } = string.Empty;
+    public string? DisplayName { get; set; }
+    public string? ThinkingLevel { get; set; }
+}
+
+public class UpdateUserModelRequest
+{
+    public string? DisplayName { get; set; }
+    public string? ThinkingLevel { get; set; }
+}
+
+public class ReorderModelsRequest
+{
+    public long[] OrderedIds { get; set; } = Array.Empty<long>();
+}
+
+public class GetModelsRequest
+{
+    public string? Provider { get; set; }
+    public string? ApiKey { get; set; }
 }

@@ -21,6 +21,8 @@ namespace MobileGnollHackLogger.Data
         public DbSet<ChatMessage> ChatMessage { get; set; } = null!;
         public DbSet<ChatMessageAttachment> ChatMessageAttachment { get; set; } = null!;
         public DbSet<UserAiSettings> UserAiSettings { get; set; } = null!;
+        public DbSet<UserAiApiKey> UserAiApiKeys { get; set; } = null!;
+        public DbSet<UserAiModel> UserAiModels { get; set; } = null!;
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
@@ -31,6 +33,11 @@ namespace MobileGnollHackLogger.Data
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
+            
+            modelBuilder.Entity<UserAiApiKey>()
+                .HasIndex(k => new { k.AspNetUserId, k.Provider })
+                .IsUnique();
+
             modelBuilder.Entity<Bones>()
                 .Property(b => b.Created)
                 .HasDefaultValueSql("getutcdate()");
