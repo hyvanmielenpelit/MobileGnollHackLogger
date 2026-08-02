@@ -152,7 +152,7 @@ public class ChatController : ControllerBase
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
         var attachment = await _dbContext.ChatMessageAttachment
             .Include(a => a.ChatMessage)
-            .ThenInclude(m => m.ChatSession)
+            .ThenInclude(m => m!.ChatSession)
             .FirstOrDefaultAsync(a => a.Id == id);
             
         if (attachment == null || attachment.ChatMessage?.ChatSession?.AspNetUserId != userId)
@@ -263,7 +263,7 @@ public class ChatController : ControllerBase
         bool hasMoreMessages = false;
         foreach (var m in allMessages)
         {
-            string roleName = m.Role.Equals("assistant", StringComparison.OrdinalIgnoreCase) ? "OVERSEER" : m.Role.ToUpper();
+            string roleName = m.Role != null && m.Role.Equals("assistant", StringComparison.OrdinalIgnoreCase) ? "OVERSEER" : (m.Role?.ToUpper() ?? "");
             string hiddenText = m.IsHidden ? " (HIDDEN)" : "";
             mdBuilder.AppendLine($"### {roleName}{hiddenText} ({m.TimestampUtc:yyyy-MM-dd HH:mm:ss} UTC)");
             mdBuilder.AppendLine(m.Content);
@@ -304,7 +304,7 @@ public class ChatController : ControllerBase
 
                 <h2>Reported Message</h2>
                 <div style='background-color: #f4f4f4; padding: 10px; border-left: 4px solid #ccc;'>
-                    {System.Net.WebUtility.HtmlEncode(message.Content).Replace("\n", "<br/>")}
+                    {System.Net.WebUtility.HtmlEncode(message.Content ?? "").Replace("\n", "<br/>")}
                 </div>
 
                 <h2>Debug Data</h2>

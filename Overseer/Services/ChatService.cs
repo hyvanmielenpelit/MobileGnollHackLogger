@@ -179,23 +179,23 @@ public class ChatService
                 
                 foreach (var pm in pastMessages)
                 {
-                    var msgAtts = pastAttachments.Where(a => a.ChatMessageId == pm.Id && a.ContentType.StartsWith("image/")).ToList();
+                    var msgAtts = pastAttachments.Where(a => a.ChatMessageId == pm.Id && a.ContentType != null && a.ContentType.StartsWith("image/")).ToList();
                     if (msgAtts.Count > 0 && recentMessageIds.Contains(pm.Id) && !string.IsNullOrEmpty(baseDir))
                     {
                         var msgImageAttachments = new List<SendMessageAttachment>();
                         foreach (var att in msgAtts)
                         {
-                            var fullPath = Path.Combine(baseDir, att.RelativePath);
+                            var fullPath = Path.Combine(baseDir, att.RelativePath ?? "");
                             if (System.IO.File.Exists(fullPath))
                             {
                                 var bytes = System.IO.File.ReadAllBytes(fullPath);
-                                msgImageAttachments.Add(new SendMessageAttachment { ContentType = att.ContentType, Base64Data = Convert.ToBase64String(bytes) });
+                                msgImageAttachments.Add(new SendMessageAttachment { ContentType = att.ContentType ?? "", Base64Data = Convert.ToBase64String(bytes) });
                             }
                         }
                         
                         if (msgImageAttachments.Count > 0)
                         {
-                            messageHistory.Add(FormatMessage(provider, pm.Role, pm.Content ?? "", msgImageAttachments));
+                            messageHistory.Add(FormatMessage(provider, pm.Role ?? "", pm.Content ?? "", msgImageAttachments));
                             continue;
                         }
                     }
@@ -297,7 +297,7 @@ public class ChatService
             };
             dbContext.ChatMessage.Add(userMsg);
             
-            session.LastMessageUtc = DateTime.UtcNow;
+            session!.LastMessageUtc = DateTime.UtcNow;
             await dbContext.SaveChangesAsync(cancellationToken);
             
             var textAttachmentsContent = new StringBuilder();
@@ -540,10 +540,10 @@ public class ChatService
                 httpClient.DefaultRequestHeaders.Add("x-api-key", apiKey);
                 httpClient.DefaultRequestHeaders.Add("anthropic-version", "2023-06-01");
 
-                var systemMessages = messageHistory.Where(m => ((dynamic)m).role == "system").Select(m => ((dynamic)m).content).Cast<string>().ToList();
+                var systemMessages = messageHistory.Where(m => (GetProperty(m, "role") as string) == "system").Select(m => GetProperty(m, "content") as string ?? "").ToList();
                 string systemPromptText = string.Join("\n\n", systemMessages);
                 
-                var userAsstMessages = messageHistory.Where(m => ((dynamic)m).role != "system").ToList();
+                var userAsstMessages = messageHistory.Where(m => (GetProperty(m, "role") as string) != "system").ToList();
 
                 int defaultAnthropicTokens = _configuration.GetValue<int?>("DefaultMaxOutputTokens:Anthropic") ?? 8192;
 
@@ -663,13 +663,12 @@ public class ChatService
 
                 foreach (var m in messageHistory)
                 {
-                    var role = ((dynamic)m).role;
-                    var dict = m as IDictionary<string, object>;
+                    var role = GetProperty(m, "role") as string;
                     var hasParts = m.GetType().GetProperty("parts") != null;
                     
                     if (role == "system")
                     {
-                        var content = ((dynamic)m).content;
+                        var content = GetProperty(m, "content") as string;
                         systemInstruction += content + "\n";
                     }
                     else
@@ -679,12 +678,12 @@ public class ChatService
                             contents.Add(new
                             {
                                 role = role == "user" ? "user" : "model",
-                                parts = ((dynamic)m).parts
+                                parts = GetProperty(m, "parts")
                             });
                         }
                         else
                         {
-                            var content = ((dynamic)m).content;
+                            var content = GetProperty(m, "content");
                             contents.Add(new
                             {
                                 role = role == "user" ? "user" : "model",
@@ -904,7 +903,7 @@ public class ChatService
 
             sw.Stop();
             
-            if (response.IsSuccessStatusCode)
+            if (response!.IsSuccessStatusCode)
             {
                 yield return new ChatEvent { Type = "debug", Data = $"[{providerName}] HTTP {(int)response.StatusCode} Received ({sw.ElapsedMilliseconds}ms)" };
                 yield return new ChatEvent { Type = "status", Data = $"Streaming response..." };
@@ -1178,27 +1177,34 @@ public class ChatService
             return new { role = role, parts = partsList };
         }
     }
-    
+    private static object? GetProperty(object? obj, string propertyName)
+    {
+        if (obj == null) return null;
+        return obj.GetType().GetProperty(propertyName)?.GetValue(obj);
+    }
+
     private List<object> AlternateAnthropicMessages(List<object> messages)
     {
         var combined = new List<object>();
         object? lastMsg = null;
         foreach (var msg in messages)
         {
-            if (lastMsg != null && ((dynamic)lastMsg).role == ((dynamic)msg).role && ((dynamic)msg).role != "system")
+            var lastRole = GetProperty(lastMsg, "role") as string;
+            var currentRole = GetProperty(msg, "role") as string;
+
+            if (lastMsg != null && lastRole != null && lastRole == currentRole && currentRole != "system")
             {
-                var role = ((dynamic)msg).role;
-                var c1 = ((dynamic)lastMsg).content;
-                var c2 = ((dynamic)msg).content;
-                
+                var c1 = GetProperty(lastMsg, "content");
+                var c2 = GetProperty(msg, "content");
+
                 var list = new List<object>();
                 if (c1 is string s1) list.Add(new { type = "text", text = s1 });
                 else if (c1 is IEnumerable<object> e1) list.AddRange(e1);
-                
+
                 if (c2 is string s2) list.Add(new { type = "text", text = "\n\n" + s2 });
                 else if (c2 is IEnumerable<object> e2) list.AddRange(e2);
-                
-                lastMsg = new { role = role, content = list };
+
+                lastMsg = new { role = currentRole, content = (object)list };
                 combined[combined.Count - 1] = lastMsg;
             }
             else
