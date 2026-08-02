@@ -358,11 +358,7 @@ export class ModelsComponent implements OnInit {
     this.editMaxOutputTokens = model.maxOutputTokens || null;
     
     this.editSupportedThinkingLevels = [];
-    if (this.editThinkingLevel) {
-      this.editThinkingLevelSelect = 'custom';
-    } else {
-      this.editThinkingLevelSelect = '';
-    }
+    this.editThinkingLevelSelect = this.editThinkingLevel || '';
 
     this.settingsService.getAvailableModels(model.provider, '').subscribe({
       next: (models) => {
