@@ -157,7 +157,8 @@
 
       <div class="attachments-preview" *ngIf="pendingAttachments.length > 0">
         <div class="attachment-chip" *ngFor="let att of pendingAttachments; let i = index">
-          <span class="att-name">{{ att.name }}</span>
+          <a *ngIf="isImage(att.name)" class="att-name preview-link" (click)="openImagePreview(att, $event, true)" href="javascript:void(0)" title="Preview {{ att.name }}">{{ att.name }}</a>
+          <a *ngIf="!isImage(att.name)" class="att-name preview-link" [href]="att.base64" [download]="att.name" title="Download {{ att.name }}">{{ att.name }}</a>
           <button (click)="removeAttachment(i)">x</button>
         </div>
       </div>
@@ -225,12 +226,13 @@
         <span class="preview-title">{{ previewAttachment.fileName }}</span>
       </div>
       <div class="preview-actions">
-        <a class="btn-gh btn-gh-download" [href]="'/api/chat/attachments/' + previewAttachment.id" [download]="previewAttachment.fileName">Download</a>
+        <a class="btn-gh btn-gh-download" [href]="previewAttachment.downloadUrl" [download]="previewAttachment.fileName">Download</a>
         <button class="btn-gh btn-gh-close" (click)="closeImagePreview()">Close</button>
       </div>
     </div>
     <div class="image-container">
-      <img [src]="'/api/chat/attachments/' + previewAttachment.id + '?inline=true'" alt="{{ previewAttachment.fileName }}" />
+      <img *ngIf="previewAttachment.isPending" [src]="previewAttachment.base64" alt="{{ previewAttachment.fileName }}" />
+      <img *ngIf="!previewAttachment.isPending" [src]="'/api/chat/attachments/' + previewAttachment.id + '?inline=true'" alt="{{ previewAttachment.fileName }}" />
     </div>
   </div>
 </dialog>

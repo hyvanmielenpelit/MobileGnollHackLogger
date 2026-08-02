@@ -830,9 +830,15 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     return ext;
   }
 
-  openImagePreview(att: any, event: Event) {
+  openImagePreview(att: any, event: Event, isPending: boolean = false) {
     event.preventDefault();
-    this.previewAttachment = att;
+    this.previewAttachment = {
+      isPending: isPending,
+      fileName: isPending ? att.name : att.fileName,
+      id: att.id,
+      base64: att.base64,
+      downloadUrl: isPending ? att.base64 : '/api/chat/attachments/' + att.id
+    };
     if (this.imagePreviewDialog) {
       this.imagePreviewDialog.nativeElement.showModal();
     }
