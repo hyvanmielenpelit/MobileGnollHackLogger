@@ -171,9 +171,24 @@ namespace Overseer.Services
             }
         }
 
-        public string SearchFiles(string query, string? fileFilter, int maxResults, bool includeNetCode, int maxResultLength)
+        public string SearchFiles(string query, string? fileFilter, int maxResults, bool includeNetCode, int maxResultLength, bool isRegex = false, bool filenamesOnly = false, int contextLines = 5)
         {
+            maxResults = Math.Clamp(maxResults, 1, 100);
+            contextLines = Math.Clamp(contextLines, 0, 25);
             if (string.IsNullOrWhiteSpace(query)) return string.Empty;
+            
+            Regex? regex = null;
+            if (isRegex)
+            {
+                try
+                {
+                    regex = new Regex(query, RegexOptions.IgnoreCase);
+                }
+                catch (Exception ex)
+                {
+                    return $"Error: Invalid regular expression. {ex.Message}";
+                }
+            }
             
             var results = new List<SearchResult>();
             
@@ -192,9 +207,19 @@ namespace Overseer.Services
                 var matches = new List<int>();
                 for (int i = 0; i < doc.ContentLines.Length; i++)
                 {
-                    if (doc.ContentLines[i].Contains(query, StringComparison.OrdinalIgnoreCase))
+                    if (isRegex && regex != null)
                     {
-                        matches.Add(i);
+                        if (regex.IsMatch(doc.ContentLines[i]))
+                        {
+                            matches.Add(i);
+                        }
+                    }
+                    else
+                    {
+                        if (doc.ContentLines[i].Contains(query, StringComparison.OrdinalIgnoreCase))
+                        {
+                            matches.Add(i);
+                        }
                     }
                 }
                 
@@ -209,7 +234,17 @@ namespace Overseer.Services
             
             if (!results.Any()) return string.Empty;
             
-            var sb = new System.Text.StringBuilder();
+            if (filenamesOnly)
+            {
+                var sb = new System.Text.StringBuilder();
+                foreach (var result in results)
+                {
+                    sb.AppendLine($"{result.Document.RelativePath} ({result.MatchLines.Count} matches)");
+                }
+                return sb.ToString().Trim();
+            }
+            
+            var resultSb = new System.Text.StringBuilder();
             
             foreach (var result in results)
             {
@@ -224,7 +259,7 @@ namespace Overseer.Services
                     else
                     {
                         var lastGroup = groups.Last();
-                        if (line - lastGroup.Last() <= 10) // within 10 lines of the last match in the group (±5 context overlap)
+                        if (line - lastGroup.Last() <= contextLines * 2)
                         {
                             lastGroup.Add(line);
                         }
@@ -235,31 +270,31 @@ namespace Overseer.Services
                     }
                 }
                 
-                // Limit to 3 match groups per file
+                // Limit to 5 match groups per file
                 int totalGroups = groups.Count;
-                var groupsToProcess = groups.Take(3).ToList();
+                var groupsToProcess = groups.Take(5).ToList();
                 
                 foreach (var group in groupsToProcess)
                 {
-                    int startLine = Math.Max(0, group.First() - 5);
-                    int endLine = Math.Min(result.Document.ContentLines.Length - 1, group.Last() + 5);
+                    int startLine = Math.Max(0, group.First() - contextLines);
+                    int endLine = Math.Min(result.Document.ContentLines.Length - 1, group.Last() + contextLines);
                     
-                    sb.AppendLine($"--- {result.Document.RelativePath}:L{startLine + 1} ---");
+                    resultSb.AppendLine($"--- {result.Document.RelativePath}:L{startLine + 1} ---");
                     for (int i = startLine; i <= endLine; i++)
                     {
-                        sb.AppendLine($"{i + 1}: {result.Document.ContentLines[i]}");
+                        resultSb.AppendLine($"{i + 1}: {result.Document.ContentLines[i]}");
                     }
-                    sb.AppendLine();
+                    resultSb.AppendLine();
                 }
                 
-                if (totalGroups > 3)
+                if (totalGroups > 5)
                 {
-                    sb.AppendLine($"[... {totalGroups - 3} additional match groups in this file hidden ...]");
-                    sb.AppendLine();
+                    resultSb.AppendLine($"[... {totalGroups - 5} additional match groups in this file hidden ...]");
+                    resultSb.AppendLine();
                 }
             }
             
-            string finalResult = sb.ToString();
+            string finalResult = resultSb.ToString();
             if (finalResult.Length > maxResultLength)
             {
                 finalResult = finalResult.Substring(0, maxResultLength) + "\n\n[... output truncated ...]\n[Additional matches not shown — refine your query or use source_code_view]";
@@ -283,7 +318,7 @@ namespace Overseer.Services
             }
             
             startLine = Math.Max(1, startLine) - 1; // 0-indexed
-            lineCount = Math.Clamp(lineCount, 1, 100);
+            lineCount = Math.Clamp(lineCount, 1, 1000);
             
             if (startLine >= doc.ContentLines.Length)
             {
@@ -299,6 +334,30 @@ namespace Overseer.Services
                 sb.AppendLine($"{i + 1}: {doc.ContentLines[i]}");
             }
             
+            return sb.ToString();
+        }
+
+        public string ListFiles(string? pathFilter, bool includeNetCode)
+        {
+            var docsToSearch = _documents.Values.AsEnumerable();
+            if (!includeNetCode)
+            {
+                docsToSearch = docsToSearch.Where(d => !d.IsNetCode);
+            }
+            if (!string.IsNullOrWhiteSpace(pathFilter))
+            {
+                docsToSearch = docsToSearch.Where(d => d.RelativePath.Contains(pathFilter, StringComparison.OrdinalIgnoreCase));
+            }
+            
+            var sortedDocs = docsToSearch.OrderBy(d => d.RelativePath).ToList();
+            if (!sortedDocs.Any()) return string.Empty;
+            
+            var sb = new System.Text.StringBuilder();
+            foreach (var doc in sortedDocs)
+            {
+                sb.AppendLine($"{doc.RelativePath} ({doc.ContentLines.Length} lines)");
+            }
+            sb.AppendLine($"Total: {sortedDocs.Count} files indexed");
             return sb.ToString();
         }
 

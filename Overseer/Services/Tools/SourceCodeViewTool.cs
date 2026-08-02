@@ -30,7 +30,7 @@ namespace Overseer.Services.Tools
                 ""properties"": {
                     ""file"": { ""type"": ""string"", ""description"": ""File path relative to the repository root (e.g., 'src/potion.c')"" },
                     ""start_line"": { ""type"": ""integer"", ""description"": ""The starting line number to view"" },
-                    ""line_count"": { ""type"": ""integer"", ""description"": ""Optional. Number of lines to view (default 50, max 100)"" }
+                    ""line_count"": { ""type"": ""integer"", ""description"": ""Optional. Number of lines to view (default 50, max 1000)"" }
                 },
                 ""required"": [""file"", ""start_line""]
             }").RootElement;

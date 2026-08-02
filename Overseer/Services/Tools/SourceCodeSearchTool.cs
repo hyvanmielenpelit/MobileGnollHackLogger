@@ -33,7 +33,10 @@ namespace Overseer.Services.Tools
                 ""properties"": {
                     ""query"": { ""type"": ""string"", ""description"": ""The search terms to look up in the source code"" },
                     ""file_filter"": { ""type"": ""string"", ""description"": ""Optional. Restrict to a specific file (e.g., 'potion.c')"" },
-                    ""max_results"": { ""type"": ""integer"", ""description"": ""Maximum number of files to return matches from (default 5)"" }
+                    ""max_results"": { ""type"": ""integer"", ""description"": ""Maximum number of files to return matches from (default 10, max 100)"" },
+                    ""is_regex"": { ""type"": ""boolean"", ""description"": ""Optional. If true, treat the query as a regular expression"" },
+                    ""filenames_only"": { ""type"": ""boolean"", ""description"": ""Optional. If true, return only file paths and match counts without code snippets"" },
+                    ""context_lines"": { ""type"": ""integer"", ""description"": ""Optional. Number of context lines around each match (default 5, max 25)"" }
                 },
                 ""required"": [""query""]
             }").RootElement;
@@ -58,15 +61,33 @@ namespace Overseer.Services.Tools
                 fileFilter = fileFilterElem.GetString() ?? "";
             }
 
-            int maxResults = 5;
+            int maxResults = 10;
             if (parameters.TryGetProperty("max_results", out var maxResElem) && maxResElem.ValueKind == JsonValueKind.Number)
             {
                 maxResults = maxResElem.GetInt32();
             }
 
+            bool isRegex = false;
+            if (parameters.TryGetProperty("is_regex", out var isRegexElem) && (isRegexElem.ValueKind == JsonValueKind.True || isRegexElem.ValueKind == JsonValueKind.False))
+            {
+                isRegex = isRegexElem.GetBoolean();
+            }
+
+            bool filenamesOnly = false;
+            if (parameters.TryGetProperty("filenames_only", out var filenamesOnlyElem) && (filenamesOnlyElem.ValueKind == JsonValueKind.True || filenamesOnlyElem.ValueKind == JsonValueKind.False))
+            {
+                filenamesOnly = filenamesOnlyElem.GetBoolean();
+            }
+
+            int contextLines = 5;
+            if (parameters.TryGetProperty("context_lines", out var contextLinesElem) && contextLinesElem.ValueKind == JsonValueKind.Number)
+            {
+                contextLines = contextLinesElem.GetInt32();
+            }
+
             bool includeNetCode = context.OverseerMode == 2;
 
-            var content = _sourceCodeService.SearchFiles(query, fileFilter, maxResults, includeNetCode, _maxResultLength);
+            var content = _sourceCodeService.SearchFiles(query, fileFilter, maxResults, includeNetCode, _maxResultLength, isRegex, filenamesOnly, contextLines);
 
             if (string.IsNullOrWhiteSpace(content))
             {

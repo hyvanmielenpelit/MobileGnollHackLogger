@@ -81,7 +81,8 @@
           <div *ngFor="let tc of msg.toolCalls" class="tool-call" [ngClass]="tc.status">
             <div class="tool-call-header">
               <span class="tool-icon">🛠️</span>
-              <span class="tool-name">{{ tc.name }}</span>
+              <span class="tool-name">{{ tc.displayName || tc.name }}</span>
+              <span class="tool-args" *ngIf="tc.argsText"> ({{ tc.argsText }})</span>
               <span class="tool-status" *ngIf="tc.status === 'running'"><span class="sidebar-spinner small-spinner"></span></span>
               <span class="tool-status" *ngIf="tc.status === 'completed'">✅</span>
               <span class="tool-status" *ngIf="tc.status === 'error'">❌</span>
@@ -120,7 +121,8 @@
           <div *ngFor="let tc of streamingToolCalls" class="tool-call" [ngClass]="tc.status">
             <div class="tool-call-header">
               <span class="tool-icon">🛠️</span>
-              <span class="tool-name">{{ tc.name }}</span>
+              <span class="tool-name">{{ tc.displayName || tc.name }}</span>
+              <span class="tool-args" *ngIf="tc.argsText"> ({{ tc.argsText }})</span>
               <span class="tool-status" *ngIf="tc.status === 'running'"><span class="sidebar-spinner small-spinner"></span></span>
               <span class="tool-status" *ngIf="tc.status === 'completed'">✅</span>
               <span class="tool-status" *ngIf="tc.status === 'error'">❌</span>

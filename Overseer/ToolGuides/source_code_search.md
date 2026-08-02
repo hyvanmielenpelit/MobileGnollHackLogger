@@ -33,4 +33,18 @@ Search tips:
 - Search for game messages to find the code that produces them (e.g., "You feel a numbness")
 - Use file_filter to narrow results to a specific file when you know where to look
 
+## Parameters
+- `query` (string, required): The search terms to look up in the source code.
+- `file_filter` (string, optional): A substring to filter the returned file paths.
+- `max_results` (integer, optional): The maximum number of files to return matches from. Defaults to 10. Max is 100.
+- `is_regex` (boolean, optional): If true, the query is treated as a regular expression. This is extremely useful for pattern matching, e.g., finding all random number calls like `rn[12]\(\d+\)`.
+- `filenames_only` (boolean, optional): If true, the tool will only return file paths and match counts, without any code snippets. This is very useful for getting a broad overview of where a term is used across the codebase without exceeding output limits.
+- `context_lines` (integer, optional): The number of context lines to include before and after each match. Defaults to 5. Max is 25. Increase this if you need to see surrounding logic or function signatures.
+
+## Search Strategy
+1. **Discover**: Start by using the `list_indexed_files` tool to get a sense of the repository structure or find specific files.
+2. **Survey**: Use `source_code_search` with `filenames_only: true` to quickly find out which files contain a term or function.
+3. **Locate**: Use `source_code_search` with `is_regex` or regular queries to find specific lines. Adjust `context_lines` up to 25 if you need more context around the match.
+4. **Deep Dive**: If the context lines aren't enough or the output gets truncated, use `source_code_view` to read the entire function or file.
+
 After finding relevant code, use source_code_view to see more context around the match.

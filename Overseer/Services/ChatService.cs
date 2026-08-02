@@ -416,10 +416,11 @@ public class ChatService
         bool hasToolsToRun = true;
         
         var execContext = new ToolExecutionContext { SessionId = currentSessionId, IsGameOn = isGameOn, SpoilerFreeMode = spoilerFreeMode, OverseerMode = overseerMode, IsGnollHackSession = isGnollHackSession };
+        int maxToolIterations = _configuration.GetValue<int>("MaxToolIterations", 32);
         
-        while (toolIterations <= 5 && hasToolsToRun && !cancellationToken.IsCancellationRequested)
+        while (toolIterations <= maxToolIterations && hasToolsToRun && !cancellationToken.IsCancellationRequested)
         {
-            if (toolIterations == 5 && hasToolsToRun)
+            if (toolIterations == maxToolIterations && hasToolsToRun)
             {
                 yield return new ChatEvent { Type = "tool_error", Data = "Tool call limit reached. Forcing final response." };
                 enableToolUse = false;

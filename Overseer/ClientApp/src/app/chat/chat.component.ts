@@ -32,6 +32,49 @@ export interface ToolResponse {
   templateUrl: './chat.component.html'
 })
 export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
+  private static readonly TOOL_DISPLAY_NAMES: Record<string, string> = {
+    'get_full_message_history': 'Reading message history',
+    'get_directory_listing': 'Reading game folder',
+    'refresh_snapshot': 'Refreshing game status',
+    'get_save_info': 'Reading save game info',
+    'get_player_library': 'Reading manuals',
+    'get_oracle_consultations': 'Reading consultations',
+    'get_player_xlog': 'Reading recent games',
+    'get_player_dumplogs': 'Reading player dumplogs',
+    'item_lookup': 'Searching Wiki for an item',
+    'monster_lookup': 'Searching Wiki for a monster',
+    'nethack_wiki_search': 'Searching NetHack Wiki',
+    'search_server_dumplogs': 'Searching server dumplogs',
+    'source_code_search': 'Searching source code',
+    'source_code_view': 'Viewing source code',
+    'wiki_search': 'Searching GnollHack Wiki',
+    'list_indexed_files': 'Listing source files'
+  };
+
+  private buildToolArgsText(name: string, args: any): string {
+    if (!args) return '';
+    try {
+      if (name === 'source_code_search') {
+        if (args.query && args.file_filter) return `"${args.query}" in ${args.file_filter}`;
+        if (args.query) return `"${args.query}"`;
+      }
+      if (name === 'source_code_view') {
+        if (args.file && args.start_line) return `${args.file}:L${args.start_line}`;
+        if (args.file) return args.file;
+      }
+      if (name === 'list_indexed_files' && args.path_filter) {
+        return args.path_filter;
+      }
+      if (name === 'monster_lookup' && args.name) return args.name;
+      if (name === 'item_lookup' && args.name) return args.name;
+      if (name === 'wiki_search' && args.query) return args.query;
+      if (name === 'nethack_wiki_search' && args.query) return args.query;
+      
+      const firstKey = Object.keys(args)[0];
+      if (firstKey) return String(args[firstKey]);
+    } catch (e) {}
+    return '';
+  }
   chatService = inject(ChatService);
   settingsService = inject(SettingsService);
   
@@ -381,7 +424,16 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         } else if (evt.type === 'tool_start') {
           try {
             const toolInfo = JSON.parse(evt.data);
-            this.streamingToolCalls.push({ id: toolInfo.id, name: toolInfo.name, status: 'running' });
+            const args = JSON.parse(toolInfo.arguments || '{}');
+            const displayName = ChatComponent.TOOL_DISPLAY_NAMES[toolInfo.name] || toolInfo.name;
+            const argsText = this.buildToolArgsText(toolInfo.name, args);
+            this.streamingToolCalls.push({ 
+              id: toolInfo.id, 
+              name: toolInfo.name, 
+              status: 'running',
+              displayName,
+              argsText
+            });
             this.cdr.detectChanges();
             this.scrollToBottomClamped(false);
           } catch(e) {}
@@ -691,7 +743,16 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         } else if (evt.type === 'tool_start') {
           try {
             const toolInfo = JSON.parse(evt.data);
-            this.streamingToolCalls.push({ id: toolInfo.id, name: toolInfo.name, status: 'running' });
+            const args = JSON.parse(toolInfo.arguments || '{}');
+            const displayName = ChatComponent.TOOL_DISPLAY_NAMES[toolInfo.name] || toolInfo.name;
+            const argsText = this.buildToolArgsText(toolInfo.name, args);
+            this.streamingToolCalls.push({ 
+              id: toolInfo.id, 
+              name: toolInfo.name, 
+              status: 'running',
+              displayName,
+              argsText
+            });
             this.cdr.detectChanges();
             this.scrollToBottomClamped(false);
           } catch(e) {}

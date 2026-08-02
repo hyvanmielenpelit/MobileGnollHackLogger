@@ -17,6 +17,8 @@ export interface ChatMessageAttachment {
 export interface ChatMessageToolCall {
   id?: string;
   name: string;
+  displayName?: string;
+  argsText?: string;
   parameters?: string;
   result?: string;
   error?: string;
