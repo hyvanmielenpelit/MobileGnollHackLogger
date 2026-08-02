@@ -35,5 +35,6 @@ namespace Overseer.Services.Tools
         public bool IsGameOn { get; set; }
         public int OverseerMode { get; set; }
         public string DataDirectory { get; set; } = string.Empty;
+        public bool IsGnollHackSession { get; set; }
     }
 }

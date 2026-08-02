@@ -18,7 +18,8 @@ namespace Overseer.Services.Tools
         InformationRetrieval,
         ExternalLookup,
         SessionData,
-        ClientStateQuery,
+        ClientActiveSessionQuery,
+        ClientPersistentDataQuery,
         GameAction
     }
 

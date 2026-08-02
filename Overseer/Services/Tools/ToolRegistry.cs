@@ -117,7 +117,9 @@ namespace Overseer.Services.Tools
                     
                     if (handler.Category == ToolCategory.GameAction && !enableGameActions) continue;
                     
-                    if (handler.Category == ToolCategory.ClientStateQuery && !context.IsGameOn) continue;
+                    if (handler.Category == ToolCategory.ClientActiveSessionQuery && !context.IsGameOn) continue;
+                    
+                    if (handler.Category == ToolCategory.ClientPersistentDataQuery && !context.IsGnollHackSession) continue;
                 }
 
                 // Append function declaration

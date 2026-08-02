@@ -82,6 +82,7 @@ public class ChatService
         int? maxInputTokens = null;
         int? maxOutputTokens = null;
         int overseerMode = 0;
+        bool isGnollHackSession = false;
 
         using (var scope = _scopeFactory.CreateScope())
         {
@@ -229,6 +230,7 @@ public class ChatService
             }
 
             var contextDocs = _wikiService.GetRelevantContext(message);
+            isGnollHackSession = session?.IsGnollHackSession ?? false;
 
             bool verboseMode = false;
             // isGameOn declared above
@@ -413,7 +415,7 @@ public class ChatService
         int toolIterations = 0;
         bool hasToolsToRun = true;
         
-        var execContext = new ToolExecutionContext { SessionId = currentSessionId, IsGameOn = isGameOn, SpoilerFreeMode = spoilerFreeMode, OverseerMode = overseerMode };
+        var execContext = new ToolExecutionContext { SessionId = currentSessionId, IsGameOn = isGameOn, SpoilerFreeMode = spoilerFreeMode, OverseerMode = overseerMode, IsGnollHackSession = isGnollHackSession };
         
         while (toolIterations <= 5 && hasToolsToRun && !cancellationToken.IsCancellationRequested)
         {

@@ -10,7 +10,7 @@ namespace Overseer.Services.Tools
         public abstract string ToolName { get; }
         public string Description { get; set; } = "Client tool";
         public ToolExecutionLocation ExecutionLocation => ToolExecutionLocation.Client;
-        public virtual ToolCategory Category => ToolCategory.ClientStateQuery;
+        public virtual ToolCategory Category => ToolCategory.ClientActiveSessionQuery;
 
         public virtual JsonElement ParameterSchema { get; } = JsonDocument.Parse(@"{
             ""type"": ""object"",
@@ -39,6 +39,7 @@ namespace Overseer.Services.Tools
     public class GetDirectoryListingTool : ClientToolHandlerBase
     {
         public override string ToolName => "get_directory_listing";
+        public override ToolCategory Category => ToolCategory.ClientPersistentDataQuery;
     }
 
     public class RefreshSnapshotTool : ClientToolHandlerBase
@@ -49,6 +50,7 @@ namespace Overseer.Services.Tools
     public class GetSaveInfoTool : ClientToolHandlerBase
     {
         public override string ToolName => "get_save_info";
+        public override ToolCategory Category => ToolCategory.ClientPersistentDataQuery;
 
         public override JsonElement ParameterSchema { get; } = JsonDocument.Parse(@"{
             ""type"": ""object"",
@@ -62,6 +64,7 @@ namespace Overseer.Services.Tools
     public class GetPlayerLibraryTool : ClientToolHandlerBase
     {
         public override string ToolName => "get_player_library";
+        public override ToolCategory Category => ToolCategory.ClientPersistentDataQuery;
 
         public override JsonElement ParameterSchema { get; } = JsonDocument.Parse(@"{
             ""type"": ""object"",
@@ -74,6 +77,7 @@ namespace Overseer.Services.Tools
     public class GetOracleConsultationsTool : ClientToolHandlerBase
     {
         public override string ToolName => "get_oracle_consultations";
+        public override ToolCategory Category => ToolCategory.ClientPersistentDataQuery;
 
         public override JsonElement ParameterSchema { get; } = JsonDocument.Parse(@"{
             ""type"": ""object"",
@@ -86,6 +90,7 @@ namespace Overseer.Services.Tools
     public class GetPlayerXlogTool : ClientToolHandlerBase
     {
         public override string ToolName => "get_player_xlog";
+        public override ToolCategory Category => ToolCategory.ClientPersistentDataQuery;
 
         public override JsonElement ParameterSchema { get; } = JsonDocument.Parse(@"{
             ""type"": ""object"",
@@ -99,6 +104,7 @@ namespace Overseer.Services.Tools
     public class GetPlayerDumplogsTool : ClientToolHandlerBase
     {
         public override string ToolName => "get_player_dumplogs";
+        public override ToolCategory Category => ToolCategory.ClientPersistentDataQuery;
 
         public override JsonElement ParameterSchema { get; } = JsonDocument.Parse(@"{
             ""type"": ""object"",
