@@ -39,12 +39,12 @@ public class ModelMetadataService
             return metadata;
         }
 
-        var anthropicRegex = new Regex(@"^claude-(?:(opus|sonnet|fable|mythos)-)?(5|4\.[6-8])(?:-(opus|sonnet|fable|mythos))?$");
+        var anthropicRegex = new Regex(@"^claude-(?:(opus|sonnet|fable|mythos)-)?(5|4(?:[.-])[6-8])(?:-(opus|sonnet|fable|mythos))?$");
         var anthropicMatch = anthropicRegex.Match(modelId);
         if (anthropicMatch.Success)
         {
             var prefixTier = anthropicMatch.Groups[1].Value;
-            var version = anthropicMatch.Groups[2].Value;
+            var version = anthropicMatch.Groups[2].Value.Replace("-", ".");
             var suffixTier = anthropicMatch.Groups[3].Value;
             
             var tierStr = !string.IsNullOrEmpty(prefixTier) ? prefixTier : suffixTier;
