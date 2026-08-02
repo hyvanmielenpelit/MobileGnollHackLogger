@@ -141,7 +141,7 @@
     ⭐ indicates a highly recommended model or optimal thinking level.
   </div>
   
-  <div *ngIf="modelError" class="modal-error">
+  <div *ngIf="modelError" class="modal-error" role="alert">
     <p>{{ modelError }}</p>
     <div class="modal-actions">
       <button type="button" class="btn-gh" (click)="closeModal()">OK</button>

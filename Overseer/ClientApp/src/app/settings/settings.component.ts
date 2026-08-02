@@ -20,13 +20,13 @@ export class SettingsComponent implements OnInit {
   @ViewChild('modelPickerDialog') modelPickerDialog!: ElementRef<HTMLDialogElement>;
 
   provider = 'OpenAI';
-  model = 'gpt-4o-mini';
-  thinkingLevel = 'high';
-  thinkingLevelSelect = 'high';
+  model = '';
+  thinkingLevel = '';
+  thinkingLevelSelect = '';
 
   initProvider = 'OpenAI';
-  initModel = 'gpt-4o-mini';
-  initThinkingLevel = 'high';
+  initModel = '';
+  initThinkingLevel = '';
 
   spoilerFreeMode = true;
   initSpoilerFreeMode = true;
@@ -121,8 +121,8 @@ export class SettingsComponent implements OnInit {
 
     this.settingsService.getSettings().subscribe(s => {
       if (s) {
-        if (s.provider) { this.provider = s.provider; this.initProvider = s.provider; }
-        if (s.model) { this.model = s.model; this.initModel = s.model; }
+        if (s.provider !== undefined && s.provider !== null) { this.provider = s.provider; this.initProvider = s.provider; }
+        if (s.model !== undefined && s.model !== null) { this.model = s.model; this.initModel = s.model; }
         if (s.thinkingLevel !== undefined && s.thinkingLevel !== null) {
           this.thinkingLevel = s.thinkingLevel;
           this.initThinkingLevel = s.thinkingLevel;
@@ -238,8 +238,21 @@ export class SettingsComponent implements OnInit {
       next: (models) => {
         this.availableModels = models;
         this.loadingModels = false;
-        if (this.sortedModels.length > 0) {
-          this.selectedModel = this.sortedModels[0].id;
+        if (this.availableModels.length === 0) {
+          this.modelError = 'No models are currently available for this provider.';
+          return;
+        }
+
+        // Try to find the existing active model
+        let targetModel = this.availableModels.find(m => m.id === this.model);
+        
+        // If not found, use the first sorted model (which will be the most recommended, or just the first)
+        if (!targetModel && this.sortedModels.length > 0) {
+          targetModel = this.sortedModels[0];
+        }
+
+        if (targetModel) {
+          this.selectedModel = targetModel.id;
           this.onModelSelect();
         }
       },
@@ -253,7 +266,9 @@ export class SettingsComponent implements OnInit {
   onModelSelect() {
     this.selectedModelObj = this.availableModels.find(m => m.id === this.selectedModel) || null;
     if (this.selectedModelObj && this.selectedModelObj.supportedThinkingLevels && this.selectedModelObj.supportedThinkingLevels.length > 0) {
-      if (this.selectedModelObj.isRecommended && this.selectedModelObj.recommendedThinkingLevel && this.selectedModelObj.supportedThinkingLevels.includes(this.selectedModelObj.recommendedThinkingLevel)) {
+      if (this.selectedModel === this.model && this.thinkingLevel && this.selectedModelObj.supportedThinkingLevels.includes(this.thinkingLevel)) {
+        this.modalThinkingLevel = this.thinkingLevel;
+      } else if (this.selectedModelObj.isRecommended && this.selectedModelObj.recommendedThinkingLevel && this.selectedModelObj.supportedThinkingLevels.includes(this.selectedModelObj.recommendedThinkingLevel)) {
         this.modalThinkingLevel = this.selectedModelObj.recommendedThinkingLevel;
       } else {
         this.modalThinkingLevel = this.selectedModelObj.supportedThinkingLevels.includes('medium') 
