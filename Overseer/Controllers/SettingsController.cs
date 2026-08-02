@@ -56,6 +56,7 @@ public class SettingsController : ControllerBase
             hasApiKey = allowMultipleModels ? hasAnyNewKey : hasLegacyKey,
             hasModel = allowMultipleModels ? hasAnyNewModel : hasLegacyModel,
             allowMultipleModels = allowMultipleModels,
+            configuredProviders = apiKeysStatus.Where(s => (bool)((dynamic)s).HasKey).Select(s => (string)((dynamic)s).Provider).ToList(),
             maxAttachmentSize = _configuration.GetValue<long>("MaxAttachmentSize", 15728640),
             spoilerFreeMode = settings?.SpoilerFreeMode ?? true,
             maxInputTokens = settings?.MaxInputTokens,
@@ -149,7 +150,9 @@ public class SettingsController : ControllerBase
             m.ModelId,
             m.DisplayName,
             m.ThinkingLevel,
-            m.OrderIndex
+            m.OrderIndex,
+            m.MaxInputTokens,
+            m.MaxOutputTokens
         });
         return Ok(dtos);
     }
@@ -166,7 +169,9 @@ public class SettingsController : ControllerBase
             Provider = request.Provider,
             ModelId = request.ModelId,
             DisplayName = request.DisplayName,
-            ThinkingLevel = request.ThinkingLevel
+            ThinkingLevel = request.ThinkingLevel,
+            MaxInputTokens = request.MaxInputTokens,
+            MaxOutputTokens = request.MaxOutputTokens
         };
         await _settingsService.AddUserModelAsync(userId, model);
         return Ok(new { model.Id });
@@ -178,7 +183,7 @@ public class SettingsController : ControllerBase
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (userId == null) return Unauthorized();
 
-        await _settingsService.UpdateUserModelAsync(userId, id, request.DisplayName, request.ThinkingLevel);
+        await _settingsService.UpdateUserModelAsync(userId, id, request.DisplayName, request.ThinkingLevel, request.MaxInputTokens, request.MaxOutputTokens);
         return Ok();
     }
 
@@ -420,12 +425,16 @@ public class AddUserModelRequest
     public string ModelId { get; set; } = string.Empty;
     public string? DisplayName { get; set; }
     public string? ThinkingLevel { get; set; }
+    public int? MaxInputTokens { get; set; }
+    public int? MaxOutputTokens { get; set; }
 }
 
 public class UpdateUserModelRequest
 {
     public string? DisplayName { get; set; }
     public string? ThinkingLevel { get; set; }
+    public int? MaxInputTokens { get; set; }
+    public int? MaxOutputTokens { get; set; }
 }
 
 public class ReorderModelsRequest

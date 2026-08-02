@@ -22,11 +22,6 @@ export class SettingsComponent implements OnInit {
   spoilerFreeMode = true;
   initSpoilerFreeMode = true;
 
-  maxInputTokens: number | null = null;
-  maxOutputTokens: number | null = null;
-  initMaxInputTokens: number | null = null;
-  initMaxOutputTokens: number | null = null;
-
   enableWebSearch = true;
   initEnableWebSearch = true;
   enableToolUse = true;
@@ -42,8 +37,6 @@ export class SettingsComponent implements OnInit {
   get isDirty(): boolean {
     return this.allowMultipleModels !== this.initAllowMultipleModels ||
            this.spoilerFreeMode !== this.initSpoilerFreeMode ||
-           this.maxInputTokens !== this.initMaxInputTokens ||
-           this.maxOutputTokens !== this.initMaxOutputTokens ||
            this.enableWebSearch !== this.initEnableWebSearch ||
            this.enableToolUse !== this.initEnableToolUse ||
            this.enableClientTools !== this.initEnableClientTools ||
@@ -88,14 +81,6 @@ export class SettingsComponent implements OnInit {
           this.spoilerFreeMode = s.spoilerFreeMode;
           this.initSpoilerFreeMode = s.spoilerFreeMode;
         }
-        if (s.maxInputTokens !== undefined) {
-          this.maxInputTokens = s.maxInputTokens;
-          this.initMaxInputTokens = s.maxInputTokens;
-        }
-        if (s.maxOutputTokens !== undefined) {
-          this.maxOutputTokens = s.maxOutputTokens;
-          this.initMaxOutputTokens = s.maxOutputTokens;
-        }
         if (s.enableWebSearch !== undefined) {
           this.enableWebSearch = s.enableWebSearch;
           this.initEnableWebSearch = s.enableWebSearch;
@@ -121,7 +106,7 @@ export class SettingsComponent implements OnInit {
     this.saved = false;
     // We send empty strings for the legacy provider/model/apiKey fields 
     // since the API might still require them in the body, but they are now managed in other tabs.
-    this.settingsService.saveSettings('', '', '', undefined, this.spoilerFreeMode, this.maxInputTokens, this.maxOutputTokens, this.enableWebSearch, this.enableToolUse, this.enableClientTools, this.enableGameActions, this.allowMultipleModels).subscribe(() => {
+    this.settingsService.saveSettings('', '', '', undefined, this.spoilerFreeMode, null, null, this.enableWebSearch, this.enableToolUse, this.enableClientTools, this.enableGameActions, this.allowMultipleModels).subscribe(() => {
       this.loading = false;
       
       const toast = this.successToast?.nativeElement as any;
@@ -137,8 +122,6 @@ export class SettingsComponent implements OnInit {
 
       this.initAllowMultipleModels = this.allowMultipleModels;
       this.initSpoilerFreeMode = this.spoilerFreeMode;
-      this.initMaxInputTokens = this.maxInputTokens;
-      this.initMaxOutputTokens = this.maxOutputTokens;
       this.initEnableWebSearch = this.enableWebSearch;
       this.initEnableToolUse = this.enableToolUse;
       this.initEnableClientTools = this.enableClientTools;

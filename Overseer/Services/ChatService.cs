@@ -111,6 +111,8 @@ public class ChatService
                     provider = userModel.Provider;
                     model = userModel.ModelId;
                     thinkingLevel = userModel.ThinkingLevel;
+                    if (userModel.MaxInputTokens.HasValue) maxInputTokens = userModel.MaxInputTokens.Value;
+                    if (userModel.MaxOutputTokens.HasValue) maxOutputTokens = userModel.MaxOutputTokens.Value;
                 }
             }
             else if (!userModelId.HasValue || !allowMultipleModels)

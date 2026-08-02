@@ -23,5 +23,8 @@ public class UserAiModel
     [MaxLength(32)]
     public string? ThinkingLevel { get; set; }
 
+    public int? MaxInputTokens { get; set; }
+    public int? MaxOutputTokens { get; set; }
+
     public int OrderIndex { get; set; }  // For drag-and-drop ordering
 }

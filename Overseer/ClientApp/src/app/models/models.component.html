@@ -1,15 +1,18 @@
-<div class="settings-container">
-  <h2>Your AI Models</h2>
+<div class="settings-container gh-main-container">
+  <div class="header-row">
+    <h2>Your AI Models</h2>
+    <a routerLink="/chat" queryParamsHandling="preserve" class="nav-back-link">&larr; Back to Chat</a>
+  </div>
   <p class="settings-description">
     Construct your list of AI models here. You can add models from different providers, set custom display names, configure thinking levels, and rearrange the list by dragging.
   </p>
 
   <div class="actions-header">
-    <button class="btn-primary" (click)="openModelPicker()">Add Model</button>
+    <button class="btn-gh" (click)="openModelPicker()">Add Model</button>
   </div>
 
   <div *ngIf="loading" class="loading-state">
-    <span class="spinner"></span> Loading Models...
+    <span class="sidebar-spinner"></span> Loading Models...
   </div>
 
   <div *ngIf="!loading" class="models-list">
@@ -42,14 +45,14 @@
       </div>
 
       <div class="model-actions">
-        <button class="btn-icon" (click)="moveUp(i)" [disabled]="i === 0 || saving" title="Move Up">
+        <button class="btn-gh btn-icon" (click)="moveUp(i)" [disabled]="i === 0 || saving" title="Move Up" style="min-width: 40px; padding: 5px;">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>
         </button>
-        <button class="btn-icon" (click)="moveDown(i)" [disabled]="i === userModels.length - 1 || saving" title="Move Down">
+        <button class="btn-gh btn-icon" (click)="moveDown(i)" [disabled]="i === userModels.length - 1 || saving" title="Move Down" style="min-width: 40px; padding: 5px;">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
         </button>
-        <button class="btn-secondary" (click)="openEdit(model)" [disabled]="saving">Edit</button>
-        <button class="btn-danger" (click)="deleteModel(model.id)" [disabled]="saving">Delete</button>
+        <button class="btn-gh" (click)="openEdit(model)" [disabled]="saving">Edit</button>
+        <button class="btn-gh btn-gh-delete" (click)="deleteModel(model.id)" [disabled]="saving">Delete</button>
       </div>
     </div>
   </div>
@@ -76,35 +79,61 @@
 
     <div *ngIf="availableModels.length > 0" class="form-group">
       <div class="flex-between">
-        <label for="pickerModel">Model</label>
+        <label for="pickerModelSelect">Models <span class="form-hint" style="display:inline; margin-left: 10px;">(⭐ = Recommended)</span></label>
         <div class="sort-options">
           <label><input type="radio" name="sort" value="alphabetical" [(ngModel)]="sortMode" (change)="onSortChange()"> Alphabetical</label>
           <label><input type="radio" name="sort" value="newest" [(ngModel)]="sortMode" (change)="onSortChange()"> Newest</label>
         </div>
       </div>
-      <select id="pickerModel" [(ngModel)]="selectedModelId" (change)="onPickerModelSelect()" class="form-control">
+      <select id="pickerModelSelect" [(ngModel)]="pickerModelSelect" (change)="onPickerModelSelect()" class="gh-input w-100" size="10">
         <option *ngFor="let m of sortedModels" [value]="m.id">
-          {{ m.id }}
-          {{ m.isRecommended ? ' (Recommended)' : '' }}
+          {{ m.description || m.id }} {{ m.isRecommended ? '⭐' : '' }}
         </option>
+        <option value="custom">Custom...</option>
       </select>
+
+      <div class="form-group mt-10" *ngIf="pickerModelSelect === 'custom'">
+        <label for="customModelId">Custom Model ID</label>
+        <input type="text" id="customModelId" [(ngModel)]="customModelId" class="gh-input w-100" placeholder="e.g. gpt-5.5-pro or claude-4.6-sonnet">
+      </div>
       
-      <p class="model-description" *ngIf="selectedModelObj?.description">
-        {{ selectedModelObj?.description }}
-      </p>
+      <div class="model-meta" *ngIf="selectedModelObj" style="padding: 10px; background-color: rgba(255, 255, 255, 0.05); border: 1px solid var(--gh-gold); border-radius: 4px; margin-top: 15px;">
+        <span class="detail-label" style="color: var(--gh-gold);">Context Window:</span> {{ selectedModelObj.contextWindowSize | number }} tokens
+      </div>
     </div>
 
-    <div *ngIf="selectedModelObj?.supportedThinkingLevels?.length" class="form-group mt-3">
-      <label for="pickerThinkingLevel">Thinking Level (Optional)</label>
-      <select id="pickerThinkingLevel" [(ngModel)]="pickerThinkingLevel" class="form-control">
-        <option value="">Default (No Thinking)</option>
-        <option *ngFor="let level of selectedModelObj?.supportedThinkingLevels" [value]="level">{{ level }}</option>
+    <div class="form-group mt-20">
+      <label for="pickerThinkingLevelSelect">Thinking Level (Optional)</label>
+      <select id="pickerThinkingLevelSelect" [(ngModel)]="pickerThinkingLevelSelect" (change)="onPickerThinkingLevelChange()" class="gh-input w-100">
+        <option value="">None</option>
+        <option *ngFor="let level of selectedModelObj?.supportedThinkingLevels" [value]="level">
+          {{ formatThinkingLevel(level) }} {{ selectedModelObj?.recommendedThinkingLevel === level ? '⭐' : '' }}
+        </option>
+        <option value="custom">Custom...</option>
       </select>
     </div>
 
-    <div class="dialog-actions">
-      <button class="btn-secondary" (click)="closeModelPicker()" [disabled]="saving">Cancel</button>
-      <button class="btn-primary" (click)="addSelectedModel()" [disabled]="saving || !selectedModelId">
+    <div class="form-group mt-10" *ngIf="pickerThinkingLevelSelect === 'custom'">
+      <label for="customThinkingLevel">Custom Thinking Level</label>
+      <input type="text" id="customThinkingLevel" [(ngModel)]="customThinkingLevel" class="gh-input w-100" placeholder="e.g. 1024, max, pro">
+    </div>
+
+    <div class="token-row mt-20" style="display: flex; gap: 15px;">
+      <div class="flex-1" style="flex: 1;">
+        <label for="pickerMaxInputTokens">Max Input Tokens</label>
+        <span class="form-hint">Leave blank for default</span>
+        <input type="number" id="pickerMaxInputTokens" [(ngModel)]="pickerMaxInputTokens" class="gh-input w-100 mt-5">
+      </div>
+      <div class="flex-1" style="flex: 1;">
+        <label for="pickerMaxOutputTokens">Max Output Tokens</label>
+        <span class="form-hint">Leave blank for default</span>
+        <input type="number" id="pickerMaxOutputTokens" [(ngModel)]="pickerMaxOutputTokens" class="gh-input w-100 mt-5">
+      </div>
+    </div>
+
+    <div class="dialog-actions mt-20">
+      <button class="btn-gh btn-gh-cancel" (click)="closeModelPicker()" [disabled]="saving">Cancel</button>
+      <button class="btn-gh" (click)="addSelectedModel()" [disabled]="saving || (pickerModelSelect !== 'custom' && !selectedModelId) || (pickerModelSelect === 'custom' && !customModelId)">
         <span *ngIf="saving" class="spinner-small"></span> Add Model
       </button>
     </div>
@@ -120,29 +149,42 @@
       <input type="text" id="editDisplayName" [(ngModel)]="editDisplayName" placeholder="Custom Name" class="form-control">
     </div>
 
-    <div class="form-group mt-3">
-      <label for="editThinkingLevelSelect">Thinking Level</label>
-      <select id="editThinkingLevelSelect" [(ngModel)]="editThinkingLevelSelect" (change)="onEditThinkingLevelChange()" class="form-control">
-        <option value="">Default (No Thinking)</option>
+    <div class="form-group mt-20">
+      <label for="editThinkingLevelSelect">Thinking Level (Optional)</label>
+      <select id="editThinkingLevelSelect" [(ngModel)]="editThinkingLevelSelect" (change)="onEditThinkingLevelChange()" class="gh-input w-100">
+        <option value="">None</option>
         <option value="minimal">Minimal</option>
         <option value="low">Low</option>
         <option value="medium">Medium</option>
         <option value="high">High</option>
         <option value="xhigh">Extra High</option>
         <option value="max">Max</option>
-        <option value="pro">Pro (Claude)</option>
+        <option value="pro">Pro</option>
         <option value="custom">Custom...</option>
       </select>
     </div>
 
-    <div class="form-group mt-3" *ngIf="editThinkingLevelSelect === 'custom'">
+    <div class="form-group mt-10" *ngIf="editThinkingLevelSelect === 'custom'">
       <label for="editCustomThinkingLevel">Custom Thinking Level</label>
-      <input type="text" id="editCustomThinkingLevel" [(ngModel)]="editThinkingLevel" class="form-control" placeholder="e.g. 1024">
+      <input type="text" id="editCustomThinkingLevel" [(ngModel)]="editThinkingLevel" class="gh-input w-100" placeholder="e.g. 1024, max, pro">
     </div>
 
-    <div class="dialog-actions">
-      <button class="btn-secondary" (click)="closeEdit()" [disabled]="saving">Cancel</button>
-      <button class="btn-primary" (click)="saveEdit()" [disabled]="saving">
+    <div class="token-row mt-20" style="display: flex; gap: 15px;">
+      <div class="flex-1" style="flex: 1;">
+        <label for="editMaxInputTokens">Max Input Tokens</label>
+        <span class="form-hint">Leave blank for default</span>
+        <input type="number" id="editMaxInputTokens" [(ngModel)]="editMaxInputTokens" class="gh-input w-100 mt-5">
+      </div>
+      <div class="flex-1" style="flex: 1;">
+        <label for="editMaxOutputTokens">Max Output Tokens</label>
+        <span class="form-hint">Leave blank for default</span>
+        <input type="number" id="editMaxOutputTokens" [(ngModel)]="editMaxOutputTokens" class="gh-input w-100 mt-5">
+      </div>
+    </div>
+
+    <div class="dialog-actions mt-20">
+      <button class="btn-gh btn-gh-cancel" (click)="closeEdit()" [disabled]="saving">Cancel</button>
+      <button class="btn-gh" (click)="saveEdit()" [disabled]="saving">
         <span *ngIf="saving" class="spinner-small"></span> Save Changes
       </button>
     </div>

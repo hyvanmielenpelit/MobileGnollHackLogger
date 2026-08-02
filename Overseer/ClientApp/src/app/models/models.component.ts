@@ -29,6 +29,10 @@ export class ModelsComponent implements OnInit {
   selectedModelId = '';
   selectedModelObj: ApiModelDto | null = null;
   pickerThinkingLevel = '';
+  pickerModelSelect = '';
+  customModelId = '';
+  pickerThinkingLevelSelect = '';
+  customThinkingLevel = '';
   modelError = '';
   sortMode: 'alphabetical' | 'newest' = 'alphabetical';
   
@@ -37,6 +41,11 @@ export class ModelsComponent implements OnInit {
   editDisplayName = '';
   editThinkingLevel = '';
   editThinkingLevelSelect = '';
+  editMaxInputTokens: number | null = null;
+  editMaxOutputTokens: number | null = null;
+
+  pickerMaxInputTokens: number | null = null;
+  pickerMaxOutputTokens: number | null = null;
 
   get sortedModels() {
     return [...this.availableModels].sort((a, b) => {
@@ -57,7 +66,20 @@ export class ModelsComponent implements OnInit {
   }
 
   ngOnInit() {
-    this.loadModels();
+    this.settingsService.getSettings().subscribe({
+      next: (settings) => {
+        if (settings.configuredProviders && settings.configuredProviders.length > 0) {
+          this.providers = settings.configuredProviders;
+          this.pickerProvider = this.providers[0];
+        } else {
+          this.providers = [];
+        }
+        this.loadModels();
+      },
+      error: () => {
+        this.loadModels();
+      }
+    });
   }
 
   loadModels() {
@@ -202,7 +224,7 @@ export class ModelsComponent implements OnInit {
   }
 
   openModelPicker() {
-    this.pickerProvider = 'OpenAI';
+    this.pickerProvider = this.providers.length > 0 ? this.providers[0] : 'OpenAI';
     this.checkModelsForPicker();
     this.modelPickerDialog?.nativeElement.showModal();
   }
@@ -221,7 +243,13 @@ export class ModelsComponent implements OnInit {
     this.availableModels = [];
     this.selectedModelId = '';
     this.selectedModelObj = null;
+    this.pickerModelSelect = '';
+    this.customModelId = '';
+    this.pickerThinkingLevelSelect = '';
+    this.customThinkingLevel = '';
     this.pickerThinkingLevel = '';
+    this.pickerMaxInputTokens = null;
+    this.pickerMaxOutputTokens = null;
 
     // fetch api keys to see if we have one for this provider. Or we can just send empty API key and let backend use saved.
     this.settingsService.getAvailableModels(this.pickerProvider, '').subscribe({
@@ -235,6 +263,10 @@ export class ModelsComponent implements OnInit {
 
         if (this.sortedModels.length > 0) {
           this.selectedModelId = this.sortedModels[0].id;
+          this.pickerModelSelect = this.selectedModelId;
+          this.onPickerModelSelect();
+        } else {
+          this.pickerModelSelect = 'custom';
           this.onPickerModelSelect();
         }
       },
@@ -246,6 +278,12 @@ export class ModelsComponent implements OnInit {
   }
 
   onPickerModelSelect() {
+    if (this.pickerModelSelect !== 'custom') {
+      this.selectedModelId = this.pickerModelSelect;
+    } else {
+      this.selectedModelId = '';
+    }
+    
     this.selectedModelObj = this.availableModels.find(m => m.id === this.selectedModelId) || null;
     if (this.selectedModelObj && this.selectedModelObj.supportedThinkingLevels && this.selectedModelObj.supportedThinkingLevels.length > 0) {
       if (this.selectedModelObj.isRecommended && this.selectedModelObj.recommendedThinkingLevel && this.selectedModelObj.supportedThinkingLevels.includes(this.selectedModelObj.recommendedThinkingLevel)) {
@@ -255,23 +293,39 @@ export class ModelsComponent implements OnInit {
           ? 'medium' 
           : this.selectedModelObj.supportedThinkingLevels[0];
       }
+      this.pickerThinkingLevelSelect = this.pickerThinkingLevel;
     } else {
       this.pickerThinkingLevel = '';
+      this.pickerThinkingLevelSelect = '';
+    }
+  }
+
+  onPickerThinkingLevelChange() {
+    if (this.pickerThinkingLevelSelect !== 'custom') {
+      this.pickerThinkingLevel = this.pickerThinkingLevelSelect;
+    } else {
+      this.pickerThinkingLevel = ''; 
     }
   }
 
   onSortChange() {
     if (this.sortedModels.length > 0) {
       this.selectedModelId = this.sortedModels[0].id;
+      this.pickerModelSelect = this.selectedModelId;
       this.onPickerModelSelect();
     }
   }
 
   addSelectedModel() {
-    if (this.selectedModelId) {
+    const finalModelId = this.pickerModelSelect === 'custom' ? this.customModelId : this.selectedModelId;
+    const finalThinkingLevel = this.pickerThinkingLevelSelect === 'custom' ? this.customThinkingLevel : this.pickerThinkingLevel;
+
+    if (finalModelId) {
       this.saving = true;
       let displayName = this.selectedModelObj?.id; // default
-      this.settingsService.addUserModel(this.pickerProvider, this.selectedModelId, displayName, this.pickerThinkingLevel || undefined).subscribe({
+      if (this.pickerModelSelect === 'custom') displayName = finalModelId;
+      
+      this.settingsService.addUserModel(this.pickerProvider, finalModelId, displayName, finalThinkingLevel || undefined, this.pickerMaxInputTokens, this.pickerMaxOutputTokens).subscribe({
         next: () => {
           this.loadModels();
           this.closeModelPicker();
@@ -297,6 +351,9 @@ export class ModelsComponent implements OnInit {
       this.editThinkingLevelSelect = 'custom';
     }
 
+    this.editMaxInputTokens = model.maxInputTokens || null;
+    this.editMaxOutputTokens = model.maxOutputTokens || null;
+
     this.editModelDialog?.nativeElement.showModal();
   }
 
@@ -316,7 +373,9 @@ export class ModelsComponent implements OnInit {
   saveEdit() {
     if (this.editingModel && this.editingModel.id) {
       this.saving = true;
-      this.settingsService.updateUserModel(this.editingModel.id, this.editDisplayName, this.editThinkingLevel || undefined).subscribe({
+      const finalThinkingLevel = this.editThinkingLevelSelect === 'custom' ? this.editThinkingLevel : this.editThinkingLevelSelect;
+
+      this.settingsService.updateUserModel(this.editingModel.id, this.editDisplayName, finalThinkingLevel || undefined, this.editMaxInputTokens, this.editMaxOutputTokens).subscribe({
         next: () => {
           this.loadModels();
           this.closeEdit();
@@ -328,5 +387,10 @@ export class ModelsComponent implements OnInit {
         }
       });
     }
+  }
+
+  formatThinkingLevel(level: string): string {
+    if (!level) return 'None';
+    return level.charAt(0).toUpperCase() + level.slice(1);
   }
 }

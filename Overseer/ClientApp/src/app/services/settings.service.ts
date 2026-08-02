@@ -17,6 +17,7 @@ export interface UserAiSettings {
   enableClientTools?: boolean;
   enableGameActions?: boolean;
   isProduction?: boolean;
+  configuredProviders?: string[];
 }
 
 export interface ApiModelDto {
@@ -39,6 +40,8 @@ export interface UserAiModel {
   displayName?: string;
   thinkingLevel?: string;
   orderIndex?: number;
+  maxInputTokens?: number | null;
+  maxOutputTokens?: number | null;
 }
 
 export interface ApiKeyStatus {
@@ -80,12 +83,12 @@ export class SettingsService {
     return this.http.get<UserAiModel[]>('/api/settings/usermodels');
   }
 
-  addUserModel(provider: string, modelId: string, displayName?: string, thinkingLevel?: string) {
-    return this.http.post<{ id: number }>('/api/settings/usermodels', { provider, modelId, displayName, thinkingLevel });
+  addUserModel(provider: string, modelId: string, displayName?: string, thinkingLevel?: string, maxInputTokens?: number | null, maxOutputTokens?: number | null) {
+    return this.http.post<{ id: number }>('/api/settings/usermodels', { provider, modelId, displayName, thinkingLevel, maxInputTokens, maxOutputTokens });
   }
 
-  updateUserModel(id: number, displayName?: string, thinkingLevel?: string) {
-    return this.http.put(`/api/settings/usermodels/${id}`, { displayName, thinkingLevel });
+  updateUserModel(id: number, displayName?: string, thinkingLevel?: string, maxInputTokens?: number | null, maxOutputTokens?: number | null) {
+    return this.http.put(`/api/settings/usermodels/${id}`, { displayName, thinkingLevel, maxInputTokens, maxOutputTokens });
   }
 
   deleteUserModel(id: number) {

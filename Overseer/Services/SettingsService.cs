@@ -155,7 +155,7 @@ public class SettingsService
         await _dbContext.SaveChangesAsync();
     }
 
-    public async Task UpdateUserModelAsync(string userId, long modelId, string? displayName, string? thinkingLevel)
+    public async Task UpdateUserModelAsync(string userId, long modelId, string? displayName, string? thinkingLevel, int? maxInputTokens, int? maxOutputTokens)
     {
         var model = await _dbContext.UserAiModels.FirstOrDefaultAsync(m => m.Id == modelId && m.AspNetUserId == userId);
         if (model != null)
@@ -163,6 +163,13 @@ public class SettingsService
             if (displayName != null) model.DisplayName = displayName;
             // thinkingLevel can be explicitly null to clear it
             model.ThinkingLevel = thinkingLevel;
+            
+            // these can also be cleared by setting them to null from UI (which we allow if empty)
+            // if we want to distinguish between "not updated" and "cleared", we could use a different pattern, 
+            // but in the UI we'll just send the current value or null to clear.
+            model.MaxInputTokens = maxInputTokens;
+            model.MaxOutputTokens = maxOutputTokens;
+            
             await _dbContext.SaveChangesAsync();
         }
     }
