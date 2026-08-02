@@ -61,12 +61,15 @@
       <div *ngFor="let msg of messages; let i = index" class="message-box" [ngClass]="msg.role">
         <div class="message-header">
           <img *ngIf="msg.role === 'assistant'" src="/img/gnoll-overseer-avatar-128x128-static.webp" class="overseer-avatar" alt="Overseer" width="64" height="64" />
-          <div *ngIf="msg.role === 'assistant'" class="sender-info">
-            <strong>Overseer</strong>
-            <div *ngIf="msg.modelDisplayName" class="model-name-subtext">{{ msg.modelDisplayName }}</div>
-          </div>
+          <strong *ngIf="msg.role === 'assistant'">Overseer</strong>
           <strong *ngIf="msg.role === 'user'">You</strong>
           <span class="msg-time" *ngIf="msg.timestampUtc">{{ msg.timestampUtc | relativeTime }}</span>
+          <div class="header-right-container">
+            <div *ngIf="msg.role === 'assistant' && msg.modelDisplayName" class="model-name-container">
+              <span class="model-name-subtext">{{ msg.modelDisplayName }}</span>
+              <span class="msg-model-badge" *ngIf="msg.thinkingLevel">{{ formatThinkingLevel(msg.thinkingLevel) }}</span>
+            </div>
+          </div>
         </div>
         <div *ngIf="msg.attachments && msg.attachments.length > 0" class="msg-attachments">
           <ng-container *ngFor="let att of msg.attachments">
@@ -118,13 +121,14 @@
       <div *ngIf="streamingMessage" class="message-box assistant">
         <div class="message-header">
           <img src="/img/GnollOverseerAvatar-128x128-animated.webp" class="overseer-avatar" alt="Overseer" width="64" height="64" />
-          <div class="sender-info">
-            <strong>Overseer</strong>
-            <div *ngIf="selectedModel?.displayName || selectedModel?.modelId || singleModelInfo?.modelId" class="model-name-subtext">
-               {{ selectedModel?.displayName || selectedModel?.modelId || singleModelInfo?.modelId }}
+          <strong>Overseer</strong>
+          <span class="msg-time">just now</span>
+          <div class="header-right-container">
+            <div *ngIf="selectedModel?.displayName || selectedModel?.modelId || singleModelInfo?.modelId" class="model-name-container">
+               <span class="model-name-subtext">{{ selectedModel?.displayName || selectedModel?.modelId || singleModelInfo?.modelId }}</span>
+               <span class="msg-model-badge" *ngIf="selectedModel?.thinkingLevel || singleModelInfo?.thinkingLevel">{{ formatThinkingLevel(selectedModel?.thinkingLevel || singleModelInfo?.thinkingLevel) }}</span>
             </div>
           </div>
-          <span class="msg-time">just now</span>
         </div>
         <div *ngIf="streamingToolCalls.length > 0" class="tool-calls-container">
           <div *ngFor="let tc of streamingToolCalls" class="tool-call" [ngClass]="tc.status">

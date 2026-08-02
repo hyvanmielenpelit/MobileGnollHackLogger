@@ -33,6 +33,7 @@ export interface ChatMessage {
   attachments?: ChatMessageAttachment[];
   toolCalls?: ChatMessageToolCall[];
   modelDisplayName?: string;
+  thinkingLevel?: string;
 }
 
 export interface ChatStreamEvent {

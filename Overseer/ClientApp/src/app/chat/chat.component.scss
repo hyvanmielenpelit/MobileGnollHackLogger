@@ -50,13 +50,34 @@
 .message-header { display: flex; align-items: center; gap: 15px; margin-block-end: 10px; }
 .message-header strong { margin-block-end: 0 !important; }
 
-.sender-info {
+.header-right-container {
+  margin-inline-start: auto;
+  align-self: flex-start;
+  margin-top: 5px;
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.model-name-container {
+  display: flex;
+  align-items: center;
+}
+
+.msg-model-badge {
+  font-size: 10px;
+  font-weight: 600;
+  color: #888;
+  border: 1px solid rgba(136, 136, 136, 0.4);
+  background: rgba(136, 136, 136, 0.05);
+  padding: 1px 4px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  margin-left: 5px;
 }
 
 .model-name-subtext {
-  font-size: 10px;
+  font-size: 11px;
   color: #888;
   letter-spacing: 0.5px;
 }

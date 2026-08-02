@@ -83,10 +83,16 @@ public class ChatController : ControllerBase
 
         var formattedMessages = messages.Select(m => {
             string? modelDisplayName = null;
+            string? thinkingLevel = null;
             if (m.Role == "assistant" && !string.IsNullOrEmpty(m.ModelUsed)) {
                 var um = userModels.FirstOrDefault(x => x.ModelId == m.ModelUsed);
-                if (um != null && !string.IsNullOrEmpty(um.DisplayName)) {
-                    modelDisplayName = um.DisplayName;
+                if (um != null) {
+                    if (!string.IsNullOrEmpty(um.DisplayName)) {
+                        modelDisplayName = um.DisplayName;
+                    } else {
+                        modelDisplayName = m.ModelUsed;
+                    }
+                    thinkingLevel = um.ThinkingLevel;
                 } else {
                     modelDisplayName = m.ModelUsed;
                 }
@@ -97,7 +103,8 @@ public class ChatController : ControllerBase
                 m.Content,
                 m.TimestampUtc,
                 m.Attachments,
-                ModelDisplayName = modelDisplayName
+                ModelDisplayName = modelDisplayName,
+                ThinkingLevel = thinkingLevel
             };
         }).ToList();
 
