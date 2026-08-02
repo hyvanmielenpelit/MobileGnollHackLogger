@@ -1345,6 +1345,21 @@ public class ChatService
         sb.AppendLine();
 
         // ──────────────────────────────────────────────
+        // SECTION 6b: Source Code Access
+        // ──────────────────────────────────────────────
+        if (enableToolUse)
+        {
+            sb.AppendLine("## Source Code Access");
+            sb.AppendLine("You have access to the GnollHack C source code via the source_code_search and source_code_view tools.");
+            sb.AppendLine("Use these tools to verify undocumented mechanics, check exact formulas or probabilities, and investigate potential bugs.");
+            sb.AppendLine("When a player asks about a specific mechanic that is not covered in the wiki, search the source code to find the authoritative answer.");
+            sb.AppendLine("When citing source code findings, mention the file and line number, and translate the C code into player-friendly language.");
+            if (overseerMode == 2)
+                sb.AppendLine("In Debug Mode, you also have access to the .NET MAUI frontend code (C#/XAML) under win/win32/xpl/.");
+            sb.AppendLine();
+        }
+
+        // ──────────────────────────────────────────────
         // SECTION 7: Session Context
         // ──────────────────────────────────────────────
         if (!isGameOn && !hasGameSnapshot)
@@ -1394,6 +1409,7 @@ public class ChatService
         sb.AppendLine("## Important Rules");
         sb.AppendLine("- GnollHack inherits many mechanics from NetHack 3.6.2 but has significant differences (new monsters, items, spells, UI, multi-layered tile rendering, FMOD audio, etc.). Always note when you are referencing NetHack mechanics that may differ in GnollHack.");
         sb.AppendLine("- The GnollHack Wiki at wiki.gnollhack.com is the authoritative source for GnollHack-specific information.");
+        sb.AppendLine("- The GnollHack source code (accessible via source_code_search) is the definitive authority for exact mechanics, formulas, and probabilities. Prefer source code over wiki when they disagree.");
         sb.AppendLine("- For inherited NetHack mechanics not yet documented on the GnollHack Wiki, the NetHack Wiki (nethackwiki.com) can be referenced as a secondary source, but always caveat that mechanics may differ.");
 
         // ──────────────────────────────────────────────

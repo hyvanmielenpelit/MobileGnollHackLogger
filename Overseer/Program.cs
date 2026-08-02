@@ -64,6 +64,8 @@ builder.Services.AddMemoryCache(options => options.SizeLimit = 10000); // Size l
 // Register Overseer services
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<WikiService>();
+builder.Services.AddSingleton<SourceCodeService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<SourceCodeService>());
 builder.Services.AddSingleton<CryptoService>();
 builder.Services.AddScoped<ChatService>();
 builder.Services.AddScoped<SettingsService>();
@@ -91,6 +93,8 @@ builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Ser
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.GetPlayerXlogTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.GetPlayerDumplogsTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.SearchServerDumplogsTool>();
+builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.SourceCodeSearchTool>();
+builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.SourceCodeViewTool>();
 
 var app = builder.Build();
 
