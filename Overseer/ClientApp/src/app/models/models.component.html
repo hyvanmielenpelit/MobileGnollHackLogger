@@ -36,11 +36,12 @@
       <div class="model-info">
         <div class="model-title">
           <h3>{{ model.displayName || model.modelId }}</h3>
-          <span class="provider-badge">{{ model.provider }}</span>
         </div>
         <div class="model-details">
-          <span class="detail-label">Model ID:</span> {{ model.modelId }}
-          <span *ngIf="model.thinkingLevel" class="detail-label thinking">Thinking: {{ model.thinkingLevel }}</span>
+          <div style="margin-bottom: 4px;">{{ model.modelId }} <span class="provider-badge" style="margin-left: 8px;">{{ model.provider }}</span></div>
+          <div *ngIf="model.thinkingLevel">
+            <span class="detail-label thinking" style="margin-left: 0;">Thinking Level:</span> {{ formatThinkingLevel(model.thinkingLevel) }}
+          </div>
         </div>
       </div>
 

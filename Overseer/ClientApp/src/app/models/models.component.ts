@@ -285,18 +285,27 @@ export class ModelsComponent implements OnInit {
     }
     
     this.selectedModelObj = this.availableModels.find(m => m.id === this.selectedModelId) || null;
-    if (this.selectedModelObj && this.selectedModelObj.supportedThinkingLevels && this.selectedModelObj.supportedThinkingLevels.length > 0) {
-      if (this.selectedModelObj.isRecommended && this.selectedModelObj.recommendedThinkingLevel && this.selectedModelObj.supportedThinkingLevels.includes(this.selectedModelObj.recommendedThinkingLevel)) {
-        this.pickerThinkingLevel = this.selectedModelObj.recommendedThinkingLevel;
+    if (this.selectedModelObj) {
+      if (this.selectedModelObj.supportedThinkingLevels && this.selectedModelObj.supportedThinkingLevels.length > 0) {
+        if (this.selectedModelObj.isRecommended && this.selectedModelObj.recommendedThinkingLevel && this.selectedModelObj.supportedThinkingLevels.includes(this.selectedModelObj.recommendedThinkingLevel)) {
+          this.pickerThinkingLevel = this.selectedModelObj.recommendedThinkingLevel;
+        } else {
+          this.pickerThinkingLevel = this.selectedModelObj.supportedThinkingLevels.includes('medium') 
+            ? 'medium' 
+            : this.selectedModelObj.supportedThinkingLevels[0];
+        }
+        this.pickerThinkingLevelSelect = this.pickerThinkingLevel;
       } else {
-        this.pickerThinkingLevel = this.selectedModelObj.supportedThinkingLevels.includes('medium') 
-          ? 'medium' 
-          : this.selectedModelObj.supportedThinkingLevels[0];
+        this.pickerThinkingLevel = '';
+        this.pickerThinkingLevelSelect = '';
       }
-      this.pickerThinkingLevelSelect = this.pickerThinkingLevel;
+      this.pickerMaxInputTokens = this.selectedModelObj.maxInputTokens || null;
+      this.pickerMaxOutputTokens = this.selectedModelObj.maxOutputTokens || null;
     } else {
       this.pickerThinkingLevel = '';
       this.pickerThinkingLevelSelect = '';
+      this.pickerMaxInputTokens = null;
+      this.pickerMaxOutputTokens = null;
     }
   }
 
@@ -322,7 +331,7 @@ export class ModelsComponent implements OnInit {
 
     if (finalModelId) {
       this.saving = true;
-      let displayName = this.selectedModelObj?.id; // default
+      let displayName = this.selectedModelObj?.description || this.selectedModelObj?.id; // use metadata name if available
       if (this.pickerModelSelect === 'custom') displayName = finalModelId;
       
       this.settingsService.addUserModel(this.pickerProvider, finalModelId, displayName, finalThinkingLevel || undefined, this.pickerMaxInputTokens, this.pickerMaxOutputTokens).subscribe({
