@@ -211,6 +211,16 @@ label { display: block; margin-bottom: 5px; font-weight: bold; }
   white-space: nowrap;
 }
 
+.star-icon-trigger {
+  anchor-name: --star-anchor;
+}
+
+.recommended-tooltip {
+  position-anchor: --star-anchor;
+  top: calc(anchor(bottom) + 8px);
+  left: anchor(center);
+}
+
 .model-picker-body {
   overflow-y: auto;
   max-height: 60dvh;

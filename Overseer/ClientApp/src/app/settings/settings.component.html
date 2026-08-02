@@ -132,7 +132,14 @@
 <!-- Modal for picking models -->
 <dialog #modelPickerDialog class="gh-dialog">
   <h3 class="modal-title">Available Models</h3>
-  <p class="modal-subtitle">Showing models released after 1 Jan, 2026</p>
+  <p class="modal-subtitle">Showing models released after 1 Jan, 2026.</p>
+  <p class="modal-subtitle">
+    Models marked with <span tabindex="0" interestfor="recommended-star-tooltip" class="star-icon-trigger" style="cursor: help;">⭐</span> are highly recommended.
+  </p>
+  
+  <div popover="hint" id="recommended-star-tooltip" class="gh-tooltip recommended-tooltip">
+    ⭐ indicates a highly recommended model or optimal thinking level.
+  </div>
   
   <div *ngIf="modelError" class="modal-error">
     <p>{{ modelError }}</p>
