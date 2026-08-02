@@ -26,6 +26,16 @@
       </label>
     </div>
 
+    <div class="margin-y-20">
+      <label class="checkbox-label align-start">
+        <input type="checkbox" [(ngModel)]="showSourceCodeReferences" name="showSourceCodeReferences" class="w-auto m-0 mt-5" aria-describedby="sourceCodeRefsHint" />
+        <div>
+          <span>Show Source Code References</span>
+          <span id="sourceCodeRefsHint" class="form-hint mt-5">Allow AI to cite source file names and line numbers in replies (overridden by Developer Mode)</span>
+        </div>
+      </label>
+    </div>
+
     <fieldset class="permissions-fieldset">
       <legend>AI Permissions</legend>
 

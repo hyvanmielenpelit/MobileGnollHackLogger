@@ -19,7 +19,7 @@ public class SettingsService
         return await _dbContext.UserAiSettings.FindAsync(userId);
     }
 
-    public async Task SaveSettingsAsync(string userId, string? defaultProvider, string? defaultModel, string? apiKey, string? thinkingLevel = null, bool? spoilerFreeMode = null, int? maxInputTokens = null, int? maxOutputTokens = null, bool? enableWebSearch = null, bool? enableToolUse = null, bool? enableClientTools = null, bool? enableGameActions = null, bool? allowMultipleModels = null)
+    public async Task SaveSettingsAsync(string userId, string? defaultProvider, string? defaultModel, string? apiKey, string? thinkingLevel = null, bool? spoilerFreeMode = null, int? maxInputTokens = null, int? maxOutputTokens = null, bool? enableWebSearch = null, bool? enableToolUse = null, bool? enableClientTools = null, bool? enableGameActions = null, bool? allowMultipleModels = null, bool? showSourceCodeReferences = null)
     {
         var settings = await _dbContext.UserAiSettings.FindAsync(userId);
         if (settings == null)
@@ -44,6 +44,7 @@ public class SettingsService
         if (enableClientTools.HasValue) settings.EnableClientTools = enableClientTools.Value;
         if (enableGameActions.HasValue) settings.EnableGameActions = enableGameActions.Value;
         if (allowMultipleModels.HasValue) settings.AllowMultipleModels = allowMultipleModels.Value;
+        if (showSourceCodeReferences.HasValue) settings.ShowSourceCodeReferences = showSourceCodeReferences.Value;
 
         if (!string.IsNullOrEmpty(apiKey))
         {

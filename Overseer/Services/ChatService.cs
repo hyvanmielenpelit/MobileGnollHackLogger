@@ -83,6 +83,7 @@ public class ChatService
         int? maxOutputTokens = null;
         int overseerMode = 0;
         bool isGnollHackSession = false;
+        bool showSourceCodeReferences = false;
 
         using (var scope = _scopeFactory.CreateScope())
         {
@@ -103,6 +104,7 @@ public class ChatService
                 enableClientTools = settings.EnableClientTools;
                 enableGameActions = settings.EnableGameActions;
                 allowMultipleModels = settings.AllowMultipleModels;
+                showSourceCodeReferences = settings.ShowSourceCodeReferences;
             }
 
             if (sessionId.HasValue)
@@ -284,8 +286,10 @@ public class ChatService
                 overseerMode = isGameOn ? 0 : 1;
             }
             
+            bool allowSourceCodeReferences = showSourceCodeReferences || developerMode;
+
             // enableToolUse handled above
-            string systemPrompt = BuildSystemPrompt(contextDocs, spoilerFreeMode, verboseMode, isGameOn, developerMode, overseerMode, hasGameSnapshot, hasMessageHistory, session?.ClientSettings, enableToolUse, enableWebSearch);
+            string systemPrompt = BuildSystemPrompt(contextDocs, spoilerFreeMode, verboseMode, isGameOn, developerMode, overseerMode, hasGameSnapshot, hasMessageHistory, session?.ClientSettings, enableToolUse, enableWebSearch, allowSourceCodeReferences);
 
             var userMsg = new ChatMessage
             {
@@ -1243,7 +1247,8 @@ public class ChatService
         bool hasMessageHistory,
         string? clientSettings,
         bool enableToolUse,
-        bool enableWebSearch)
+        bool enableWebSearch,
+        bool allowSourceCodeReferences)
     {
         var sb = new StringBuilder();
 
@@ -1387,7 +1392,14 @@ public class ChatService
             sb.AppendLine("You have access to the GnollHack C source code via the source_code_search and source_code_view tools.");
             sb.AppendLine("Use these tools to verify undocumented mechanics, check exact formulas or probabilities, and investigate potential bugs.");
             sb.AppendLine("When a player asks about a specific mechanic that is not covered in the wiki, search the source code to find the authoritative answer.");
-            sb.AppendLine("When citing source code findings, mention the file and line number, and translate the C code into player-friendly language.");
+            if (allowSourceCodeReferences)
+            {
+                sb.AppendLine("When citing source code findings, mention the file and line number, and translate the C code into player-friendly language.");
+            }
+            else
+            {
+                sb.AppendLine("IMPORTANT: Do NOT include raw source code file names, paths, or line numbers in your responses. Instead, describe the underlying mechanics in plain, player-friendly language without referencing the code itself. Use the source code tools internally to find accurate information, but present only the gameplay-relevant conclusions.");
+            }
             if (overseerMode == 2)
                 sb.AppendLine("In Debug Mode, you also have access to the .NET MAUI frontend code (C#/XAML) under win/win32/xpl/.");
             sb.AppendLine();

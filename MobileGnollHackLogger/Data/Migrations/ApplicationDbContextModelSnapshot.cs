@@ -903,6 +903,9 @@ namespace MobileGnollHackLogger.Data.Migrations
                     b.Property<int?>("MaxOutputTokens")
                         .HasColumnType("int");
 
+                    b.Property<bool>("ShowSourceCodeReferences")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("SpoilerFreeMode")
                         .HasColumnType("bit");
 

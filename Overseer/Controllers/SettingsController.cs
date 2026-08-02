@@ -59,6 +59,7 @@ public class SettingsController : ControllerBase
             configuredProviders = apiKeysStatus.Where(s => (bool)((dynamic)s).HasKey).Select(s => (string)((dynamic)s).Provider).ToList(),
             maxAttachmentSize = _configuration.GetValue<long>("MaxAttachmentSize", 15728640),
             spoilerFreeMode = settings?.SpoilerFreeMode ?? true,
+            showSourceCodeReferences = settings?.ShowSourceCodeReferences ?? false,
             maxInputTokens = settings?.MaxInputTokens,
             maxOutputTokens = settings?.MaxOutputTokens,
             enableWebSearch = settings?.EnableWebSearch ?? true,
@@ -81,7 +82,7 @@ public class SettingsController : ControllerBase
             request.EnableGameActions = false;
         }
 
-        await _settingsService.SaveSettingsAsync(userId, request.Provider, request.Model, request.ApiKey, request.ThinkingLevel, request.SpoilerFreeMode, request.MaxInputTokens, request.MaxOutputTokens, request.EnableWebSearch, request.EnableToolUse, request.EnableClientTools, request.EnableGameActions, request.AllowMultipleModels);
+        await _settingsService.SaveSettingsAsync(userId, request.Provider, request.Model, request.ApiKey, request.ThinkingLevel, request.SpoilerFreeMode, request.MaxInputTokens, request.MaxOutputTokens, request.EnableWebSearch, request.EnableToolUse, request.EnableClientTools, request.EnableGameActions, request.AllowMultipleModels, request.ShowSourceCodeReferences);
         
         return Ok();
     }
@@ -411,6 +412,7 @@ public class UpdateSettingsRequest
     public bool? EnableClientTools { get; set; }
     public bool? EnableGameActions { get; set; }
     public bool? AllowMultipleModels { get; set; }
+    public bool? ShowSourceCodeReferences { get; set; }
 }
 
 public class SaveApiKeyRequest

@@ -10,6 +10,7 @@ export interface UserAiSettings {
   allowMultipleModels?: boolean;
   maxAttachmentSize?: number;
   spoilerFreeMode: boolean;
+  showSourceCodeReferences?: boolean;
   maxInputTokens?: number | null;
   maxOutputTokens?: number | null;
   enableWebSearch?: boolean;
@@ -59,8 +60,8 @@ export class SettingsService {
     return this.http.get<UserAiSettings>('/api/settings');
   }
 
-  saveSettings(provider: string, model: string, apiKey: string, thinkingLevel?: string, spoilerFreeMode: boolean = false, maxInputTokens: number | null = null, maxOutputTokens: number | null = null, enableWebSearch: boolean = true, enableToolUse: boolean = true, enableClientTools: boolean = true, enableGameActions: boolean = false, allowMultipleModels: boolean = false) {
-    return this.http.put('/api/settings', { provider, model, apiKey, thinkingLevel, spoilerFreeMode, maxInputTokens, maxOutputTokens, enableWebSearch, enableToolUse, enableClientTools, enableGameActions, allowMultipleModels });
+  saveSettings(provider: string, model: string, apiKey: string, thinkingLevel?: string, spoilerFreeMode: boolean = false, maxInputTokens: number | null = null, maxOutputTokens: number | null = null, enableWebSearch: boolean = true, enableToolUse: boolean = true, enableClientTools: boolean = true, enableGameActions: boolean = false, allowMultipleModels: boolean = false, showSourceCodeReferences: boolean = false) {
+    return this.http.put('/api/settings', { provider, model, apiKey, thinkingLevel, spoilerFreeMode, maxInputTokens, maxOutputTokens, enableWebSearch, enableToolUse, enableClientTools, enableGameActions, allowMultipleModels, showSourceCodeReferences });
   }
 
   deleteApiKey() {

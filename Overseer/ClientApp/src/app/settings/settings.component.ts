@@ -21,6 +21,9 @@ export class SettingsComponent implements OnInit {
 
   spoilerFreeMode = true;
   initSpoilerFreeMode = true;
+  
+  showSourceCodeReferences = false;
+  initShowSourceCodeReferences = false;
 
   enableWebSearch = true;
   initEnableWebSearch = true;
@@ -37,6 +40,7 @@ export class SettingsComponent implements OnInit {
   get isDirty(): boolean {
     return this.allowMultipleModels !== this.initAllowMultipleModels ||
            this.spoilerFreeMode !== this.initSpoilerFreeMode ||
+           this.showSourceCodeReferences !== this.initShowSourceCodeReferences ||
            this.enableWebSearch !== this.initEnableWebSearch ||
            this.enableToolUse !== this.initEnableToolUse ||
            this.enableClientTools !== this.initEnableClientTools ||
@@ -81,6 +85,10 @@ export class SettingsComponent implements OnInit {
           this.spoilerFreeMode = s.spoilerFreeMode;
           this.initSpoilerFreeMode = s.spoilerFreeMode;
         }
+        if (s.showSourceCodeReferences !== undefined) {
+          this.showSourceCodeReferences = s.showSourceCodeReferences;
+          this.initShowSourceCodeReferences = s.showSourceCodeReferences;
+        }
         if (s.enableWebSearch !== undefined) {
           this.enableWebSearch = s.enableWebSearch;
           this.initEnableWebSearch = s.enableWebSearch;
@@ -106,7 +114,7 @@ export class SettingsComponent implements OnInit {
     this.saved = false;
     // We send empty strings for the legacy provider/model/apiKey fields 
     // since the API might still require them in the body, but they are now managed in other tabs.
-    this.settingsService.saveSettings('', '', '', undefined, this.spoilerFreeMode, null, null, this.enableWebSearch, this.enableToolUse, this.enableClientTools, this.enableGameActions, this.allowMultipleModels).subscribe(() => {
+    this.settingsService.saveSettings('', '', '', undefined, this.spoilerFreeMode, null, null, this.enableWebSearch, this.enableToolUse, this.enableClientTools, this.enableGameActions, this.allowMultipleModels, this.showSourceCodeReferences).subscribe(() => {
       this.loading = false;
       
       const toast = this.successToast?.nativeElement as any;
@@ -122,6 +130,7 @@ export class SettingsComponent implements OnInit {
 
       this.initAllowMultipleModels = this.allowMultipleModels;
       this.initSpoilerFreeMode = this.spoilerFreeMode;
+      this.initShowSourceCodeReferences = this.showSourceCodeReferences;
       this.initEnableWebSearch = this.enableWebSearch;
       this.initEnableToolUse = this.enableToolUse;
       this.initEnableClientTools = this.enableClientTools;
