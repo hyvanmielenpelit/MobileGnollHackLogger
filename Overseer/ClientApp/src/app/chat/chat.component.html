@@ -22,10 +22,10 @@
       </li>
     </ul>
     <div class="bottom-links">
-      <a *ngIf="!isProduction" routerLink="/debug-log" queryParamsHandling="preserve">Debug Log</a>
+      <a routerLink="/settings" queryParamsHandling="preserve">Settings</a>
       <a routerLink="/api-keys" queryParamsHandling="preserve">API Keys</a>
       <a routerLink="/models" queryParamsHandling="preserve">Models</a>
-      <a routerLink="/settings" queryParamsHandling="preserve">Settings</a>
+      <a *ngIf="!isProduction" routerLink="/debug-log" queryParamsHandling="preserve">Debug Log</a>
       <a href="#" (click)="logout($event)">Logout</a>
     </div>
   </div>
@@ -45,7 +45,9 @@
            <li *ngIf="!hasApiKey">API Key is not set.</li>
            <li *ngIf="!hasModel">Model is not set.</li>
         </ul>
-        <a routerLink="/settings" queryParamsHandling="preserve" class="btn-gh mt-10">Go to Settings</a>
+        <a [routerLink]="!hasApiKey ? '/api-keys' : '/models'" queryParamsHandling="preserve" class="btn-gh mt-10">
+          {{ !hasApiKey ? 'Go to API Keys' : 'Go to Models' }}
+        </a>
       </div>
       <div *ngIf="isHandoffWaiting && hasApiKey && hasModel" class="handoff-loading-box gh-main-container">
         <div class="handoff-avatar-container">

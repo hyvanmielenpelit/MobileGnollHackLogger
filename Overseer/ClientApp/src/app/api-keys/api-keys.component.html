@@ -1,11 +1,14 @@
-<div class="settings-container">
-  <h2>API Keys</h2>
+<div class="settings-container gh-main-container">
+  <div class="header-row">
+    <h2>API Keys</h2>
+    <a routerLink="/chat" queryParamsHandling="preserve" class="nav-back-link">&larr; Back to Chat</a>
+  </div>
   <p class="settings-description">
     Manage your API keys for different AI providers. Keys are encrypted before being stored in the database.
   </p>
 
   <div *ngIf="loading" class="loading-state">
-    <span class="spinner"></span> Loading API Keys...
+    <span class="sidebar-spinner"></span> Loading API Keys...
   </div>
 
   <div *ngIf="!loading" class="api-keys-list">
@@ -18,21 +21,19 @@
       </div>
 
       <div class="provider-body">
-        <div *ngIf="keyStatuses[provider]" class="key-actions">
+        <div *ngIf="keyStatuses[provider]" class="api-key-grid">
           <p class="key-info-text">You have a saved API key for this provider.</p>
-          <button class="btn-danger" (click)="deleteKey(provider)" [disabled]="savingProvider === provider">
-            <span *ngIf="savingProvider === provider" class="spinner-small"></span>
+          <button class="btn-gh btn-gh-delete btn-action" (click)="deleteKey(provider)" [disabled]="savingProvider === provider">
+            <span *ngIf="savingProvider === provider" class="sidebar-spinner small-spinner"></span>
             Delete Key
           </button>
         </div>
 
-        <div *ngIf="!keyStatuses[provider]" class="key-actions">
-          <div class="form-group">
-            <label [for]="'key-' + provider">API Key</label>
-            <input type="password" [id]="'key-' + provider" [(ngModel)]="newKeys[provider]" placeholder="Enter API Key" class="form-control">
-          </div>
-          <button class="btn-primary" (click)="saveKey(provider)" [disabled]="!newKeys[provider] || savingProvider === provider">
-            <span *ngIf="savingProvider === provider" class="spinner-small"></span>
+        <div *ngIf="!keyStatuses[provider]" class="api-key-grid">
+          <label class="sr-only" [for]="'key-' + provider">API Key</label>
+          <input type="password" [id]="'key-' + provider" [(ngModel)]="newKeys[provider]" placeholder="Enter API Key" class="gh-input m-0">
+          <button class="btn-gh btn-action" (click)="saveKey(provider)" [disabled]="!newKeys[provider] || savingProvider === provider">
+            <span *ngIf="savingProvider === provider" class="sidebar-spinner small-spinner"></span>
             Save Key
           </button>
         </div>

@@ -40,6 +40,8 @@ public class SettingsController : ControllerBase
         var apiKeysStatus = await _settingsService.GetApiKeysStatusAsync(userId);
         var userModels = await _settingsService.GetUserModelsAsync(userId);
         
+        bool allowMultipleModels = settings?.AllowMultipleModels ?? false;
+        
         bool hasLegacyKey = !string.IsNullOrEmpty(settings?.EncryptedApiKey);
         bool hasAnyNewKey = apiKeysStatus.Any(s => (bool)((dynamic)s).HasKey);
         
@@ -51,9 +53,9 @@ public class SettingsController : ControllerBase
             provider = settings?.DefaultProvider,
             model = settings?.DefaultModel,
             thinkingLevel = settings?.ThinkingLevel,
-            hasApiKey = hasLegacyKey || hasAnyNewKey,
-            hasModel = hasLegacyModel || hasAnyNewModel,
-            allowMultipleModels = settings?.AllowMultipleModels ?? false,
+            hasApiKey = allowMultipleModels ? hasAnyNewKey : hasLegacyKey,
+            hasModel = allowMultipleModels ? hasAnyNewModel : hasLegacyModel,
+            allowMultipleModels = allowMultipleModels,
             maxAttachmentSize = _configuration.GetValue<long>("MaxAttachmentSize", 15728640),
             spoilerFreeMode = settings?.SpoilerFreeMode ?? true,
             maxInputTokens = settings?.MaxInputTokens,
