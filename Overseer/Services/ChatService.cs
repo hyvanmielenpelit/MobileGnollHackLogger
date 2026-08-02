@@ -505,7 +505,8 @@ public class ChatService
 
                 if (!string.IsNullOrEmpty(thinkingLevel))
                 {
-                    requestBody["thinking"] = new { type = "enabled", budget_tokens = 1024 }; 
+                    requestBody["thinking"] = new { type = "adaptive" }; 
+                    requestBody["output_config"] = new { effort = thinkingLevel.ToLower() };
                 }
                 
                 if (requestTools.HasTools)

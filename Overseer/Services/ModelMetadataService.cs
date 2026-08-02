@@ -27,17 +27,7 @@ public class ModelMetadataService
             return metadata;
         }
 
-        var openai4Regex = new Regex(@"^gpt-4o(?:-(mini))?$");
-        var openai4Match = openai4Regex.Match(modelId);
-        if (openai4Match.Success)
-        {
-            var isMini = openai4Match.Groups[1].Success;
-            metadata.Description = isMini ? "OpenAI GPT-4o Mini" : "OpenAI GPT-4o";
-            metadata.ContextWindowSize = 128000;
-            metadata.MaxOutputTokens = 16384;
-            metadata.MaxInputTokens = metadata.ContextWindowSize - metadata.MaxOutputTokens;
-            return metadata;
-        }
+
 
         var anthropicRegex = new Regex(@"^claude-(?:(opus|sonnet|fable|mythos)-)?(5|4(?:[.-])[6-8])(?:-(opus|sonnet|fable|mythos))?$");
         var anthropicMatch = anthropicRegex.Match(modelId);
@@ -58,20 +48,9 @@ public class ModelMetadataService
             return metadata;
         }
 
-        var anthropic3Regex = new Regex(@"^claude-3-5-(sonnet|haiku).*$");
-        var anthropic3Match = anthropic3Regex.Match(modelId);
-        if (anthropic3Match.Success)
-        {
-            var tierStr = anthropic3Match.Groups[1].Value;
-            var formattedTier = !string.IsNullOrEmpty(tierStr) ? char.ToUpper(tierStr[0]) + tierStr.Substring(1) : "Model";
-            metadata.Description = $"Claude 3.5 {formattedTier}";
-            metadata.ContextWindowSize = 200000;
-            metadata.MaxOutputTokens = 8192;
-            metadata.MaxInputTokens = metadata.ContextWindowSize - metadata.MaxOutputTokens;
-            return metadata;
-        }
 
-        var googleRegex = new Regex(@"^gemini-(2\.5|3(?:\.[1-6])?)-(pro|flash(?:-lite|-cyber|-tts)?)(?:-(.*))?$");
+
+        var googleRegex = new Regex(@"^gemini-(3(?:\.[1-6])?)-(pro|flash(?:-lite|-cyber|-tts)?)(?:-(.*))?$");
         var googleMatch = googleRegex.Match(modelId);
         if (googleMatch.Success)
         {
@@ -89,14 +68,7 @@ public class ModelMetadataService
                 metadata.SupportedThinkingLevels = new List<string> { "minimal", "low", "medium", "high" };
             }
             
-            if (version == "3.5")
-            {
-                metadata.ContextWindowSize = 2097152;
-            }
-            else
-            {
-                metadata.ContextWindowSize = 1048576;
-            }
+            metadata.ContextWindowSize = 1048576;
             metadata.MaxOutputTokens = 65536;
             metadata.MaxInputTokens = metadata.ContextWindowSize - metadata.MaxOutputTokens;
             
