@@ -33,6 +33,7 @@ namespace Overseer.Services.Tools
             {
                 var payload = new
                 {
+                    type = "tool_client_request",
                     requestId = requestId,
                     toolName = toolName,
                     parameters = parameters

@@ -770,16 +770,26 @@ public class ChatService
                     var modelParts = new List<object>();
                     foreach (var tc in currentIterationToolCalls)
                     {
-                        var argsStr = tc.GetProperty("arguments").GetString() ?? "{}";
-                        JsonElement argJson = JsonDocument.Parse("{}").RootElement;
-                        try { argJson = JsonSerializer.Deserialize<JsonElement>(argsStr); } catch { }
-                        
-                        modelParts.Add(new {
-                            functionCall = new {
-                                name = tc.GetProperty("name").GetString(),
-                                args = argJson
-                            }
-                        });
+                        if (tc.TryGetProperty("raw_part", out var rp) && rp.ValueKind == JsonValueKind.String)
+                        {
+                            modelParts.Add(JsonSerializer.Deserialize<JsonElement>(rp.GetString()!));
+                        }
+                        else
+                        {
+                            var argsStr = tc.GetProperty("arguments").GetString() ?? "{}";
+                            JsonElement argJson = JsonDocument.Parse("{}").RootElement;
+                            try { argJson = JsonSerializer.Deserialize<JsonElement>(argsStr); } catch { }
+                            
+                            var fcObj = new Dictionary<string, object>
+                            {
+                                { "name", tc.GetProperty("name").GetString() ?? "" },
+                                { "args", argJson }
+                            };
+                            
+                            modelParts.Add(new {
+                                functionCall = fcObj
+                            });
+                        }
                     }
                     
                     if (!string.IsNullOrEmpty(iterationText))
@@ -1125,7 +1135,12 @@ public class ChatService
                             {
                                 var name = fc.GetProperty("name").GetString() ?? "";
                                 var args = fc.TryGetProperty("args", out var a) ? a.GetRawText() : "{}";
-                                var callObj = new { id = Guid.NewGuid().ToString(), name = name, arguments = args };
+                                var callObj = new { 
+                                    id = Guid.NewGuid().ToString(), 
+                                    name = name, 
+                                    arguments = args,
+                                    raw_part = part.GetRawText()
+                                };
                                 eventsToYield.Add(new ChatEvent { Type = "tool_call_complete", Data = JsonSerializer.Serialize(callObj) });
                             }
                         }
