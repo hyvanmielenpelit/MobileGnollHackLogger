@@ -14,7 +14,7 @@ import { SettingsService, ApiKeyStatus } from '../services/settings.service';
 export class ApiKeysComponent implements OnInit {
   settingsService = inject(SettingsService);
 
-  providers = ['OpenAI', 'Anthropic', 'Google'];
+  providers = ['Anthropic', 'Google', 'OpenAI'];
   keyStatuses: Record<string, boolean> = {};
   newKeys: Record<string, string> = {};
   
