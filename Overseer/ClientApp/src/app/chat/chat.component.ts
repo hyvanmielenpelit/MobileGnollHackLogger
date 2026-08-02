@@ -94,6 +94,64 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
   userModels: import('../services/settings.service').UserAiModel[] = [];
   selectedUserModelId: number | null = null;
+  isModelDropdownOpen = false;
+
+  get selectedModel() {
+    return this.userModels.find(m => m.id === this.selectedUserModelId);
+  }
+
+  toggleModelDropdown(event: Event) {
+    event.stopPropagation();
+    this.isModelDropdownOpen = !this.isModelDropdownOpen;
+  }
+
+  selectModel(modelId: number | undefined) {
+    if (modelId !== undefined) {
+      this.selectedUserModelId = modelId;
+      localStorage.setItem('overseer_chat_model_global', modelId.toString());
+      if (this.currentSessionId !== null) {
+        localStorage.setItem(`overseer_chat_model_session_${this.currentSessionId}`, modelId.toString());
+      }
+    }
+    this.isModelDropdownOpen = false;
+  }
+
+  applySavedModelPreference() {
+    if (!this.allowMultipleModels || this.userModels.length === 0) return;
+
+    let targetId: number | null = null;
+
+    if (this.currentSessionId !== null) {
+      const sessionPref = localStorage.getItem(`overseer_chat_model_session_${this.currentSessionId}`);
+      if (sessionPref) targetId = Number(sessionPref);
+    }
+
+    if (!targetId || !this.userModels.find(m => m.id === targetId)) {
+      const globalPref = localStorage.getItem('overseer_chat_model_global');
+      if (globalPref) targetId = Number(globalPref);
+    }
+
+    if (targetId && this.userModels.find(m => m.id === targetId)) {
+      this.selectedUserModelId = targetId;
+    } else {
+      this.selectedUserModelId = this.userModels[0].id ?? null;
+    }
+  }
+
+  formatThinkingLevel(level: string | undefined): string {
+    if (!level) return 'None';
+    return level.charAt(0).toUpperCase() + level.slice(1);
+  }
+
+  @HostListener('document:click', ['$event'])
+  onDocumentClick(event: MouseEvent) {
+    if (this.isModelDropdownOpen) {
+      const target = event.target as HTMLElement;
+      if (!target.closest('.custom-model-selector')) {
+        this.isModelDropdownOpen = false;
+      }
+    }
+  }
 
   isReporting = false;
   reportingMessageId: number | null = null;
@@ -226,17 +284,21 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           this.maxAttachmentSize = settings.maxAttachmentSize;
         }
         this.hasApiKey = settings.hasApiKey;
-        this.hasModel = !!settings.model;
         this.isProduction = settings.isProduction ?? false;
         this.allowMultipleModels = settings.allowMultipleModels ?? false;
 
         if (this.allowMultipleModels) {
+          // Temporarily assume true to prevent the error popup from flashing while loading
+          this.hasModel = true;
           this.settingsService.getUserModels().subscribe(models => {
             this.userModels = models;
-            if (this.userModels.length > 0 && !this.selectedUserModelId) {
-              this.selectedUserModelId = this.userModels[0].id ?? null;
+            this.hasModel = this.userModels.length > 0;
+            if (this.userModels.length > 0) {
+              this.applySavedModelPreference();
             }
           });
+        } else {
+          this.hasModel = !!settings.model;
         }
       }
     });
@@ -438,6 +500,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.streamingToolCalls = [];
     this.currentStatusText = '';
     this.loadDraft();
+    this.applySavedModelPreference();
     this.focusPromptInput();
   }
 
@@ -459,6 +522,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         if (!this.sessions.find(x => x.id === id)) {
            this.loadSessions();
         }
+        this.applySavedModelPreference();
         this.focusPromptInput();
       },
       error: (err) => {

@@ -391,6 +391,11 @@ public class ChatService
             
             // Note: maxOutputTokens is handled later
 
+            yield return new ChatEvent 
+            { 
+                Type = "debug", 
+                Data = $"[Model Configuration]\nProvider: {provider}\nModel: {model}\nThinking Level: {(string.IsNullOrEmpty(thinkingLevel) ? "None" : thinkingLevel)}\nMax Input Tokens (Limit): {effectiveInputLimit}\nMax Output Tokens: {(maxOutputTokens.HasValue ? maxOutputTokens.Value.ToString() : "Default")}\nEstimated Request Input Tokens: ~{totalTokens}" 
+            };
         }
 
         string fullResponse = "";
