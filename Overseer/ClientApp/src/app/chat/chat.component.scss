@@ -22,7 +22,7 @@
 .resizer:hover::after, .resizer:active::after {
   background: var(--primary-color);
 }
-.sidebar h3 { margin-block-start: 0; color: var(--title-color); border-block-end: 1px solid var(--border-glass); padding-block-end: 10px; }
+.sidebar h3 { margin-block-start: 0; color: var(--title-color); border-block-end: 1px solid var(--border-glass); padding-block-end: 10px; text-align: center; }
 .sidebar ul { list-style: none; padding: 0; flex-grow: 1; overflow-y: auto; }
 .sidebar li { padding: 10px; cursor: pointer; border-block-end: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center; color: #ccc; transition: background 0.2s; }
 .sidebar li:hover { background: rgba(255,255,255,0.05); }
@@ -351,7 +351,131 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
   box-shadow: 0 0 10px rgba(0,0,0,0.5);
 }
 
-.mobile-header {
+.chat-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 15px;
+  border-block-end: 1px solid var(--border-glass);
+  background: rgba(0, 0, 0, 0.3);
+  
+  .chat-title-container {
+    flex-grow: 1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    overflow: hidden;
+  }
+  
+  .chat-title {
+    font-family: "Cinzel", serif;
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: var(--title-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: default;
+  }
+  
+  .rename-btn {
+    background: transparent;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    transition: background 0.2s, color 0.2s;
+    
+    &:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+    }
+  }
+  
+  .rename-container {
+    flex-grow: 1;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .rename-input-wrapper {
+    flex-grow: 1;
+    display: flex;
+    align-items: center;
+    background: rgba(0, 0, 0, 0.5);
+    border: 1px solid var(--border-glass);
+    border-radius: 4px;
+    padding-inline-end: 4px;
+    
+    &.has-error {
+      border-color: rgba(220, 53, 69, 0.8);
+      box-shadow: 0 0 5px rgba(220, 53, 69, 0.3);
+    }
+    
+    &:focus-within:not(.has-error) {
+      border-color: var(--primary-color);
+      box-shadow: 0 0 5px rgba(212, 175, 55, 0.5);
+    }
+  }
+
+  .rename-input {
+    flex-grow: 1;
+    background: transparent;
+    border: none;
+    color: #fff;
+    font-family: inherit;
+    font-size: 1.2rem;
+    padding: 4px 8px;
+    outline: none;
+  }
+  
+  .rename-error-msg {
+    color: #dc3545;
+    font-size: 12px;
+    margin-top: 4px;
+    position: absolute;
+    top: 100%;
+    left: 0;
+  }
+  
+  .rename-action-btn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    transition: background 0.2s, color 0.2s;
+    margin-inline-start: 4px;
+    
+    &.ok-btn {
+      color: #28a745;
+      &:hover {
+        background: rgba(40, 167, 69, 0.2);
+        color: #34ce57;
+      }
+    }
+    &.cancel-btn {
+      color: #dc3545;
+      &:hover {
+        background: rgba(220, 53, 69, 0.2);
+        color: #f86c6b;
+      }
+    }
+  }
+}
+
+.sidebar-toggle {
   display: none;
 }
 .sidebar-backdrop {
@@ -393,13 +517,8 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
     height: 40px;
   }
   
-  .mobile-header {
-    display: flex;
-    align-items: center;
-    gap: 10px;
+  .chat-header {
     padding: 10px;
-    border-block-end: 1px solid var(--border-glass);
-    background: rgba(0, 0, 0, 0.3);
   }
   
   .sidebar-close-btn {
@@ -424,6 +543,7 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
   }
   
   .sidebar-toggle {
+    display: flex;
     background: transparent;
     border: 1px solid var(--border-glass);
     color: var(--primary-color);

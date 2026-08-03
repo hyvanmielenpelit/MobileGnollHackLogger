@@ -63,6 +63,10 @@ export class ChatService {
     return this.http.post('/api/chat/report', { messageId });
   }
 
+  renameSession(sessionId: number, newTitle: string) {
+    return this.http.put(`/api/chat/sessions/${sessionId}/title`, { title: newTitle });
+  }
+
   async *streamMessage(sessionId: number | null, message: string, attachments?: ChatMessageAttachment[], userModelId?: number, abortSignal?: AbortSignal): AsyncGenerator<ChatStreamEvent, void, unknown> {
     const response = await fetch('/api/chat/send', {
       method: 'POST',

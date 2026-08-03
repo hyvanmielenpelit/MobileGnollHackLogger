@@ -84,6 +84,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   @ViewChild('imagePreviewDialog') imagePreviewDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('errorToast') errorToast!: ElementRef<HTMLElement>;
   @ViewChild('promptInput') promptInput!: ElementRef<HTMLTextAreaElement>;
+  @ViewChild('renameInput') renameInput!: ElementRef<HTMLInputElement>;
   autoScrollEnabled = true;
 
   private hubConnection: signalR.HubConnection | null = null;
@@ -139,6 +140,15 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   selectedUserModelId: number | null = null;
   isModelDropdownOpen = false;
   singleModelInfo: any = null;
+  
+  isRenamingTitle = false;
+  renameTitleValue = '';
+  renameError: string | null = null;
+
+  get currentTitle(): string {
+    const session = this.sessions.find(s => s.id === this.currentSessionId);
+    return session ? session.title : 'New Chat';
+  }
 
   get selectedModel() {
     return this.userModels.find(m => m.id === this.selectedUserModelId);
@@ -147,6 +157,48 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   toggleModelDropdown(event: Event) {
     event.stopPropagation();
     this.isModelDropdownOpen = !this.isModelDropdownOpen;
+  }
+  
+  startRename() {
+    this.isRenamingTitle = true;
+    this.renameTitleValue = this.currentTitle;
+    this.renameError = null;
+    setTimeout(() => {
+      this.renameInput?.nativeElement?.focus();
+    }, 0);
+  }
+  
+  saveRename() {
+    if (!this.isRenamingTitle) return;
+    
+    const newTitle = this.renameTitleValue.trim();
+    if (!newTitle) {
+      this.renameError = 'Chat title cannot be empty.';
+      return;
+    }
+    
+    if (/[<>{}[\]\\\/]/.test(newTitle)) {
+      this.renameError = 'Chat title contains illegal characters. Please remove any < > { } [ ] \\ or /';
+      return;
+    }
+    
+    this.isRenamingTitle = false;
+    this.renameError = null;
+    
+    if (!this.currentSessionId) return;
+    
+    const session = this.sessions.find(s => s.id === this.currentSessionId);
+    if (session && session.title !== newTitle) {
+      session.title = newTitle;
+      this.chatService.renameSession(this.currentSessionId, newTitle).subscribe({
+        error: (err) => console.error('Failed to rename session', err)
+      });
+    }
+  }
+  
+  cancelRename() {
+    this.isRenamingTitle = false;
+    this.renameError = null;
   }
 
   selectModel(modelId: number | undefined) {

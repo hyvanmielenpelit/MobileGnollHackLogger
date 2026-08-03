@@ -31,3 +31,7 @@ When creating UI elements in the Overseer frontend, adhere to the following stan
 - **Implementation**: Add the `interestfor="tooltip-id"` attribute to the trigger (e.g. the button). Provide a corresponding `<div popover="hint" id="tooltip-id" class="gh-tooltip">...</div>`.
 - **Styling**: Center the tooltip appropriately utilizing `anchor()` functions and standard best practices.
 - **CRITICAL**: Never use the `title` attribute in conjunction with a custom tooltip, as they will conflict and overlap.
+
+### Error Handling & User Prompts
+- **Avoid Basic JS Dialogs**: Do NOT use basic JavaScript `alert()`, `prompt()`, or `confirm()` dialogs. They disrupt user flow, unfocus elements, and look outdated.
+- **Use Modern Equivalents**: Implement inline error messaging (e.g., displaying error text near an input field) or use styled `<dialog>` modals for confirmation prompts, ensuring integration with Angular state and modern web guidance.

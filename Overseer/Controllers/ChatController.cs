@@ -50,6 +50,34 @@ public class ChatController : ControllerBase
         return Ok(sessions);
     }
 
+    public class UpdateTitleRequest
+    {
+        public string Title { get; set; } = string.Empty;
+    }
+
+    [HttpPut("sessions/{id}/title")]
+    public async Task<IActionResult> UpdateSessionTitle(long id, [FromBody] UpdateTitleRequest request)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
+        
+        var session = await _dbContext.ChatSession
+            .FirstOrDefaultAsync(s => s.Id == id && s.AspNetUserId == userId);
+            
+        if (session == null) return NotFound();
+        
+        if (string.IsNullOrWhiteSpace(request.Title))
+            return BadRequest("Title cannot be empty.");
+            
+        if (System.Text.RegularExpressions.Regex.IsMatch(request.Title, @"[<>{}[\]\\/]"))
+            return BadRequest("Title contains illegal characters.");
+            
+        session.Title = request.Title.Trim();
+        await _dbContext.SaveChangesAsync();
+        
+        return Ok();
+    }
+
     [HttpGet("sessions/{id}")]
     public async Task<IActionResult> GetSession(long id)
     {

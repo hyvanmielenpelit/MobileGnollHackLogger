@@ -3,7 +3,7 @@
     <button class="sidebar-close-btn" (click)="closeSidebar()" title="Close Sidebar" aria-label="Close sidebar">
       <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
     </button>
-    <h3>Sessions</h3>
+    <h3 class="sidebar-title">Conversations</h3>
     <button class="btn-gh btn-new-chat" (click)="navigateToNewSession()">New Chat</button>
     <ul>
       <div *ngIf="loadingSessions" class="sessions-loader">
@@ -32,9 +32,38 @@
   <div class="resizer" (mousedown)="startResize($event)" (touchstart)="startResize($event)"></div>
   <div class="sidebar-backdrop" [class.visible]="isSidebarOpen" (click)="closeSidebar()"></div>
   <div class="chat-area gh-main-container">
-    <div class="mobile-header">
+    <div class="chat-header">
       <button class="sidebar-toggle" (click)="toggleSidebar()">☰</button>
-      <span class="mobile-title">Overseer</span>
+      
+      <div class="chat-title-container" *ngIf="currentSessionId; else newChatHeader">
+        <ng-container *ngIf="!isRenamingTitle">
+          <span class="chat-title" title="{{ currentTitle }}">{{ currentTitle }}</span>
+          <button class="rename-btn" (click)="startRename()" title="Rename Chat">✏️</button>
+        </ng-container>
+        
+        <ng-container *ngIf="isRenamingTitle">
+          <div class="rename-container">
+            <div class="rename-input-wrapper" [class.has-error]="renameError">
+              <input type="text" class="rename-input" [value]="renameTitleValue" (input)="renameTitleValue = $any($event.target).value" (input)="renameError = null" (keydown.enter)="saveRename()" (keydown.esc)="cancelRename()" #renameInput autofocus>
+              <button class="rename-action-btn ok-btn" (click)="saveRename()" title="Save">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              </button>
+              <button class="rename-action-btn cancel-btn" (click)="cancelRename()" title="Cancel">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
+            </div>
+            <div class="rename-error-msg" *ngIf="renameError">
+              {{ renameError }}
+            </div>
+          </div>
+        </ng-container>
+      </div>
+      
+      <ng-template #newChatHeader>
+        <div class="chat-title-container">
+          <span class="chat-title">New Chat</span>
+        </div>
+      </ng-template>
     </div>
     <div class="messages" #messagesContainer (wheel)="onUserInteraction()" (touchstart)="onUserInteraction()" (scroll)="onScroll()">
       <div *ngIf="messages.length === 0 && (!hasApiKey || !hasModel)" class="chat-alert-box gh-main-container">
