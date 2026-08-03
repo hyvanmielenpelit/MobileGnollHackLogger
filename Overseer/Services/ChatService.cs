@@ -489,6 +489,9 @@ public class ChatService
                     requestBody["tools"] = allTools;
                 }
 
+                var jsonRequest = JsonSerializer.Serialize(requestBody);
+                yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - OpenAI] Request Body: {jsonRequest}" };
+
                 await foreach (var evt in ExecuteApiWithRetriesAsync(
                     async ct =>
                     {
@@ -599,6 +602,9 @@ public class ChatService
                     allTools.AddRange(requestTools.FunctionDeclarations);
                     requestBody["tools"] = allTools;
                 }
+
+                var jsonRequest = JsonSerializer.Serialize(requestBody);
+                yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - Anthropic] Request Body: {jsonRequest}" };
 
                 await foreach (var evt in ExecuteApiWithRetriesAsync(
                     async ct =>
@@ -763,6 +769,9 @@ public class ChatService
                     requestBody["tools"] = allTools;
                     requestBody["toolConfig"] = new { includeServerSideToolInvocations = true };
                 }
+
+                var jsonRequest = JsonSerializer.Serialize(requestBody);
+                yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - Google] Request Body: {jsonRequest}" };
 
                 await foreach (var evt in ExecuteApiWithRetriesAsync(
                     async ct =>
@@ -1659,8 +1668,9 @@ public class ChatService
             
             string apiKey = cryptoService.Decrypt(apiKeyEntry.EncryptedApiKey, apiKeyEntry.ApiKeyNonce, apiKeyEntry.ApiKeyTag, userId);
             
-            string prompt = "Generate a descriptive 3 to 8 word title for this conversation based on the user's message. Output ONLY the title itself, with no quotes, no punctuation, and no extra text. Do NOT use single-word abbreviations.";
+            string prompt = "Generate a descriptive 3 to 8 word title for this conversation based on the user's message. Output ONLY the title itself in Title Case, with no quotes, and no extra text. Use correct punctuation (such as commas for lists or hyphens), but do NOT end the title with a period. Do NOT use single-word abbreviations.";
             string generatedTitle = string.Empty;
+            int maxTokens = _configuration.GetValue<int>("AITitleGenerationMaxTokens", 2048);
             
             var client = _httpClientFactory.CreateClient();
             
@@ -1675,7 +1685,7 @@ public class ChatService
                         new { role = "system", content = prompt },
                         new { role = "user", content = userMessage }
                     },
-                    max_tokens = 50,
+                    max_tokens = maxTokens,
                     temperature = 0.5
                 };
                 reqBodyStr = System.Text.Json.JsonSerializer.Serialize(reqBody);
@@ -1692,7 +1702,7 @@ public class ChatService
                     messages = new[] {
                         new { role = "user", content = userMessage }
                     },
-                    max_tokens = 1024,
+                    max_tokens = maxTokens,
                     temperature = 0.5
                 };
                 reqBodyStr = System.Text.Json.JsonSerializer.Serialize(reqBody);
@@ -1702,9 +1712,9 @@ public class ChatService
             {
                 var reqBody = new Dictionary<string, object>
                 {
-                    { "system_instruction", new { parts = new[] { new { text = prompt } } } },
+                    { "systemInstruction", new { parts = new[] { new { text = prompt } } } },
                     { "contents", new[] { new { role = "user", parts = new[] { new { text = userMessage } } } } },
-                    { "generationConfig", new { maxOutputTokens = 50, temperature = 0.5 } }
+                    { "generationConfig", new { maxOutputTokens = maxTokens, temperature = 0.5 } }
                 };
                 reqBodyStr = System.Text.Json.JsonSerializer.Serialize(reqBody);
                 requestMessage = new HttpRequestMessage(HttpMethod.Post, $"https://generativelanguage.googleapis.com/v1beta/models/{model.ModelId}:generateContent?key={apiKey}");
@@ -1713,7 +1723,9 @@ public class ChatService
             if (requestMessage != null)
             {
                 var sw = System.Diagnostics.Stopwatch.StartNew();
-                await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] Starting POST request to {requestMessage.RequestUri}..." }, CancellationToken.None);
+                var safeUri = requestMessage.RequestUri?.ToString() ?? "";
+                if (safeUri.Contains("key=")) { safeUri = System.Text.RegularExpressions.Regex.Replace(safeUri, "key=[^&]+", "key=APIKEY_NOT_DISCLOSED"); }
+                await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] Starting POST request to {safeUri}..." }, CancellationToken.None);
                 
                 HttpResponseMessage? response = null;
                 int[] retryDelays = { 1000, 3000, 5000, 10000, 15000 };
@@ -1795,7 +1807,7 @@ public class ChatService
                     
                     if (string.IsNullOrWhiteSpace(generatedTitle))
                     {
-                        await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] Warning: API returned empty or whitespace title." }, CancellationToken.None);
+                        await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] Warning: API returned empty or whitespace title. Raw JSON: {json}" }, CancellationToken.None);
                     }
                     else
                     {

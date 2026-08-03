@@ -46,13 +46,40 @@
     font-style: italic;
   }
 
-  pre {
+  .debug-line {
     margin: 0 0 4px 0;
     white-space: pre-wrap;
     word-break: break-all;
+    display: block; /* acts like pre */
 
     .time {
       color: #569cd6;
+    }
+
+    .copy-btn {
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 4px;
+      color: #ccc;
+      cursor: pointer;
+      padding: 2px 6px;
+      margin-left: 8px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      vertical-align: middle;
+      transition: all 0.2s;
+
+      &:hover {
+        background: rgba(255,255,255,0.1);
+        color: white;
+        border-color: rgba(255,255,255,0.4);
+      }
+      
+      svg {
+        width: 14px;
+        height: 14px;
+      }
     }
   }
 }
