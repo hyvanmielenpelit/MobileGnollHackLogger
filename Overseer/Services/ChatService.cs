@@ -160,6 +160,7 @@ public class ChatService
             bool hasMessageHistory = false;
 
             ChatSession? session = null;
+            bool shouldGenerateTitle = false;
             if (sessionId.HasValue && sessionId.Value > 0)
             {
                 session = await dbContext.ChatSession.FindAsync(sessionId.Value);
@@ -211,6 +212,11 @@ public class ChatService
                         if (pm.Content.StartsWith("Full Message History")) hasMessageHistory = true;
                     }
                 }
+
+                if (!isHidden && !pastMessages.Any(m => m.Role == "user" && !m.IsHidden))
+                {
+                    shouldGenerateTitle = true;
+                }
             }
             else
             {
@@ -227,6 +233,14 @@ public class ChatService
                 
                 yield return new ChatEvent { Type = "sessionId", Data = currentSessionId.ToString() };
 
+                if (!isHidden)
+                {
+                    shouldGenerateTitle = true;
+                }
+            }
+
+            if (shouldGenerateTitle)
+            {
                 _ = Task.Run(async () =>
                 {
                     await GenerateTitleAsync(currentSessionId, message, userId);
