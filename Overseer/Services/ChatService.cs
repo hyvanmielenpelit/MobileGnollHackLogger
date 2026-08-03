@@ -1610,7 +1610,7 @@ public class ChatService
             if (model == null) return; // No models configured
 
             var apiKeyEntry = await dbContext.UserAiApiKeys.FirstOrDefaultAsync(k => k.AspNetUserId == userId && k.Provider == model.Provider);
-            if (apiKeyEntry == null || string.IsNullOrEmpty(apiKeyEntry.EncryptedApiKey)) return;
+            if (apiKeyEntry == null || string.IsNullOrEmpty(apiKeyEntry.EncryptedApiKey) || string.IsNullOrEmpty(apiKeyEntry.ApiKeyNonce) || string.IsNullOrEmpty(apiKeyEntry.ApiKeyTag)) return;
             
             string apiKey = cryptoService.Decrypt(apiKeyEntry.EncryptedApiKey, apiKeyEntry.ApiKeyNonce, apiKeyEntry.ApiKeyTag, userId);
             

@@ -21,6 +21,8 @@ export class ModelsComponent implements OnInit {
   loading = false;
   saving = false;
   titleGenerationModelId: number | null = null;
+  savingTitleModel = false;
+  savedTitleModelSuccess = false;
   
   // Model Picker State
   providers = ['OpenAI', 'Anthropic', 'Google'];
@@ -108,6 +110,9 @@ export class ModelsComponent implements OnInit {
       this.saving = true;
       this.settingsService.deleteUserModel(id).subscribe({
         next: () => {
+          if (this.titleGenerationModelId === id) {
+            this.titleGenerationModelId = null;
+          }
           this.loadModels();
           this.settingsService.getSettings().subscribe({
             next: (settings) => {
@@ -235,8 +240,18 @@ export class ModelsComponent implements OnInit {
   }
 
   onTitleModelChange() {
+    this.savingTitleModel = true;
+    this.savedTitleModelSuccess = false;
     this.settingsService.saveTitleGenerationModel(this.titleGenerationModelId).subscribe({
+      next: () => {
+        this.savingTitleModel = false;
+        this.savedTitleModelSuccess = true;
+        setTimeout(() => {
+          this.savedTitleModelSuccess = false;
+        }, 3000);
+      },
       error: (err) => {
+        this.savingTitleModel = false;
         console.error("Failed to save title generation model", err);
       }
     });
