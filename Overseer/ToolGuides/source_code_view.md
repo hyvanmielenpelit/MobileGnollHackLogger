@@ -1,6 +1,9 @@
 # source_code_view
 
 ## Description
+**EXPENSIVE TOOL** — Same cost considerations as source_code_search. Only use after
+source_code_search has identified relevant code and you need additional context.
+
 View a section of a GnollHack source code file by line range.
 Use this after source_code_search to see more context around a match,
 or when you already know which file and approximate location to examine.

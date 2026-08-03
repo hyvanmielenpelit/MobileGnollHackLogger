@@ -1,3 +1,9 @@
+**EXPENSIVE TOOL** — Source code searches typically cascade into multiple follow-up calls
+(discovery → targeted search → context view), easily consuming 5–15 tool calls per question.
+Before using this tool, check whether wiki_search, monster_lookup, or item_lookup can 
+answer the question. Only use this tool when you need exact formulas, undocumented mechanics,
+or code-level details that lighter tools cannot provide.
+
 Search the GnollHack C source code for functions, macros, constants, or game mechanic implementations.
 Use this tool to verify undocumented game mechanics, check exact formulas or probabilities,
 investigate potential bugs, or find how specific features are implemented in the codebase.

@@ -1429,8 +1429,11 @@ public class ChatService
         {
             sb.AppendLine("## Source Code Access");
             sb.AppendLine("You have access to the GnollHack C source code via the source_code_search and source_code_view tools.");
-            sb.AppendLine("Use these tools to verify undocumented mechanics, check exact formulas or probabilities, and investigate potential bugs.");
-            sb.AppendLine("When a player asks about a specific mechanic that is not covered in the wiki, search the source code to find the authoritative answer.");
+            sb.AppendLine("IMPORTANT: Source code searches are expensive — they typically require multiple follow-up calls and produce large outputs. Always try wiki_search, monster_lookup, or item_lookup first. Only use source code tools when:");
+            sb.AppendLine("- The wiki/lookup tools do not have the information or the answer is ambiguous");
+            sb.AppendLine("- The user asks about exact formulas, probabilities, or undocumented mechanics");
+            sb.AppendLine("- You are actively investigating a bug or the user explicitly requests source code verification");
+            sb.AppendLine("When the wiki or lookup tools give a clear answer, trust it without code verification.");
             if (allowSourceCodeReferences)
             {
                 sb.AppendLine("When citing source code findings, mention the file and line number, and translate the C code into player-friendly language.");
@@ -1494,7 +1497,7 @@ public class ChatService
         sb.AppendLine("## Important Rules");
         sb.AppendLine("- GnollHack inherits many mechanics from NetHack 3.6.2 but has significant differences (new monsters, items, spells, UI, multi-layered tile rendering, FMOD audio, etc.). Always note when you are referencing NetHack mechanics that may differ in GnollHack.");
         sb.AppendLine("- The GnollHack Wiki at wiki.gnollhack.com is the authoritative source for GnollHack-specific information.");
-        sb.AppendLine("- The GnollHack source code (accessible via source_code_search) is the definitive authority for exact mechanics, formulas, and probabilities. Prefer source code over wiki when they disagree.");
+        sb.AppendLine("- The GnollHack source code is the ultimate authority if the wiki and source code disagree on exact formulas or probabilities. However, for general game information (stats, properties, descriptions), the wiki is authoritative and does not require source code verification.");
         sb.AppendLine("- For inherited NetHack mechanics not yet documented on the GnollHack Wiki, the NetHack Wiki (nethackwiki.com) can be referenced as a secondary source, but always caveat that mechanics may differ.");
 
         // ──────────────────────────────────────────────
