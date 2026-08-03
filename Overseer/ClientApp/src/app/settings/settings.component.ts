@@ -69,11 +69,11 @@ export class SettingsComponent implements OnInit {
     const l = this.performanceLimits.maxResultLength;
     return [
       { label: 'Default', value: null, text: `Default \u2013 ${l.defaultValue} chars` },
-      { label: 'Minimal', value: l.min, text: `Minimal \u2013 ${l.min} chars` },
-      { label: 'Low', value: Math.max(l.min, Math.round(l.defaultValue * 0.5)), text: `Low \u2013 ${Math.max(l.min, Math.round(l.defaultValue * 0.5))} chars` },
-      { label: 'Medium', value: l.defaultValue, text: `Medium \u2013 ${l.defaultValue} chars` },
-      { label: 'High', value: Math.min(l.max, Math.round(l.defaultValue * 2)), text: `High \u2013 ${Math.min(l.max, Math.round(l.defaultValue * 2))} chars` },
-      { label: 'Very High', value: l.max, text: `Very High \u2013 ${l.max} chars` },
+      { label: 'Minimal', value: Math.max(l.min, 1000), text: `Minimal \u2013 ${Math.max(l.min, 1000)} chars` },
+      { label: 'Low', value: Math.max(l.min, 3000), text: `Low \u2013 ${Math.max(l.min, 3000)} chars` },
+      { label: 'Medium', value: 8000, text: `Medium \u2013 8000 chars` },
+      { label: 'High', value: Math.min(l.max, 20000), text: `High \u2013 ${Math.min(l.max, 20000)} chars` },
+      { label: 'Very High', value: Math.min(l.max, 50000), text: `Very High \u2013 ${Math.min(l.max, 50000)} chars` },
       { label: 'Custom', value: 'custom', text: 'Custom' }
     ];
   }
@@ -83,11 +83,11 @@ export class SettingsComponent implements OnInit {
     const l = this.performanceLimits.maxCallsPerSession;
     return [
       { label: 'Default', value: null, text: `Default \u2013 ${l.defaultValue}` },
-      { label: 'Minimal', value: l.min, text: `Minimal \u2013 ${l.min}` },
-      { label: 'Low', value: Math.max(l.min, Math.round(l.defaultValue * 0.5)), text: `Low \u2013 ${Math.max(l.min, Math.round(l.defaultValue * 0.5))}` },
-      { label: 'Medium', value: l.defaultValue, text: `Medium \u2013 ${l.defaultValue}` },
-      { label: 'High', value: Math.min(l.max, Math.round(l.defaultValue * 2)), text: `High \u2013 ${Math.min(l.max, Math.round(l.defaultValue * 2))}` },
-      { label: 'Very High', value: l.max, text: `Very High \u2013 ${l.max}` },
+      { label: 'Minimal', value: Math.max(l.min, 5), text: `Minimal \u2013 ${Math.max(l.min, 5)}` },
+      { label: 'Low', value: Math.max(l.min, 15), text: `Low \u2013 ${Math.max(l.min, 15)}` },
+      { label: 'Medium', value: 50, text: `Medium \u2013 50` },
+      { label: 'High', value: Math.min(l.max, 100), text: `High \u2013 ${Math.min(l.max, 100)}` },
+      { label: 'Very High', value: Math.min(l.max, 250), text: `Very High \u2013 ${Math.min(l.max, 250)}` },
       { label: 'Custom', value: 'custom', text: 'Custom' }
     ];
   }
@@ -97,11 +97,11 @@ export class SettingsComponent implements OnInit {
     const l = this.performanceLimits.maxToolIterations;
     return [
       { label: 'Default', value: null, text: `Default \u2013 ${l.defaultValue}` },
-      { label: 'Minimal', value: l.min, text: `Minimal \u2013 ${l.min}` },
-      { label: 'Low', value: Math.max(l.min, Math.round(l.defaultValue * 0.5)), text: `Low \u2013 ${Math.max(l.min, Math.round(l.defaultValue * 0.5))}` },
-      { label: 'Medium', value: l.defaultValue, text: `Medium \u2013 ${l.defaultValue}` },
-      { label: 'High', value: Math.min(l.max, Math.round(l.defaultValue * 2)), text: `High \u2013 ${Math.min(l.max, Math.round(l.defaultValue * 2))}` },
-      { label: 'Very High', value: l.max, text: `Very High \u2013 ${l.max}` },
+      { label: 'Minimal', value: Math.max(l.min, 3), text: `Minimal \u2013 ${Math.max(l.min, 3)}` },
+      { label: 'Low', value: Math.max(l.min, 5), text: `Low \u2013 ${Math.max(l.min, 5)}` },
+      { label: 'Medium', value: 10, text: `Medium \u2013 10` },
+      { label: 'High', value: Math.min(l.max, 20), text: `High \u2013 ${Math.min(l.max, 20)}` },
+      { label: 'Very High', value: Math.min(l.max, 30), text: `Very High \u2013 ${Math.min(l.max, 30)}` },
       { label: 'Custom', value: 'custom', text: 'Custom' }
     ];
   }
@@ -200,6 +200,34 @@ export class SettingsComponent implements OnInit {
       if (field === 'maxResultLength') this.maxResultLength = numVal;
       if (field === 'maxCallsPerSession') this.maxCallsPerSession = numVal;
       if (field === 'maxToolIterations') this.maxToolIterations = numVal;
+    }
+  }
+
+  getSelectedOptionDisplay(field: 'maxResultLength' | 'maxCallsPerSession' | 'maxToolIterations'): { label: string, valueText: string } {
+    let selectVal, options;
+    if (field === 'maxResultLength') { selectVal = this.maxResultLengthSelect; options = this.resultLengthOptions; }
+    else if (field === 'maxCallsPerSession') { selectVal = this.maxCallsPerSessionSelect; options = this.callsOptions; }
+    else { selectVal = this.maxToolIterationsSelect; options = this.iterationsOptions; }
+
+    const opt = options.find(o => o.value === selectVal);
+    if (!opt) return { label: 'Select...', valueText: '' };
+
+    if (opt.value === 'custom') return { label: 'Custom', valueText: '' };
+    
+    const valStr = `${opt.value ?? this.performanceLimits?.[field]?.defaultValue} ${field === 'maxResultLength' ? 'chars' : ''}`;
+    return { label: opt.label, valueText: valStr.trim() };
+  }
+
+  selectCustomOption(field: 'maxResultLength' | 'maxCallsPerSession' | 'maxToolIterations', value: any, popoverId: string) {
+    if (field === 'maxResultLength') this.maxResultLengthSelect = value;
+    else if (field === 'maxCallsPerSession') this.maxCallsPerSessionSelect = value;
+    else if (field === 'maxToolIterations') this.maxToolIterationsSelect = value;
+    
+    this.onSelectChange(field, value);
+    
+    const popoverElement = document.getElementById(popoverId) as any;
+    if (popoverElement && typeof popoverElement.hidePopover === 'function') {
+      popoverElement.hidePopover();
     }
   }
 
