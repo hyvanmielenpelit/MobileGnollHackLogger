@@ -29,4 +29,6 @@ public class ChatMessage
 
     [MaxLength(32)]
     public string? ThinkingLevelUsed { get; set; }
+
+    public ICollection<ChatMessageToolCall> ToolCalls { get; set; } = new List<ChatMessageToolCall>();
 }

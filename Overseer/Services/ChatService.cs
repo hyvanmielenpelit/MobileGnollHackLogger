@@ -39,6 +39,19 @@ public class ChatService
         _toolExecutor = toolExecutor;
     }
 
+    private int MapThinkingBudget(string thinkingLevel)
+    {
+        return thinkingLevel switch
+        {
+            "minimal" => 512,
+            "low" => 2048,
+            "medium" => 8192,
+            "high" => 32768,
+            "disabled" => 0,
+            _ => -1
+        };
+    }
+
     public static string SanitizeSnapshotForLlm(string html)
     {
         if (string.IsNullOrWhiteSpace(html)) return string.Empty;
@@ -440,6 +453,10 @@ public class ChatService
         
         int toolIterations = 0;
         bool hasToolsToRun = true;
+        var thinkingBoundaries = new List<(int start, int end)>();
+        int thinkingStartIndex = -1;
+        var streamToolCalls = new List<ChatMessageToolCall>();
+
         
         var execContext = new ToolExecutionContext { 
             SessionId = currentSessionId, 
@@ -511,8 +528,24 @@ public class ChatService
                     "OpenAI",
                     cancellationToken))
                 {
-                    if (evt.Type == "chunk")
+                    if (evt.Type == "thinking_chunk")
                     {
+                        if (thinkingStartIndex == -1)
+                        {
+                            thinkingStartIndex = fullResponse.Length;
+                        }
+                        fullResponse += evt.Data;
+                        iterationText += evt.Data;
+                        yield return evt;
+                    }
+                    else if (evt.Type == "chunk")
+                    {
+                        if (thinkingStartIndex != -1)
+                        {
+                            thinkingBoundaries.Add((thinkingStartIndex, fullResponse.Length));
+                            thinkingStartIndex = -1;
+                        }
+
                         if (!string.IsNullOrEmpty(evt.Data))
                         {
                             if ((toolIterations > 0 && string.IsNullOrEmpty(iterationText)) || lastEventWasToolCall)
@@ -572,6 +605,16 @@ public class ChatService
                         var tId = tc.GetProperty("id").GetString();
                         var tName = tc.GetProperty("name").GetString() ?? "";
                         var tArgsStr = tc.GetProperty("arguments").GetString() ?? "{}";
+
+                        streamToolCalls.Add(new ChatMessageToolCall
+                        {
+                            ToolCallId = tId,
+                            Name = tName,
+                            ArgsText = tArgsStr,
+                            Status = "running",
+                            SortOrder = streamToolCalls.Count
+                        });
+
                         JsonElement tArgs = JsonDocument.Parse("{}").RootElement;
                         try { tArgs = JsonSerializer.Deserialize<JsonElement>(tArgsStr); } catch { }
                         
@@ -580,6 +623,14 @@ public class ChatService
                         
                         messageHistory.Add(new { role = "tool", tool_call_id = tId, content = resContent });
                         
+                        var streamTc = streamToolCalls.FirstOrDefault(t => t.ToolCallId == tId);
+                        if (streamTc != null)
+                        {
+                            streamTc.Result = res.Success ? resContent : null;
+                            streamTc.Error = res.Success ? null : resContent;
+                            streamTc.Status = res.Success ? "completed" : "error";
+                        }
+
                         if (res.Success)
                         {
                             var resObj = new { id = tId, name = tName, result = resContent };
@@ -645,8 +696,24 @@ public class ChatService
                     "Anthropic",
                     cancellationToken))
                 {
-                    if (evt.Type == "chunk")
+                    if (evt.Type == "thinking_chunk")
                     {
+                        if (thinkingStartIndex == -1)
+                        {
+                            thinkingStartIndex = fullResponse.Length;
+                        }
+                        fullResponse += evt.Data;
+                        iterationText += evt.Data;
+                        yield return evt;
+                    }
+                    else if (evt.Type == "chunk")
+                    {
+                        if (thinkingStartIndex != -1)
+                        {
+                            thinkingBoundaries.Add((thinkingStartIndex, fullResponse.Length));
+                            thinkingStartIndex = -1;
+                        }
+
                         if (!string.IsNullOrEmpty(evt.Data))
                         {
                             if ((toolIterations > 0 && string.IsNullOrEmpty(iterationText)) || lastEventWasToolCall)
@@ -684,15 +751,30 @@ public class ChatService
                     {
                         fullResponse = fullResponse.Substring(0, fullResponse.Length - iterationText.Length);
                         fullResponse += $"<div class=\"ai-thought\">\n\n{iterationText}\n\n</div>\n\n";
+                        thinkingBoundaries.Clear(); // Invalidate boundaries since we just modified the text and wrapped it manually
+                        thinkingStartIndex = -1;
                     }
                     var asstContent = new List<object>();
                     foreach (var tc in currentIterationToolCalls)
                     {
+                        var tId = tc.GetProperty("id").GetString();
+                        var tName = tc.GetProperty("name").GetString();
+                        var tArgsStr = tc.GetProperty("arguments").GetString() ?? "{}";
+
+                        streamToolCalls.Add(new ChatMessageToolCall
+                        {
+                            ToolCallId = tId,
+                            Name = tName,
+                            ArgsText = tArgsStr,
+                            Status = "running",
+                            SortOrder = streamToolCalls.Count
+                        });
+
                         asstContent.Add(new {
                             type = "tool_use",
-                            id = tc.GetProperty("id").GetString(),
-                            name = tc.GetProperty("name").GetString(),
-                            input = JsonSerializer.Deserialize<JsonElement>(tc.GetProperty("arguments").GetString() ?? "{}")
+                            id = tId,
+                            name = tName,
+                            input = JsonSerializer.Deserialize<JsonElement>(tArgsStr)
                         });
                     }
                     
@@ -721,6 +803,14 @@ public class ChatService
                             tool_use_id = tId,
                             content = resContent
                         });
+                        
+                        var streamTc = streamToolCalls.FirstOrDefault(t => t.ToolCallId == tId);
+                        if (streamTc != null)
+                        {
+                            streamTc.Result = res.Success ? resContent : null;
+                            streamTc.Error = res.Success ? null : resContent;
+                            streamTc.Status = res.Success ? "completed" : "error";
+                        }
                         
                         if (res.Success)
                         {
@@ -792,6 +882,18 @@ public class ChatService
                 {
                     requestBody["generationConfig"] = new { maxOutputTokens = maxOutputTokens.Value };
                 }
+
+                if (!string.IsNullOrEmpty(thinkingLevel) && thinkingLevel != "disabled")
+                {
+                    int budget = MapThinkingBudget(thinkingLevel);
+                    if (budget > 0)
+                    {
+                        var genConfig = new Dictionary<string, object>();
+                        if (maxOutputTokens.HasValue) genConfig["maxOutputTokens"] = maxOutputTokens.Value;
+                        genConfig["thinkingConfig"] = new { thinkingBudget = budget };
+                        requestBody["generationConfig"] = genConfig;
+                    }
+                }
                 
                 var geminiSafetySettings = _configuration.GetSection("SafetySettings:Gemini").GetChildren().Select(c => new
                 {
@@ -832,8 +934,24 @@ public class ChatService
                     "Google",
                     cancellationToken))
                 {
-                    if (evt.Type == "chunk")
+                    if (evt.Type == "thinking_chunk")
                     {
+                        if (thinkingStartIndex == -1)
+                        {
+                            thinkingStartIndex = fullResponse.Length;
+                        }
+                        fullResponse += evt.Data;
+                        iterationText += evt.Data;
+                        yield return evt;
+                    }
+                    else if (evt.Type == "chunk")
+                    {
+                        if (thinkingStartIndex != -1)
+                        {
+                            thinkingBoundaries.Add((thinkingStartIndex, fullResponse.Length));
+                            thinkingStartIndex = -1;
+                        }
+
                         if (!string.IsNullOrEmpty(evt.Data))
                         {
                             if ((toolIterations > 0 && string.IsNullOrEmpty(iterationText)) || lastEventWasToolCall)
@@ -871,6 +989,8 @@ public class ChatService
                     {
                         fullResponse = fullResponse.Substring(0, fullResponse.Length - iterationText.Length);
                         fullResponse += $"<div class=\"ai-thought\">\n\n{iterationText}\n\n</div>\n\n";
+                        thinkingBoundaries.Clear(); // Invalidate boundaries since we just modified the text and wrapped it manually
+                        thinkingStartIndex = -1;
                     }
                     var modelParts = new List<object>();
                     foreach (var tc in currentIterationToolCalls)
@@ -883,6 +1003,19 @@ public class ChatService
                         {
                             var argsStr = tc.GetProperty("arguments").GetString() ?? "{}";
                             JsonElement argJson = JsonDocument.Parse("{}").RootElement;
+                            try { argJson = JsonDocument.Parse(argsStr).RootElement; } catch { }
+
+                            string tName = tc.GetProperty("name").GetString() ?? "";
+                            string tId = tc.GetProperty("id").GetString() ?? "";
+
+                            streamToolCalls.Add(new ChatMessageToolCall
+                            {
+                                ToolCallId = tId,
+                                Name = tName,
+                                ArgsText = argsStr,
+                                Status = "running",
+                                SortOrder = streamToolCalls.Count
+                            });
                             try { argJson = JsonSerializer.Deserialize<JsonElement>(argsStr); } catch { }
                             
                             var fcObj = new Dictionary<string, object>
@@ -926,6 +1059,14 @@ public class ChatService
                             }
                         });
                         
+                        var streamTc = streamToolCalls.FirstOrDefault(t => t.ToolCallId == tId);
+                        if (streamTc != null)
+                        {
+                            streamTc.Result = res.Success ? resContent : null;
+                            streamTc.Error = res.Success ? null : resContent;
+                            streamTc.Status = res.Success ? "completed" : "error";
+                        }
+                        
                         if (res.Success)
                         {
                             var resObj = new { id = tId, name = tName, result = resContent };
@@ -950,6 +1091,23 @@ public class ChatService
             toolIterations++;
         }
 
+        if (thinkingStartIndex != -1)
+        {
+            thinkingBoundaries.Add((thinkingStartIndex, fullResponse.Length));
+        }
+        
+        if (thinkingBoundaries.Count > 0)
+        {
+            var sb = new StringBuilder(fullResponse);
+            for (int i = thinkingBoundaries.Count - 1; i >= 0; i--)
+            {
+                var boundary = thinkingBoundaries[i];
+                sb.Insert(boundary.end, "\n\n</div>\n\n");
+                sb.Insert(boundary.start, "<div class=\"ai-thought\">\n\n");
+            }
+            fullResponse = sb.ToString();
+        }
+
         using (var scope = _scopeFactory.CreateScope())
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -964,7 +1122,8 @@ public class ChatService
                     TimestampUtc = DateTime.UtcNow,
                     ProviderUsed = provider,
                     ModelUsed = model,
-                    ThinkingLevelUsed = thinkingLevel
+                    ThinkingLevelUsed = thinkingLevel,
+                    ToolCalls = streamToolCalls
                 };
                 dbContext.ChatMessage.Add(asstMsg);
                 session.LastMessageUtc = DateTime.UtcNow;
@@ -1153,6 +1312,7 @@ public class ChatService
             {
                 var data = line.Substring(6);
                 string? chunkStr = null;
+                string? thinkingChunkStr = null;
                 ChatEvent? toolCallEvt = null;
                 try
                 {
@@ -1163,11 +1323,21 @@ public class ChatService
                         if (t == "content_block_start")
                         {
                             var cb = json.GetProperty("content_block");
-                            if (cb.TryGetProperty("type", out var cbType) && cbType.GetString() == "tool_use")
+                            if (cb.TryGetProperty("type", out var cbType))
                             {
-                                currentToolId = cb.GetProperty("id").GetString();
-                                currentToolName = cb.GetProperty("name").GetString();
-                                currentToolArgs.Clear();
+                                if (cbType.GetString() == "tool_use")
+                                {
+                                    currentToolId = cb.GetProperty("id").GetString();
+                                    currentToolName = cb.GetProperty("name").GetString();
+                                    currentToolArgs.Clear();
+                                }
+                                else if (cbType.GetString() == "thinking")
+                                {
+                                    if (cb.TryGetProperty("thinking", out var tProp))
+                                    {
+                                        thinkingChunkStr = tProp.GetString() ?? "";
+                                    }
+                                }
                             }
                         }
                         else if (t == "content_block_delta")
@@ -1178,6 +1348,10 @@ public class ChatService
                                 if (deltaType.GetString() == "text_delta")
                                 {
                                     chunkStr = delta.GetProperty("text").GetString();
+                                }
+                                else if (deltaType.GetString() == "thinking_delta")
+                                {
+                                    thinkingChunkStr = delta.GetProperty("thinking").GetString() ?? "";
                                 }
                                 else if (deltaType.GetString() == "input_json_delta")
                                 {
@@ -1199,6 +1373,11 @@ public class ChatService
                 }
                 catch { /* ignore */ }
                 
+                if (thinkingChunkStr != null)
+                {
+                    yield return new ChatEvent { Type = "thinking_chunk", Data = thinkingChunkStr };
+                }
+
                 if (chunkStr != null)
                 {
                     yield return new ChatEvent { Type = "chunk", Data = chunkStr };
@@ -1234,7 +1413,8 @@ public class ChatService
                         {
                             if (part.TryGetProperty("text", out var text))
                             {
-                                eventsToYield.Add(new ChatEvent { Type = "chunk", Data = text.GetString() ?? "" });
+                                bool isThought = part.TryGetProperty("thought", out var thoughtVal) && thoughtVal.ValueKind == JsonValueKind.True;
+                                eventsToYield.Add(new ChatEvent { Type = isThought ? "thinking_chunk" : "chunk", Data = text.GetString() ?? "" });
                             }
                             else if (part.TryGetProperty("functionCall", out var fc))
                             {

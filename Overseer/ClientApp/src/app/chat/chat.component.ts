@@ -9,6 +9,7 @@ import { MarkdownPipe } from './markdown.pipe';
 import { RelativeTimePipe } from './relative-time.pipe';
 import { SettingsService } from '../services/settings.service';
 import * as signalR from '@microsoft/signalr';
+import { firstValueFrom } from 'rxjs';
 export interface ToolClientRequest {
     type: string;
     requestId: string;
@@ -131,6 +132,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   
   currentInput = '';
   isStreaming = false;
+  isThinkingActive = false;
   streamingMessage = '';
   streamingToolCalls: ChatMessageToolCall[] = [];
   pendingAttachments: { file: File, base64: string, name: string, type: string }[] = [];
@@ -393,7 +395,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.hasApiKey = settings.hasApiKey;
         this.isProduction = settings.isProduction ?? false;
         this.allowMultipleModels = settings.allowMultipleModels ?? false;
-        this.showThoughtsAndTools = settings.showThoughtsAndTools ?? 1;
+        this.showThoughtsAndTools = Number(settings.showThoughtsAndTools ?? 1);
+        this.debugService.log(`showThoughtsAndTools loaded: ${this.showThoughtsAndTools} (type: ${typeof this.showThoughtsAndTools})`);
 
         this.settingsService.getUserModels().subscribe(models => {
           this.userModels = models;
@@ -478,7 +481,23 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         } else if (evt.type === 'status') {
           this.currentStatusText = evt.data;
           this.cdr.detectChanges();
+        } else if (evt.type === 'thinking_chunk') {
+          this.isThinkingActive = true;
+          if (this.showThoughtsAndTools === 2 || this.showThoughtsAndTools === 3) {
+            if (!this.streamingMessage.endsWith('<div class="ai-thought">\n\n')) {
+              this.streamingMessage += '\n\n<div class="ai-thought">\n\n';
+            }
+            this.streamingMessage += evt.data;
+            this.cdr.detectChanges();
+            this.scrollToBottomClamped(false);
+          }
         } else if (evt.type === 'chunk') {
+          if (this.isThinkingActive) {
+              this.isThinkingActive = false;
+              if (this.showThoughtsAndTools === 2 || this.showThoughtsAndTools === 3) {
+                this.streamingMessage += '\n\n</div>\n\n';
+              }
+          }
           if (!this.isStreaming) {
             this.isStreaming = true;
             this.showSpinner = false;
@@ -500,14 +519,20 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
             const displayName = ChatComponent.TOOL_DISPLAY_NAMES[toolInfo.name] || toolInfo.name;
             const argsText = this.buildToolArgsText(toolInfo.name, args);
             
-            // Wrap the preceding text of the current thought dynamically in streamingMessage
+            // Handle preceding text based on showThoughtsAndTools setting
             if (this.streamingMessage.length > 0) {
               const lastDivIndex = this.streamingMessage.lastIndexOf('</div>');
               const thoughtStartIndex = lastDivIndex >= 0 ? lastDivIndex + 6 : 0;
               const thoughtText = this.streamingMessage.substring(thoughtStartIndex).trim();
               if (thoughtText.length > 0) {
-                this.streamingMessage = this.streamingMessage.substring(0, thoughtStartIndex) 
-                  + '\n\n<div class="ai-thought">\n\n' + thoughtText + '\n\n</div>\n\n';
+                if (this.showThoughtsAndTools === 2 || this.showThoughtsAndTools === 3) {
+                  // Wrap preceding text in ai-thought div
+                  this.streamingMessage = this.streamingMessage.substring(0, thoughtStartIndex)
+                    + '\n\n<div class="ai-thought">\n\n' + thoughtText + '\n\n</div>\n\n';
+                } else {
+                  // Strip preceding text (it's thinking/reasoning that should be hidden)
+                  this.streamingMessage = this.streamingMessage.substring(0, thoughtStartIndex);
+                }
               }
             }
 
@@ -660,6 +685,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.streamingToolCalls = [];
     this.currentStatusText = '';
     this.isGeneratingTitle = false;
+    this.isThinkingActive = false;
     this.titleStatusText = '';
     this.loadDraft();
     this.applySavedModelPreference();
@@ -678,6 +704,15 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
         this.currentSessionId = s.id;
         this.messages = s.messages || [];
+        this.messages.forEach(msg => {
+          if (msg.toolCalls) {
+            msg.toolCalls.forEach(tc => {
+              if (!tc.displayName && tc.name) {
+                tc.displayName = ChatComponent.TOOL_DISPLAY_NAMES[tc.name] || tc.name;
+              }
+            });
+          }
+        });
         this.currentStatusText = '';
         this.isGeneratingTitle = false;
         this.titleStatusText = '';
@@ -834,6 +869,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.currentInput = '';
     this.pendingAttachments = [];
     this.isStreaming = true;
+    this.isThinkingActive = false;
     this.streamingMessage = '';
     this.streamingToolCalls = [];
 
@@ -843,7 +879,16 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.currentStatusText = 'Connecting...';
     this.showSpinner = true;
     this.abortController = new AbortController();
-    this.debugService.log(`Starting UI Request to backend for chat message.`);
+
+    // Refetch showThoughtsAndTools since the chat component is reused across navigations
+    try {
+      const settings = await firstValueFrom(this.settingsService.getSettings());
+      if (settings) {
+        this.showThoughtsAndTools = Number(settings.showThoughtsAndTools ?? 1);
+      }
+    } catch { /* use cached value */ }
+
+    this.debugService.log(`Starting UI Request to backend for chat message. showThoughtsAndTools=${this.showThoughtsAndTools}`);
 
     try {
       const modelIdToUse = this.allowMultipleModels && this.selectedUserModelId ? this.selectedUserModelId : undefined;
@@ -870,7 +915,24 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         } else if (evt.type === 'status') {
           this.currentStatusText = evt.data;
           this.cdr.detectChanges();
+        } else if (evt.type === 'thinking_chunk') {
+          this.debugService.log(`[SSE thinking_chunk] showT=${this.showThoughtsAndTools} data="${(evt.data || '').substring(0, 80)}..."`);
+          this.isThinkingActive = true;
+          if (this.showThoughtsAndTools === 2 || this.showThoughtsAndTools === 3) {
+            if (!this.streamingMessage.endsWith('<div class="ai-thought">\n\n')) {
+              this.streamingMessage += '\n\n<div class="ai-thought">\n\n';
+            }
+            this.streamingMessage += evt.data;
+            this.cdr.detectChanges();
+            this.scrollToBottomClamped(false);
+          }
         } else if (evt.type === 'chunk') {
+          if (this.isThinkingActive) {
+              this.isThinkingActive = false;
+              if (this.showThoughtsAndTools === 2 || this.showThoughtsAndTools === 3) {
+                this.streamingMessage += '\n\n</div>\n\n';
+              }
+          }
           if (this.showSpinner) {
             this.showSpinner = false;
             const ttfb = performance.now() - this.requestStartTime;
@@ -887,6 +949,31 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           this.cdr.detectChanges();
         } else if (evt.type === 'tool_start') {
           try {
+            // Close any active thinking div
+            if (this.isThinkingActive) {
+                this.isThinkingActive = false;
+                if (this.showThoughtsAndTools === 2 || this.showThoughtsAndTools === 3) {
+                  this.streamingMessage += '\n\n</div>\n\n';
+                }
+            }
+
+            // Handle preceding text based on showThoughtsAndTools setting
+            if (this.streamingMessage.length > 0) {
+              const lastDivIndex = this.streamingMessage.lastIndexOf('</div>');
+              const thoughtStartIndex = lastDivIndex >= 0 ? lastDivIndex + 6 : 0;
+              const thoughtText = this.streamingMessage.substring(thoughtStartIndex).trim();
+              if (thoughtText.length > 0) {
+                if (this.showThoughtsAndTools === 2 || this.showThoughtsAndTools === 3) {
+                  // Wrap preceding text in ai-thought div
+                  this.streamingMessage = this.streamingMessage.substring(0, thoughtStartIndex)
+                    + '\n\n<div class="ai-thought">\n\n' + thoughtText + '\n\n</div>\n\n';
+                } else {
+                  // Strip preceding text (it's thinking/reasoning that should be hidden)
+                  this.streamingMessage = this.streamingMessage.substring(0, thoughtStartIndex);
+                }
+              }
+            }
+
             const toolInfo = JSON.parse(evt.data);
             const args = JSON.parse(toolInfo.arguments || '{}');
             const displayName = ChatComponent.TOOL_DISPLAY_NAMES[toolInfo.name] || toolInfo.name;
@@ -951,6 +1038,12 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.debugService.log(`Frontend Error: ${e.message}`);
       }
     } finally {
+      if (this.isThinkingActive) {
+          this.isThinkingActive = false;
+          if (this.showThoughtsAndTools === 2 || this.showThoughtsAndTools === 3) {
+            this.streamingMessage += '\n\n</div>\n\n';
+          }
+      }
       this.streamingMessage = '';
       this.streamingToolCalls = [];
       this.isStreaming = false;

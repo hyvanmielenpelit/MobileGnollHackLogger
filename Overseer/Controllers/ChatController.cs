@@ -105,6 +105,19 @@ public class ChatController : ControllerBase
                 Attachments = _dbContext.ChatMessageAttachment
                     .Where(a => a.ChatMessageId == m.Id)
                     .Select(a => new { a.Id, a.FileName, a.ContentType })
+                    .ToList(),
+                ToolCalls = _dbContext.ChatMessageToolCall
+                    .Where(tc => tc.ChatMessageId == m.Id)
+                    .OrderBy(tc => tc.SortOrder)
+                    .Select(tc => new {
+                        id = tc.ToolCallId,
+                        name = tc.Name,
+                        displayName = tc.DisplayName,
+                        argsText = tc.ArgsText,
+                        status = tc.Status,
+                        result = tc.Result,
+                        error = tc.Error
+                    })
                     .ToList()
             })
             .ToListAsync();
@@ -131,6 +144,7 @@ public class ChatController : ControllerBase
                 m.Content,
                 m.TimestampUtc,
                 m.Attachments,
+                m.ToolCalls,
                 ModelDisplayName = modelDisplayName,
                 ThinkingLevel = thinkingLevel
             };

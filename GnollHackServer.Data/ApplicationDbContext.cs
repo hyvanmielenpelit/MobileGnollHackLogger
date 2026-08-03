@@ -23,6 +23,7 @@ namespace MobileGnollHackLogger.Data
         public DbSet<UserAiSettings> UserAiSettings { get; set; } = null!;
         public DbSet<UserAiApiKey> UserAiApiKeys { get; set; } = null!;
         public DbSet<UserAiModel> UserAiModels { get; set; } = null!;
+        public DbSet<ChatMessageToolCall> ChatMessageToolCall { get; set; } = null!;
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
