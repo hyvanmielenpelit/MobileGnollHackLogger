@@ -396,7 +396,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.isProduction = settings.isProduction ?? false;
         this.allowMultipleModels = settings.allowMultipleModels ?? false;
         this.showThoughtsAndTools = Number(settings.showThoughtsAndTools ?? 1);
-        this.debugService.log(`showThoughtsAndTools loaded: ${this.showThoughtsAndTools} (type: ${typeof this.showThoughtsAndTools})`);
+        this.debugService.log(`[Overseer] showThoughtsAndTools loaded: ${this.showThoughtsAndTools} (type: ${typeof this.showThoughtsAndTools})`);
 
         this.settingsService.getUserModels().subscribe(models => {
           this.userModels = models;
@@ -888,7 +888,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       }
     } catch { /* use cached value */ }
 
-    this.debugService.log(`Starting UI Request to backend for chat message. showThoughtsAndTools=${this.showThoughtsAndTools}`);
+    this.debugService.log(`[Overseer] Starting UI Request to backend for chat message.`);
+    this.debugService.log(`[Overseer] showThoughtsAndTools=${this.showThoughtsAndTools}`);
 
     try {
       const modelIdToUse = this.allowMultipleModels && this.selectedUserModelId ? this.selectedUserModelId : undefined;
