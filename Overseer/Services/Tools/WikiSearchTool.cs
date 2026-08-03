@@ -25,6 +25,7 @@ namespace Overseer.Services.Tools
                 ""type"": ""object"",
                 ""properties"": {
                     ""query"": { ""type"": ""string"", ""description"": ""The search terms to look up in the wiki"" },
+                    ""category"": { ""type"": ""string"", ""description"": ""Optional. Filter by category (e.g., 'monster', 'item', 'spell', 'class')"" },
                     ""max_results"": { ""type"": ""integer"", ""description"": ""Maximum number of wiki articles to return (default 3)"" }
                 },
                 ""required"": [""query""]
@@ -50,7 +51,13 @@ namespace Overseer.Services.Tools
                 maxResults = maxResElem.GetInt32();
             }
 
-            var results = _wikiService.GetRelevantContext(query, null, maxResults);
+            string? category = null;
+            if (parameters.TryGetProperty("category", out var categoryElem))
+            {
+                category = categoryElem.GetString();
+            }
+
+            var results = _wikiService.GetRelevantContext(query, category, maxResults);
             var content = string.Join("\n\n", results);
 
             if (string.IsNullOrWhiteSpace(content))

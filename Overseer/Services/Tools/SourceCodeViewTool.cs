@@ -29,10 +29,11 @@ namespace Overseer.Services.Tools
                 ""type"": ""object"",
                 ""properties"": {
                     ""file"": { ""type"": ""string"", ""description"": ""File path relative to the repository root (e.g., 'src/potion.c')"" },
-                    ""start_line"": { ""type"": ""integer"", ""description"": ""The starting line number to view"" },
-                    ""line_count"": { ""type"": ""integer"", ""description"": ""Optional. Number of lines to view (default 50, max 1000)"" }
+                    ""start_line"": { ""type"": ""integer"", ""description"": ""Optional. The starting line number to view"" },
+                    ""line_count"": { ""type"": ""integer"", ""description"": ""Optional. Number of lines to view (default 50, max 1000)"" },
+                    ""search_term"": { ""type"": ""string"", ""description"": ""Optional. Find this term and show context around it (alternative to start_line)"" }
                 },
-                ""required"": [""file"", ""start_line""]
+                ""required"": [""file""]
             }").RootElement;
         }
 
@@ -78,14 +79,21 @@ namespace Overseer.Services.Tools
                  return Task.FromResult(new ToolResult { Success = false, ErrorMessage = $"Access to '{ext}' files is not permitted in the current mode." });
             }
 
-            int startLine = 1;
+            int? startLine = null;
             if (parameters.TryGetProperty("start_line", out var startLineElem) && startLineElem.ValueKind == JsonValueKind.Number)
             {
                 startLine = startLineElem.GetInt32();
             }
-            else
+
+            string? searchTerm = null;
+            if (parameters.TryGetProperty("search_term", out var searchTermElem))
             {
-                return Task.FromResult(new ToolResult { Success = false, ErrorMessage = "Missing start_line parameter" });
+                searchTerm = searchTermElem.GetString();
+            }
+
+            if (startLine == null && string.IsNullOrWhiteSpace(searchTerm))
+            {
+                return Task.FromResult(new ToolResult { Success = false, ErrorMessage = "Missing start_line or search_term parameter" });
             }
 
             int lineCount = 50;
@@ -94,7 +102,7 @@ namespace Overseer.Services.Tools
                 lineCount = lineCountElem.GetInt32();
             }
 
-            var content = _sourceCodeService.GetFileExcerpt(file, startLine, lineCount);
+            var content = _sourceCodeService.GetFileExcerpt(file, startLine, lineCount, searchTerm);
 
             if (context.SpoilerFreeMode)
             {

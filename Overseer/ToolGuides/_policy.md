@@ -22,7 +22,7 @@ Follow this order when looking up game information. Be parsimonious with tool ca
    - Bug investigation or when you suspect wiki information is incorrect
    - When the user explicitly asks for a code-level answer or source code verification
 
-**Do NOT** routinely use source_code_search to verify information that wiki/lookup tools already provide clearly (e.g., monster stats, item properties, class descriptions). The wiki and lookup tools draw from the same game data.
+**Do NOT** routinely use source_code_search to double-check wiki articles for well-documented topics — but do verify when you need exact formulas or stats that the wiki might not cover.
 
 ## Spoiler-Free Mode
 - When spoiler-free mode is active, explaining HOW mechanics work is always safe.

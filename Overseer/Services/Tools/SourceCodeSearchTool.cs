@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
+using System.Text.RegularExpressions;
 
 namespace Overseer.Services.Tools
 {
@@ -35,6 +36,8 @@ namespace Overseer.Services.Tools
                     ""file_filter"": { ""type"": ""string"", ""description"": ""Optional. Restrict to a specific file (e.g., 'potion.c')"" },
                     ""max_results"": { ""type"": ""integer"", ""description"": ""Maximum number of files to return matches from (default 10, max 100)"" },
                     ""is_regex"": { ""type"": ""boolean"", ""description"": ""Optional. If true, treat the query as a regular expression"" },
+                    ""whole_word"": { ""type"": ""boolean"", ""description"": ""Optional. If true and is_regex is false, search for whole words only"" },
+                    ""case_sensitive"": { ""type"": ""boolean"", ""description"": ""Optional. If true, perform a case-sensitive search"" },
                     ""filenames_only"": { ""type"": ""boolean"", ""description"": ""Optional. If true, return only file paths and match counts without code snippets"" },
                     ""context_lines"": { ""type"": ""integer"", ""description"": ""Optional. Number of context lines around each match (default 5, max 25)"" }
                 },
@@ -85,9 +88,48 @@ namespace Overseer.Services.Tools
                 contextLines = contextLinesElem.GetInt32();
             }
 
+            bool caseSensitive = false;
+            if (parameters.TryGetProperty("case_sensitive", out var caseSensitiveElem) && (caseSensitiveElem.ValueKind == JsonValueKind.True || caseSensitiveElem.ValueKind == JsonValueKind.False))
+            {
+                caseSensitive = caseSensitiveElem.GetBoolean();
+            }
+
+            bool wholeWord = false;
+            if (parameters.TryGetProperty("whole_word", out var wholeWordElem) && (wholeWordElem.ValueKind == JsonValueKind.True || wholeWordElem.ValueKind == JsonValueKind.False))
+            {
+                wholeWord = wholeWordElem.GetBoolean();
+            }
+
+            if (wholeWord && !isRegex)
+            {
+                query = $@"\b{Regex.Escape(query)}\b";
+                isRegex = true;
+            }
+
             bool includeNetCode = context.OverseerMode == 2;
 
-            var content = _sourceCodeService.SearchFiles(query, fileFilter, maxResults, includeNetCode, _maxResultLength, isRegex, filenamesOnly, contextLines);
+            var content = _sourceCodeService.SearchFiles(query, fileFilter, maxResults, includeNetCode, _maxResultLength, isRegex, filenamesOnly, contextLines, caseSensitive);
+
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                if (caseSensitive)
+                {
+                    content = _sourceCodeService.SearchFiles(query, fileFilter, maxResults, includeNetCode, _maxResultLength, isRegex, filenamesOnly, contextLines, false);
+                    if (!string.IsNullOrWhiteSpace(content))
+                    {
+                        content = $"[Note: No exact case match found. Falling back to case-insensitive search.]\n\n" + content;
+                    }
+                }
+                
+                if (string.IsNullOrWhiteSpace(content) && isRegex)
+                {
+                    content = _sourceCodeService.SearchFiles(query, fileFilter, maxResults, includeNetCode, _maxResultLength, false, filenamesOnly, contextLines, false);
+                    if (!string.IsNullOrWhiteSpace(content))
+                    {
+                        content = $"[Note: Regex search failed. Falling back to literal text search.]\n\n" + content;
+                    }
+                }
+            }
 
             if (string.IsNullOrWhiteSpace(content))
             {

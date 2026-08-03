@@ -31,7 +31,8 @@ namespace Overseer.Services.Tools
             {
                 ""type"": ""object"",
                 ""properties"": {
-                    ""query"": { ""type"": ""string"", ""description"": ""The search terms to look up in the NetHack wiki"" }
+                    ""query"": { ""type"": ""string"", ""description"": ""The search terms to look up in the NetHack wiki"" },
+                    ""max_results"": { ""type"": ""integer"", ""description"": ""Optional. Maximum number of articles to return (default 1, max 3)"" }
                 },
                 ""required"": [""query""]
             }").RootElement;
@@ -48,6 +49,12 @@ namespace Overseer.Services.Tools
             if (string.IsNullOrWhiteSpace(query))
             {
                 return new ToolResult { Success = false, ErrorMessage = "Missing query parameter" };
+            }
+
+            int maxResults = 1;
+            if (parameters.TryGetProperty("max_results", out var maxResElem) && maxResElem.ValueKind == JsonValueKind.Number)
+            {
+                maxResults = Math.Clamp(maxResElem.GetInt32(), 1, 3);
             }
 
             var rateLimitKey = $"nhwiki_rate_{context.SessionId}";
@@ -69,7 +76,7 @@ namespace Overseer.Services.Tools
                 AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(1)
             });
 
-            var cacheKey = $"nhwiki_result_{query}";
+            var cacheKey = $"nhwiki_result_{query}_{maxResults}";
             if (_cache.TryGetValue(cacheKey, out string? cachedResult) && !string.IsNullOrEmpty(cachedResult))
             {
                 return new ToolResult { Success = true, Content = cachedResult };
@@ -91,40 +98,55 @@ namespace Overseer.Services.Tools
                     queryResult.TryGetProperty("search", out var searchResults) &&
                     searchResults.GetArrayLength() > 0)
                 {
-                    var firstResult = searchResults.EnumerateArray().First();
-                    var title = firstResult.GetProperty("title").GetString();
+                    var resultSb = new System.Text.StringBuilder();
+                    int count = 0;
                     
-                    if (!string.IsNullOrEmpty(title))
+                    foreach (var result in searchResults.EnumerateArray())
                     {
-                        var parseUrl = $"https://nethackwiki.com/api.php?action=parse&page={Uri.EscapeDataString(title)}&prop=text&format=json";
-                        var parseResponse = await client.GetAsync(parseUrl, cancellationToken);
-                        parseResponse.EnsureSuccessStatusCode();
+                        if (count >= maxResults) break;
                         
-                        var parseJsonStr = await parseResponse.Content.ReadAsStringAsync(cancellationToken);
-                        var parseJson = JsonDocument.Parse(parseJsonStr);
+                        var title = result.GetProperty("title").GetString();
                         
-                        if (parseJson.RootElement.TryGetProperty("parse", out var parseObj) &&
-                            parseObj.TryGetProperty("text", out var textObj) &&
-                            textObj.TryGetProperty("*", out var htmlElem))
+                        if (!string.IsNullOrEmpty(title))
                         {
-                            var html = htmlElem.GetString() ?? "";
-                            var text = Regex.Replace(html, @"<(script|style)[^>]*>.*?</\1>", "", RegexOptions.Singleline | RegexOptions.IgnoreCase);
-                            text = Regex.Replace(text, "<[^>]*>", " ");
-                            text = System.Net.WebUtility.HtmlDecode(text);
+                            var parseUrl = $"https://nethackwiki.com/api.php?action=parse&page={Uri.EscapeDataString(title)}&prop=text&format=json";
+                            var parseResponse = await client.GetAsync(parseUrl, cancellationToken);
+                            if (!parseResponse.IsSuccessStatusCode) continue;
                             
-                            // Remove extra newlines and spaces
-                            text = Regex.Replace(text, @"\n{3,}", "\n\n");
+                            var parseJsonStr = await parseResponse.Content.ReadAsStringAsync(cancellationToken);
+                            var parseJson = JsonDocument.Parse(parseJsonStr);
                             
-                            var resultContent = $"Title: {title}\nContent:\n{text}";
-                            
-                            _cache.Set(cacheKey, resultContent, new MemoryCacheEntryOptions
+                            if (parseJson.RootElement.TryGetProperty("parse", out var parseObj) &&
+                                parseObj.TryGetProperty("text", out var textObj) &&
+                                textObj.TryGetProperty("*", out var htmlElem))
                             {
-                                Size = resultContent.Length,
-                                AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(60)
-                            });
-                            
-                            return new ToolResult { Success = true, Content = resultContent };
+                                var html = htmlElem.GetString() ?? "";
+                                var text = Regex.Replace(html, @"<(script|style)[^>]*>.*?</\1>", "", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+                                text = Regex.Replace(text, "<[^>]*>", " ");
+                                text = System.Net.WebUtility.HtmlDecode(text);
+                                
+                                // Remove extra newlines and spaces
+                                text = Regex.Replace(text, @"\n{3,}", "\n\n");
+                                
+                                resultSb.AppendLine($"### Article: {title}");
+                                resultSb.AppendLine(text);
+                                resultSb.AppendLine("--------------------------------------------------");
+                                count++;
+                            }
                         }
+                    }
+                    
+                    if (count > 0)
+                    {
+                        var resultContent = resultSb.ToString();
+                        
+                        _cache.Set(cacheKey, resultContent, new MemoryCacheEntryOptions
+                        {
+                            Size = resultContent.Length,
+                            AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(60)
+                        });
+                        
+                        return new ToolResult { Success = true, Content = resultContent };
                     }
                 }
 

@@ -202,7 +202,7 @@ label { display: block; margin-bottom: 5px; font-weight: bold; }
   top: calc(anchor(bottom) + 8px);
   left: anchor(center);
   transform: translateX(-50%);
-  position-try: flip-block;
+  #{'position-try'}: flip-block;
   margin: unset;
   background: rgba(20, 20, 20, 0.95);
   color: #ddd;
@@ -365,8 +365,8 @@ label { display: block; margin-bottom: 5px; font-weight: bold; }
   color: #e0e0e0;
   min-width: 250px;
   width: anchor-size(width);
-  position-area: bottom span-right;
-  position-try-fallbacks: flip-block;
+  #{'position-area'}: bottom span-right;
+  #{'position-try-fallbacks'}: flip-block;
   z-index: 1000;
 }
 

@@ -1,98 +1,247 @@
 using Microsoft.Extensions.Configuration;
+using Lucene.Net.Analysis.Standard;
+using Lucene.Net.Documents;
+using Lucene.Net.Index;
+using Lucene.Net.Search;
+using Lucene.Net.Search.Similarities;
+using Lucene.Net.Store;
+using Lucene.Net.Util;
+using Lucene.Net.QueryParsers.Classic;
+using System.IO;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System;
+using System.Text.RegularExpressions;
 
 namespace Overseer.Services;
 
-public class WikiService
+public class WikiService : IDisposable
 {
     private readonly string _wikiPath;
-    private readonly int _maxFiles;
     private readonly int _maxFileSizeKB;
-    private readonly List<WikiDocument> _documents = new();
+    private readonly object _swapLock = new();
+    private RAMDirectory? _directory;
+    private DirectoryReader? _reader;
+    private IndexSearcher? _searcher;
+    private StandardAnalyzer? _analyzer;
+    private Timer? _reindexTimer;
 
     public WikiService(IConfiguration configuration)
     {
         _wikiPath = configuration["WikiPath"] ?? "c:\\wiki";
-        _maxFiles = int.TryParse(configuration["MaxWikiFilesToInclude"], out var maxFiles) ? maxFiles : 5;
         _maxFileSizeKB = int.TryParse(configuration["MaxWikiFileSizeKB"], out var maxFileSize) ? maxFileSize : 100;
 
         IndexWikiFiles();
+        
+        // Re-index every 10 minutes
+        _reindexTimer = new Timer(_ => IndexWikiFiles(), null, TimeSpan.FromMinutes(10), TimeSpan.FromMinutes(10));
     }
 
     private void IndexWikiFiles()
     {
-        if (!Directory.Exists(_wikiPath)) return;
+        if (!System.IO.Directory.Exists(_wikiPath)) return;
 
-        var files = Directory.GetFiles(_wikiPath, "*.*", SearchOption.AllDirectories)
+        var files = System.IO.Directory.GetFiles(_wikiPath, "*.*", SearchOption.AllDirectories)
             .Where(f => f.EndsWith(".md", StringComparison.OrdinalIgnoreCase)
                      || f.EndsWith(".txt", StringComparison.OrdinalIgnoreCase)
-                     || f.EndsWith(".html", StringComparison.OrdinalIgnoreCase));
+                     || f.EndsWith(".html", StringComparison.OrdinalIgnoreCase))
+            .ToList();
 
-        foreach (var file in files)
+        _analyzer = new StandardAnalyzer(LuceneVersion.LUCENE_48);
+        
+        // Build the new index into a fresh directory
+        var newDirectory = new RAMDirectory();
+        var config = new IndexWriterConfig(LuceneVersion.LUCENE_48, _analyzer)
         {
-            var fileInfo = new FileInfo(file);
-            if (fileInfo.Length <= _maxFileSizeKB * 1024)
+            Similarity = new BM25Similarity()  // BM25 scoring
+        };
+        
+        using (var writer = new IndexWriter(newDirectory, config))
+        {
+            foreach (var file in files)
             {
-                _documents.Add(new WikiDocument
+                var fileInfo = new FileInfo(file);
+                if (fileInfo.Length <= _maxFileSizeKB * 1024)
                 {
-                    FilePath = file,
-                    FileName = Path.GetFileName(file),
-                    Content = File.ReadAllText(file)
-                });
+                    var doc = new Document();
+                    doc.Add(new TextField("title", Path.GetFileNameWithoutExtension(file), Field.Store.YES));
+                    doc.Add(new TextField("content", File.ReadAllText(file), Field.Store.YES));
+                    doc.Add(new StringField("path", file, Field.Store.YES));
+                    doc.Add(new StringField("filename", Path.GetFileName(file), Field.Store.YES));
+                    writer.AddDocument(doc);
+                }
             }
+            writer.Commit();
         }
+        
+        var newReader = DirectoryReader.Open(newDirectory);
+        var newSearcher = new IndexSearcher(newReader)
+        {
+            Similarity = new BM25Similarity()
+        };
+        
+        // Hot-swap: atomically replace the old index, then dispose of the old one
+        RAMDirectory? oldDirectory;
+        DirectoryReader? oldReader;
+        lock (_swapLock)
+        {
+            oldDirectory = _directory;
+            oldReader = _reader;
+            _directory = newDirectory;
+            _reader = newReader;
+            _searcher = newSearcher;
+        }
+        
+        // Dispose old resources OUTSIDE the lock to avoid blocking queries
+        oldReader?.Dispose();
+        oldDirectory?.Dispose();
     }
-
-    private static readonly HashSet<string> _stopWords = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "the", "a", "an", "is", "it", "to", "in", "of", "and", "or", "for",
-        "on", "at", "by", "be", "as", "do", "if", "so", "no", "up", "my",
-        "we", "he", "me", "am", "us", "its", "has", "had", "was", "are",
-        "not", "but", "all", "can", "her", "him", "his", "how", "our",
-        "out", "own", "say", "she", "too", "use", "way", "who", "did",
-        "get", "got", "let", "may", "new", "now", "old", "see", "two",
-        "any", "few", "than", "then", "them", "they", "this", "that",
-        "what", "when", "will", "with", "very", "your", "from", "have",
-        "been", "here", "just", "like", "make", "many", "more", "much",
-        "some", "such", "take", "also", "back", "come", "each", "even",
-        "give", "good", "most", "only", "over", "said", "same", "tell",
-        "time", "want", "well", "went", "were", "work", "year", "about",
-        "after", "being", "could", "every", "first", "found", "great",
-        "still", "their", "there", "these", "thing", "think", "those",
-        "under", "where", "which", "while", "world", "would", "other",
-        "should", "through", "does", "into"
-    };
-
+    
     public IEnumerable<string> GetRelevantContext(string query, string? categoryFilter = null, int? maxResults = null)
     {
-        if (string.IsNullOrWhiteSpace(query)) return Enumerable.Empty<string>();
-
-        var words = query.Split(new[] { ' ', '.', ',', '?', '!', ':', ';', '(', ')', '[', ']', '"', '\'' },
-                                StringSplitOptions.RemoveEmptyEntries)
-                         .Where(w => w.Length > 1 && !_stopWords.Contains(w))
-                         .Select(w => w.ToLowerInvariant())
-                         .Distinct()
-                         .ToList();
-
-        if (!words.Any()) return Enumerable.Empty<string>();
-
-        var scoredDocs = _documents.Select(doc => new
+        IndexSearcher? searcher;
+        StandardAnalyzer? analyzer;
+        lock (_swapLock)
         {
-            Document = doc,
-            Score = words.Count(w => doc.Content.Contains(w, StringComparison.OrdinalIgnoreCase))
-        })
-        .Where(x => x.Score > 0 && (string.IsNullOrEmpty(categoryFilter) || x.Document.FilePath.Contains(categoryFilter, StringComparison.OrdinalIgnoreCase)))
-        .OrderByDescending(x => x.Score)
-        .Take(maxResults ?? _maxFiles)
-        .Select(x => $"--- {x.Document.FileName} ---\n{x.Document.Content}")
-        .ToList();
-
-        return scoredDocs;
+            searcher = _searcher;
+            analyzer = _analyzer;
+        }
+        if (searcher == null || analyzer == null || string.IsNullOrWhiteSpace(query)) return Enumerable.Empty<string>();
+        
+        // Build a BooleanQuery that searches both title (boosted) and content
+        var parser = new MultiFieldQueryParser(
+            LuceneVersion.LUCENE_48,
+            new[] { "title", "content" },
+            analyzer,
+            new Dictionary<string, float> { { "title", 5.0f }, { "content", 1.0f } }
+        );
+        
+        Query luceneQuery;
+        try
+        {
+            luceneQuery = parser.Parse(QueryParserBase.Escape(query));
+        }
+        catch (Lucene.Net.QueryParsers.Classic.ParseException)
+        {
+            return Enumerable.Empty<string>(); // Ignore parse errors
+        }
+        
+        // Apply category filter if provided
+        if (!string.IsNullOrEmpty(categoryFilter))
+        {
+            var boolQuery = new BooleanQuery();
+            boolQuery.Add(luceneQuery, Occur.MUST);
+            boolQuery.Add(new WildcardQuery(new Term("path", $"*{categoryFilter}*")), Occur.MUST);
+            luceneQuery = boolQuery;
+        }
+        
+        var hits = searcher.Search(luceneQuery, maxResults ?? 5);
+        var results = new List<string>();
+        
+        foreach (var hit in hits.ScoreDocs)
+        {
+            var doc = searcher.Doc(hit.Doc);
+            string filename = doc.Get("filename");
+            string content = doc.Get("content");
+            results.Add($"--- {filename} ---\n{content}");
+        }
+        
+        return results;
     }
 
-    private class WikiDocument
+    public string? GetArticle(string articleName, string? section = null)
     {
-        public string FilePath { get; set; } = string.Empty;
-        public string FileName { get; set; } = string.Empty;
-        public string Content { get; set; } = string.Empty;
+        IndexSearcher? searcher;
+        StandardAnalyzer? analyzer;
+        lock (_swapLock)
+        {
+            searcher = _searcher;
+            analyzer = _analyzer;
+        }
+        if (searcher == null || analyzer == null || string.IsNullOrWhiteSpace(articleName)) return null;
+        
+        // Try exact match on title or filename
+        var parser = new MultiFieldQueryParser(
+            LuceneVersion.LUCENE_48,
+            new[] { "title", "filename" },
+            analyzer
+        );
+        Query luceneQuery;
+        try
+        {
+            luceneQuery = parser.Parse(QueryParserBase.Escape(articleName));
+        }
+        catch (Lucene.Net.QueryParsers.Classic.ParseException)
+        {
+            return null;
+        }
+        
+        var hits = searcher.Search(luceneQuery, 1);
+        if (hits.TotalHits == 0) return null;
+        
+        var doc = searcher.Doc(hits.ScoreDocs[0].Doc);
+        string filename = doc.Get("filename");
+        string content = doc.Get("content");
+        
+        if (!string.IsNullOrWhiteSpace(section))
+        {
+            content = ExtractMarkdownSection(content, section);
+        }
+        
+        return $"--- {filename} ---\n{content}";
+    }
+
+    private string ExtractMarkdownSection(string content, string section)
+    {
+        var lines = content.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
+        var sb = new System.Text.StringBuilder();
+        bool inSection = false;
+        int sectionLevel = -1;
+        
+        foreach (var line in lines)
+        {
+            if (line.TrimStart().StartsWith("#"))
+            {
+                var match = Regex.Match(line, @"^(#+)\s+(.*)");
+                if (match.Success)
+                {
+                    int level = match.Groups[1].Value.Length;
+                    string title = match.Groups[2].Value.Trim();
+                    
+                    if (title.Equals(section, StringComparison.OrdinalIgnoreCase))
+                    {
+                        inSection = true;
+                        sectionLevel = level;
+                        sb.AppendLine(line);
+                        continue;
+                    }
+                    else if (inSection && level <= sectionLevel)
+                    {
+                        break;
+                    }
+                }
+            }
+            
+            if (inSection)
+            {
+                sb.AppendLine(line);
+            }
+        }
+        
+        if (!inSection)
+        {
+            return $"[Section '{section}' not found in article. Returning full text.]\n\n{content}";
+        }
+        
+        return sb.ToString();
+    }
+    
+    public void Dispose()
+    {
+        _reader?.Dispose();
+        _directory?.Dispose();
+        _reindexTimer?.Dispose();
+        _reindexTimer = null;
     }
 }
