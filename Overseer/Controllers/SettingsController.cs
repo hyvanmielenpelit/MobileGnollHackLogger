@@ -30,6 +30,7 @@ public class SettingsController : ControllerBase
     }
 
     [HttpGet]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     public async Task<IActionResult> GetSettings()
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -61,7 +62,7 @@ public class SettingsController : ControllerBase
             enableToolUse = settings?.EnableToolUse ?? true,
             enableClientTools = settings?.EnableClientTools ?? true,
             enableGameActions = settings?.EnableGameActions ?? false,
-            showThoughtsAndTools = (settings?.ShowThoughtsAndTools ?? 1) == 0 ? 1 : (settings?.ShowThoughtsAndTools ?? 1),
+            showThoughtsAndTools = settings?.ShowThoughtsAndTools ?? 1,
             isProduction = _env.IsProduction(),
             performanceLimits = new {
                 maxResultLength = new {

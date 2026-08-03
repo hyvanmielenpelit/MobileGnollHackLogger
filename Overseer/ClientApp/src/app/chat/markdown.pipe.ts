@@ -31,7 +31,7 @@ export class MarkdownPipe implements PipeTransform {
     return DOMPurify.sanitize(html, {
       USE_PROFILES: { mathMl: true, html: true },
       ADD_TAGS: ['annotation', 'semantics'],
-      ADD_ATTR: ['encoding']
+      ADD_ATTR: ['encoding', 'class']
     });
   }
 }

@@ -65,7 +65,7 @@
         </div>
       </ng-template>
     </div>
-    <div class="messages" #messagesContainer (wheel)="onUserInteraction()" (touchstart)="onUserInteraction()" (scroll)="onScroll()" [class.hide-thoughts]="showThoughtsAndTools === 4 || showThoughtsAndTools === 1">
+    <div class="messages" #messagesContainer (wheel)="onUserInteraction()" (touchstart)="onUserInteraction()" (scroll)="onScroll()" [class.hide-thoughts]="showThoughtsAndTools === 0 || showThoughtsAndTools === 1">
       <div *ngIf="messages.length === 0 && (!hasApiKey || !hasModel)" class="chat-alert-box gh-main-container">
         <div class="alert-icon">⚠️</div>
         <h3>Settings Missing</h3>
@@ -183,7 +183,7 @@
             </div>
           </div>
         </div>
-        <div class="thinking-placeholder" *ngIf="isStreaming && showThoughtsAndTools === 4">
+        <div class="thinking-placeholder" *ngIf="isStreaming && showThoughtsAndTools === 0">
           <span class="gh-spinner-small" style="display:inline-block; margin-inline-end: 8px;"></span> <em>Thinking...</em>
         </div>
         <div [innerHTML]="streamingMessage | markdown" class="markdown-body"></div>

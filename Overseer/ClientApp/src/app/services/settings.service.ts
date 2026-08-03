@@ -58,7 +58,13 @@ export class SettingsService {
   private http = inject(HttpClient);
 
   getSettings() {
-    return this.http.get<UserAiSettings>('/api/settings');
+    return this.http.get<UserAiSettings>('/api/settings', {
+      headers: {
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    });
   }
 
   saveSettings(spoilerFreeMode: boolean, enableWebSearch: boolean, enableToolUse: boolean, enableClientTools: boolean, enableGameActions: boolean, allowMultipleModels: boolean, showSourceCodeReferences: boolean, maxResultLength: number | null, maxCallsPerSession: number | null, maxToolIterations: number | null, showThoughtsAndTools: number) {

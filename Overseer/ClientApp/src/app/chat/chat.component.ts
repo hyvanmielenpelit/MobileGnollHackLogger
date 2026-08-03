@@ -50,7 +50,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     'source_code_search': 'Searching source code',
     'source_code_view': 'Viewing source code',
     'wiki_search': 'Searching GnollHack Wiki',
-    'list_indexed_files': 'Listing source files'
+    'list_indexed_files': 'Listing source files',
+    'get_constants': 'Searching constants',
+    'wiki_view': 'Viewing Wiki page',
+    'search_definitions': 'Searching definitions'
   };
 
   private buildToolArgsText(name: string, args: any): string {
