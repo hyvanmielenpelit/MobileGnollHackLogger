@@ -38,18 +38,18 @@
           <h3>{{ model.displayName || model.modelId }}</h3>
         </div>
         <div class="model-details">
-          <div style="margin-bottom: 4px;">{{ model.modelId }} <span class="provider-badge" style="margin-left: 8px;">{{ model.provider }}</span></div>
+          <div class="mb-4">{{ model.modelId }} <span class="provider-badge ml-8">{{ model.provider }}</span></div>
           <div *ngIf="model.thinkingLevel">
-            <span class="detail-label thinking" style="margin-left: 0;">Thinking Level:</span> {{ formatThinkingLevel(model.thinkingLevel) }}
+            <span class="detail-label thinking ml-0">Thinking Level:</span> {{ formatThinkingLevel(model.thinkingLevel) }}
           </div>
         </div>
       </div>
 
       <div class="model-actions">
-        <button class="btn-gh btn-icon" (click)="moveUp(i)" [disabled]="i === 0 || saving" title="Move Up" style="min-width: 40px; padding: 5px;">
+        <button class="btn-gh btn-icon btn-gh-icon-small" (click)="moveUp(i)" [disabled]="i === 0 || saving" title="Move Up">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>
         </button>
-        <button class="btn-gh btn-icon" (click)="moveDown(i)" [disabled]="i === userModels.length - 1 || saving" title="Move Down" style="min-width: 40px; padding: 5px;">
+        <button class="btn-gh btn-icon btn-gh-icon-small" (click)="moveDown(i)" [disabled]="i === userModels.length - 1 || saving" title="Move Down">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
         </button>
         <button class="btn-gh" (click)="openEdit(model)" [disabled]="saving">Edit</button>
@@ -60,7 +60,7 @@
 </div>
 
 <dialog #modelPickerDialog class="settings-dialog">
-  <div class="dialog-content" style="display: flex; flex-direction: column;">
+  <div class="dialog-content flex-col">
     <h3>Add Model</h3>
     
     <div class="form-group">
@@ -72,13 +72,13 @@
 
     <div class="form-group">
       <div class="flex-between">
-        <label for="pickerModelSelect">Models <span class="form-hint" style="display:inline; margin-left: 10px;">(⭐ = Recommended)</span></label>
+        <label for="pickerModelSelect">Models <span class="form-hint d-inline-block ml-10">(⭐ = Recommended)</span></label>
         <div class="sort-options">
           <label><input type="radio" name="sort" value="alphabetical" [(ngModel)]="sortMode" (change)="onSortChange()" [disabled]="loadingModels"> Alphabetical</label>
           <label><input type="radio" name="sort" value="newest" [(ngModel)]="sortMode" (change)="onSortChange()" [disabled]="loadingModels"> Newest</label>
         </div>
       </div>
-      <select id="pickerModelSelect" [(ngModel)]="pickerModelSelect" (change)="onPickerModelSelect()" class="gh-input w-100" size="10" style="height: 220px;" [disabled]="loadingModels">
+      <select id="pickerModelSelect" [(ngModel)]="pickerModelSelect" (change)="onPickerModelSelect()" class="gh-input w-100 picker-model-select" size="10" [disabled]="loadingModels">
         <option *ngIf="loadingModels" value="" disabled>Loading models...</option>
         <option *ngIf="modelError" value="" disabled>Error loading models</option>
         <option *ngFor="let m of sortedModels" [value]="m.id">
@@ -92,8 +92,8 @@
         <input type="text" id="customModelId" [(ngModel)]="customModelId" class="gh-input w-100" placeholder="e.g. gpt-5.5-pro or claude-4.6-sonnet">
       </div>
       
-      <div class="model-meta" [style.visibility]="selectedModelObj ? 'visible' : 'hidden'" style="padding: 10px; background-color: rgba(255, 255, 255, 0.05); border: 1px solid var(--gh-gold); border-radius: 4px; margin-top: 15px; box-sizing: border-box;">
-        <span style="display: inline-block;" [style.visibility]="selectedModelObj ? 'visible' : 'hidden'"><span class="detail-label" style="color: var(--gh-gold);">Context Window:</span> {{ (selectedModelObj ? selectedModelObj.contextWindowSize : 0) | number }} tokens</span>
+      <div class="model-meta model-meta-box" [style.visibility]="selectedModelObj ? 'visible' : 'hidden'">
+        <span class="d-inline-block" [style.visibility]="selectedModelObj ? 'visible' : 'hidden'"><span class="detail-label color-gh-gold">Context Window:</span> {{ (selectedModelObj ? selectedModelObj.contextWindowSize : 0) | number }} tokens</span>
       </div>
     </div>
 
@@ -113,30 +113,30 @@
       <input type="text" id="customThinkingLevel" [(ngModel)]="customThinkingLevel" class="gh-input w-100" placeholder="e.g. 1024, max, pro">
     </div>
 
-    <div class="token-row mt-20" style="display: flex; gap: 15px;">
-      <div class="flex-1" style="flex: 1;">
+    <div class="token-row mt-20 flex-gap-15">
+      <div class="flex-1">
         <label for="pickerMaxInputTokens">Max Input Tokens</label>
         <span class="form-hint">Leave blank for default</span>
         <input type="number" id="pickerMaxInputTokens" [(ngModel)]="pickerMaxInputTokens" class="gh-input w-100 mt-5" [disabled]="loadingModels">
       </div>
-      <div class="flex-1" style="flex: 1;">
+      <div class="flex-1">
         <label for="pickerMaxOutputTokens">Max Output Tokens</label>
         <span class="form-hint">Leave blank for default</span>
         <input type="number" id="pickerMaxOutputTokens" [(ngModel)]="pickerMaxOutputTokens" class="gh-input w-100 mt-5" [disabled]="loadingModels">
       </div>
     </div>
 
-    <div class="dialog-actions" style="margin-top: auto; padding-top: 20px;">
+    <div class="dialog-actions mt-auto pt-20">
       <button class="btn-gh btn-gh-cancel" (click)="closeModelPicker()" [disabled]="saving">Cancel</button>
       <button class="btn-gh" (click)="addSelectedModel()" [disabled]="saving || loadingModels || (pickerModelSelect !== 'custom' && !selectedModelId) || (pickerModelSelect === 'custom' && !customModelId)">
-        <span *ngIf="saving" class="spinner-small"></span> Add Model
+        <span *ngIf="saving" class="gh-spinner-small"></span> Add Model
       </button>
     </div>
   </div>
 </dialog>
 
 <dialog #editModelDialog class="settings-dialog">
-  <div class="dialog-content" *ngIf="editingModel" style="display: flex; flex-direction: column;">
+  <div class="dialog-content flex-col" *ngIf="editingModel">
     <h3>Edit Model: {{ editingModel.modelId }}</h3>
     
     <div class="form-group">
@@ -160,23 +160,23 @@
       <input type="text" id="editCustomThinkingLevel" [(ngModel)]="editThinkingLevel" class="gh-input w-100" placeholder="e.g. 1024, max, pro">
     </div>
 
-    <div class="token-row mt-20" style="display: flex; gap: 15px;">
-      <div class="flex-1" style="flex: 1;">
+    <div class="token-row mt-20 flex-gap-15">
+      <div class="flex-1">
         <label for="editMaxInputTokens">Max Input Tokens</label>
         <span class="form-hint">Leave blank for default</span>
         <input type="number" id="editMaxInputTokens" [(ngModel)]="editMaxInputTokens" class="gh-input w-100 mt-5">
       </div>
-      <div class="flex-1" style="flex: 1;">
+      <div class="flex-1">
         <label for="editMaxOutputTokens">Max Output Tokens</label>
         <span class="form-hint">Leave blank for default</span>
         <input type="number" id="editMaxOutputTokens" [(ngModel)]="editMaxOutputTokens" class="gh-input w-100 mt-5">
       </div>
     </div>
 
-    <div class="dialog-actions" style="margin-top: auto; padding-top: 20px;">
+    <div class="dialog-actions mt-auto pt-20">
       <button class="btn-gh btn-gh-cancel" (click)="closeEdit()" [disabled]="saving">Cancel</button>
       <button class="btn-gh" (click)="saveEdit()" [disabled]="saving">
-        <span *ngIf="saving" class="spinner-small"></span> Save Changes
+        <span *ngIf="saving" class="gh-spinner-small"></span> Save Changes
       </button>
     </div>
   </div>

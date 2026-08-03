@@ -339,3 +339,108 @@ a:hover {
   gap: 10px;
   margin-top: 20px;
 }
+
+/* --- GLOBAL LAYOUT AND UTILITY CLASSES --- */
+
+/* Header Row (reused across settings, models, api-keys) */
+.header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 30px;
+  border-bottom: 1px solid var(--border-glass);
+  margin: 0;
+  
+  h2 {
+    margin-top: 0;
+    margin-block-end: 0;
+  }
+}
+
+/* Settings Description */
+.settings-description {
+  color: #ccc;
+  margin-bottom: 20px;
+  padding: 0 30px;
+  margin-top: 20px;
+}
+
+/* Provider Badge */
+.provider-badge {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.1);
+  color: #ddd;
+}
+
+/* Info Button */
+.btn-info {
+  background: transparent;
+  color: var(--primary-color);
+  border: 1px solid var(--border-glass);
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  font-size: 1.2em;
+  transition: all 0.2s;
+  padding: 0;
+}
+.btn-info:hover {
+  background: rgba(212, 160, 23, 0.2);
+  border-color: var(--primary-color);
+  box-shadow: 0 0 8px var(--gold-glow);
+}
+
+/* API Instructions */
+.api-instructions {
+  margin-top: 15px;
+  padding-left: 20px;
+  color: #ccc;
+  
+  li {
+    margin-bottom: 10px;
+  }
+}
+
+/* Spacing and Flex Utilities */
+.w-100 { width: 100%; }
+.w-auto { width: auto; }
+.flex-1 { flex: 1; }
+.m-0 { margin: 0; }
+.mt-5 { margin-top: 5px; }
+.mt-10 { margin-top: 10px; }
+.mt-15 { margin-top: 15px; }
+.mt-20 { margin-top: 20px; }
+.mb-10 { margin-bottom: 10px; }
+.margin-y-20 { margin-block: 20px; }
+.flex-gap-10 { display: flex; gap: 10px; }
+.flex-gap-15 { display: flex; gap: 15px; }
+.gap-15 { gap: 15px; }
+.flex-center { display: flex; justify-content: center; align-items: center; }
+.flex-col { display: flex; flex-direction: column; }
+.ml-10 { margin-left: 10px; }
+.ms-10 { margin-inline-start: 10px; }
+.mt-auto { margin-top: auto; }
+.pt-20 { padding-top: 20px; }
+
+/* Small Spinner */
+.gh-spinner-small {
+  display: inline-block;
+  border: 2px solid rgba(255,255,255,0.1);
+  border-left-color: #fff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
+  margin: 0;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

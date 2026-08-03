@@ -185,9 +185,7 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
   margin-block-start: 10px;
 }
 
-.ms-10 {
-  margin-inline-start: 10px;
-}
+
 
 .chat-alert-box {
   margin: 40px auto;
@@ -488,13 +486,7 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
 .tool-icon { font-size: 14px; }
 .tool-name { font-weight: bold; color: var(--primary-color); }
 .tool-status { margin-inline-start: auto; display: flex; align-items: center; }
-.small-spinner {
-  width: 16px;
-  height: 16px;
-  border-width: 2px;
-  display: inline-block;
-  margin: 0;
-}
+
 .tool-call-result {
   margin-block-start: 8px;
   font-size: 12px;
@@ -643,13 +635,15 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
   text-transform: uppercase;
 }
 
-.provider-badge {
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: #ddd;
-  background: rgba(255, 255, 255, 0.1);
-  padding: 1px 5px;
-  border-radius: 4px;
+.model-selector-wrapper {
+  align-self: flex-start;
+  margin-left: 50px;
+  margin-bottom: 5px;
+}
+
+.chat-input-wrapper {
+  flex-grow: 1;
+  display: flex;
 }
 
 .single-model-display {

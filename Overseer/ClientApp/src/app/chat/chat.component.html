@@ -90,7 +90,7 @@
               <span class="tool-icon">🛠️</span>
               <span class="tool-name">{{ tc.displayName || tc.name }}</span>
               <span class="tool-args" *ngIf="tc.argsText"> ({{ tc.argsText }})</span>
-              <span class="tool-status" *ngIf="tc.status === 'running'"><span class="sidebar-spinner small-spinner"></span></span>
+              <span class="tool-status" *ngIf="tc.status === 'running'"><span class="gh-spinner-small"></span></span>
               <span class="tool-status" *ngIf="tc.status === 'completed'">✅</span>
               <span class="tool-status" *ngIf="tc.status === 'error'">❌</span>
             </div>
@@ -136,7 +136,7 @@
               <span class="tool-icon">🛠️</span>
               <span class="tool-name">{{ tc.displayName || tc.name }}</span>
               <span class="tool-args" *ngIf="tc.argsText"> ({{ tc.argsText }})</span>
-              <span class="tool-status" *ngIf="tc.status === 'running'"><span class="sidebar-spinner small-spinner"></span></span>
+              <span class="tool-status" *ngIf="tc.status === 'running'"><span class="gh-spinner-small"></span></span>
               <span class="tool-status" *ngIf="tc.status === 'completed'">✅</span>
               <span class="tool-status" *ngIf="tc.status === 'error'">❌</span>
             </div>
@@ -178,7 +178,7 @@
         </div>
       </div>
       <div class="input-area">
-        <div *ngIf="hasModel" class="custom-model-selector" style="align-self: flex-start; margin-left: 50px; margin-bottom: 5px;">
+        <div *ngIf="hasModel" class="custom-model-selector model-selector-wrapper">
           <ng-container *ngIf="allowMultipleModels && userModels.length > 1; else singleModelView">
             <button class="selector-trigger" (click)="toggleModelDropdown($event)" [class.open]="isModelDropdownOpen">
               <span class="model-name">{{ selectedModel?.displayName || selectedModel?.modelId || 'Select Model' }}</span>
@@ -208,8 +208,8 @@
           <button class="add-media-btn" (click)="triggerFileInput()" [disabled]="pendingAttachments.length >= 5">+</button>
           <input type="file" id="fileInput" hidden multiple accept=".html,.htm,.txt,.md,.png,.jpg,.jpeg,.webp" (change)="onFileSelected($event)">
           
-          <div style="flex-grow: 1; display: flex;">
-            <textarea #promptInput [(ngModel)]="currentInput" (ngModelChange)="saveDraft()" (keyup.enter)="sendMessage()" (paste)="onPaste($event)" placeholder="Ask the Overseer" autofocus style="width: 100%;"></textarea>
+          <div class="chat-input-wrapper">
+            <textarea #promptInput [(ngModel)]="currentInput" (ngModelChange)="saveDraft()" (keyup.enter)="sendMessage()" (paste)="onPaste($event)" placeholder="Ask the Overseer" autofocus class="w-100"></textarea>
           </div>
           
           <button class="btn-gh ms-10" (click)="sendMessage()" [disabled]="isStreaming || (!currentInput.trim() && pendingAttachments.length === 0)">Send</button>
@@ -272,7 +272,7 @@
   <div class="dialog-actions">
     <button class="btn-gh btn-gh-cancel" (click)="closeReportConfirm()" [disabled]="isReporting">Cancel</button>
     <button class="btn-gh" (click)="confirmReport()" [disabled]="isReporting">
-      <span *ngIf="isReporting" class="sidebar-spinner small-spinner"></span>
+      <span *ngIf="isReporting" class="gh-spinner-small"></span>
       <span *ngIf="isReporting" class="ms-10">Sending...</span>
       <span *ngIf="!isReporting">OK</span>
     </button>

@@ -88,11 +88,11 @@
         <label class="block fw-bold">Max Result Length</label>
         <span class="form-hint mt-5 d-block mb-10">Maximum length of text the AI will process per tool result (truncated if longer).</span>
         
-        <button type="button" class="form-input form-select text-start" style="text-align: left; anchor-name: --select-len; display: flex; align-items: center; gap: 12px; padding-left: 12px;" popovertarget="maxResultLengthPopover">
+        <button type="button" class="form-input form-select popover-trigger-btn popover-anchor-len" popovertarget="maxResultLengthPopover">
           <span class="opt-label">{{ getSelectedOptionDisplay('maxResultLength').label }}</span>
-          <span class="opt-val" *ngIf="getSelectedOptionDisplay('maxResultLength').valueText" style="color: inherit;">{{ getSelectedOptionDisplay('maxResultLength').valueText }}</span>
+          <span class="opt-val color-inherit" *ngIf="getSelectedOptionDisplay('maxResultLength').valueText">{{ getSelectedOptionDisplay('maxResultLength').valueText }}</span>
         </button>
-        <div id="maxResultLengthPopover" popover class="custom-select-popover" style="position-anchor: --select-len;">
+        <div id="maxResultLengthPopover" popover class="custom-select-popover popover-target-len">
           <div class="popover-option" *ngFor="let o of resultLengthOptions" (click)="selectCustomOption('maxResultLength', o.value, 'maxResultLengthPopover')" [class.selected]="o.value === maxResultLengthSelect">
             <span class="opt-label">{{o.label}}</span>
             <span class="opt-val" *ngIf="o.value !== 'custom'">{{o.value ?? performanceLimits?.maxResultLength?.defaultValue}} chars</span>
@@ -101,7 +101,7 @@
 
         <div *ngIf="maxResultLengthSelect === 'custom'" class="mt-10 custom-input-wrapper">
           <input type="number" [(ngModel)]="maxResultLength" name="maxResultLength" class="form-input w-100" [min]="performanceLimits?.maxResultLength?.min" [max]="performanceLimits?.maxResultLength?.max" placeholder="Custom value" />
-          <span class="form-hint mt-5 d-block" style="font-size: 0.85em; margin-left: 6px;">Allowed range: {{performanceLimits?.maxResultLength?.min}}–{{performanceLimits?.maxResultLength?.max}}</span>
+          <span class="form-hint mt-5 d-block">Allowed range: {{performanceLimits?.maxResultLength?.min}}–{{performanceLimits?.maxResultLength?.max}}</span>
         </div>
       </div>
 
@@ -109,11 +109,11 @@
         <label class="block fw-bold">Max Calls Per Session</label>
         <span class="form-hint mt-5 d-block mb-10">Maximum number of interactions permitted in a single chat session.</span>
         
-        <button type="button" class="form-input form-select text-start" style="text-align: left; anchor-name: --select-calls; display: flex; align-items: center; gap: 12px; padding-left: 12px;" popovertarget="maxCallsPerSessionPopover">
+        <button type="button" class="form-input form-select popover-trigger-btn popover-anchor-calls" popovertarget="maxCallsPerSessionPopover">
           <span class="opt-label">{{ getSelectedOptionDisplay('maxCallsPerSession').label }}</span>
-          <span class="opt-val" *ngIf="getSelectedOptionDisplay('maxCallsPerSession').valueText" style="color: inherit;">{{ getSelectedOptionDisplay('maxCallsPerSession').valueText }}</span>
+          <span class="opt-val color-inherit" *ngIf="getSelectedOptionDisplay('maxCallsPerSession').valueText">{{ getSelectedOptionDisplay('maxCallsPerSession').valueText }}</span>
         </button>
-        <div id="maxCallsPerSessionPopover" popover class="custom-select-popover" style="position-anchor: --select-calls;">
+        <div id="maxCallsPerSessionPopover" popover class="custom-select-popover popover-target-calls">
           <div class="popover-option" *ngFor="let o of callsOptions" (click)="selectCustomOption('maxCallsPerSession', o.value, 'maxCallsPerSessionPopover')" [class.selected]="o.value === maxCallsPerSessionSelect">
             <span class="opt-label">{{o.label}}</span>
             <span class="opt-val" *ngIf="o.value !== 'custom'">{{o.value ?? performanceLimits?.maxCallsPerSession?.defaultValue}}</span>
@@ -122,7 +122,7 @@
 
         <div *ngIf="maxCallsPerSessionSelect === 'custom'" class="mt-10 custom-input-wrapper">
           <input type="number" [(ngModel)]="maxCallsPerSession" name="maxCallsPerSession" class="form-input w-100" [min]="performanceLimits?.maxCallsPerSession?.min" [max]="performanceLimits?.maxCallsPerSession?.max" placeholder="Custom value" />
-          <span class="form-hint mt-5 d-block" style="font-size: 0.85em; margin-left: 12px;">Allowed range: {{performanceLimits?.maxCallsPerSession?.min}} - {{performanceLimits?.maxCallsPerSession?.max}}</span>
+          <span class="form-hint mt-5 d-block">Allowed range: {{performanceLimits?.maxCallsPerSession?.min}} - {{performanceLimits?.maxCallsPerSession?.max}}</span>
         </div>
       </div>
 
@@ -130,11 +130,11 @@
         <label class="block fw-bold">Max Tool Iterations</label>
         <span class="form-hint mt-5 d-block mb-10">Maximum number of consecutive tool calls the AI can make before stopping.</span>
         
-        <button type="button" class="form-input form-select text-start" style="text-align: left; anchor-name: --select-iters; display: flex; align-items: center; gap: 12px; padding-left: 12px;" popovertarget="maxToolIterationsPopover">
+        <button type="button" class="form-input form-select popover-trigger-btn popover-anchor-iters" popovertarget="maxToolIterationsPopover">
           <span class="opt-label">{{ getSelectedOptionDisplay('maxToolIterations').label }}</span>
-          <span class="opt-val" *ngIf="getSelectedOptionDisplay('maxToolIterations').valueText" style="color: inherit;">{{ getSelectedOptionDisplay('maxToolIterations').valueText }}</span>
+          <span class="opt-val color-inherit" *ngIf="getSelectedOptionDisplay('maxToolIterations').valueText">{{ getSelectedOptionDisplay('maxToolIterations').valueText }}</span>
         </button>
-        <div id="maxToolIterationsPopover" popover class="custom-select-popover" style="position-anchor: --select-iters;">
+        <div id="maxToolIterationsPopover" popover class="custom-select-popover popover-target-iters">
           <div class="popover-option" *ngFor="let o of iterationsOptions" (click)="selectCustomOption('maxToolIterations', o.value, 'maxToolIterationsPopover')" [class.selected]="o.value === maxToolIterationsSelect">
             <span class="opt-label">{{o.label}}</span>
             <span class="opt-val" *ngIf="o.value !== 'custom'">{{o.value ?? performanceLimits?.maxToolIterations?.defaultValue}}</span>
@@ -143,7 +143,7 @@
 
         <div *ngIf="maxToolIterationsSelect === 'custom'" class="mt-10 custom-input-wrapper">
           <input type="number" [(ngModel)]="maxToolIterations" name="maxToolIterations" class="form-input w-100" [min]="performanceLimits?.maxToolIterations?.min" [max]="performanceLimits?.maxToolIterations?.max" placeholder="Custom value" />
-          <span class="form-hint mt-5 d-block" style="font-size: 0.85em; margin-left: 12px;">Allowed range: {{performanceLimits?.maxToolIterations?.min}} - {{performanceLimits?.maxToolIterations?.max}}</span>
+          <span class="form-hint mt-5 d-block">Allowed range: {{performanceLimits?.maxToolIterations?.min}} - {{performanceLimits?.maxToolIterations?.max}}</span>
         </div>
       </div>
     </fieldset>
