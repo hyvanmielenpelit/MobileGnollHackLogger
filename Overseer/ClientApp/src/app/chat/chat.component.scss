@@ -97,6 +97,11 @@
   font-size: 12px;
   color: var(--primary-color);
 }
+.progress-bar.title-progress {
+  background: rgba(110, 90, 180, 0.12);
+  color: #b8a5e8;
+  border-block-end: 1px solid rgba(110, 90, 180, 0.25);
+}
 .status-icon { margin-inline-end: 8px; font-size: 14px; }
 .status-icon.spin { animation: spin 1.5s linear infinite; display: inline-block; }
 @keyframes spin { 100% { transform: rotate(360deg); } }

@@ -198,6 +198,13 @@
         <span class="status-text">{{ currentStatusText }}</span>
         <button *ngIf="isStreaming" class="stop-btn" (click)="stopRequest()" title="Stop Request">■</button>
       </div>
+      
+      <div class="progress-bar title-progress" *ngIf="isGeneratingTitle || titleStatusText">
+        <span class="status-icon spin" *ngIf="isGeneratingTitle">↻</span>
+        <span class="status-icon" *ngIf="!isGeneratingTitle && titleStatusText">✅</span>
+        <span class="status-text">{{ titleStatusText }}</span>
+        <button *ngIf="isGeneratingTitle" class="stop-btn" (click)="cancelTitleGeneration()" title="Cancel Title Generation">■</button>
+      </div>
 
       <div class="attachments-preview" *ngIf="pendingAttachments.length > 0">
         <div class="attachment-chip" *ngFor="let att of pendingAttachments; let i = index">

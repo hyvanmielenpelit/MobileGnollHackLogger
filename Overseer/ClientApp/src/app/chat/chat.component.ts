@@ -130,6 +130,9 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   streamingToolCalls: ChatMessageToolCall[] = [];
   pendingAttachments: { file: File, base64: string, name: string, type: string }[] = [];
   
+  isGeneratingTitle = false;
+  titleStatusText = '';
+
   maxAttachmentSize = 15728640; // default 15MB
   errorMessage = '';
   hasApiKey = true;
@@ -537,6 +540,26 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
               this.cdr.detectChanges();
             }
           } catch(e) {}
+        } else if (evt.type === 'title_status') {
+          try {
+            const data = JSON.parse(evt.data);
+            if (data.sessionId !== this.currentSessionId) return;
+        
+        if (data.status === 'canceled' || data.status === '') {
+              this.isGeneratingTitle = false;
+              this.titleStatusText = data.status === 'canceled' ? 'Title generation canceled.' : 'Title generation complete.';
+              setTimeout(() => {
+                if (this.titleStatusText === 'Title generation canceled.' || this.titleStatusText === 'Title generation complete.') {
+                  this.titleStatusText = '';
+                  this.cdr.detectChanges();
+                }
+              }, 2000);
+            } else {
+              this.isGeneratingTitle = true;
+              this.titleStatusText = data.status;
+            }
+            this.cdr.detectChanges();
+          } catch(e) {}
         } else if (evt.type === 'done') {
           if (this.isStreaming) {
             this.messages.push({ role: 'assistant', content: this.streamingMessage, timestampUtc: new Date().toISOString(), toolCalls: [...this.streamingToolCalls] });
@@ -617,6 +640,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.messages = [];
     this.streamingToolCalls = [];
     this.currentStatusText = '';
+    this.isGeneratingTitle = false;
+    this.titleStatusText = '';
     this.loadDraft();
     this.applySavedModelPreference();
     this.focusPromptInput();
@@ -635,6 +660,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.currentSessionId = s.id;
         this.messages = s.messages || [];
         this.currentStatusText = '';
+        this.isGeneratingTitle = false;
+        this.titleStatusText = '';
         this.loadDraft();
         
         if (!this.sessions.find(x => x.id === id)) {
@@ -734,6 +761,12 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     }
   }
 
+  cancelTitleGeneration() {
+    if (this.hubConnection && this.currentSessionId) {
+      this.hubConnection.invoke('CancelTitleGeneration', this.currentSessionId).catch(console.error);
+    }
+  }
+
   async sendMessage() {
     if ((!this.currentInput.trim() && this.pendingAttachments.length === 0) || this.isStreaming) return;
     
@@ -784,13 +817,22 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       const modelIdToUse = this.allowMultipleModels && this.selectedUserModelId ? this.selectedUserModelId : undefined;
       for await (const evt of this.chatService.streamMessage(this.currentSessionId, message, attachmentsPayload, modelIdToUse, this.abortController.signal)) {
         if (evt.type === 'sessionId') {
-          this.currentSessionId = Number(evt.data);
-          const urlTree = this.router.createUrlTree([], {
-            relativeTo: this.route,
-            queryParams: { sessionId: this.currentSessionId },
-            queryParamsHandling: 'merge'
-          });
-          this.router.navigateByUrl(urlTree, { replaceUrl: true });
+          const newSessionId = Number(evt.data);
+          if (this.currentSessionId !== newSessionId) {
+            this.currentSessionId = newSessionId;
+            
+            if (this.hubConnection?.state === signalR.HubConnectionState.Connected) {
+              this.hubConnection.invoke("JoinSession", this.currentSessionId).catch(console.error);
+            }
+            this.loadSessions();
+            
+            const urlTree = this.router.createUrlTree([], {
+              relativeTo: this.route,
+              queryParams: { sessionId: this.currentSessionId },
+              queryParamsHandling: 'merge'
+            });
+            this.router.navigateByUrl(urlTree, { replaceUrl: true });
+          }
         } else if (evt.type === 'debug') {
           this.debugService.log(`[Backend] ${evt.data}`);
         } else if (evt.type === 'status') {
