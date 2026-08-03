@@ -25,6 +25,9 @@ export class SettingsComponent implements OnInit {
   showSourceCodeReferences = false;
   initShowSourceCodeReferences = false;
 
+  showThoughtsAndTools = 1;
+  initShowThoughtsAndTools = 1;
+
   enableWebSearch = true;
   initEnableWebSearch = true;
   enableToolUse = true;
@@ -59,6 +62,7 @@ export class SettingsComponent implements OnInit {
            this.enableToolUse !== this.initEnableToolUse ||
            this.enableClientTools !== this.initEnableClientTools ||
            this.enableGameActions !== this.initEnableGameActions ||
+           this.showThoughtsAndTools !== this.initShowThoughtsAndTools ||
            this.maxResultLength !== this.initMaxResultLength ||
            this.maxCallsPerSession !== this.initMaxCallsPerSession ||
            this.maxToolIterations !== this.initMaxToolIterations;
@@ -164,6 +168,10 @@ export class SettingsComponent implements OnInit {
           this.enableGameActions = s.enableGameActions;
           this.initEnableGameActions = s.enableGameActions;
         }
+        if (s.showThoughtsAndTools !== undefined) {
+          this.showThoughtsAndTools = s.showThoughtsAndTools;
+          this.initShowThoughtsAndTools = s.showThoughtsAndTools;
+        }
         if (s.maxResultLength !== undefined) {
           this.maxResultLength = s.maxResultLength ?? null;
           this.initMaxResultLength = this.maxResultLength;
@@ -234,7 +242,7 @@ export class SettingsComponent implements OnInit {
   saveSettings() {
     this.loading = true;
     this.saved = false;
-    this.settingsService.saveSettings(this.spoilerFreeMode, this.enableWebSearch, this.enableToolUse, this.enableClientTools, this.enableGameActions, this.allowMultipleModels, this.showSourceCodeReferences, this.maxResultLength, this.maxCallsPerSession, this.maxToolIterations).subscribe(() => {
+    this.settingsService.saveSettings(this.spoilerFreeMode, this.enableWebSearch, this.enableToolUse, this.enableClientTools, this.enableGameActions, this.allowMultipleModels, this.showSourceCodeReferences, this.maxResultLength, this.maxCallsPerSession, this.maxToolIterations, Number(this.showThoughtsAndTools)).subscribe(() => {
       this.loading = false;
       
       const toast = this.successToast?.nativeElement as any;
@@ -255,6 +263,7 @@ export class SettingsComponent implements OnInit {
       this.initEnableToolUse = this.enableToolUse;
       this.initEnableClientTools = this.enableClientTools;
       this.initEnableGameActions = this.enableGameActions;
+      this.initShowThoughtsAndTools = this.showThoughtsAndTools;
       this.initMaxResultLength = this.maxResultLength;
       this.initMaxCallsPerSession = this.maxCallsPerSession;
       this.initMaxToolIterations = this.maxToolIterations;

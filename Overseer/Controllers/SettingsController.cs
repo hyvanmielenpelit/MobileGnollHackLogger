@@ -61,6 +61,7 @@ public class SettingsController : ControllerBase
             enableToolUse = settings?.EnableToolUse ?? true,
             enableClientTools = settings?.EnableClientTools ?? true,
             enableGameActions = settings?.EnableGameActions ?? false,
+            showThoughtsAndTools = (settings?.ShowThoughtsAndTools ?? 1) == 0 ? 1 : (settings?.ShowThoughtsAndTools ?? 1),
             isProduction = _env.IsProduction(),
             performanceLimits = new {
                 maxResultLength = new {
@@ -120,7 +121,7 @@ public class SettingsController : ControllerBase
                 return BadRequest($"MaxToolIterations must be between {min} and {max}");
         }
 
-        await _settingsService.SaveSettingsAsync(userId, request.SpoilerFreeMode, request.EnableWebSearch, request.EnableToolUse, request.EnableClientTools, request.EnableGameActions, request.AllowMultipleModels, request.ShowSourceCodeReferences, request.MaxResultLength, request.MaxCallsPerSession, request.MaxToolIterations);
+        await _settingsService.SaveSettingsAsync(userId, request.SpoilerFreeMode, request.EnableWebSearch, request.EnableToolUse, request.EnableClientTools, request.EnableGameActions, request.AllowMultipleModels, request.ShowSourceCodeReferences, request.MaxResultLength, request.MaxCallsPerSession, request.MaxToolIterations, request.ShowThoughtsAndTools);
         
         return Ok();
     }
@@ -446,6 +447,7 @@ public class UpdateSettingsRequest
     public bool? EnableGameActions { get; set; }
     public bool? AllowMultipleModels { get; set; }
     public bool? ShowSourceCodeReferences { get; set; }
+    public int? ShowThoughtsAndTools { get; set; }
 }
 
 public class SaveApiKeyRequest

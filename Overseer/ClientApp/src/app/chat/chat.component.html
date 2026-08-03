@@ -65,7 +65,7 @@
         </div>
       </ng-template>
     </div>
-    <div class="messages" #messagesContainer (wheel)="onUserInteraction()" (touchstart)="onUserInteraction()" (scroll)="onScroll()">
+    <div class="messages" #messagesContainer (wheel)="onUserInteraction()" (touchstart)="onUserInteraction()" (scroll)="onScroll()" [class.hide-thoughts]="showThoughtsAndTools === 4 || showThoughtsAndTools === 1">
       <div *ngIf="messages.length === 0 && (!hasApiKey || !hasModel)" class="chat-alert-box gh-main-container">
         <div class="alert-icon">⚠️</div>
         <h3>Settings Missing</h3>
@@ -113,7 +113,7 @@
             </span>
           </ng-container>
         </div>
-        <div *ngIf="msg.toolCalls && msg.toolCalls.length > 0" class="tool-calls-container">
+        <div *ngIf="msg.toolCalls && msg.toolCalls.length > 0 && (showThoughtsAndTools === 1 || showThoughtsAndTools === 3)" class="tool-calls-container">
           <div *ngFor="let tc of msg.toolCalls" class="tool-call" [ngClass]="tc.status">
             <div class="tool-call-header">
               <span class="tool-icon">🛠️</span>
@@ -147,7 +147,7 @@
           <svg *ngIf="copiedMsgIndex !== i" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
         </button>
       </div>
-      <div *ngIf="streamingMessage" class="message-box assistant">
+      <div *ngIf="isStreaming || streamingMessage" class="message-box assistant">
         <div class="message-header">
           <img src="/img/GnollOverseerAvatar-128x128-animated.webp" class="overseer-avatar" alt="Overseer" width="64" height="64" />
           <strong>Overseer</strong>
@@ -159,7 +159,7 @@
             </div>
           </div>
         </div>
-        <div *ngIf="streamingToolCalls.length > 0" class="tool-calls-container">
+        <div *ngIf="streamingToolCalls.length > 0 && (showThoughtsAndTools === 1 || showThoughtsAndTools === 3)" class="tool-calls-container">
           <div *ngFor="let tc of streamingToolCalls" class="tool-call" [ngClass]="tc.status">
             <div class="tool-call-header">
               <span class="tool-icon">🛠️</span>
@@ -182,6 +182,9 @@
               </details>
             </div>
           </div>
+        </div>
+        <div class="thinking-placeholder" *ngIf="isStreaming && showThoughtsAndTools === 4">
+          <span class="gh-spinner-small" style="display:inline-block; margin-inline-end: 8px;"></span> <em>Thinking...</em>
         </div>
         <div [innerHTML]="streamingMessage | markdown" class="markdown-body"></div>
         <button class="copy-btn" (click)="copyToClipboard(streamingMessage, null)" title="Copy">

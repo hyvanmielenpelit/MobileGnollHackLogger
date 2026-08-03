@@ -465,6 +465,7 @@ public class ChatService
             
             hasToolsToRun = false;
             string iterationText = "";
+            bool lastEventWasToolCall = false;
             var requestTools = _toolRegistry.BuildToolsForRequest(provider, execContext, enableWebSearch, enableToolUse, enableClientTools, enableGameActions);
             var currentIterationToolCalls = new List<JsonElement>();
             
@@ -512,6 +513,20 @@ public class ChatService
                 {
                     if (evt.Type == "chunk")
                     {
+                        if (!string.IsNullOrEmpty(evt.Data))
+                        {
+                            if ((toolIterations > 0 && string.IsNullOrEmpty(iterationText)) || lastEventWasToolCall)
+                            {
+                                if (!string.IsNullOrWhiteSpace(fullResponse) && !fullResponse.EndsWith("\n") && !fullResponse.EndsWith(" "))
+                                {
+                                    var spacer = "\n\n";
+                                    fullResponse += spacer;
+                                    yield return new ChatEvent { Type = "chunk", Data = spacer };
+                                }
+                                lastEventWasToolCall = false;
+                            }
+                        }
+
                         fullResponse += evt.Data;
                         iterationText += evt.Data;
                     }
@@ -519,6 +534,7 @@ public class ChatService
                     if (evt.Type == "tool_call_complete")
                     {
                         hasToolsToRun = true;
+                        lastEventWasToolCall = true;
                         currentIterationToolCalls.Add(JsonSerializer.Deserialize<JsonElement>(evt.Data));
                         yield return new ChatEvent { Type = "tool_start", Data = evt.Data };
                     }
@@ -530,6 +546,11 @@ public class ChatService
                 
                 if (hasToolsToRun && currentIterationToolCalls.Count > 0)
                 {
+                    if (!string.IsNullOrWhiteSpace(iterationText) && fullResponse.EndsWith(iterationText))
+                    {
+                        fullResponse = fullResponse.Substring(0, fullResponse.Length - iterationText.Length);
+                        fullResponse += $"<div class=\"ai-thought\">\n\n{iterationText}\n\n</div>\n\n";
+                    }
                     // Add assistant tool calls message
                     var toolCallsForHistory = new List<object>();
                     foreach (var tc in currentIterationToolCalls)
@@ -626,6 +647,20 @@ public class ChatService
                 {
                     if (evt.Type == "chunk")
                     {
+                        if (!string.IsNullOrEmpty(evt.Data))
+                        {
+                            if ((toolIterations > 0 && string.IsNullOrEmpty(iterationText)) || lastEventWasToolCall)
+                            {
+                                if (!string.IsNullOrWhiteSpace(fullResponse) && !fullResponse.EndsWith("\n") && !fullResponse.EndsWith(" "))
+                                {
+                                    var spacer = "\n\n";
+                                    fullResponse += spacer;
+                                    yield return new ChatEvent { Type = "chunk", Data = spacer };
+                                }
+                                lastEventWasToolCall = false;
+                            }
+                        }
+
                         fullResponse += evt.Data;
                         iterationText += evt.Data;
                     }
@@ -633,6 +668,7 @@ public class ChatService
                     if (evt.Type == "tool_call_complete")
                     {
                         hasToolsToRun = true;
+                        lastEventWasToolCall = true;
                         currentIterationToolCalls.Add(JsonSerializer.Deserialize<JsonElement>(evt.Data));
                         yield return new ChatEvent { Type = "tool_start", Data = evt.Data };
                     }
@@ -644,6 +680,11 @@ public class ChatService
                 
                 if (hasToolsToRun && currentIterationToolCalls.Count > 0)
                 {
+                    if (!string.IsNullOrWhiteSpace(iterationText) && fullResponse.EndsWith(iterationText))
+                    {
+                        fullResponse = fullResponse.Substring(0, fullResponse.Length - iterationText.Length);
+                        fullResponse += $"<div class=\"ai-thought\">\n\n{iterationText}\n\n</div>\n\n";
+                    }
                     var asstContent = new List<object>();
                     foreach (var tc in currentIterationToolCalls)
                     {
@@ -793,6 +834,20 @@ public class ChatService
                 {
                     if (evt.Type == "chunk")
                     {
+                        if (!string.IsNullOrEmpty(evt.Data))
+                        {
+                            if ((toolIterations > 0 && string.IsNullOrEmpty(iterationText)) || lastEventWasToolCall)
+                            {
+                                if (!string.IsNullOrWhiteSpace(fullResponse) && !fullResponse.EndsWith("\n") && !fullResponse.EndsWith(" "))
+                                {
+                                    var spacer = "\n\n";
+                                    fullResponse += spacer;
+                                    yield return new ChatEvent { Type = "chunk", Data = spacer };
+                                }
+                                lastEventWasToolCall = false;
+                            }
+                        }
+
                         fullResponse += evt.Data;
                         iterationText += evt.Data;
                     }
@@ -800,6 +855,7 @@ public class ChatService
                     if (evt.Type == "tool_call_complete")
                     {
                         hasToolsToRun = true;
+                        lastEventWasToolCall = true;
                         currentIterationToolCalls.Add(JsonSerializer.Deserialize<JsonElement>(evt.Data));
                         yield return new ChatEvent { Type = "tool_start", Data = evt.Data };
                     }
@@ -811,6 +867,11 @@ public class ChatService
                 
                 if (hasToolsToRun && currentIterationToolCalls.Count > 0)
                 {
+                    if (!string.IsNullOrWhiteSpace(iterationText) && fullResponse.EndsWith(iterationText))
+                    {
+                        fullResponse = fullResponse.Substring(0, fullResponse.Length - iterationText.Length);
+                        fullResponse += $"<div class=\"ai-thought\">\n\n{iterationText}\n\n</div>\n\n";
+                    }
                     var modelParts = new List<object>();
                     foreach (var tc in currentIterationToolCalls)
                     {

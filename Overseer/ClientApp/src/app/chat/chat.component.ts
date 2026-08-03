@@ -140,6 +140,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   hasApiKey = true;
   hasModel = true;
   allowMultipleModels = false;
+  showThoughtsAndTools = 1;
 
   userModels: import('../services/settings.service').UserAiModel[] = [];
   selectedUserModelId: number | null = null;
@@ -389,6 +390,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.hasApiKey = settings.hasApiKey;
         this.isProduction = settings.isProduction ?? false;
         this.allowMultipleModels = settings.allowMultipleModels ?? false;
+        this.showThoughtsAndTools = settings.showThoughtsAndTools ?? 1;
 
         this.settingsService.getUserModels().subscribe(models => {
           this.userModels = models;
@@ -494,6 +496,18 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
             const args = JSON.parse(toolInfo.arguments || '{}');
             const displayName = ChatComponent.TOOL_DISPLAY_NAMES[toolInfo.name] || toolInfo.name;
             const argsText = this.buildToolArgsText(toolInfo.name, args);
+            
+            // Wrap the preceding text of the current thought dynamically in streamingMessage
+            if (this.streamingMessage.length > 0) {
+              const lastDivIndex = this.streamingMessage.lastIndexOf('</div>');
+              const thoughtStartIndex = lastDivIndex >= 0 ? lastDivIndex + 6 : 0;
+              const thoughtText = this.streamingMessage.substring(thoughtStartIndex).trim();
+              if (thoughtText.length > 0) {
+                this.streamingMessage = this.streamingMessage.substring(0, thoughtStartIndex) 
+                  + '\n\n<div class="ai-thought">\n\n' + thoughtText + '\n\n</div>\n\n';
+              }
+            }
+
             this.streamingToolCalls.push({ 
               id: toolInfo.id, 
               name: toolInfo.name, 
