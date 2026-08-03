@@ -109,8 +109,29 @@ namespace Overseer.Services.Tools
         public override JsonElement ParameterSchema { get; } = JsonDocument.Parse(@"{
             ""type"": ""object"",
             ""properties"": {
-                ""filename"": { ""type"": ""string"", ""description"": ""Filename of a specific dumplog to read (e.g. gnollhack.Gandalf.20260801100000.txt). Get filenames from the list mode or from get_player_xlog's dumplog_filename field. If omitted, returns a list of all existing dumplog files on the device."" }
+                ""filename"": { ""type"": ""string"", ""description"": ""Filename of a specific dumplog to read (e.g. gnollhack.Gandalf.20260801100000.txt). Get filenames from the list mode or from get_player_xlog's dumplog_filename field. If omitted, returns a list of all existing dumplog files on the device."" },
+                ""max_length"": { ""type"": ""integer"", ""description"": ""Maximum number of characters to return from the dumplog content. Defaults to 4000. Use a higher value (e.g. 16000) to get more complete dumplogs when needed."" }
             }
         }").RootElement;
+    }
+
+    public class GetAppLogTool : ClientToolHandlerBase
+    {
+        public override string ToolName => "get_app_log";
+        public override ToolCategory Category => ToolCategory.ClientPersistentDataQuery;
+
+        public override JsonElement ParameterSchema { get; } = JsonDocument.Parse(@"{
+            ""type"": ""object"",
+            ""properties"": {
+                ""last_n"": { ""type"": ""integer"", ""description"": ""Return only the last N lines of the log. If omitted, returns the entire log (subject to server-side truncation)."" },
+                ""search_term"": { ""type"": ""string"", ""description"": ""Optional substring to filter log lines (case-insensitive). Only lines containing this term are returned."" }
+            }
+        }").RootElement;
+    }
+
+    public class GetPanicLogTool : ClientToolHandlerBase
+    {
+        public override string ToolName => "get_panic_log";
+        public override ToolCategory Category => ToolCategory.ClientPersistentDataQuery;
     }
 }

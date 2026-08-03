@@ -41,6 +41,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     'get_oracle_consultations': 'Reading consultations',
     'get_player_xlog': 'Reading recent games',
     'get_player_dumplogs': 'Reading player dumplogs',
+    'get_app_log': 'Reading application log',
+    'get_panic_log': 'Reading panic log',
     'item_lookup': 'Searching Wiki for an item',
     'monster_lookup': 'Searching Wiki for a monster',
     'nethack_wiki_search': 'Searching NetHack Wiki',

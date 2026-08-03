@@ -20,3 +20,5 @@ last run?"). When you do read a dumplog, you may then update your understanding
 of what the player has seen and adjust spoiler filtering accordingly.
 
 This tool requires client data to be enabled.
+
+When reading a specific dumplog, content is truncated to `max_length` characters (default 4000). If you need more complete dumplog content (e.g. for detailed post-mortem analysis), pass a higher `max_length` value such as 16000.
