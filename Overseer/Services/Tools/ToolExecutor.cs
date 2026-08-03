@@ -17,8 +17,7 @@ namespace Overseer.Services.Tools
         private readonly ILogger<ToolExecutor> _logger;
         private readonly Microsoft.Extensions.Caching.Memory.IMemoryCache _cache;
 
-        private const int MaxCallsPerSession = 50;
-        private const int MaxResultLength = 3000;
+
 
         public ToolExecutor(IEnumerable<IToolHandler> handlers, IClientToolBridge clientBridge, ILogger<ToolExecutor> logger, Microsoft.Extensions.Caching.Memory.IMemoryCache cache)
         {
@@ -41,7 +40,7 @@ namespace Overseer.Services.Tools
                 return 0;
             });
             
-            if (count > MaxCallsPerSession)
+            if (count > context.MaxCallsPerSession)
             {
                 _logger.LogWarning("Rate limit exceeded for Session {SessionId}", context.SessionId);
                 return new ToolResult { Success = false, ErrorMessage = "Maximum tool calls per session exceeded." };
@@ -99,7 +98,7 @@ namespace Overseer.Services.Tools
             // 4. Truncation
             if (result.Success && !string.IsNullOrEmpty(result.Content))
             {
-                if (result.Content.Length > MaxResultLength)
+                if (result.Content.Length > context.MaxResultLength)
                 {
                     // As noted in plan, if it's JSON, blindly truncating the string will break it.
                     if (result.Content.TrimStart().StartsWith("{") || result.Content.TrimStart().StartsWith("["))
@@ -112,12 +111,12 @@ namespace Overseer.Services.Tools
                         }
                         catch
                         {
-                            result.Content = result.Content.Substring(0, MaxResultLength) + "... [Result truncated for length]";
+                            result.Content = result.Content.Substring(0, context.MaxResultLength) + "... [Result truncated for length]";
                         }
                     }
                     else
                     {
-                        result.Content = result.Content.Substring(0, MaxResultLength) + "... [Result truncated for length]";
+                        result.Content = result.Content.Substring(0, context.MaxResultLength) + "... [Result truncated for length]";
                     }
                 }
             }

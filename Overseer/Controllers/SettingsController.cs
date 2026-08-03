@@ -42,31 +42,43 @@ public class SettingsController : ControllerBase
         
         bool allowMultipleModels = settings?.AllowMultipleModels ?? false;
         
-        bool hasLegacyKey = !string.IsNullOrEmpty(settings?.EncryptedApiKey);
-        bool hasAnyNewKey = apiKeysStatus.Any(s => (bool)((dynamic)s).HasKey);
-        
-        bool hasLegacyModel = !string.IsNullOrEmpty(settings?.DefaultModel);
-        bool hasAnyNewModel = userModels.Any();
+        bool hasApiKey = apiKeysStatus.Any(s => (bool)((dynamic)s).HasKey);
+        bool hasModel = userModels.Any();
         
         return Ok(new
         {
-            provider = settings?.DefaultProvider,
-            model = settings?.DefaultModel,
-            thinkingLevel = settings?.ThinkingLevel,
-            hasApiKey = allowMultipleModels ? hasAnyNewKey : hasLegacyKey,
-            hasModel = allowMultipleModels ? hasAnyNewModel : hasLegacyModel,
+            hasApiKey = hasApiKey,
+            hasModel = hasModel,
             allowMultipleModels = allowMultipleModels,
             configuredProviders = apiKeysStatus.Where(s => (bool)((dynamic)s).HasKey).Select(s => (string)((dynamic)s).Provider).ToList(),
             maxAttachmentSize = _configuration.GetValue<long>("MaxAttachmentSize", 15728640),
             spoilerFreeMode = settings?.SpoilerFreeMode ?? true,
             showSourceCodeReferences = settings?.ShowSourceCodeReferences ?? false,
-            maxInputTokens = settings?.MaxInputTokens,
-            maxOutputTokens = settings?.MaxOutputTokens,
+            maxResultLength = settings?.MaxResultLength,
+            maxCallsPerSession = settings?.MaxCallsPerSession,
+            maxToolIterations = settings?.MaxToolIterations,
             enableWebSearch = settings?.EnableWebSearch ?? true,
             enableToolUse = settings?.EnableToolUse ?? true,
             enableClientTools = settings?.EnableClientTools ?? true,
             enableGameActions = settings?.EnableGameActions ?? false,
-            isProduction = _env.IsProduction()
+            isProduction = _env.IsProduction(),
+            performanceLimits = new {
+                maxResultLength = new {
+                    min = _configuration.GetValue<int>("AiPerformanceSettings:MaxResultLength:Min", 500),
+                    max = _configuration.GetValue<int>("AiPerformanceSettings:MaxResultLength:Max", 100000),
+                    defaultValue = _configuration.GetValue<int>("AiPerformanceSettings:MaxResultLength:Default", 3000)
+                },
+                maxCallsPerSession = new {
+                    min = _configuration.GetValue<int>("AiPerformanceSettings:MaxCallsPerSession:Min", 1),
+                    max = _configuration.GetValue<int>("AiPerformanceSettings:MaxCallsPerSession:Max", 500),
+                    defaultValue = _configuration.GetValue<int>("AiPerformanceSettings:MaxCallsPerSession:Default", 30)
+                },
+                maxToolIterations = new {
+                    min = _configuration.GetValue<int>("AiPerformanceSettings:MaxToolIterations:Min", 1),
+                    max = _configuration.GetValue<int>("AiPerformanceSettings:MaxToolIterations:Max", 100),
+                    defaultValue = _configuration.GetValue<int>("AiPerformanceSettings:MaxToolIterations:Default", 32)
+                }
+            }
         });
     }
 
@@ -82,30 +94,37 @@ public class SettingsController : ControllerBase
             request.EnableGameActions = false;
         }
 
-        await _settingsService.SaveSettingsAsync(userId, request.Provider, request.Model, request.ApiKey, request.ThinkingLevel, request.SpoilerFreeMode, request.MaxInputTokens, request.MaxOutputTokens, request.EnableWebSearch, request.EnableToolUse, request.EnableClientTools, request.EnableGameActions, request.AllowMultipleModels, request.ShowSourceCodeReferences);
+        // Validate limits
+        if (request.MaxResultLength.HasValue)
+        {
+            int min = _configuration.GetValue<int>("AiPerformanceSettings:MaxResultLength:Min", 500);
+            int max = _configuration.GetValue<int>("AiPerformanceSettings:MaxResultLength:Max", 100000);
+            if (request.MaxResultLength.Value < min || request.MaxResultLength.Value > max)
+                return BadRequest($"MaxResultLength must be between {min} and {max}");
+        }
+
+        if (request.MaxCallsPerSession.HasValue)
+        {
+            int min = _configuration.GetValue<int>("AiPerformanceSettings:MaxCallsPerSession:Min", 1);
+            int max = _configuration.GetValue<int>("AiPerformanceSettings:MaxCallsPerSession:Max", 500);
+            if (request.MaxCallsPerSession.Value < min || request.MaxCallsPerSession.Value > max)
+                return BadRequest($"MaxCallsPerSession must be between {min} and {max}");
+        }
+
+        if (request.MaxToolIterations.HasValue)
+        {
+            int min = _configuration.GetValue<int>("AiPerformanceSettings:MaxToolIterations:Min", 1);
+            int max = _configuration.GetValue<int>("AiPerformanceSettings:MaxToolIterations:Max", 100);
+            if (request.MaxToolIterations.Value < min || request.MaxToolIterations.Value > max)
+                return BadRequest($"MaxToolIterations must be between {min} and {max}");
+        }
+
+        await _settingsService.SaveSettingsAsync(userId, request.SpoilerFreeMode, request.EnableWebSearch, request.EnableToolUse, request.EnableClientTools, request.EnableGameActions, request.AllowMultipleModels, request.ShowSourceCodeReferences, request.MaxResultLength, request.MaxCallsPerSession, request.MaxToolIterations);
         
         return Ok();
     }
-    
-    [HttpPost("test")]
-    public IActionResult TestSettings([FromBody] UpdateSettingsRequest request)
-    {
-        // Dummy test endpoint
-        if (string.IsNullOrEmpty(request.ApiKey)) return BadRequest("API key is required for testing.");
-        
-        // In a real implementation, you would make a small API call to the specified provider using the provided key.
-        return Ok(new { success = true, message = "Test successful (mock)" });
-    }
 
-    [HttpDelete("apikey")]
-    public async Task<IActionResult> DeleteApiKey()
-    {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (userId == null) return Unauthorized();
 
-        await _settingsService.DeleteApiKeyAsync(userId);
-        return Ok();
-    }
 
     [HttpGet("apikeys")]
     public async Task<IActionResult> GetApiKeys()
@@ -400,13 +419,10 @@ public class ApiModelDto
 
 public class UpdateSettingsRequest
 {
-    public string? Provider { get; set; }
-    public string? Model { get; set; }
-    public string? ApiKey { get; set; }
-    public string? ThinkingLevel { get; set; }
     public bool? SpoilerFreeMode { get; set; }
-    public int? MaxInputTokens { get; set; }
-    public int? MaxOutputTokens { get; set; }
+    public int? MaxResultLength { get; set; }
+    public int? MaxCallsPerSession { get; set; }
+    public int? MaxToolIterations { get; set; }
     public bool? EnableWebSearch { get; set; }
     public bool? EnableToolUse { get; set; }
     public bool? EnableClientTools { get; set; }

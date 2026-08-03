@@ -81,6 +81,49 @@
 
     </fieldset>
 
+    <fieldset class="permissions-fieldset mt-20">
+      <legend>AI Performance Settings</legend>
+
+      <div class="margin-y-20 mt-5">
+        <label>
+          <span class="block fw-bold">Max Result Length</span>
+          <select [(ngModel)]="maxResultLengthSelect" (ngModelChange)="onSelectChange('maxResultLength', $event)" name="maxResultLengthSelect" class="form-input mt-5">
+            <option *ngFor="let o of resultLengthOptions" [value]="o.value">{{o.text}}</option>
+          </select>
+        </label>
+        <div *ngIf="maxResultLengthSelect === 'custom'" class="mt-5">
+          <input type="number" [(ngModel)]="maxResultLength" name="maxResultLength" class="form-input" [min]="performanceLimits?.maxResultLength?.min" [max]="performanceLimits?.maxResultLength?.max" />
+        </div>
+        <span class="form-hint mt-5 d-block">Maximum length of text the AI will process per tool result (truncated if longer).</span>
+      </div>
+
+      <div class="margin-y-20 mt-5">
+        <label>
+          <span class="block fw-bold">Max Calls Per Session</span>
+          <select [(ngModel)]="maxCallsPerSessionSelect" (ngModelChange)="onSelectChange('maxCallsPerSession', $event)" name="maxCallsPerSessionSelect" class="form-input mt-5">
+            <option *ngFor="let o of callsOptions" [value]="o.value">{{o.text}}</option>
+          </select>
+        </label>
+        <div *ngIf="maxCallsPerSessionSelect === 'custom'" class="mt-5">
+          <input type="number" [(ngModel)]="maxCallsPerSession" name="maxCallsPerSession" class="form-input" [min]="performanceLimits?.maxCallsPerSession?.min" [max]="performanceLimits?.maxCallsPerSession?.max" />
+        </div>
+        <span class="form-hint mt-5 d-block">Maximum number of interactions permitted in a single chat session.</span>
+      </div>
+
+      <div class="margin-y-20 mt-5">
+        <label>
+          <span class="block fw-bold">Max Tool Iterations</span>
+          <select [(ngModel)]="maxToolIterationsSelect" (ngModelChange)="onSelectChange('maxToolIterations', $event)" name="maxToolIterationsSelect" class="form-input mt-5">
+            <option *ngFor="let o of iterationsOptions" [value]="o.value">{{o.text}}</option>
+          </select>
+        </label>
+        <div *ngIf="maxToolIterationsSelect === 'custom'" class="mt-5">
+          <input type="number" [(ngModel)]="maxToolIterations" name="maxToolIterations" class="form-input" [min]="performanceLimits?.maxToolIterations?.min" [max]="performanceLimits?.maxToolIterations?.max" />
+        </div>
+        <span class="form-hint mt-5 d-block">Maximum number of consecutive tool calls the AI can make before stopping.</span>
+      </div>
+    </fieldset>
+
     </div>
     <div class="form-footer">
       <button type="submit" class="btn-gh save-btn" [disabled]="loading">Save</button>

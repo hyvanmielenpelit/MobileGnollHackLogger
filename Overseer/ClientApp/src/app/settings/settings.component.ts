@@ -34,6 +34,20 @@ export class SettingsComponent implements OnInit {
   enableGameActions = false;
   initEnableGameActions = false;
 
+  maxResultLength: number | null = null;
+  initMaxResultLength: number | null = null;
+  maxResultLengthSelect: any = null;
+
+  maxCallsPerSession: number | null = null;
+  initMaxCallsPerSession: number | null = null;
+  maxCallsPerSessionSelect: any = null;
+
+  maxToolIterations: number | null = null;
+  initMaxToolIterations: number | null = null;
+  maxToolIterationsSelect: any = null;
+
+  performanceLimits: any = null;
+
   loading = false;
   saved = false;
 
@@ -44,7 +58,52 @@ export class SettingsComponent implements OnInit {
            this.enableWebSearch !== this.initEnableWebSearch ||
            this.enableToolUse !== this.initEnableToolUse ||
            this.enableClientTools !== this.initEnableClientTools ||
-           this.enableGameActions !== this.initEnableGameActions;
+           this.enableGameActions !== this.initEnableGameActions ||
+           this.maxResultLength !== this.initMaxResultLength ||
+           this.maxCallsPerSession !== this.initMaxCallsPerSession ||
+           this.maxToolIterations !== this.initMaxToolIterations;
+  }
+
+  get resultLengthOptions() {
+    if (!this.performanceLimits?.maxResultLength) return [];
+    const l = this.performanceLimits.maxResultLength;
+    return [
+      { label: 'Default', value: null, text: `Default \u2013 ${l.defaultValue} chars` },
+      { label: 'Minimal', value: l.min, text: `Minimal \u2013 ${l.min} chars` },
+      { label: 'Low', value: Math.max(l.min, Math.round(l.defaultValue * 0.5)), text: `Low \u2013 ${Math.max(l.min, Math.round(l.defaultValue * 0.5))} chars` },
+      { label: 'Medium', value: l.defaultValue, text: `Medium \u2013 ${l.defaultValue} chars` },
+      { label: 'High', value: Math.min(l.max, Math.round(l.defaultValue * 2)), text: `High \u2013 ${Math.min(l.max, Math.round(l.defaultValue * 2))} chars` },
+      { label: 'Very High', value: l.max, text: `Very High \u2013 ${l.max} chars` },
+      { label: 'Custom', value: 'custom', text: 'Custom' }
+    ];
+  }
+
+  get callsOptions() {
+    if (!this.performanceLimits?.maxCallsPerSession) return [];
+    const l = this.performanceLimits.maxCallsPerSession;
+    return [
+      { label: 'Default', value: null, text: `Default \u2013 ${l.defaultValue}` },
+      { label: 'Minimal', value: l.min, text: `Minimal \u2013 ${l.min}` },
+      { label: 'Low', value: Math.max(l.min, Math.round(l.defaultValue * 0.5)), text: `Low \u2013 ${Math.max(l.min, Math.round(l.defaultValue * 0.5))}` },
+      { label: 'Medium', value: l.defaultValue, text: `Medium \u2013 ${l.defaultValue}` },
+      { label: 'High', value: Math.min(l.max, Math.round(l.defaultValue * 2)), text: `High \u2013 ${Math.min(l.max, Math.round(l.defaultValue * 2))}` },
+      { label: 'Very High', value: l.max, text: `Very High \u2013 ${l.max}` },
+      { label: 'Custom', value: 'custom', text: 'Custom' }
+    ];
+  }
+
+  get iterationsOptions() {
+    if (!this.performanceLimits?.maxToolIterations) return [];
+    const l = this.performanceLimits.maxToolIterations;
+    return [
+      { label: 'Default', value: null, text: `Default \u2013 ${l.defaultValue}` },
+      { label: 'Minimal', value: l.min, text: `Minimal \u2013 ${l.min}` },
+      { label: 'Low', value: Math.max(l.min, Math.round(l.defaultValue * 0.5)), text: `Low \u2013 ${Math.max(l.min, Math.round(l.defaultValue * 0.5))}` },
+      { label: 'Medium', value: l.defaultValue, text: `Medium \u2013 ${l.defaultValue}` },
+      { label: 'High', value: Math.min(l.max, Math.round(l.defaultValue * 2)), text: `High \u2013 ${Math.min(l.max, Math.round(l.defaultValue * 2))}` },
+      { label: 'Very High', value: l.max, text: `Very High \u2013 ${l.max}` },
+      { label: 'Custom', value: 'custom', text: 'Custom' }
+    ];
   }
 
   canDeactivate(): Promise<boolean> | boolean {
@@ -105,16 +164,49 @@ export class SettingsComponent implements OnInit {
           this.enableGameActions = s.enableGameActions;
           this.initEnableGameActions = s.enableGameActions;
         }
+        if (s.maxResultLength !== undefined) {
+          this.maxResultLength = s.maxResultLength ?? null;
+          this.initMaxResultLength = this.maxResultLength;
+        }
+        if (s.maxCallsPerSession !== undefined) {
+          this.maxCallsPerSession = s.maxCallsPerSession ?? null;
+          this.initMaxCallsPerSession = this.maxCallsPerSession;
+        }
+        if (s.maxToolIterations !== undefined) {
+          this.maxToolIterations = s.maxToolIterations ?? null;
+          this.initMaxToolIterations = this.maxToolIterations;
+        }
+        if (s.performanceLimits) {
+          this.performanceLimits = s.performanceLimits;
+        }
+        this.initializeSelects();
       }
     });
+  }
+
+  initializeSelects() {
+    const isStandardOption = (val: any, options: any[]) => {
+      return options.some(o => o.value !== 'custom' && String(o.value) === String(val));
+    };
+
+    this.maxResultLengthSelect = isStandardOption(this.maxResultLength, this.resultLengthOptions) ? this.maxResultLength : 'custom';
+    this.maxCallsPerSessionSelect = isStandardOption(this.maxCallsPerSession, this.callsOptions) ? this.maxCallsPerSession : 'custom';
+    this.maxToolIterationsSelect = isStandardOption(this.maxToolIterations, this.iterationsOptions) ? this.maxToolIterations : 'custom';
+  }
+
+  onSelectChange(field: string, value: any) {
+    if (value !== 'custom') {
+      const numVal = value === 'null' || value === null ? null : Number(value);
+      if (field === 'maxResultLength') this.maxResultLength = numVal;
+      if (field === 'maxCallsPerSession') this.maxCallsPerSession = numVal;
+      if (field === 'maxToolIterations') this.maxToolIterations = numVal;
+    }
   }
 
   saveSettings() {
     this.loading = true;
     this.saved = false;
-    // We send empty strings for the legacy provider/model/apiKey fields 
-    // since the API might still require them in the body, but they are now managed in other tabs.
-    this.settingsService.saveSettings('', '', '', undefined, this.spoilerFreeMode, null, null, this.enableWebSearch, this.enableToolUse, this.enableClientTools, this.enableGameActions, this.allowMultipleModels, this.showSourceCodeReferences).subscribe(() => {
+    this.settingsService.saveSettings(this.spoilerFreeMode, this.enableWebSearch, this.enableToolUse, this.enableClientTools, this.enableGameActions, this.allowMultipleModels, this.showSourceCodeReferences, this.maxResultLength, this.maxCallsPerSession, this.maxToolIterations).subscribe(() => {
       this.loading = false;
       
       const toast = this.successToast?.nativeElement as any;
@@ -135,6 +227,9 @@ export class SettingsComponent implements OnInit {
       this.initEnableToolUse = this.enableToolUse;
       this.initEnableClientTools = this.enableClientTools;
       this.initEnableGameActions = this.enableGameActions;
+      this.initMaxResultLength = this.maxResultLength;
+      this.initMaxCallsPerSession = this.maxCallsPerSession;
+      this.initMaxToolIterations = this.maxToolIterations;
     });
   }
 }

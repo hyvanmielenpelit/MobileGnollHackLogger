@@ -2,23 +2,22 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 
 export interface UserAiSettings {
-  provider: string;
-  model: string;
-  thinkingLevel?: string;
   hasApiKey: boolean;
   hasModel?: boolean;
   allowMultipleModels?: boolean;
   maxAttachmentSize?: number;
   spoilerFreeMode: boolean;
   showSourceCodeReferences?: boolean;
-  maxInputTokens?: number | null;
-  maxOutputTokens?: number | null;
+  maxResultLength?: number | null;
+  maxCallsPerSession?: number | null;
+  maxToolIterations?: number | null;
   enableWebSearch?: boolean;
   enableToolUse?: boolean;
   enableClientTools?: boolean;
   enableGameActions?: boolean;
   isProduction?: boolean;
   configuredProviders?: string[];
+  performanceLimits?: any;
 }
 
 export interface ApiModelDto {
@@ -60,12 +59,8 @@ export class SettingsService {
     return this.http.get<UserAiSettings>('/api/settings');
   }
 
-  saveSettings(provider: string, model: string, apiKey: string, thinkingLevel?: string, spoilerFreeMode: boolean = false, maxInputTokens: number | null = null, maxOutputTokens: number | null = null, enableWebSearch: boolean = true, enableToolUse: boolean = true, enableClientTools: boolean = true, enableGameActions: boolean = false, allowMultipleModels: boolean = false, showSourceCodeReferences: boolean = false) {
-    return this.http.put('/api/settings', { provider, model, apiKey, thinkingLevel, spoilerFreeMode, maxInputTokens, maxOutputTokens, enableWebSearch, enableToolUse, enableClientTools, enableGameActions, allowMultipleModels, showSourceCodeReferences });
-  }
-
-  deleteApiKey() {
-    return this.http.delete('/api/settings/apikey');
+  saveSettings(spoilerFreeMode: boolean = false, enableWebSearch: boolean = true, enableToolUse: boolean = true, enableClientTools: boolean = true, enableGameActions: boolean = false, allowMultipleModels: boolean = false, showSourceCodeReferences: boolean = false, maxResultLength: number | null = null, maxCallsPerSession: number | null = null, maxToolIterations: number | null = null) {
+    return this.http.put('/api/settings', { spoilerFreeMode, enableWebSearch, enableToolUse, enableClientTools, enableGameActions, allowMultipleModels, showSourceCodeReferences, maxResultLength, maxCallsPerSession, maxToolIterations });
   }
 
   getApiKeys() {

@@ -84,6 +84,9 @@ public class ChatService
         int overseerMode = 0;
         bool isGnollHackSession = false;
         bool showSourceCodeReferences = false;
+        int? userMaxResultLength = null;
+        int? userMaxCallsPerSession = null;
+        int? userMaxToolIterations = null;
 
         using (var scope = _scopeFactory.CreateScope())
         {
@@ -93,18 +96,16 @@ public class ChatService
             
             if (settings != null)
             {
-                if (!string.IsNullOrEmpty(settings.DefaultProvider)) provider = settings.DefaultProvider;
-                if (!string.IsNullOrEmpty(settings.DefaultModel)) model = settings.DefaultModel;
-                if (!string.IsNullOrEmpty(settings.ThinkingLevel)) thinkingLevel = settings.ThinkingLevel;
                 spoilerFreeMode = settings.SpoilerFreeMode;
-                maxInputTokens = settings.MaxInputTokens;
-                maxOutputTokens = settings.MaxOutputTokens;
                 enableWebSearch = settings.EnableWebSearch;
                 enableToolUse = settings.EnableToolUse;
                 enableClientTools = settings.EnableClientTools;
                 enableGameActions = settings.EnableGameActions;
                 allowMultipleModels = settings.AllowMultipleModels;
                 showSourceCodeReferences = settings.ShowSourceCodeReferences;
+                userMaxResultLength = settings.MaxResultLength;
+                userMaxCallsPerSession = settings.MaxCallsPerSession;
+                userMaxToolIterations = settings.MaxToolIterations;
             }
 
             if (sessionId.HasValue)
@@ -147,10 +148,6 @@ public class ChatService
             if (providerKey != null && !string.IsNullOrEmpty(providerKey.EncryptedApiKey) && !string.IsNullOrEmpty(providerKey.ApiKeyNonce) && !string.IsNullOrEmpty(providerKey.ApiKeyTag))
             {
                 apiKey = _cryptoService.Decrypt(providerKey.EncryptedApiKey, providerKey.ApiKeyNonce, providerKey.ApiKeyTag, userId);
-            }
-            else if (settings != null && settings.DefaultProvider == provider && !string.IsNullOrEmpty(settings.EncryptedApiKey) && !string.IsNullOrEmpty(settings.ApiKeyNonce) && !string.IsNullOrEmpty(settings.ApiKeyTag))
-            {
-                apiKey = _cryptoService.Decrypt(settings.EncryptedApiKey, settings.ApiKeyNonce, settings.ApiKeyTag, userId);
             }
 
             if (string.IsNullOrEmpty(apiKey))
@@ -419,8 +416,16 @@ public class ChatService
         int toolIterations = 0;
         bool hasToolsToRun = true;
         
-        var execContext = new ToolExecutionContext { SessionId = currentSessionId, IsGameOn = isGameOn, SpoilerFreeMode = spoilerFreeMode, OverseerMode = overseerMode, IsGnollHackSession = isGnollHackSession };
-        int maxToolIterations = _configuration.GetValue<int>("MaxToolIterations", 32);
+        var execContext = new ToolExecutionContext { 
+            SessionId = currentSessionId, 
+            IsGameOn = isGameOn, 
+            SpoilerFreeMode = spoilerFreeMode, 
+            OverseerMode = overseerMode, 
+            IsGnollHackSession = isGnollHackSession,
+            MaxResultLength = userMaxResultLength ?? _configuration.GetValue<int>("AiPerformanceSettings:MaxResultLength:Default", 3000),
+            MaxCallsPerSession = userMaxCallsPerSession ?? _configuration.GetValue<int>("AiPerformanceSettings:MaxCallsPerSession:Default", 30)
+        };
+        int maxToolIterations = userMaxToolIterations ?? _configuration.GetValue<int>("AiPerformanceSettings:MaxToolIterations:Default", 32);
         
         while (toolIterations <= maxToolIterations && hasToolsToRun && !cancellationToken.IsCancellationRequested)
         {

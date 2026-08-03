@@ -53,8 +53,7 @@ public class AuthController : ControllerBase
         var user = await _userManager.GetUserAsync(User);
         if (user == null) return Unauthorized();
 
-        var settings = await dbContext.UserAiSettings.FindAsync(user.Id);
-        bool hasApiKey = settings != null && !string.IsNullOrEmpty(settings.EncryptedApiKey);
+        bool hasApiKey = dbContext.UserAiApiKeys.Any(k => k.AspNetUserId == user.Id && !string.IsNullOrEmpty(k.EncryptedApiKey));
 
         return Ok(new
         {

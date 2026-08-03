@@ -50,6 +50,10 @@ namespace Overseer.Tests
             services.AddSingleton<IConfiguration>(config);
             services.AddHttpClient();
             services.AddSignalR(); // Adds IHubContext<ChatHub>
+            services.AddMemoryCache();
+            services.AddSingleton<Overseer.Services.Tools.IClientToolBridge, DummyClientToolBridge>();
+            services.AddScoped<Overseer.Services.Tools.ToolRegistry>();
+            services.AddScoped<Overseer.Services.Tools.ToolExecutor>();
             services.AddScoped<CryptoService>();
             services.AddScoped<WikiService>();
             services.AddScoped<ModelMetadataService>();
@@ -69,18 +73,33 @@ namespace Overseer.Tests
                 dbContext.Users.Add(user);
 
                 // Setup Settings
-                var (ciphertext, nonce, tag) = cryptoService.Encrypt(testApiKey, userId);
                 var aiSettings = new UserAiSettings
                 {
                     AspNetUserId = userId,
-                    DefaultProvider = testProvider,
-                    DefaultModel = testModel,
-                    ThinkingLevel = testThinkingLevel,
+                    AllowMultipleModels = true
+                };
+                dbContext.UserAiSettings.Add(aiSettings);
+                
+                var (ciphertext, nonce, tag) = cryptoService.Encrypt(testApiKey, userId);
+                var apiKey = new UserAiApiKey
+                {
+                    AspNetUserId = userId,
+                    Provider = testProvider,
                     EncryptedApiKey = ciphertext,
                     ApiKeyNonce = nonce,
                     ApiKeyTag = tag
                 };
-                dbContext.UserAiSettings.Add(aiSettings);
+                dbContext.UserAiApiKeys.Add(apiKey);
+                
+                var aiModel = new UserAiModel
+                {
+                    AspNetUserId = userId,
+                    Provider = testProvider,
+                    ModelId = testModel,
+                    ThinkingLevel = testThinkingLevel,
+                    OrderIndex = 0
+                };
+                dbContext.UserAiModels.Add(aiModel);
                 await dbContext.SaveChangesAsync();
             }
 
@@ -124,6 +143,16 @@ namespace Overseer.Tests
 
             Assert.False(errorOccurred, "An error occurred during streaming.");
             Assert.False(string.IsNullOrWhiteSpace(fullResponse), "The response from the AI provider was empty.");
+        }
+    }
+
+    public class DummyClientToolBridge : Overseer.Services.Tools.IClientToolBridge
+    {
+        public bool IsClientConnected { get; set; } = true;
+        
+        public Task<Overseer.Services.Tools.ToolResult> SendToolRequestAsync(long sessionId, string toolName, System.Text.Json.JsonElement parameters, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new Overseer.Services.Tools.ToolResult { Success = true, Content = "Dummy result" });
         }
     }
 }
