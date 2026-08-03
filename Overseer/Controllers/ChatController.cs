@@ -222,6 +222,16 @@ public class ChatController : ControllerBase
                 Response.StatusCode = 401;
                 return;
             }
+
+            request.Message = System.Text.RegularExpressions.Regex.Replace(
+                request.Message ?? "", @"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]", "").Trim();
+
+            if (string.IsNullOrEmpty(request.Message) && (request.Attachments == null || request.Attachments.Count == 0))
+            {
+                Response.StatusCode = 400;
+                return;
+            }
+
             await foreach (var chatEvent in _chatService.StreamMessageAsync(request.SessionId, request.Message, request.Attachments, userId, false, cancellationToken, request.UserModelId))
             {
                 if (chatEvent.Type == "chunk")

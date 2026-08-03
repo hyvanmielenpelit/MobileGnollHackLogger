@@ -68,6 +68,11 @@ public class ChatService
     {
         if (string.IsNullOrEmpty(userId)) yield break;
 
+        // Sanitize: strip dangerous control characters safely handling nulls, then trim
+        message = System.Text.RegularExpressions.Regex.Replace(message ?? "", @"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]", "").Trim();
+        if (string.IsNullOrEmpty(message) && (attachments == null || attachments.Count == 0))
+            yield break;
+
         long currentSessionId = 0;
         string? apiKey = null;
         string provider = "OpenAI";

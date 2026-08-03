@@ -245,7 +245,7 @@
           <input type="file" id="fileInput" hidden multiple accept=".html,.htm,.txt,.md,.png,.jpg,.jpeg,.webp" (change)="onFileSelected($event)">
           
           <div class="chat-input-wrapper">
-            <textarea #promptInput [(ngModel)]="currentInput" (ngModelChange)="saveDraft()" (keyup.enter)="sendMessage()" (paste)="onPaste($event)" placeholder="Ask the Overseer" autofocus class="w-100"></textarea>
+            <textarea #promptInput [(ngModel)]="currentInput" (ngModelChange)="saveDraft()" (keydown.enter)="onEnter($event)" (paste)="onPaste($event)" placeholder="Ask the Overseer" autofocus class="w-100"></textarea>
           </div>
           
           <button class="btn-gh ms-10" (click)="sendMessage()" [disabled]="isStreaming || (!currentInput.trim() && pendingAttachments.length === 0)">Send</button>

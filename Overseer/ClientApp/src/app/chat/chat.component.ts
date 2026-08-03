@@ -767,10 +767,23 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     }
   }
 
+  onEnter(event: Event) {
+    const keyboardEvent = event as KeyboardEvent;
+    if (!keyboardEvent.shiftKey) {
+      keyboardEvent.preventDefault();
+      this.sendMessage();
+    }
+  }
+
+  private sanitizeInput(text: string): string {
+    if (!text) return '';
+    return text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+  }
+
   async sendMessage() {
-    if ((!this.currentInput.trim() && this.pendingAttachments.length === 0) || this.isStreaming) return;
-    
-    const message = this.currentInput;
+    const message = this.sanitizeInput(this.currentInput).trim();
+    if ((!message && this.pendingAttachments.length === 0) || this.isStreaming) return;
+
     const attachmentsPayload = this.pendingAttachments.map(a => ({
       fileName: a.name,
       contentType: a.type,
