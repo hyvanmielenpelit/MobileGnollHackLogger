@@ -18,6 +18,7 @@ export interface UserAiSettings {
   isProduction?: boolean;
   configuredProviders?: string[];
   performanceLimits?: any;
+  titleGenerationModelId?: number | null;
 }
 
 export interface ApiModelDto {
@@ -61,6 +62,10 @@ export class SettingsService {
 
   saveSettings(spoilerFreeMode: boolean = false, enableWebSearch: boolean = true, enableToolUse: boolean = true, enableClientTools: boolean = true, enableGameActions: boolean = false, allowMultipleModels: boolean = false, showSourceCodeReferences: boolean = false, maxResultLength: number | null = null, maxCallsPerSession: number | null = null, maxToolIterations: number | null = null) {
     return this.http.put('/api/settings', { spoilerFreeMode, enableWebSearch, enableToolUse, enableClientTools, enableGameActions, allowMultipleModels, showSourceCodeReferences, maxResultLength, maxCallsPerSession, maxToolIterations });
+  }
+
+  saveTitleGenerationModel(modelId: number | null) {
+    return this.http.put('/api/settings/titlemodel', { modelId });
   }
 
   getApiKeys() {

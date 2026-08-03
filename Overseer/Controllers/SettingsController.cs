@@ -78,7 +78,8 @@ public class SettingsController : ControllerBase
                     max = _configuration.GetValue<int>("AiPerformanceSettings:MaxToolIterations:Max", 100),
                     defaultValue = _configuration.GetValue<int>("AiPerformanceSettings:MaxToolIterations:Default", 32)
                 }
-            }
+            },
+            titleGenerationModelId = settings?.TitleGenerationModelId
         });
     }
 
@@ -124,6 +125,22 @@ public class SettingsController : ControllerBase
         return Ok();
     }
 
+    [HttpPut("titlemodel")]
+    public async Task<IActionResult> UpdateTitleModel([FromBody] UpdateTitleModelRequest request)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId == null) return Unauthorized();
+
+        try
+        {
+            await _settingsService.SaveTitleGenerationModelAsync(userId, request.ModelId);
+            return Ok();
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
 
 
     [HttpGet("apikeys")]
@@ -465,3 +482,9 @@ public class GetModelsRequest
     public string? Provider { get; set; }
     public string? ApiKey { get; set; }
 }
+
+public class UpdateTitleModelRequest
+{
+    public long? ModelId { get; set; }
+}
+

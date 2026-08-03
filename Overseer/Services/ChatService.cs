@@ -226,6 +226,11 @@ public class ChatService
                 currentSessionId = session.Id;
                 
                 yield return new ChatEvent { Type = "sessionId", Data = currentSessionId.ToString() };
+
+                _ = Task.Run(async () =>
+                {
+                    await GenerateTitleAsync(currentSessionId, message, userId);
+                });
             }
 
             var contextDocs = _wikiService.GetRelevantContext(message);
@@ -1576,5 +1581,132 @@ public class ChatService
         }
 
         return sb.ToString();
+    }
+
+    internal async Task GenerateTitleAsync(long sessionId, string userMessage, string userId)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var cryptoService = scope.ServiceProvider.GetRequiredService<CryptoService>();
+            
+            var settings = await dbContext.UserAiSettings.FindAsync(userId);
+            UserAiModel? model = null;
+            
+            if (settings?.TitleGenerationModelId != null)
+            {
+                model = await dbContext.UserAiModels.FirstOrDefaultAsync(m => m.Id == settings.TitleGenerationModelId && m.AspNetUserId == userId);
+            }
+            
+            if (model == null)
+            {
+                model = await dbContext.UserAiModels
+                    .Where(m => m.AspNetUserId == userId)
+                    .OrderBy(m => m.OrderIndex)
+                    .FirstOrDefaultAsync();
+            }
+
+            if (model == null) return; // No models configured
+
+            var apiKeyEntry = await dbContext.UserAiApiKeys.FirstOrDefaultAsync(k => k.AspNetUserId == userId && k.Provider == model.Provider);
+            if (apiKeyEntry == null || string.IsNullOrEmpty(apiKeyEntry.EncryptedApiKey)) return;
+            
+            string apiKey = cryptoService.Decrypt(apiKeyEntry.EncryptedApiKey, apiKeyEntry.ApiKeyNonce, apiKeyEntry.ApiKeyTag, userId);
+            
+            string prompt = "Generate a 3-8 word title for this chat based on the user's message. No quotes, no punctuation.";
+            string generatedTitle = string.Empty;
+            
+            var client = _httpClientFactory.CreateClient();
+            
+            if (model.Provider == "OpenAI")
+            {
+                client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+                var reqBody = new {
+                    model = model.ModelId,
+                    messages = new[] {
+                        new { role = "system", content = prompt },
+                        new { role = "user", content = userMessage }
+                    },
+                    max_tokens = 50,
+                    temperature = 0.5
+                };
+                var response = await client.PostAsync("https://api.openai.com/v1/chat/completions", new StringContent(JsonSerializer.Serialize(reqBody), Encoding.UTF8, "application/json"));
+                if (response.IsSuccessStatusCode)
+                {
+                    var json = await response.Content.ReadAsStringAsync();
+                    var root = JsonDocument.Parse(json).RootElement;
+                    if (root.TryGetProperty("choices", out var choices) && choices.GetArrayLength() > 0)
+                    {
+                        var content = choices[0].GetProperty("message").GetProperty("content").GetString();
+                        if (!string.IsNullOrEmpty(content)) generatedTitle = content.Trim('"', '\'', ' ', '.');
+                    }
+                }
+            }
+            else if (model.Provider == "Anthropic")
+            {
+                client.DefaultRequestHeaders.Add("x-api-key", apiKey);
+                client.DefaultRequestHeaders.Add("anthropic-version", "2023-06-01");
+                var reqBody = new {
+                    model = model.ModelId,
+                    system = prompt,
+                    messages = new[] {
+                        new { role = "user", content = userMessage }
+                    },
+                    max_tokens = 50,
+                    temperature = 0.5
+                };
+                var response = await client.PostAsync("https://api.anthropic.com/v1/messages", new StringContent(JsonSerializer.Serialize(reqBody), Encoding.UTF8, "application/json"));
+                if (response.IsSuccessStatusCode)
+                {
+                    var json = await response.Content.ReadAsStringAsync();
+                    var root = JsonDocument.Parse(json).RootElement;
+                    if (root.TryGetProperty("content", out var contentArray) && contentArray.GetArrayLength() > 0)
+                    {
+                        var content = contentArray[0].GetProperty("text").GetString();
+                        if (!string.IsNullOrEmpty(content)) generatedTitle = content.Trim('"', '\'', ' ', '.');
+                    }
+                }
+            }
+            else if (model.Provider == "Google")
+            {
+                var reqBody = new {
+                    systemInstruction = new { parts = new[] { new { text = prompt } } },
+                    contents = new[] {
+                        new { role = "user", parts = new[] { new { text = userMessage } } }
+                    },
+                    generationConfig = new { maxOutputTokens = 50, temperature = 0.5 }
+                };
+                var response = await client.PostAsync($"https://generativelanguage.googleapis.com/v1beta/models/{model.ModelId}:generateContent?key={apiKey}", new StringContent(JsonSerializer.Serialize(reqBody), Encoding.UTF8, "application/json"));
+                if (response.IsSuccessStatusCode)
+                {
+                    var json = await response.Content.ReadAsStringAsync();
+                    var root = JsonDocument.Parse(json).RootElement;
+                    if (root.TryGetProperty("candidates", out var candidates) && candidates.GetArrayLength() > 0)
+                    {
+                        var content = candidates[0].GetProperty("content").GetProperty("parts")[0].GetProperty("text").GetString();
+                        if (!string.IsNullOrEmpty(content)) generatedTitle = content.Trim('"', '\'', ' ', '.');
+                    }
+                }
+            }
+            
+            if (!string.IsNullOrEmpty(generatedTitle))
+            {
+                var session = await dbContext.ChatSession.FindAsync(sessionId);
+                if (session != null)
+                {
+                    session.Title = generatedTitle;
+                    await dbContext.SaveChangesAsync();
+                    
+                    var titleUpdateData = new { sessionId = sessionId, title = generatedTitle };
+                    var evt = new ChatEvent { Type = "title_update", Data = JsonSerializer.Serialize(titleUpdateData) };
+                    await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", evt, CancellationToken.None);
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // Ignore errors for title generation
+        }
     }
 }

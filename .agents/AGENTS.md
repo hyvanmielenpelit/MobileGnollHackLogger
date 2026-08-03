@@ -35,6 +35,13 @@ To compile SCSS files:
 - **NEVER** store temporary files, scratch scripts, or guidance files in the repository root, in a scratch directory under the repository root, or anywhere else within the repository.
 - Always save temporary files and guidance files directly to the agent's dedicated scratch directory: `<appDataDir>\brain\<conversation-id>\scratch\` as specified in the global agent rules.
 
+## Entity Framework Core Migrations
+
+When making changes to database models that require EF Core migrations, you MUST observe the following rules:
+- **Correct Project**: Migrations MUST be targeted to the `MobileGnollHackLogger` project. Use the `-p` and `-s` flags to explicitly point to `MobileGnollHackLogger`.
+- **Add Migration**: `dotnet ef migrations add <MigrationName> -p MobileGnollHackLogger -s MobileGnollHackLogger -o Data/Migrations`
+- **Update Database**: After generating a migration, you MUST run a separate command to apply it to the database: `dotnet ef database update -p MobileGnollHackLogger -s MobileGnollHackLogger`
+
 ## File Organization
 
 | Area | Location |

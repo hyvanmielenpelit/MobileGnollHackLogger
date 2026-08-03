@@ -37,7 +37,7 @@ export interface ChatMessage {
 }
 
 export interface ChatStreamEvent {
-  type: 'chunk' | 'status' | 'debug' | 'error' | 'sessionId' | 'tool_start' | 'tool_result' | 'tool_error';
+  type: 'chunk' | 'status' | 'debug' | 'error' | 'sessionId' | 'tool_start' | 'tool_result' | 'tool_error' | 'title_update';
   data: string;
 }
 

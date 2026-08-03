@@ -20,6 +20,7 @@ export class ModelsComponent implements OnInit {
   userModels: UserAiModel[] = [];
   loading = false;
   saving = false;
+  titleGenerationModelId: number | null = null;
   
   // Model Picker State
   providers = ['OpenAI', 'Anthropic', 'Google'];
@@ -72,6 +73,7 @@ export class ModelsComponent implements OnInit {
     this.settingsService.getSettings().subscribe({
       next: (settings) => {
         this.allowMultipleModels = settings.allowMultipleModels ?? false;
+        this.titleGenerationModelId = settings.titleGenerationModelId ?? null;
         if (settings.configuredProviders && settings.configuredProviders.length > 0) {
           this.providers = settings.configuredProviders;
           this.pickerProvider = this.providers[0];
@@ -107,6 +109,11 @@ export class ModelsComponent implements OnInit {
       this.settingsService.deleteUserModel(id).subscribe({
         next: () => {
           this.loadModels();
+          this.settingsService.getSettings().subscribe({
+            next: (settings) => {
+              this.titleGenerationModelId = settings.titleGenerationModelId ?? null;
+            }
+          });
           this.saving = false;
         },
         error: (err) => {
@@ -223,6 +230,14 @@ export class ModelsComponent implements OnInit {
       error: (err) => {
         console.error("Failed to save order", err);
         this.saving = false;
+      }
+    });
+  }
+
+  onTitleModelChange() {
+    this.settingsService.saveTitleGenerationModel(this.titleGenerationModelId).subscribe({
+      error: (err) => {
+        console.error("Failed to save title generation model", err);
       }
     });
   }

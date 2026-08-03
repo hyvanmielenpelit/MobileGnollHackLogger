@@ -57,6 +57,19 @@
       </div>
     </div>
   </div>
+
+  <div class="title-gen-section" *ngIf="userModels.length > 0">
+    <div class="title-gen-header">
+      <h3>Title Generation</h3>
+      <p>Select which AI model is used to automatically generate chat titles from your initial prompts.</p>
+    </div>
+    <div class="form-group title-gen-form">
+      <select id="titleGenerationModelSelect" [(ngModel)]="titleGenerationModelId" (change)="onTitleModelChange()" class="gh-input w-100">
+        <option [ngValue]="null">Default (First Available)</option>
+        <option *ngFor="let m of userModels" [ngValue]="m.id">{{ m.displayName || m.modelId }}</option>
+      </select>
+    </div>
+  </div>
 </div>
 
 <dialog #modelPickerDialog class="settings-dialog">

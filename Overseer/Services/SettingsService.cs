@@ -44,6 +44,28 @@ public class SettingsService
         await _dbContext.SaveChangesAsync();
     }
 
+    public async Task SaveTitleGenerationModelAsync(string userId, long? modelId)
+    {
+        var settings = await _dbContext.UserAiSettings.FindAsync(userId);
+        if (settings == null)
+        {
+            settings = new UserAiSettings { AspNetUserId = userId };
+            _dbContext.UserAiSettings.Add(settings);
+        }
+
+        if (modelId.HasValue)
+        {
+            // Verify model belongs to user
+            var modelExists = await _dbContext.UserAiModels.AnyAsync(m => m.Id == modelId.Value && m.AspNetUserId == userId);
+            if (!modelExists)
+            {
+                throw new ArgumentException("Model does not exist or does not belong to user.");
+            }
+        }
+
+        settings.TitleGenerationModelId = modelId;
+        await _dbContext.SaveChangesAsync();
+    }
 
 
     public async Task<List<dynamic>> GetApiKeysStatusAsync(string userId)
@@ -153,6 +175,21 @@ public class SettingsService
                 remaining[i].OrderIndex = i;
             }
             await _dbContext.SaveChangesAsync();
+
+            // Fallback for TitleGenerationModelId if the deleted model was in use
+            var settings = await _dbContext.UserAiSettings.FindAsync(userId);
+            if (settings != null && settings.TitleGenerationModelId == modelId)
+            {
+                if (remaining.Count > 0)
+                {
+                    settings.TitleGenerationModelId = remaining[0].Id;
+                }
+                else
+                {
+                    settings.TitleGenerationModelId = null;
+                }
+                await _dbContext.SaveChangesAsync();
+            }
         }
     }
 

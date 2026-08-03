@@ -165,6 +165,7 @@ public class SessionController : ControllerBase
             {
                 using var scope = _scopeFactory.CreateScope();
                 var chatService = scope.ServiceProvider.GetRequiredService<ChatService>();
+                await chatService.GenerateTitleAsync(sessionId, initialPrompt, userId);
                 await chatService.GenerateAndBroadcastMessageAsync(sessionId, initialPrompt, null, userId, true, CancellationToken.None);
             });
         }

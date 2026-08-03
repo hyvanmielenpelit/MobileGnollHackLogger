@@ -208,6 +208,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   showSpinner = false;
   requestStartTime = 0;
   abortController: AbortController | null = null;
+  timeUpdateInterval: any;
 
   get isHandoffWaiting(): boolean {
     if (this.messages.length > 0) return false;
@@ -258,6 +259,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     (window as any).onGnollHackToolResponse = undefined;
     this.pendingRequests.forEach(timer => clearTimeout(timer));
     this.pendingRequests.clear();
+    if (this.timeUpdateInterval) clearInterval(this.timeUpdateInterval);
   }
 
   getHubConnection() {
@@ -391,6 +393,14 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     };
 
     this.setupSignalR();
+
+    this.ngZone.runOutsideAngular(() => {
+      this.timeUpdateInterval = setInterval(() => {
+        this.ngZone.run(() => {
+          this.cdr.detectChanges();
+        });
+      }, 30000);
+    });
   }
 
   setupSignalR() {
@@ -466,6 +476,15 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           } catch (e) {
             console.error('Failed to parse tool_client_request:', e);
           }
+        } else if (evt.type === 'title_update') {
+          try {
+            const data = JSON.parse(evt.data);
+            const s = this.sessions.find(x => x.id === data.sessionId);
+            if (s) {
+              s.title = data.title;
+              this.cdr.detectChanges();
+            }
+          } catch(e) {}
         } else if (evt.type === 'done') {
           if (this.isStreaming) {
             this.messages.push({ role: 'assistant', content: this.streamingMessage, timestampUtc: new Date().toISOString(), toolCalls: [...this.streamingToolCalls] });
@@ -777,6 +796,15 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
             }
             this.cdr.detectChanges();
             this.scrollToBottomClamped(false);
+          } catch(e) {}
+        } else if (evt.type === 'title_update') {
+          try {
+            const data = JSON.parse(evt.data);
+            const s = this.sessions.find(x => x.id === data.sessionId);
+            if (s) {
+              s.title = data.title;
+              this.cdr.detectChanges();
+            }
           } catch(e) {}
         }
       }
