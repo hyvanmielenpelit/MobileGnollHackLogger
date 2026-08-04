@@ -118,6 +118,15 @@ public class KnowledgeBaseService
         return sb.ToString();
     }
 
+    public string? GetArticleTitle(string topic)
+    {
+        if (_articles.TryGetValue(topic, out var article))
+        {
+            return article.Title;
+        }
+        return null;
+    }
+
     public string? GetArticle(string topic)
     {
         if (_articles.TryGetValue(topic, out var article))

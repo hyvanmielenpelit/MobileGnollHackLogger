@@ -571,7 +571,7 @@ public class ChatService
                         hasToolsToRun = true;
                         lastEventWasToolCall = true;
                         currentIterationToolCalls.Add(JsonSerializer.Deserialize<JsonElement>(evt.Data));
-                        yield return new ChatEvent { Type = "tool_start", Data = evt.Data };
+                        yield return new ChatEvent { Type = "tool_start", Data = EnrichToolStartData(evt.Data) };
                     }
                     else
                     {
@@ -739,7 +739,7 @@ public class ChatService
                         hasToolsToRun = true;
                         lastEventWasToolCall = true;
                         currentIterationToolCalls.Add(JsonSerializer.Deserialize<JsonElement>(evt.Data));
-                        yield return new ChatEvent { Type = "tool_start", Data = evt.Data };
+                        yield return new ChatEvent { Type = "tool_start", Data = EnrichToolStartData(evt.Data) };
                     }
                     else
                     {
@@ -977,7 +977,7 @@ public class ChatService
                         hasToolsToRun = true;
                         lastEventWasToolCall = true;
                         currentIterationToolCalls.Add(JsonSerializer.Deserialize<JsonElement>(evt.Data));
-                        yield return new ChatEvent { Type = "tool_start", Data = evt.Data };
+                        yield return new ChatEvent { Type = "tool_start", Data = EnrichToolStartData(evt.Data) };
                     }
                     else
                     {
@@ -2124,7 +2124,40 @@ public class ChatService
             
             var errorStatus = new { sessionId = sessionId, status = "" };
             await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "title_status", Data = System.Text.Json.JsonSerializer.Serialize(errorStatus) }, CancellationToken.None);
-}
+        }
 
+    }
+
+    private string EnrichToolStartData(string eventData)
+    {
+        try
+        {
+            var node = System.Text.Json.Nodes.JsonNode.Parse(eventData);
+            if (node is System.Text.Json.Nodes.JsonObject rootObj && 
+                rootObj.TryGetPropertyValue("name", out var nameNode) && 
+                nameNode?.GetValue<string>() == "get_knowledge_article" &&
+                rootObj.TryGetPropertyValue("arguments", out var argsNode))
+            {
+                var argsStr = argsNode?.GetValue<string>();
+                if (!string.IsNullOrEmpty(argsStr))
+                {
+                    var argsObjNode = System.Text.Json.Nodes.JsonNode.Parse(argsStr);
+                    if (argsObjNode is System.Text.Json.Nodes.JsonObject argsObj && 
+                        argsObj.TryGetPropertyValue("topic", out var topicNode))
+                    {
+                        var topic = topicNode?.GetValue<string>();
+                        if (topic != null)
+                        {
+                            var title = _knowledgeBaseService.GetArticleTitle(topic) ?? topic;
+                            argsObj["topic_title"] = title;
+                            rootObj["arguments"] = argsObj.ToJsonString();
+                            return rootObj.ToJsonString();
+                        }
+                    }
+                }
+            }
+        }
+        catch { /* Ignore parsing errors */ }
+        return eventData;
     }
 }

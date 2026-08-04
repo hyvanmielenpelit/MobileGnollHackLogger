@@ -76,6 +76,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       if (name === 'item_lookup' && args.name) return args.name;
       if (name === 'wiki_search' && args.query) return args.query;
       if (name === 'nethack_wiki_search' && args.query) return args.query;
+      if (name === 'get_knowledge_article') {
+        if (args.topic_title) return args.topic_title;
+        if (args.topic) return args.topic;
+      }
       
       const firstKey = Object.keys(args)[0];
       if (firstKey) return String(args[firstKey]);
