@@ -107,6 +107,7 @@ builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Ser
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.GetFunctionDefinitionTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.GetMonsterStatsTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.GetItemStatsTool>();
+builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.GetArtifactStatsTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.WikiViewTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.SearchDefinitionsTool>();
 

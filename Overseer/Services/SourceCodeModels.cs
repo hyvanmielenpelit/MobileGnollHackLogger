@@ -38,4 +38,10 @@ namespace Overseer.Services
         [JsonExtensionData]
         public Dictionary<string, object> Fields { get; set; } = new();
     }
+
+    public class ArtifactStats
+    {
+        [JsonExtensionData]
+        public Dictionary<string, object> Fields { get; set; } = new();
+    }
 }

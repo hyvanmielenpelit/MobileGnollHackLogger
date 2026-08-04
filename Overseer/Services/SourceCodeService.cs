@@ -1127,6 +1127,175 @@ namespace Overseer.Services
             return results;
         }
 
+        public StatsResponse<ArtifactStats> GetArtifactStats(string name)
+        {
+            var response = new StatsResponse<ArtifactStats>();
+            var doc = _documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("include\\artilist.h", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("include/artilist.h", StringComparison.OrdinalIgnoreCase));
+            if (doc == null)
+            {
+                response.Error = "include/artilist.h is not in the source code index. Ensure the GnollHack repository is indexed. Use wiki_search as a fallback.";
+                return response;
+            }
+
+            int matchLine = -1;
+            bool isGeneralArtifact = false;
+            string escapedName = Regex.Escape(name);
+            var nameRegex = new Regex($@"^\s*(?:GENERAL_ARTIFACT|A)\(\s*""{escapedName}""", RegexOptions.IgnoreCase);
+
+            for (int i = 0; i < doc.ContentLines.Length; i++)
+            {
+                if (nameRegex.IsMatch(doc.ContentLines[i]))
+                {
+                    matchLine = i;
+                    isGeneralArtifact = doc.ContentLines[i].TrimStart().StartsWith("GENERAL_ARTIFACT(", StringComparison.OrdinalIgnoreCase);
+                    break;
+                }
+            }
+
+            if (matchLine == -1)
+            {
+                response.Error = $"No artifact named '{name}' found in the game data. Try wiki_search for partial matches, or check the spelling.";
+                return response;
+            }
+
+            var extraction = CLexer.ExtractParenBlock(doc.ContentLines, matchLine);
+            if (extraction == null)
+            {
+                response.Error = "Failed to parse artifact definition block.";
+                return response;
+            }
+
+            string rawDef = doc.ContentLines[matchLine].TrimStart() + "\n" + string.Join("\n", doc.ContentLines.Skip(matchLine + 1).Take(extraction.EndLine - matchLine));
+
+            try
+            {
+                /* ExtractParenBlock includes outer parens; strip them before tokenizing */
+                string innerContent = ExtractInnerArgs(extraction.Content);
+                var tokens = _dataParser.ParseMonsterMacroArgs(innerContent);
+                int minTokens = isGeneralArtifact ? 37 : 34;
+                if (tokens.Count >= minTokens)
+                {
+                    var stats = new ArtifactStats();
+
+                    /* Positional fields for A() macro — 34 parameters */
+                    /* 0: name */
+                    stats.Fields["name"] = tokens[0].Trim('"');
+                    /* 1: desc (unidentified name) */
+                    if (tokens[1].Trim() != "None") stats.Fields["desc"] = tokens[1].Trim('"');
+                    /* 2: hit_desc */
+                    if (tokens[2].Trim() != "None") stats.Fields["hit_desc"] = tokens[2].Trim('"');
+                    /* 3: typ (base object type) */
+                    stats.Fields["otyp"] = tokens[3].Trim();
+                    /* 4: masktyp */
+                    stats.Fields["maskotyp"] = tokens[4].Trim();
+                    /* 5: material */
+                    stats.Fields["material"] = tokens[5].Trim();
+                    /* 6: exceptionality */
+                    stats.Fields["exceptionality"] = tokens[6].Trim();
+                    /* 7: mythic_prefix */
+                    stats.Fields["mythic_prefix"] = tokens[7].Trim();
+                    /* 8: mythic_suffix */
+                    stats.Fields["mythic_suffix"] = tokens[8].Trim();
+                    /* 9: aflags */
+                    stats.Fields["aflags"] = ParseFlagField(tokens[9]);
+                    /* 10: aflags2 */
+                    stats.Fields["aflags2"] = ParseFlagField(tokens[10]);
+                    /* 11: spfx (wielded/worn special effects) */
+                    stats.Fields["spfx"] = ParseFlagField(tokens[11]);
+                    /* 12: cspfx (carried special effects) */
+                    stats.Fields["cspfx"] = ParseFlagField(tokens[12]);
+                    /* 13: mtype (monster type, symbol, or flag) */
+                    stats.Fields["mtype"] = tokens[13].Trim();
+                    /* 14-16: tohit dice */
+                    stats.Fields["tohit_dice"] = TryParseInt(tokens[14]);
+                    stats.Fields["tohit_diesize"] = TryParseInt(tokens[15]);
+                    stats.Fields["tohit_plus"] = TryParseInt(tokens[16]);
+                    /* 17: attk (attack sub-macro, e.g. PHYS(1,10)) */
+                    stats.Fields["attk"] = tokens[17].Trim();
+                    /* 18: worn_prop (defense property when wielded/worn) */
+                    stats.Fields["worn_prop"] = tokens[18].Trim();
+                    /* 19: carried_prop */
+                    stats.Fields["carried_prop"] = tokens[19].Trim();
+                    /* 20: inv_prop (invoke property) */
+                    stats.Fields["inv_prop"] = tokens[20].Trim();
+                    /* 21-23: invoke duration dice */
+                    stats.Fields["inv_duration_dice"] = TryParseInt(tokens[21]);
+                    stats.Fields["inv_duration_diesize"] = TryParseInt(tokens[22]);
+                    stats.Fields["inv_duration_plus"] = TryParseInt(tokens[23]);
+                    /* 24: inv_mana_cost */
+                    stats.Fields["inv_mana_cost"] = TryParseInt(tokens[24]);
+                    /* 25: repower_time */
+                    stats.Fields["repower_time"] = TryParseInt(tokens[25]);
+                    /* 26: alignment */
+                    stats.Fields["alignment"] = tokens[26].Trim();
+                    /* 27: role */
+                    stats.Fields["role"] = tokens[27].Trim();
+                    /* 28: race */
+                    stats.Fields["race"] = tokens[28].Trim();
+                    /* 29: cost */
+                    string costVal = tokens[29].Trim().TrimEnd('L', 'l');
+                    stats.Fields["cost"] = TryParseInt(costVal);
+                    /* 30: acolor (glow color) */
+                    stats.Fields["acolor"] = tokens[30].Trim();
+                    /* 31: ocolor (object color override) */
+                    stats.Fields["ocolor"] = tokens[31].Trim();
+                    /* 32: tile_floor_height */
+                    stats.Fields["tile_floor_height"] = TryParseInt(tokens[32]);
+                    /* 33: soundset */
+                    stats.Fields["soundset"] = tokens[33].Trim();
+
+                    /* GENERAL_ARTIFACT has 3 extra fields */
+                    if (isGeneralArtifact && tokens.Count >= 37)
+                    {
+                        stats.Fields["stand_animation"] = tokens[34].Trim();
+                        stats.Fields["enlargement"] = tokens[35].Trim();
+                        stats.Fields["replacement"] = tokens[36].Trim();
+                    }
+
+                    /* Level 1 success */
+                    response.Stats = stats;
+                    PopulateFlagDescriptions(response, tokens);
+
+                    return response;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Level 1 parsing failed for artifact '{Name}', falling back to Level 2.", name);
+            }
+
+            /* Level 2 fallback: raw dump + context */
+            response.RawDefinition = rawDef;
+            response.MacroDefinitions = _dataParser.GetMacroDefinitions("GENERAL_ARTIFACT", "A", "PHYS", "PHYSI", "DRLI", "COLD", "FIRE", "ELEC", "STUN", "NO_ATTK");
+            response.StructDefinitions = _dataParser.GetStructDefinitions("artifact", "attack");
+            response.Message = $"Could not parse structured stats for '{name}'. Raw source and context provided for manual interpretation.";
+            PopulateFlagDescriptions(response, rawDef);
+
+            return response;
+        }
+
+        public IEnumerable<string> SearchArtifacts(string query)
+        {
+            var doc = _documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("include\\artilist.h", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("include/artilist.h", StringComparison.OrdinalIgnoreCase));
+            if (doc == null) return Enumerable.Empty<string>();
+
+            var results = new List<string>();
+            var regex = new Regex(@"^\s*(?:GENERAL_ARTIFACT|A)\(\s*""([^""]+)""", RegexOptions.IgnoreCase);
+            foreach (var line in doc.ContentLines)
+            {
+                var m = regex.Match(line);
+                if (m.Success)
+                {
+                    string artifactName = m.Groups[1].Value;
+                    if (!string.IsNullOrEmpty(artifactName) && artifactName.Contains(query, StringComparison.OrdinalIgnoreCase))
+                    {
+                        results.Add(artifactName);
+                    }
+                }
+            }
+            return results;
+        }
+
         /* --- Helper methods for monster stats Level 1 parsing --- */
 
         /// <summary>

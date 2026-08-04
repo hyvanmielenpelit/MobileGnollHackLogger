@@ -23,15 +23,15 @@ Follow this order when looking up game information. Be parsimonious with tool ca
    article fully answers the question, stop — no further tool calls are needed.
    Only proceed to wiki or source code tools if the article does not fully cover
    the user's question.
-3. **Monster/item information** — pick ONE tool first based on the question type:
+3. **Monster/item/artifact information** — pick ONE tool first based on the question type:
    - **For strategy, descriptions, tips, or general "what is X" questions:**
      Use `monster_lookup`, `item_lookup`, `wiki_search`, or `wiki_view` **first**.
      The wiki contains strategy advice, added notes, and gameplay context that
      raw struct data cannot provide. Only fall back to `get_monster_stats` /
-     `get_item_stats` if the wiki lacks data for the specific monster/item.
-   - **For specific mechanics questions (exact AC, damage dice, MR, resistances, speed, material):**
-     Use `get_monster_stats` or `get_item_stats` **first**.
-     These return authoritative JSON parsed directly from `src/monst.c` / `src/objects.c`.
+     `get_item_stats` / `get_artifact_stats` if the wiki lacks data for the specific monster/item/artifact.
+   - **For specific mechanics questions (exact AC, damage dice, MR, resistances, speed, material, artifact flags, special effects):**
+     Use `get_monster_stats`, `get_item_stats`, or `get_artifact_stats` **first**.
+     These return authoritative JSON parsed directly from `src/monst.c` / `src/objects.c` / `include/artilist.h`.
      Only fall back to wiki if you need additional context the struct data doesn't cover.
    - **Do NOT routinely call both tools for the same question.** Pick the one that best
      matches the question type. Only use the other if the first result is inconclusive.
