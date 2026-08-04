@@ -31,4 +31,6 @@ public class ChatMessage
     public string? ThinkingLevelUsed { get; set; }
 
     public ICollection<ChatMessageToolCall> ToolCalls { get; set; } = new List<ChatMessageToolCall>();
+
+    public int? TimeToFirstTokenMs { get; set; }
 }

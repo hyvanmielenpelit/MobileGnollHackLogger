@@ -34,10 +34,11 @@ export interface ChatMessage {
   toolCalls?: ChatMessageToolCall[];
   modelDisplayName?: string;
   thinkingLevel?: string;
+  timeToFirstTokenMs?: number;
 }
 
 export interface ChatStreamEvent {
-  type: 'chunk' | 'status' | 'debug' | 'error' | 'sessionId' | 'tool_start' | 'tool_result' | 'tool_error' | 'title_update' | 'thinking_chunk' | 'final';
+  type: 'chunk' | 'status' | 'debug' | 'error' | 'sessionId' | 'tool_start' | 'tool_result' | 'tool_error' | 'title_update' | 'thinking_chunk' | 'ttft' | 'final';
   data: string;
 }
 @Injectable({

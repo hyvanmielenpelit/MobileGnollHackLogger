@@ -40,10 +40,10 @@
       <label class="block fw-bold">Show Thinking and Tool Use</label>
       <span class="form-hint mt-5 d-block mb-10">Control what is shown while the AI is executing tools or thinking in the background.</span>
       <select class="form-input form-select" [(ngModel)]="showThoughtsAndTools" name="showThoughtsAndTools">
-        <option [ngValue]="0">Nothing</option>
-        <option [ngValue]="1">Tool blocks</option>
+        <option [ngValue]="0">Minimal</option>
+        <option [ngValue]="1">Blocks</option>
         <option [ngValue]="2">Text</option>
-        <option [ngValue]="3">Tool blocks and text</option>
+        <option [ngValue]="3">Blocks and text</option>
       </select>
     </div>
 

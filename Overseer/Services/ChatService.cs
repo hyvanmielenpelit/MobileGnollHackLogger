@@ -443,6 +443,9 @@ public class ChatService
 
         string fullResponse = "";
         
+        long? apiCallStartTime = null;
+        int? timeToFirstTokenMs = null;
+        
         int toolIterations = 0;
         bool hasToolsToRun = true;
         var thinkingBoundaries = new List<(int start, int end)>();
@@ -507,6 +510,8 @@ public class ChatService
                 var jsonRequest = JsonSerializer.Serialize(requestBody);
                 yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - OpenAI] Request Body: {jsonRequest}" };
 
+                if (!apiCallStartTime.HasValue) apiCallStartTime = System.Diagnostics.Stopwatch.GetTimestamp();
+
                 await foreach (var evt in ExecuteApiWithRetriesAsync(
                     async ct =>
                     {
@@ -520,6 +525,12 @@ public class ChatService
                     "OpenAI",
                     cancellationToken))
                 {
+                    if (!timeToFirstTokenMs.HasValue && (evt.Type == "chunk" || evt.Type == "thinking_chunk" || evt.Type == "tool_call_complete" || evt.Type == "error"))
+                    {
+                        timeToFirstTokenMs = (int)System.Diagnostics.Stopwatch.GetElapsedTime(apiCallStartTime!.Value).TotalMilliseconds;
+                        yield return new ChatEvent { Type = "ttft", Data = timeToFirstTokenMs.Value.ToString() };
+                    }
+
                     if (evt.Type == "thinking_chunk")
                     {
                         if (thinkingStartIndex == -1)
@@ -675,6 +686,8 @@ public class ChatService
                 var jsonRequest = JsonSerializer.Serialize(requestBody);
                 yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - Anthropic] Request Body: {jsonRequest}" };
 
+                if (!apiCallStartTime.HasValue) apiCallStartTime = System.Diagnostics.Stopwatch.GetTimestamp();
+
                 await foreach (var evt in ExecuteApiWithRetriesAsync(
                     async ct =>
                     {
@@ -688,6 +701,12 @@ public class ChatService
                     "Anthropic",
                     cancellationToken))
                 {
+                    if (!timeToFirstTokenMs.HasValue && (evt.Type == "chunk" || evt.Type == "thinking_chunk" || evt.Type == "tool_call_complete"))
+                    {
+                        timeToFirstTokenMs = (int)System.Diagnostics.Stopwatch.GetElapsedTime(apiCallStartTime.Value).TotalMilliseconds;
+                        yield return new ChatEvent { Type = "ttft", Data = timeToFirstTokenMs.Value.ToString() };
+                    }
+
                     if (evt.Type == "thinking_chunk")
                     {
                         if (thinkingStartIndex == -1)
@@ -913,6 +932,8 @@ public class ChatService
                 var jsonRequest = JsonSerializer.Serialize(requestBody);
                 yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - Google] Request Body: {jsonRequest}" };
 
+                if (!apiCallStartTime.HasValue) apiCallStartTime = System.Diagnostics.Stopwatch.GetTimestamp();
+
                 await foreach (var evt in ExecuteApiWithRetriesAsync(
                     async ct =>
                     {
@@ -926,6 +947,12 @@ public class ChatService
                     "Google",
                     cancellationToken))
                 {
+                    if (!timeToFirstTokenMs.HasValue && (evt.Type == "chunk" || evt.Type == "thinking_chunk" || evt.Type == "tool_call_complete" || evt.Type == "error"))
+                    {
+                        timeToFirstTokenMs = (int)System.Diagnostics.Stopwatch.GetElapsedTime(apiCallStartTime!.Value).TotalMilliseconds;
+                        yield return new ChatEvent { Type = "ttft", Data = timeToFirstTokenMs.Value.ToString() };
+                    }
+
                     if (evt.Type == "thinking_chunk")
                     {
                         if (thinkingStartIndex == -1)
@@ -1115,7 +1142,8 @@ public class ChatService
                     ProviderUsed = provider,
                     ModelUsed = model,
                     ThinkingLevelUsed = thinkingLevel,
-                    ToolCalls = streamToolCalls
+                    ToolCalls = streamToolCalls,
+                    TimeToFirstTokenMs = timeToFirstTokenMs
                 };
                 dbContext.ChatMessage.Add(asstMsg);
                 session.LastMessageUtc = DateTime.UtcNow;
@@ -1891,7 +1919,7 @@ public class ChatService
             await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen] Task started for session {sessionId}." }, CancellationToken.None);
             
             var initialStatus = new { sessionId = sessionId, status = "Generating AI title..." };
-            await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "title_status", Data = System.Text.Json.JsonSerializer.Serialize(initialStatus) }, CancellationToken.None);
+            await _hubContext.Clients.User(userId).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "title_status", Data = System.Text.Json.JsonSerializer.Serialize(initialStatus) }, CancellationToken.None);
             
             using var scope = _scopeFactory.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -2005,7 +2033,7 @@ public class ChatService
                         if (i > 0)
                         {
                             var retryStatus = new { sessionId = sessionId, status = $"Retrying title generation ({i}/{retryDelays.Length})..." };
-                            await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "title_status", Data = System.Text.Json.JsonSerializer.Serialize(retryStatus) }, CancellationToken.None);
+                            await _hubContext.Clients.User(userId).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "title_status", Data = System.Text.Json.JsonSerializer.Serialize(retryStatus) }, CancellationToken.None);
                         }
                         
                         response = await client.SendAsync(reqClone, cancellationToken);
@@ -2096,24 +2124,24 @@ public class ChatService
                     
                     var titleUpdateData = new { sessionId = sessionId, title = generatedTitle };
                     var evt = new ChatEvent { Type = "title_update", Data = System.Text.Json.JsonSerializer.Serialize(titleUpdateData) };
-                    await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", evt, CancellationToken.None);
+                    await _hubContext.Clients.User(userId).SendAsync("ReceiveChatEvent", evt, CancellationToken.None);
                 }
             }
             
             var successStatus = new { sessionId = sessionId, status = "" };
-            await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "title_status", Data = System.Text.Json.JsonSerializer.Serialize(successStatus) }, CancellationToken.None);
+            await _hubContext.Clients.User(userId).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "title_status", Data = System.Text.Json.JsonSerializer.Serialize(successStatus) }, CancellationToken.None);
         }
         catch (OperationCanceledException)
         {
             var cancelStatus = new { sessionId = sessionId, status = "canceled" };
-            await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "title_status", Data = System.Text.Json.JsonSerializer.Serialize(cancelStatus) }, CancellationToken.None);
+            await _hubContext.Clients.User(userId).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "title_status", Data = System.Text.Json.JsonSerializer.Serialize(cancelStatus) }, CancellationToken.None);
         }
         catch (Exception ex)
         {
             await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - Exception] {ex.GetType().Name}: {ex.Message}" }, CancellationToken.None);
             
             var errorStatus = new { sessionId = sessionId, status = "" };
-            await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "title_status", Data = System.Text.Json.JsonSerializer.Serialize(errorStatus) }, CancellationToken.None);
+            await _hubContext.Clients.User(userId).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "title_status", Data = System.Text.Json.JsonSerializer.Serialize(errorStatus) }, CancellationToken.None);
         }
 
     }

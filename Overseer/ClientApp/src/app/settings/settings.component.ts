@@ -25,8 +25,8 @@ export class SettingsComponent implements OnInit {
   showSourceCodeReferences = false;
   initShowSourceCodeReferences = false;
 
-  showThoughtsAndTools = 1;
-  initShowThoughtsAndTools = 1;
+  showThoughtsAndTools = 0;
+  initShowThoughtsAndTools = 0;
 
   enableWebSearch = true;
   initEnableWebSearch = true;

@@ -142,6 +142,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   streamingMessage = '';
   streamingToolCalls: ChatMessageToolCall[] = [];
   pendingAttachments: { file: File, base64: string, name: string, type: string }[] = [];
+  timeToFirstTokenMs: number | null = null;
   
   isGeneratingTitle = false;
   titleStatusText = '';
@@ -151,7 +152,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   hasApiKey = true;
   hasModel = true;
   allowMultipleModels = false;
-  showThoughtsAndTools = 1;
+  showThoughtsAndTools = 0;
 
   userModels: import('../services/settings.service').UserAiModel[] = [];
   selectedUserModelId: number | null = null;
@@ -420,7 +421,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.hasApiKey = settings.hasApiKey;
         this.isProduction = settings.isProduction ?? false;
         this.allowMultipleModels = settings.allowMultipleModels ?? false;
-        this.showThoughtsAndTools = Number(settings.showThoughtsAndTools ?? 1);
+        this.showThoughtsAndTools = Number(settings.showThoughtsAndTools ?? 0);
         this.debugService.log(`[Overseer] showThoughtsAndTools loaded: ${this.showThoughtsAndTools} (type: ${typeof this.showThoughtsAndTools})`);
 
         this.settingsService.getUserModels().subscribe(models => {
@@ -506,16 +507,20 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       this.currentStatusText = evt.data;
       this.cdr.detectChanges();
     } else if (evt.type === 'thinking_chunk') {
-      this.isThinkingActive = true;
       if (this.showThoughtsAndTools === 2 || this.showThoughtsAndTools === 3) {
-        if (!this.streamingMessage.endsWith('<div class="ai-thought">\n\n')) {
+        if (!this.isThinkingActive) {
           this.streamingMessage += '\n\n<div class="ai-thought">\n\n';
         }
         this.streamingMessage += evt.data;
         this.cdr.detectChanges();
         this.scrollToBottomClamped(false);
       }
+      this.isThinkingActive = true;
+    } else if (evt.type === 'ttft') {
+      this.timeToFirstTokenMs = parseInt(evt.data, 10);
+      this.cdr.detectChanges();
     } else if (evt.type === 'chunk') {
+      this.debugService.log(`[Frontend] chunk received, streamingMessage.length=${this.streamingMessage.length}, mode=${this.showThoughtsAndTools}`);
       if (this.isThinkingActive) {
           this.isThinkingActive = false;
           if (this.showThoughtsAndTools === 2 || this.showThoughtsAndTools === 3) {
@@ -564,6 +569,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         }
 
         const toolInfo = JSON.parse(evt.data);
+        this.debugService.log(`[Frontend] tool_start: ${toolInfo.name}, streamingMessage.length after=${this.streamingMessage.length}`);
+
         const args = JSON.parse(toolInfo.arguments || '{}');
         const displayName = ChatComponent.TOOL_DISPLAY_NAMES[toolInfo.name] || toolInfo.name;
         const argsText = this.buildToolArgsText(toolInfo.name, args);
@@ -637,6 +644,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.cdr.detectChanges();
       } catch(e) {}
     } else if (evt.type === 'done') {
+      this.debugService.log(`[Frontend] done, streamingMessage.length=${this.streamingMessage.length}`);
       if (this.isStreaming) {
         if (this.isThinkingActive) {
             this.isThinkingActive = false;
@@ -644,9 +652,18 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
               this.streamingMessage += '\n\n</div>\n\n';
             }
         }
-        this.messages.push({ role: 'assistant', content: this.streamingMessage, timestampUtc: new Date().toISOString(), toolCalls: [...this.streamingToolCalls] });
+        this.messages.push({ 
+          role: 'assistant', 
+          content: this.streamingMessage, 
+          timestampUtc: new Date().toISOString(), 
+          toolCalls: [...this.streamingToolCalls], 
+          timeToFirstTokenMs: this.timeToFirstTokenMs ?? undefined,
+          modelDisplayName: this.selectedModel?.displayName || this.selectedModel?.modelId || this.singleModelInfo?.modelId,
+          thinkingLevel: this.selectedModel?.thinkingLevel || this.singleModelInfo?.thinkingLevel
+        });
         this.streamingMessage = '';
         this.streamingToolCalls = [];
+        this.timeToFirstTokenMs = null;
         this.isStreaming = false;
         this.showSpinner = false;
         this.currentStatusText = 'Generation complete.';
@@ -655,6 +672,17 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.focusPromptInput();
       }
     }
+  }
+
+  formatTtft(ms: number | null | undefined): string {
+    if (ms == null) return '';
+    const seconds = ms / 1000;
+    return seconds < 1 ? seconds.toFixed(1) + 's' : Math.round(seconds) + 's';
+  }
+
+  getMinimalStatusLabel(): string {
+    const runningTool = this.streamingToolCalls.find(tc => tc.status === 'running');
+    return runningTool ? (runningTool.displayName || runningTool.name) + '...' : 'Thinking...';
   }
 
   setupSignalR() {
@@ -740,6 +768,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.isGeneratingTitle = false;
     this.isThinkingActive = false;
     this.titleStatusText = '';
+    this.timeToFirstTokenMs = null;
     this.loadDraft();
     this.applySavedModelPreference();
     this.focusPromptInput();
@@ -753,6 +782,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.streamingToolCalls = [];
     this.showSpinner = false;
     this.isThinkingActive = false;
+    this.timeToFirstTokenMs = null;
 
     this.sessionLoadSub = this.chatService.getSession(id).subscribe({
       next: (s) => {
@@ -942,6 +972,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.isThinkingActive = false;
     this.streamingMessage = '';
     this.streamingToolCalls = [];
+    this.timeToFirstTokenMs = null;
 
     this.focusPromptInput();
 
@@ -953,7 +984,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     try {
       const settings = await firstValueFrom(this.settingsService.getSettings());
       if (settings) {
-        this.showThoughtsAndTools = Number(settings.showThoughtsAndTools ?? 1);
+        this.showThoughtsAndTools = Number(settings.showThoughtsAndTools ?? 0);
       }
     } catch { /* use cached value */ }
 

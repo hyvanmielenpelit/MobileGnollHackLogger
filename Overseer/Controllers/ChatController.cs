@@ -104,6 +104,7 @@ public class ChatController : ControllerBase
                 m.Role, 
                 m.Content, 
                 m.TimestampUtc,
+                m.TimeToFirstTokenMs,
                 m.ProviderUsed,
                 m.ModelUsed,
                 Attachments = _dbContext.ChatMessageAttachment
@@ -147,6 +148,7 @@ public class ChatController : ControllerBase
                 m.Role,
                 m.Content,
                 m.TimestampUtc,
+                m.TimeToFirstTokenMs,
                 m.Attachments,
                 m.ToolCalls,
                 ModelDisplayName = modelDisplayName,
