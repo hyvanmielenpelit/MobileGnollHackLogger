@@ -66,6 +66,8 @@ builder.Services.AddHttpClient();
 builder.Services.AddSingleton<WikiService>();
 builder.Services.AddSingleton<SourceCodeService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<SourceCodeService>());
+
+
 builder.Services.AddSingleton<CryptoService>();
 builder.Services.AddScoped<ChatService>();
 builder.Services.AddSingleton<OngoingChatManager>();
@@ -102,6 +104,9 @@ builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Ser
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.SourceCodeViewTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.ListIndexedFilesTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.GetConstantsTool>();
+builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.GetFunctionDefinitionTool>();
+builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.GetMonsterStatsTool>();
+builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.GetItemStatsTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.WikiViewTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.SearchDefinitionsTool>();
 

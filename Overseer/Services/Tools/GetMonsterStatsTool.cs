@@ -1,0 +1,86 @@
+using System.Text.Json;
+using System.Threading.Tasks;
+
+namespace Overseer.Services.Tools
+{
+    public class GetMonsterStatsTool : IToolHandler
+    {
+        private readonly SourceCodeService _sourceCodeService;
+
+        public GetMonsterStatsTool(SourceCodeService sourceCodeService)
+        {
+            _sourceCodeService = sourceCodeService;
+        }
+
+        public string ToolName => "get_monster_stats";
+        
+        public string Description { get; set; } = "Extract complete statistics and properties for a specific monster from src/monst.c.";
+
+        public ToolExecutionLocation ExecutionLocation => ToolExecutionLocation.Server;
+        public ToolCategory Category => ToolCategory.InformationRetrieval;
+        
+        private static readonly JsonElement _parameterSchema = JsonDocument.Parse("""
+        {
+            "type": "object",
+            "properties": {
+                "name": { 
+                    "type": "string", 
+                    "description": "The exact name of the monster as defined in src/monst.c (e.g. 'goblin', 'adult red dragon')" 
+                }
+            },
+            "required": ["name"]
+        }
+        """).RootElement.Clone();
+
+        public JsonElement ParameterSchema => _parameterSchema;
+
+        public Task<ToolResult> ExecuteAsync(JsonElement arguments, ToolExecutionContext context, System.Threading.CancellationToken cancellationToken)
+        {
+            string name = arguments.GetProperty("name").GetString() ?? string.Empty;
+            
+            var result = _sourceCodeService.GetMonsterStats(name);
+            
+            var options = new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+            };
+            
+            string jsonResult = JsonSerializer.Serialize(result, options);
+            
+            if (jsonResult.Length > 2900)
+            {
+                if (result.RawDefinition != null)
+                {
+                    /* Level 2: drop macros/structs/flags, keep raw definition */
+                    var minResult = new StatsResponse<MonsterStats>
+                    {
+                        Stats = result.Stats,
+                        RawDefinition = result.RawDefinition,
+                        Message = "Response truncated due to size limits. Macro definitions and flag descriptions omitted.",
+                        Error = result.Error
+                    };
+                    jsonResult = JsonSerializer.Serialize(minResult, options);
+                }
+                else if (result.Stats != null)
+                {
+                    /* Level 1: drop flag_descriptions to fit */
+                    var minResult = new StatsResponse<MonsterStats>
+                    {
+                        Stats = result.Stats,
+                        Message = "Response truncated due to size limits. Flag descriptions omitted.",
+                        Error = result.Error
+                    };
+                    jsonResult = JsonSerializer.Serialize(minResult, options);
+                }
+            }
+            
+            if (jsonResult.Length > 3000)
+            {
+                return Task.FromResult(new ToolResult { Success = false, ErrorMessage = "Result too large (over 3000 chars) even after minification. Try viewing the source code file directly." });
+            }
+            
+            return Task.FromResult(new ToolResult { Success = true, Content = jsonResult });
+        }
+    }
+}

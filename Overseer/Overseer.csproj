@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <Content Include="ToolGuides\**" CopyToOutputDirectory="PreserveNewest" />
+    <Content Update="Data\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

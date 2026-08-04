@@ -38,6 +38,11 @@ namespace Overseer.Services
             "vis_tab.c", "vis_tab.h", "date.h"
         };
         
+        private readonly Dictionary<string, string> _flagDescriptions = new(StringComparer.OrdinalIgnoreCase);
+        private readonly GameDataParser _dataParser = new();
+        
+        public GameDataParser Parser => _dataParser;
+        
         private readonly IConfiguration _configuration;
         private readonly string[] _makedefsSourceFiles = new[]
         {
@@ -60,6 +65,7 @@ namespace Overseer.Services
         public Task StartAsync(CancellationToken cancellationToken)
         {
             _logger.LogInformation("SourceCodeService starting. Path: {Path}", _sourceCodePath);
+            LoadFlagDescriptions();
             RegenerateHeaders(force: true);
             IndexRepository();
             
@@ -67,6 +73,31 @@ namespace Overseer.Services
             _reindexTimer = new Timer(CheckForUpdates, null, TimeSpan.FromMinutes(10), TimeSpan.FromMinutes(10));
             
             return Task.CompletedTask;
+        }
+
+        private void LoadFlagDescriptions()
+        {
+            try
+            {
+                string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data", "flag_descriptions.json");
+                if (File.Exists(path))
+                {
+                    var content = File.ReadAllText(path);
+                    var dict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(content);
+                    if (dict != null)
+                    {
+                        foreach (var kvp in dict)
+                        {
+                            _flagDescriptions[kvp.Key] = kvp.Value;
+                        }
+                    }
+                    _logger.LogInformation("Loaded {Count} flag descriptions.", _flagDescriptions.Count);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error loading flag descriptions.");
+            }
         }
 
         public Task StopAsync(CancellationToken cancellationToken)
@@ -391,6 +422,27 @@ namespace Overseer.Services
                 {
                     _lastHeadSha = File.ReadAllText(gitHeadPath).Trim();
                 }
+
+                // 2. Parse game data via GameDataParser
+                try
+                {
+                    var permonstDoc = _documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("include\\permonst.h", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("include/permonst.h", StringComparison.OrdinalIgnoreCase));
+                    var objclassDoc = _documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("include\\objclass.h", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("include/objclass.h", StringComparison.OrdinalIgnoreCase));
+                    if (permonstDoc != null && objclassDoc != null)
+                    {
+                        _dataParser.ParseStructs(permonstDoc.ContentLines, objclassDoc.ContentLines);
+                    }
+                    var monstDoc = _documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("src\\monst.c", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("src/monst.c", StringComparison.OrdinalIgnoreCase));
+                    var objectsDoc = _documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("src\\objects.c", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("src/objects.c", StringComparison.OrdinalIgnoreCase));
+                    if (monstDoc != null) _dataParser.ParseMacros(monstDoc.ContentLines);
+                    if (objectsDoc != null) _dataParser.ParseMacros(objectsDoc.ContentLines);
+                    
+                    _logger.LogInformation("Parsed game data macros and structs.");
+                }
+                catch (Exception pex)
+                {
+                    _logger.LogError(pex, "Error parsing game data macros and structs.");
+                }
                 
                 _logger.LogInformation("Indexed {Count} source files.", _documents.Count);
             }
@@ -637,6 +689,126 @@ namespace Overseer.Services
 
             return results.Length > 0 ? results.ToString().Trim() : $"No definition found for '{symbol}' of kind '{kind}'.";
         }
+        /// <summary>
+        /// Shared helper: finds the first line in the index that matches a symbol of the given kind.
+        /// Returns the document and 0-based line index, or (null, -1) if not found.
+        /// </summary>
+        private (SourceDocument? doc, int line) FindSymbolLine(string name, string kind)
+        {
+            var docsToSearch = _documents.Values
+                .Where(d => !d.IsNetCode)
+                .OrderBy(d => d.FilePath.EndsWith(".c", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+                .ToList();
+
+            string escapedSymbol = Regex.Escape(name);
+
+            foreach (var doc in docsToSearch)
+            {
+                bool isCFile = doc.FilePath.EndsWith(".c", StringComparison.OrdinalIgnoreCase);
+
+                for (int i = 0; i < doc.ContentLines.Length; i++)
+                {
+                    string line = doc.ContentLines[i];
+                    bool match = false;
+
+                    if ((kind == "any" || kind == "function") && isCFile)
+                    {
+                        if (Regex.IsMatch(line, $@"^{escapedSymbol}\s*\(")) match = true;
+                    }
+                    if ((kind == "any" || kind == "macro") && !match)
+                    {
+                        if (Regex.IsMatch(line, $@"^\s*#define\s+{escapedSymbol}[\s(]")) match = true;
+                    }
+                    if ((kind == "any" || kind == "struct") && !match)
+                    {
+                        if (Regex.IsMatch(line, $@"^\s*struct\s+{escapedSymbol}\s*{{")) match = true;
+                    }
+                    if ((kind == "any" || kind == "enum") && !match)
+                    {
+                        if (Regex.IsMatch(line, $@"^\s*enum\s+{escapedSymbol}\s*{{")) match = true;
+                    }
+
+                    if (match) return (doc, i);
+                }
+            }
+            return (null, -1);
+        }
+
+        public string GetFunctionBody(string name, string kind, int? startLineReq = null)
+        {
+            var (matchDoc, matchLine) = FindSymbolLine(name, kind);
+
+            if (matchDoc == null || matchLine < 0)
+            {
+                return $"No definition found for '{name}' of kind '{kind}'.";
+            }
+
+            // Decide how to extract
+            string resultText = "";
+            int extractStart = Math.Max(0, matchLine - (kind == "function" || kind == "any" ? 2 : 1));
+            int extractEnd = matchLine;
+            bool isMacro = Regex.IsMatch(matchDoc.ContentLines[matchLine], $@"^\s*#define");
+            
+            if (isMacro)
+            {
+                // Macro: read lines until no continuation
+                int current = matchLine;
+                while (current < matchDoc.ContentLines.Length && matchDoc.ContentLines[current].EndsWith("\\"))
+                {
+                    current++;
+                }
+                extractEnd = current;
+                var sb = new System.Text.StringBuilder();
+                for (int i = extractStart; i <= extractEnd; i++) sb.AppendLine(matchDoc.ContentLines[i]);
+                resultText = sb.ToString();
+            }
+            else
+            {
+                // Function/Struct: look for { and use lexer
+                var extraction = CLexer.ExtractBracedBlock(matchDoc.ContentLines, matchLine);
+                if (extraction != null)
+                {
+                    extractEnd = extraction.EndLine;
+                    var sb = new System.Text.StringBuilder();
+                    for (int i = extractStart; i < extraction.StartLine; i++) sb.AppendLine(matchDoc.ContentLines[i]);
+                    sb.AppendLine(extraction.Content);
+                    resultText = sb.ToString();
+                }
+                else
+                {
+                    // Fallback to simple context
+                    extractEnd = Math.Min(matchDoc.ContentLines.Length - 1, matchLine + 10);
+                    var sb = new System.Text.StringBuilder();
+                    for (int i = extractStart; i <= extractEnd; i++) sb.AppendLine(matchDoc.ContentLines[i]);
+                    resultText = sb.ToString();
+                }
+            }
+
+            string[] resultLines = resultText.Split('\n');
+            int totalLines = resultLines.Length;
+            int startOutputLine = startLineReq ?? 0;
+            if (startOutputLine < 0) startOutputLine = 0;
+            if (startOutputLine >= totalLines) startOutputLine = totalLines - 1;
+
+            var finalSb = new System.Text.StringBuilder();
+            finalSb.AppendLine($"--- {matchDoc.RelativePath}:L{extractStart + 1}-L{extractEnd + 1} ({name}, {totalLines} lines) ---");
+            
+            int maxLines = 150; // Provide up to 150 lines per response chunk to fit in 3000 chars roughly
+            int outputCount = 0;
+            
+            for (int i = startOutputLine; i < totalLines; i++)
+            {
+                finalSb.AppendLine(resultLines[i].TrimEnd('\r'));
+                outputCount++;
+                if (outputCount >= maxLines && i < totalLines - 1)
+                {
+                    finalSb.AppendLine($"\n[Output truncated at line {i + 1} of {totalLines}. Call again with start_line={i + 1} to continue.]");
+                    break;
+                }
+            }
+
+            return finalSb.ToString().Trim();
+        }
 
         public string GetFileExcerpt(string relativePath, int? startLineReq, int lineCount, string? searchTerm = null)
         {
@@ -750,6 +922,378 @@ namespace Overseer.Services
             }
             sb.AppendLine($"Total: {sortedDocs.Count} files indexed");
             return sb.ToString();
+        }
+
+        public StatsResponse<MonsterStats> GetMonsterStats(string name)
+        {
+            var response = new StatsResponse<MonsterStats>();
+            var doc = _documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("src\\monst.c", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("src/monst.c", StringComparison.OrdinalIgnoreCase));
+            if (doc == null)
+            {
+                response.Error = "src/monst.c is not in the source code index. Ensure the GnollHack repository is indexed. Use monster_lookup or wiki_search as a fallback.";
+                return response;
+            }
+
+            int matchLine = -1;
+            string escapedName = Regex.Escape(name);
+            var nameRegex = new Regex($@"^\s*(?:ANIMATED_MON|ENLARGED_MON|ENLARGED_ANIMATED_MON|MON)\(\s*""{escapedName}""", RegexOptions.IgnoreCase);
+
+            for (int i = 0; i < doc.ContentLines.Length; i++)
+            {
+                if (nameRegex.IsMatch(doc.ContentLines[i]))
+                {
+                    matchLine = i;
+                    break;
+                }
+            }
+
+            if (matchLine == -1)
+            {
+                response.Error = $"No monster named '{name}' found in the game data. Try monster_lookup or wiki_search for partial matches, or check the spelling.";
+                return response;
+            }
+
+            var extraction = CLexer.ExtractParenBlock(doc.ContentLines, matchLine);
+            if (extraction == null)
+            {
+                response.Error = "Failed to parse monster definition block.";
+                return response;
+            }
+
+            string rawDef = doc.ContentLines[matchLine].TrimStart() + "\n" + string.Join("\n", doc.ContentLines.Skip(matchLine + 1).Take(extraction.EndLine - matchLine));
+
+            try
+            {
+                /* ExtractParenBlock includes outer parens; strip them before tokenizing */
+                string innerContent = ExtractInnerArgs(extraction.Content);
+                var tokens = _dataParser.ParseMonsterMacroArgs(innerContent);
+                if (tokens.Count >= 24) /* MON has at least 24 top-level args before soundset fields */
+                {
+                    var stats = new MonsterStats();
+
+                    /* Positional fields 0-5: name, title, description, femalename, commonname, mlet */
+                    stats.Fields["mname"] = tokens[0].Trim('"');
+                    if (tokens[1] != "None") stats.Fields["mtitle"] = tokens[1].Trim('"');
+                    if (tokens[2] != "None") stats.Fields["mdescription"] = tokens[2].Trim('"');
+                    if (tokens[3] != "None") stats.Fields["mfemalename"] = tokens[3].Trim('"');
+                    if (tokens[4] != "None") stats.Fields["mcommonname"] = tokens[4].Trim('"');
+                    stats.Fields["mlet"] = tokens[5].Trim();
+
+                    /* Position 6: LVL(lvl, mov, ac, mc, mr, aln) */
+                    ParseSubMacro(tokens[6], stats.Fields, new[] { "mlevel", "mmove", "ac", "mc", "mr", "maligntyp" });
+
+                    /* Position 7: geno flags — e.g. (G_GENO | G_LGROUP | 2) */
+                    ParseGenoFlags(tokens[7], stats.Fields);
+
+                    /* Position 8: A(ATTK(...), ...) — 8 attack slots */
+                    ParseAttacks(tokens[8], stats.Fields);
+
+                    /* Position 9: SIZ(wt, nut, snd, siz, heads, lightrange, mat) */
+                    ParseSubMacro(tokens[9], stats.Fields, new[] { "cwt", "cnutrit", "msound", "msize", "heads", "lightrange", "body_material_type" });
+
+                    /* Position 10: STATS(str, dex, con, intl, wis, cha) */
+                    ParseSubMacro(tokens[10], stats.Fields, new[] { "str", "dex", "con", "intl", "wis", "cha" });
+
+                    /* Positions 11-13: mresists, mresists2, mconveys */
+                    stats.Fields["mresists"] = ParseFlagField(tokens[11]);
+                    stats.Fields["mresists2"] = ParseFlagField(tokens[12]);
+                    stats.Fields["mconveys"] = ParseFlagField(tokens[13]);
+
+                    /* Positions 14-21: mflags1 through mflags8 */
+                    for (int f = 0; f < 8; f++)
+                    {
+                        stats.Fields[$"mflags{f + 1}"] = ParseFlagField(tokens[14 + f]);
+                    }
+
+                    /* Position 22: difficulty */
+                    stats.Fields["difficulty"] = TryParseInt(tokens[22]);
+
+                    /* Position 23: mcolor */
+                    stats.Fields["mcolor"] = tokens[23].Trim();
+
+                    /* Level 1 success: populate stats, populate flag_descriptions, leave macro/struct empty */
+                    response.Stats = stats;
+                    PopulateFlagDescriptions(response, tokens);
+
+                    return response;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Level 1 parsing failed for monster '{Name}', falling back to Level 2.", name);
+            }
+
+            /* Level 2 fallback: raw dump + context */
+            response.RawDefinition = rawDef;
+            response.MacroDefinitions = _dataParser.GetMacroDefinitions("MON", "ANIMATED_MON", "ENLARGED_MON", "ENLARGED_ANIMATED_MON", "GENERAL_MON", "LVL", "A", "ATTK", "SIZ", "STATS");
+            response.StructDefinitions = _dataParser.GetStructDefinitions("permonst", "attack");
+            response.Message = $"Could not parse structured stats for '{name}'. Raw source and context provided for manual interpretation.";
+            PopulateFlagDescriptions(response, rawDef);
+
+            return response;
+        }
+
+        public IEnumerable<string> SearchMonsters(string query)
+        {
+            var doc = _documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("src\\monst.c", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("src/monst.c", StringComparison.OrdinalIgnoreCase));
+            if (doc == null) return Enumerable.Empty<string>();
+
+            var results = new List<string>();
+            var regex = new Regex(@"^\s*(?:ANIMATED_MON|ENLARGED_MON|ENLARGED_ANIMATED_MON|MON)\(\s*""([^""]+)""", RegexOptions.IgnoreCase);
+            foreach (var line in doc.ContentLines)
+            {
+                var m = regex.Match(line);
+                if (m.Success)
+                {
+                    string monName = m.Groups[1].Value;
+                    if (monName.Contains(query, StringComparison.OrdinalIgnoreCase))
+                    {
+                        results.Add(monName);
+                    }
+                }
+            }
+            return results;
+        }
+
+        public StatsResponse<ItemStats> GetItemStats(string name)
+        {
+            var response = new StatsResponse<ItemStats>();
+            var doc = _documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("src\\objects.c", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("src/objects.c", StringComparison.OrdinalIgnoreCase));
+            if (doc == null)
+            {
+                response.Error = "src/objects.c is not in the source code index. Ensure the GnollHack repository is indexed. Use item_lookup or wiki_search as a fallback.";
+                return response;
+            }
+
+            int matchLine = -1;
+            string escapedName = Regex.Escape(name);
+            var nameRegex = new Regex($@"^\s*(?:WEAPON|ARMOR|POTION|SCROLL|SPELL|WAND|RING|AMULET|TOOL|GEM|ROCK|COIN|MISCELLANEOUSITEM|SUIT|HELM|CLOAK|SHIELD|GLOVES|BOOTS|SHIRT|ROBE|BRACERS|WEAPONSHIELD|WEAPONBOOTS|WEAPONGLOVES|DRGN_ARMR|FOOD|REAGENT|CHARGEDRING|SPELLTOOL|CONTAINER|WEPTOOL|BOW|PROJECTILE|GENERAL_[A-Z_]+)\(\s*""{escapedName}""", RegexOptions.IgnoreCase);
+
+            for (int i = 0; i < doc.ContentLines.Length; i++)
+            {
+                if (nameRegex.IsMatch(doc.ContentLines[i]))
+                {
+                    matchLine = i;
+                    break;
+                }
+            }
+
+            if (matchLine == -1)
+            {
+                response.Error = $"No item named '{name}' found in the game data. Try item_lookup or wiki_search for partial matches, or check the spelling.";
+                return response;
+            }
+
+            var extraction = CLexer.ExtractParenBlock(doc.ContentLines, matchLine);
+            if (extraction == null)
+            {
+                response.Error = "Failed to parse item definition block.";
+                return response;
+            }
+
+            string rawDef = doc.ContentLines[matchLine].TrimStart() + "\n" + string.Join("\n", doc.ContentLines.Skip(matchLine + 1).Take(extraction.EndLine - matchLine));
+
+            /* Level 2 for items — raw dump + context (structured parsing requires per-macro handlers) */
+            response.RawDefinition = rawDef;
+            response.MacroDefinitions = _dataParser.GetMacroDefinitions("OBJECT", "OBJ", "BITS", "WEAPON", "ARMOR", "POTION", "SCROLL", "SPELL", "WAND", "RING", "AMULET", "TOOL", "GEM", "ROCK", "COIN", "MISCELLANEOUSITEM", "FOOD", "REAGENT", "BOW", "PROJECTILE");
+            response.StructDefinitions = _dataParser.GetStructDefinitions("objclass");
+            response.Message = $"Raw source and context provided for '{name}'. Item parsing uses many macro formats; interpret using the macro definitions provided.";
+            PopulateFlagDescriptions(response, rawDef);
+
+            return response;
+        }
+
+        public IEnumerable<string> SearchItems(string query)
+        {
+            var doc = _documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("src\\objects.c", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("src/objects.c", StringComparison.OrdinalIgnoreCase));
+            if (doc == null) return Enumerable.Empty<string>();
+
+            var results = new List<string>();
+            var regex = new Regex(@"^\s*(?:WEAPON|ARMOR|POTION|SCROLL|SPELL|WAND|RING|AMULET|TOOL|GEM|ROCK|COIN|MISCELLANEOUSITEM|SUIT|HELM|CLOAK|SHIELD|GLOVES|BOOTS|SHIRT|ROBE|BRACERS|WEAPONSHIELD|WEAPONBOOTS|WEAPONGLOVES|DRGN_ARMR|FOOD|REAGENT|CHARGEDRING|SPELLTOOL|CONTAINER|WEPTOOL|BOW|PROJECTILE|GENERAL_[A-Z_]+)\(\s*""([^""]+)""", RegexOptions.IgnoreCase);
+            foreach (var line in doc.ContentLines)
+            {
+                var m = regex.Match(line);
+                if (m.Success)
+                {
+                    string itemName = m.Groups[1].Value;
+                    if (itemName.Contains(query, StringComparison.OrdinalIgnoreCase))
+                    {
+                        results.Add(itemName);
+                    }
+                }
+            }
+            return results;
+        }
+
+        /* --- Helper methods for monster stats Level 1 parsing --- */
+
+        /// <summary>
+        /// Parse a sub-macro like LVL(3, 9, 8, 0, 0, -4) into named fields.
+        /// </summary>
+        private static void ParseSubMacro(string token, Dictionary<string, object> fields, string[] fieldNames)
+        {
+            string inner = ExtractInnerArgs(token);
+            var args = SplitTopLevelCommas(inner);
+            for (int i = 0; i < fieldNames.Length && i < args.Count; i++)
+            {
+                string val = args[i].Trim();
+                fields[fieldNames[i]] = TryParseInt(val);
+            }
+        }
+
+        /// <summary>
+        /// Parse geno flags like (G_GENO | G_LGROUP | 2) into a list of flag names + frequency.
+        /// </summary>
+        private static void ParseGenoFlags(string token, Dictionary<string, object> fields)
+        {
+            string inner = token.Trim();
+            /* Remove outer parens if present */
+            if (inner.StartsWith("(") && inner.EndsWith(")"))
+                inner = inner.Substring(1, inner.Length - 2).Trim();
+
+            var parts = inner.Split('|').Select(p => p.Trim()).Where(p => !string.IsNullOrEmpty(p)).ToList();
+            var flagNames = new List<string>();
+            int? frequency = null;
+            foreach (var part in parts)
+            {
+                if (int.TryParse(part, out int freq))
+                    frequency = freq;
+                else
+                    flagNames.Add(part);
+            }
+            fields["geno"] = flagNames;
+            if (frequency.HasValue)
+                fields["geno_frequency"] = frequency.Value;
+        }
+
+        /// <summary>
+        /// Parse A(ATTK(...), ATTK(...), ..., NO_ATTK, ...) into mattk array.
+        /// </summary>
+        private static void ParseAttacks(string token, Dictionary<string, object> fields)
+        {
+            string inner = ExtractInnerArgs(token);
+            var attackTokens = SplitTopLevelCommas(inner);
+            var attacks = new List<Dictionary<string, object>>();
+            var attackFields = new[] { "aatyp", "adtyp", "damn", "damd", "damp", "mcadj", "mlevel", "range", "aflags", "action_tile" };
+
+            foreach (var atkToken in attackTokens)
+            {
+                string trimmed = atkToken.Trim();
+                if (trimmed == "NO_ATTK") continue;
+                if (trimmed.StartsWith("ATTK(", StringComparison.OrdinalIgnoreCase))
+                {
+                    string atkInner = ExtractInnerArgs(trimmed);
+                    var atkArgs = SplitTopLevelCommas(atkInner);
+                    var attack = new Dictionary<string, object>();
+                    for (int i = 0; i < attackFields.Length && i < atkArgs.Count; i++)
+                    {
+                        string val = atkArgs[i].Trim();
+                        /* aflags often have UL suffix */
+                        if (val.EndsWith("UL", StringComparison.OrdinalIgnoreCase))
+                            val = val.Substring(0, val.Length - 2);
+                        attack[attackFields[i]] = TryParseInt(val);
+                    }
+                    attacks.Add(attack);
+                }
+            }
+            fields["mattk"] = attacks;
+        }
+
+        /// <summary>
+        /// Parse a flag field like "M1_HUMANOID | M1_CARNIVORE" into a list, or a simple value.
+        /// </summary>
+        private static object ParseFlagField(string token)
+        {
+            string trimmed = token.Trim();
+            if (trimmed.Contains('|'))
+            {
+                var flags = trimmed.Split('|').Select(p => p.Trim()).Where(p => !string.IsNullOrEmpty(p)).ToList();
+                return flags;
+            }
+            return trimmed;
+        }
+
+        /// <summary>
+        /// Extract the inner arguments from a macro call: "LVL(3, 9, 8)" -> "3, 9, 8"
+        /// </summary>
+        private static string ExtractInnerArgs(string token)
+        {
+            int openParen = token.IndexOf('(');
+            if (openParen < 0) return token;
+            int closeParen = token.LastIndexOf(')');
+            if (closeParen <= openParen) return token.Substring(openParen + 1);
+            return token.Substring(openParen + 1, closeParen - openParen - 1);
+        }
+
+        /// <summary>
+        /// Split by commas at depth 0 (respecting nested parens).
+        /// </summary>
+        private static List<string> SplitTopLevelCommas(string text)
+        {
+            var result = new List<string>();
+            int depth = 0;
+            int start = 0;
+            for (int i = 0; i < text.Length; i++)
+            {
+                char c = text[i];
+                if (c == '(' || c == '{') depth++;
+                else if (c == ')' || c == '}') depth--;
+                else if (c == ',' && depth == 0)
+                {
+                    result.Add(text.Substring(start, i - start));
+                    start = i + 1;
+                }
+            }
+            if (start < text.Length) result.Add(text.Substring(start));
+            return result;
+        }
+
+        /// <summary>
+        /// Try to parse a string as integer; return the int if successful, otherwise the trimmed string.
+        /// </summary>
+        private static object TryParseInt(string val)
+        {
+            string trimmed = val.Trim();
+            if (int.TryParse(trimmed, out int intVal)) return intVal;
+            return trimmed;
+        }
+
+        /// <summary>
+        /// Populate flag_descriptions from tokens list. Uses flag name as own description if not in dictionary (Fix #6).
+        /// </summary>
+        private void PopulateFlagDescriptions<T>(StatsResponse<T> response, List<string> tokens)
+        {
+            foreach (var token in tokens)
+            {
+                foreach (var part in token.Split('|', '(', ')', ' ', '\t', ','))
+                {
+                    string p = part.Trim();
+                    if (string.IsNullOrEmpty(p)) continue;
+                    /* Only include tokens that look like flag constants (contain underscore and uppercase) */
+                    if (!p.Contains('_') || p.All(c => char.IsDigit(c) || c == '-')) continue;
+                    if (_flagDescriptions.TryGetValue(p, out var desc))
+                        response.FlagDescriptions[p] = desc;
+                    else if (Regex.IsMatch(p, @"^[A-Z][A-Z0-9_]+$"))
+                        response.FlagDescriptions[p] = p; /* Flag name as own description */
+                }
+            }
+        }
+
+        /// <summary>
+        /// Populate flag_descriptions from raw definition string.
+        /// </summary>
+        private void PopulateFlagDescriptions<T>(StatsResponse<T> response, string rawDefinition)
+        {
+            foreach (var part in rawDefinition.Split('|', '(', ')', ',', ' ', '\t', '\n', '\r'))
+            {
+                string p = part.Trim();
+                if (string.IsNullOrEmpty(p)) continue;
+                if (!p.Contains('_') || p.All(c => char.IsDigit(c) || c == '-')) continue;
+                if (_flagDescriptions.TryGetValue(p, out var desc))
+                    response.FlagDescriptions[p] = desc;
+                else if (Regex.IsMatch(p, @"^[A-Z][A-Z0-9_]+$"))
+                    response.FlagDescriptions[p] = p;
+            }
         }
 
         private class SourceDocument
