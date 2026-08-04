@@ -637,7 +637,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.cdr.detectChanges();
       } catch(e) {}
     } else if (evt.type === 'done') {
-      this.debugService.log(`[Frontend] done, streamingMessage.length=${this.streamingMessage.length}`);
+      const hasThinking = this.streamingMessage.includes('ai-thought');
+      this.debugService.log(`[Frontend] done: ${this.streamingMessage.length} chars, hasThinkingText=${hasThinking}, toolCalls=${this.streamingToolCalls.length}, mode=${this.showThoughtsAndTools}`);
       if (this.isStreaming) {
         if (this.isThinkingActive) {
             this.isThinkingActive = false;
