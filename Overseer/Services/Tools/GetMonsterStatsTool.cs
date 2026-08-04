@@ -1,15 +1,20 @@
 using System.Text.Json;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Configuration;
 
 namespace Overseer.Services.Tools
 {
     public class GetMonsterStatsTool : IToolHandler
     {
         private readonly SourceCodeService _sourceCodeService;
+        private readonly int _truncationThreshold;
+        private readonly int _hardLimit;
 
-        public GetMonsterStatsTool(SourceCodeService sourceCodeService)
+        public GetMonsterStatsTool(SourceCodeService sourceCodeService, IConfiguration configuration)
         {
             _sourceCodeService = sourceCodeService;
+            _truncationThreshold = configuration.GetValue<int>("Tools:get_monster_stats:TruncationThreshold", 9900);
+            _hardLimit = configuration.GetValue<int>("Tools:get_monster_stats:HardLimit", 10000);
         }
 
         public string ToolName => "get_monster_stats";
@@ -49,7 +54,7 @@ namespace Overseer.Services.Tools
             
             string jsonResult = JsonSerializer.Serialize(result, options);
             
-            if (jsonResult.Length > 9900)
+            if (jsonResult.Length > _truncationThreshold)
             {
                 if (result.RawDefinition != null)
                 {
@@ -76,9 +81,9 @@ namespace Overseer.Services.Tools
                 }
             }
             
-            if (jsonResult.Length > 10000)
+            if (jsonResult.Length > _hardLimit)
             {
-                return Task.FromResult(new ToolResult { Success = false, ErrorMessage = "Result too large (over 10000 chars) even after minification. Try viewing the source code file directly." });
+                return Task.FromResult(new ToolResult { Success = false, ErrorMessage = $"Result too large (over {_hardLimit} chars) even after minification. Try viewing the source code file directly." });
             }
             
             return Task.FromResult(new ToolResult { Success = true, Content = jsonResult });

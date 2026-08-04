@@ -16,6 +16,10 @@ namespace Overseer.Services.Tools
     {
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly IConfiguration _configuration;
+        private readonly int _configMaxResults;
+        private readonly int _batchSize;
+        private readonly int _maxBatches;
+        private readonly int _contextPadding;
 
         public string ToolName => "search_server_dumplogs";
         public string Description { get; set; } = "Search server dumplogs for a specific term.";
@@ -28,6 +32,10 @@ namespace Overseer.Services.Tools
         {
             _scopeFactory = scopeFactory;
             _configuration = configuration;
+            _configMaxResults = configuration.GetValue<int>("Tools:search_server_dumplogs:MaxResults", 5);
+            _batchSize = configuration.GetValue<int>("Tools:search_server_dumplogs:BatchSize", 100);
+            _maxBatches = configuration.GetValue<int>("Tools:search_server_dumplogs:MaxBatches", 5);
+            _contextPadding = configuration.GetValue<int>("Tools:search_server_dumplogs:ContextPadding", 100);
             ParameterSchema = JsonDocument.Parse(@"
             {
                 ""type"": ""object"",
@@ -57,7 +65,7 @@ namespace Overseer.Services.Tools
                 int maxResults = 3;
                 if (parameters.TryGetProperty("max_results", out var maxResultsProp) && maxResultsProp.TryGetInt32(out int maxParsed))
                 {
-                    maxResults = Math.Clamp(maxParsed, 1, 5);
+                    maxResults = Math.Clamp(maxParsed, 1, _configMaxResults);
                 }
 
                 string dumplogBasePath = _configuration["DumpLogPath"] ?? "";
@@ -71,8 +79,8 @@ namespace Overseer.Services.Tools
 
                 // We want to search the most recent games first. We'll grab a chunk of recent games and search them.
                 // We'll iterate in chunks until we find enough matches or hit a reasonable limit.
-                int batchSize = 100;
-                int maxBatches = 5; // Look at up to 500 recent games
+                int batchSize = _batchSize;
+                int maxBatches = _maxBatches; // Look at up to batchSize * maxBatches recent games
                 var results = new List<string>();
 
                 for (int batch = 0; batch < maxBatches; batch++)
@@ -103,8 +111,8 @@ namespace Overseer.Services.Tools
                                 if (matchIndex >= 0)
                                 {
                                     // Extract an excerpt
-                                    int start = Math.Max(0, matchIndex - 100);
-                                    int end = Math.Min(content.Length, matchIndex + searchTerm.Length + 100);
+                                    int start = Math.Max(0, matchIndex - _contextPadding);
+                                    int end = Math.Min(content.Length, matchIndex + searchTerm.Length + _contextPadding);
                                     string excerpt = content.Substring(start, end - start);
                                     
                                     excerpt = excerpt.Replace("\n", " ").Replace("\r", "");

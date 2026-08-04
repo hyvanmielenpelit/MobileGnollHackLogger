@@ -49,6 +49,7 @@ namespace Overseer.Services
             "src/monst.c", "src/objects.c", "src/animdef.c", "util/makedefs.c"
         };
         private Dictionary<string, DateTime> _lastMakedefsSourceTimestamps = new();
+        private readonly int _maxFunctionBodyLines;
         
         public SourceCodeService(IConfiguration configuration, ILogger<SourceCodeService> logger)
         {
@@ -60,6 +61,7 @@ namespace Overseer.Services
             {
                 _maxFileSizeKB = 800;
             }
+            _maxFunctionBodyLines = configuration.GetValue<int>("Tools:get_function_definition:MaxLinesPerChunk", 150);
         }
         
         public Task StartAsync(CancellationToken cancellationToken)
@@ -793,7 +795,7 @@ namespace Overseer.Services
             var finalSb = new System.Text.StringBuilder();
             finalSb.AppendLine($"--- {matchDoc.RelativePath}:L{extractStart + 1}-L{extractEnd + 1} ({name}, {totalLines} lines) ---");
             
-            int maxLines = 150; // Provide up to 150 lines per response chunk to fit in 3000 chars roughly
+            int maxLines = _maxFunctionBodyLines;
             int outputCount = 0;
             
             for (int i = startOutputLine; i < totalLines; i++)

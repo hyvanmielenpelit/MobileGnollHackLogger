@@ -11,6 +11,7 @@ namespace Overseer.Services.Tools
     {
         private readonly SourceCodeService _sourceCodeService;
         private readonly string _sourceCodePath;
+        private readonly int _defaultLineCount;
 
         public string ToolName => "source_code_view";
         public string Description { get; set; } = "View a section of a GnollHack source code file by line range.";
@@ -23,6 +24,7 @@ namespace Overseer.Services.Tools
         {
             _sourceCodeService = sourceCodeService;
             _sourceCodePath = Path.GetFullPath(configuration["SourceCodePath"] ?? @"c:\gnollhack-repository");
+            _defaultLineCount = configuration.GetValue<int>("Tools:source_code_view:LineCount", 50);
 
             ParameterSchema = JsonDocument.Parse(@"
             {
@@ -96,7 +98,7 @@ namespace Overseer.Services.Tools
                 return Task.FromResult(new ToolResult { Success = false, ErrorMessage = "Missing start_line or search_term parameter" });
             }
 
-            int lineCount = 50;
+            int lineCount = _defaultLineCount;
             if (parameters.TryGetProperty("line_count", out var lineCountElem) && lineCountElem.ValueKind == JsonValueKind.Number)
             {
                 lineCount = lineCountElem.GetInt32();

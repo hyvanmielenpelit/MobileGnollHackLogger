@@ -3,12 +3,14 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Configuration;
 
 namespace Overseer.Services.Tools
 {
     public class WikiSearchTool : IToolHandler
     {
         private readonly WikiService _wikiService;
+        private readonly int _defaultMaxResults;
 
         public string ToolName => "wiki_search";
         public string Description { get; set; } = "Search the GnollHack specific wiki for information.";
@@ -17,9 +19,10 @@ namespace Overseer.Services.Tools
 
         public JsonElement ParameterSchema { get; }
 
-        public WikiSearchTool(WikiService wikiService)
+        public WikiSearchTool(WikiService wikiService, IConfiguration configuration)
         {
             _wikiService = wikiService;
+            _defaultMaxResults = configuration.GetValue<int>("Tools:wiki_search:MaxResults", 3);
             ParameterSchema = JsonDocument.Parse(@"
             {
                 ""type"": ""object"",
@@ -45,7 +48,7 @@ namespace Overseer.Services.Tools
                 return Task.FromResult(new ToolResult { Success = false, ErrorMessage = "Missing query parameter" });
             }
 
-            int maxResults = 3;
+            int maxResults = _defaultMaxResults;
             if (parameters.TryGetProperty("max_results", out var maxResElem) && maxResElem.ValueKind == JsonValueKind.Number)
             {
                 maxResults = maxResElem.GetInt32();

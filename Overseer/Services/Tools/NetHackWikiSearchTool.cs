@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Configuration;
 
 namespace Overseer.Services.Tools
 {
@@ -13,8 +14,9 @@ namespace Overseer.Services.Tools
     {
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IMemoryCache _cache;
-        
-        private const int MaxCallsPerMinute = 10;
+        private readonly int _maxCallsPerMinute;
+        private readonly int _maxResults;
+        private readonly int _cacheMinutes;
 
         public string ToolName => "nethack_wiki_search";
         public string Description { get; set; } = "Search the general NetHack wiki for mechanics, monsters, and items not specific to GnollHack.";
@@ -23,10 +25,13 @@ namespace Overseer.Services.Tools
 
         public JsonElement ParameterSchema { get; }
 
-        public NetHackWikiSearchTool(IHttpClientFactory httpClientFactory, IMemoryCache cache)
+        public NetHackWikiSearchTool(IHttpClientFactory httpClientFactory, IMemoryCache cache, IConfiguration configuration)
         {
             _httpClientFactory = httpClientFactory;
             _cache = cache;
+            _maxCallsPerMinute = configuration.GetValue<int>("Tools:nethack_wiki_search:MaxCallsPerMinute", 10);
+            _maxResults = configuration.GetValue<int>("Tools:nethack_wiki_search:MaxResults", 3);
+            _cacheMinutes = configuration.GetValue<int>("Tools:nethack_wiki_search:CacheMinutes", 60);
             ParameterSchema = JsonDocument.Parse(@"
             {
                 ""type"": ""object"",
@@ -54,7 +59,7 @@ namespace Overseer.Services.Tools
             int maxResults = 1;
             if (parameters.TryGetProperty("max_results", out var maxResElem) && maxResElem.ValueKind == JsonValueKind.Number)
             {
-                maxResults = Math.Clamp(maxResElem.GetInt32(), 1, 3);
+                maxResults = Math.Clamp(maxResElem.GetInt32(), 1, _maxResults);
             }
 
             var rateLimitKey = $"nhwiki_rate_{context.SessionId}";
@@ -65,7 +70,7 @@ namespace Overseer.Services.Tools
                 return 0;
             });
 
-            if (currentCalls >= MaxCallsPerMinute)
+            if (currentCalls >= _maxCallsPerMinute)
             {
                 return new ToolResult { Success = false, ErrorMessage = "Rate limit exceeded. Please wait a minute before querying the external wiki again." };
             }
@@ -143,7 +148,7 @@ namespace Overseer.Services.Tools
                         _cache.Set(cacheKey, resultContent, new MemoryCacheEntryOptions
                         {
                             Size = resultContent.Length,
-                            AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(60)
+                            AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(_cacheMinutes)
                         });
                         
                         return new ToolResult { Success = true, Content = resultContent };

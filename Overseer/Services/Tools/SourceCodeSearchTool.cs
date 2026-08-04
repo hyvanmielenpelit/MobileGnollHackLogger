@@ -11,6 +11,8 @@ namespace Overseer.Services.Tools
     {
         private readonly SourceCodeService _sourceCodeService;
         private readonly int _maxResultLength;
+        private readonly int _defaultMaxResults;
+        private readonly int _defaultContextLines;
 
         public string ToolName => "source_code_search";
         public string Description { get; set; } = "Search the GnollHack C source code for functions, macros, constants, or game mechanic implementations.";
@@ -25,8 +27,11 @@ namespace Overseer.Services.Tools
             
             if (!int.TryParse(configuration["MaxSourceResultLength"], out _maxResultLength))
             {
-                _maxResultLength = 3000;
+                _maxResultLength = 100000;
             }
+
+            _defaultMaxResults = configuration.GetValue<int>("Tools:source_code_search:MaxResults", 10);
+            _defaultContextLines = configuration.GetValue<int>("Tools:source_code_search:ContextLines", 5);
 
             ParameterSchema = JsonDocument.Parse(@"
             {
@@ -64,7 +69,7 @@ namespace Overseer.Services.Tools
                 fileFilter = fileFilterElem.GetString() ?? "";
             }
 
-            int maxResults = 10;
+            int maxResults = _defaultMaxResults;
             if (parameters.TryGetProperty("max_results", out var maxResElem) && maxResElem.ValueKind == JsonValueKind.Number)
             {
                 maxResults = maxResElem.GetInt32();
@@ -82,7 +87,7 @@ namespace Overseer.Services.Tools
                 filenamesOnly = filenamesOnlyElem.GetBoolean();
             }
 
-            int contextLines = 5;
+            int contextLines = _defaultContextLines;
             if (parameters.TryGetProperty("context_lines", out var contextLinesElem) && contextLinesElem.ValueKind == JsonValueKind.Number)
             {
                 contextLines = contextLinesElem.GetInt32();
