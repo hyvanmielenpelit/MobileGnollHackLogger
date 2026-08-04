@@ -126,7 +126,7 @@
           </ng-container>
         </div>
         <div *ngIf="msg.toolCalls && msg.toolCalls.length > 0 && (showThoughtsAndTools === 1 || showThoughtsAndTools === 3)" class="tool-calls-container">
-          <div *ngFor="let tc of msg.toolCalls" class="tool-call" [ngClass]="tc.status">
+          <div *ngFor="let tc of msg.toolCalls; let tIndex = index" class="tool-call" [ngClass]="tc.status">
             <div class="tool-call-header">
               <span class="tool-icon">🛠️</span>
               <span class="tool-name">{{ tc.displayName || tc.name }}</span>
@@ -137,7 +137,13 @@
             </div>
             <div class="tool-call-result" *ngIf="tc.status === 'completed'">
               <details>
-                <summary>Result</summary>
+                <summary>
+                  <span>Result</span>
+                  <button class="tool-copy-btn" (click)="copyToolResult(tc.result, i + '-' + tIndex, $event)" title="Copy Result">
+                    <span *ngIf="copiedToolCallId === (i + '-' + tIndex)">✅</span>
+                    <svg *ngIf="copiedToolCallId !== (i + '-' + tIndex)" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                  </button>
+                </summary>
                 <pre>{{ tc.result }}</pre>
               </details>
             </div>
@@ -176,7 +182,7 @@
           </div>
         </div>
         <div *ngIf="streamingToolCalls.length > 0 && (showThoughtsAndTools === 1 || showThoughtsAndTools === 3)" class="tool-calls-container">
-          <div *ngFor="let tc of streamingToolCalls" class="tool-call" [ngClass]="tc.status">
+          <div *ngFor="let tc of streamingToolCalls; let tIndex = index" class="tool-call" [ngClass]="tc.status">
             <div class="tool-call-header">
               <span class="tool-icon">🛠️</span>
               <span class="tool-name">{{ tc.displayName || tc.name }}</span>
@@ -187,7 +193,13 @@
             </div>
             <div class="tool-call-result" *ngIf="tc.status === 'completed'">
               <details>
-                <summary>Result</summary>
+                <summary>
+                  <span>Result</span>
+                  <button class="tool-copy-btn" (click)="copyToolResult(tc.result, 'stream-' + tIndex, $event)" title="Copy Result">
+                    <span *ngIf="copiedToolCallId === ('stream-' + tIndex)">✅</span>
+                    <svg *ngIf="copiedToolCallId !== ('stream-' + tIndex)" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                  </button>
+                </summary>
                 <pre>{{ tc.result }}</pre>
               </details>
             </div>

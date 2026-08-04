@@ -43,12 +43,13 @@ namespace Overseer.Services.Tools
             var options = new JsonSerializerOptions
             {
                 WriteIndented = true,
-                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
             };
             
             string jsonResult = JsonSerializer.Serialize(result, options);
             
-            if (jsonResult.Length > 2900)
+            if (jsonResult.Length > 9900)
             {
                 if (result.RawDefinition != null)
                 {
@@ -75,9 +76,9 @@ namespace Overseer.Services.Tools
                 }
             }
             
-            if (jsonResult.Length > 3000)
+            if (jsonResult.Length > 10000)
             {
-                return Task.FromResult(new ToolResult { Success = false, ErrorMessage = "Result too large (over 3000 chars) even after minification. Try viewing the source code file directly." });
+                return Task.FromResult(new ToolResult { Success = false, ErrorMessage = "Result too large (over 10000 chars) even after minification. Try viewing the source code file directly." });
             }
             
             return Task.FromResult(new ToolResult { Success = true, Content = jsonResult });

@@ -137,6 +137,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   
   copiedMsgIndex: number | null = null;
   copiedStreamMsg = false;
+  copiedToolCallId: string | null = null;
   
   previewAttachment: any = null;
   
@@ -1178,6 +1179,21 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       }
     } catch (err) {
       console.error('Failed to copy text: ', err);
+    }
+  }
+
+  async copyToolResult(text: string | undefined | null, tcId: string, event: Event) {
+    event.stopPropagation();
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      this.copiedToolCallId = tcId;
+      setTimeout(() => {
+        if (this.copiedToolCallId === tcId) this.copiedToolCallId = null;
+        this.cdr.detectChanges();
+      }, 2000);
+    } catch (err) {
+      console.error('Failed to copy tool result: ', err);
     }
   }
 
