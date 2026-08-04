@@ -55,7 +55,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     'get_constants': 'Searching constants',
     'get_knowledge_article': 'Searching knowledge base',
     'wiki_view': 'Viewing Wiki page',
-    'search_definitions': 'Searching definitions'
+    'search_definitions': 'Searching definitions',
+    'get_function_definition': 'Reading function definition',
+    'get_item_stats': 'Reading item stats',
+    'get_monster_stats': 'Reading monster stats'
   };
 
   private buildToolArgsText(name: string, args: any): string {
