@@ -18,6 +18,12 @@
     gap: 15px; /* Use gap instead of margin on button */
   }
 
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
   h2 {
     margin: 0;
   }

@@ -4,7 +4,10 @@
       <button (click)="goBack()" class="nav-back-link">&larr; Back</button>
       <h2>Debug Log</h2>
     </div>
-    <button (click)="clearLogs()" class="nav-back-link btn-clear">Clear</button>
+    <div class="header-right">
+      <button (click)="copyAllLogs()" class="nav-back-link">{{ isCopiedAll ? 'Copied!' : 'Copy All' }}</button>
+      <button (click)="clearLogs()" class="nav-back-link btn-clear">Clear</button>
+    </div>
   </div>
   <div class="log-viewer gh-main-container">
     <div *ngIf="logs.length === 0" class="empty">No debug logs yet.</div>
