@@ -250,6 +250,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     return level.charAt(0).toUpperCase() + level.slice(1);
   }
 
+
+
   @HostListener('document:click', ['$event'])
   onDocumentClick(event: MouseEvent) {
     if (this.isModelDropdownOpen) {

@@ -660,6 +660,57 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
   border-radius: 4px;
 }
 
+/* Input Area Top */
+.input-area-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 5px;
+
+  .custom-model-selector {
+    margin-bottom: 0;
+  }
+}
+
+.setting-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  user-select: none;
+  white-space: nowrap;
+  
+  svg {
+    margin-right: 4px;
+  }
+}
+
+.badge-none {
+  background: rgba(158, 158, 158, 0.1);
+  border: 1px solid rgba(158, 158, 158, 0.3);
+  color: #e0e0e0;
+  svg { opacity: 0.7; }
+}
+
+.badge-tools {
+  background: rgba(41, 182, 246, 0.15);
+  border: 1px solid rgba(41, 182, 246, 0.4);
+  color: #81d4fa;
+}
+
+.badge-text {
+  background: rgba(171, 71, 188, 0.15);
+  border: 1px solid rgba(171, 71, 188, 0.4);
+  color: #ce93d8;
+}
+
+.badge-all {
+  background: rgba(255, 167, 38, 0.15);
+  border: 1px solid rgba(255, 167, 38, 0.4);
+  color: #ffcc80;
+}
 
 /* Custom Model Selector */
 .custom-model-selector {

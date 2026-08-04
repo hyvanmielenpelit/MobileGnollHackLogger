@@ -217,30 +217,51 @@
         </div>
       </div>
       <div class="input-area">
-        <div *ngIf="hasModel" class="custom-model-selector model-selector-wrapper">
-          <ng-container *ngIf="allowMultipleModels && userModels.length > 1; else singleModelView">
-            <button class="selector-trigger" (click)="toggleModelDropdown($event)" [class.open]="isModelDropdownOpen">
-              <span class="model-name">{{ selectedModel?.displayName || selectedModel?.modelId || 'Select Model' }}</span>
-              <span class="thinking-badge" *ngIf="selectedModel?.thinkingLevel">{{ formatThinkingLevel(selectedModel?.thinkingLevel) }}</span>
-              <span class="provider-badge">{{ selectedModel?.provider }}</span>
-              <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-            </button>
-            
-            <div class="selector-dropdown" *ngIf="isModelDropdownOpen">
-              <div class="model-option" *ngFor="let model of userModels" (click)="selectModel(model.id)" [class.selected]="model.id === selectedUserModelId">
-                <span class="model-name">{{ model.displayName || model.modelId }}</span>
-                <span class="thinking-badge" *ngIf="model.thinkingLevel">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
-                <span class="provider-badge">{{ model.provider }}</span>
+        <div class="input-area-top">
+          <div *ngIf="hasModel" class="custom-model-selector model-selector-wrapper">
+            <ng-container *ngIf="allowMultipleModels && userModels.length > 1; else singleModelView">
+              <button class="selector-trigger" (click)="toggleModelDropdown($event)" [class.open]="isModelDropdownOpen">
+                <span class="model-name">{{ selectedModel?.displayName || selectedModel?.modelId || 'Select Model' }}</span>
+                <span class="thinking-badge" *ngIf="selectedModel?.thinkingLevel">{{ formatThinkingLevel(selectedModel?.thinkingLevel) }}</span>
+                <span class="provider-badge">{{ selectedModel?.provider }}</span>
+                <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </button>
+              
+              <div class="selector-dropdown" *ngIf="isModelDropdownOpen">
+                <div class="model-option" *ngFor="let model of userModels" (click)="selectModel(model.id)" [class.selected]="model.id === selectedUserModelId">
+                  <span class="model-name">{{ model.displayName || model.modelId }}</span>
+                  <span class="thinking-badge" *ngIf="model.thinkingLevel">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
+                  <span class="provider-badge">{{ model.provider }}</span>
+                </div>
               </div>
-            </div>
-          </ng-container>
-          <ng-template #singleModelView>
-            <div class="single-model-display">
-              <span class="model-name">{{ selectedModel?.displayName || selectedModel?.modelId || singleModelInfo?.modelId || 'Model' }}</span>
-              <span class="thinking-badge" *ngIf="selectedModel?.thinkingLevel || singleModelInfo?.thinkingLevel">{{ formatThinkingLevel(selectedModel?.thinkingLevel || singleModelInfo?.thinkingLevel) }}</span>
-              <span class="provider-badge">{{ selectedModel?.provider || singleModelInfo?.provider }}</span>
-            </div>
-          </ng-template>
+            </ng-container>
+            <ng-template #singleModelView>
+              <div class="single-model-display">
+                <span class="model-name">{{ selectedModel?.displayName || selectedModel?.modelId || singleModelInfo?.modelId || 'Model' }}</span>
+                <span class="thinking-badge" *ngIf="selectedModel?.thinkingLevel || singleModelInfo?.thinkingLevel">{{ formatThinkingLevel(selectedModel?.thinkingLevel || singleModelInfo?.thinkingLevel) }}</span>
+                <span class="provider-badge">{{ selectedModel?.provider || singleModelInfo?.provider }}</span>
+              </div>
+            </ng-template>
+          </div>
+          
+          <div class="setting-indicator" *ngIf="showThoughtsAndTools !== undefined" [ngSwitch]="showThoughtsAndTools">
+            <span *ngSwitchCase="0" class="setting-badge badge-none" title="Show Thinking and Tool Use">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+              Nothing
+            </span>
+            <span *ngSwitchCase="1" class="setting-badge badge-tools" title="Show Thinking and Tool Use">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
+              Tool blocks
+            </span>
+            <span *ngSwitchCase="2" class="setting-badge badge-text" title="Show Thinking and Tool Use">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1"><line x1="21" y1="6" x2="3" y2="6"></line><line x1="21" y1="12" x2="3" y2="12"></line><line x1="21" y1="18" x2="3" y2="18"></line></svg>
+              Text
+            </span>
+            <span *ngSwitchCase="3" class="setting-badge badge-all" title="Show Thinking and Tool Use">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 12 12 17 22 12"></polyline><polyline points="2 17 12 22 22 17"></polyline></svg>
+              Tool blocks and text
+            </span>
+          </div>
         </div>
         
         <div class="input-row">
