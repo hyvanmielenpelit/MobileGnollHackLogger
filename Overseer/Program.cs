@@ -68,6 +68,7 @@ builder.Services.AddSingleton<SourceCodeService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<SourceCodeService>());
 builder.Services.AddSingleton<CryptoService>();
 builder.Services.AddScoped<ChatService>();
+builder.Services.AddSingleton<OngoingChatManager>();
 builder.Services.AddScoped<SettingsService>();
 builder.Services.AddSingleton<ModelMetadataService>();
 builder.Services.AddSingleton<RecommendedModelService>();

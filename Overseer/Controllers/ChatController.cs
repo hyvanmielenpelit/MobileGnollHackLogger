@@ -25,8 +25,10 @@ public class ChatController : ControllerBase
     private readonly IMemoryCache _memoryCache;
     private readonly EmailSender _emailSender;
     private readonly UserManager<ApplicationUser> _userManager;
+    private readonly OngoingChatManager _ongoingChatManager;
+    private readonly IServiceScopeFactory _scopeFactory;
 
-    public ChatController(ApplicationDbContext dbContext, ChatService chatService, IConfiguration configuration, IMemoryCache memoryCache, EmailSender emailSender, UserManager<ApplicationUser> userManager)
+    public ChatController(ApplicationDbContext dbContext, ChatService chatService, IConfiguration configuration, IMemoryCache memoryCache, EmailSender emailSender, UserManager<ApplicationUser> userManager, OngoingChatManager ongoingChatManager, IServiceScopeFactory scopeFactory)
     {
         _dbContext = dbContext;
         _chatService = chatService;
@@ -34,6 +36,8 @@ public class ChatController : ControllerBase
         _memoryCache = memoryCache;
         _emailSender = emailSender;
         _userManager = userManager;
+        _ongoingChatManager = ongoingChatManager;
+        _scopeFactory = scopeFactory;
     }
 
     [HttpGet("sessions")]
@@ -150,11 +154,16 @@ public class ChatController : ControllerBase
             };
         }).ToList();
 
+        var ongoing = _ongoingChatManager.TryGet(id);
+        
         return Ok(new
         {
             session.Id,
             session.Title,
-            Messages = formattedMessages
+            Messages = formattedMessages,
+            OngoingGeneration = ongoing != null ? new {
+                events = ongoing.AccumulatedEvents.Select(e => new { type = e.Type, data = e.Data }).ToList()
+            } : null
         });
     }
 
@@ -222,52 +231,65 @@ public class ChatController : ControllerBase
     }
 
     [HttpPost("send")]
-    public async Task Send([FromBody] SendMessageRequest request, CancellationToken cancellationToken)
+    public async Task<IActionResult> Send([FromBody] SendMessageRequest request)
     {
-        Response.ContentType = "text/event-stream";
-        Response.Headers.Append("Cache-Control", "no-cache");
-        Response.Headers.Append("Connection", "keep-alive");
-        
-        try 
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+        request.Message = System.Text.RegularExpressions.Regex.Replace(
+            request.Message ?? "", @"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]", "").Trim();
+
+        if (string.IsNullOrEmpty(request.Message) && (request.Attachments == null || request.Attachments.Count == 0))
         {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (string.IsNullOrEmpty(userId))
-            {
-                Response.StatusCode = 401;
-                return;
-            }
-
-            request.Message = System.Text.RegularExpressions.Regex.Replace(
-                request.Message ?? "", @"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]", "").Trim();
-
-            if (string.IsNullOrEmpty(request.Message) && (request.Attachments == null || request.Attachments.Count == 0))
-            {
-                Response.StatusCode = 400;
-                return;
-            }
-
-            await foreach (var chatEvent in _chatService.StreamMessageAsync(request.SessionId, request.Message, request.Attachments, userId, false, cancellationToken, request.UserModelId))
-            {
-                if (chatEvent.Type == "chunk")
-                {
-                    var formattedChunk = chatEvent.Data.Replace("\n", "\ndata: ");
-                    await Response.WriteAsync($"data: {formattedChunk}\n\n", cancellationToken);
-                }
-                else
-                {
-                    var formattedData = chatEvent.Data.Replace("\n", " ");
-                    await Response.WriteAsync($"event: {chatEvent.Type}\ndata: {formattedData}\n\n", cancellationToken);
-                }
-                await Response.Body.FlushAsync(cancellationToken);
-            }
+            return BadRequest("Message cannot be empty");
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+
+        long sessionId;
+        if (request.SessionId.HasValue && request.SessionId.Value > 0)
         {
-            // Send SSE error event so the client doesn't hang
-            var errorMessage = ex.Message.Replace("\n", " ");
-            await Response.WriteAsync($"event: error\ndata: {errorMessage}\n\n");
-            await Response.Body.FlushAsync();
+            sessionId = request.SessionId.Value;
+            var session = await _dbContext.ChatSession.FindAsync(sessionId);
+            if (session == null || session.AspNetUserId != userId)
+                return NotFound("Session not found");
         }
+        else
+        {
+            var session = new ChatSession
+            {
+                AspNetUserId = userId,
+                Title = request.Message.Length > 50 ? request.Message.Substring(0, 47) + "..." : request.Message,
+                CreatedUtc = DateTime.UtcNow,
+                LastMessageUtc = DateTime.UtcNow
+            };
+            _dbContext.ChatSession.Add(session);
+            await _dbContext.SaveChangesAsync();
+            sessionId = session.Id;
+        }
+
+        var cts = new CancellationTokenSource();
+        if (!_ongoingChatManager.TryStart(sessionId, cts, out _))
+            return Conflict("Generation already in progress for this session.");
+
+        var message = request.Message;
+        var attachments = request.Attachments;
+        var userModelId = request.UserModelId;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var chatService = scope.ServiceProvider.GetRequiredService<ChatService>();
+                await chatService.GenerateAndBroadcastMessageAsync(
+                    sessionId, message, attachments, userId, false, cts.Token, userModelId);
+            }
+            finally
+            {
+                _ongoingChatManager.Complete(sessionId);
+            }
+        });
+
+        return Ok(new { sessionId = sessionId });
     }
 
     [HttpPost("report")]

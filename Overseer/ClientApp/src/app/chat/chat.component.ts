@@ -492,6 +492,164 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     });
   }
 
+  processChatEvent(evt: any) {
+    if (evt.type === 'debug') {
+      this.debugService.log(`[Backend] ${evt.data}`);
+    } else if (evt.type === 'status') {
+      this.currentStatusText = evt.data;
+      this.cdr.detectChanges();
+    } else if (evt.type === 'thinking_chunk') {
+      this.isThinkingActive = true;
+      if (this.showThoughtsAndTools === 2 || this.showThoughtsAndTools === 3) {
+        if (!this.streamingMessage.endsWith('<div class="ai-thought">\n\n')) {
+          this.streamingMessage += '\n\n<div class="ai-thought">\n\n';
+        }
+        this.streamingMessage += evt.data;
+        this.cdr.detectChanges();
+        this.scrollToBottomClamped(false);
+      }
+    } else if (evt.type === 'chunk') {
+      if (this.isThinkingActive) {
+          this.isThinkingActive = false;
+          if (this.showThoughtsAndTools === 2 || this.showThoughtsAndTools === 3) {
+            this.streamingMessage += '\n\n</div>\n\n';
+          }
+      }
+      if (!this.isStreaming) {
+        this.isStreaming = true;
+        this.showSpinner = false;
+        this.currentStatusText = 'Receiving data (background task)...';
+      }
+      this.streamingMessage += evt.data;
+      this.cdr.detectChanges();
+      this.scrollToBottomClamped(false);
+    } else if (evt.type === 'error') {
+      this.currentStatusText = `Error: ${evt.data}`;
+      this.debugService.log(`[Backend Error] ${evt.data}`);
+      this.streamingMessage += `\n\n**Error:** ${evt.data}`;
+      this.showSpinner = false;
+      this.cdr.detectChanges();
+    } else if (evt.type === 'tool_start') {
+      try {
+        // Close any active thinking div
+        if (this.isThinkingActive) {
+            this.isThinkingActive = false;
+            if (this.showThoughtsAndTools === 2 || this.showThoughtsAndTools === 3) {
+              this.streamingMessage += '\n\n</div>\n\n';
+            }
+        }
+
+        // Handle preceding text based on showThoughtsAndTools setting
+        if (this.streamingMessage.length > 0) {
+          const lastDivIndex = this.streamingMessage.lastIndexOf('</div>');
+          const thoughtStartIndex = lastDivIndex >= 0 ? lastDivIndex + 6 : 0;
+          const thoughtText = this.streamingMessage.substring(thoughtStartIndex).trim();
+          if (thoughtText.length > 0) {
+            if (this.showThoughtsAndTools === 2 || this.showThoughtsAndTools === 3) {
+              // Wrap preceding text in ai-thought div
+              this.streamingMessage = this.streamingMessage.substring(0, thoughtStartIndex)
+                + '\n\n<div class="ai-thought">\n\n' + thoughtText + '\n\n</div>\n\n';
+            } else {
+              // Strip preceding text (it's thinking/reasoning that should be hidden)
+              this.streamingMessage = this.streamingMessage.substring(0, thoughtStartIndex);
+            }
+          }
+        }
+
+        const toolInfo = JSON.parse(evt.data);
+        const args = JSON.parse(toolInfo.arguments || '{}');
+        const displayName = ChatComponent.TOOL_DISPLAY_NAMES[toolInfo.name] || toolInfo.name;
+        const argsText = this.buildToolArgsText(toolInfo.name, args);
+        
+        this.streamingToolCalls.push({ 
+          id: toolInfo.id, 
+          name: toolInfo.name, 
+          status: 'running',
+          displayName,
+          argsText
+        });
+        this.cdr.detectChanges();
+        this.scrollToBottomClamped(false);
+      } catch(e) {}
+    } else if (evt.type === 'tool_result') {
+      try {
+        const toolInfo = JSON.parse(evt.data);
+        const tc = this.streamingToolCalls.find(t => t.id === toolInfo.id && t.status === 'running');
+        if (tc) {
+          tc.status = 'completed';
+          tc.result = toolInfo.result;
+        }
+        this.cdr.detectChanges();
+        this.scrollToBottomClamped(false);
+      } catch(e) {}
+    } else if (evt.type === 'tool_error') {
+      try {
+        const toolInfo = JSON.parse(evt.data);
+        const tc = this.streamingToolCalls.find(t => t.id === toolInfo.id && t.status === 'running');
+        if (tc) {
+          tc.status = 'error';
+          tc.error = toolInfo.error;
+        }
+        this.cdr.detectChanges();
+        this.scrollToBottomClamped(false);
+      } catch(e) {}
+    } else if (evt.type === 'tool_client_request') {
+      try {
+        const request: ToolClientRequest = JSON.parse(evt.data);
+        this.forwardToolRequest(request);
+      } catch (e) {
+        console.error('Failed to parse tool_client_request:', e);
+      }
+    } else if (evt.type === 'title_update') {
+      try {
+        const data = JSON.parse(evt.data);
+        const s = this.sessions.find(x => x.id === data.sessionId);
+        if (s) {
+          s.title = data.title;
+          this.cdr.detectChanges();
+        }
+      } catch(e) {}
+    } else if (evt.type === 'title_status') {
+      try {
+        const data = JSON.parse(evt.data);
+        if (data.sessionId !== this.currentSessionId) return;
+    
+        if (data.status === 'canceled' || data.status === '') {
+          this.isGeneratingTitle = false;
+          this.titleStatusText = data.status === 'canceled' ? 'Title generation canceled.' : 'Title generation complete.';
+          setTimeout(() => {
+            if (this.titleStatusText === 'Title generation canceled.' || this.titleStatusText === 'Title generation complete.') {
+              this.titleStatusText = '';
+              this.cdr.detectChanges();
+            }
+          }, 2000);
+        } else {
+          this.isGeneratingTitle = true;
+          this.titleStatusText = data.status;
+        }
+        this.cdr.detectChanges();
+      } catch(e) {}
+    } else if (evt.type === 'done') {
+      if (this.isStreaming) {
+        if (this.isThinkingActive) {
+            this.isThinkingActive = false;
+            if (this.showThoughtsAndTools === 2 || this.showThoughtsAndTools === 3) {
+              this.streamingMessage += '\n\n</div>\n\n';
+            }
+        }
+        this.messages.push({ role: 'assistant', content: this.streamingMessage, timestampUtc: new Date().toISOString(), toolCalls: [...this.streamingToolCalls] });
+        this.streamingMessage = '';
+        this.streamingToolCalls = [];
+        this.isStreaming = false;
+        this.showSpinner = false;
+        this.currentStatusText = 'Generation complete.';
+        this.cdr.detectChanges();
+        this.loadSessions();
+        this.focusPromptInput();
+      }
+    }
+  }
+
   setupSignalR() {
     this.hubConnection = new signalR.HubConnectionBuilder()
       .withUrl('/chathub')
@@ -500,147 +658,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
     this.hubConnection.on('ReceiveChatEvent', (evt: any) => {
       this.ngZone.run(() => {
-        if (evt.type === 'debug') {
-          this.debugService.log(`[Backend] ${evt.data}`);
-        } else if (evt.type === 'status') {
-          this.currentStatusText = evt.data;
-          this.cdr.detectChanges();
-        } else if (evt.type === 'thinking_chunk') {
-          this.isThinkingActive = true;
-          if (this.showThoughtsAndTools === 2 || this.showThoughtsAndTools === 3) {
-            if (!this.streamingMessage.endsWith('<div class="ai-thought">\n\n')) {
-              this.streamingMessage += '\n\n<div class="ai-thought">\n\n';
-            }
-            this.streamingMessage += evt.data;
-            this.cdr.detectChanges();
-            this.scrollToBottomClamped(false);
-          }
-        } else if (evt.type === 'chunk') {
-          if (this.isThinkingActive) {
-              this.isThinkingActive = false;
-              if (this.showThoughtsAndTools === 2 || this.showThoughtsAndTools === 3) {
-                this.streamingMessage += '\n\n</div>\n\n';
-              }
-          }
-          if (!this.isStreaming) {
-            this.isStreaming = true;
-            this.showSpinner = false;
-            this.currentStatusText = 'Receiving data (background task)...';
-          }
-          this.streamingMessage += evt.data;
-          this.cdr.detectChanges();
-          this.scrollToBottomClamped(false);
-        } else if (evt.type === 'error') {
-          this.currentStatusText = `Error: ${evt.data}`;
-          this.debugService.log(`[Backend Error] ${evt.data}`);
-          this.streamingMessage += `\n\n**Error:** ${evt.data}`;
-          this.showSpinner = false;
-          this.cdr.detectChanges();
-        } else if (evt.type === 'tool_start') {
-          try {
-            const toolInfo = JSON.parse(evt.data);
-            const args = JSON.parse(toolInfo.arguments || '{}');
-            const displayName = ChatComponent.TOOL_DISPLAY_NAMES[toolInfo.name] || toolInfo.name;
-            const argsText = this.buildToolArgsText(toolInfo.name, args);
-            
-            // Handle preceding text based on showThoughtsAndTools setting
-            if (this.streamingMessage.length > 0) {
-              const lastDivIndex = this.streamingMessage.lastIndexOf('</div>');
-              const thoughtStartIndex = lastDivIndex >= 0 ? lastDivIndex + 6 : 0;
-              const thoughtText = this.streamingMessage.substring(thoughtStartIndex).trim();
-              if (thoughtText.length > 0) {
-                if (this.showThoughtsAndTools === 2 || this.showThoughtsAndTools === 3) {
-                  // Wrap preceding text in ai-thought div
-                  this.streamingMessage = this.streamingMessage.substring(0, thoughtStartIndex)
-                    + '\n\n<div class="ai-thought">\n\n' + thoughtText + '\n\n</div>\n\n';
-                } else {
-                  // Strip preceding text (it's thinking/reasoning that should be hidden)
-                  this.streamingMessage = this.streamingMessage.substring(0, thoughtStartIndex);
-                }
-              }
-            }
-
-            this.streamingToolCalls.push({ 
-              id: toolInfo.id, 
-              name: toolInfo.name, 
-              status: 'running',
-              displayName,
-              argsText
-            });
-            this.cdr.detectChanges();
-            this.scrollToBottomClamped(false);
-          } catch(e) {}
-        } else if (evt.type === 'tool_result') {
-          try {
-            const toolInfo = JSON.parse(evt.data);
-            const tc = this.streamingToolCalls.find(t => t.id === toolInfo.id && t.status === 'running');
-            if (tc) {
-              tc.status = 'completed';
-              tc.result = toolInfo.result;
-            }
-            this.cdr.detectChanges();
-            this.scrollToBottomClamped(false);
-          } catch(e) {}
-        } else if (evt.type === 'tool_error') {
-          try {
-            const toolInfo = JSON.parse(evt.data);
-            const tc = this.streamingToolCalls.find(t => t.id === toolInfo.id && t.status === 'running');
-            if (tc) {
-              tc.status = 'error';
-              tc.error = toolInfo.error;
-            }
-            this.cdr.detectChanges();
-            this.scrollToBottomClamped(false);
-          } catch(e) {}
-        } else if (evt.type === 'tool_client_request') {
-          try {
-            const request: ToolClientRequest = JSON.parse(evt.data);
-            this.forwardToolRequest(request);
-          } catch (e) {
-            console.error('Failed to parse tool_client_request:', e);
-          }
-        } else if (evt.type === 'title_update') {
-          try {
-            const data = JSON.parse(evt.data);
-            const s = this.sessions.find(x => x.id === data.sessionId);
-            if (s) {
-              s.title = data.title;
-              this.cdr.detectChanges();
-            }
-          } catch(e) {}
-        } else if (evt.type === 'title_status') {
-          try {
-            const data = JSON.parse(evt.data);
-            if (data.sessionId !== this.currentSessionId) return;
-        
-        if (data.status === 'canceled' || data.status === '') {
-              this.isGeneratingTitle = false;
-              this.titleStatusText = data.status === 'canceled' ? 'Title generation canceled.' : 'Title generation complete.';
-              setTimeout(() => {
-                if (this.titleStatusText === 'Title generation canceled.' || this.titleStatusText === 'Title generation complete.') {
-                  this.titleStatusText = '';
-                  this.cdr.detectChanges();
-                }
-              }, 2000);
-            } else {
-              this.isGeneratingTitle = true;
-              this.titleStatusText = data.status;
-            }
-            this.cdr.detectChanges();
-          } catch(e) {}
-        } else if (evt.type === 'done') {
-          if (this.isStreaming) {
-            this.messages.push({ role: 'assistant', content: this.streamingMessage, timestampUtc: new Date().toISOString(), toolCalls: [...this.streamingToolCalls] });
-            this.streamingMessage = '';
-            this.streamingToolCalls = [];
-            this.isStreaming = false;
-            this.showSpinner = false;
-            this.currentStatusText = 'Generation complete.';
-            this.cdr.detectChanges();
-            this.loadSessions();
-            this.focusPromptInput();
-          }
-        }
+        this.processChatEvent(evt);
       });
     });
 
@@ -741,6 +759,13 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.isGeneratingTitle = false;
         this.titleStatusText = '';
         this.loadDraft();
+
+        if (s.ongoingGeneration && s.ongoingGeneration.events) {
+          this.isStreaming = true;
+          for (const evt of s.ongoingGeneration.events) {
+            this.processChatEvent(evt);
+          }
+        }
         
         if (!this.sessions.find(x => x.id === id)) {
            this.loadSessions();
@@ -834,8 +859,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   stopRequest() {
-    if (this.abortController) {
-      this.abortController.abort();
+    if (this.isStreaming && this.currentSessionId && this.hubConnection) {
+      this.hubConnection.invoke('CancelGeneration', this.currentSessionId).catch(console.error);
     }
   }
 
@@ -902,7 +927,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.requestStartTime = performance.now();
     this.currentStatusText = 'Connecting...';
     this.showSpinner = true;
-    this.abortController = new AbortController();
 
     // Refetch showThoughtsAndTools since the chat component is reused across navigations
     try {
@@ -917,167 +941,32 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
     try {
       const modelIdToUse = this.allowMultipleModels && this.selectedUserModelId ? this.selectedUserModelId : undefined;
-      for await (const evt of this.chatService.streamMessage(this.currentSessionId, message, attachmentsPayload, modelIdToUse, this.abortController.signal)) {
-        if (evt.type === 'sessionId') {
-          const newSessionId = Number(evt.data);
-          if (this.currentSessionId !== newSessionId) {
-            this.currentSessionId = newSessionId;
-            
-            if (this.hubConnection?.state === signalR.HubConnectionState.Connected) {
-              this.hubConnection.invoke("JoinSession", this.currentSessionId).catch(console.error);
-            }
-            this.loadSessions();
-            
-            const urlTree = this.router.createUrlTree([], {
-              relativeTo: this.route,
-              queryParams: { sessionId: this.currentSessionId },
-              queryParamsHandling: 'merge'
-            });
-            this.router.navigateByUrl(urlTree, { replaceUrl: true });
-          }
-        } else if (evt.type === 'debug') {
-          this.debugService.log(`[Backend] ${evt.data}`);
-        } else if (evt.type === 'status') {
-          this.currentStatusText = evt.data;
-          this.cdr.detectChanges();
-        } else if (evt.type === 'thinking_chunk') {
-          this.debugService.log(`[SSE thinking_chunk] showT=${this.showThoughtsAndTools} data="${(evt.data || '').substring(0, 80)}..."`);
-          this.isThinkingActive = true;
-          if (this.showThoughtsAndTools === 2 || this.showThoughtsAndTools === 3) {
-            if (!this.streamingMessage.endsWith('<div class="ai-thought">\n\n')) {
-              this.streamingMessage += '\n\n<div class="ai-thought">\n\n';
-            }
-            this.streamingMessage += evt.data;
-            this.cdr.detectChanges();
-            this.scrollToBottomClamped(false);
-          }
-        } else if (evt.type === 'chunk') {
-          if (this.isThinkingActive) {
-              this.isThinkingActive = false;
-              if (this.showThoughtsAndTools === 2 || this.showThoughtsAndTools === 3) {
-                this.streamingMessage += '\n\n</div>\n\n';
-              }
-          }
-          if (this.showSpinner) {
-            this.showSpinner = false;
-            const ttfb = performance.now() - this.requestStartTime;
-            this.currentStatusText = `Receiving data (${Math.round(ttfb)}ms)...`;
-          }
-          this.streamingMessage += evt.data;
-          this.cdr.detectChanges();
-          this.scrollToBottomClamped(false);
-        } else if (evt.type === 'error') {
-          this.currentStatusText = `Error: ${evt.data}`;
-          this.debugService.log(`[Backend Error] ${evt.data}`);
-          this.streamingMessage += `\n\n**Error:** ${evt.data}`;
-          this.showSpinner = false;
-          this.cdr.detectChanges();
-        } else if (evt.type === 'tool_start') {
-          try {
-            // Close any active thinking div
-            if (this.isThinkingActive) {
-                this.isThinkingActive = false;
-                if (this.showThoughtsAndTools === 2 || this.showThoughtsAndTools === 3) {
-                  this.streamingMessage += '\n\n</div>\n\n';
-                }
-            }
-
-            // Handle preceding text based on showThoughtsAndTools setting
-            if (this.streamingMessage.length > 0) {
-              const lastDivIndex = this.streamingMessage.lastIndexOf('</div>');
-              const thoughtStartIndex = lastDivIndex >= 0 ? lastDivIndex + 6 : 0;
-              const thoughtText = this.streamingMessage.substring(thoughtStartIndex).trim();
-              if (thoughtText.length > 0) {
-                if (this.showThoughtsAndTools === 2 || this.showThoughtsAndTools === 3) {
-                  // Wrap preceding text in ai-thought div
-                  this.streamingMessage = this.streamingMessage.substring(0, thoughtStartIndex)
-                    + '\n\n<div class="ai-thought">\n\n' + thoughtText + '\n\n</div>\n\n';
-                } else {
-                  // Strip preceding text (it's thinking/reasoning that should be hidden)
-                  this.streamingMessage = this.streamingMessage.substring(0, thoughtStartIndex);
-                }
-              }
-            }
-
-            const toolInfo = JSON.parse(evt.data);
-            const args = JSON.parse(toolInfo.arguments || '{}');
-            const displayName = ChatComponent.TOOL_DISPLAY_NAMES[toolInfo.name] || toolInfo.name;
-            const argsText = this.buildToolArgsText(toolInfo.name, args);
-            this.streamingToolCalls.push({ 
-              id: toolInfo.id, 
-              name: toolInfo.name, 
-              status: 'running',
-              displayName,
-              argsText
-            });
-            this.cdr.detectChanges();
-            this.scrollToBottomClamped(false);
-          } catch(e) {}
-        } else if (evt.type === 'tool_result') {
-          try {
-            const toolInfo = JSON.parse(evt.data);
-            const tc = this.streamingToolCalls.find(t => t.id === toolInfo.id && t.status === 'running');
-            if (tc) {
-              tc.status = 'completed';
-              tc.result = toolInfo.result;
-            }
-            this.cdr.detectChanges();
-            this.scrollToBottomClamped(false);
-          } catch(e) {}
-        } else if (evt.type === 'tool_error') {
-          try {
-            const toolInfo = JSON.parse(evt.data);
-            const tc = this.streamingToolCalls.find(t => t.id === toolInfo.id && t.status === 'running');
-            if (tc) {
-              tc.status = 'error';
-              tc.error = toolInfo.error;
-            }
-            this.cdr.detectChanges();
-            this.scrollToBottomClamped(false);
-          } catch(e) {}
-        } else if (evt.type === 'title_update') {
-          try {
-            const data = JSON.parse(evt.data);
-            const s = this.sessions.find(x => x.id === data.sessionId);
-            if (s) {
-              s.title = data.title;
-              this.cdr.detectChanges();
-            }
-          } catch(e) {}
-        }
-      }
+      const res = await firstValueFrom(this.chatService.sendMessage(this.currentSessionId, message, attachmentsPayload, modelIdToUse));
+      const newSessionId = res.sessionId;
       
-      const totalTimeMs = performance.now() - this.requestStartTime;
-      if (this.currentStatusText && !this.currentStatusText.startsWith('Error')) {
-          this.currentStatusText = `Request completed (${Math.round(totalTimeMs)}ms)`;
+      if (this.currentSessionId !== newSessionId) {
+        this.currentSessionId = newSessionId;
+        
+        if (this.hubConnection?.state === signalR.HubConnectionState.Connected) {
+          this.hubConnection.invoke("JoinSession", this.currentSessionId).catch(console.error);
+        }
+        this.loadSessions();
+        
+        const urlTree = this.router.createUrlTree([], {
+          relativeTo: this.route,
+          queryParams: { sessionId: this.currentSessionId },
+          queryParamsHandling: 'merge'
+        });
+        this.router.navigateByUrl(urlTree, { replaceUrl: true });
       }
-      this.messages.push({ role: 'assistant', content: this.streamingMessage, timestampUtc: new Date().toISOString(), toolCalls: [...this.streamingToolCalls] });
     } catch (e: any) {
-      if (e.name === 'AbortError') {
-        this.currentStatusText = `Cancelled by user.`;
-        this.debugService.log(`Request aborted by user.`);
-      } else {
-        console.error(e);
-        this.currentStatusText = `Error: ${e.message}`;
-        this.messages.push({ role: 'assistant', content: 'Error: ' + e, timestampUtc: new Date().toISOString() });
-        this.debugService.log(`Frontend Error: ${e.message}`);
-      }
-    } finally {
-      if (this.isThinkingActive) {
-          this.isThinkingActive = false;
-          if (this.showThoughtsAndTools === 2 || this.showThoughtsAndTools === 3) {
-            this.streamingMessage += '\n\n</div>\n\n';
-          }
-      }
-      this.streamingMessage = '';
-      this.streamingToolCalls = [];
+      console.error(e);
+      this.currentStatusText = `Error: ${e.message}`;
+      this.messages.push({ role: 'assistant', content: 'Error: ' + e, timestampUtc: new Date().toISOString() });
+      this.debugService.log(`Frontend Error: ${e.message}`);
+      
       this.isStreaming = false;
       this.showSpinner = false;
-      this.abortController = null;
-      this.loadSessions(); // Refresh sessions list in case a new one was created
-      this.cdr.detectChanges();
-      
-      this.focusPromptInput();
     }
   }
 

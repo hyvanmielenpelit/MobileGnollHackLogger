@@ -26,8 +26,9 @@ public class ChatService
     private readonly ToolRegistry _toolRegistry;
     private readonly ToolExecutor _toolExecutor;
     private readonly KnowledgeBaseService _knowledgeBaseService;
+    private readonly OngoingChatManager _ongoingChatManager;
 
-    public ChatService(IServiceScopeFactory scopeFactory, WikiService wikiService, CryptoService cryptoService, IHttpClientFactory httpClientFactory, IConfiguration configuration, IHubContext<ChatHub> hubContext, ModelMetadataService modelMetadataService, ToolRegistry toolRegistry, ToolExecutor toolExecutor, KnowledgeBaseService knowledgeBaseService)
+    public ChatService(IServiceScopeFactory scopeFactory, WikiService wikiService, CryptoService cryptoService, IHttpClientFactory httpClientFactory, IConfiguration configuration, IHubContext<ChatHub> hubContext, ModelMetadataService modelMetadataService, ToolRegistry toolRegistry, ToolExecutor toolExecutor, KnowledgeBaseService knowledgeBaseService, OngoingChatManager ongoingChatManager)
     {
         _scopeFactory = scopeFactory;
         _wikiService = wikiService;
@@ -39,6 +40,7 @@ public class ChatService
         _toolRegistry = toolRegistry;
         _toolExecutor = toolExecutor;
         _knowledgeBaseService = knowledgeBaseService;
+        _ongoingChatManager = ongoingChatManager;
     }
 
     private int MapThinkingBudget(string thinkingLevel)
@@ -69,17 +71,29 @@ public class ChatService
         {
             await foreach (var evt in StreamMessageAsync(sessionId, message, attachments, userId, isHidden, cancellationToken, userModelId))
             {
-                await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", evt, cancellationToken);
+                _ongoingChatManager.ProcessEvent(sessionId, evt);
+                await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", evt, CancellationToken.None);
             }
-            await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "done", Data = "" }, cancellationToken);
+            var doneEvt = new ChatEvent { Type = "done", Data = "" };
+            _ongoingChatManager.ProcessEvent(sessionId, doneEvt);
+            await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", doneEvt, CancellationToken.None);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (OperationCanceledException)
         {
-            await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "error", Data = ex.Message }, cancellationToken);
+            var canceledEvt = new ChatEvent { Type = "title_status", Data = "{\"status\":\"canceled\",\"sessionId\":" + sessionId + "}" };
+            var doneEvt = new ChatEvent { Type = "done", Data = "" };
+            _ongoingChatManager.ProcessEvent(sessionId, doneEvt);
+            await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", doneEvt, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            var errEvt = new ChatEvent { Type = "error", Data = ex.Message };
+            _ongoingChatManager.ProcessEvent(sessionId, errEvt);
+            await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", errEvt, CancellationToken.None);
         }
     }
 
-    public async IAsyncEnumerable<ChatEvent> StreamMessageAsync(long? sessionId, string message, List<SendMessageAttachment>? attachments, string userId, bool isHidden, [EnumeratorCancellation] CancellationToken cancellationToken, long? userModelId = null)
+    public async IAsyncEnumerable<ChatEvent> StreamMessageAsync(long sessionId, string message, List<SendMessageAttachment>? attachments, string userId, bool isHidden, [EnumeratorCancellation] CancellationToken cancellationToken, long? userModelId = null)
     {
         if (string.IsNullOrEmpty(userId)) yield break;
 
@@ -129,13 +143,10 @@ public class ChatService
                 userMaxToolIterations = settings.MaxToolIterations;
             }
 
-            if (sessionId.HasValue)
+            var tempSession = await dbContext.ChatSession.FindAsync(sessionId);
+            if (tempSession != null && tempSession.IsGnollHackSession)
             {
-                var tempSession = await dbContext.ChatSession.FindAsync(sessionId.Value);
-                if (tempSession != null && tempSession.IsGnollHackSession)
-                {
-                    userModelId = null; // force first model because GnollHack doesn't support model selection
-                }
+                userModelId = null; // force first model because GnollHack doesn't support model selection
             }
 
             if (userModelId.HasValue)
@@ -182,82 +193,60 @@ public class ChatService
 
             ChatSession? session = null;
             bool shouldGenerateTitle = false;
-            if (sessionId.HasValue && sessionId.Value > 0)
+
+            session = await dbContext.ChatSession.FindAsync(sessionId);
+            if (session == null || session.AspNetUserId != userId)
             {
-                session = await dbContext.ChatSession.FindAsync(sessionId.Value);
-                if (session == null || session.AspNetUserId != userId)
+                yield return new ChatEvent { Type = "error", Data = "Error: Session not found." };
+                yield break;
+            }
+            currentSessionId = session.Id;
+            
+            var pastMessages = dbContext.ChatMessage.Where(m => m.ChatSessionId == currentSessionId).OrderBy(m => m.TimestampUtc).ToList();
+            var recentMessageIds = pastMessages.OrderByDescending(m => m.TimestampUtc).Take(5).Select(m => m.Id).ToHashSet();
+            
+            var pastAttachments = dbContext.ChatMessageAttachment.Where(a => pastMessages.Select(m => m.Id).Contains(a.ChatMessageId)).ToList();
+            var baseDir = _configuration["ConversationsDataLocation"];
+            
+            foreach (var pm in pastMessages)
+            {
+                var msgAtts = pastAttachments.Where(a => a.ChatMessageId == pm.Id && a.ContentType != null && a.ContentType.StartsWith("image/")).ToList();
+                if (msgAtts.Count > 0 && recentMessageIds.Contains(pm.Id) && !string.IsNullOrEmpty(baseDir))
                 {
-                    yield return new ChatEvent { Type = "error", Data = "Error: Session not found." };
-                    yield break;
-                }
-                currentSessionId = session.Id;
-                
-                var pastMessages = dbContext.ChatMessage.Where(m => m.ChatSessionId == currentSessionId).OrderBy(m => m.TimestampUtc).ToList();
-                var recentMessageIds = pastMessages.OrderByDescending(m => m.TimestampUtc).Take(5).Select(m => m.Id).ToHashSet();
-                
-                var pastAttachments = dbContext.ChatMessageAttachment.Where(a => pastMessages.Select(m => m.Id).Contains(a.ChatMessageId)).ToList();
-                var baseDir = _configuration["ConversationsDataLocation"];
-                
-                foreach (var pm in pastMessages)
-                {
-                    var msgAtts = pastAttachments.Where(a => a.ChatMessageId == pm.Id && a.ContentType != null && a.ContentType.StartsWith("image/")).ToList();
-                    if (msgAtts.Count > 0 && recentMessageIds.Contains(pm.Id) && !string.IsNullOrEmpty(baseDir))
+                    var msgImageAttachments = new List<SendMessageAttachment>();
+                    foreach (var att in msgAtts)
                     {
-                        var msgImageAttachments = new List<SendMessageAttachment>();
-                        foreach (var att in msgAtts)
+                        var fullPath = Path.Combine(baseDir, att.RelativePath ?? "");
+                        if (System.IO.File.Exists(fullPath))
                         {
-                            var fullPath = Path.Combine(baseDir, att.RelativePath ?? "");
-                            if (System.IO.File.Exists(fullPath))
-                            {
-                                var bytes = System.IO.File.ReadAllBytes(fullPath);
-                                msgImageAttachments.Add(new SendMessageAttachment { ContentType = att.ContentType ?? "", Base64Data = Convert.ToBase64String(bytes) });
-                            }
-                        }
-                        
-                        if (msgImageAttachments.Count > 0)
-                        {
-                            messageHistory.Add(FormatMessage(provider, pm.Role ?? "", pm.Content ?? "", msgImageAttachments));
-                            continue;
+                            var bytes = System.IO.File.ReadAllBytes(fullPath);
+                            msgImageAttachments.Add(new SendMessageAttachment { ContentType = att.ContentType ?? "", Base64Data = Convert.ToBase64String(bytes) });
                         }
                     }
                     
-                    messageHistory.Add(new { role = pm.Role, content = pm.Content });
-                }
-
-                // Detect context types from system messages
-                foreach (var pm in pastMessages)
-                {
-                    if (pm.Role == "system" && pm.Content != null)
+                    if (msgImageAttachments.Count > 0)
                     {
-                        if (pm.Content.StartsWith("Game Snapshot:")) hasGameSnapshot = true;
-                        if (pm.Content.StartsWith("Full Message History")) hasMessageHistory = true;
+                        messageHistory.Add(FormatMessage(provider, pm.Role ?? "", pm.Content ?? "", msgImageAttachments));
+                        continue;
                     }
                 }
+                
+                messageHistory.Add(new { role = pm.Role, content = pm.Content });
+            }
 
-                if (!isHidden && !pastMessages.Any(m => m.Role == "user" && !m.IsHidden))
+            // Detect context types from system messages
+            foreach (var pm in pastMessages)
+            {
+                if (pm.Role == "system" && pm.Content != null)
                 {
-                    shouldGenerateTitle = true;
+                    if (pm.Content.StartsWith("Game Snapshot:")) hasGameSnapshot = true;
+                    if (pm.Content.StartsWith("Full Message History")) hasMessageHistory = true;
                 }
             }
-            else
-            {
-                session = new ChatSession
-                {
-                    AspNetUserId = userId,
-                    Title = message.Length > 50 ? message.Substring(0, 47) + "..." : message,
-                    CreatedUtc = DateTime.UtcNow,
-                    LastMessageUtc = DateTime.UtcNow
-                };
-                dbContext.ChatSession.Add(session);
-                await dbContext.SaveChangesAsync(cancellationToken);
-                currentSessionId = session.Id;
-                
-                yield return new ChatEvent { Type = "sessionId", Data = currentSessionId.ToString() };
 
-                if (!isHidden)
-                {
-                    shouldGenerateTitle = true;
-                }
+            if (!isHidden && !pastMessages.Any(m => m.Role == "user" && !m.IsHidden))
+            {
+                shouldGenerateTitle = true;
             }
 
             if (shouldGenerateTitle)
@@ -339,14 +328,14 @@ public class ChatService
             dbContext.ChatMessage.Add(userMsg);
             
             session!.LastMessageUtc = DateTime.UtcNow;
-            await dbContext.SaveChangesAsync(cancellationToken);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
             
             var textAttachmentsContent = new StringBuilder();
             List<SendMessageAttachment> imageAttachments = new();
 
             if (attachments != null && attachments.Count > 0)
             {
-                var baseDir = _configuration["ConversationsDataLocation"];
+                baseDir = _configuration["ConversationsDataLocation"];
                 if (!string.IsNullOrEmpty(baseDir))
                 {
                     var sessionDir = Path.Combine(baseDir, currentSessionId.ToString());
@@ -395,7 +384,7 @@ public class ChatService
                             // Ignore specific attachment failure
                         }
                     }
-                    await dbContext.SaveChangesAsync(cancellationToken);
+                    await dbContext.SaveChangesAsync(CancellationToken.None);
                 }
             }
 

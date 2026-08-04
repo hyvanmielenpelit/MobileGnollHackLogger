@@ -62,5 +62,19 @@ namespace Overseer.Hubs
                 }
             }
         }
+
+        public async Task CancelGeneration(long sessionId)
+        {
+            var userId = Context.UserIdentifier ?? Context.User?.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (userId != null)
+            {
+                var session = await _dbContext.ChatSession.FirstOrDefaultAsync(s => s.Id == sessionId && s.AspNetUserId == userId);
+                if (session != null)
+                {
+                    var manager = Context.GetHttpContext()?.RequestServices.GetService(typeof(Overseer.Services.OngoingChatManager)) as Overseer.Services.OngoingChatManager;
+                    manager?.TryCancelAndRemove(sessionId);
+                }
+            }
+        }
     }
 }
