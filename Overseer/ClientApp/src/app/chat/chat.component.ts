@@ -9,7 +9,7 @@ import { MarkdownPipe } from './markdown.pipe';
 import { RelativeTimePipe } from './relative-time.pipe';
 import { SettingsService } from '../services/settings.service';
 import * as signalR from '@microsoft/signalr';
-import { firstValueFrom, filter } from 'rxjs';
+import { firstValueFrom, filter, Subscription } from 'rxjs';
 export interface ToolClientRequest {
     type: string;
     requestId: string;
@@ -126,6 +126,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
   sessions: ChatSession[] = [];
   loadingSessions = false;
+  private sessionLoadSub: Subscription | null = null;
   currentSessionId: number | null = null;
   sessionToDelete: number | null = null;
   messages: ChatMessage[] = [];
@@ -448,12 +449,16 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         if (isNaN(id)) {
           this.navigateToNewSession();
         } else if (this.currentSessionId !== id) {
-          if (this.isStreaming) this.stopRequest();
+          if (this.isStreaming) {
+            this.debugService.log(`[Frontend] Navigating away from session ${this.currentSessionId} while streaming. Generation continues in background.`);
+          }
           this.loadSession(id);
         }
       } else {
         if (this.currentSessionId !== null || this.messages.length > 0) {
-          if (this.isStreaming) this.stopRequest();
+          if (this.isStreaming) {
+            this.debugService.log('[Frontend] Navigating to new session, clearing local streaming state. Generation continues in background.');
+          }
           this.newSession();
         } else {
           this.loadDraft();
@@ -493,6 +498,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   processChatEvent(evt: any) {
+    if (typeof evt.sessionId === 'number' && evt.sessionId !== this.currentSessionId) return;
+
     if (evt.type === 'debug') {
       this.debugService.log(`[Backend] ${evt.data}`);
     } else if (evt.type === 'status') {
@@ -722,9 +729,13 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   newSession() {
+    this.sessionLoadSub?.unsubscribe();
     this.currentSessionId = null;
     this.messages = [];
+    this.isStreaming = false;
+    this.streamingMessage = '';
     this.streamingToolCalls = [];
+    this.showSpinner = false;
     this.currentStatusText = '';
     this.isGeneratingTitle = false;
     this.isThinkingActive = false;
@@ -735,7 +746,15 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   loadSession(id: number) {
-    this.chatService.getSession(id).subscribe({
+    this.sessionLoadSub?.unsubscribe();
+
+    this.isStreaming = false;
+    this.streamingMessage = '';
+    this.streamingToolCalls = [];
+    this.showSpinner = false;
+    this.isThinkingActive = false;
+
+    this.sessionLoadSub = this.chatService.getSession(id).subscribe({
       next: (s) => {
         if (this.hubConnection?.state === signalR.HubConnectionState.Connected) {
           if (this.currentSessionId && this.currentSessionId !== id) {
@@ -761,10 +780,12 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.loadDraft();
 
         if (s.ongoingGeneration && s.ongoingGeneration.events) {
+          this.debugService.log(`[Frontend] Session ${id} has ongoing generation with ${s.ongoingGeneration.events.length} buffered events. Replaying...`);
           this.isStreaming = true;
           for (const evt of s.ongoingGeneration.events) {
             this.processChatEvent(evt);
           }
+          this.debugService.log(`[Frontend] Replay complete. isStreaming=${this.isStreaming}, streamingMessage length=${this.streamingMessage.length}`);
         }
         
         if (!this.sessions.find(x => x.id === id)) {

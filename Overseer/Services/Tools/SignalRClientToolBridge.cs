@@ -42,7 +42,8 @@ namespace Overseer.Services.Tools
                 var chatEvent = new ChatEvent
                 {
                     Type = "tool_client_request",
-                    Data = JsonSerializer.Serialize(payload)
+                    Data = JsonSerializer.Serialize(payload),
+                    SessionId = sessionId
                 };
 
                 await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", chatEvent, ct);

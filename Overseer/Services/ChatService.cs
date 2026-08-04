@@ -71,23 +71,24 @@ public class ChatService
         {
             await foreach (var evt in StreamMessageAsync(sessionId, message, attachments, userId, isHidden, cancellationToken, userModelId))
             {
+                evt.SessionId = sessionId;
                 _ongoingChatManager.ProcessEvent(sessionId, evt);
                 await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", evt, CancellationToken.None);
             }
-            var doneEvt = new ChatEvent { Type = "done", Data = "" };
+            var doneEvt = new ChatEvent { Type = "done", Data = "", SessionId = sessionId };
             _ongoingChatManager.ProcessEvent(sessionId, doneEvt);
             await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", doneEvt, CancellationToken.None);
         }
         catch (OperationCanceledException)
         {
-            var canceledEvt = new ChatEvent { Type = "title_status", Data = "{\"status\":\"canceled\",\"sessionId\":" + sessionId + "}" };
-            var doneEvt = new ChatEvent { Type = "done", Data = "" };
+            var canceledEvt = new ChatEvent { Type = "title_status", Data = "{\"status\":\"canceled\",\"sessionId\":" + sessionId + "}", SessionId = sessionId };
+            var doneEvt = new ChatEvent { Type = "done", Data = "", SessionId = sessionId };
             _ongoingChatManager.ProcessEvent(sessionId, doneEvt);
             await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", doneEvt, CancellationToken.None);
         }
         catch (Exception ex)
         {
-            var errEvt = new ChatEvent { Type = "error", Data = ex.Message };
+            var errEvt = new ChatEvent { Type = "error", Data = ex.Message, SessionId = sessionId };
             _ongoingChatManager.ProcessEvent(sessionId, errEvt);
             await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", errEvt, CancellationToken.None);
         }

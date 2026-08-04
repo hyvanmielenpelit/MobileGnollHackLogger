@@ -4,4 +4,5 @@ public class ChatEvent
 {
     public string Type { get; set; } = "chunk";
     public string Data { get; set; } = "";
+    public long? SessionId { get; set; }
 }
