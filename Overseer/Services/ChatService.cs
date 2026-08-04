@@ -1908,7 +1908,8 @@ public class ChatService
     {
         CancelTitleGeneration(sessionId);
         
-        var cts = new CancellationTokenSource();
+        int titleTimeout = _configuration.GetValue<int>("AITitleGenerationTimeout", 120);
+        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(titleTimeout));
         _titleCancellationTokens[sessionId] = cts;
         var cancellationToken = cts.Token;
 

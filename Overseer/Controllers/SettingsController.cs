@@ -63,6 +63,7 @@ public class SettingsController : ControllerBase
             enableClientTools = settings?.EnableClientTools ?? true,
             enableGameActions = settings?.EnableGameActions ?? false,
             showThoughtsAndTools = settings?.ShowThoughtsAndTools ?? 0,
+            requestTimeout = settings?.RequestTimeout,
             isProduction = _env.IsProduction(),
             performanceLimits = new {
                 maxResultLength = new {
@@ -79,6 +80,11 @@ public class SettingsController : ControllerBase
                     min = _configuration.GetValue<int>("AiPerformanceSettings:MaxToolIterations:Min", 1),
                     max = _configuration.GetValue<int>("AiPerformanceSettings:MaxToolIterations:Max", 100),
                     defaultValue = _configuration.GetValue<int>("AiPerformanceSettings:MaxToolIterations:Default", 32)
+                },
+                requestTimeout = new {
+                    min = _configuration.GetValue<int>("AiPerformanceSettings:ChatRequestTimeout:Min", 5),
+                    max = _configuration.GetValue<int>("AiPerformanceSettings:ChatRequestTimeout:Max", 3600),
+                    defaultValue = _configuration.GetValue<int>("AiPerformanceSettings:ChatRequestTimeout:Default", 300)
                 }
             },
             titleGenerationModelId = settings?.TitleGenerationModelId
@@ -122,7 +128,15 @@ public class SettingsController : ControllerBase
                 return BadRequest($"MaxToolIterations must be between {min} and {max}");
         }
 
-        await _settingsService.SaveSettingsAsync(userId, request.SpoilerFreeMode, request.EnableWebSearch, request.EnableToolUse, request.EnableClientTools, request.EnableGameActions, request.AllowMultipleModels, request.ShowSourceCodeReferences, request.MaxResultLength, request.MaxCallsPerSession, request.MaxToolIterations, request.ShowThoughtsAndTools);
+        if (request.RequestTimeout.HasValue)
+        {
+            int min = _configuration.GetValue<int>("AiPerformanceSettings:ChatRequestTimeout:Min", 5);
+            int max = _configuration.GetValue<int>("AiPerformanceSettings:ChatRequestTimeout:Max", 3600);
+            if (request.RequestTimeout.Value < min || request.RequestTimeout.Value > max)
+                return BadRequest($"RequestTimeout must be between {min} and {max}");
+        }
+
+        await _settingsService.SaveSettingsAsync(userId, request.SpoilerFreeMode, request.EnableWebSearch, request.EnableToolUse, request.EnableClientTools, request.EnableGameActions, request.AllowMultipleModels, request.ShowSourceCodeReferences, request.MaxResultLength, request.MaxCallsPerSession, request.MaxToolIterations, request.ShowThoughtsAndTools, request.RequestTimeout);
         
         return Ok();
     }
@@ -449,6 +463,7 @@ public class UpdateSettingsRequest
     public bool? AllowMultipleModels { get; set; }
     public bool? ShowSourceCodeReferences { get; set; }
     public int? ShowThoughtsAndTools { get; set; }
+    public int? RequestTimeout { get; set; }
 }
 
 public class SaveApiKeyRequest

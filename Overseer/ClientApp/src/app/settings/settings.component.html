@@ -157,6 +157,16 @@
           <span class="form-hint mt-5 d-block">Allowed range: {{performanceLimits?.maxToolIterations?.min}} - {{performanceLimits?.maxToolIterations?.max}}</span>
         </div>
       </div>
+
+      <div class="margin-y-20 mt-15 form-group-stacked">
+        <label for="requestTimeout" class="block fw-bold">API Request Timeout</label>
+        <span class="form-hint mt-5 d-block mb-10">Maximum time to wait for a chat message response before aborting.</span>
+        
+        <div class="custom-input-wrapper" style="animation: none;">
+          <input type="number" id="requestTimeout" [(ngModel)]="requestTimeout" name="requestTimeout" class="form-input w-100" [min]="performanceLimits?.requestTimeout?.min" [max]="performanceLimits?.requestTimeout?.max" [placeholder]="'Default (' + performanceLimits?.requestTimeout?.defaultValue + 's)'" />
+          <span class="form-hint mt-5 d-block" style="margin-left: 0;">Allowed range: {{performanceLimits?.requestTimeout?.min}} - {{performanceLimits?.requestTimeout?.max}} seconds</span>
+        </div>
+      </div>
     </fieldset>
 
     </div>

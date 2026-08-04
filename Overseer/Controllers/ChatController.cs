@@ -268,7 +268,9 @@ public class ChatController : ControllerBase
             sessionId = session.Id;
         }
 
-        var cts = new CancellationTokenSource();
+        var settings = await _dbContext.UserAiSettings.FindAsync(userId);
+        int timeoutSeconds = settings?.RequestTimeout ?? _configuration.GetValue<int>("AiPerformanceSettings:ChatRequestTimeout:Default", 300);
+        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
         if (!_ongoingChatManager.TryStart(sessionId, cts, out _))
             return Conflict("Generation already in progress for this session.");
 

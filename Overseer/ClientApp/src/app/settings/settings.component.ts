@@ -49,6 +49,9 @@ export class SettingsComponent implements OnInit {
   initMaxToolIterations: number | null = null;
   maxToolIterationsSelect: any = null;
 
+  requestTimeout: number | null = null;
+  initRequestTimeout: number | null = null;
+
   performanceLimits: any = null;
 
   loading = false;
@@ -65,7 +68,8 @@ export class SettingsComponent implements OnInit {
            this.showThoughtsAndTools !== this.initShowThoughtsAndTools ||
            this.maxResultLength !== this.initMaxResultLength ||
            this.maxCallsPerSession !== this.initMaxCallsPerSession ||
-           this.maxToolIterations !== this.initMaxToolIterations;
+           this.maxToolIterations !== this.initMaxToolIterations ||
+           this.requestTimeout !== this.initRequestTimeout;
   }
 
   get resultLengthOptions() {
@@ -184,6 +188,10 @@ export class SettingsComponent implements OnInit {
           this.maxToolIterations = s.maxToolIterations ?? null;
           this.initMaxToolIterations = this.maxToolIterations;
         }
+        if (s.requestTimeout !== undefined) {
+          this.requestTimeout = s.requestTimeout ?? null;
+          this.initRequestTimeout = this.requestTimeout;
+        }
         if (s.performanceLimits) {
           this.performanceLimits = s.performanceLimits;
         }
@@ -242,7 +250,7 @@ export class SettingsComponent implements OnInit {
   saveSettings() {
     this.loading = true;
     this.saved = false;
-    this.settingsService.saveSettings(this.spoilerFreeMode, this.enableWebSearch, this.enableToolUse, this.enableClientTools, this.enableGameActions, this.allowMultipleModels, this.showSourceCodeReferences, this.maxResultLength, this.maxCallsPerSession, this.maxToolIterations, Number(this.showThoughtsAndTools)).subscribe(() => {
+    this.settingsService.saveSettings(this.spoilerFreeMode, this.enableWebSearch, this.enableToolUse, this.enableClientTools, this.enableGameActions, this.allowMultipleModels, this.showSourceCodeReferences, this.maxResultLength, this.maxCallsPerSession, this.maxToolIterations, Number(this.showThoughtsAndTools), this.requestTimeout).subscribe(() => {
       this.loading = false;
       this.settingsService.showThoughtsAndToolsUpdated.next(Number(this.showThoughtsAndTools));
       
@@ -268,6 +276,7 @@ export class SettingsComponent implements OnInit {
       this.initMaxResultLength = this.maxResultLength;
       this.initMaxCallsPerSession = this.maxCallsPerSession;
       this.initMaxToolIterations = this.maxToolIterations;
-    });
+      this.initRequestTimeout = this.requestTimeout;
+    }, err => {});
   }
 }

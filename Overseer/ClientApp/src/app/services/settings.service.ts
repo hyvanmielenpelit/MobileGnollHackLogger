@@ -18,6 +18,7 @@ export interface UserAiSettings {
   enableClientTools?: boolean;
   enableGameActions?: boolean;
   isProduction?: boolean;
+  requestTimeout?: number;
   configuredProviders?: string[];
   performanceLimits?: any;
   titleGenerationModelId?: number | null;
@@ -69,7 +70,7 @@ export class SettingsService {
     });
   }
 
-  saveSettings(spoilerFreeMode: boolean, enableWebSearch: boolean, enableToolUse: boolean, enableClientTools: boolean, enableGameActions: boolean, allowMultipleModels: boolean, showSourceCodeReferences: boolean, maxResultLength: number | null, maxCallsPerSession: number | null, maxToolIterations: number | null, showThoughtsAndTools: number) {
+  saveSettings(spoilerFreeMode: boolean, enableWebSearch: boolean, enableToolUse: boolean, enableClientTools: boolean, enableGameActions: boolean, allowMultipleModels: boolean, showSourceCodeReferences: boolean, maxResultLength: number | null, maxCallsPerSession: number | null, maxToolIterations: number | null, showThoughtsAndTools: number, requestTimeout: number | null) {
     return this.http.put('/api/settings', {
       spoilerFreeMode,
       enableWebSearch,
@@ -81,7 +82,8 @@ export class SettingsService {
       maxResultLength,
       maxCallsPerSession,
       maxToolIterations,
-      showThoughtsAndTools
+      showThoughtsAndTools,
+      requestTimeout
     });
   }
 

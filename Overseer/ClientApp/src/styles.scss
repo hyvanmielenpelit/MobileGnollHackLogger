@@ -445,3 +445,23 @@ a:hover {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* Global styling for number input spin buttons */
+input[type="number"] {
+    &::-webkit-inner-spin-button,
+    &::-webkit-outer-spin-button {
+        -webkit-appearance: none;
+        background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg width='12' height='16' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='%23d4af37' d='M6 0L12 6H0z M6 16L0 10h12z'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: center;
+        width: 14px;
+        opacity: 0.8;
+        cursor: pointer;
+        transition: opacity 0.2s;
+        
+        &:hover {
+            opacity: 1;
+        }
+    }
+}
+
