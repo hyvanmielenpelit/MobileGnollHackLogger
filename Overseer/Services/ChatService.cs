@@ -1010,36 +1010,39 @@ public class ChatService
                         fullResponse += $"<div class=\"ai-thought\">\n\n{iterationText}\n\n</div>\n\n";
                         thinkingBoundaries.Clear(); // Invalidate boundaries since we just modified the text and wrapped it manually
                         thinkingStartIndex = -1;
+                        yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - Google] Wrapped iteration thinking text ({iterationText.Length} chars) in ai-thought div" };
                     }
                     var modelParts = new List<object>();
                     foreach (var tc in currentIterationToolCalls)
                     {
+                        string tName = tc.GetProperty("name").GetString() ?? "";
+                        string tId = tc.GetProperty("id").GetString() ?? "";
+                        var argsStr = tc.GetProperty("arguments").GetString() ?? "{}";
+
+                        // Always persist to streamToolCalls for database storage
+                        streamToolCalls.Add(new ChatMessageToolCall
+                        {
+                            ToolCallId = tId,
+                            Name = tName,
+                            ArgsText = argsStr,
+                            Status = "running",
+                            SortOrder = streamToolCalls.Count
+                        });
+                        yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - Google] Tool call '{tName}' (id={tId}) added to streamToolCalls (count={streamToolCalls.Count})" };
+
+                        // Reconstruct API history: use raw_part if available (preserves exact Gemini format)
                         if (tc.TryGetProperty("raw_part", out var rp) && rp.ValueKind == JsonValueKind.String)
                         {
                             modelParts.Add(JsonSerializer.Deserialize<JsonElement>(rp.GetString()!));
                         }
                         else
                         {
-                            var argsStr = tc.GetProperty("arguments").GetString() ?? "{}";
                             JsonElement argJson = JsonDocument.Parse("{}").RootElement;
-                            try { argJson = JsonDocument.Parse(argsStr).RootElement; } catch { }
-
-                            string tName = tc.GetProperty("name").GetString() ?? "";
-                            string tId = tc.GetProperty("id").GetString() ?? "";
-
-                            streamToolCalls.Add(new ChatMessageToolCall
-                            {
-                                ToolCallId = tId,
-                                Name = tName,
-                                ArgsText = argsStr,
-                                Status = "running",
-                                SortOrder = streamToolCalls.Count
-                            });
                             try { argJson = JsonSerializer.Deserialize<JsonElement>(argsStr); } catch { }
                             
                             var fcObj = new Dictionary<string, object>
                             {
-                                { "name", tc.GetProperty("name").GetString() ?? "" },
+                                { "name", tName },
                                 { "args", argJson }
                             };
                             
@@ -1084,6 +1087,11 @@ public class ChatService
                             streamTc.Result = res.Success ? resContent : null;
                             streamTc.Error = res.Success ? null : resContent;
                             streamTc.Status = res.Success ? "completed" : "error";
+                            yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - Google] Tool call '{tName}' (id={tId}) status updated to {streamTc.Status}" };
+                        }
+                        else
+                        {
+                            yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - Google] WARNING: Tool call '{tName}' (id={tId}) not found in streamToolCalls for status update" };
                         }
                         
                         if (res.Success)
@@ -1133,6 +1141,9 @@ public class ChatService
             var session = await dbContext.ChatSession.FindAsync(currentSessionId);
             if (session != null)
             {
+                bool hasThinkingDivs = fullResponse.Contains("ai-thought");
+                yield return new ChatEvent { Type = "debug", Data = $"[Main Chat] Saving assistant message: {fullResponse.Length} chars, hasThinkingDivs={hasThinkingDivs}, thinkingBoundaries={thinkingBoundaries.Count}, toolCalls={streamToolCalls.Count}" };
+
                 var asstMsg = new ChatMessage
                 {
                     ChatSessionId = currentSessionId,
@@ -1148,6 +1159,7 @@ public class ChatService
                 dbContext.ChatMessage.Add(asstMsg);
                 session.LastMessageUtc = DateTime.UtcNow;
                 await dbContext.SaveChangesAsync(CancellationToken.None);
+                yield return new ChatEvent { Type = "debug", Data = $"[Main Chat] Assistant message saved to DB (id={asstMsg.Id})" };
             }
         }
     }

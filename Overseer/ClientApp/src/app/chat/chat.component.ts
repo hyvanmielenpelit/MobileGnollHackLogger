@@ -432,6 +432,34 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           }
         });
       }
+
+      // Load sessions and handle route AFTER settings are loaded to avoid
+      // showThoughtsAndTools race condition (defaulting to 0 before settings arrive)
+      this.debugService.log(`[Overseer] Settings loaded, now loading sessions. showThoughtsAndTools=${this.showThoughtsAndTools}`);
+      this.loadSessions();
+      this.route.queryParams.subscribe(params => {
+        const idParam = params['sessionId'];
+        if (idParam) {
+          const id = Number(idParam);
+          if (isNaN(id)) {
+            this.navigateToNewSession();
+          } else if (this.currentSessionId !== id) {
+            if (this.isStreaming) {
+              this.debugService.log(`[Frontend] Navigating away from session ${this.currentSessionId} while streaming. Generation continues in background.`);
+            }
+            this.loadSession(id);
+          }
+        } else {
+          if (this.currentSessionId !== null || this.messages.length > 0) {
+            if (this.isStreaming) {
+              this.debugService.log('[Frontend] Navigating to new session, clearing local streaming state. Generation continues in background.');
+            }
+            this.newSession();
+          } else {
+            this.loadDraft();
+          }
+        }
+      });
     });
 
     const savedWidth = localStorage.getItem('overseer_sidebar_width');
@@ -441,31 +469,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.sidebarWidth = parsed;
       }
     }
-
-    this.loadSessions();
-    this.route.queryParams.subscribe(params => {
-      const idParam = params['sessionId'];
-      if (idParam) {
-        const id = Number(idParam);
-        if (isNaN(id)) {
-          this.navigateToNewSession();
-        } else if (this.currentSessionId !== id) {
-          if (this.isStreaming) {
-            this.debugService.log(`[Frontend] Navigating away from session ${this.currentSessionId} while streaming. Generation continues in background.`);
-          }
-          this.loadSession(id);
-        }
-      } else {
-        if (this.currentSessionId !== null || this.messages.length > 0) {
-          if (this.isStreaming) {
-            this.debugService.log('[Frontend] Navigating to new session, clearing local streaming state. Generation continues in background.');
-          }
-          this.newSession();
-        } else {
-          this.loadDraft();
-        }
-      }
-    });
 
     (window as any).onGnollHackToolResponse = (jsonString: string) => {
       try {
@@ -507,14 +510,14 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       this.currentStatusText = evt.data;
       this.cdr.detectChanges();
     } else if (evt.type === 'thinking_chunk') {
-      if (this.showThoughtsAndTools === 2 || this.showThoughtsAndTools === 3) {
-        if (!this.isThinkingActive) {
-          this.streamingMessage += '\n\n<div class="ai-thought">\n\n';
-        }
-        this.streamingMessage += evt.data;
-        this.cdr.detectChanges();
-        this.scrollToBottomClamped(false);
+      // Always append thinking text; CSS .hide-thoughts handles visibility
+      if (!this.isThinkingActive) {
+        this.debugService.log(`[Frontend] thinking_chunk received (first chunk), opening ai-thought div. mode=${this.showThoughtsAndTools}`);
+        this.streamingMessage += '\n\n<div class="ai-thought">\n\n';
       }
+      this.streamingMessage += evt.data;
+      this.cdr.detectChanges();
+      this.scrollToBottomClamped(false);
       this.isThinkingActive = true;
     } else if (evt.type === 'ttft') {
       this.timeToFirstTokenMs = parseInt(evt.data, 10);
@@ -523,9 +526,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       this.debugService.log(`[Frontend] chunk received, streamingMessage.length=${this.streamingMessage.length}, mode=${this.showThoughtsAndTools}`);
       if (this.isThinkingActive) {
           this.isThinkingActive = false;
-          if (this.showThoughtsAndTools === 2 || this.showThoughtsAndTools === 3) {
-            this.streamingMessage += '\n\n</div>\n\n';
-          }
+          this.streamingMessage += '\n\n</div>\n\n';
       }
       if (!this.isStreaming) {
         this.isStreaming = true;
@@ -546,25 +547,17 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         // Close any active thinking div
         if (this.isThinkingActive) {
             this.isThinkingActive = false;
-            if (this.showThoughtsAndTools === 2 || this.showThoughtsAndTools === 3) {
-              this.streamingMessage += '\n\n</div>\n\n';
-            }
+            this.streamingMessage += '\n\n</div>\n\n';
         }
 
-        // Handle preceding text based on showThoughtsAndTools setting
+        // Wrap any preceding text (reasoning before tool call) in ai-thought div
         if (this.streamingMessage.length > 0) {
           const lastDivIndex = this.streamingMessage.lastIndexOf('</div>');
           const thoughtStartIndex = lastDivIndex >= 0 ? lastDivIndex + 6 : 0;
           const thoughtText = this.streamingMessage.substring(thoughtStartIndex).trim();
           if (thoughtText.length > 0) {
-            if (this.showThoughtsAndTools === 2 || this.showThoughtsAndTools === 3) {
-              // Wrap preceding text in ai-thought div
-              this.streamingMessage = this.streamingMessage.substring(0, thoughtStartIndex)
-                + '\n\n<div class="ai-thought">\n\n' + thoughtText + '\n\n</div>\n\n';
-            } else {
-              // Strip preceding text (it's thinking/reasoning that should be hidden)
-              this.streamingMessage = this.streamingMessage.substring(0, thoughtStartIndex);
-            }
+            this.streamingMessage = this.streamingMessage.substring(0, thoughtStartIndex)
+              + '\n\n<div class="ai-thought">\n\n' + thoughtText + '\n\n</div>\n\n';
           }
         }
 
@@ -648,9 +641,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       if (this.isStreaming) {
         if (this.isThinkingActive) {
             this.isThinkingActive = false;
-            if (this.showThoughtsAndTools === 2 || this.showThoughtsAndTools === 3) {
-              this.streamingMessage += '\n\n</div>\n\n';
-            }
+            this.streamingMessage += '\n\n</div>\n\n';
         }
         this.messages.push({ 
           role: 'assistant', 
@@ -804,6 +795,13 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
             });
           }
         });
+
+        // Debug: summarize loaded messages
+        const asstMsgs = this.messages.filter(m => m.role === 'assistant');
+        const msgsWithThinking = asstMsgs.filter(m => m.content && m.content.includes('ai-thought'));
+        const msgsWithTools = asstMsgs.filter(m => m.toolCalls && m.toolCalls.length > 0);
+        const totalTools = asstMsgs.reduce((sum, m) => sum + (m.toolCalls?.length || 0), 0);
+        this.debugService.log(`[Frontend] Session ${id} loaded: ${this.messages.length} messages, ${asstMsgs.length} assistant, ${msgsWithThinking.length} with thinking text, ${msgsWithTools.length} with tool calls (${totalTools} total tools). showThoughtsAndTools=${this.showThoughtsAndTools}`);
         this.currentStatusText = '';
         this.isGeneratingTitle = false;
         this.titleStatusText = '';
