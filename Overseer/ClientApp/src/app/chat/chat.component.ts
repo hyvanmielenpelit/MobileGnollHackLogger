@@ -274,7 +274,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   reportedMsgIndex: number | null = null;
   reportSuccessIndex: number | null = null;
   reportError = '';
-  showDebugLog = false;
+  showDebugLog = localStorage.getItem('showDebugLog') === 'true';
 
   currentStatusText = '';
   showSpinner = false;
@@ -415,13 +415,15 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     
     this.settingsService.getSettings().subscribe(settings => {
       if (settings) {
+        this.hasApiKey = settings.hasApiKey;
+        this.allowMultipleModels = settings.allowMultipleModels ?? false;
         if (settings.maxAttachmentSize) {
           this.maxAttachmentSize = settings.maxAttachmentSize;
         }
-        this.hasApiKey = settings.hasApiKey;
         this.showDebugLog = settings.showDebugLog ?? false;
+        localStorage.setItem('showDebugLog', this.showDebugLog.toString());
         this.debugService.setEnabled(this.showDebugLog);
-        this.allowMultipleModels = settings.allowMultipleModels ?? false;
+        
         this.showThoughtsAndTools = Number(settings.showThoughtsAndTools ?? 0);
         this.debugService.log(`[Overseer] showThoughtsAndTools loaded: ${this.showThoughtsAndTools} (type: ${typeof this.showThoughtsAndTools})`);
 
