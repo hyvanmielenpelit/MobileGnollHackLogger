@@ -53,6 +53,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     'wiki_search': 'Searching GnollHack Wiki',
     'list_indexed_files': 'Listing source files',
     'get_constants': 'Searching constants',
+    'get_knowledge_article': 'Searching knowledge base',
     'wiki_view': 'Viewing Wiki page',
     'search_definitions': 'Searching definitions'
   };

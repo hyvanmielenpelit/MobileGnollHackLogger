@@ -25,8 +25,9 @@ public class ChatService
     private readonly ModelMetadataService _modelMetadataService;
     private readonly ToolRegistry _toolRegistry;
     private readonly ToolExecutor _toolExecutor;
+    private readonly KnowledgeBaseService _knowledgeBaseService;
 
-    public ChatService(IServiceScopeFactory scopeFactory, WikiService wikiService, CryptoService cryptoService, IHttpClientFactory httpClientFactory, IConfiguration configuration, IHubContext<ChatHub> hubContext, ModelMetadataService modelMetadataService, ToolRegistry toolRegistry, ToolExecutor toolExecutor)
+    public ChatService(IServiceScopeFactory scopeFactory, WikiService wikiService, CryptoService cryptoService, IHttpClientFactory httpClientFactory, IConfiguration configuration, IHubContext<ChatHub> hubContext, ModelMetadataService modelMetadataService, ToolRegistry toolRegistry, ToolExecutor toolExecutor, KnowledgeBaseService knowledgeBaseService)
     {
         _scopeFactory = scopeFactory;
         _wikiService = wikiService;
@@ -37,6 +38,7 @@ public class ChatService
         _modelMetadataService = modelMetadataService;
         _toolRegistry = toolRegistry;
         _toolExecutor = toolExecutor;
+        _knowledgeBaseService = knowledgeBaseService;
     }
 
     private int MapThinkingBudget(string thinkingLevel)
@@ -1649,6 +1651,25 @@ public class ChatService
             sb.AppendLine("- **Developer Assistance**: This session includes runtime debug data. You can help diagnose crashes, runtime errors, save corruption, pending task issues, and provide code-level guidance for the GnollHack C core and .NET MAUI frontend.");
         }
         sb.AppendLine();
+
+        // ──────────────────────────────────────────────
+        // SECTION 5b: Knowledge Base
+        // ──────────────────────────────────────────────
+        if (enableToolUse)
+        {
+            var topicList = _knowledgeBaseService.GetTopicList();
+            if (!string.IsNullOrEmpty(topicList))
+            {
+                sb.AppendLine("## Knowledge Base");
+                sb.AppendLine("You have curated reference articles available via the get_knowledge_article tool on the following topics:");
+                sb.AppendLine(topicList);
+                sb.AppendLine();
+                sb.AppendLine("### Information Routing");
+                sb.AppendLine("- For topics listed above: ALWAYS call get_knowledge_article FIRST. The knowledge base is the authoritative source for these topics. Only use wiki or other tools if the article does not fully answer the question.");
+                sb.AppendLine("- For game mechanics, monsters, items, spells, or other topics NOT listed above: skip the knowledge base entirely and go directly to wiki_search, monster_lookup, or item_lookup.");
+                sb.AppendLine();
+            }
+        }
 
         // ──────────────────────────────────────────────
         // SECTION 6: Available Context
