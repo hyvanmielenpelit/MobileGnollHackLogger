@@ -20,6 +20,15 @@
         </div>
         <button class="session-delete-btn" (click)="requestDeleteSession(s.id, $event)" title="Delete Session">X</button>
       </li>
+      <!-- Load More link -->
+      <li *ngIf="hasMoreSessions && !loadingMoreSessions && !loadingSessions"
+          class="load-more-item" (click)="loadMoreSessions()">
+        Load more
+      </li>
+      <!-- Loading spinner for additional pages -->
+      <li *ngIf="loadingMoreSessions" class="load-more-spinner-item">
+        <div class="sidebar-spinner load-more-spinner"></div>
+      </li>
     </ul>
     <div class="bottom-links">
       <a routerLink="/settings" queryParamsHandling="preserve">Settings</a>

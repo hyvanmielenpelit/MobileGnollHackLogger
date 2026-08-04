@@ -42,17 +42,29 @@ public class ChatController : ControllerBase
     }
 
     [HttpGet("sessions")]
-    public async Task<IActionResult> GetSessions()
+    public async Task<IActionResult> GetSessions([FromQuery] int skip = 0, [FromQuery] int? take = null)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+        int pageSize = _configuration.GetValue<int>("ConversationListPageSize", 20);
+        int effectiveTake = Math.Min(take ?? pageSize, 500);
+
         var sessions = await _dbContext.ChatSession
             .Where(s => s.AspNetUserId == userId)
             .OrderByDescending(s => s.LastMessageUtc)
+            .Skip(skip)
+            .Take(effectiveTake)
             .Select(s => new { s.Id, s.Title, s.LastMessageUtc })
             .ToListAsync();
 
-        return Ok(sessions);
+        var totalCount = await _dbContext.ChatSession.CountAsync(s => s.AspNetUserId == userId);
+
+        return Ok(new
+        {
+            sessions = sessions,
+            hasMore = (skip + sessions.Count) < totalCount
+        });
     }
 
     public class UpdateTitleRequest

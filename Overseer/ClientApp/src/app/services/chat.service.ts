@@ -41,14 +41,23 @@ export interface ChatStreamEvent {
   type: 'chunk' | 'status' | 'debug' | 'error' | 'sessionId' | 'tool_start' | 'tool_result' | 'tool_error' | 'title_update' | 'thinking_chunk' | 'ttft' | 'final';
   data: string;
 }
+export interface ChatSessionsResponse {
+  sessions: ChatSession[];
+  hasMore: boolean;
+}
+
 @Injectable({
   providedIn: 'root'
 })
 export class ChatService {
   private http = inject(HttpClient);
 
-  getSessions() {
-    return this.http.get<ChatSession[]>('/api/chat/sessions');
+  getSessions(skip: number = 0, take?: number) {
+    let url = `/api/chat/sessions?skip=${skip}`;
+    if (take) {
+      url += `&take=${take}`;
+    }
+    return this.http.get<ChatSessionsResponse>(url);
   }
 
   getSession(id: number) {

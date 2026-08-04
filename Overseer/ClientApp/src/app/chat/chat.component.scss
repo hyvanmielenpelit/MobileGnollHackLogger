@@ -35,6 +35,41 @@
 .btn-new-chat { width: 100%; margin-block-end: 15px; }
 .sessions-loader { padding: 30px 10px; color: #aaa; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 0.9em; gap: 15px; }
 .sidebar-spinner { width: 36px; height: 36px; border: 4px solid rgba(212, 175, 55, 0.2); border-block-start-color: var(--primary-color); border-radius: 50%; animation: spin 1s linear infinite; }
+
+/* Load More Pagination */
+.load-more-item {
+  justify-content: center !important; /* Override sidebar li flex space-between */
+  padding: 15px 10px;
+  color: var(--primary-color) !important; /* Special link color distinct from regular items */
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border-block-end: 1px solid rgba(255,255,255,0.1);
+  background: rgba(212, 175, 55, 0.05);
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: rgba(212, 175, 55, 0.15) !important;
+    color: #fce6a8 !important;
+    box-shadow: inset 0 0 10px rgba(212, 175, 55, 0.1);
+  }
+}
+
+.load-more-spinner-item {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 15px 10px;
+}
+
+.load-more-spinner {
+  width: 24px;
+  height: 24px;
+  border-width: 3px;
+}
+
 .bottom-links a { display: block; margin-block-start: 10px; text-decoration: none; color: var(--link-color); padding: 5px; }
 .bottom-links a:hover { background: rgba(255,255,255,0.05); border-radius: 4px; }
 .chat-area { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; }

@@ -121,10 +121,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   pendingRequests = new Map<string, ReturnType<typeof setTimeout>>();
 
   isOffline = !navigator.onLine;
-  private onlineHandler = () => { this.isOffline = false; this.cdr.detectChanges(); this.loadSessions(); };
+  private onlineHandler = () => { this.isOffline = false; this.cdr.detectChanges(); this.loadSessions(true); };
   private offlineHandler = () => { this.isOffline = true; this.cdr.detectChanges(); };
-
   sessions: ChatSession[] = [];
+  hasMoreSessions = false;
+  loadingMoreSessions = false;
   loadingSessions = false;
   private sessionLoadSub: Subscription | null = null;
   currentSessionId: number | null = null;
@@ -663,7 +664,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.showSpinner = false;
         this.currentStatusText = 'Generation complete.';
         this.cdr.detectChanges();
-        this.loadSessions();
+        this.loadSessions(true);
         this.focusPromptInput();
       }
     }
@@ -713,17 +714,34 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     const key = this.currentSessionId ? `chat_draft_${this.currentSessionId}` : 'chat_draft_new';
     localStorage.removeItem(key);
   }
-
-  loadSessions() {
+  loadSessions(preserveLoaded: boolean = false) {
     this.loadingSessions = true;
-    this.chatService.getSessions().subscribe({
-      next: (s) => {
-        this.sessions = s;
+    const take = preserveLoaded && this.sessions.length > 0 ? this.sessions.length : undefined;
+    this.chatService.getSessions(0, take).subscribe({
+      next: (response) => {
+        this.sessions = response.sessions;
+        this.hasMoreSessions = response.hasMore;
         this.loadingSessions = false;
       },
       error: (err) => {
         console.error('Failed to load sessions', err);
         this.loadingSessions = false;
+      }
+    });
+  }
+
+  loadMoreSessions() {
+    if (this.loadingMoreSessions || this.loadingSessions || !this.hasMoreSessions) return;
+    this.loadingMoreSessions = true;
+    this.chatService.getSessions(this.sessions.length).subscribe({
+      next: (response) => {
+        this.sessions = [...this.sessions, ...response.sessions];
+        this.hasMoreSessions = response.hasMore;
+        this.loadingMoreSessions = false;
+      },
+      error: (err) => {
+        console.error('Failed to load more sessions', err);
+        this.loadingMoreSessions = false;
       }
     });
   }
@@ -821,7 +839,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         }
         
         if (!this.sessions.find(x => x.id === id)) {
-           this.loadSessions();
+           this.loadSessions(true);
         }
         this.applySavedModelPreference();
         this.focusPromptInput();
@@ -847,7 +865,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     
     this.chatService.deleteSession(id).subscribe(() => {
       if (this.currentSessionId === id) this.navigateToNewSession();
-      this.loadSessions();
+      this.loadSessions(true);
       if (this.deleteConfirmDialog) {
         this.deleteConfirmDialog.nativeElement.close();
       }
@@ -1004,7 +1022,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         if (this.hubConnection?.state === signalR.HubConnectionState.Connected) {
           this.hubConnection.invoke("JoinSession", this.currentSessionId).catch(console.error);
         }
-        this.loadSessions();
+        this.loadSessions(true);
         
         const urlTree = this.router.createUrlTree([], {
           relativeTo: this.route,
