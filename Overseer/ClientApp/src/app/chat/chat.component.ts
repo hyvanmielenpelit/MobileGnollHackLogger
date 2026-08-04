@@ -4,12 +4,12 @@ import { FormsModule } from '@angular/forms';
 import { ChatService, ChatSession, ChatMessage, ChatMessageToolCall } from '../services/chat.service';
 import { AuthService } from '../services/auth.service';
 import { DebugService } from '../services/debug.service';
-import { Router, ActivatedRoute, RouterModule } from '@angular/router';
+import { Router, ActivatedRoute, RouterModule, NavigationEnd } from '@angular/router';
 import { MarkdownPipe } from './markdown.pipe';
 import { RelativeTimePipe } from './relative-time.pipe';
 import { SettingsService } from '../services/settings.service';
 import * as signalR from '@microsoft/signalr';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, filter } from 'rxjs';
 export interface ToolClientRequest {
     type: string;
     requestId: string;
@@ -380,6 +380,23 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   ngOnInit() {
+    this.settingsService.showThoughtsAndToolsUpdated.subscribe(val => {
+      this.showThoughtsAndTools = val;
+    });
+
+    let previousUrl = '';
+    this.router.events.pipe(
+      filter(event => event instanceof NavigationEnd)
+    ).subscribe((event: any) => {
+      const currentUrl = event.urlAfterRedirects;
+      if (currentUrl && currentUrl.startsWith('/chat')) {
+        if (previousUrl && previousUrl.startsWith('/settings')) {
+          this.debugService.log(`[Overseer] showThoughtsAndTools after re-entering the chat window: ` + this.showThoughtsAndTools);
+        }
+      }
+      previousUrl = currentUrl || '';
+    });
+
     window.addEventListener('online', this.onlineHandler);
     window.addEventListener('offline', this.offlineHandler);
 

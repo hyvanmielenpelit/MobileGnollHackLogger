@@ -244,6 +244,7 @@ export class SettingsComponent implements OnInit {
     this.saved = false;
     this.settingsService.saveSettings(this.spoilerFreeMode, this.enableWebSearch, this.enableToolUse, this.enableClientTools, this.enableGameActions, this.allowMultipleModels, this.showSourceCodeReferences, this.maxResultLength, this.maxCallsPerSession, this.maxToolIterations, Number(this.showThoughtsAndTools)).subscribe(() => {
       this.loading = false;
+      this.settingsService.showThoughtsAndToolsUpdated.next(Number(this.showThoughtsAndTools));
       
       const toast = this.successToast?.nativeElement as any;
       if (toast && ("popover" in HTMLElement.prototype || toast.classList.contains('\:popover-open') || 'showPopover' in toast)) {

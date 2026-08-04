@@ -1,5 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
+import { Subject } from 'rxjs';
 
 export interface UserAiSettings {
   hasApiKey: boolean;
@@ -56,6 +57,7 @@ export interface ApiKeyStatus {
 })
 export class SettingsService {
   private http = inject(HttpClient);
+  public showThoughtsAndToolsUpdated = new Subject<number>();
 
   getSettings() {
     return this.http.get<UserAiSettings>('/api/settings', {
