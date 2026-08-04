@@ -670,6 +670,13 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
   .custom-model-selector {
     margin-bottom: 0;
   }
+
+  .vertical-separator {
+    width: 1px;
+    height: 24px;
+    background: linear-gradient(to bottom, transparent, rgba(255, 255, 255, 0.2) 50%, transparent);
+    margin: 0 4px;
+  }
 }
 
 .setting-badge {
