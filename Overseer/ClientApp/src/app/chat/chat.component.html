@@ -25,7 +25,7 @@
       <a routerLink="/settings" queryParamsHandling="preserve">Settings</a>
       <a routerLink="/api-keys" queryParamsHandling="preserve">API Keys</a>
       <a routerLink="/models" queryParamsHandling="preserve">Models</a>
-      <a *ngIf="!isProduction" routerLink="/debug-log" queryParamsHandling="preserve">Debug Log</a>
+      <a *ngIf="showDebugLog" routerLink="/debug-log" queryParamsHandling="preserve">Debug Log</a>
       <a href="#" (click)="logout($event)">Logout</a>
     </div>
   </div>

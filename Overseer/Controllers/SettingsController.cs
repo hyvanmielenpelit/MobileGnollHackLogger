@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Overseer.Services;
+using Overseer.Extensions;
 using System.Security.Claims;
 using System.Text.Json;
 using System.Net.Http.Headers;
@@ -16,16 +17,14 @@ public class SettingsController : ControllerBase
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConfiguration _configuration;
     private readonly ModelMetadataService _modelMetadataService;
-    private readonly IWebHostEnvironment _env;
     private readonly RecommendedModelService _recommendedModelService;
 
-    public SettingsController(SettingsService settingsService, IHttpClientFactory httpClientFactory, IConfiguration configuration, ModelMetadataService modelMetadataService, IWebHostEnvironment env, RecommendedModelService recommendedModelService)
+    public SettingsController(SettingsService settingsService, IHttpClientFactory httpClientFactory, IConfiguration configuration, ModelMetadataService modelMetadataService, RecommendedModelService recommendedModelService)
     {
         _settingsService = settingsService;
         _httpClientFactory = httpClientFactory;
         _configuration = configuration;
         _modelMetadataService = modelMetadataService;
-        _env = env;
         _recommendedModelService = recommendedModelService;
     }
 
@@ -46,6 +45,8 @@ public class SettingsController : ControllerBase
         bool hasApiKey = apiKeysStatus.Any(s => (bool)((dynamic)s).HasKey);
         bool hasModel = userModels.Any();
         
+        bool showDebugLog = _configuration.ShouldShowDebugLog(User.Identity?.Name);
+        
         return Ok(new
         {
             hasApiKey = hasApiKey,
@@ -64,7 +65,7 @@ public class SettingsController : ControllerBase
             enableGameActions = settings?.EnableGameActions ?? false,
             showThoughtsAndTools = settings?.ShowThoughtsAndTools ?? 0,
             requestTimeout = settings?.RequestTimeout,
-            isProduction = _env.IsProduction(),
+            showDebugLog = showDebugLog,
             performanceLimits = new {
                 maxResultLength = new {
                     min = _configuration.GetValue<int>("AiPerformanceSettings:MaxResultLength:Min", 500),

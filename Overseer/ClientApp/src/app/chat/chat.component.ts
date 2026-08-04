@@ -274,7 +274,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   reportedMsgIndex: number | null = null;
   reportSuccessIndex: number | null = null;
   reportError = '';
-  isProduction = false;
+  showDebugLog = false;
 
   currentStatusText = '';
   showSpinner = false;
@@ -419,7 +419,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           this.maxAttachmentSize = settings.maxAttachmentSize;
         }
         this.hasApiKey = settings.hasApiKey;
-        this.isProduction = settings.isProduction ?? false;
+        this.showDebugLog = settings.showDebugLog ?? false;
+        this.debugService.setEnabled(this.showDebugLog);
         this.allowMultipleModels = settings.allowMultipleModels ?? false;
         this.showThoughtsAndTools = Number(settings.showThoughtsAndTools ?? 0);
         this.debugService.log(`[Overseer] showThoughtsAndTools loaded: ${this.showThoughtsAndTools} (type: ${typeof this.showThoughtsAndTools})`);

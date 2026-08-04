@@ -17,7 +17,7 @@ export interface UserAiSettings {
   enableToolUse?: boolean;
   enableClientTools?: boolean;
   enableGameActions?: boolean;
-  isProduction?: boolean;
+  showDebugLog?: boolean;
   requestTimeout?: number;
   configuredProviders?: string[];
   performanceLimits?: any;

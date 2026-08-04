@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using Overseer.Controllers;
 using Microsoft.AspNetCore.SignalR;
 using Overseer.Hubs;
+using Overseer.Extensions;
 using Overseer.Services.Tools;
 
 namespace Overseer.Services;
@@ -27,6 +28,7 @@ public class ChatService
     private readonly ToolExecutor _toolExecutor;
     private readonly KnowledgeBaseService _knowledgeBaseService;
     private readonly OngoingChatManager _ongoingChatManager;
+    private bool _showDebugLog = false;
 
     public ChatService(IServiceScopeFactory scopeFactory, WikiService wikiService, CryptoService cryptoService, IHttpClientFactory httpClientFactory, IConfiguration configuration, IHubContext<ChatHub> hubContext, ModelMetadataService modelMetadataService, ToolRegistry toolRegistry, ToolExecutor toolExecutor, KnowledgeBaseService knowledgeBaseService, OngoingChatManager ongoingChatManager)
     {
@@ -127,6 +129,8 @@ public class ChatService
         using (var scope = _scopeFactory.CreateScope())
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var userName = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(System.Linq.Queryable.Select(System.Linq.Queryable.Where(dbContext.Users, u => u.Id == userId), u => u.UserName), cancellationToken);
+            _showDebugLog = _configuration.ShouldShowDebugLog(userName);
             var settings = await dbContext.UserAiSettings.FindAsync(userId);
             bool allowMultipleModels = false;
             
@@ -434,7 +438,7 @@ public class ChatService
             
             // Note: maxOutputTokens is handled later
 
-            yield return new ChatEvent 
+            if (_showDebugLog) yield return new ChatEvent 
             { 
                 Type = "debug", 
                 Data = $"[Model Configuration]\nProvider: {provider}\nModel: {model}\nThinking Level: {(string.IsNullOrEmpty(thinkingLevel) ? "None" : thinkingLevel)}\nMax Input Tokens (Limit): {effectiveInputLimit}\nMax Output Tokens: {(maxOutputTokens.HasValue ? maxOutputTokens.Value.ToString() : "Default")}\nEstimated Request Input Tokens: ~{totalTokens}" 
@@ -508,7 +512,7 @@ public class ChatService
                 }
 
                 var jsonRequest = JsonSerializer.Serialize(requestBody);
-                yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - OpenAI] Request Body: {jsonRequest}" };
+                if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - OpenAI] Request Body: {jsonRequest}" };
 
                 if (!apiCallStartTime.HasValue) apiCallStartTime = System.Diagnostics.Stopwatch.GetTimestamp();
 
@@ -684,7 +688,7 @@ public class ChatService
                 }
 
                 var jsonRequest = JsonSerializer.Serialize(requestBody);
-                yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - Anthropic] Request Body: {jsonRequest}" };
+                if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - Anthropic] Request Body: {jsonRequest}" };
 
                 if (!apiCallStartTime.HasValue) apiCallStartTime = System.Diagnostics.Stopwatch.GetTimestamp();
 
@@ -930,7 +934,7 @@ public class ChatService
                 }
 
                 var jsonRequest = JsonSerializer.Serialize(requestBody);
-                yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - Google] Request Body: {jsonRequest}" };
+                if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - Google] Request Body: {jsonRequest}" };
 
                 if (!apiCallStartTime.HasValue) apiCallStartTime = System.Diagnostics.Stopwatch.GetTimestamp();
 
@@ -1010,7 +1014,7 @@ public class ChatService
                         fullResponse += $"<div class=\"ai-thought\">\n\n{iterationText}\n\n</div>\n\n";
                         thinkingBoundaries.Clear(); // Invalidate boundaries since we just modified the text and wrapped it manually
                         thinkingStartIndex = -1;
-                        yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - Google] Wrapped iteration thinking text ({iterationText.Length} chars) in ai-thought div" };
+                        if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - Google] Wrapped iteration thinking text ({iterationText.Length} chars) in ai-thought div" };
                     }
                     var modelParts = new List<object>();
                     foreach (var tc in currentIterationToolCalls)
@@ -1028,7 +1032,7 @@ public class ChatService
                             Status = "running",
                             SortOrder = streamToolCalls.Count
                         });
-                        yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - Google] Tool call '{tName}' (id={tId}) added to streamToolCalls (count={streamToolCalls.Count})" };
+                        if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - Google] Tool call '{tName}' (id={tId}) added to streamToolCalls (count={streamToolCalls.Count})" };
 
                         // Reconstruct API history: use raw_part if available (preserves exact Gemini format)
                         if (tc.TryGetProperty("raw_part", out var rp) && rp.ValueKind == JsonValueKind.String)
@@ -1087,11 +1091,11 @@ public class ChatService
                             streamTc.Result = res.Success ? resContent : null;
                             streamTc.Error = res.Success ? null : resContent;
                             streamTc.Status = res.Success ? "completed" : "error";
-                            yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - Google] Tool call '{tName}' (id={tId}) status updated to {streamTc.Status}" };
+                            if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - Google] Tool call '{tName}' (id={tId}) status updated to {streamTc.Status}" };
                         }
                         else
                         {
-                            yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - Google] WARNING: Tool call '{tName}' (id={tId}) not found in streamToolCalls for status update" };
+                            if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - Google] WARNING: Tool call '{tName}' (id={tId}) not found in streamToolCalls for status update" };
                         }
                         
                         if (res.Success)
@@ -1142,7 +1146,7 @@ public class ChatService
             if (session != null)
             {
                 bool hasThinkingDivs = fullResponse.Contains("ai-thought");
-                yield return new ChatEvent { Type = "debug", Data = $"[Main Chat] Saving assistant message: {fullResponse.Length} chars, hasThinkingDivs={hasThinkingDivs}, thinkingBoundaries={thinkingBoundaries.Count}, toolCalls={streamToolCalls.Count}" };
+                if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat] Saving assistant message: {fullResponse.Length} chars, hasThinkingDivs={hasThinkingDivs}, thinkingBoundaries={thinkingBoundaries.Count}, toolCalls={streamToolCalls.Count}" };
 
                 var asstMsg = new ChatMessage
                 {
@@ -1159,7 +1163,7 @@ public class ChatService
                 dbContext.ChatMessage.Add(asstMsg);
                 session.LastMessageUtc = DateTime.UtcNow;
                 await dbContext.SaveChangesAsync(CancellationToken.None);
-                yield return new ChatEvent { Type = "debug", Data = $"[Main Chat] Assistant message saved to DB (id={asstMsg.Id})" };
+                if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat] Assistant message saved to DB (id={asstMsg.Id})" };
             }
         }
     }
@@ -1177,7 +1181,7 @@ public class ChatService
         while (!success && !cancellationToken.IsCancellationRequested)
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] Starting POST request (Attempt {attempt + 1})..." };
+            if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] Starting POST request (Attempt {attempt + 1})..." };
             yield return new ChatEvent { Type = "status", Data = $"Waiting for {providerName}..." };
 
             HttpResponseMessage? response = null;
@@ -1196,12 +1200,12 @@ public class ChatService
                 sw.Stop();
                 if (cancellationToken.IsCancellationRequested)
                 {
-                    yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] Request canceled by user in {sw.ElapsedMilliseconds}ms" };
+                    if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] Request canceled by user in {sw.ElapsedMilliseconds}ms" };
                     yield return new ChatEvent { Type = "error", Data = "Request canceled." };
                 }
                 else
                 {
-                    yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] Request failed in {sw.ElapsedMilliseconds}ms: {requestException.Message}" };
+                    if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] Request failed in {sw.ElapsedMilliseconds}ms: {requestException.Message}" };
                     yield return new ChatEvent { Type = "error", Data = $"Request failed: {requestException.Message}" };
                 }
                 yield break;
@@ -1211,7 +1215,7 @@ public class ChatService
             
             if (response!.IsSuccessStatusCode)
             {
-                yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] HTTP {(int)response.StatusCode} Received ({sw.ElapsedMilliseconds}ms)" };
+                if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] HTTP {(int)response.StatusCode} Received ({sw.ElapsedMilliseconds}ms)" };
                 yield return new ChatEvent { Type = "status", Data = $"Streaming response..." };
                 
                 await foreach (var evt in streamParser(response, cancellationToken))
@@ -1219,13 +1223,13 @@ public class ChatService
                     yield return evt;
                 }
                 
-                yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] Stream completed." };
+                if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] Stream completed." };
                 success = true;
             }
             else
             {
                 var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
-                yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] HTTP {(int)response.StatusCode} Received ({sw.ElapsedMilliseconds}ms)\nBody: {errorBody}" };
+                if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] HTTP {(int)response.StatusCode} Received ({sw.ElapsedMilliseconds}ms)\nBody: {errorBody}" };
 
                 if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests) // 429
                 {
@@ -1238,7 +1242,7 @@ public class ChatService
                     {
                         int delaySeconds = retryDelays[attempt];
                         yield return new ChatEvent { Type = "status", Data = $"503 Unavailable. Retrying in {delaySeconds}s..." };
-                        yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] Sleeping for {delaySeconds}s before retry..." };
+                        if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] Sleeping for {delaySeconds}s before retry..." };
                         
                         try {
                             await Task.Delay(delaySeconds * 1000, cancellationToken);
@@ -1927,9 +1931,14 @@ public class ChatService
 
         try
         {
+            using var startScope = _scopeFactory.CreateScope();
+            var startDbContext = startScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var titleUserName = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(System.Linq.Queryable.Select(System.Linq.Queryable.Where(startDbContext.Users, u => u.Id == userId), u => u.UserName), cancellationToken);
+            _showDebugLog = _configuration.ShouldShowDebugLog(titleUserName);
+
             await Task.Delay(2500, cancellationToken); // Give the UI time to navigate and join the SignalR session
             
-            await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen] Task started for session {sessionId}." }, CancellationToken.None);
+            if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen] Task started for session {sessionId}." }, CancellationToken.None);
             
             var initialStatus = new { sessionId = sessionId, status = "Generating AI title..." };
             await _hubContext.Clients.User(userId).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "title_status", Data = System.Text.Json.JsonSerializer.Serialize(initialStatus) }, CancellationToken.None);
@@ -1956,14 +1965,14 @@ public class ChatService
 
             if (model == null)
             {
-                await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen] Aborted: No AI model configured." }, CancellationToken.None);
+                if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen] Aborted: No AI model configured." }, CancellationToken.None);
                 return;
             }
 
             var apiKeyEntry = await dbContext.UserAiApiKeys.FirstOrDefaultAsync(k => k.AspNetUserId == userId && k.Provider == model.Provider, cancellationToken);
             if (apiKeyEntry == null || string.IsNullOrEmpty(apiKeyEntry.EncryptedApiKey) || string.IsNullOrEmpty(apiKeyEntry.ApiKeyNonce) || string.IsNullOrEmpty(apiKeyEntry.ApiKeyTag))
             {
-                await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen] Aborted: No API key found for provider {model.Provider}." }, CancellationToken.None);
+                if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen] Aborted: No API key found for provider {model.Provider}." }, CancellationToken.None);
                 return;
             }
             
@@ -2026,7 +2035,7 @@ public class ChatService
                 var sw = System.Diagnostics.Stopwatch.StartNew();
                 var safeUri = requestMessage.RequestUri?.ToString() ?? "";
                 if (safeUri.Contains("key=")) { safeUri = System.Text.RegularExpressions.Regex.Replace(safeUri, "key=[^&]+", "key=APIKEY_NOT_DISCLOSED"); }
-                await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] Starting POST request to {safeUri}..." }, CancellationToken.None);
+                if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] Starting POST request to {safeUri}..." }, CancellationToken.None);
                 
                 HttpResponseMessage? response = null;
                 int[] retryDelays = { 1000, 3000, 5000, 10000, 15000 };
@@ -2051,7 +2060,7 @@ public class ChatService
                         
                         response = await client.SendAsync(reqClone, cancellationToken);
                         
-                        await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] HTTP {(int)response.StatusCode} Received ({sw.ElapsedMilliseconds}ms, Attempt {i + 1})" }, CancellationToken.None);
+                        if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] HTTP {(int)response.StatusCode} Received ({sw.ElapsedMilliseconds}ms, Attempt {i + 1})" }, CancellationToken.None);
                         
                         if (response.StatusCode != System.Net.HttpStatusCode.ServiceUnavailable || i == retryDelays.Length)
                         {
@@ -2061,12 +2070,12 @@ public class ChatService
                     catch (OperationCanceledException) { throw; }
                     catch (Exception ex)
                     {
-                        await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] Request failed: {ex.Message} (Attempt {i + 1})" }, CancellationToken.None);
+                        if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] Request failed: {ex.Message} (Attempt {i + 1})" }, CancellationToken.None);
                         if (i == retryDelays.Length) throw;
                     }
                     
                     int delayMs = retryDelays[i];
-                    await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] Sleeping for {delayMs / 1000.0}s before retry..." }, CancellationToken.None);
+                    if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] Sleeping for {delayMs / 1000.0}s before retry..." }, CancellationToken.None);
                     await Task.Delay(delayMs, cancellationToken);
                 }
                 
@@ -2108,17 +2117,17 @@ public class ChatService
                     
                     if (string.IsNullOrWhiteSpace(generatedTitle))
                     {
-                        await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] Warning: API returned empty or whitespace title. Raw JSON: {json}" }, CancellationToken.None);
+                        if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] Warning: API returned empty or whitespace title. Raw JSON: {json}" }, CancellationToken.None);
                     }
                     else
                     {
-                        await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] Generated Title: \"{generatedTitle}\"" }, CancellationToken.None);
+                        if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] Generated Title: \"{generatedTitle}\"" }, CancellationToken.None);
                     }
                 }
                 else if (response != null)
                 {
                     var errorStr = await response.Content.ReadAsStringAsync(CancellationToken.None);
-                    await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] API Error: {errorStr}" }, CancellationToken.None);
+                    if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] API Error: {errorStr}" }, CancellationToken.None);
                     try
                     {
                         System.IO.File.WriteAllText($@"C:\Users\TommiGustafsson\.gemini\antigravity\brain\527f1941-808c-47af-84c6-4f4161647aea\scratch\api_error_{Guid.NewGuid()}.txt", errorStr);
@@ -2151,7 +2160,7 @@ public class ChatService
         }
         catch (Exception ex)
         {
-            await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - Exception] {ex.GetType().Name}: {ex.Message}" }, CancellationToken.None);
+            if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - Exception] {ex.GetType().Name}: {ex.Message}" }, CancellationToken.None);
             
             var errorStatus = new { sessionId = sessionId, status = "" };
             await _hubContext.Clients.User(userId).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "title_status", Data = System.Text.Json.JsonSerializer.Serialize(errorStatus) }, CancellationToken.None);

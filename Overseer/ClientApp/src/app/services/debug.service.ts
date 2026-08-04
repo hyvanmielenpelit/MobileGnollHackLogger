@@ -11,10 +11,19 @@ export interface DebugLogEntry {
 export class DebugService {
   private logs: DebugLogEntry[] = [];
   private readonly MAX_LOGS = 2000;
+  private isEnabled = true;
 
   constructor() { }
 
+  setEnabled(enabled: boolean) {
+    this.isEnabled = enabled;
+    if (!this.isEnabled) {
+      this.logs = [];
+    }
+  }
+
   log(message: string) {
+    if (!this.isEnabled) return;
     this.logs.push({
       timestamp: new Date(),
       message: message

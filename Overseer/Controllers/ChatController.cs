@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
 using Overseer.Services;
+using Overseer.Extensions;
 using System.Security.Claims;
 using Microsoft.Extensions.Configuration;
 using System.IO;
@@ -157,6 +158,7 @@ public class ChatController : ControllerBase
         }).ToList();
 
         var ongoing = _ongoingChatManager.TryGet(id);
+        bool showDebugLog = _configuration.ShouldShowDebugLog(User.Identity?.Name);
         
         return Ok(new
         {
@@ -164,7 +166,9 @@ public class ChatController : ControllerBase
             session.Title,
             Messages = formattedMessages,
             OngoingGeneration = ongoing != null ? new {
-                events = ongoing.AccumulatedEvents.Select(e => new { type = e.Type, data = e.Data }).ToList()
+                events = ongoing.AccumulatedEvents
+                    .Where(e => showDebugLog || e.Type != "debug")
+                    .Select(e => new { type = e.Type, data = e.Data }).ToList()
             } : null
         });
     }
@@ -299,16 +303,17 @@ public class ChatController : ControllerBase
     [HttpPost("report")]
     public async Task<IActionResult> ReportMessage([FromBody] ReportMessageRequest request)
     {
+        bool showDebugLog = _configuration.ShouldShowDebugLog(User.Identity?.Name);
         var debugLogs = new List<string>();
-        debugLogs.Add($"Starting ReportMessage for MessageId: {request.MessageId}");
+        if (showDebugLog) debugLogs.Add($"Starting ReportMessage for MessageId: {request.MessageId}");
 
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId)) 
         {
-            debugLogs.Add("User ID not found in claims.");
+            if (showDebugLog) debugLogs.Add("User ID not found in claims.");
             return Unauthorized();
         }
-        debugLogs.Add($"User ID: {userId}");
+        if (showDebugLog) debugLogs.Add($"User ID: {userId}");
 
         // Rate limiting: max 10 per day
         string cacheKey = $"ReportMessageCount_{userId}";
@@ -398,34 +403,33 @@ public class ChatController : ControllerBase
             </html>
         ";
 
-        var emailMessage = new EmailMessage(
-            senderAddress: "DoNotReply@gnollhack.com",
-            recipientAddress: toAddress,
-            content: new EmailContent("Overseer Message Report")
-            {
-                Html = htmlBody
-            });
+        var emailContent = new EmailContent("Overseer Message Report")
+        {
+            Html = htmlBody
+        };
 
         var attachmentContent = BinaryData.FromString(mdBuilder.ToString());
         var attachment = new EmailAttachment("conversation.md", "text/markdown", attachmentContent);
+        var emailMessage = new EmailMessage("donotreply@gnollhack.com", toAddress, emailContent);
         emailMessage.Attachments.Add(attachment);
 
         try
         {
-            debugLogs.Add($"Sending email to {toAddress}...");
+            if (showDebugLog) debugLogs.Add($"Sending email to {toAddress}...");
             await _emailSender.SendAsync(Azure.WaitUntil.Started, emailMessage);
-            debugLogs.Add("Email SendAsync completed successfully.");
+            if (showDebugLog) debugLogs.Add("Email SendAsync completed successfully.");
 
             var cacheEntryOptions = new MemoryCacheEntryOptions()
                 .SetAbsoluteExpiration(TimeSpan.FromDays(1))
                 .SetSize(1);
             _memoryCache.Set(cacheKey, reportCount + 1, cacheEntryOptions);
-            return Ok(new { debugLogs });
+            return Ok(showDebugLog ? (object)new { debugLogs } : new { });
         }
         catch (Exception ex)
         {
-            debugLogs.Add($"Exception in SendAsync: {ex}");
-            return StatusCode(500, new { message = $"Failed to send report email: {ex.Message}", debugLogs });
+            if (showDebugLog) debugLogs.Add($"Exception in SendAsync: {ex}");
+            if (showDebugLog) return StatusCode(500, new { message = $"Failed to send report email: {ex.Message}", debugLogs });
+            else return StatusCode(500, new { message = $"Failed to send report email: {ex.Message}" });
         }
     }
 }
