@@ -201,15 +201,32 @@ public class SettingsController : ControllerBase
 
         var models = await _settingsService.GetUserModelsAsync(userId);
         var dtos = models.Select(m => new {
-            m.Id,
-            m.Provider,
-            m.ModelId,
-            m.DisplayName,
-            m.ThinkingLevel,
-            m.OrderIndex,
-            m.MaxInputTokens,
-            m.MaxOutputTokens
+            Id = m.Id,
+            Provider = m.Provider,
+            ModelId = m.ModelId,
+            DisplayName = (string?)m.DisplayName,
+            ThinkingLevel = (string?)m.ThinkingLevel,
+            OrderIndex = m.OrderIndex,
+            MaxInputTokens = (int?)m.MaxInputTokens,
+            MaxOutputTokens = (int?)m.MaxOutputTokens,
+            IsSystem = false
+        }).ToList();
+
+        var systemConfigs = await _settingsService.GetResolvedSystemModelsAsync(userId);
+        var sysDtos = systemConfigs.Select(c => new {
+            Id = c.Id,
+            Provider = c.Provider,
+            ModelId = c.ModelId,
+            DisplayName = (string?)c.DisplayName,
+            ThinkingLevel = (string?)c.ThinkingLevel,
+            OrderIndex = c.OrderIndex,
+            MaxInputTokens = (int?)c.MaxInputTokens,
+            MaxOutputTokens = (int?)c.MaxOutputTokens,
+            IsSystem = true
         });
+
+        dtos.AddRange(sysDtos);
+
         return Ok(dtos);
     }
 

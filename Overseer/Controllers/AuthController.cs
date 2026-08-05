@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using MobileGnollHackLogger.Data;
+using Overseer.Extensions;
 
 namespace Overseer.Controllers;
 
@@ -48,18 +49,20 @@ public class AuthController : ControllerBase
 
     [HttpGet("me")]
     [Authorize]
-    public async Task<IActionResult> Me([FromServices] ApplicationDbContext dbContext)
+    public async Task<IActionResult> Me([FromServices] ApplicationDbContext dbContext, [FromServices] IConfiguration configuration)
     {
         var user = await _userManager.GetUserAsync(User);
         if (user == null) return Unauthorized();
 
         bool hasApiKey = dbContext.UserAiApiKeys.Any(k => k.AspNetUserId == user.Id && !string.IsNullOrEmpty(k.EncryptedApiKey));
+        bool isAdmin = configuration.IsAdmin(user.UserName);
 
         return Ok(new
         {
             userName = user.UserName,
             email = user.Email,
-            hasApiKey = hasApiKey
+            hasApiKey = hasApiKey,
+            isAdmin = isAdmin
         });
     }
 

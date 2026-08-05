@@ -293,6 +293,7 @@ public class ChatController : ControllerBase
         var message = request.Message;
         var attachments = request.Attachments;
         var userModelId = request.UserModelId;
+        var systemModelId = request.SystemModelId;
 
         _ = Task.Run(async () =>
         {
@@ -301,7 +302,7 @@ public class ChatController : ControllerBase
                 using var scope = _scopeFactory.CreateScope();
                 var chatService = scope.ServiceProvider.GetRequiredService<ChatService>();
                 await chatService.GenerateAndBroadcastMessageAsync(
-                    sessionId, message, attachments, userId, false, cts.Token, userModelId);
+                    sessionId, message, attachments, userId, false, cts.Token, userModelId, systemModelId);
             }
             finally
             {
@@ -464,4 +465,5 @@ public class SendMessageRequest
     public string Message { get; set; } = string.Empty;
     public List<SendMessageAttachment>? Attachments { get; set; }
     public long? UserModelId { get; set; }
+    public long? SystemModelId { get; set; }
 }

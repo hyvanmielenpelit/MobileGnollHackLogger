@@ -23,4 +23,19 @@ public static class ConfigurationExtensions
         }
         return showDebugLog;
     }
+
+    public static bool IsAdmin(this IConfiguration configuration, string? userName)
+    {
+        if (string.IsNullOrWhiteSpace(userName)) return false;
+        string admins = configuration.GetValue<string>("Admins", "") ?? "";
+        if (!string.IsNullOrWhiteSpace(admins))
+        {
+            var adminList = admins.Split(',').Select(u => u.Trim()).ToList();
+            if (adminList.Contains(userName, StringComparer.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
 }

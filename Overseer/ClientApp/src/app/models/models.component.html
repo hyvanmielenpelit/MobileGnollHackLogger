@@ -58,7 +58,29 @@
     </div>
   </div>
 
-  <div class="title-gen-section" *ngIf="userModels.length > 0">
+  <div *ngIf="systemModels.length > 0" class="mt-30">
+    <div class="actions-header">
+      <h3>System-Provided Models</h3>
+    </div>
+    <div class="models-list">
+      <div *ngFor="let model of systemModels" class="model-item system-model-item">
+        <div class="model-info">
+          <div class="model-title d-flex align-items-center">
+            <h3>{{ model.displayName || model.modelId }}</h3>
+            <span class="badge-system-wide ml-10" style="background-color: #28a745; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.8em;">System Config</span>
+          </div>
+          <div class="model-details">
+            <div class="mb-4">{{ model.modelId }} <span class="provider-badge ml-8">{{ model.provider }}</span></div>
+            <div *ngIf="model.thinkingLevel">
+              <span class="detail-label thinking ml-0">Thinking Level:</span> {{ formatThinkingLevel(model.thinkingLevel) }}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="title-gen-section" *ngIf="userModels.length > 0 || systemModels.length > 0">
     <div class="title-gen-header">
       <h3>Title Generation</h3>
       <p>Select which AI model is used to automatically generate chat titles from your initial prompts.</p>
@@ -67,7 +89,12 @@
       <div class="d-flex align-items-center flex-gap-15">
         <select id="titleGenerationModelSelect" [(ngModel)]="titleGenerationModelId" (change)="onTitleModelChange()" class="gh-input flex-1" [disabled]="savingTitleModel">
           <option [ngValue]="null">Default (First Available)</option>
-          <option *ngFor="let m of userModels" [ngValue]="m.id">{{ m.displayName || m.modelId }}</option>
+          <optgroup label="Your Models" *ngIf="userModels.length > 0">
+            <option *ngFor="let m of userModels" [ngValue]="m.id">{{ m.displayName || m.modelId }}</option>
+          </optgroup>
+          <optgroup label="System Models" *ngIf="systemModels.length > 0">
+            <option *ngFor="let m of systemModels" [ngValue]="m.id">{{ m.displayName || m.modelId }}</option>
+          </optgroup>
         </select>
         <div class="save-indicator" style="width: 24px; display: flex; justify-content: center;">
           <span *ngIf="savingTitleModel" class="sidebar-spinner" style="margin: 0;"></span>

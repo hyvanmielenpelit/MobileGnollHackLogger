@@ -89,12 +89,13 @@ export class ChatService {
     return this.http.put(`/api/chat/sessions/${sessionId}/title`, { title: newTitle });
   }
 
-  sendMessage(sessionId: number | null, message: string, attachments?: ChatMessageAttachment[], userModelId?: number) {
+  sendMessage(sessionId: number | null, message: string, attachments?: ChatMessageAttachment[], userModelId?: number, systemModelId?: number) {
     return this.http.post<{sessionId: number}>('/api/chat/send', {
       sessionId,
       message,
       attachments: attachments || [],
-      userModelId
+      userModelId,
+      systemModelId
     });
   }
   

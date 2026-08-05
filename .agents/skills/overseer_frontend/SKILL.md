@@ -13,6 +13,11 @@ When working on the frontend for the Overseer project within MobileGnollHackLogg
 
 ## Styling UI Elements
 
+### Global Styles
+- **`Overseer/ClientApp/src/styles.scss` is the EXCLUSIVE global styles file** for the Overseer Angular project.
+- **Do NOT modify `site2.scss` or `site2.css`** when working on the Overseer project (those files are strictly for the main ASP.NET MobileGnollHackLogger web pages).
+- If you find duplicate styles across multiple component SCSS files (e.g. `.settings-container` or `.header-row`), move them to `styles.scss` for centralized management.
+
 When creating UI elements in the Overseer frontend, adhere to the following standards:
 
 ### Buttons

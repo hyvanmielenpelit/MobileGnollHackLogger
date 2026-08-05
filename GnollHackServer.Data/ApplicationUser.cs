@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity;
 using System.ComponentModel.DataAnnotations;
 
 namespace MobileGnollHackLogger.Data
@@ -16,6 +16,10 @@ namespace MobileGnollHackLogger.Data
         [MaxLength(255)]
         [RegularExpression("^[a-zA-Z0-9_]$")]
         public string? JunetHackUserName { get; set; }
+
+        public ICollection<UserGroup>? UserGroups { get; set; }
+        public ICollection<UserSystemAiApiConfiguration>? UserSystemAiApiConfigurations { get; set; }
+        public ICollection<SystemAiUsageLog>? SystemAiUsageLogs { get; set; }
 
         public ApplicationUser() : base()
         {

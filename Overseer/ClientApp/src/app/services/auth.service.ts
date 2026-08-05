@@ -8,7 +8,7 @@ import { BehaviorSubject, tap, catchError, of } from 'rxjs';
 export class AuthService {
   private http = inject(HttpClient);
   
-  private userSubject = new BehaviorSubject<{ userName: string, email: string, hasApiKey: boolean } | null>(null);
+  private userSubject = new BehaviorSubject<{ userName: string, email: string, hasApiKey: boolean, isAdmin?: boolean } | null>(null);
   user$ = this.userSubject.asObservable();
 
   checkAuth() {

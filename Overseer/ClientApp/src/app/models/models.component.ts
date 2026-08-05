@@ -18,6 +18,7 @@ export class ModelsComponent implements OnInit {
   @ViewChild('editModelDialog') editModelDialog!: ElementRef<HTMLDialogElement>;
 
   userModels: UserAiModel[] = [];
+  systemModels: UserAiModel[] = [];
   loading = false;
   saving = false;
   titleGenerationModelId: number | null = null;
@@ -94,7 +95,8 @@ export class ModelsComponent implements OnInit {
     this.loading = true;
     this.settingsService.getUserModels().subscribe({
       next: (models) => {
-        this.userModels = models;
+        this.userModels = models.filter(m => !m.isSystem);
+        this.systemModels = models.filter(m => m.isSystem);
         this.loading = false;
       },
       error: (err) => {

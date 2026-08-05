@@ -46,6 +46,7 @@ export interface UserAiModel {
   orderIndex?: number;
   maxInputTokens?: number | null;
   maxOutputTokens?: number | null;
+  isSystem?: boolean;
 }
 
 export interface ApiKeyStatus {

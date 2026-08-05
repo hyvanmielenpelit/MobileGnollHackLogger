@@ -164,6 +164,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   showThoughtsAndTools = 0;
 
   userModels: import('../services/settings.service').UserAiModel[] = [];
+  systemModels: import('../services/settings.service').UserAiModel[] = [];
   selectedUserModelId: number | null = null;
   isModelDropdownOpen = false;
   singleModelInfo: any = null;
@@ -178,7 +179,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   get selectedModel() {
-    return this.userModels.find(m => m.id === this.selectedUserModelId);
+    return this.userModels.find(m => m.id === this.selectedUserModelId) || 
+           this.systemModels.find(m => m.id === this.selectedUserModelId);
   }
 
   toggleModelDropdown(event: Event) {
@@ -249,15 +251,19 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       if (sessionPref) targetId = Number(sessionPref);
     }
 
-    if (!targetId || !this.userModels.find(m => m.id === targetId)) {
+    if (!targetId || (!this.userModels.find(m => m.id === targetId) && !this.systemModels.find(m => m.id === targetId))) {
       const globalPref = localStorage.getItem('overseer_chat_model_global');
       if (globalPref) targetId = Number(globalPref);
     }
 
-    if (targetId && this.userModels.find(m => m.id === targetId)) {
+    if (targetId && (this.userModels.find(m => m.id === targetId) || this.systemModels.find(m => m.id === targetId))) {
       this.selectedUserModelId = targetId;
     } else {
-      this.selectedUserModelId = this.userModels[0].id ?? null;
+      if (this.userModels.length > 0) {
+        this.selectedUserModelId = this.userModels[0].id ?? null;
+      } else if (this.systemModels.length > 0) {
+        this.selectedUserModelId = this.systemModels[0].id ?? null;
+      }
     }
   }
 
@@ -412,20 +418,18 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.showThoughtsAndTools = Number(settings.showThoughtsAndTools ?? 0);
         this.debugService.log(`[Overseer] showThoughtsAndTools loaded: ${this.showThoughtsAndTools} (type: ${typeof this.showThoughtsAndTools})`);
 
-        this.settingsService.getUserModels().subscribe(models => {
-          this.debugService.log(`[Overseer] Retrieved ${models.length} models from server: ` + models.map(m => m.provider + '/' + m.modelId).join(', '));
-          this.debugService.log(`[Overseer] Configured providers from settings: ` + (settings.configuredProviders?.join(', ') || 'none'));
-          
-          this.userModels = models.filter(m => settings.configuredProviders?.includes(m.provider));
-          this.debugService.log(`[Overseer] Models after filtering by configured providers: ${this.userModels.length}`);
-
-          this.hasModel = this.userModels.length > 0;
-          if (this.userModels.length > 0) {
-            this.applySavedModelPreference();
-          } else {
-            this.selectedUserModelId = null;
-          }
-        });
+        this.settingsService.getUserModels().subscribe({ next: (models) => {
+        this.userModels = models.filter(m => !m.isSystem);
+        this.systemModels = models.filter(m => m.isSystem);
+        this.hasModel = this.userModels.length > 0 || this.systemModels.length > 0;
+        
+        if (this.hasModel) {
+          this.applySavedModelPreference();
+        } else {
+          this.singleModelInfo = null;
+          this.selectedUserModelId = null;
+        }
+      },  });
       }
 
       if (isInit) {
@@ -1098,8 +1102,18 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.debugService.log(`[Overseer] showThoughtsAndTools=${this.showThoughtsAndTools}`);
 
     try {
-      const modelIdToUse = this.allowMultipleModels && this.selectedUserModelId ? this.selectedUserModelId : undefined;
-      const res = await firstValueFrom(this.chatService.sendMessage(this.currentSessionId, message, attachmentsPayload, modelIdToUse));
+      const selectedModelObj = this.selectedModel;
+      let uId: number | undefined = undefined;
+      let sId: number | undefined = undefined;
+      if (selectedModelObj) {
+        if (selectedModelObj.isSystem) {
+          sId = selectedModelObj.id;
+        } else {
+          uId = selectedModelObj.id;
+        }
+      }
+
+      const res = await firstValueFrom(this.chatService.sendMessage(this.currentSessionId, message, attachmentsPayload, uId, sId));
       const newSessionId = res.sessionId;
       
       if (this.currentSessionId !== newSessionId) {

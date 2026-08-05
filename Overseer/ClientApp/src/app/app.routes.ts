@@ -12,6 +12,21 @@ import { map, catchError, of } from 'rxjs';
 
 export const routes: Routes = [
   { path: 'login', component: LoginComponent },
+  {
+    path: 'admin',
+    loadComponent: () => import('./admin/admin.component').then(m => m.AdminComponent),
+    canActivate: [(route: any, state: any) => {
+      const auth = inject(AuthService);
+      const router = inject(Router);
+      return auth.checkAuth().pipe(
+        map(user => {
+          if (user && user.isAdmin) return true;
+          return router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } });
+        }),
+        catchError(() => of(router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } })))
+      );
+    }]
+  },
   { 
     path: 'debug-log', 
     component: DebugLogComponent,

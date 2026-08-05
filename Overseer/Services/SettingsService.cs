@@ -130,6 +130,24 @@ public class SettingsService
             .ToListAsync();
     }
 
+    public async Task<List<SystemAiApiConfiguration>> GetResolvedSystemModelsAsync(string userId)
+    {
+        var userGroupIds = await _dbContext.UserGroups
+            .Where(ug => ug.AspNetUserId == userId)
+            .Select(ug => ug.GroupId)
+            .ToListAsync();
+
+        var configs = await _dbContext.SystemAiApiConfigurations
+            .Where(c => c.IsEnabled &&
+                        (c.IsSystemWide || 
+                         _dbContext.UserSystemAiApiConfigurations.Any(uca => uca.SystemAiApiConfigurationId == c.Id && uca.AspNetUserId == userId && uca.IsEnabled) ||
+                         _dbContext.GroupSystemAiApiConfigurations.Any(gca => gca.SystemAiApiConfigurationId == c.Id && userGroupIds.Contains(gca.GroupId) && gca.IsEnabled)))
+            .OrderBy(c => c.OrderIndex)
+            .ToListAsync();
+
+        return configs;
+    }
+
     public async Task AddUserModelAsync(string userId, UserAiModel model)
     {
         var count = await _dbContext.UserAiModels.CountAsync(m => m.AspNetUserId == userId);

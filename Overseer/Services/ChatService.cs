@@ -69,11 +69,11 @@ public class ChatService
         return text.Trim();
     }
 
-    public async Task GenerateAndBroadcastMessageAsync(long sessionId, string message, List<SendMessageAttachment>? attachments, string userId, bool isHidden, CancellationToken cancellationToken, long? userModelId = null)
+    public async Task GenerateAndBroadcastMessageAsync(long sessionId, string message, List<SendMessageAttachment>? attachments, string userId, bool isHidden, CancellationToken cancellationToken, long? userModelId = null, long? systemModelId = null)
     {
         try
         {
-            await foreach (var evt in StreamMessageAsync(sessionId, message, attachments, userId, isHidden, cancellationToken, userModelId))
+            await foreach (var evt in StreamMessageAsync(sessionId, message, attachments, userId, isHidden, cancellationToken, userModelId, systemModelId))
             {
                 evt.SessionId = sessionId;
                 _ongoingChatManager.ProcessEvent(sessionId, evt);
@@ -98,7 +98,7 @@ public class ChatService
         }
     }
 
-    public async IAsyncEnumerable<ChatEvent> StreamMessageAsync(long sessionId, string message, List<SendMessageAttachment>? attachments, string userId, bool isHidden, [EnumeratorCancellation] CancellationToken cancellationToken, long? userModelId = null)
+    public async IAsyncEnumerable<ChatEvent> StreamMessageAsync(long sessionId, string message, List<SendMessageAttachment>? attachments, string userId, bool isHidden, [EnumeratorCancellation] CancellationToken cancellationToken, long? userModelId = null, long? systemModelId = null)
     {
         if (string.IsNullOrEmpty(userId)) yield break;
 
@@ -129,6 +129,8 @@ public class ChatService
         int? userMaxCallsPerSession = null;
         int? userMaxToolIterations = null;
 
+        int estimatedInputTokens = 0;
+
         using (var scope = _scopeFactory.CreateScope())
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -157,7 +159,29 @@ public class ChatService
                 userModelId = null; // force first model because GnollHack doesn't support model selection
             }
 
-            if (userModelId.HasValue)
+            if (systemModelId.HasValue)
+            {
+                var systemAiConfigService = scope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
+                var (config, errorMessage) = await systemAiConfigService.GetAndCheckSystemConfigAsync(systemModelId.Value, userId);
+                
+                if (config == null)
+                {
+                    yield return new ChatEvent { Type = "error", Data = $"Error: {errorMessage}" };
+                    yield break;
+                }
+
+                provider = config.Provider;
+                model = config.ModelId;
+                thinkingLevel = config.ThinkingLevel;
+                if (config.MaxInputTokens.HasValue) maxInputTokens = config.MaxInputTokens.Value;
+                if (config.MaxOutputTokens.HasValue) maxOutputTokens = config.MaxOutputTokens.Value;
+                
+                if (!string.IsNullOrEmpty(config.EncryptedApiKey) && !string.IsNullOrEmpty(config.ApiKeyNonce) && !string.IsNullOrEmpty(config.ApiKeyTag))
+                {
+                    apiKey = _cryptoService.Decrypt(config.EncryptedApiKey, config.ApiKeyNonce, config.ApiKeyTag, "SYSTEM_API_KEY");
+                }
+            }
+            else if (userModelId.HasValue)
             {
                 var userModel = await dbContext.UserAiModels.FirstOrDefaultAsync(m => m.Id == userModelId.Value && m.AspNetUserId == userId);
                 if (userModel != null)
@@ -169,7 +193,7 @@ public class ChatService
                     if (userModel.MaxOutputTokens.HasValue) maxOutputTokens = userModel.MaxOutputTokens.Value;
                 }
             }
-            else if (!userModelId.HasValue || !allowMultipleModels)
+            else if (!allowMultipleModels)
             {
                 var firstModel = await dbContext.UserAiModels
                     .Where(m => m.AspNetUserId == userId)
@@ -184,15 +208,18 @@ public class ChatService
                 }
             }
 
-            var providerKey = await dbContext.UserAiApiKeys.FirstOrDefaultAsync(k => k.AspNetUserId == userId && k.Provider == provider);
-            if (providerKey != null && !string.IsNullOrEmpty(providerKey.EncryptedApiKey) && !string.IsNullOrEmpty(providerKey.ApiKeyNonce) && !string.IsNullOrEmpty(providerKey.ApiKeyTag))
+            if (!systemModelId.HasValue)
             {
-                apiKey = _cryptoService.Decrypt(providerKey.EncryptedApiKey, providerKey.ApiKeyNonce, providerKey.ApiKeyTag, userId);
+                var providerKey = await dbContext.UserAiApiKeys.FirstOrDefaultAsync(k => k.AspNetUserId == userId && k.Provider == provider);
+                if (providerKey != null && !string.IsNullOrEmpty(providerKey.EncryptedApiKey) && !string.IsNullOrEmpty(providerKey.ApiKeyNonce) && !string.IsNullOrEmpty(providerKey.ApiKeyTag))
+                {
+                    apiKey = _cryptoService.Decrypt(providerKey.EncryptedApiKey, providerKey.ApiKeyNonce, providerKey.ApiKeyTag, userId);
+                }
             }
 
             if (string.IsNullOrEmpty(apiKey))
             {
-                yield return new ChatEvent { Type = "error", Data = $"Error: API Key not configured for {provider}. Please configure it in the API Keys page." };
+                yield return new ChatEvent { Type = "error", Data = $"Error: API Key not configured for {provider}. Please configure it in the API Keys page or select a system-provided model." };
                 yield break;
             }
 
@@ -444,6 +471,8 @@ public class ChatService
             
             // Note: maxOutputTokens is handled later
 
+            estimatedInputTokens = totalTokens;
+
             if (_showDebugLog) yield return new ChatEvent 
             { 
                 Type = "debug", 
@@ -509,6 +538,7 @@ public class ChatService
                 },
                 (response, ct) => aiProvider.ParseStreamAsync(response, _showDebugLog, ct),
                 aiProvider.ProviderName,
+                systemModelId,
                 cancellationToken))
             {
                 if (!timeToFirstTokenMs.HasValue && (evt.Type == "chunk" || evt.Type == "thinking_chunk" || evt.Type == "tool_call_complete" || evt.Type == "error"))
@@ -672,6 +702,14 @@ public class ChatService
                 };
                 dbContext.ChatMessage.Add(asstMsg);
                 session.LastMessageUtc = DateTime.UtcNow;
+
+                if (systemModelId.HasValue)
+                {
+                    var systemAiConfigService = scope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
+                    int outputTokens = fullResponse.Length / 4;
+                    await systemAiConfigService.RecordUsageAsync(systemModelId.Value, userId, estimatedInputTokens, outputTokens);
+                }
+
                 await dbContext.SaveChangesAsync(CancellationToken.None);
                 if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat] Assistant message saved to DB (id={asstMsg.Id})" };
             }
@@ -682,6 +720,7 @@ public class ChatService
         Func<CancellationToken, Task<HttpResponseMessage>> requestFactory,
         Func<HttpResponseMessage, CancellationToken, IAsyncEnumerable<ChatEvent>> streamParser,
         string providerName,
+        long? systemModelId,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         int[] retryDelays = { 1, 5, 10, 20, 30, 60 };
@@ -793,7 +832,24 @@ public class ChatService
 
                 if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests) // 429
                 {
+                    if (systemModelId.HasValue)
+                    {
+                        using var errScope = _scopeFactory.CreateScope();
+                        var errService = errScope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
+                        await errService.RecordErrorAsync(systemModelId.Value, "429 Too Many Requests");
+                    }
                     yield return new ChatEvent { Type = "error", Data = "429 Rate Limited. Please try again later." };
+                    yield break;
+                }
+                else if (response.StatusCode == System.Net.HttpStatusCode.PaymentRequired || errorBody.Contains("402") || errorBody.Contains("insufficient_quota")) // 402 or string match
+                {
+                    if (systemModelId.HasValue)
+                    {
+                        using var errScope = _scopeFactory.CreateScope();
+                        var errService = errScope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
+                        await errService.RecordErrorAsync(systemModelId.Value, $"Budget Exhausted: {errorBody}");
+                    }
+                    yield return new ChatEvent { Type = "error", Data = "The system provider budget has been exhausted. Please contact the administrator." };
                     yield break;
                 }
                 else if (response.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable || response.StatusCode == System.Net.HttpStatusCode.BadGateway || response.StatusCode == System.Net.HttpStatusCode.InternalServerError) // 503, 502, 500

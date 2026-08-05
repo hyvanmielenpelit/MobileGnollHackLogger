@@ -25,6 +25,14 @@ namespace MobileGnollHackLogger.Data
         public DbSet<UserAiModel> UserAiModels { get; set; } = null!;
         public DbSet<ChatMessageToolCall> ChatMessageToolCall { get; set; } = null!;
 
+        public DbSet<Group> Groups { get; set; } = null!;
+        public DbSet<UserGroup> UserGroups { get; set; } = null!;
+        public DbSet<SystemAiApiConfiguration> SystemAiApiConfigurations { get; set; } = null!;
+        public DbSet<UserSystemAiApiConfiguration> UserSystemAiApiConfigurations { get; set; } = null!;
+        public DbSet<GroupSystemAiApiConfiguration> GroupSystemAiApiConfigurations { get; set; } = null!;
+        public DbSet<SystemAiUsageLog> SystemAiUsageLogs { get; set; } = null!;
+        public DbSet<SystemAiErrorLog> SystemAiErrorLogs { get; set; } = null!;
+
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
         {
@@ -38,6 +46,32 @@ namespace MobileGnollHackLogger.Data
             modelBuilder.Entity<UserAiApiKey>()
                 .HasIndex(k => new { k.AspNetUserId, k.Provider })
                 .IsUnique();
+
+            modelBuilder.Entity<UserGroup>()
+                .HasKey(ug => new { ug.AspNetUserId, ug.GroupId });
+
+            modelBuilder.Entity<UserGroup>()
+                .HasOne(ug => ug.AspNetUser)
+                .WithMany(u => u.UserGroups)
+                .HasForeignKey(ug => ug.AspNetUserId)
+                .HasPrincipalKey(u => u.Id);
+
+            modelBuilder.Entity<UserGroup>()
+                .HasOne(ug => ug.Group)
+                .WithMany(g => g.UserGroups)
+                .HasForeignKey(ug => ug.GroupId);
+
+            modelBuilder.Entity<SystemAiUsageLog>()
+                .HasOne(l => l.AspNetUser)
+                .WithMany(u => u.SystemAiUsageLogs)
+                .HasForeignKey(l => l.AspNetUserId)
+                .HasPrincipalKey(u => u.Id);
+
+            modelBuilder.Entity<SystemAiErrorLog>()
+                .HasOne(l => l.DismissedByUser)
+                .WithMany()
+                .HasForeignKey(l => l.DismissedByUserId)
+                .HasPrincipalKey(u => u.Id);
 
             modelBuilder.Entity<Bones>()
                 .Property(b => b.Created)
