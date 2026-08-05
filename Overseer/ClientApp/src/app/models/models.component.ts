@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, ViewChild, ElementRef } from '@angular/core';
+import { Component, OnInit, inject, ViewChild, ElementRef, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
@@ -27,6 +27,7 @@ export class ModelsComponent implements OnInit {
   titleModelSelection: string | null = null;
   savingTitleModel = false;
   savedTitleModelSuccess = false;
+  isTitleDropdownOpen = false;
   
   // Model Picker State
   providers = ['OpenAI', 'Anthropic', 'Google'];
@@ -37,12 +38,9 @@ export class ModelsComponent implements OnInit {
   editingModel: UserAiModel | null = null;
   editFormData: any = null;
 
-  allowMultipleModels = false;
-
   ngOnInit() {
     this.settingsService.getSettings().subscribe({
       next: (settings) => {
-        this.allowMultipleModels = settings.allowMultipleModels ?? false;
         if (settings.titleGenerationModelId) {
           this.titleModelSelection = 'u_' + settings.titleGenerationModelId;
         } else if (settings.titleGenerationSystemModelId) {
@@ -222,24 +220,33 @@ export class ModelsComponent implements OnInit {
     });
   }
 
-  onTitleModelChange() {
+  @HostListener('document:click', ['$event'])
+  onDocumentClick(event: Event) {
+    const target = event.target as HTMLElement;
+    if (!target.closest('.title-model-selector-wrapper')) {
+      this.isTitleDropdownOpen = false;
+    }
+  }
+
+  toggleTitleDropdown(event: Event) {
+    event.stopPropagation();
+    this.isTitleDropdownOpen = !this.isTitleDropdownOpen;
+  }
+
+  selectTitleModel(id: number | null, isSystem: boolean) {
+    if (id === null) {
+      this.titleModelSelection = null;
+    } else if (isSystem) {
+      this.titleModelSelection = 's_' + id;
+    } else {
+      this.titleModelSelection = 'u_' + id;
+    }
+    
+    this.isTitleDropdownOpen = false;
     this.savingTitleModel = true;
     this.savedTitleModelSuccess = false;
     
-    let modelId: number | null = null;
-    let isSystem = false;
-    
-    if (this.titleModelSelection) {
-      if (this.titleModelSelection.startsWith('u_')) {
-        modelId = parseInt(this.titleModelSelection.substring(2));
-        isSystem = false;
-      } else if (this.titleModelSelection.startsWith('s_')) {
-        modelId = parseInt(this.titleModelSelection.substring(2));
-        isSystem = true;
-      }
-    }
-    
-    this.settingsService.saveTitleGenerationModel(modelId, isSystem).subscribe({
+    this.settingsService.saveTitleGenerationModel(id, isSystem).subscribe({
       next: () => {
         this.savingTitleModel = false;
         this.savedTitleModelSuccess = true;
@@ -252,6 +259,28 @@ export class ModelsComponent implements OnInit {
         console.error("Failed to save title generation model", err);
       }
     });
+  }
+
+  get selectedTitleModel(): UserAiModel | null {
+    if (!this.titleModelSelection) return null;
+    
+    if (this.titleModelSelection.startsWith('u_')) {
+      const id = parseInt(this.titleModelSelection.substring(2));
+      return this.titleUserModels.find(m => m.id === id) || null;
+    } else if (this.titleModelSelection.startsWith('s_')) {
+      const id = parseInt(this.titleModelSelection.substring(2));
+      return this.titleSystemModels.find(m => m.id === id) || null;
+    }
+    
+    return null;
+  }
+
+  get selectedTitleModelDisplay(): string {
+    const model = this.selectedTitleModel;
+    if (!model) {
+      return 'Default (First Available Chat Model)';
+    }
+    return model.displayName || model.modelId;
   }
 
   openModelPicker() {
@@ -324,7 +353,7 @@ export class ModelsComponent implements OnInit {
     }
   }
 
-  formatThinkingLevel(level: string): string {
+  formatThinkingLevel(level: string | undefined): string {
     if (!level) return 'None';
     return level.charAt(0).toUpperCase() + level.slice(1);
   }

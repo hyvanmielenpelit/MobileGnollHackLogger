@@ -23,8 +23,6 @@ public class UserAiSettings
     public bool EnableClientTools { get; set; } = true;
     public bool EnableGameActions { get; set; } = false;
 
-    public bool AllowMultipleModels { get; set; } = false;
-
     public long? TitleGenerationModelId { get; set; }
     public long? TitleGenerationSystemModelId { get; set; }
 

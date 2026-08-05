@@ -160,7 +160,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   errorMessage = '';
   hasApiKey = true;
   hasModel = true;
-  allowMultipleModels = false;
+  isTitleGenerationInProgress = false;
   showThoughtsAndTools = 0;
 
   userModels: import('../services/settings.service').UserAiModel[] = [];
@@ -407,7 +407,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.settingsService.getSettings().subscribe(settings => {
       if (settings) {
         this.hasApiKey = settings.hasApiKey;
-        this.allowMultipleModels = settings.allowMultipleModels ?? false;
+        this.hasModel = settings.hasModel ?? false;
         if (settings.maxAttachmentSize) {
           this.maxAttachmentSize = settings.maxAttachmentSize;
         }

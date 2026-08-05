@@ -137,8 +137,6 @@ public class ChatService
             var userName = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(System.Linq.Queryable.Select(System.Linq.Queryable.Where(dbContext.Users, u => u.Id == userId), u => u.UserName), cancellationToken);
             _showDebugLog = _configuration.ShouldShowDebugLog(userName);
             var settings = await dbContext.UserAiSettings.FindAsync(userId);
-            bool allowMultipleModels = false;
-            
             if (settings != null)
             {
                 spoilerFreeMode = settings.SpoilerFreeMode;
@@ -146,7 +144,6 @@ public class ChatService
                 enableToolUse = settings.EnableToolUse;
                 enableClientTools = settings.EnableClientTools;
                 enableGameActions = settings.EnableGameActions;
-                allowMultipleModels = settings.AllowMultipleModels;
                 showSourceCodeReferences = settings.ShowSourceCodeReferences;
                 userMaxResultLength = settings.MaxResultLength;
                 userMaxCallsPerSession = settings.MaxCallsPerSession;
@@ -191,20 +188,6 @@ public class ChatService
                     thinkingLevel = userModel.ThinkingLevel;
                     if (userModel.MaxInputTokens.HasValue) maxInputTokens = userModel.MaxInputTokens.Value;
                     if (userModel.MaxOutputTokens.HasValue) maxOutputTokens = userModel.MaxOutputTokens.Value;
-                }
-            }
-            else if (!allowMultipleModels)
-            {
-                var firstModel = await dbContext.UserAiModels
-                    .Where(m => m.AspNetUserId == userId)
-                    .OrderBy(m => m.OrderIndex)
-                    .FirstOrDefaultAsync();
-                
-                if (firstModel != null)
-                {
-                    provider = firstModel.Provider;
-                    model = firstModel.ModelId;
-                    thinkingLevel = firstModel.ThinkingLevel;
                 }
             }
 

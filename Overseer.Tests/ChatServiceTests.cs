@@ -82,7 +82,7 @@ namespace Overseer.Tests
                 var aiSettings = new UserAiSettings
                 {
                     AspNetUserId = userId,
-                    AllowMultipleModels = true
+                    EnableGameActions = true
                 };
                 dbContext.UserAiSettings.Add(aiSettings);
                 

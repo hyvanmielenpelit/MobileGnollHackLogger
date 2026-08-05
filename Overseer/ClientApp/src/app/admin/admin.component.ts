@@ -41,6 +41,10 @@ export class AdminComponent implements OnInit {
   @ViewChild('createGroupDialog') createGroupDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('configDialog') configDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('confirmDialog') confirmDialog!: ElementRef<HTMLDialogElement>;
+  
+  @ViewChild('manageUserConfigsDialog') manageUserConfigsDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('manageGroupConfigsDialog') manageGroupConfigsDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('editConfigOverrideDialog') editConfigOverrideDialog!: ElementRef<HTMLDialogElement>;
 
   // Generic Confirm State
   confirmMessage: string = '';
@@ -52,6 +56,14 @@ export class AdminComponent implements OnInit {
 
   newGroupName: string = '';
   createGroupError: string = '';
+
+  // Config Assignment State
+  selectedUserForConfigs: UserDto | null = null;
+  selectedGroupForConfigs: GroupDto | null = null;
+  userConfigAssignments: any[] = [];
+  groupConfigAssignments: any[] = [];
+  editingOverride: any = null;
+  overrideContext: 'user' | 'group' = 'user';
 
   ngOnInit() {
     this.loadData();
@@ -247,5 +259,184 @@ export class AdminComponent implements OnInit {
       this.confirmAction();
     }
     this.closeConfirmDialog();
+  }
+
+  // --- Config Assignments ---
+  
+  openManageUserConfigs(user: UserDto) {
+    this.selectedUserForConfigs = user;
+    this.adminService.getUserSystemConfigs(user.id).subscribe(assignments => {
+      this.userConfigAssignments = assignments;
+      this.manageUserConfigsDialog.nativeElement.showModal();
+    });
+  }
+
+  closeManageUserConfigs() {
+    this.manageUserConfigsDialog.nativeElement.close();
+    this.selectedUserForConfigs = null;
+    this.userConfigAssignments = [];
+  }
+
+  isConfigAssignedToUser(configId: number): boolean {
+    return this.userConfigAssignments.some(a => a.systemAiApiConfigurationId === configId);
+  }
+
+  getUserAssignment(configId: number) {
+    return this.userConfigAssignments.find(a => a.systemAiApiConfigurationId === configId);
+  }
+
+  toggleUserConfig(config: SystemAiConfigDto, event: any) {
+    const isChecked = event.target.checked;
+    const assignment = this.getUserAssignment(config.id);
+    
+    if (isChecked) {
+      if (!assignment) {
+        this.adminService.createUserSystemConfig(this.selectedUserForConfigs!.id, {
+          systemAiApiConfigurationId: config.id,
+          isEnabled: true,
+          modelRole: config.modelRole,
+          maxResultLength: null,
+          maxCallsPerSession: null,
+          maxToolIterations: null,
+          maxDailyRequests: null,
+          maxMonthlyRequests: null,
+          maxTotalRequests: null
+        }).subscribe(res => {
+          this.userConfigAssignments.push(res);
+        });
+      }
+    } else {
+      if (assignment) {
+        this.adminService.deleteUserSystemConfig(assignment.id).subscribe(() => {
+          this.userConfigAssignments = this.userConfigAssignments.filter(a => a.id !== assignment.id);
+        });
+      }
+    }
+  }
+
+  openManageGroupConfigs(group: GroupDto) {
+    this.selectedGroupForConfigs = group;
+    this.adminService.getGroupSystemConfigs(group.id).subscribe(assignments => {
+      this.groupConfigAssignments = assignments;
+      this.manageGroupConfigsDialog.nativeElement.showModal();
+    });
+  }
+
+  closeManageGroupConfigs() {
+    this.manageGroupConfigsDialog.nativeElement.close();
+    this.selectedGroupForConfigs = null;
+    this.groupConfigAssignments = [];
+  }
+
+  isConfigAssignedToGroup(configId: number): boolean {
+    return this.groupConfigAssignments.some(a => a.systemAiApiConfigurationId === configId);
+  }
+
+  getGroupAssignment(configId: number) {
+    return this.groupConfigAssignments.find(a => a.systemAiApiConfigurationId === configId);
+  }
+
+  toggleGroupConfig(config: SystemAiConfigDto, event: any) {
+    const isChecked = event.target.checked;
+    const assignment = this.getGroupAssignment(config.id);
+    
+    if (isChecked) {
+      if (!assignment) {
+        this.adminService.createGroupSystemConfig(this.selectedGroupForConfigs!.id, {
+          systemAiApiConfigurationId: config.id,
+          isEnabled: true,
+          modelRole: config.modelRole,
+          maxResultLength: null,
+          maxCallsPerSession: null,
+          maxToolIterations: null,
+          maxDailyRequests: null,
+          maxMonthlyRequests: null,
+          maxTotalRequests: null
+        }).subscribe(res => {
+          this.groupConfigAssignments.push(res);
+        });
+      }
+    } else {
+      if (assignment) {
+        this.adminService.deleteGroupSystemConfig(assignment.id).subscribe(() => {
+          this.groupConfigAssignments = this.groupConfigAssignments.filter(a => a.id !== assignment.id);
+        });
+      }
+    }
+  }
+
+  openEditUserOverride(assignment: any) {
+    this.editingOverride = { ...assignment };
+    this.overrideContext = 'user';
+    this.editConfigOverrideDialog.nativeElement.showModal();
+  }
+
+  openEditGroupOverride(assignment: any) {
+    this.overrideContext = 'group';
+    this.editingOverride = {
+      id: assignment.id,
+      isEnabled: assignment.isEnabled,
+      modelRole: assignment.modelRole || 3,
+      maxResultLength: assignment.maxResultLength,
+      maxCallsPerSession: assignment.maxCallsPerSession,
+      maxToolIterations: assignment.maxToolIterations,
+      maxDailyRequests: assignment.maxDailyRequests,
+      maxMonthlyRequests: assignment.maxMonthlyRequests,
+      maxTotalRequests: assignment.maxTotalRequests
+    };
+    this.editConfigOverrideDialog.nativeElement.showModal();
+  }
+
+  formatModelRole(role: number): string {
+    switch (role) {
+      case 1: return 'Title Generation';
+      case 2: return 'Main Chat';
+      case 3: return 'All (Chat & Title)';
+      default: return 'Unknown';
+    }
+  }
+
+  closeEditOverride() {
+    this.editConfigOverrideDialog.nativeElement.close();
+    this.editingOverride = null;
+  }
+
+  saveOverride() {
+    if (!this.editingOverride) return;
+
+    // Convert string limits to numbers or nulls
+    const sanitize = (val: any) => {
+      if (val === null || val === undefined || val === '') return null;
+      return Number(val);
+    };
+
+    const payload = {
+      isEnabled: this.editingOverride.isEnabled,
+      modelRole: Number(this.editingOverride.modelRole),
+      maxResultLength: sanitize(this.editingOverride.maxResultLength),
+      maxCallsPerSession: sanitize(this.editingOverride.maxCallsPerSession),
+      maxToolIterations: sanitize(this.editingOverride.maxToolIterations),
+      maxDailyRequests: sanitize(this.editingOverride.maxDailyRequests),
+      maxMonthlyRequests: sanitize(this.editingOverride.maxMonthlyRequests),
+      maxTotalRequests: sanitize(this.editingOverride.maxTotalRequests)
+    };
+
+    if (this.overrideContext === 'user') {
+      this.adminService.updateUserSystemConfig(this.editingOverride.id, payload).subscribe(() => {
+        const idx = this.userConfigAssignments.findIndex(a => a.id === this.editingOverride.id);
+        if (idx !== -1) {
+          this.userConfigAssignments[idx] = { ...this.editingOverride, ...payload };
+        }
+        this.closeEditOverride();
+      });
+    } else {
+      this.adminService.updateGroupSystemConfig(this.editingOverride.id, payload).subscribe(() => {
+        const idx = this.groupConfigAssignments.findIndex(a => a.id === this.editingOverride.id);
+        if (idx !== -1) {
+          this.groupConfigAssignments[idx] = { ...this.editingOverride, ...payload };
+        }
+        this.closeEditOverride();
+      });
+    }
   }
 }

@@ -5,7 +5,6 @@ import { Subject } from 'rxjs';
 export interface UserAiSettings {
   hasApiKey: boolean;
   hasModel?: boolean;
-  allowMultipleModels?: boolean;
   maxAttachmentSize?: number;
   spoilerFreeMode: boolean;
   showSourceCodeReferences?: boolean;
@@ -73,14 +72,13 @@ export class SettingsService {
     });
   }
 
-  saveSettings(spoilerFreeMode: boolean, enableWebSearch: boolean, enableToolUse: boolean, enableClientTools: boolean, enableGameActions: boolean, allowMultipleModels: boolean, showSourceCodeReferences: boolean, maxResultLength: number | null, maxCallsPerSession: number | null, maxToolIterations: number | null, showThoughtsAndTools: number, requestTimeout: number | null) {
+  saveSettings(spoilerFreeMode: boolean, enableWebSearch: boolean, enableToolUse: boolean, enableClientTools: boolean, enableGameActions: boolean, showSourceCodeReferences: boolean, maxResultLength: number | null, maxCallsPerSession: number | null, maxToolIterations: number | null, showThoughtsAndTools: number, requestTimeout: number | null) {
     return this.http.put('/api/settings', {
       spoilerFreeMode,
       enableWebSearch,
       enableToolUse,
       enableClientTools,
       enableGameActions,
-      allowMultipleModels,
       showSourceCodeReferences,
       maxResultLength,
       maxCallsPerSession,

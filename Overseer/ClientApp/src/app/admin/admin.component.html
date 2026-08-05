@@ -44,8 +44,13 @@
                       <span *ngFor="let g of user.groups" class="group-badge">{{ g.displayName }}</span>
                       <span *ngIf="!user.groups || user.groups.length === 0" class="text-muted italic">None</span>
                     </td>
-                    <td style="text-align: right;">
-                      <button class="btn-gh btn-gh-small" (click)="openManageUserGroups(user)">Manage Groups</button>
+                    <td style="text-align: right; white-space: nowrap;">
+                      <button class="action-btn" title="Manage Groups" (click)="openManageUserGroups(user)">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                      </button>
+                      <button class="action-btn" title="Manage Configs" (click)="openManageUserConfigs(user)">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                      </button>
                     </td>
                   </tr>
                 </tbody>
@@ -75,8 +80,13 @@
                   <tr *ngFor="let group of groups">
                     <td>{{ group.id }}</td>
                     <td>{{ group.displayName }}</td>
-                    <td style="text-align: right;">
-                      <button class="btn-gh btn-gh-small btn-gh-delete" (click)="deleteGroup(group)">Delete</button>
+                    <td style="text-align: right; white-space: nowrap;">
+                      <button class="action-btn" title="Manage Configs" (click)="openManageGroupConfigs(group)">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                      </button>
+                      <button class="action-btn action-btn-danger" title="Delete Group" (click)="deleteGroup(group)">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                      </button>
                     </td>
                   </tr>
                 </tbody>
@@ -103,6 +113,7 @@
                   <div class="model-details">
                     <div class="mb-4">
                       {{ config.modelId }} <span class="provider-badge ml-8">{{ config.provider }}</span>
+                      <span class="provider-badge ml-8" style="background-color: rgba(255, 255, 255, 0.05); color: #ccc;">{{ formatModelRole(config.modelRole) }}</span>
                       <span *ngIf="config.isSystemWide" class="badge-system-wide ml-8">System Wide</span>
                       <span *ngIf="!config.isEnabled" class="badge-disabled ml-8">Disabled</span>
                       <span class="status-badge ml-8" [class.badge-success]="config.hasApiKey" [class.badge-warning]="!config.hasApiKey">
@@ -200,3 +211,123 @@
         </div>
       </div>
     </dialog>
+
+    <dialog #manageUserConfigsDialog class="gh-dialog" style="min-width: 550px;">
+      <div class="dialog-content flex-col">
+        <h3>Manage User Configs: {{ selectedUserForConfigs?.userName }}</h3>
+        <div class="form-group mt-20" style="max-height: 400px; overflow-y: auto;">
+          <div *ngFor="let config of configs" class="mb-15" style="padding: 15px 20px; background: rgba(255,255,255,0.05); border: 1px solid var(--border-glass); border-radius: 6px; display: flex; justify-content: space-between; align-items: center;">
+            <label class="gh-switch-wrapper d-flex align-items-center m-0">
+              <div class="gh-switch">
+                <input type="checkbox" [checked]="isConfigAssignedToUser(config.id)" (change)="toggleUserConfig(config, $event)" />
+                <span class="gh-slider"></span>
+              </div>
+              <div style="margin-left: 20px;">
+                <div style="font-weight: 500; font-size: 1.1em;">{{ config.displayName }}</div>
+                <div class="text-muted mt-5" style="font-size: 0.85em; font-family: monospace;">
+                  Provider: {{ config.provider }} <span class="ml-10">Role: {{ formatModelRole(config.modelRole) }}</span>
+                </div>
+              </div>
+            </label>
+            <button class="action-btn" *ngIf="isConfigAssignedToUser(config.id)" (click)="openEditUserOverride(getUserAssignment(config.id))" title="Overrides">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+            </button>
+          </div>
+        </div>
+        <div class="dialog-actions mt-auto pt-20">
+          <button class="btn-gh" (click)="closeManageUserConfigs()">Done</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog #manageGroupConfigsDialog class="gh-dialog" style="min-width: 550px;">
+      <div class="dialog-content flex-col">
+        <h3>Manage Group Configs: {{ selectedGroupForConfigs?.displayName }}</h3>
+        <div class="form-group mt-20" style="max-height: 400px; overflow-y: auto;">
+          <div *ngFor="let config of configs" class="mb-15" style="padding: 15px 20px; background: rgba(255,255,255,0.05); border: 1px solid var(--border-glass); border-radius: 6px; display: flex; justify-content: space-between; align-items: center;">
+            <label class="gh-switch-wrapper d-flex align-items-center m-0">
+              <div class="gh-switch">
+                <input type="checkbox" [checked]="isConfigAssignedToGroup(config.id)" (change)="toggleGroupConfig(config, $event)" />
+                <span class="gh-slider"></span>
+              </div>
+              <div style="margin-left: 20px;">
+                <div style="font-weight: 500; font-size: 1.1em;">{{ config.displayName }}</div>
+                <div class="text-muted mt-5" style="font-size: 0.85em; font-family: monospace;">
+                  Provider: {{ config.provider }} <span class="ml-10">Role: {{ formatModelRole(config.modelRole) }}</span>
+                </div>
+              </div>
+            </label>
+            <button class="action-btn" *ngIf="isConfigAssignedToGroup(config.id)" (click)="openEditGroupOverride(getGroupAssignment(config.id))" title="Overrides">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2-2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+            </button>
+          </div>
+        </div>
+        <div class="dialog-actions mt-auto pt-20">
+          <button class="btn-gh" (click)="closeManageGroupConfigs()">Done</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog #editConfigOverrideDialog class="gh-dialog">
+      <div class="dialog-content flex-col" *ngIf="editingOverride">
+        <h3>Edit Overrides ({{ overrideContext === 'user' ? 'User' : 'Group' }})</h3>
+        <p class="text-muted" style="font-size: 0.85em; margin-top: 5px; margin-bottom: 20px;">
+          Leave empty to use base system config values.
+        </p>
+
+        <div class="form-group">
+          <label class="gh-switch-wrapper d-flex align-items-center m-0">
+            <div class="gh-switch">
+              <input type="checkbox" [(ngModel)]="editingOverride.isEnabled" name="overrideIsEnabled" />
+              <span class="gh-slider"></span>
+            </div>
+            <span style="margin-left: 20px;">Is Enabled</span>
+          </label>
+        </div>
+
+        <div class="form-group mt-15">
+          <label>Model Role Filter</label>
+          <select [(ngModel)]="editingOverride.modelRole" class="gh-input w-100">
+            <option [value]="1">Title Generation</option>
+            <option [value]="2">Main Chat</option>
+            <option [value]="3">All</option>
+          </select>
+        </div>
+
+        <div class="form-group mt-15">
+          <label>Max Result Length (Tokens)</label>
+          <input type="number" [(ngModel)]="editingOverride.maxResultLength" class="gh-input w-100" placeholder="Inherit">
+        </div>
+
+        <div class="form-group mt-15">
+          <label>Max Calls Per Session</label>
+          <input type="number" [(ngModel)]="editingOverride.maxCallsPerSession" class="gh-input w-100" placeholder="Inherit">
+        </div>
+
+        <div class="form-group mt-15">
+          <label>Max Tool Iterations</label>
+          <input type="number" [(ngModel)]="editingOverride.maxToolIterations" class="gh-input w-100" placeholder="Inherit">
+        </div>
+
+        <div class="form-group mt-15">
+          <label>Max Daily Requests</label>
+          <input type="number" [(ngModel)]="editingOverride.maxDailyRequests" class="gh-input w-100" placeholder="Inherit">
+        </div>
+        
+        <div class="form-group mt-15">
+          <label>Max Monthly Requests</label>
+          <input type="number" [(ngModel)]="editingOverride.maxMonthlyRequests" class="gh-input w-100" placeholder="Inherit">
+        </div>
+        
+        <div class="form-group mt-15">
+          <label>Max Total Requests</label>
+          <input type="number" [(ngModel)]="editingOverride.maxTotalRequests" class="gh-input w-100" placeholder="Inherit">
+        </div>
+
+        <div class="dialog-actions mt-auto pt-20">
+          <button class="btn-gh btn-gh-cancel" (click)="closeEditOverride()">Cancel</button>
+          <button class="btn-gh" (click)="saveOverride()">Save</button>
+        </div>
+      </div>
+    </dialog>
+

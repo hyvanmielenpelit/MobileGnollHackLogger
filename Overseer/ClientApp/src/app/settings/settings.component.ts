@@ -16,8 +16,6 @@ export class SettingsComponent implements OnInit {
   
   @ViewChild('successToast') successToast!: ElementRef<HTMLElement>;
   @ViewChild('confirmDialog') confirmDialog!: ElementRef<HTMLDialogElement>;
-  allowMultipleModels = false;
-  initAllowMultipleModels = false;
 
   spoilerFreeMode = true;
   initSpoilerFreeMode = true;
@@ -58,8 +56,7 @@ export class SettingsComponent implements OnInit {
   saved = false;
 
   get isDirty(): boolean {
-    return this.allowMultipleModels !== this.initAllowMultipleModels ||
-           this.spoilerFreeMode !== this.initSpoilerFreeMode ||
+    return this.spoilerFreeMode !== this.initSpoilerFreeMode ||
            this.showSourceCodeReferences !== this.initShowSourceCodeReferences ||
            this.enableWebSearch !== this.initEnableWebSearch ||
            this.enableToolUse !== this.initEnableToolUse ||
@@ -144,10 +141,6 @@ export class SettingsComponent implements OnInit {
 
     this.settingsService.getSettings().subscribe(s => {
       if (s) {
-        if (s.allowMultipleModels !== undefined) {
-          this.allowMultipleModels = s.allowMultipleModels;
-          this.initAllowMultipleModels = s.allowMultipleModels;
-        }
         if (s.spoilerFreeMode !== undefined) {
           this.spoilerFreeMode = s.spoilerFreeMode;
           this.initSpoilerFreeMode = s.spoilerFreeMode;
@@ -250,7 +243,7 @@ export class SettingsComponent implements OnInit {
   saveSettings() {
     this.loading = true;
     this.saved = false;
-    this.settingsService.saveSettings(this.spoilerFreeMode, this.enableWebSearch, this.enableToolUse, this.enableClientTools, this.enableGameActions, this.allowMultipleModels, this.showSourceCodeReferences, this.maxResultLength, this.maxCallsPerSession, this.maxToolIterations, Number(this.showThoughtsAndTools), this.requestTimeout).subscribe(() => {
+    this.settingsService.saveSettings(this.spoilerFreeMode, this.enableWebSearch, this.enableToolUse, this.enableClientTools, this.enableGameActions, this.showSourceCodeReferences, this.maxResultLength, this.maxCallsPerSession, this.maxToolIterations, Number(this.showThoughtsAndTools), this.requestTimeout).subscribe(() => {
       this.loading = false;
       this.settingsService.showThoughtsAndToolsUpdated.next(Number(this.showThoughtsAndTools));
       
@@ -265,7 +258,6 @@ export class SettingsComponent implements OnInit {
         setTimeout(() => this.saved = false, 3000);
       }
 
-      this.initAllowMultipleModels = this.allowMultipleModels;
       this.initSpoilerFreeMode = this.spoilerFreeMode;
       this.initShowSourceCodeReferences = this.showSourceCodeReferences;
       this.initEnableWebSearch = this.enableWebSearch;

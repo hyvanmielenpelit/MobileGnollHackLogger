@@ -151,3 +151,39 @@
   }
 }
 
+/* Action Buttons for Tables */
+.action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-glass);
+  color: #ccc;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-left: 5px;
+  padding: 0;
+
+  &:hover {
+    background: rgba(212, 175, 55, 0.15);
+    border-color: var(--gh-gold);
+    color: var(--gh-gold);
+  }
+
+  svg {
+    width: 16px;
+    height: 16px;
+  }
+}
+
+.action-btn-danger {
+  &:hover {
+    background: rgba(220, 53, 69, 0.15);
+    border-color: #ff4d4d;
+    color: #ff4d4d;
+  }
+}
+

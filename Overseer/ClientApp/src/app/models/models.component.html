@@ -8,7 +8,7 @@
   </p>
 
   <div class="actions-header">
-    <button class="btn-gh" (click)="openModelPicker()" [disabled]="!allowMultipleModels && userModels.length > 0">Add Model</button>
+    <button class="btn-gh" (click)="openModelPicker()">Add Model</button>
   </div>
 
   <div *ngIf="loading" class="loading-state">
@@ -87,15 +87,33 @@
     </div>
     <div class="form-group title-gen-form">
       <div class="d-flex align-items-center flex-gap-15">
-        <select id="titleGenerationModelSelect" [(ngModel)]="titleModelSelection" (change)="onTitleModelChange()" class="gh-input flex-1" [disabled]="savingTitleModel">
-          <option [ngValue]="null">Default (First Available Chat Model)</option>
-          <optgroup label="Your Models" *ngIf="titleUserModels.length > 0">
-            <option *ngFor="let m of titleUserModels" [ngValue]="'u_' + m.id">{{ m.displayName || m.modelId }}</option>
-          </optgroup>
-          <optgroup label="System Models" *ngIf="titleSystemModels.length > 0">
-            <option *ngFor="let m of titleSystemModels" [ngValue]="'s_' + m.id">{{ m.displayName || m.modelId }}</option>
-          </optgroup>
-        </select>
+        <div class="custom-model-selector title-model-selector-wrapper">
+      <button type="button" class="selector-trigger" (click)="toggleTitleDropdown($event)" [class.open]="isTitleDropdownOpen">
+        <span class="model-name">{{ selectedTitleModelDisplay }}</span>
+        <span class="thinking-badge" *ngIf="selectedTitleModel?.thinkingLevel">{{ formatThinkingLevel(selectedTitleModel?.thinkingLevel) }}</span>
+        <span class="provider-badge" *ngIf="selectedTitleModel?.provider">{{ selectedTitleModel?.provider }}</span>
+        <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+      </button>
+      <div class="selector-dropdown" *ngIf="isTitleDropdownOpen">
+        <div class="model-option" (click)="selectTitleModel(null, false)" [class.selected]="!titleModelSelection">
+          <span class="model-name">Default (First Available Chat Model)</span>
+        </div>
+        
+        <div *ngIf="titleUserModels.length > 0" class="model-group-title" style="padding: 4px 10px; font-size: 0.8em; color: var(--gh-gold); background-color: var(--gh-panel-bg); text-transform: uppercase;">Your Models</div>
+        <div class="model-option" *ngFor="let m of titleUserModels" (click)="selectTitleModel(m.id ?? null, false)" [class.selected]="titleModelSelection === 'u_' + m.id">
+          <span class="model-name">{{ m.displayName || m.modelId }}</span>
+          <span class="thinking-badge" *ngIf="m.thinkingLevel">{{ formatThinkingLevel(m.thinkingLevel) }}</span>
+          <span class="provider-badge">{{ m.provider }}</span>
+        </div>
+        
+        <div *ngIf="titleSystemModels.length > 0" class="model-group-title" style="padding: 4px 10px; font-size: 0.8em; color: var(--gh-gold); background-color: var(--gh-panel-bg); text-transform: uppercase;">System Models</div>
+        <div class="model-option" *ngFor="let m of titleSystemModels" (click)="selectTitleModel(m.id ?? null, true)" [class.selected]="titleModelSelection === 's_' + m.id">
+          <span class="model-name">{{ m.displayName || m.modelId }}</span>
+          <span class="thinking-badge" *ngIf="m.thinkingLevel">{{ formatThinkingLevel(m.thinkingLevel) }}</span>
+          <span class="provider-badge">{{ m.provider }}</span>
+        </div>
+      </div>
+    </div>
         <div class="save-indicator" style="width: 24px; display: flex; justify-content: center;">
           <span *ngIf="savingTitleModel" class="sidebar-spinner" style="margin: 0;"></span>
           <svg *ngIf="savedTitleModelSuccess && !savingTitleModel" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#28a745" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" title="Saved!"><polyline points="20 6 9 17 4 12"></polyline></svg>

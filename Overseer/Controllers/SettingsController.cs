@@ -39,11 +39,11 @@ public class SettingsController : ControllerBase
         
         var apiKeysStatus = await _settingsService.GetApiKeysStatusAsync(userId);
         var userModels = await _settingsService.GetUserModelsAsync(userId);
+        var systemConfigs = await _settingsService.GetResolvedSystemModelsAsync(userId);
+        bool hasSystemModel = systemConfigs.Any();
         
-        bool allowMultipleModels = settings?.AllowMultipleModels ?? false;
-        
-        bool hasApiKey = apiKeysStatus.Any(s => (bool)((dynamic)s).HasKey);
-        bool hasModel = userModels.Any();
+        bool hasApiKey = apiKeysStatus.Any(s => (bool)((dynamic)s).HasKey) || hasSystemModel;
+        bool hasModel = userModels.Any() || hasSystemModel;
         
         bool showDebugLog = _configuration.ShouldShowDebugLog(User.Identity?.Name);
         
@@ -51,7 +51,6 @@ public class SettingsController : ControllerBase
         {
             hasApiKey = hasApiKey,
             hasModel = hasModel,
-            allowMultipleModels = allowMultipleModels,
             configuredProviders = apiKeysStatus.Where(s => (bool)((dynamic)s).HasKey).Select(s => (string)((dynamic)s).Provider).ToList(),
             maxAttachmentSize = _configuration.GetValue<long>("MaxAttachmentSize", 15728640),
             spoilerFreeMode = settings?.SpoilerFreeMode ?? true,
@@ -88,7 +87,8 @@ public class SettingsController : ControllerBase
                     defaultValue = _configuration.GetValue<int>("AiPerformanceSettings:ChatRequestTimeout:Default", 300)
                 }
             },
-            titleGenerationModelId = settings?.TitleGenerationModelId
+            titleGenerationModelId = settings?.TitleGenerationModelId,
+            titleGenerationSystemModelId = settings?.TitleGenerationSystemModelId
         });
     }
 
@@ -137,7 +137,7 @@ public class SettingsController : ControllerBase
                 return BadRequest($"RequestTimeout must be between {min} and {max}");
         }
 
-        await _settingsService.SaveSettingsAsync(userId, request.SpoilerFreeMode, request.EnableWebSearch, request.EnableToolUse, request.EnableClientTools, request.EnableGameActions, request.AllowMultipleModels, request.ShowSourceCodeReferences, request.MaxResultLength, request.MaxCallsPerSession, request.MaxToolIterations, request.ShowThoughtsAndTools, request.RequestTimeout);
+        await _settingsService.SaveSettingsAsync(userId, request.SpoilerFreeMode, request.EnableWebSearch, request.EnableToolUse, request.EnableClientTools, request.EnableGameActions, request.ShowSourceCodeReferences, request.MaxResultLength, request.MaxCallsPerSession, request.MaxToolIterations, request.ShowThoughtsAndTools, request.RequestTimeout);
         
         return Ok();
     }
@@ -482,7 +482,6 @@ public class UpdateSettingsRequest
     public bool? EnableToolUse { get; set; }
     public bool? EnableClientTools { get; set; }
     public bool? EnableGameActions { get; set; }
-    public bool? AllowMultipleModels { get; set; }
     public bool? ShowSourceCodeReferences { get; set; }
     public int? ShowThoughtsAndTools { get; set; }
     public int? RequestTimeout { get; set; }
