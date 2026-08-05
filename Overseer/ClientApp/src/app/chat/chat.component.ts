@@ -145,6 +145,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   currentInput = '';
   isStreaming = false;
   isThinkingActive = false;
+  hasRealContent = false;
+  realContentTimeout: any = null;
   streamingMessage = '';
   streamingToolCalls: ChatMessageToolCall[] = [];
   pendingAttachments: { file: File, base64: string, name: string, type: string }[] = [];
@@ -525,6 +527,26 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     });
   }
 
+  updateHasRealContent() {
+    const stripped = this.streamingMessage.replace(/<div class="ai-thought">[\s\S]*?<\/div>/g, '').trim();
+    if (stripped.length > 0) {
+      if (!this.hasRealContent && !this.realContentTimeout) {
+        this.realContentTimeout = setTimeout(() => {
+          this.hasRealContent = true;
+          this.realContentTimeout = null;
+          this.cdr.detectChanges();
+          this.scrollToBottomClamped(false);
+        }, 300);
+      }
+    } else {
+      if (this.realContentTimeout) {
+        clearTimeout(this.realContentTimeout);
+        this.realContentTimeout = null;
+      }
+      this.hasRealContent = false;
+    }
+  }
+
   processChatEvent(evt: any) {
     if (typeof evt.sessionId === 'number' && evt.sessionId !== this.currentSessionId) return;
 
@@ -536,11 +558,12 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       this.debugService.log(`[Backend] ${evt.data}`);
     } else if (evt.type === 'status') {
       this.currentStatusText = evt.data;
+      this.debugService.log(`[Frontend] status updated to: ${evt.data}`);
       this.cdr.detectChanges();
     } else if (evt.type === 'thinking_chunk') {
       // Always append thinking text; CSS .hide-thoughts handles visibility
       if (!this.isThinkingActive) {
-        this.debugService.log(`[Frontend] thinking_chunk received (first chunk), opening ai-thought div. mode=${this.showThoughtsAndTools}`);
+        this.debugService.log(`[Frontend] thinking_chunk started. Current streamingMessage length: ${this.streamingMessage.length}`);
         this.streamingMessage += '\n\n<div class="ai-thought">\n\n';
       }
       this.streamingMessage += evt.data;
@@ -551,8 +574,9 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       this.timeToFirstTokenMs = parseInt(evt.data, 10);
       this.cdr.detectChanges();
     } else if (evt.type === 'chunk') {
-      this.debugService.log(`[Frontend] chunk received, streamingMessage.length=${this.streamingMessage.length}, mode=${this.showThoughtsAndTools}`);
+      this.debugService.log(`[Frontend] chunk received: "${evt.data}". isThinkingActive=${this.isThinkingActive}, hasRealContent=${this.hasRealContent}`);
       if (this.isThinkingActive) {
+          this.debugService.log(`[Frontend] closing ai-thought div before chunk.`);
           this.isThinkingActive = false;
           this.streamingMessage += '\n\n</div>\n\n';
       }
@@ -562,6 +586,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.currentStatusText = 'Receiving data (background task)...';
       }
       this.streamingMessage += evt.data;
+      this.updateHasRealContent();
       this.cdr.detectChanges();
       this.scrollToBottomClamped(false);
     } else if (evt.type === 'error') {
@@ -569,6 +594,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       this.debugService.log(`[Backend Error] ${evt.data}`);
       this.streamingMessage += `\n\n**Error:** ${evt.data}`;
       this.showSpinner = false;
+      this.hasRealContent = true;
+      if (this.realContentTimeout) {
+         clearTimeout(this.realContentTimeout);
+         this.realContentTimeout = null;
+      }
       this.cdr.detectChanges();
     } else if (evt.type === 'tool_start') {
       try {
@@ -588,6 +618,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
               + '\n\n<div class="ai-thought">\n\n' + thoughtText + '\n\n</div>\n\n';
           }
         }
+        this.updateHasRealContent();
 
         const toolInfo = JSON.parse(evt.data);
         this.debugService.log(`[Frontend] tool_start: ${toolInfo.name}, streamingMessage.length after=${this.streamingMessage.length}`);
@@ -665,6 +696,13 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.cdr.detectChanges();
       } catch(e) {}
     } else if (evt.type === 'done') {
+      this.debugService.log(`[Frontend] done received. hasRealContent=${this.hasRealContent}, streamingMessage.length=${this.streamingMessage.length}`);
+      if (this.realContentTimeout) {
+         clearTimeout(this.realContentTimeout);
+         this.realContentTimeout = null;
+      }
+      const stripped = this.streamingMessage.replace(/<div class="ai-thought">[\s\S]*?<\/div>/g, '').trim();
+      this.hasRealContent = stripped.length > 0;
       const hasThinking = this.streamingMessage.includes('ai-thought');
       this.debugService.log(`[Frontend] done: ${this.streamingMessage.length} chars, hasThinkingText=${hasThinking}, toolCalls=${this.streamingToolCalls.length}, mode=${this.showThoughtsAndTools}`);
       if (this.isStreaming) {
@@ -701,8 +739,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   getMinimalStatusLabel(): string {
-    const runningTool = this.streamingToolCalls.find(tc => tc.status === 'running');
-    return runningTool ? (runningTool.displayName || runningTool.name) + '...' : 'Thinking...';
+    if (this.streamingToolCalls && this.streamingToolCalls.length > 0) {
+      const lastTool = this.streamingToolCalls[this.streamingToolCalls.length - 1];
+      return (lastTool.displayName || lastTool.name) + '...';
+    }
+    return 'Thinking...';
   }
 
   setupSignalR() {
@@ -800,6 +841,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.messages = [];
     this.isStreaming = false;
     this.streamingMessage = '';
+    if (this.realContentTimeout) {
+      clearTimeout(this.realContentTimeout);
+      this.realContentTimeout = null;
+    }
+    this.hasRealContent = false;
     this.streamingToolCalls = [];
     this.showSpinner = false;
     this.currentStatusText = '';
@@ -818,6 +864,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.isStreaming = false;
     this.lastSeenSeqNo = -1;
     this.streamingMessage = '';
+    if (this.realContentTimeout) {
+      clearTimeout(this.realContentTimeout);
+      this.realContentTimeout = null;
+    }
+    this.hasRealContent = false;
     this.streamingToolCalls = [];
     this.showSpinner = false;
     this.isThinkingActive = false;
@@ -1021,6 +1072,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.isStreaming = true;
     this.isThinkingActive = false;
     this.streamingMessage = '';
+    if (this.realContentTimeout) {
+      clearTimeout(this.realContentTimeout);
+      this.realContentTimeout = null;
+    }
+    this.hasRealContent = false;
     this.streamingToolCalls = [];
     this.timeToFirstTokenMs = null;
 

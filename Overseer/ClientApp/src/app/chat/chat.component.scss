@@ -229,6 +229,13 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
   margin-block-start: 10px;
 }
 
+.thinking-placeholder {
+  display: flex;
+  align-items: center;
+  padding: 8px 0;
+  color: #ccc;
+}
+
 
 
 .chat-alert-box {
