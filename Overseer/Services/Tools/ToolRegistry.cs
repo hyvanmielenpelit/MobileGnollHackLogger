@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Microsoft.Extensions.Logging;
+using Overseer.Services.Providers;
 
 namespace Overseer.Services.Tools
 {
@@ -81,23 +82,16 @@ namespace Overseer.Services.Tools
             return _spoilerPolicyText;
         }
 
-        public ToolsForRequest BuildToolsForRequest(string provider, ToolExecutionContext context, bool enableWebSearch, bool enableToolUse, bool enableClientTools, bool enableGameActions)
+        public ToolsForRequest BuildToolsForRequest(IAiProvider provider, ToolExecutionContext context, bool enableWebSearch, bool enableToolUse, bool enableClientTools, bool enableGameActions)
         {
             var result = new ToolsForRequest();
 
             if (enableWebSearch)
             {
-                if (provider.Equals("Google", StringComparison.OrdinalIgnoreCase))
+                var webSearchTool = provider.BuildWebSearchTool();
+                if (webSearchTool != null)
                 {
-                    result.ProviderTools.Add(new { googleSearch = new { } });
-                }
-                else if (provider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase))
-                {
-                    result.ProviderTools.Add(new { type = "web_search" });
-                }
-                else if (provider.Equals("Anthropic", StringComparison.OrdinalIgnoreCase))
-                {
-                    result.ProviderTools.Add(new { type = "web_search_20260318", name = "web_search" });
+                    result.ProviderTools.Add(webSearchTool);
                 }
             }
 
@@ -123,37 +117,8 @@ namespace Overseer.Services.Tools
                 }
 
                 // Append function declaration
-                if (provider.Equals("Google", StringComparison.OrdinalIgnoreCase))
-                {
-                    result.FunctionDeclarations.Add(new
-                    {
-                        name = handler.ToolName,
-                        description = GetAdjustedDescription(handler, context),
-                        parameters = handler.ParameterSchema
-                    });
-                }
-                else if (provider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase))
-                {
-                    result.FunctionDeclarations.Add(new
-                    {
-                        type = "function",
-                        function = new
-                        {
-                            name = handler.ToolName,
-                            description = GetAdjustedDescription(handler, context),
-                            parameters = handler.ParameterSchema
-                        }
-                    });
-                }
-                else if (provider.Equals("Anthropic", StringComparison.OrdinalIgnoreCase))
-                {
-                    result.FunctionDeclarations.Add(new
-                    {
-                        name = handler.ToolName,
-                        description = GetAdjustedDescription(handler, context),
-                        input_schema = handler.ParameterSchema
-                    });
-                }
+                result.FunctionDeclarations.Add(
+                    provider.BuildFunctionDeclaration(handler.ToolName, GetAdjustedDescription(handler, context), handler.ParameterSchema));
             }
 
             return result;

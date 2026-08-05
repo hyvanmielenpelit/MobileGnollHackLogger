@@ -1,0 +1,61 @@
+using System.Collections.Generic;
+using System.Net.Http;
+using System.Text.Json;
+using System.Threading;
+using Overseer.Controllers;
+using Overseer.Services.Tools;
+
+namespace Overseer.Services.Providers;
+
+public interface IAiProvider
+{
+    string ProviderName { get; }
+
+    // Request building
+    Dictionary<string, object> BuildChatRequestBody(
+        string modelId,
+        List<object> messageHistory,
+        int? maxOutputTokens,
+        string? thinkingLevel,
+        ToolsForRequest requestTools);
+
+    string GetChatStreamUrl(string modelId, string apiKey);
+
+    void ConfigureRequest(HttpRequestMessage request, string apiKey);
+
+    // Stream parsing
+    IAsyncEnumerable<ChatEvent> ParseStreamAsync(
+        HttpResponseMessage response,
+        bool showDebugLog,
+        CancellationToken cancellationToken);
+
+    // Message formatting
+    object FormatMessage(string role, string text, List<SendMessageAttachment>? imageAttachments);
+
+    List<object> PrepareMessageHistory(List<object> messages);
+
+    // Tool call history
+    void AppendAssistantToolCallsToHistory(
+        List<object> messageHistory,
+        string iterationText,
+        List<JsonElement> toolCalls);
+
+    void AppendToolResultsToHistory(
+        List<object> messageHistory,
+        List<ProviderToolResult> results);
+
+    // Title generation
+    Dictionary<string, object> BuildTitleRequestBody(
+        string modelId, string systemPrompt, string userMessage, int maxTokens);
+
+    string GetTitleUrl(string modelId, string apiKey);
+
+    string? ParseTitleResponse(JsonElement root);
+
+    // Tool declarations
+    object? BuildWebSearchTool();
+
+    object BuildFunctionDeclaration(string name, string description, object parameterSchema);
+
+    object? BuildToolsPayload(List<object> providerTools, List<object> functionDeclarations);
+}

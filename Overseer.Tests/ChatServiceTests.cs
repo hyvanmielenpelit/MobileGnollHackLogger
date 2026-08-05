@@ -57,12 +57,18 @@ namespace Overseer.Tests
             services.AddScoped<CryptoService>();
             services.AddScoped<WikiService>();
             services.AddScoped<ModelMetadataService>();
+            services.AddScoped<KnowledgeBaseService>();
+            services.AddScoped<OngoingChatManager>();
+            services.AddScoped<Overseer.Services.Providers.IAiProvider, Overseer.Services.Providers.OpenAiProvider>();
+            services.AddScoped<Overseer.Services.Providers.IAiProvider, Overseer.Services.Providers.AnthropicProvider>();
+            services.AddScoped<Overseer.Services.Providers.IAiProvider, Overseer.Services.Providers.GoogleProvider>();
             services.AddScoped<ChatService>();
 
             var serviceProvider = services.BuildServiceProvider();
 
             // 3. Seed Database
             var userId = Guid.NewGuid().ToString();
+            long testSessionId = 0;
             using (var scope = serviceProvider.CreateScope())
             {
                 var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -100,7 +106,18 @@ namespace Overseer.Tests
                     OrderIndex = 0
                 };
                 dbContext.UserAiModels.Add(aiModel);
+
+                var session = new ChatSession
+                {
+                    AspNetUserId = userId,
+                    Title = "Test Session",
+                    CreatedUtc = DateTime.UtcNow,
+                    LastMessageUtc = DateTime.UtcNow
+                };
+                dbContext.ChatSession.Add(session);
                 await dbContext.SaveChangesAsync();
+
+                testSessionId = session.Id;
             }
 
             // 4. Test StreamMessageAsync
@@ -123,7 +140,7 @@ namespace Overseer.Tests
             
             try
             {
-                await foreach (var chunk in chatService.StreamMessageAsync(0, "Say hello in exactly one sentence.", null, claimsPrincipal.FindFirstValue(ClaimTypes.NameIdentifier), false, cts.Token))
+                await foreach (var chunk in chatService.StreamMessageAsync(testSessionId, "Say hello in exactly one sentence.", null, claimsPrincipal.FindFirstValue(ClaimTypes.NameIdentifier), false, cts.Token))
                 {
                     _output.WriteLine(chunk.Data);
                     fullResponse += chunk.Data;

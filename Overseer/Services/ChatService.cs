@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.SignalR;
 using Overseer.Hubs;
 using Overseer.Extensions;
 using Overseer.Services.Tools;
+using Overseer.Services.Providers;
 
 namespace Overseer.Services;
 
@@ -28,9 +29,22 @@ public class ChatService
     private readonly ToolExecutor _toolExecutor;
     private readonly KnowledgeBaseService _knowledgeBaseService;
     private readonly OngoingChatManager _ongoingChatManager;
+    private readonly Dictionary<string, IAiProvider> _aiProviders;
     private bool _showDebugLog = false;
 
-    public ChatService(IServiceScopeFactory scopeFactory, WikiService wikiService, CryptoService cryptoService, IHttpClientFactory httpClientFactory, IConfiguration configuration, IHubContext<ChatHub> hubContext, ModelMetadataService modelMetadataService, ToolRegistry toolRegistry, ToolExecutor toolExecutor, KnowledgeBaseService knowledgeBaseService, OngoingChatManager ongoingChatManager)
+    public ChatService(
+        IServiceScopeFactory scopeFactory,
+        WikiService wikiService,
+        CryptoService cryptoService,
+        IHttpClientFactory httpClientFactory,
+        IConfiguration configuration,
+        IHubContext<ChatHub> hubContext,
+        ModelMetadataService modelMetadataService,
+        ToolRegistry toolRegistry,
+        ToolExecutor toolExecutor,
+        KnowledgeBaseService knowledgeBaseService,
+        OngoingChatManager ongoingChatManager,
+        IEnumerable<IAiProvider> aiProviders)
     {
         _scopeFactory = scopeFactory;
         _wikiService = wikiService;
@@ -43,19 +57,7 @@ public class ChatService
         _toolExecutor = toolExecutor;
         _knowledgeBaseService = knowledgeBaseService;
         _ongoingChatManager = ongoingChatManager;
-    }
-
-    private int MapThinkingBudget(string thinkingLevel)
-    {
-        return thinkingLevel switch
-        {
-            "minimal" => 512,
-            "low" => 2048,
-            "medium" => 8192,
-            "high" => 32768,
-            "disabled" => 0,
-            _ => -1
-        };
+        _aiProviders = aiProviders.ToDictionary(p => p.ProviderName, p => p, StringComparer.OrdinalIgnoreCase);
     }
 
     public static string SanitizeSnapshotForLlm(string html)
@@ -110,6 +112,7 @@ public class ChatService
         string provider = "OpenAI";
         string model = "gpt-4o-mini";
         string? thinkingLevel = null;
+        IAiProvider? aiProvider = null;
         List<object> messageHistory = new();
         bool spoilerFreeMode = false;
         bool isGameOn = false;
@@ -193,6 +196,12 @@ public class ChatService
                 yield break;
             }
 
+            if (!_aiProviders.TryGetValue(provider, out aiProvider) || aiProvider == null)
+            {
+                yield return new ChatEvent { Type = "error", Data = $"Error: AI Provider '{provider}' not supported." };
+                yield break;
+            }
+
             bool hasGameSnapshot = false;
             bool hasMessageHistory = false;
 
@@ -231,7 +240,7 @@ public class ChatService
                     
                     if (msgImageAttachments.Count > 0)
                     {
-                        messageHistory.Add(FormatMessage(provider, pm.Role ?? "", pm.Content ?? "", msgImageAttachments));
+                        messageHistory.Add(aiProvider.FormatMessage(pm.Role ?? "", pm.Content ?? "", msgImageAttachments));
                         continue;
                     }
                 }
@@ -399,7 +408,7 @@ public class ChatService
                 finalMessageText += "\n\n" + textAttachmentsContent.ToString();
             }
 
-            messageHistory.Add(FormatMessage(provider, "user", finalMessageText, imageAttachments));
+            messageHistory.Add(aiProvider.FormatMessage("user", finalMessageText, imageAttachments));
             
             // Truncation logic
             var meta = _modelMetadataService.GetMetadata(model);
@@ -430,11 +439,8 @@ public class ChatService
             // Always Insert System Prompt
             messageHistory.Insert(0, new { role = "system", content = systemPrompt });
             
-            // Format Anthropic alternating
-            if (provider.Equals("Anthropic", StringComparison.OrdinalIgnoreCase))
-            {
-                messageHistory = AlternateAnthropicMessages(messageHistory);
-            }
+            // Prepare history for provider (e.g. Anthropic alternating / Google parts)
+            messageHistory = aiProvider.PrepareMessageHistory(messageHistory);
             
             // Note: maxOutputTokens is handled later
 
@@ -468,6 +474,8 @@ public class ChatService
         };
         int maxToolIterations = userMaxToolIterations ?? _configuration.GetValue<int>("AiPerformanceSettings:MaxToolIterations:Default", 32);
         
+        var httpClient = _httpClientFactory.CreateClient();
+
         while (toolIterations <= maxToolIterations && hasToolsToRun && !cancellationToken.IsCancellationRequested)
         {
             if (toolIterations == maxToolIterations && hasToolsToRun)
@@ -482,641 +490,145 @@ public class ChatService
             hasToolsToRun = false;
             string iterationText = "";
             bool lastEventWasToolCall = false;
-            var requestTools = _toolRegistry.BuildToolsForRequest(provider, execContext, enableWebSearch, enableToolUse, enableClientTools, enableGameActions);
+            var requestTools = _toolRegistry.BuildToolsForRequest(aiProvider, execContext, enableWebSearch, enableToolUse, enableClientTools, enableGameActions);
             var currentIterationToolCalls = new List<JsonElement>();
-            
-            if (provider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase))
+
+            var requestBody = aiProvider.BuildChatRequestBody(model, messageHistory, maxOutputTokens, thinkingLevel, requestTools);
+            var jsonRequest = JsonSerializer.Serialize(requestBody);
+            if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {aiProvider.ProviderName}] Request Body: {jsonRequest}" };
+
+            if (!apiCallStartTime.HasValue) apiCallStartTime = System.Diagnostics.Stopwatch.GetTimestamp();
+
+            await foreach (var evt in ExecuteApiWithRetriesAsync(
+                async ct =>
+                {
+                    var request = new HttpRequestMessage(HttpMethod.Post, aiProvider.GetChatStreamUrl(model, apiKey));
+                    aiProvider.ConfigureRequest(request, apiKey);
+                    request.Content = new StringContent(jsonRequest, Encoding.UTF8, "application/json");
+                    return await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+                },
+                (response, ct) => aiProvider.ParseStreamAsync(response, _showDebugLog, ct),
+                aiProvider.ProviderName,
+                cancellationToken))
             {
-                var httpClient = _httpClientFactory.CreateClient();
-                httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
-
-                var requestBody = new Dictionary<string, object>
+                if (!timeToFirstTokenMs.HasValue && (evt.Type == "chunk" || evt.Type == "thinking_chunk" || evt.Type == "tool_call_complete" || evt.Type == "error"))
                 {
-                    { "model", model },
-                    { "messages", messageHistory },
-                    { "stream", true }
-                };
-                if (maxOutputTokens.HasValue) requestBody["max_tokens"] = maxOutputTokens.Value;
-
-                if (!string.IsNullOrEmpty(thinkingLevel))
-                {
-                    requestBody["reasoning_effort"] = thinkingLevel;
-                }
-                
-                if (requestTools.HasTools)
-                {
-                    var allTools = new List<object>();
-                    allTools.AddRange(requestTools.ProviderTools);
-                    allTools.AddRange(requestTools.FunctionDeclarations);
-                    requestBody["tools"] = allTools;
+                    timeToFirstTokenMs = (int)System.Diagnostics.Stopwatch.GetElapsedTime(apiCallStartTime!.Value).TotalMilliseconds;
+                    yield return new ChatEvent { Type = "ttft", Data = timeToFirstTokenMs.Value.ToString() };
                 }
 
-                var jsonRequest = JsonSerializer.Serialize(requestBody);
-                if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - OpenAI] Request Body: {jsonRequest}" };
-
-                if (!apiCallStartTime.HasValue) apiCallStartTime = System.Diagnostics.Stopwatch.GetTimestamp();
-
-                await foreach (var evt in ExecuteApiWithRetriesAsync(
-                    async ct =>
-                    {
-                        var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/chat/completions")
-                        {
-                            Content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json")
-                        };
-                        return await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
-                    },
-                    ParseOpenAIStream,
-                    "OpenAI",
-                    cancellationToken))
+                if (evt.Type == "thinking_chunk")
                 {
-                    if (!timeToFirstTokenMs.HasValue && (evt.Type == "chunk" || evt.Type == "thinking_chunk" || evt.Type == "tool_call_complete" || evt.Type == "error"))
+                    if (thinkingStartIndex == -1)
                     {
-                        timeToFirstTokenMs = (int)System.Diagnostics.Stopwatch.GetElapsedTime(apiCallStartTime!.Value).TotalMilliseconds;
-                        yield return new ChatEvent { Type = "ttft", Data = timeToFirstTokenMs.Value.ToString() };
+                        thinkingStartIndex = fullResponse.Length;
                     }
-
-                    if (evt.Type == "thinking_chunk")
-                    {
-                        if (thinkingStartIndex == -1)
-                        {
-                            thinkingStartIndex = fullResponse.Length;
-                        }
-                        fullResponse += evt.Data;
-                        iterationText += evt.Data;
-                    }
-                    else if (evt.Type == "chunk")
-                    {
-                        if (thinkingStartIndex != -1)
-                        {
-                            thinkingBoundaries.Add((thinkingStartIndex, fullResponse.Length));
-                            thinkingStartIndex = -1;
-                        }
-
-                        if (!string.IsNullOrEmpty(evt.Data))
-                        {
-                            if ((toolIterations > 0 && string.IsNullOrEmpty(iterationText)) || lastEventWasToolCall)
-                            {
-                                if (!string.IsNullOrWhiteSpace(fullResponse) && !fullResponse.EndsWith("\n") && !fullResponse.EndsWith(" "))
-                                {
-                                    var spacer = "\n\n";
-                                    fullResponse += spacer;
-                                    yield return new ChatEvent { Type = "chunk", Data = spacer };
-                                }
-                                lastEventWasToolCall = false;
-                            }
-                        }
-
-                        fullResponse += evt.Data;
-                        iterationText += evt.Data;
-                    }
-                    
-                    if (evt.Type == "tool_call_complete")
-                    {
-                        hasToolsToRun = true;
-                        lastEventWasToolCall = true;
-                        currentIterationToolCalls.Add(JsonSerializer.Deserialize<JsonElement>(evt.Data));
-                        yield return new ChatEvent { Type = "tool_start", Data = EnrichToolStartData(evt.Data) };
-                    }
-                    else
-                    {
-                        yield return evt;
-                    }
+                    fullResponse += evt.Data;
+                    iterationText += evt.Data;
                 }
-                
-                if (hasToolsToRun && currentIterationToolCalls.Count > 0)
+                else if (evt.Type == "chunk")
                 {
-                    if (!string.IsNullOrWhiteSpace(iterationText) && fullResponse.EndsWith(iterationText))
+                    if (thinkingStartIndex != -1)
                     {
-                        fullResponse = fullResponse.Substring(0, fullResponse.Length - iterationText.Length);
-                        fullResponse += $"<div class=\"ai-thought\">\n\n{iterationText}\n\n</div>\n\n";
-                    }
-                    // Add assistant tool calls message
-                    var toolCallsForHistory = new List<object>();
-                    foreach (var tc in currentIterationToolCalls)
-                    {
-                        toolCallsForHistory.Add(new { 
-                            id = tc.GetProperty("id").GetString(),
-                            type = "function",
-                            function = new {
-                                name = tc.GetProperty("name").GetString(),
-                                arguments = tc.GetProperty("arguments").GetString()
-                            }
-                        });
-                    }
-                    messageHistory.Add(new { role = "assistant", content = iterationText, tool_calls = toolCallsForHistory });
-                    
-                    // Execute tools
-                    foreach (var tc in currentIterationToolCalls)
-                    {
-                        var tId = tc.GetProperty("id").GetString();
-                        var tName = tc.GetProperty("name").GetString() ?? "";
-                        var tArgsStr = tc.GetProperty("arguments").GetString() ?? "{}";
-
-                        streamToolCalls.Add(new ChatMessageToolCall
-                        {
-                            ToolCallId = tId,
-                            Name = tName,
-                            ArgsText = tArgsStr,
-                            Status = "running",
-                            SortOrder = streamToolCalls.Count
-                        });
-
-                        JsonElement tArgs = JsonDocument.Parse("{}").RootElement;
-                        try { tArgs = JsonSerializer.Deserialize<JsonElement>(tArgsStr); } catch { }
-                        
-                        var res = await _toolExecutor.ExecuteAsync(tName, tArgs, execContext);
-                        var resContent = res.Content ?? (res.Success ? "Success" : res.ErrorMessage);
-                        
-                        messageHistory.Add(new { role = "tool", tool_call_id = tId, content = resContent });
-                        
-                        var streamTc = streamToolCalls.FirstOrDefault(t => t.ToolCallId == tId);
-                        if (streamTc != null)
-                        {
-                            streamTc.Result = res.Success ? resContent : null;
-                            streamTc.Error = res.Success ? null : resContent;
-                            streamTc.Status = res.Success ? "completed" : "error";
-                        }
-
-                        if (res.Success)
-                        {
-                            var resObj = new { id = tId, name = tName, result = resContent };
-                            yield return new ChatEvent { Type = "tool_result", Data = JsonSerializer.Serialize(resObj) };
-                        }
-                        else
-                        {
-                            var errObj = new { id = tId, name = tName, error = resContent };
-                            yield return new ChatEvent { Type = "tool_error", Data = JsonSerializer.Serialize(errObj) };
-                        }
-                    }
-                }
-            }
-            else if (provider.Equals("Anthropic", StringComparison.OrdinalIgnoreCase))
-            {
-                var httpClient = _httpClientFactory.CreateClient();
-                httpClient.DefaultRequestHeaders.Add("x-api-key", apiKey);
-                httpClient.DefaultRequestHeaders.Add("anthropic-version", "2023-06-01");
-
-                var systemMessages = messageHistory.Where(m => (GetProperty(m, "role") as string) == "system").Select(m => GetProperty(m, "content") as string ?? "").ToList();
-                string systemPromptText = string.Join("\n\n", systemMessages);
-                
-                var userAsstMessages = messageHistory.Where(m => (GetProperty(m, "role") as string) != "system").ToList();
-
-                int defaultAnthropicTokens = _configuration.GetValue<int?>("DefaultMaxOutputTokens:Anthropic") ?? 8192;
-
-                var requestBody = new Dictionary<string, object>
-                {
-                    { "model", model },
-                    { "system", systemPromptText },
-                    { "messages", userAsstMessages },
-                    { "stream", true },
-                    { "max_tokens", maxOutputTokens ?? defaultAnthropicTokens }
-                };
-
-                if (!string.IsNullOrEmpty(thinkingLevel))
-                {
-                    requestBody["thinking"] = new { type = "adaptive" }; 
-                    requestBody["output_config"] = new { effort = thinkingLevel.ToLower() };
-                }
-                
-                if (requestTools.HasTools)
-                {
-                    var allTools = new List<object>();
-                    allTools.AddRange(requestTools.ProviderTools);
-                    allTools.AddRange(requestTools.FunctionDeclarations);
-                    requestBody["tools"] = allTools;
-                    if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - Anthropic] Sending {requestTools.ProviderTools.Count} provider tools + {requestTools.FunctionDeclarations.Count} function declarations" };
-                }
-
-                var jsonRequest = JsonSerializer.Serialize(requestBody);
-                if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - Anthropic] Request Body: {jsonRequest}" };
-
-                if (!apiCallStartTime.HasValue) apiCallStartTime = System.Diagnostics.Stopwatch.GetTimestamp();
-
-                await foreach (var evt in ExecuteApiWithRetriesAsync(
-                    async ct =>
-                    {
-                        var request = new HttpRequestMessage(HttpMethod.Post, "https://api.anthropic.com/v1/messages")
-                        {
-                            Content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json")
-                        };
-                        return await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
-                    },
-                    ParseAnthropicStream,
-                    "Anthropic",
-                    cancellationToken))
-                {
-                    if (!timeToFirstTokenMs.HasValue && (evt.Type == "chunk" || evt.Type == "thinking_chunk" || evt.Type == "tool_call_complete"))
-                    {
-                        timeToFirstTokenMs = (int)System.Diagnostics.Stopwatch.GetElapsedTime(apiCallStartTime.Value).TotalMilliseconds;
-                        yield return new ChatEvent { Type = "ttft", Data = timeToFirstTokenMs.Value.ToString() };
-                    }
-
-                    if (evt.Type == "thinking_chunk")
-                    {
-                        if (thinkingStartIndex == -1)
-                        {
-                            thinkingStartIndex = fullResponse.Length;
-                        }
-                        fullResponse += evt.Data;
-                        iterationText += evt.Data;
-                    }
-                    else if (evt.Type == "chunk")
-                    {
-                        if (thinkingStartIndex != -1)
-                        {
-                            thinkingBoundaries.Add((thinkingStartIndex, fullResponse.Length));
-                            thinkingStartIndex = -1;
-                        }
-
-                        if (!string.IsNullOrEmpty(evt.Data))
-                        {
-                            if ((toolIterations > 0 && string.IsNullOrEmpty(iterationText)) || lastEventWasToolCall)
-                            {
-                                if (!string.IsNullOrWhiteSpace(fullResponse) && !fullResponse.EndsWith("\n") && !fullResponse.EndsWith(" "))
-                                {
-                                    var spacer = "\n\n";
-                                    fullResponse += spacer;
-                                    yield return new ChatEvent { Type = "chunk", Data = spacer };
-                                }
-                                lastEventWasToolCall = false;
-                            }
-                        }
-
-                        fullResponse += evt.Data;
-                        iterationText += evt.Data;
-                    }
-                    
-                    if (evt.Type == "tool_call_complete")
-                    {
-                        hasToolsToRun = true;
-                        lastEventWasToolCall = true;
-                        currentIterationToolCalls.Add(JsonSerializer.Deserialize<JsonElement>(evt.Data));
-                        yield return new ChatEvent { Type = "tool_start", Data = EnrichToolStartData(evt.Data) };
-                    }
-                    else
-                    {
-                        yield return evt;
-                    }
-                }
-                
-                if (hasToolsToRun && currentIterationToolCalls.Count > 0)
-                {
-                    if (!string.IsNullOrWhiteSpace(iterationText) && fullResponse.EndsWith(iterationText))
-                    {
-                        fullResponse = fullResponse.Substring(0, fullResponse.Length - iterationText.Length);
-                        fullResponse += $"<div class=\"ai-thought\">\n\n{iterationText}\n\n</div>\n\n";
-                        thinkingBoundaries.Clear(); // Invalidate boundaries since we just modified the text and wrapped it manually
+                        thinkingBoundaries.Add((thinkingStartIndex, fullResponse.Length));
                         thinkingStartIndex = -1;
                     }
-                    var asstContent = new List<object>();
-                    foreach (var tc in currentIterationToolCalls)
-                    {
-                        var tId = tc.GetProperty("id").GetString();
-                        var tName = tc.GetProperty("name").GetString();
-                        var tArgsStr = tc.GetProperty("arguments").GetString() ?? "{}";
 
-                        streamToolCalls.Add(new ChatMessageToolCall
+                    if (!string.IsNullOrEmpty(evt.Data))
+                    {
+                        if ((toolIterations > 0 && string.IsNullOrEmpty(iterationText)) || lastEventWasToolCall)
                         {
-                            ToolCallId = tId,
-                            Name = tName,
-                            ArgsText = tArgsStr,
-                            Status = "running",
-                            SortOrder = streamToolCalls.Count
-                        });
+                            if (!string.IsNullOrWhiteSpace(fullResponse) && !fullResponse.EndsWith("\n") && !fullResponse.EndsWith(" "))
+                            {
+                                var spacer = "\n\n";
+                                fullResponse += spacer;
+                                yield return new ChatEvent { Type = "chunk", Data = spacer };
+                            }
+                            lastEventWasToolCall = false;
+                        }
+                    }
 
-                        asstContent.Add(new {
-                            type = "tool_use",
-                            id = tId,
-                            name = tName,
-                            input = JsonSerializer.Deserialize<JsonElement>(tArgsStr)
-                        });
-                    }
-                    
-                    if (!string.IsNullOrEmpty(iterationText))
-                    {
-                        asstContent.Insert(0, new { type = "text", text = iterationText });
-                    }
-                    
-                    messageHistory.Add(new { role = "assistant", content = asstContent });
-                    messageHistory = AlternateAnthropicMessages(messageHistory);
-                    
-                    var userToolResults = new List<object>();
-                    foreach (var tc in currentIterationToolCalls)
-                    {
-                        var tId = tc.GetProperty("id").GetString();
-                        var tName = tc.GetProperty("name").GetString() ?? "";
-                        var tArgsStr = tc.GetProperty("arguments").GetString() ?? "{}";
-                        JsonElement tArgs = JsonDocument.Parse("{}").RootElement;
-                        try { tArgs = JsonSerializer.Deserialize<JsonElement>(tArgsStr); } catch { }
-                        
-                        var res = await _toolExecutor.ExecuteAsync(tName, tArgs, execContext);
-                        var resContent = res.Content ?? (res.Success ? "Success" : res.ErrorMessage);
-                        
-                        userToolResults.Add(new {
-                            type = "tool_result",
-                            tool_use_id = tId,
-                            content = resContent
-                        });
-                        
-                        var streamTc = streamToolCalls.FirstOrDefault(t => t.ToolCallId == tId);
-                        if (streamTc != null)
-                        {
-                            streamTc.Result = res.Success ? resContent : null;
-                            streamTc.Error = res.Success ? null : resContent;
-                            streamTc.Status = res.Success ? "completed" : "error";
-                        }
-                        
-                        if (res.Success)
-                        {
-                            var resObj = new { id = tId, name = tName, result = resContent };
-                            yield return new ChatEvent { Type = "tool_result", Data = JsonSerializer.Serialize(resObj) };
-                        }
-                        else
-                        {
-                            var errObj = new { id = tId, name = tName, error = resContent };
-                            yield return new ChatEvent { Type = "tool_error", Data = JsonSerializer.Serialize(errObj) };
-                        }
-                    }
-                    messageHistory.Add(new { role = "user", content = userToolResults });
-                    messageHistory = AlternateAnthropicMessages(messageHistory);
+                    fullResponse += evt.Data;
+                    iterationText += evt.Data;
+                }
+
+                if (evt.Type == "tool_call_complete")
+                {
+                    hasToolsToRun = true;
+                    lastEventWasToolCall = true;
+                    currentIterationToolCalls.Add(JsonSerializer.Deserialize<JsonElement>(evt.Data));
+                    yield return new ChatEvent { Type = "tool_start", Data = EnrichToolStartData(evt.Data) };
+                }
+                else
+                {
+                    yield return evt;
                 }
             }
-            else if (provider.Equals("Google", StringComparison.OrdinalIgnoreCase))
-            {
-                var httpClient = _httpClientFactory.CreateClient();
-                var contents = new List<object>();
-                string systemInstruction = "";
 
-                foreach (var m in messageHistory)
+            if (hasToolsToRun && currentIterationToolCalls.Count > 0)
+            {
+                if (!string.IsNullOrWhiteSpace(iterationText) && fullResponse.EndsWith(iterationText))
                 {
-                    var role = GetProperty(m, "role") as string;
-                    var hasParts = m.GetType().GetProperty("parts") != null;
-                    
-                    if (role == "system")
+                    fullResponse = fullResponse.Substring(0, fullResponse.Length - iterationText.Length);
+                    fullResponse += $"<div class=\"ai-thought\">\n\n{iterationText}\n\n</div>\n\n";
+                }
+
+                aiProvider.AppendAssistantToolCallsToHistory(messageHistory, iterationText, currentIterationToolCalls);
+
+                var providerResults = new List<ProviderToolResult>();
+
+                foreach (var tc in currentIterationToolCalls)
+                {
+                    var tId = tc.TryGetProperty("id", out var idProp) ? idProp.GetString() ?? Guid.NewGuid().ToString() : Guid.NewGuid().ToString();
+                    var tName = tc.TryGetProperty("name", out var nameProp) ? nameProp.GetString() ?? "" : "";
+                    var tArgsStr = tc.TryGetProperty("arguments", out var argsProp) ? argsProp.GetString() ?? "{}" : "{}";
+
+                    streamToolCalls.Add(new ChatMessageToolCall
                     {
-                        var content = GetProperty(m, "content") as string;
-                        systemInstruction += content + "\n";
+                        ToolCallId = tId,
+                        Name = tName,
+                        ArgsText = tArgsStr,
+                        Status = "running",
+                        SortOrder = streamToolCalls.Count
+                    });
+
+                    JsonElement tArgs = JsonDocument.Parse("{}").RootElement;
+                    try { tArgs = JsonSerializer.Deserialize<JsonElement>(tArgsStr); } catch { }
+
+                    var res = await _toolExecutor.ExecuteAsync(tName, tArgs, execContext);
+                    var resContent = res.Content ?? (res.Success ? "Success" : res.ErrorMessage);
+
+                    providerResults.Add(new ProviderToolResult
+                    {
+                        ToolCallId = tId,
+                        ToolName = tName,
+                        Content = resContent,
+                        Success = res.Success
+                    });
+
+                    var streamTc = streamToolCalls.FirstOrDefault(t => t.ToolCallId == tId);
+                    if (streamTc != null)
+                    {
+                        streamTc.Result = res.Success ? resContent : null;
+                        streamTc.Error = res.Success ? null : resContent;
+                        streamTc.Status = res.Success ? "completed" : "error";
+                    }
+
+                    if (res.Success)
+                    {
+                        var resObj = new { id = tId, name = tName, result = resContent };
+                        yield return new ChatEvent { Type = "tool_result", Data = JsonSerializer.Serialize(resObj) };
                     }
                     else
                     {
-                        if (hasParts)
-                        {
-                            contents.Add(new
-                            {
-                                role = role == "user" ? "user" : "model",
-                                parts = GetProperty(m, "parts")
-                            });
-                        }
-                        else
-                        {
-                            var content = GetProperty(m, "content");
-                            contents.Add(new
-                            {
-                                role = role == "user" ? "user" : "model",
-                                parts = new[] { new { text = content } }
-                            });
-                        }
+                        var errObj = new { id = tId, name = tName, error = resContent };
+                        yield return new ChatEvent { Type = "tool_error", Data = JsonSerializer.Serialize(errObj) };
                     }
                 }
 
-                var requestBody = new Dictionary<string, object>
-                {
-                    { "contents", contents }
-                };
-
-                if (!string.IsNullOrEmpty(systemInstruction))
-                {
-                    requestBody["systemInstruction"] = new
-                    {
-                        parts = new[] { new { text = systemInstruction } }
-                    };
-                }
-                
-                if (maxOutputTokens.HasValue)
-                {
-                    requestBody["generationConfig"] = new { maxOutputTokens = maxOutputTokens.Value };
-                }
-
-                if (!string.IsNullOrEmpty(thinkingLevel) && thinkingLevel != "disabled")
-                {
-                    int budget = MapThinkingBudget(thinkingLevel);
-                    if (budget > 0)
-                    {
-                        var genConfig = new Dictionary<string, object>();
-                        if (maxOutputTokens.HasValue) genConfig["maxOutputTokens"] = maxOutputTokens.Value;
-                        genConfig["thinkingConfig"] = new { thinkingBudget = budget };
-                        requestBody["generationConfig"] = genConfig;
-                    }
-                }
-                
-                var geminiSafetySettings = _configuration.GetSection("SafetySettings:Gemini").GetChildren().Select(c => new
-                {
-                    category = c.Key,
-                    threshold = c.Value
-                }).ToList();
-
-                if (geminiSafetySettings.Any())
-                {
-                    requestBody["safetySettings"] = geminiSafetySettings;
-                }
-                
-                if (requestTools.HasTools)
-                {
-                    var allTools = new List<object>();
-                    allTools.AddRange(requestTools.ProviderTools);
-                    if (requestTools.FunctionDeclarations.Any())
-                    {
-                        allTools.Add(new { functionDeclarations = requestTools.FunctionDeclarations });
-                    }
-                    requestBody["tools"] = allTools;
-                    requestBody["toolConfig"] = new { includeServerSideToolInvocations = true };
-                }
-
-                var jsonRequest = JsonSerializer.Serialize(requestBody);
-                if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - Google] Request Body: {jsonRequest}" };
-
-                if (!apiCallStartTime.HasValue) apiCallStartTime = System.Diagnostics.Stopwatch.GetTimestamp();
-
-                await foreach (var evt in ExecuteApiWithRetriesAsync(
-                    async ct =>
-                    {
-                        var request = new HttpRequestMessage(HttpMethod.Post, $"https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse&key={apiKey}")
-                        {
-                            Content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json")
-                        };
-                        return await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
-                    },
-                    ParseGeminiStream,
-                    "Google",
-                    cancellationToken))
-                {
-                    if (!timeToFirstTokenMs.HasValue && (evt.Type == "chunk" || evt.Type == "thinking_chunk" || evt.Type == "tool_call_complete" || evt.Type == "error"))
-                    {
-                        timeToFirstTokenMs = (int)System.Diagnostics.Stopwatch.GetElapsedTime(apiCallStartTime!.Value).TotalMilliseconds;
-                        yield return new ChatEvent { Type = "ttft", Data = timeToFirstTokenMs.Value.ToString() };
-                    }
-
-                    if (evt.Type == "thinking_chunk")
-                    {
-                        if (thinkingStartIndex == -1)
-                        {
-                            thinkingStartIndex = fullResponse.Length;
-                        }
-                        fullResponse += evt.Data;
-                        iterationText += evt.Data;
-                    }
-                    else if (evt.Type == "chunk")
-                    {
-                        if (thinkingStartIndex != -1)
-                        {
-                            thinkingBoundaries.Add((thinkingStartIndex, fullResponse.Length));
-                            thinkingStartIndex = -1;
-                        }
-
-                        if (!string.IsNullOrEmpty(evt.Data))
-                        {
-                            if ((toolIterations > 0 && string.IsNullOrEmpty(iterationText)) || lastEventWasToolCall)
-                            {
-                                if (!string.IsNullOrWhiteSpace(fullResponse) && !fullResponse.EndsWith("\n") && !fullResponse.EndsWith(" "))
-                                {
-                                    var spacer = "\n\n";
-                                    fullResponse += spacer;
-                                    yield return new ChatEvent { Type = "chunk", Data = spacer };
-                                }
-                                lastEventWasToolCall = false;
-                            }
-                        }
-
-                        fullResponse += evt.Data;
-                        iterationText += evt.Data;
-                    }
-                    
-                    if (evt.Type == "tool_call_complete")
-                    {
-                        hasToolsToRun = true;
-                        lastEventWasToolCall = true;
-                        currentIterationToolCalls.Add(JsonSerializer.Deserialize<JsonElement>(evt.Data));
-                        yield return new ChatEvent { Type = "tool_start", Data = EnrichToolStartData(evt.Data) };
-                    }
-                    else
-                    {
-                        yield return evt;
-                    }
-                }
-                
-                if (hasToolsToRun && currentIterationToolCalls.Count > 0)
-                {
-                    if (!string.IsNullOrWhiteSpace(iterationText) && fullResponse.EndsWith(iterationText))
-                    {
-                        fullResponse = fullResponse.Substring(0, fullResponse.Length - iterationText.Length);
-                        fullResponse += $"<div class=\"ai-thought\">\n\n{iterationText}\n\n</div>\n\n";
-                        thinkingBoundaries.Clear(); // Invalidate boundaries since we just modified the text and wrapped it manually
-                        thinkingStartIndex = -1;
-                        if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - Google] Wrapped iteration thinking text ({iterationText.Length} chars) in ai-thought div" };
-                    }
-                    var modelParts = new List<object>();
-                    foreach (var tc in currentIterationToolCalls)
-                    {
-                        string tName = tc.GetProperty("name").GetString() ?? "";
-                        string tId = tc.GetProperty("id").GetString() ?? "";
-                        var argsStr = tc.GetProperty("arguments").GetString() ?? "{}";
-
-                        // Always persist to streamToolCalls for database storage
-                        streamToolCalls.Add(new ChatMessageToolCall
-                        {
-                            ToolCallId = tId,
-                            Name = tName,
-                            ArgsText = argsStr,
-                            Status = "running",
-                            SortOrder = streamToolCalls.Count
-                        });
-                        if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - Google] Tool call '{tName}' (id={tId}) added to streamToolCalls (count={streamToolCalls.Count})" };
-
-                        // Reconstruct API history: use raw_part if available (preserves exact Gemini format)
-                        if (tc.TryGetProperty("raw_part", out var rp) && rp.ValueKind == JsonValueKind.String)
-                        {
-                            modelParts.Add(JsonSerializer.Deserialize<JsonElement>(rp.GetString()!));
-                        }
-                        else
-                        {
-                            JsonElement argJson = JsonDocument.Parse("{}").RootElement;
-                            try { argJson = JsonSerializer.Deserialize<JsonElement>(argsStr); } catch { }
-                            
-                            var fcObj = new Dictionary<string, object>
-                            {
-                                { "name", tName },
-                                { "args", argJson }
-                            };
-                            
-                            modelParts.Add(new {
-                                functionCall = fcObj
-                            });
-                        }
-                    }
-                    
-                    if (!string.IsNullOrEmpty(iterationText))
-                    {
-                        modelParts.Insert(0, new { text = iterationText });
-                    }
-                    
-                    messageHistory.Add(new { role = "model", parts = modelParts });
-                    
-                    var userParts = new List<object>();
-                    foreach (var tc in currentIterationToolCalls)
-                    {
-                        var tId = tc.GetProperty("id").GetString();
-                        var tName = tc.GetProperty("name").GetString() ?? "";
-                        var tArgsStr = tc.GetProperty("arguments").GetString() ?? "{}";
-                        JsonElement tArgs = JsonDocument.Parse("{}").RootElement;
-                        try { tArgs = JsonSerializer.Deserialize<JsonElement>(tArgsStr); } catch { }
-                        
-                        var res = await _toolExecutor.ExecuteAsync(tName, tArgs, execContext);
-                        var resContent = res.Content ?? (res.Success ? "Success" : res.ErrorMessage);
-                        
-                        userParts.Add(new {
-                            functionResponse = new {
-                                name = tName,
-                                response = new {
-                                    name = tName,
-                                    content = resContent
-                                }
-                            }
-                        });
-                        
-                        var streamTc = streamToolCalls.FirstOrDefault(t => t.ToolCallId == tId);
-                        if (streamTc != null)
-                        {
-                            streamTc.Result = res.Success ? resContent : null;
-                            streamTc.Error = res.Success ? null : resContent;
-                            streamTc.Status = res.Success ? "completed" : "error";
-                            if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - Google] Tool call '{tName}' (id={tId}) status updated to {streamTc.Status}" };
-                        }
-                        else
-                        {
-                            if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - Google] WARNING: Tool call '{tName}' (id={tId}) not found in streamToolCalls for status update" };
-                        }
-                        
-                        if (res.Success)
-                        {
-                            var resObj = new { id = tId, name = tName, result = resContent };
-                            yield return new ChatEvent { Type = "tool_result", Data = JsonSerializer.Serialize(resObj) };
-                        }
-                        else
-                        {
-                            var errObj = new { id = tId, name = tName, error = resContent };
-                            yield return new ChatEvent { Type = "tool_error", Data = JsonSerializer.Serialize(errObj) };
-                        }
-                    }
-                    messageHistory.Add(new { role = "user", parts = userParts });
-                }
+                aiProvider.AppendToolResultsToHistory(messageHistory, providerResults);
             }
-            else
-            {
-                yield return new ChatEvent { Type = "error", Data = $"Provider {provider} is not fully implemented yet in this demo." };
-                fullResponse = $"Provider {provider} is not fully implemented yet in this demo.";
-                hasToolsToRun = false;
-            }
-            
+
             toolIterations++;
         }
 
@@ -1311,356 +823,6 @@ public class ChatService
                 }
             }
         }
-    }
-
-    private async IAsyncEnumerable<ChatEvent> ParseOpenAIStream(HttpResponseMessage response, [EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var reader = new StreamReader(stream);
-        string? line = null;
-        
-        var toolCalls = new Dictionary<int, (string Id, string Name, StringBuilder Arguments)>();
-
-        while (!cancellationToken.IsCancellationRequested && (line = await reader.ReadLineAsync()) != null)
-        {
-            if (string.IsNullOrEmpty(line)) continue;
-            if (line.StartsWith("data: "))
-            {
-                var data = line.Substring(6);
-                if (data == "[DONE]") break;
-
-                string? chunkStr = null;
-                try
-                {
-                    var json = JsonSerializer.Deserialize<JsonElement>(data);
-                    if (json.TryGetProperty("choices", out var choices) && choices.GetArrayLength() > 0)
-                    {
-                        var delta = choices[0].GetProperty("delta");
-                        if (delta.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.String)
-                        {
-                            chunkStr = content.GetString();
-                        }
-                        
-                        if (delta.TryGetProperty("tool_calls", out var tcArray))
-                        {
-                            foreach (var tc in tcArray.EnumerateArray())
-                            {
-                                int idx = tc.GetProperty("index").GetInt32();
-                                if (!toolCalls.ContainsKey(idx))
-                                {
-                                    toolCalls[idx] = (
-                                        tc.TryGetProperty("id", out var idProp) ? (idProp.GetString() ?? "") : "",
-                                        tc.TryGetProperty("function", out var fProp) && fProp.TryGetProperty("name", out var nProp) ? (nProp.GetString() ?? "") : "",
-                                        new StringBuilder()
-                                    );
-                                }
-                                
-                                if (tc.TryGetProperty("function", out var fProp2) && fProp2.TryGetProperty("arguments", out var argProp))
-                                {
-                                    toolCalls[idx].Arguments.Append(argProp.GetString());
-                                }
-                            }
-                        }
-                    }
-                }
-                catch { /* ignore */ }
-                
-                if (chunkStr != null)
-                {
-                    yield return new ChatEvent { Type = "chunk", Data = chunkStr };
-                }
-            }
-        }
-        
-        foreach (var tc in toolCalls.Values)
-        {
-            var callObj = new { id = tc.Id, name = tc.Name, arguments = tc.Arguments.ToString() };
-            yield return new ChatEvent { Type = "tool_call_complete", Data = JsonSerializer.Serialize(callObj) };
-        }
-    }
-
-    private async IAsyncEnumerable<ChatEvent> ParseAnthropicStream(HttpResponseMessage response, [EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var reader = new StreamReader(stream);
-        string? line = null;
-        
-        string? currentToolId = null;
-        string? currentToolName = null;
-        StringBuilder currentToolArgs = new StringBuilder();
-
-        while (!cancellationToken.IsCancellationRequested && (line = await reader.ReadLineAsync()) != null)
-        {
-            if (string.IsNullOrEmpty(line)) continue;
-            if (line.StartsWith("data: "))
-            {
-                var data = line.Substring(6);
-                string? chunkStr = null;
-                string? thinkingChunkStr = null;
-                ChatEvent? toolCallEvt = null;
-                ChatEvent? errorEvt = null;
-                ChatEvent? debugEvt = null;
-
-                try
-                {
-                    var json = JsonSerializer.Deserialize<JsonElement>(data);
-                    if (json.TryGetProperty("type", out var type))
-                    {
-                        var t = type.GetString();
-                        if (t == "content_block_start")
-                        {
-                            var cb = json.GetProperty("content_block");
-                            if (cb.TryGetProperty("type", out var cbType))
-                            {
-                                if (cbType.GetString() == "tool_use")
-                                {
-                                    currentToolId = cb.GetProperty("id").GetString();
-                                    currentToolName = cb.GetProperty("name").GetString();
-                                    currentToolArgs.Clear();
-                                }
-                                else if (cbType.GetString() == "thinking")
-                                {
-                                    if (cb.TryGetProperty("thinking", out var tProp))
-                                    {
-                                        thinkingChunkStr = tProp.GetString() ?? "";
-                                    }
-                                }
-                            }
-                        }
-                        else if (t == "content_block_delta")
-                        {
-                            var delta = json.GetProperty("delta");
-                            if (delta.TryGetProperty("type", out var deltaType))
-                            {
-                                if (deltaType.GetString() == "text_delta")
-                                {
-                                    chunkStr = delta.GetProperty("text").GetString();
-                                }
-                                else if (deltaType.GetString() == "thinking_delta")
-                                {
-                                    thinkingChunkStr = delta.GetProperty("thinking").GetString() ?? "";
-                                }
-                                else if (deltaType.GetString() == "input_json_delta")
-                                {
-                                    currentToolArgs.Append(delta.GetProperty("partial_json").GetString());
-                                }
-                            }
-                        }
-                        else if (t == "content_block_stop")
-                        {
-                            if (currentToolId != null && currentToolName != null)
-                            {
-                                var callObj = new { id = currentToolId, name = currentToolName, arguments = currentToolArgs.ToString() };
-                                toolCallEvt = new ChatEvent { Type = "tool_call_complete", Data = JsonSerializer.Serialize(callObj) };
-                                currentToolId = null;
-                                currentToolName = null;
-                            }
-                        }
-                        else if (t == "error")
-                        {
-                            string errMsg = "Unknown stream error";
-                            if (json.TryGetProperty("error", out var errObj))
-                            {
-                                var errType = errObj.TryGetProperty("type", out var et) ? et.GetString() : "unknown";
-                                var errMessage = errObj.TryGetProperty("message", out var em) ? em.GetString() : "Unknown error";
-                                errMsg = $"Anthropic stream error: [{errType}] {errMessage}";
-                            }
-                            errorEvt = new ChatEvent { Type = "error", Data = errMsg };
-                        }
-                        else if (t == "message_start")
-                        {
-                            if (_showDebugLog && json.TryGetProperty("message", out var msg))
-                            {
-                                var resolvedModel = msg.TryGetProperty("model", out var mp) ? mp.GetString() : "unknown";
-                                string usageInfo = "";
-                                if (msg.TryGetProperty("usage", out var usage))
-                                {
-                                    var inputTokens = usage.TryGetProperty("input_tokens", out var it) ? it.GetInt32().ToString() : "?";
-                                    usageInfo = $", input_tokens={inputTokens}";
-                                }
-                                debugEvt = new ChatEvent { Type = "debug", Data = $"[Main Chat - Anthropic] message_start: model={resolvedModel}{usageInfo}" };
-                            }
-                        }
-                        else if (t == "message_delta")
-                        {
-                            if (_showDebugLog && json.TryGetProperty("delta", out var delta2))
-                            {
-                                var stopReason = delta2.TryGetProperty("stop_reason", out var sr) ? sr.GetString() : "null";
-                                string usageInfo = "";
-                                if (json.TryGetProperty("usage", out var usage))
-                                {
-                                    var outputTokens = usage.TryGetProperty("output_tokens", out var ot) ? ot.GetInt32().ToString() : "?";
-                                    usageInfo = $", output_tokens={outputTokens}";
-                                }
-                                debugEvt = new ChatEvent { Type = "debug", Data = $"[Main Chat - Anthropic] message_delta: stop_reason={stopReason}{usageInfo}" };
-                            }
-                        }
-                        else
-                        {
-                            if (_showDebugLog)
-                            {
-                                debugEvt = new ChatEvent { Type = "debug", Data = $"[Main Chat - Anthropic] Unhandled event type: {t}" };
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    if (_showDebugLog)
-                    {
-                        debugEvt = new ChatEvent { Type = "debug", Data = $"[Main Chat - Anthropic] Parse error: {ex.Message}, line: {line}" };
-                    }
-                }
-
-                if (debugEvt != null) yield return debugEvt;
-
-                if (errorEvt != null)
-                {
-                    yield return errorEvt;
-                    yield break;
-                }
-                
-                if (thinkingChunkStr != null)
-                {
-                    yield return new ChatEvent { Type = "thinking_chunk", Data = thinkingChunkStr };
-                }
-
-                if (chunkStr != null)
-                {
-                    yield return new ChatEvent { Type = "chunk", Data = chunkStr };
-                }
-                if (toolCallEvt != null)
-                {
-                    yield return toolCallEvt;
-                }
-            }
-        }
-    }
-
-    private async IAsyncEnumerable<ChatEvent> ParseGeminiStream(HttpResponseMessage response, [EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var reader = new StreamReader(stream);
-        string? line = null;
-        
-        while (!cancellationToken.IsCancellationRequested && (line = await reader.ReadLineAsync()) != null)
-        {
-            if (string.IsNullOrEmpty(line)) continue;
-            if (line.StartsWith("data: "))
-            {
-                var data = line.Substring(6);
-                var eventsToYield = new List<ChatEvent>();
-                try
-                {
-                    var json = JsonSerializer.Deserialize<JsonElement>(data);
-                    if (json.TryGetProperty("candidates", out var candidates) && candidates.GetArrayLength() > 0)
-                    {
-                        var parts = candidates[0].GetProperty("content").GetProperty("parts");
-                        foreach (var part in parts.EnumerateArray())
-                        {
-                            if (part.TryGetProperty("text", out var text))
-                            {
-                                bool isThought = part.TryGetProperty("thought", out var thoughtVal) && thoughtVal.ValueKind == JsonValueKind.True;
-                                eventsToYield.Add(new ChatEvent { Type = isThought ? "thinking_chunk" : "chunk", Data = text.GetString() ?? "" });
-                            }
-                            else if (part.TryGetProperty("functionCall", out var fc))
-                            {
-                                var name = fc.GetProperty("name").GetString() ?? "";
-                                var args = fc.TryGetProperty("args", out var a) ? a.GetRawText() : "{}";
-                                var callObj = new { 
-                                    id = Guid.NewGuid().ToString(), 
-                                    name = name, 
-                                    arguments = args,
-                                    raw_part = part.GetRawText()
-                                };
-                                eventsToYield.Add(new ChatEvent { Type = "tool_call_complete", Data = JsonSerializer.Serialize(callObj) });
-                            }
-                        }
-                    }
-                }
-                catch { /* ignore */ }
-                
-                foreach(var evt in eventsToYield)
-                {
-                    yield return evt;
-                }
-            }
-        }
-    }
-
-    
-    private object FormatMessage(string provider, string role, string text, List<SendMessageAttachment>? imageAttachments)
-    {
-        if (imageAttachments == null || imageAttachments.Count == 0) return new { role = role, content = text };
-        
-        if (provider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase))
-        {
-            var contentList = new List<object>();
-            contentList.Add(new { type = "text", text = text });
-            foreach(var img in imageAttachments)
-            {
-                contentList.Add(new { type = "image_url", image_url = new { url = $"data:{img.ContentType};base64,{img.Base64Data}" } });
-            }
-            return new { role = role, content = contentList };
-        }
-        else if (provider.Equals("Anthropic", StringComparison.OrdinalIgnoreCase))
-        {
-            var contentList = new List<object>();
-            foreach(var img in imageAttachments)
-            {
-                contentList.Add(new { type = "image", source = new { type = "base64", media_type = img.ContentType, data = img.Base64Data } });
-            }
-            contentList.Add(new { type = "text", text = text });
-            return new { role = role, content = contentList };
-        }
-        else // Google
-        {
-            var partsList = new List<object>();
-            partsList.Add(new { text = text });
-            foreach(var img in imageAttachments)
-            {
-                partsList.Add(new { inlineData = new { mimeType = img.ContentType, data = img.Base64Data } });
-            }
-            return new { role = role, parts = partsList };
-        }
-    }
-    private static object? GetProperty(object? obj, string propertyName)
-    {
-        if (obj == null) return null;
-        return obj.GetType().GetProperty(propertyName)?.GetValue(obj);
-    }
-
-    private List<object> AlternateAnthropicMessages(List<object> messages)
-    {
-        var combined = new List<object>();
-        object? lastMsg = null;
-        foreach (var msg in messages)
-        {
-            var lastRole = GetProperty(lastMsg, "role") as string;
-            var currentRole = GetProperty(msg, "role") as string;
-
-            if (lastMsg != null && lastRole != null && lastRole == currentRole && currentRole != "system")
-            {
-                var c1 = GetProperty(lastMsg, "content");
-                var c2 = GetProperty(msg, "content");
-
-                var list = new List<object>();
-                if (c1 is string s1) list.Add(new { type = "text", text = s1 });
-                else if (c1 is IEnumerable<object> e1) list.AddRange(e1);
-
-                if (c2 is string s2) list.Add(new { type = "text", text = "\n\n" + s2 });
-                else if (c2 is IEnumerable<object> e2) list.AddRange(e2);
-
-                lastMsg = new { role = currentRole, content = (object)list };
-                combined[combined.Count - 1] = lastMsg;
-            }
-            else
-            {
-                combined.Add(msg);
-                lastMsg = msg;
-            }
-        }
-        return combined;
     }
 
     private string BuildSystemPrompt(
@@ -2074,9 +1236,9 @@ public class ChatService
                     .FirstOrDefaultAsync(cancellationToken);
             }
 
-            if (model == null)
+            if (!_aiProviders.TryGetValue(model.Provider, out var aiProvider))
             {
-                if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen] Aborted: No AI model configured." }, CancellationToken.None);
+                if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen] Aborted: Provider {model.Provider} not supported." }, CancellationToken.None);
                 return;
             }
 
@@ -2095,156 +1257,85 @@ public class ChatService
             
             var client = _httpClientFactory.CreateClient();
             
-            HttpRequestMessage? requestMessage = null;
-            string reqBodyStr = "";
-            
-            if (model.Provider == "OpenAI")
-            {
-                var reqBody = new {
-                    model = model.ModelId,
-                    messages = new[] {
-                        new { role = "system", content = prompt },
-                        new { role = "user", content = userMessage }
-                    },
-                    max_tokens = maxTokens,
-                    temperature = 0.5
-                };
-                reqBodyStr = System.Text.Json.JsonSerializer.Serialize(reqBody);
-                requestMessage = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/chat/completions");
-                requestMessage.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
-            }
-            else if (model.Provider == "Anthropic")
-            {
-                client.DefaultRequestHeaders.Add("x-api-key", apiKey);
-                client.DefaultRequestHeaders.Add("anthropic-version", "2023-06-01");
-                var reqBody = new {
-                    model = model.ModelId,
-                    system = prompt,
-                    messages = new[] {
-                        new { role = "user", content = userMessage }
-                    },
-                    max_tokens = maxTokens,
-                    temperature = 0.5
-                };
-                reqBodyStr = System.Text.Json.JsonSerializer.Serialize(reqBody);
-                requestMessage = new HttpRequestMessage(HttpMethod.Post, "https://api.anthropic.com/v1/messages");
-            }
-            else if (model.Provider == "Google")
-            {
-                var reqBody = new Dictionary<string, object>
-                {
-                    { "systemInstruction", new { parts = new[] { new { text = prompt } } } },
-                    { "contents", new[] { new { role = "user", parts = new[] { new { text = userMessage } } } } },
-                    { "generationConfig", new { maxOutputTokens = maxTokens, temperature = 0.5 } }
-                };
-                reqBodyStr = System.Text.Json.JsonSerializer.Serialize(reqBody);
-                requestMessage = new HttpRequestMessage(HttpMethod.Post, $"https://generativelanguage.googleapis.com/v1beta/models/{model.ModelId}:generateContent?key={apiKey}");
-            }
+            var titleReqBody = aiProvider.BuildTitleRequestBody(model.ModelId, prompt, userMessage, maxTokens);
+            string reqBodyStr = System.Text.Json.JsonSerializer.Serialize(titleReqBody);
+            string titleUrl = aiProvider.GetTitleUrl(model.ModelId, apiKey);
 
-            if (requestMessage != null)
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var safeUri = titleUrl;
+            if (safeUri.Contains("key=")) { safeUri = System.Text.RegularExpressions.Regex.Replace(safeUri, "key=[^&]+", "key=APIKEY_NOT_DISCLOSED"); }
+            if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] Starting POST request to {safeUri}..." }, CancellationToken.None);
+            
+            HttpResponseMessage? response = null;
+            int[] retryDelays = { 1000, 3000, 5000, 10000, 15000 };
+            
+            for (int i = 0; i <= retryDelays.Length; i++)
             {
-                var sw = System.Diagnostics.Stopwatch.StartNew();
-                var safeUri = requestMessage.RequestUri?.ToString() ?? "";
-                if (safeUri.Contains("key=")) { safeUri = System.Text.RegularExpressions.Regex.Replace(safeUri, "key=[^&]+", "key=APIKEY_NOT_DISCLOSED"); }
-                if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] Starting POST request to {safeUri}..." }, CancellationToken.None);
-                
-                HttpResponseMessage? response = null;
-                int[] retryDelays = { 1000, 3000, 5000, 10000, 15000 };
-                
-                for (int i = 0; i <= retryDelays.Length; i++)
+                try
                 {
-                    try
+                    var reqClone = new HttpRequestMessage(HttpMethod.Post, titleUrl)
                     {
-                        var reqClone = new HttpRequestMessage(requestMessage.Method, requestMessage.RequestUri)
-                        {
-                            Content = new StringContent(reqBodyStr, Encoding.UTF8, "application/json")
-                        };
-                        foreach (var hdr in requestMessage.Headers) reqClone.Headers.TryAddWithoutValidation(hdr.Key, hdr.Value);
-                        
-                        cancellationToken.ThrowIfCancellationRequested();
-                        
-                        if (i > 0)
-                        {
-                            var retryStatus = new { sessionId = sessionId, status = $"Retrying title generation ({i}/{retryDelays.Length})..." };
-                            await _hubContext.Clients.User(userId).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "title_status", Data = System.Text.Json.JsonSerializer.Serialize(retryStatus) }, CancellationToken.None);
-                        }
-                        
-                        response = await client.SendAsync(reqClone, cancellationToken);
-                        
-                        if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] HTTP {(int)response.StatusCode} Received ({sw.ElapsedMilliseconds}ms, Attempt {i + 1})" }, CancellationToken.None);
-                        
-                        if (response.StatusCode != System.Net.HttpStatusCode.ServiceUnavailable || i == retryDelays.Length)
-                        {
-                            break;
-                        }
-                    }
-                    catch (OperationCanceledException) { throw; }
-                    catch (Exception ex)
+                        Content = new StringContent(reqBodyStr, Encoding.UTF8, "application/json")
+                    };
+                    aiProvider.ConfigureRequest(reqClone, apiKey);
+                    
+                    cancellationToken.ThrowIfCancellationRequested();
+                    
+                    if (i > 0)
                     {
-                        if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] Request failed: {ex.Message} (Attempt {i + 1})" }, CancellationToken.None);
-                        if (i == retryDelays.Length) throw;
+                        var retryStatus = new { sessionId = sessionId, status = $"Retrying title generation ({i}/{retryDelays.Length})..." };
+                        await _hubContext.Clients.User(userId).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "title_status", Data = System.Text.Json.JsonSerializer.Serialize(retryStatus) }, CancellationToken.None);
                     }
                     
-                    int delayMs = retryDelays[i];
-                    if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] Sleeping for {delayMs / 1000.0}s before retry..." }, CancellationToken.None);
-                    await Task.Delay(delayMs, cancellationToken);
+                    response = await client.SendAsync(reqClone, cancellationToken);
+                    
+                    if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] HTTP {(int)response.StatusCode} Received ({sw.ElapsedMilliseconds}ms, Attempt {i + 1})" }, CancellationToken.None);
+                    
+                    if (response.StatusCode != System.Net.HttpStatusCode.ServiceUnavailable || i == retryDelays.Length)
+                    {
+                        break;
+                    }
+                }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex)
+                {
+                    if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] Request failed: {ex.Message} (Attempt {i + 1})" }, CancellationToken.None);
+                    if (i == retryDelays.Length) throw;
                 }
                 
-                if (response != null && response.IsSuccessStatusCode)
+                int delayMs = retryDelays[i];
+                if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] Sleeping for {delayMs / 1000.0}s before retry..." }, CancellationToken.None);
+                await Task.Delay(delayMs, cancellationToken);
+            }
+            
+            if (response != null && response.IsSuccessStatusCode)
+            {
+                var json = await response.Content.ReadAsStringAsync(cancellationToken);
+                var root = System.Text.Json.JsonDocument.Parse(json).RootElement;
+                var parsedTitle = aiProvider.ParseTitleResponse(root);
+                if (!string.IsNullOrEmpty(parsedTitle))
                 {
-                    var json = await response.Content.ReadAsStringAsync(cancellationToken);
-                    var root = System.Text.Json.JsonDocument.Parse(json).RootElement;
-                    
-                    if (model.Provider == "OpenAI")
-                    {
-                        if (root.TryGetProperty("choices", out var choices) && choices.GetArrayLength() > 0)
-                        {
-                            var content = choices[0].GetProperty("message").GetProperty("content").GetString();
-                            if (!string.IsNullOrEmpty(content)) generatedTitle = content.Trim('"', '\'', ' ', '.', '\n', '\r', '\t');
-                        }
-                    }
-                    else if (model.Provider == "Anthropic")
-                    {
-                        if (root.TryGetProperty("content", out var contentArray) && contentArray.GetArrayLength() > 0)
-                        {
-                            var content = contentArray[0].GetProperty("text").GetString();
-                            if (!string.IsNullOrEmpty(content)) generatedTitle = content.Trim('"', '\'', ' ', '.', '\n', '\r', '\t');
-                        }
-                    }
-                    else if (model.Provider == "Google")
-                    {
-                        if (root.TryGetProperty("candidates", out var candidates) && candidates.GetArrayLength() > 0)
-                        {
-                            try 
-                            {
-                                if (candidates[0].TryGetProperty("content", out var contentProp) && contentProp.TryGetProperty("parts", out var partsProp) && partsProp.GetArrayLength() > 0)
-                                {
-                                    var content = partsProp[0].GetProperty("text").GetString();
-                                    if (!string.IsNullOrEmpty(content)) generatedTitle = content.Trim('"', '\'', ' ', '.', '\n', '\r', '\t');
-                                }
-                            } catch { }
-                        }
-                    }
-                    
-                    if (string.IsNullOrWhiteSpace(generatedTitle))
-                    {
-                        if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] Warning: API returned empty or whitespace title. Raw JSON: {json}" }, CancellationToken.None);
-                    }
-                    else
-                    {
-                        if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] Generated Title: \"{generatedTitle}\"" }, CancellationToken.None);
-                    }
+                    generatedTitle = parsedTitle.Trim('"', '\'', ' ', '.', '\n', '\r', '\t');
                 }
-                else if (response != null)
+                
+                if (string.IsNullOrWhiteSpace(generatedTitle))
                 {
-                    var errorStr = await response.Content.ReadAsStringAsync(CancellationToken.None);
-                    if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] API Error: {errorStr}" }, CancellationToken.None);
-                    try
-                    {
-                        System.IO.File.WriteAllText($@"C:\Users\TommiGustafsson\.gemini\antigravity\brain\527f1941-808c-47af-84c6-4f4161647aea\scratch\api_error_{Guid.NewGuid()}.txt", errorStr);
-                    }
-                    catch { }
+                    if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] Warning: API returned empty or whitespace title. Raw JSON: {json}" }, CancellationToken.None);
                 }
+                else
+                {
+                    if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] Generated Title: \"{generatedTitle}\"" }, CancellationToken.None);
+                }
+            }
+            else if (response != null)
+            {
+                var errorStr = await response.Content.ReadAsStringAsync(CancellationToken.None);
+                if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] API Error: {errorStr}" }, CancellationToken.None);
+                try
+                {
+                    System.IO.File.WriteAllText($@"C:\Users\TommiGustafsson\.gemini\antigravity\brain\527f1941-808c-47af-84c6-4f4161647aea\scratch\api_error_{Guid.NewGuid()}.txt", errorStr);
+                }
+                catch { }
             }
 
             if (!string.IsNullOrWhiteSpace(generatedTitle))
