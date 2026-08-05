@@ -543,7 +543,6 @@ public class ChatService
                         }
                         fullResponse += evt.Data;
                         iterationText += evt.Data;
-                        yield return evt;
                     }
                     else if (evt.Type == "chunk")
                     {
@@ -685,6 +684,7 @@ public class ChatService
                     allTools.AddRange(requestTools.ProviderTools);
                     allTools.AddRange(requestTools.FunctionDeclarations);
                     requestBody["tools"] = allTools;
+                    if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - Anthropic] Sending {requestTools.ProviderTools.Count} provider tools + {requestTools.FunctionDeclarations.Count} function declarations" };
                 }
 
                 var jsonRequest = JsonSerializer.Serialize(requestBody);
@@ -719,7 +719,6 @@ public class ChatService
                         }
                         fullResponse += evt.Data;
                         iterationText += evt.Data;
-                        yield return evt;
                     }
                     else if (evt.Type == "chunk")
                     {
@@ -965,7 +964,6 @@ public class ChatService
                         }
                         fullResponse += evt.Data;
                         iterationText += evt.Data;
-                        yield return evt;
                     }
                     else if (evt.Type == "chunk")
                     {
@@ -1218,9 +1216,59 @@ public class ChatService
                 if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] HTTP {(int)response.StatusCode} Received ({sw.ElapsedMilliseconds}ms)" };
                 yield return new ChatEvent { Type = "status", Data = $"Streaming response..." };
                 
+                bool hasYieldedChunks = false;
+                bool retryTriggered = false;
+
                 await foreach (var evt in streamParser(response, cancellationToken))
                 {
-                    yield return evt;
+                    if (evt.Type == "chunk" || evt.Type == "thinking_chunk" || evt.Type == "tool_call_complete")
+                    {
+                        hasYieldedChunks = true;
+                    }
+
+                    if (evt.Type == "error" && !hasYieldedChunks)
+                    {
+                        // Anthropic sends some errors (e.g. overloaded_error) inside HTTP 200 streams. We must retry these.
+                        bool isRetryable = evt.Data != null && (
+                            evt.Data.Contains("[overloaded_error]") || 
+                            evt.Data.Contains("[rate_limit_error]") || 
+                            evt.Data.Contains("[api_error]") ||
+                            evt.Data.Contains("529") || 
+                            evt.Data.Contains("503") || 
+                            evt.Data.Contains("502"));
+                            
+                        if (isRetryable && attempt < retryDelays.Length)
+                        {
+                            int delaySeconds = retryDelays[attempt];
+                            yield return new ChatEvent { Type = "status", Data = $"API Overloaded (attempt {attempt + 1}/{retryDelays.Length + 1}). Retrying in {delaySeconds}s..." };
+                            if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] Sleeping for {delaySeconds}s before retry due to stream error: {evt.Data}" };
+                            
+                            try {
+                                await Task.Delay(delaySeconds * 1000, cancellationToken);
+                            } catch(TaskCanceledException) { yield break; }
+                            
+                            attempt++;
+                            retryTriggered = true;
+                            break; // break out of await foreach to restart request
+                        }
+                        else if (isRetryable)
+                        {
+                            // Retries exhausted — replace the raw stream error with a user-friendly message
+                            if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] Max retries exhausted for stream error: {evt.Data}" };
+                            yield return new ChatEvent { Type = "error", Data = $"The {providerName} API is currently overloaded. Max retries ({retryDelays.Length + 1}) exceeded. Please try again later." };
+                            yield break;
+                        }
+                    }
+
+                    if (!retryTriggered)
+                    {
+                        yield return evt;
+                    }
+                }
+                
+                if (retryTriggered)
+                {
+                    continue; // Loop back to the start of the while (!success) loop
                 }
                 
                 if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] Stream completed." };
@@ -1350,6 +1398,9 @@ public class ChatService
                 string? chunkStr = null;
                 string? thinkingChunkStr = null;
                 ChatEvent? toolCallEvt = null;
+                ChatEvent? errorEvt = null;
+                ChatEvent? debugEvt = null;
+
                 try
                 {
                     var json = JsonSerializer.Deserialize<JsonElement>(data);
@@ -1405,9 +1456,69 @@ public class ChatService
                                 currentToolName = null;
                             }
                         }
+                        else if (t == "error")
+                        {
+                            string errMsg = "Unknown stream error";
+                            if (json.TryGetProperty("error", out var errObj))
+                            {
+                                var errType = errObj.TryGetProperty("type", out var et) ? et.GetString() : "unknown";
+                                var errMessage = errObj.TryGetProperty("message", out var em) ? em.GetString() : "Unknown error";
+                                errMsg = $"Anthropic stream error: [{errType}] {errMessage}";
+                            }
+                            errorEvt = new ChatEvent { Type = "error", Data = errMsg };
+                        }
+                        else if (t == "message_start")
+                        {
+                            if (_showDebugLog && json.TryGetProperty("message", out var msg))
+                            {
+                                var resolvedModel = msg.TryGetProperty("model", out var mp) ? mp.GetString() : "unknown";
+                                string usageInfo = "";
+                                if (msg.TryGetProperty("usage", out var usage))
+                                {
+                                    var inputTokens = usage.TryGetProperty("input_tokens", out var it) ? it.GetInt32().ToString() : "?";
+                                    usageInfo = $", input_tokens={inputTokens}";
+                                }
+                                debugEvt = new ChatEvent { Type = "debug", Data = $"[Main Chat - Anthropic] message_start: model={resolvedModel}{usageInfo}" };
+                            }
+                        }
+                        else if (t == "message_delta")
+                        {
+                            if (_showDebugLog && json.TryGetProperty("delta", out var delta2))
+                            {
+                                var stopReason = delta2.TryGetProperty("stop_reason", out var sr) ? sr.GetString() : "null";
+                                string usageInfo = "";
+                                if (json.TryGetProperty("usage", out var usage))
+                                {
+                                    var outputTokens = usage.TryGetProperty("output_tokens", out var ot) ? ot.GetInt32().ToString() : "?";
+                                    usageInfo = $", output_tokens={outputTokens}";
+                                }
+                                debugEvt = new ChatEvent { Type = "debug", Data = $"[Main Chat - Anthropic] message_delta: stop_reason={stopReason}{usageInfo}" };
+                            }
+                        }
+                        else
+                        {
+                            if (_showDebugLog)
+                            {
+                                debugEvt = new ChatEvent { Type = "debug", Data = $"[Main Chat - Anthropic] Unhandled event type: {t}" };
+                            }
+                        }
                     }
                 }
-                catch { /* ignore */ }
+                catch (Exception ex)
+                {
+                    if (_showDebugLog)
+                    {
+                        debugEvt = new ChatEvent { Type = "debug", Data = $"[Main Chat - Anthropic] Parse error: {ex.Message}, line: {line}" };
+                    }
+                }
+
+                if (debugEvt != null) yield return debugEvt;
+
+                if (errorEvt != null)
+                {
+                    yield return errorEvt;
+                    yield break;
+                }
                 
                 if (thinkingChunkStr != null)
                 {

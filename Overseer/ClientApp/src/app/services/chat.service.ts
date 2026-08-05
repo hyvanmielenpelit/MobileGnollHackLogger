@@ -40,6 +40,7 @@ export interface ChatMessage {
 export interface ChatStreamEvent {
   type: 'chunk' | 'status' | 'debug' | 'error' | 'sessionId' | 'tool_start' | 'tool_result' | 'tool_error' | 'title_update' | 'thinking_chunk' | 'ttft' | 'final';
   data: string;
+  seqNo?: number;
 }
 export interface ChatSessionsResponse {
   sessions: ChatSession[];

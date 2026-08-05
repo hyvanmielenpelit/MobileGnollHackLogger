@@ -152,6 +152,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   
   isGeneratingTitle = false;
   titleStatusText = '';
+  lastSeenSeqNo: number = -1;
 
   maxAttachmentSize = 15728640; // default 15MB
   errorMessage = '';
@@ -527,6 +528,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   processChatEvent(evt: any) {
     if (typeof evt.sessionId === 'number' && evt.sessionId !== this.currentSessionId) return;
 
+    if (evt.seqNo !== undefined && evt.seqNo !== null) {
+      this.lastSeenSeqNo = Math.max(this.lastSeenSeqNo, evt.seqNo);
+    }
+
     if (evt.type === 'debug') {
       this.debugService.log(`[Backend] ${evt.data}`);
     } else if (evt.type === 'status') {
@@ -791,6 +796,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   newSession() {
     this.sessionLoadSub?.unsubscribe();
     this.currentSessionId = null;
+    this.lastSeenSeqNo = -1;
     this.messages = [];
     this.isStreaming = false;
     this.streamingMessage = '';
@@ -810,6 +816,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.sessionLoadSub?.unsubscribe();
 
     this.isStreaming = false;
+    this.lastSeenSeqNo = -1;
     this.streamingMessage = '';
     this.streamingToolCalls = [];
     this.showSpinner = false;
@@ -852,6 +859,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           this.debugService.log(`[Frontend] Session ${id} has ongoing generation with ${s.ongoingGeneration.events.length} buffered events. Replaying...`);
           this.isStreaming = true;
           for (const evt of s.ongoingGeneration.events) {
+            if (evt.seqNo !== undefined && evt.seqNo !== null && evt.seqNo <= this.lastSeenSeqNo) {
+              this.debugService.log(`[Frontend] Skipping duplicated replayed event seqNo=${evt.seqNo}`);
+              continue;
+            }
             this.processChatEvent(evt);
           }
           this.debugService.log(`[Frontend] Replay complete. isStreaming=${this.isStreaming}, streamingMessage length=${this.streamingMessage.length}`);

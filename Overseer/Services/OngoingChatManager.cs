@@ -6,6 +6,7 @@ public class OngoingGenerationState
 {
     public ConcurrentQueue<ChatEvent> AccumulatedEvents { get; set; } = new();
     public CancellationTokenSource Cts { get; set; } = null!;
+    public int EventSequence = 0;
 }
 
 public class OngoingChatManager
@@ -22,6 +23,7 @@ public class OngoingChatManager
     {
         if (_active.TryGetValue(sessionId, out var state))
         {
+            evt.SeqNo = Interlocked.Increment(ref state.EventSequence);
             state.AccumulatedEvents.Enqueue(evt);
         }
     }
