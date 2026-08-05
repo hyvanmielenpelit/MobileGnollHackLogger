@@ -154,12 +154,12 @@
     <!-- Admin only fields: Status, Rate Limits -->
     <ng-container *ngIf="isAdmin">
       
-      <div class="form-group checkbox-row">
+      <div class="checkbox-row" style="flex-direction: row; gap: 20px;">
         <label class="gh-checkbox-label">
           <input type="checkbox" [(ngModel)]="isEnabled"> Enabled
         </label>
-        <label class="gh-checkbox-label" style="margin-left: 20px;">
-          <input type="checkbox" [(ngModel)]="isSystemWide"> Is System Wide
+        <label class="gh-checkbox-label">
+          <input type="checkbox" [(ngModel)]="isSystemWide"> System Wide
         </label>
       </div>
 

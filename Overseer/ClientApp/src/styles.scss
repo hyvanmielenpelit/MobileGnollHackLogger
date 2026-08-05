@@ -525,3 +525,197 @@ input[type="number"] {
     }
 }
 
+/* Shared component styles for Overseer ClientApp */
+
+/* --- Dialog Styles --- */
+.settings-dialog {
+  padding: 0;
+  border: 2px solid var(--primary-color);
+  border-radius: 8px;
+  background-color: var(--bg-glass);
+  color: #fff;
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.8), inset 0 0 20px rgba(212, 175, 55, 0.1);
+  max-width: 500px;
+  width: 90vw;
+  
+  &::backdrop {
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+  }
+}
+
+.dialog-content {
+  padding: 20px;
+  
+  h3 {
+    margin-top: 0;
+    margin-bottom: 20px;
+    font-size: 1.25rem;
+    color: var(--primary-color);
+  }
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 15px;
+  margin-top: 20px;
+  padding-top: 15px;
+  border-top: 1px solid var(--border-glass);
+}
+
+.dialog-header {
+  margin-bottom: 20px;
+  h3 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--title-color);
+  }
+}
+
+/* --- Form Components --- */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 15px;
+  
+  &.mt-3 {
+    margin-top: 15px;
+  }
+  
+  label {
+    font-weight: 500;
+    color: #ddd;
+    margin-bottom: 5px;
+  }
+}
+
+.form-control {
+  padding: 8px 12px;
+  border: 1px solid var(--border-glass);
+  background-color: var(--bg-input);
+  color: #fff;
+  border-radius: 4px;
+  font-size: 0.95rem;
+  width: 100%;
+  box-sizing: border-box;
+
+  &:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 5px rgba(212, 175, 55, 0.3);
+  }
+  
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}
+
+/* --- Status Badge --- */
+.status-badge {
+  font-size: 0.75rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 8px;
+  font-weight: normal;
+  
+  &.badge-success {
+    background-color: rgba(46, 204, 113, 0.2);
+    color: #2ecc71;
+  }
+  
+  &.badge-warning {
+    background-color: rgba(241, 196, 15, 0.2);
+    color: #f1c40f;
+  }
+  
+  &.badge-danger {
+    background-color: rgba(231, 76, 60, 0.2);
+    color: #e74c3c;
+  }
+  
+  &.has-key {
+    background: rgba(50, 205, 50, 0.2);
+    color: var(--color-success);
+    border: 1px solid var(--color-success);
+  }
+}
+
+/* --- Error Message --- */
+.error-message {
+  padding: 10px;
+  background: rgba(231, 76, 60, 0.1);
+  color: #e74c3c;
+  border-radius: 4px;
+  border-left: 3px solid #e74c3c;
+  margin-bottom: 15px;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  
+  .gh-icon {
+    font-size: 18px;
+  }
+}
+
+/* --- Models List --- */
+.models-list {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  padding: 10px 0; 
+}
+
+.model-item {
+  display: flex;
+  align-items: center;
+  padding: 15px;
+  border: 1px solid var(--border-glass);
+  border-radius: 4px;
+  background-color: rgba(17, 17, 17, 0.65);
+  box-shadow: inset 0 0 10px rgba(212, 175, 55, 0.1);
+  transition: all 0.2s;
+}
+
+.model-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.model-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  
+  h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--title-color);
+  }
+}
+
+.model-details {
+  font-size: 0.85rem;
+  color: #aaa;
+}
+
+.model-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* --- Flex Utilities --- */
+.flex-between {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}

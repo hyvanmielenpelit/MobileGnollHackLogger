@@ -38,21 +38,7 @@
   }
 }
 
-.status-badge {
-  padding: 0.25rem 0.75rem;
-  border-radius: 9999px;
-  font-size: 0.875rem;
-  font-weight: bold;
-  background: rgba(212, 160, 23, 0.2);
-  color: var(--primary-color);
-  border: 1px solid var(--primary-color);
-  
-  &.has-key {
-    background: rgba(50, 205, 50, 0.2);
-    color: var(--color-success);
-    border: 1px solid var(--color-success);
-  }
-}
+
 
 .provider-body {
   padding: 20px;
