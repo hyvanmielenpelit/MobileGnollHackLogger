@@ -419,8 +419,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.debugService.log(`[Overseer] showThoughtsAndTools loaded: ${this.showThoughtsAndTools} (type: ${typeof this.showThoughtsAndTools})`);
 
         this.settingsService.getUserModels().subscribe({ next: (models) => {
-        this.userModels = models.filter(m => !m.isSystem);
-        this.systemModels = models.filter(m => m.isSystem);
+        this.userModels = models.filter(m => !m.isSystem && (m.modelRole === undefined || (m.modelRole & 1) === 1));
+        this.systemModels = models.filter(m => m.isSystem && (m.modelRole === undefined || (m.modelRole & 1) === 1));
         this.hasModel = this.userModels.length > 0 || this.systemModels.length > 0;
         
         if (this.hasModel) {

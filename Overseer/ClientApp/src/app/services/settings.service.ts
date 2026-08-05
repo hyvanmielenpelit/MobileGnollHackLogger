@@ -22,6 +22,7 @@ export interface UserAiSettings {
   configuredProviders?: string[];
   performanceLimits?: any;
   titleGenerationModelId?: number | null;
+  titleGenerationSystemModelId?: number | null;
 }
 
 export interface ApiModelDto {
@@ -47,6 +48,7 @@ export interface UserAiModel {
   maxInputTokens?: number | null;
   maxOutputTokens?: number | null;
   isSystem?: boolean;
+  modelRole?: number;
 }
 
 export interface ApiKeyStatus {
@@ -88,8 +90,8 @@ export class SettingsService {
     });
   }
 
-  saveTitleGenerationModel(modelId: number | null) {
-    return this.http.put('/api/settings/titlemodel', { modelId });
+  saveTitleGenerationModel(modelId: number | null, isSystem: boolean = false) {
+    return this.http.put('/api/settings/titlemodel', { modelId, isSystem });
   }
 
   getApiKeys() {

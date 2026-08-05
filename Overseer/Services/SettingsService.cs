@@ -46,7 +46,7 @@ public class SettingsService
         await _dbContext.SaveChangesAsync();
     }
 
-    public async Task SaveTitleGenerationModelAsync(string userId, long? modelId)
+    public async Task SaveTitleGenerationModelAsync(string userId, long? modelId, bool isSystem = false)
     {
         var settings = await _dbContext.UserAiSettings.FindAsync(userId);
         if (settings == null)
@@ -57,15 +57,30 @@ public class SettingsService
 
         if (modelId.HasValue)
         {
-            // Verify model belongs to user
-            var modelExists = await _dbContext.UserAiModels.AnyAsync(m => m.Id == modelId.Value && m.AspNetUserId == userId);
-            if (!modelExists)
+            if (isSystem)
             {
-                throw new ArgumentException("Model does not exist or does not belong to user.");
+                // Note: Security check happens at runtime when using the model. We can just set it here.
+                settings.TitleGenerationSystemModelId = modelId;
+                settings.TitleGenerationModelId = null;
+            }
+            else
+            {
+                // Verify model belongs to user
+                var modelExists = await _dbContext.UserAiModels.AnyAsync(m => m.Id == modelId.Value && m.AspNetUserId == userId);
+                if (!modelExists)
+                {
+                    throw new ArgumentException("Model does not exist or does not belong to user.");
+                }
+                settings.TitleGenerationModelId = modelId;
+                settings.TitleGenerationSystemModelId = null;
             }
         }
+        else
+        {
+            settings.TitleGenerationModelId = null;
+            settings.TitleGenerationSystemModelId = null;
+        }
 
-        settings.TitleGenerationModelId = modelId;
         await _dbContext.SaveChangesAsync();
     }
 
@@ -130,22 +145,33 @@ public class SettingsService
             .ToListAsync();
     }
 
-    public async Task<List<SystemAiApiConfiguration>> GetResolvedSystemModelsAsync(string userId)
+    public async Task<List<(SystemAiApiConfiguration Config, int ResolvedRole)>> GetResolvedSystemModelsAsync(string userId, int? roleFilter = null)
     {
         var userGroupIds = await _dbContext.UserGroups
             .Where(ug => ug.AspNetUserId == userId)
             .Select(ug => ug.GroupId)
             .ToListAsync();
 
-        var configs = await _dbContext.SystemAiApiConfigurations
-            .Where(c => c.IsEnabled &&
-                        (c.IsSystemWide || 
-                         _dbContext.UserSystemAiApiConfigurations.Any(uca => uca.SystemAiApiConfigurationId == c.Id && uca.AspNetUserId == userId && uca.IsEnabled) ||
-                         _dbContext.GroupSystemAiApiConfigurations.Any(gca => gca.SystemAiApiConfigurationId == c.Id && userGroupIds.Contains(gca.GroupId) && gca.IsEnabled)))
-            .OrderBy(c => c.OrderIndex)
-            .ToListAsync();
+        var query = from c in _dbContext.SystemAiApiConfigurations
+                    where c.IsEnabled
+                    let userAssignment = _dbContext.UserSystemAiApiConfigurations.FirstOrDefault(u => u.SystemAiApiConfigurationId == c.Id && u.AspNetUserId == userId && u.IsEnabled)
+                    let groupAssignment = _dbContext.GroupSystemAiApiConfigurations.Where(g => g.SystemAiApiConfigurationId == c.Id && userGroupIds.Contains(g.GroupId) && g.IsEnabled).OrderBy(g => g.OrderIndex).FirstOrDefault()
+                    where c.IsSystemWide || userAssignment != null || groupAssignment != null
+                    select new {
+                        Config = c,
+                        ResolvedRole = userAssignment != null ? userAssignment.ModelRole :
+                                       (groupAssignment != null ? groupAssignment.ModelRole : c.ModelRole)
+                    };
 
-        return configs;
+        var rawList = await query.ToListAsync();
+        
+        var resultList = rawList
+            .Where(x => roleFilter == null || (x.ResolvedRole & roleFilter.Value) == roleFilter.Value)
+            .Select(x => (x.Config, x.ResolvedRole))
+            .OrderBy(x => x.Config.OrderIndex)
+            .ToList();
+
+        return resultList;
     }
 
     public async Task AddUserModelAsync(string userId, UserAiModel model)

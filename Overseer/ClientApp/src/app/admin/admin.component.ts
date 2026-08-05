@@ -3,11 +3,12 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import { AdminService, UserDto, GroupDto, SystemAiConfigDto, UserSystemAiConfigDto, GroupSystemAiConfigDto } from '../services/admin.service';
+import { AiModelFormComponent, AiModelFormResult } from '../shared/ai-model-form/ai-model-form.component';
 
 @Component({
   selector: 'app-admin',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule],
+  imports: [CommonModule, FormsModule, RouterModule, AiModelFormComponent],
   templateUrl: './admin.component.html',
   styleUrl: './admin.component.scss'
 })
@@ -44,8 +45,10 @@ export class AdminComponent implements OnInit {
   // Generic Confirm State
   confirmMessage: string = '';
   confirmAction: (() => void) | null = null;
-  editingConfig: any = null;
+  editingConfig: Partial<SystemAiConfigDto> | null = null;
   isNewConfig = false;
+  adminProviders = ['Anthropic', 'Google', 'OpenAI'];
+  savingConfig = false;
 
   newGroupName: string = '';
   createGroupError: string = '';
@@ -150,19 +153,18 @@ export class AdminComponent implements OnInit {
   openCreateConfig() {
     this.isNewConfig = true;
     this.editingConfig = {
-      displayName: '',
-      provider: 'Anthropic',
-      modelId: '',
+      provider: this.adminProviders[0],
       isEnabled: true,
       isSystemWide: false,
-      orderIndex: 0
+      orderIndex: 0,
+      modelRole: 3
     };
     this.configDialog.nativeElement.showModal();
   }
 
   openEditConfig(config: SystemAiConfigDto) {
     this.isNewConfig = false;
-    this.editingConfig = { ...config, apiKey: '' }; // blank apiKey means don't update
+    this.editingConfig = { ...config }; 
     this.configDialog.nativeElement.showModal();
   }
 
@@ -171,17 +173,38 @@ export class AdminComponent implements OnInit {
     this.editingConfig = null;
   }
 
-  saveConfig() {
+  onConfigSave(formData: AiModelFormResult) {
+    this.savingConfig = true;
+    
+    // Merge form data with existing config (for things like orderIndex)
+    const payload = {
+      ...(this.editingConfig || {}),
+      ...formData
+    };
+
     if (this.isNewConfig) {
-      this.adminService.createSystemConfig(this.editingConfig).subscribe(c => {
-        this.configs.push(c);
-        this.closeConfig();
+      this.adminService.createSystemConfig(payload).subscribe({
+        next: (c) => {
+          this.loadData();
+          this.savingConfig = false;
+          this.closeConfig();
+        },
+        error: (err) => {
+          this.savingConfig = false;
+          alert(err.error?.message || 'Error creating config');
+        }
       });
     } else {
-      this.adminService.updateSystemConfig(this.editingConfig.id, this.editingConfig).subscribe(c => {
-        const idx = this.configs.findIndex(x => x.id === c.id);
-        if (idx !== -1) this.configs[idx] = c;
-        this.closeConfig();
+      this.adminService.updateSystemConfig(payload.id!, payload).subscribe({
+        next: (c) => {
+          this.loadData();
+          this.savingConfig = false;
+          this.closeConfig();
+        },
+        error: (err) => {
+          this.savingConfig = false;
+          alert(err.error?.message || 'Error updating config');
+        }
       });
     }
   }
@@ -191,6 +214,23 @@ export class AdminComponent implements OnInit {
     this.confirmAction = () => {
       this.adminService.deleteSystemConfig(config.id).subscribe(() => {
         this.configs = this.configs.filter(c => c.id !== config.id);
+      });
+    };
+    this.confirmDialog.nativeElement.showModal();
+  }
+
+  resetConfig(config: SystemAiConfigDto) {
+    this.confirmMessage = `Are you sure you want to reset all rate limits (Daily, Monthly, Total) for the System Config '${config.displayName}'?`;
+    this.confirmAction = () => {
+      this.adminService.resetSystemConfig(config.id).subscribe({
+        next: () => {
+          config.dailyRequestsCount = 0;
+          config.monthlyRequestsCount = 0;
+          config.totalRequestsCount = 0;
+        },
+        error: (err) => {
+          console.error("Failed to reset config rate limits", err);
+        }
       });
     };
     this.confirmDialog.nativeElement.showModal();

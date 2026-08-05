@@ -2,7 +2,7 @@ namespace MobileGnollHackLogger.Data;
 
 using System;
 
-public class GroupSystemAiApiConfiguration
+public class GroupSystemAiApiConfiguration : IRateLimitedEntity
 {
     public long Id { get; set; }
 
@@ -12,10 +12,13 @@ public class GroupSystemAiApiConfiguration
     public long SystemAiApiConfigurationId { get; set; }
     public SystemAiApiConfiguration SystemAiApiConfiguration { get; set; } = default!;
 
-    public bool IsEnabled { get; set; }
+    public bool IsEnabled { get; set; } = true;
+
+    public int ModelRole { get; set; } = 3; // 1 = Chat, 2 = Title Generation, 3 = Both
+
     public int OrderIndex { get; set; }
 
-    // Rate limits
+    // Rate limits (null means use system defaults)
     public int? MaxDailyRequests { get; set; }
     public int? MaxMonthlyRequests { get; set; }
     public int? MaxTotalRequests { get; set; }

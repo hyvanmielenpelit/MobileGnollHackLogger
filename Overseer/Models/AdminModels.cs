@@ -48,6 +48,7 @@ public class SystemAiApiConfigurationDto
     public int DailyRequestsCount { get; set; }
     public int MonthlyRequestsCount { get; set; }
     public int TotalRequestsCount { get; set; }
+    public int ModelRole { get; set; }
 }
 
 public class CreateSystemAiApiConfigurationRequest
@@ -64,6 +65,7 @@ public class CreateSystemAiApiConfigurationRequest
     public int? MaxDailyRequests { get; set; }
     public int? MaxMonthlyRequests { get; set; }
     public int? MaxTotalRequests { get; set; }
+    public int ModelRole { get; set; } = 3;
 }
 
 public class UpdateSystemAiApiConfigurationRequest : CreateSystemAiApiConfigurationRequest
@@ -86,6 +88,10 @@ public class UserSystemAiConfigDto
     public int? MaxDailyRequests { get; set; }
     public int? MaxMonthlyRequests { get; set; }
     public int? MaxTotalRequests { get; set; }
+    public int DailyRequestsCount { get; set; }
+    public int MonthlyRequestsCount { get; set; }
+    public int TotalRequestsCount { get; set; }
+    public int ModelRole { get; set; }
 }
 
 public class GroupSystemAiConfigDto
@@ -98,6 +104,10 @@ public class GroupSystemAiConfigDto
     public int? MaxDailyRequests { get; set; }
     public int? MaxMonthlyRequests { get; set; }
     public int? MaxTotalRequests { get; set; }
+    public int DailyRequestsCount { get; set; }
+    public int MonthlyRequestsCount { get; set; }
+    public int TotalRequestsCount { get; set; }
+    public int ModelRole { get; set; }
 }
 
 public class AssignConfigToUserRequest
@@ -107,9 +117,18 @@ public class AssignConfigToUserRequest
     public int? MaxDailyRequests { get; set; }
     public int? MaxMonthlyRequests { get; set; }
     public int? MaxTotalRequests { get; set; }
+    public int ModelRole { get; set; } = 3;
 }
 
 public class AssignConfigToGroupRequest : AssignConfigToUserRequest
+{
+}
+
+public class UpdateUserSystemAiConfigRequest : AssignConfigToUserRequest
+{
+}
+
+public class UpdateGroupSystemAiConfigRequest : AssignConfigToGroupRequest
 {
 }
 

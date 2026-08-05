@@ -162,7 +162,7 @@ public class ChatService
             if (systemModelId.HasValue)
             {
                 var systemAiConfigService = scope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
-                var (config, errorMessage) = await systemAiConfigService.GetAndCheckSystemConfigAsync(systemModelId.Value, userId);
+                var (config, errorMessage) = await systemAiConfigService.GetAndCheckSystemConfigAsync(systemModelId.Value, userId, requiredRoleFilter: 1);
                 
                 if (config == null)
                 {
@@ -626,7 +626,7 @@ public class ChatService
                     try { tArgs = JsonSerializer.Deserialize<JsonElement>(tArgsStr); } catch { }
 
                     var res = await _toolExecutor.ExecuteAsync(tName, tArgs, execContext);
-                    var resContent = res.Content ?? (res.Success ? "Success" : res.ErrorMessage);
+                    var resContent = res.Content ?? (res.Success ? "Success" : (res.ErrorMessage ?? "Unknown error"));
 
                     providerResults.Add(new ProviderToolResult
                     {
@@ -1278,34 +1278,66 @@ public class ChatService
             
             var settings = await dbContext.UserAiSettings.FindAsync(new object[] { userId }, cancellationToken);
             UserAiModel? model = null;
-            
-            if (settings?.TitleGenerationModelId != null)
+            string provider = "";
+            string modelId = "";
+            string apiKey = "";
+
+            if (settings?.TitleGenerationSystemModelId != null)
             {
-                model = await dbContext.UserAiModels.FirstOrDefaultAsync(m => m.Id == settings.TitleGenerationModelId && m.AspNetUserId == userId, cancellationToken);
+                var systemAiConfigService = scope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
+                var (config, errorMessage) = await systemAiConfigService.GetAndCheckSystemConfigAsync(settings.TitleGenerationSystemModelId.Value, userId, requiredRoleFilter: 2);
+                
+                if (config != null && !string.IsNullOrEmpty(config.EncryptedApiKey) && !string.IsNullOrEmpty(config.ApiKeyNonce) && !string.IsNullOrEmpty(config.ApiKeyTag))
+                {
+                    provider = config.Provider;
+                    modelId = config.ModelId;
+                    apiKey = cryptoService.Decrypt(config.EncryptedApiKey, config.ApiKeyNonce, config.ApiKeyTag, "SYSTEM_API_KEY");
+                }
+                else if (config == null)
+                {
+                    if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen] Aborted: {errorMessage}" }, CancellationToken.None);
+                    return;
+                }
             }
-            
-            if (model == null)
+            else
             {
-                model = await dbContext.UserAiModels
-                    .Where(m => m.AspNetUserId == userId)
-                    .OrderBy(m => m.OrderIndex)
-                    .FirstOrDefaultAsync(cancellationToken);
+                if (settings?.TitleGenerationModelId != null)
+                {
+                    model = await dbContext.UserAiModels.FirstOrDefaultAsync(m => m.Id == settings.TitleGenerationModelId && m.AspNetUserId == userId, cancellationToken);
+                }
+                
+                if (model == null)
+                {
+                    model = await dbContext.UserAiModels
+                        .Where(m => m.AspNetUserId == userId)
+                        .OrderBy(m => m.OrderIndex)
+                        .FirstOrDefaultAsync(cancellationToken);
+                }
+
+                if (model != null)
+                {
+                    provider = model.Provider;
+                    modelId = model.ModelId;
+
+                    var apiKeyEntry = await dbContext.UserAiApiKeys.FirstOrDefaultAsync(k => k.AspNetUserId == userId && k.Provider == provider, cancellationToken);
+                    if (apiKeyEntry != null && !string.IsNullOrEmpty(apiKeyEntry.EncryptedApiKey) && !string.IsNullOrEmpty(apiKeyEntry.ApiKeyNonce) && !string.IsNullOrEmpty(apiKeyEntry.ApiKeyTag))
+                    {
+                        apiKey = cryptoService.Decrypt(apiKeyEntry.EncryptedApiKey, apiKeyEntry.ApiKeyNonce, apiKeyEntry.ApiKeyTag, userId);
+                    }
+                }
             }
 
-            if (!_aiProviders.TryGetValue(model.Provider, out var aiProvider))
+            if (string.IsNullOrEmpty(provider) || string.IsNullOrEmpty(apiKey))
             {
-                if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen] Aborted: Provider {model.Provider} not supported." }, CancellationToken.None);
+                if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen] Aborted: No valid model or API key found." }, CancellationToken.None);
                 return;
             }
 
-            var apiKeyEntry = await dbContext.UserAiApiKeys.FirstOrDefaultAsync(k => k.AspNetUserId == userId && k.Provider == model.Provider, cancellationToken);
-            if (apiKeyEntry == null || string.IsNullOrEmpty(apiKeyEntry.EncryptedApiKey) || string.IsNullOrEmpty(apiKeyEntry.ApiKeyNonce) || string.IsNullOrEmpty(apiKeyEntry.ApiKeyTag))
+            if (!_aiProviders.TryGetValue(provider, out var aiProvider))
             {
-                if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen] Aborted: No API key found for provider {model.Provider}." }, CancellationToken.None);
+                if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen] Aborted: Provider {provider} not supported." }, CancellationToken.None);
                 return;
             }
-            
-            string apiKey = cryptoService.Decrypt(apiKeyEntry.EncryptedApiKey, apiKeyEntry.ApiKeyNonce, apiKeyEntry.ApiKeyTag, userId);
             
             string prompt = "Generate a descriptive 3 to 8 word title for this conversation based on the user's message. Output ONLY the title itself in Title Case, with no quotes, and no extra text. Use correct punctuation (such as commas for lists or hyphens), but do NOT end the title with a period. Do NOT use single-word abbreviations.";
             string generatedTitle = string.Empty;
@@ -1313,14 +1345,14 @@ public class ChatService
             
             var client = _httpClientFactory.CreateClient();
             
-            var titleReqBody = aiProvider.BuildTitleRequestBody(model.ModelId, prompt, userMessage, maxTokens);
+            var titleReqBody = aiProvider.BuildTitleRequestBody(modelId, prompt, userMessage, maxTokens);
             string reqBodyStr = System.Text.Json.JsonSerializer.Serialize(titleReqBody);
-            string titleUrl = aiProvider.GetTitleUrl(model.ModelId, apiKey);
+            string titleUrl = aiProvider.GetTitleUrl(modelId, apiKey);
 
             var sw = System.Diagnostics.Stopwatch.StartNew();
             var safeUri = titleUrl;
             if (safeUri.Contains("key=")) { safeUri = System.Text.RegularExpressions.Regex.Replace(safeUri, "key=[^&]+", "key=APIKEY_NOT_DISCLOSED"); }
-            if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] Starting POST request to {safeUri}..." }, CancellationToken.None);
+            if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {provider}] Starting POST request to {safeUri}..." }, CancellationToken.None);
             
             HttpResponseMessage? response = null;
             int[] retryDelays = { 1000, 3000, 5000, 10000, 15000 };
@@ -1345,7 +1377,7 @@ public class ChatService
                     
                     response = await client.SendAsync(reqClone, cancellationToken);
                     
-                    if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] HTTP {(int)response.StatusCode} Received ({sw.ElapsedMilliseconds}ms, Attempt {i + 1})" }, CancellationToken.None);
+                    if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {provider}] HTTP {(int)response.StatusCode} Received ({sw.ElapsedMilliseconds}ms, Attempt {i + 1})" }, CancellationToken.None);
                     
                     if (response.StatusCode != System.Net.HttpStatusCode.ServiceUnavailable || i == retryDelays.Length)
                     {
@@ -1355,12 +1387,12 @@ public class ChatService
                 catch (OperationCanceledException) { throw; }
                 catch (Exception ex)
                 {
-                    if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] Request failed: {ex.Message} (Attempt {i + 1})" }, CancellationToken.None);
+                    if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {provider}] Request failed: {ex.Message} (Attempt {i + 1})" }, CancellationToken.None);
                     if (i == retryDelays.Length) throw;
                 }
                 
                 int delayMs = retryDelays[i];
-                if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] Sleeping for {delayMs / 1000.0}s before retry..." }, CancellationToken.None);
+                if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {provider}] Sleeping for {delayMs / 1000.0}s before retry..." }, CancellationToken.None);
                 await Task.Delay(delayMs, cancellationToken);
             }
             
@@ -1376,17 +1408,17 @@ public class ChatService
                 
                 if (string.IsNullOrWhiteSpace(generatedTitle))
                 {
-                    if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] Warning: API returned empty or whitespace title. Raw JSON: {json}" }, CancellationToken.None);
+                    if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {provider}] Warning: API returned empty or whitespace title. Raw JSON: {json}" }, CancellationToken.None);
                 }
                 else
                 {
-                    if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] Generated Title: \"{generatedTitle}\"" }, CancellationToken.None);
+                    if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {provider}] Generated Title: \"{generatedTitle}\"" }, CancellationToken.None);
                 }
             }
             else if (response != null)
             {
                 var errorStr = await response.Content.ReadAsStringAsync(CancellationToken.None);
-                if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {model.Provider}] API Error: {errorStr}" }, CancellationToken.None);
+                if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {provider}] API Error: {errorStr}" }, CancellationToken.None);
                 try
                 {
                     System.IO.File.WriteAllText($@"C:\Users\TommiGustafsson\.gemini\antigravity\brain\527f1941-808c-47af-84c6-4f4161647aea\scratch\api_error_{Guid.NewGuid()}.txt", errorStr);

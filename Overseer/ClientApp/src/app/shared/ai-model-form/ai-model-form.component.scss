@@ -1,0 +1,281 @@
+.dialog-content {
+  padding: 20px;
+  background-color: var(transparent);
+  color: var(#fff);
+  border-radius: 8px;
+}
+
+.dialog-header {
+  margin-bottom: 20px;
+  h3 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+  }
+}
+
+.form-scroll-area {
+  max-height: 65vh;
+  overflow-y: auto;
+  padding-right: 10px; // space for scrollbar
+  
+  // Custom scrollbar
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  &::-webkit-scrollbar-thumb {
+    background-color: var(--border-glass);
+    border-radius: 3px;
+  }
+}
+
+.form-group {
+  margin-bottom: 15px;
+  label {
+    margin-bottom: 5px;
+    font-size: 0.9rem;
+    color: var(#ccc);
+    font-weight: 500;
+  }
+}
+
+.flex-col {
+  display: flex;
+  flex-direction: column;
+}
+
+.flex-between {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.form-control {
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-glass);
+  color: var(#fff);
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 0.95rem;
+  width: 100%;
+  box-sizing: border-box;
+
+  &:focus {
+    outline: none;
+    border-color: var(--primary-color);
+  }
+  
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}
+
+.picker-model-select {
+  height: auto;
+  min-height: 120px; // make it look like a listbox
+  padding: 4px;
+  
+  option {
+    padding: 4px 8px;
+    margin-bottom: 0px;
+    border-radius: 4px;
+    
+    &:checked {
+      background-color: var(--primary-color);
+      color: white;
+    }
+  }
+}
+
+.sort-options {
+  display: flex;
+  gap: 15px;
+  label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.85rem;
+    margin: 0;
+    cursor: pointer;
+  }
+}
+
+.model-meta-box {
+  background-color: rgba(0, 0, 0, 0.2);
+  padding: 8px 12px;
+  border-radius: 4px;
+  margin-bottom: 15px;
+  display: flex;
+  gap: 10px;
+  font-size: 0.85rem;
+
+  .meta-label {
+    color: var(#ccc);
+  }
+  .meta-value {
+    color: var(#fff);
+    font-family: monospace;
+  }
+}
+
+.token-row {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 5px; // to offset the 15px from form-group
+  .form-group {
+    flex: 1;
+  }
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  margin-top: 10px;
+  margin-bottom: 20px;
+}
+
+.gh-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  input[type="checkbox"] {
+    accent-color: var(--primary-color);
+    width: 16px;
+    height: 16px;
+  }
+}
+
+.api-key-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  
+  .form-control {
+    flex: 1;
+  }
+}
+
+.api-key-info {
+  margin-top: 8px;
+  padding: 10px;
+  background-color: rgba(255, 255, 255, 0.05);
+  border-left: 3px solid var(--primary-color);
+  border-radius: 4px;
+  font-size: 0.85rem;
+  
+  p {
+    margin: 0;
+    line-height: 1.4;
+  }
+  
+  a {
+    color: var(--primary-color);
+    text-decoration: none;
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+}
+
+.rate-limits-row {
+  display: flex;
+  gap: 10px;
+  
+  .limit-input {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    
+    .limit-label {
+      font-size: 0.75rem;
+      color: var(#ccc);
+      text-transform: uppercase;
+    }
+    
+    .form-control {
+      padding: 6px 8px;
+    }
+  }
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 15px;
+  border-top: 1px solid var(--border-glass);
+}
+
+.icon-btn {
+  background: none;
+  border: none;
+  color: var(#ccc);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 4px;
+  
+  &:hover {
+    color: var(#fff);
+    background-color: rgba(255, 255, 255, 0.1);
+  }
+  
+  .gh-icon {
+    font-size: 18px;
+  }
+}
+
+.status-badge {
+  font-size: 0.75rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 8px;
+  font-weight: normal;
+  
+  &.badge-success {
+    background-color: rgba(46, 204, 113, 0.2);
+    color: #2ecc71;
+  }
+  
+  &.badge-warning {
+    background-color: rgba(241, 196, 15, 0.2);
+    color: #f1c40f;
+  }
+  
+  &.badge-danger {
+    background-color: rgba(231, 76, 60, 0.2);
+    color: #e74c3c;
+  }
+}
+
+.error-message {
+  color: #e74c3c;
+  background-color: rgba(231, 76, 60, 0.1);
+  padding: 10px;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  
+  .gh-icon {
+    font-size: 18px;
+  }
+}
+
+.loading-spinner-container {
+  display: flex;
+  justify-content: center;
+  padding: 15px;
+}

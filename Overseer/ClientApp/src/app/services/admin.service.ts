@@ -24,10 +24,15 @@ export interface SystemAiConfigDto {
   maxOutputTokens: number | null;
   orderIndex: number;
   isEnabled: boolean;
+  hasApiKey: boolean;
   isSystemWide: boolean;
   maxDailyRequests: number | null;
   maxMonthlyRequests: number | null;
   maxTotalRequests: number | null;
+  dailyRequestsCount: number;
+  monthlyRequestsCount: number;
+  totalRequestsCount: number;
+  modelRole: number;
   apiKey?: string;
 }
 
@@ -40,6 +45,10 @@ export interface UserSystemAiConfigDto {
   maxDailyRequests: number | null;
   maxMonthlyRequests: number | null;
   maxTotalRequests: number | null;
+  dailyRequestsCount: number;
+  monthlyRequestsCount: number;
+  totalRequestsCount: number;
+  modelRole: number;
 }
 
 export interface GroupSystemAiConfigDto {
@@ -51,6 +60,10 @@ export interface GroupSystemAiConfigDto {
   maxDailyRequests: number | null;
   maxMonthlyRequests: number | null;
   maxTotalRequests: number | null;
+  dailyRequestsCount: number;
+  monthlyRequestsCount: number;
+  totalRequestsCount: number;
+  modelRole: number;
 }
 
 @Injectable({
@@ -103,6 +116,10 @@ export class AdminService {
     return this.http.delete<void>(`/api/admin/systemconfigs/${id}`);
   }
 
+  resetSystemConfig(id: number): Observable<void> {
+    return this.http.post<void>(`/api/admin/systemconfigs/${id}/reset`, {});
+  }
+
   reorderSystemConfigs(ids: number[]): Observable<void> {
     return this.http.put<void>('/api/admin/systemconfigs/reorder', ids);
   }
@@ -120,6 +137,14 @@ export class AdminService {
     return this.http.delete<void>(`/api/admin/user-systemconfigs/${id}`);
   }
 
+  updateUserSystemConfig(id: number, config: any): Observable<void> {
+    return this.http.put<void>(`/api/admin/user-systemconfigs/${id}`, config);
+  }
+
+  resetUserSystemConfig(id: number): Observable<void> {
+    return this.http.post<void>(`/api/admin/user-systemconfigs/${id}/reset`, {});
+  }
+
   reorderUserSystemConfigs(userId: string, ids: number[]): Observable<void> {
     return this.http.put<void>(`/api/admin/users/${userId}/systemconfigs/reorder`, ids);
   }
@@ -135,6 +160,14 @@ export class AdminService {
 
   deleteGroupSystemConfig(id: number): Observable<void> {
     return this.http.delete<void>(`/api/admin/group-systemconfigs/${id}`);
+  }
+
+  updateGroupSystemConfig(id: number, config: any): Observable<void> {
+    return this.http.put<void>(`/api/admin/group-systemconfigs/${id}`, config);
+  }
+
+  resetGroupSystemConfig(id: number): Observable<void> {
+    return this.http.post<void>(`/api/admin/group-systemconfigs/${id}/reset`, {});
   }
 
   reorderGroupSystemConfigs(groupId: number, ids: number[]): Observable<void> {

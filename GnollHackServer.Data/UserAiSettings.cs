@@ -26,6 +26,7 @@ public class UserAiSettings
     public bool AllowMultipleModels { get; set; } = false;
 
     public long? TitleGenerationModelId { get; set; }
+    public long? TitleGenerationSystemModelId { get; set; }
 
     public int? RequestTimeout { get; set; }
 }

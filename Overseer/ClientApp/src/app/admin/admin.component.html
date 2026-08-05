@@ -105,11 +105,23 @@
                       {{ config.modelId }} <span class="provider-badge ml-8">{{ config.provider }}</span>
                       <span *ngIf="config.isSystemWide" class="badge-system-wide ml-8">System Wide</span>
                       <span *ngIf="!config.isEnabled" class="badge-disabled ml-8">Disabled</span>
+                      <span class="status-badge ml-8" [class.badge-success]="config.hasApiKey" [class.badge-warning]="!config.hasApiKey">
+                        {{ config.hasApiKey ? 'Key Saved' : 'No Key' }}
+                      </span>
+                    </div>
+                    <div *ngIf="config.thinkingLevel">
+                      <span class="detail-label thinking ml-0">Thinking Level:</span> {{ config.thinkingLevel }}
+                    </div>
+                    <div *ngIf="config.maxInputTokens || config.maxOutputTokens" style="font-size: 0.85em; margin-top: 4px; color: var(--gh-text-secondary);">
+                      <span *ngIf="config.maxInputTokens">Max Input: {{ config.maxInputTokens | number }}</span>
+                      <span *ngIf="config.maxInputTokens && config.maxOutputTokens" style="margin: 0 5px;">|</span>
+                      <span *ngIf="config.maxOutputTokens">Max Output: {{ config.maxOutputTokens | number }}</span>
                     </div>
                   </div>
                 </div>
                 <div class="model-actions">
                    <button class="btn-gh btn-gh-small" (click)="openEditConfig(config)">Edit</button>
+                   <button class="btn-gh btn-gh-small" style="background-color: #f39c12; color: #fff; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8em;" (click)="resetConfig(config)">Reset Limits</button>
                    <button class="btn-gh btn-gh-small btn-gh-delete" (click)="deleteConfig(config)">Delete</button>
                 </div>
               </div>
@@ -162,40 +174,18 @@
       </div>
     </dialog>
 
-    <dialog #configDialog class="gh-dialog">
-      <div class="dialog-content flex-col" style="min-width: 500px;" *ngIf="editingConfig">
-        <h3>{{ isNewConfig ? 'Create' : 'Edit' }} System AI Config</h3>
-        <div class="form-group mt-10">
-          <label>Display Name</label>
-          <input type="text" [(ngModel)]="editingConfig.displayName" class="gh-input w-100">
-        </div>
-        <div class="form-group mt-10">
-          <label>Provider</label>
-          <input type="text" [(ngModel)]="editingConfig.provider" class="gh-input w-100">
-        </div>
-        <div class="form-group mt-10">
-          <label>Model ID</label>
-          <input type="text" [(ngModel)]="editingConfig.modelId" class="gh-input w-100">
-        </div>
-        <div class="form-group mt-10">
-          <label>API Key (Base64 AES Encrypted, optional to update)</label>
-          <input type="text" [(ngModel)]="editingConfig.apiKey" class="gh-input w-100" placeholder="Enter new API key to update">
-        </div>
-        <div class="form-group mt-10 d-flex flex-gap-15">
-          <label class="d-flex align-items-center">
-            <input type="checkbox" [(ngModel)]="editingConfig.isEnabled">
-            <span class="ml-10">Is Enabled</span>
-          </label>
-          <label class="d-flex align-items-center">
-            <input type="checkbox" [(ngModel)]="editingConfig.isSystemWide">
-            <span class="ml-10">Is System Wide</span>
-          </label>
-        </div>
-        <div class="dialog-actions mt-auto pt-20">
-          <button class="btn-gh btn-gh-cancel" (click)="closeConfig()">Cancel</button>
-          <button class="btn-gh" (click)="saveConfig()">Save</button>
-        </div>
-      </div>
+    <dialog #configDialog class="settings-dialog">
+      <app-ai-model-form
+        *ngIf="editingConfig"
+        [mode]="isNewConfig ? 'add' : 'edit'"
+        [isAdmin]="true"
+        [providers]="adminProviders"
+        [initialProvider]="editingConfig.provider"
+        [initialData]="editingConfig"
+        [saving]="savingConfig"
+        (save)="onConfigSave($event)"
+        (cancel)="closeConfig()">
+      </app-ai-model-form>
     </dialog>
 
     <dialog #confirmDialog class="gh-dialog">

@@ -12,7 +12,7 @@ public class SystemAiConfigService
         _dbContext = dbContext;
     }
 
-    public async Task<(SystemAiApiConfiguration? Config, string? ErrorMessage)> GetAndCheckSystemConfigAsync(long configId, string userId)
+    public async Task<(SystemAiApiConfiguration? Config, string? ErrorMessage)> GetAndCheckSystemConfigAsync(long configId, string userId, int? requiredRoleFilter = null)
     {
         var config = await _dbContext.SystemAiApiConfigurations.FindAsync(configId);
         if (config == null || !config.IsEnabled)
@@ -37,6 +37,9 @@ public class SystemAiConfigService
             return (null, "System-wide rate limit exceeded for this model.");
         }
 
+        // Calculate resolved role
+        int resolvedModelRole = config.ModelRole;
+
         // Check User specific limit
         var userAssignment = await _dbContext.UserSystemAiApiConfigurations
             .FirstOrDefaultAsync(u => u.SystemAiApiConfigurationId == configId && u.AspNetUserId == userId);
@@ -50,6 +53,13 @@ public class SystemAiConfigService
             {
                 return (null, "User rate limit exceeded for this model.");
             }
+            
+            resolvedModelRole = userAssignment.ModelRole;
+            if (requiredRoleFilter.HasValue && (resolvedModelRole & requiredRoleFilter.Value) != requiredRoleFilter.Value)
+            {
+                return (null, "Model not authorized for this role.");
+            }
+            
             return (config, null); // Has specific user access
         }
 
@@ -80,12 +90,23 @@ public class SystemAiConfigService
                 return (null, "Group rate limit exceeded for this model.");
             }
             
+            resolvedModelRole = allowedGroup.ModelRole;
+            if (requiredRoleFilter.HasValue && (resolvedModelRole & requiredRoleFilter.Value) != requiredRoleFilter.Value)
+            {
+                return (null, "Model not authorized for this role.");
+            }
+            
             return (config, null); // Has group access
         }
 
         if (!config.IsSystemWide)
         {
             return (null, "You do not have access to this model.");
+        }
+
+        if (requiredRoleFilter.HasValue && (resolvedModelRole & requiredRoleFilter.Value) != requiredRoleFilter.Value)
+        {
+            return (null, "Model not authorized for this role.");
         }
 
         return (config, null);
@@ -177,7 +198,7 @@ public class SystemAiConfigService
         return false;
     }
 
-    private void ResetCountersIfNeeded(dynamic entity, DateTime now)
+    private void ResetCountersIfNeeded(IRateLimitedEntity entity, DateTime now)
     {
         if (entity.LastDailyReset == null || entity.LastDailyReset.Value.Date < now.Date)
         {

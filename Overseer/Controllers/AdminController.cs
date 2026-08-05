@@ -109,7 +109,7 @@ public class AdminController : ControllerBase
         var query = _userManager.Users.AsQueryable();
         if (!string.IsNullOrWhiteSpace(search))
         {
-            query = query.Where(u => u.UserName.Contains(search) || u.Email.Contains(search));
+            query = query.Where(u => (u.UserName != null && u.UserName.Contains(search)) || (u.Email != null && u.Email.Contains(search)));
         }
 
         var users = await query.Take(50).ToListAsync();
@@ -126,8 +126,8 @@ public class AdminController : ControllerBase
             dtos.Add(new AdminUserDto
             {
                 Id = u.Id,
-                UserName = u.UserName,
-                Email = u.Email,
+                UserName = u.UserName ?? "",
+                Email = u.Email ?? "",
                 Groups = userGroups
             });
         }
@@ -190,7 +190,8 @@ public class AdminController : ControllerBase
                 MaxTotalRequests = c.MaxTotalRequests,
                 DailyRequestsCount = c.DailyRequestsCount,
                 MonthlyRequestsCount = c.MonthlyRequestsCount,
-                TotalRequestsCount = c.TotalRequestsCount
+                TotalRequestsCount = c.TotalRequestsCount,
+                ModelRole = c.ModelRole
             })
             .ToListAsync();
 
@@ -219,6 +220,7 @@ public class AdminController : ControllerBase
             MaxDailyRequests = request.MaxDailyRequests,
             MaxMonthlyRequests = request.MaxMonthlyRequests,
             MaxTotalRequests = request.MaxTotalRequests,
+            ModelRole = request.ModelRole,
             OrderIndex = orderIndex
         };
 
@@ -252,6 +254,7 @@ public class AdminController : ControllerBase
         config.MaxDailyRequests = request.MaxDailyRequests;
         config.MaxMonthlyRequests = request.MaxMonthlyRequests;
         config.MaxTotalRequests = request.MaxTotalRequests;
+        config.ModelRole = request.ModelRole;
 
         if (request.ApiKey != null)
         {
@@ -267,6 +270,23 @@ public class AdminController : ControllerBase
             }
         }
 
+        await _dbContext.SaveChangesAsync();
+
+        return Ok();
+    }
+
+    [HttpPost("systemconfigs/{id}/reset")]
+    public async Task<IActionResult> ResetSystemConfigRateLimits(long id)
+    {
+        if (!CheckAdmin()) return Forbid();
+
+        var config = await _dbContext.SystemAiApiConfigurations.FindAsync(id);
+        if (config == null) return NotFound();
+
+        config.DailyRequestsCount = 0;
+        config.MonthlyRequestsCount = 0;
+        config.TotalRequestsCount = 0;
+        
         await _dbContext.SaveChangesAsync();
         return Ok();
     }
@@ -323,7 +343,11 @@ public class AdminController : ControllerBase
                 OrderIndex = a.OrderIndex,
                 MaxDailyRequests = a.MaxDailyRequests,
                 MaxMonthlyRequests = a.MaxMonthlyRequests,
-                MaxTotalRequests = a.MaxTotalRequests
+                MaxTotalRequests = a.MaxTotalRequests,
+                DailyRequestsCount = a.DailyRequestsCount,
+                MonthlyRequestsCount = a.MonthlyRequestsCount,
+                TotalRequestsCount = a.TotalRequestsCount,
+                ModelRole = a.ModelRole
             })
             .ToListAsync();
 
@@ -334,6 +358,11 @@ public class AdminController : ControllerBase
     public async Task<IActionResult> AssignSystemConfigToUser(string userId, [FromBody] AssignConfigToUserRequest request)
     {
         if (!CheckAdmin()) return Forbid();
+
+        if (await _dbContext.UserSystemAiApiConfigurations.AnyAsync(a => a.AspNetUserId == userId && a.SystemAiApiConfigurationId == request.SystemAiApiConfigurationId))
+        {
+            return BadRequest("This configuration is already assigned to the user.");
+        }
 
         var orderIndex = await _dbContext.UserSystemAiApiConfigurations.Where(a => a.AspNetUserId == userId).AnyAsync() 
             ? await _dbContext.UserSystemAiApiConfigurations.Where(a => a.AspNetUserId == userId).MaxAsync(c => c.OrderIndex) + 1 
@@ -347,6 +376,7 @@ public class AdminController : ControllerBase
             MaxDailyRequests = request.MaxDailyRequests,
             MaxMonthlyRequests = request.MaxMonthlyRequests,
             MaxTotalRequests = request.MaxTotalRequests,
+            ModelRole = request.ModelRole,
             OrderIndex = orderIndex
         };
 
@@ -366,6 +396,38 @@ public class AdminController : ControllerBase
             _dbContext.UserSystemAiApiConfigurations.Remove(assignment);
             await _dbContext.SaveChangesAsync();
         }
+        return Ok();
+    }
+    
+    [HttpPut("user-systemconfigs/{id}")]
+    public async Task<IActionResult> UpdateUserSystemConfig(long id, [FromBody] UpdateUserSystemAiConfigRequest request)
+    {
+        if (!CheckAdmin()) return Forbid();
+        var assignment = await _dbContext.UserSystemAiApiConfigurations.FindAsync(id);
+        if (assignment == null) return NotFound();
+
+        assignment.IsEnabled = request.IsEnabled;
+        assignment.MaxDailyRequests = request.MaxDailyRequests;
+        assignment.MaxMonthlyRequests = request.MaxMonthlyRequests;
+        assignment.MaxTotalRequests = request.MaxTotalRequests;
+        assignment.ModelRole = request.ModelRole;
+
+        await _dbContext.SaveChangesAsync();
+        return Ok();
+    }
+
+    [HttpPost("user-systemconfigs/{id}/reset")]
+    public async Task<IActionResult> ResetUserSystemConfigRateLimits(long id)
+    {
+        if (!CheckAdmin()) return Forbid();
+        var assignment = await _dbContext.UserSystemAiApiConfigurations.FindAsync(id);
+        if (assignment == null) return NotFound();
+
+        assignment.DailyRequestsCount = 0;
+        assignment.MonthlyRequestsCount = 0;
+        assignment.TotalRequestsCount = 0;
+        
+        await _dbContext.SaveChangesAsync();
         return Ok();
     }
     
@@ -408,7 +470,11 @@ public class AdminController : ControllerBase
                 OrderIndex = a.OrderIndex,
                 MaxDailyRequests = a.MaxDailyRequests,
                 MaxMonthlyRequests = a.MaxMonthlyRequests,
-                MaxTotalRequests = a.MaxTotalRequests
+                MaxTotalRequests = a.MaxTotalRequests,
+                DailyRequestsCount = a.DailyRequestsCount,
+                MonthlyRequestsCount = a.MonthlyRequestsCount,
+                TotalRequestsCount = a.TotalRequestsCount,
+                ModelRole = a.ModelRole
             })
             .ToListAsync();
 
@@ -419,6 +485,11 @@ public class AdminController : ControllerBase
     public async Task<IActionResult> AssignSystemConfigToGroup(long groupId, [FromBody] AssignConfigToGroupRequest request)
     {
         if (!CheckAdmin()) return Forbid();
+
+        if (await _dbContext.GroupSystemAiApiConfigurations.AnyAsync(a => a.GroupId == groupId && a.SystemAiApiConfigurationId == request.SystemAiApiConfigurationId))
+        {
+            return BadRequest("This configuration is already assigned to the group.");
+        }
 
         var orderIndex = await _dbContext.GroupSystemAiApiConfigurations.Where(a => a.GroupId == groupId).AnyAsync() 
             ? await _dbContext.GroupSystemAiApiConfigurations.Where(a => a.GroupId == groupId).MaxAsync(c => c.OrderIndex) + 1 
@@ -432,6 +503,7 @@ public class AdminController : ControllerBase
             MaxDailyRequests = request.MaxDailyRequests,
             MaxMonthlyRequests = request.MaxMonthlyRequests,
             MaxTotalRequests = request.MaxTotalRequests,
+            ModelRole = request.ModelRole,
             OrderIndex = orderIndex
         };
 
@@ -451,6 +523,38 @@ public class AdminController : ControllerBase
             _dbContext.GroupSystemAiApiConfigurations.Remove(assignment);
             await _dbContext.SaveChangesAsync();
         }
+        return Ok();
+    }
+    
+    [HttpPut("group-systemconfigs/{id}")]
+    public async Task<IActionResult> UpdateGroupSystemConfig(long id, [FromBody] UpdateGroupSystemAiConfigRequest request)
+    {
+        if (!CheckAdmin()) return Forbid();
+        var assignment = await _dbContext.GroupSystemAiApiConfigurations.FindAsync(id);
+        if (assignment == null) return NotFound();
+
+        assignment.IsEnabled = request.IsEnabled;
+        assignment.MaxDailyRequests = request.MaxDailyRequests;
+        assignment.MaxMonthlyRequests = request.MaxMonthlyRequests;
+        assignment.MaxTotalRequests = request.MaxTotalRequests;
+        assignment.ModelRole = request.ModelRole;
+
+        await _dbContext.SaveChangesAsync();
+        return Ok();
+    }
+
+    [HttpPost("group-systemconfigs/{id}/reset")]
+    public async Task<IActionResult> ResetGroupSystemConfigRateLimits(long id)
+    {
+        if (!CheckAdmin()) return Forbid();
+        var assignment = await _dbContext.GroupSystemAiApiConfigurations.FindAsync(id);
+        if (assignment == null) return NotFound();
+
+        assignment.DailyRequestsCount = 0;
+        assignment.MonthlyRequestsCount = 0;
+        assignment.TotalRequestsCount = 0;
+        
+        await _dbContext.SaveChangesAsync();
         return Ok();
     }
     

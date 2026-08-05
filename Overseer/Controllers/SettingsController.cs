@@ -150,7 +150,7 @@ public class SettingsController : ControllerBase
 
         try
         {
-            await _settingsService.SaveTitleGenerationModelAsync(userId, request.ModelId);
+            await _settingsService.SaveTitleGenerationModelAsync(userId, request.ModelId, request.IsSystem);
             return Ok();
         }
         catch (ArgumentException ex)
@@ -209,20 +209,22 @@ public class SettingsController : ControllerBase
             OrderIndex = m.OrderIndex,
             MaxInputTokens = (int?)m.MaxInputTokens,
             MaxOutputTokens = (int?)m.MaxOutputTokens,
-            IsSystem = false
+            IsSystem = false,
+            ModelRole = 3
         }).ToList();
 
         var systemConfigs = await _settingsService.GetResolvedSystemModelsAsync(userId);
-        var sysDtos = systemConfigs.Select(c => new {
-            Id = c.Id,
-            Provider = c.Provider,
-            ModelId = c.ModelId,
-            DisplayName = (string?)c.DisplayName,
-            ThinkingLevel = (string?)c.ThinkingLevel,
-            OrderIndex = c.OrderIndex,
-            MaxInputTokens = (int?)c.MaxInputTokens,
-            MaxOutputTokens = (int?)c.MaxOutputTokens,
-            IsSystem = true
+        var sysDtos = systemConfigs.Select(x => new {
+            Id = x.Config.Id,
+            Provider = x.Config.Provider,
+            ModelId = x.Config.ModelId,
+            DisplayName = (string?)x.Config.DisplayName,
+            ThinkingLevel = (string?)x.Config.ThinkingLevel,
+            OrderIndex = x.Config.OrderIndex,
+            MaxInputTokens = (int?)x.Config.MaxInputTokens,
+            MaxOutputTokens = (int?)x.Config.MaxOutputTokens,
+            IsSystem = true,
+            ModelRole = x.ResolvedRole
         });
 
         dtos.AddRange(sysDtos);
@@ -524,5 +526,6 @@ public class GetModelsRequest
 public class UpdateTitleModelRequest
 {
     public long? ModelId { get; set; }
+    public bool IsSystem { get; set; }
 }
 

@@ -87,13 +87,13 @@
     </div>
     <div class="form-group title-gen-form">
       <div class="d-flex align-items-center flex-gap-15">
-        <select id="titleGenerationModelSelect" [(ngModel)]="titleGenerationModelId" (change)="onTitleModelChange()" class="gh-input flex-1" [disabled]="savingTitleModel">
-          <option [ngValue]="null">Default (First Available)</option>
-          <optgroup label="Your Models" *ngIf="userModels.length > 0">
-            <option *ngFor="let m of userModels" [ngValue]="m.id">{{ m.displayName || m.modelId }}</option>
+        <select id="titleGenerationModelSelect" [(ngModel)]="titleModelSelection" (change)="onTitleModelChange()" class="gh-input flex-1" [disabled]="savingTitleModel">
+          <option [ngValue]="null">Default (First Available Chat Model)</option>
+          <optgroup label="Your Models" *ngIf="titleUserModels.length > 0">
+            <option *ngFor="let m of titleUserModels" [ngValue]="'u_' + m.id">{{ m.displayName || m.modelId }}</option>
           </optgroup>
-          <optgroup label="System Models" *ngIf="systemModels.length > 0">
-            <option *ngFor="let m of systemModels" [ngValue]="m.id">{{ m.displayName || m.modelId }}</option>
+          <optgroup label="System Models" *ngIf="titleSystemModels.length > 0">
+            <option *ngFor="let m of titleSystemModels" [ngValue]="'s_' + m.id">{{ m.displayName || m.modelId }}</option>
           </optgroup>
         </select>
         <div class="save-indicator" style="width: 24px; display: flex; justify-content: center;">
@@ -106,124 +106,26 @@
 </div>
 
 <dialog #modelPickerDialog class="settings-dialog">
-  <div class="dialog-content flex-col">
-    <h3>Add Model</h3>
-    
-    <div class="form-group">
-      <label for="pickerProvider">Provider</label>
-      <select id="pickerProvider" [(ngModel)]="pickerProvider" (change)="onProviderChange()" class="form-control">
-        <option *ngFor="let p of providers" [value]="p">{{ p }}</option>
-      </select>
-    </div>
-
-    <div class="form-group">
-      <div class="flex-between">
-        <label for="pickerModelSelect">Models <span class="form-hint d-inline-block ml-10">(⭐ = Recommended)</span></label>
-        <div class="sort-options">
-          <label><input type="radio" name="sort" value="alphabetical" [(ngModel)]="sortMode" (change)="onSortChange()" [disabled]="loadingModels"> Alphabetical</label>
-          <label><input type="radio" name="sort" value="newest" [(ngModel)]="sortMode" (change)="onSortChange()" [disabled]="loadingModels"> Newest</label>
-        </div>
-      </div>
-      <select id="pickerModelSelect" [(ngModel)]="pickerModelSelect" (change)="onPickerModelSelect()" class="gh-input w-100 picker-model-select" size="10" [disabled]="loadingModels">
-        <option *ngIf="loadingModels" value="" disabled>Loading models...</option>
-        <option *ngIf="modelError" value="" disabled>Error loading models</option>
-        <option *ngFor="let m of sortedModels" [value]="m.id">
-          {{ m.description || m.id }} {{ m.isRecommended ? '⭐' : '' }}
-        </option>
-        <option *ngIf="!loadingModels && !modelError" value="custom">Custom...</option>
-      </select>
-
-      <div class="form-group mt-10" *ngIf="pickerModelSelect === 'custom'">
-        <label for="customModelId">Custom Model ID</label>
-        <input type="text" id="customModelId" [(ngModel)]="customModelId" class="gh-input w-100" placeholder="e.g. gpt-5.5-pro or claude-4.6-sonnet">
-      </div>
-      
-      <div class="model-meta model-meta-box" *ngIf="selectedModelObj">
-        <span class="d-inline-block"><span class="detail-label color-gh-gold">Context Window:</span> {{ selectedModelObj.contextWindowSize | number }} tokens</span>
-      </div>
-    </div>
-
-    <div class="form-group mt-20">
-      <label for="pickerThinkingLevelSelect">Thinking Level (Optional)</label>
-      <select id="pickerThinkingLevelSelect" [(ngModel)]="pickerThinkingLevelSelect" (change)="onPickerThinkingLevelChange()" class="gh-input w-100" [disabled]="loadingModels">
-        <option value="">None</option>
-        <option *ngFor="let level of selectedModelObj?.supportedThinkingLevels" [value]="level">
-          {{ formatThinkingLevel(level) }} {{ selectedModelObj?.recommendedThinkingLevel === level ? '⭐' : '' }}
-        </option>
-        <option *ngIf="!loadingModels && !modelError" value="custom">Custom...</option>
-      </select>
-    </div>
-
-    <div class="form-group mt-10" *ngIf="pickerThinkingLevelSelect === 'custom'">
-      <label for="customThinkingLevel">Custom Thinking Level</label>
-      <input type="text" id="customThinkingLevel" [(ngModel)]="customThinkingLevel" class="gh-input w-100" placeholder="e.g. 1024, max, pro">
-    </div>
-
-    <div class="token-row mt-20 flex-gap-15">
-      <div class="flex-1">
-        <label for="pickerMaxInputTokens">Max Input Tokens</label>
-        <span class="form-hint">Leave blank for default</span>
-        <input type="number" id="pickerMaxInputTokens" [(ngModel)]="pickerMaxInputTokens" class="gh-input w-100 mt-5" [disabled]="loadingModels">
-      </div>
-      <div class="flex-1">
-        <label for="pickerMaxOutputTokens">Max Output Tokens</label>
-        <span class="form-hint">Leave blank for default</span>
-        <input type="number" id="pickerMaxOutputTokens" [(ngModel)]="pickerMaxOutputTokens" class="gh-input w-100 mt-5" [disabled]="loadingModels">
-      </div>
-    </div>
-
-    <div class="dialog-actions mt-auto pt-20">
-      <button class="btn-gh btn-gh-cancel" (click)="closeModelPicker()" [disabled]="saving">Cancel</button>
-      <button class="btn-gh" (click)="addSelectedModel()" [disabled]="saving || loadingModels || (pickerModelSelect !== 'custom' && !selectedModelId) || (pickerModelSelect === 'custom' && !customModelId)">
-        <span *ngIf="saving" class="gh-spinner-small"></span> Add Model
-      </button>
-    </div>
-  </div>
+  <app-ai-model-form
+    *ngIf="isAddingModel"
+    mode="add"
+    [providers]="providers"
+    [initialProvider]="pickerProvider"
+    [saving]="saving"
+    (save)="onAddModel($event)"
+    (cancel)="closeModelPicker()">
+  </app-ai-model-form>
 </dialog>
 
 <dialog #editModelDialog class="settings-dialog">
-  <div class="dialog-content flex-col" *ngIf="editingModel">
-    <h3>Edit Model: {{ editingModel.modelId }}</h3>
-    
-    <div class="form-group">
-      <label for="editDisplayName">Display Name (Optional)</label>
-      <input type="text" id="editDisplayName" [(ngModel)]="editDisplayName" placeholder="Custom Name" class="form-control">
-    </div>
-
-    <div class="form-group mt-20">
-      <label for="editThinkingLevelSelect">Thinking Level (Optional)</label>
-      <select id="editThinkingLevelSelect" [(ngModel)]="editThinkingLevelSelect" (change)="onEditThinkingLevelChange()" class="gh-input w-100">
-        <option value="">None</option>
-        <option *ngFor="let level of editSupportedThinkingLevels" [value]="level">
-          {{ formatThinkingLevel(level) }}
-        </option>
-        <option value="custom">Custom...</option>
-      </select>
-    </div>
-
-    <div class="form-group mt-10" *ngIf="editThinkingLevelSelect === 'custom'">
-      <label for="editCustomThinkingLevel">Custom Thinking Level</label>
-      <input type="text" id="editCustomThinkingLevel" [(ngModel)]="editThinkingLevel" class="gh-input w-100" placeholder="e.g. 1024, max, pro">
-    </div>
-
-    <div class="token-row mt-20 flex-gap-15">
-      <div class="flex-1">
-        <label for="editMaxInputTokens">Max Input Tokens</label>
-        <span class="form-hint">Leave blank for default</span>
-        <input type="number" id="editMaxInputTokens" [(ngModel)]="editMaxInputTokens" class="gh-input w-100 mt-5">
-      </div>
-      <div class="flex-1">
-        <label for="editMaxOutputTokens">Max Output Tokens</label>
-        <span class="form-hint">Leave blank for default</span>
-        <input type="number" id="editMaxOutputTokens" [(ngModel)]="editMaxOutputTokens" class="gh-input w-100 mt-5">
-      </div>
-    </div>
-
-    <div class="dialog-actions mt-auto pt-20">
-      <button class="btn-gh btn-gh-cancel" (click)="closeEdit()" [disabled]="saving">Cancel</button>
-      <button class="btn-gh" (click)="saveEdit()" [disabled]="saving">
-        <span *ngIf="saving" class="gh-spinner-small"></span> Save Changes
-      </button>
-    </div>
-  </div>
+  <app-ai-model-form
+    *ngIf="editingModel && editFormData"
+    mode="edit"
+    [providers]="providers"
+    [initialProvider]="editingModel.provider"
+    [initialData]="editFormData"
+    [saving]="saving"
+    (save)="onEditSave($event)"
+    (cancel)="closeEdit()">
+  </app-ai-model-form>
 </dialog>

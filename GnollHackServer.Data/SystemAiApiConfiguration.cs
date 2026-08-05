@@ -4,7 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 
-public class SystemAiApiConfiguration
+public class SystemAiApiConfiguration : IRateLimitedEntity
 {
     public long Id { get; set; }
 
@@ -36,6 +36,10 @@ public class SystemAiApiConfiguration
     public string? ApiKeyTag { get; set; }
 
     public bool IsSystemWide { get; set; }
+
+    public int ModelRole { get; set; } = 3; // 1 = Chat, 2 = Title Generation, 3 = Both
+
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 
     // Rate limits
     public int? MaxDailyRequests { get; set; }
