@@ -111,8 +111,8 @@
         <input type="text" id="customModelId" [(ngModel)]="customModelId" class="gh-input w-100" placeholder="e.g. gpt-5.5-pro or claude-4.6-sonnet">
       </div>
       
-      <div class="model-meta model-meta-box" [style.visibility]="selectedModelObj ? 'visible' : 'hidden'">
-        <span class="d-inline-block" [style.visibility]="selectedModelObj ? 'visible' : 'hidden'"><span class="detail-label color-gh-gold">Context Window:</span> {{ (selectedModelObj ? selectedModelObj.contextWindowSize : 0) | number }} tokens</span>
+      <div class="model-meta model-meta-box" *ngIf="selectedModelObj">
+        <span class="d-inline-block"><span class="detail-label color-gh-gold">Context Window:</span> {{ selectedModelObj.contextWindowSize | number }} tokens</span>
       </div>
     </div>
 
