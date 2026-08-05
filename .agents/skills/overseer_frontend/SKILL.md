@@ -35,3 +35,62 @@ When creating UI elements in the Overseer frontend, adhere to the following stan
 ### Error Handling & User Prompts
 - **Avoid Basic JS Dialogs**: Do NOT use basic JavaScript `alert()`, `prompt()`, or `confirm()` dialogs. They disrupt user flow, unfocus elements, and look outdated.
 - **Use Modern Equivalents**: Implement inline error messaging (e.g., displaying error text near an input field) or use styled `<dialog>` modals for confirmation prompts, ensuring integration with Angular state and modern web guidance.
+
+## Component Reuse and State Management
+
+The Overseer frontend utilizes a custom `RouteReuseStrategy` (indicated by `data: { reuse: true }` in `app.routes.ts`) for primary views like the `ChatComponent`. This prevents the component from being destroyed when navigating away, ensuring chat history and UI state are preserved.
+
+However, this design introduces a critical pitfall: **`ngOnInit()` is NOT triggered when navigating back to a reused component.**
+
+### The Correct Design Pattern
+If a user changes settings, API keys, or models on a different page and navigates back to the chat window, the chat window must reflect these changes immediately. To achieve this, use the following patterns:
+
+1. **Router Navigation Events (Recommended for data fetching)**
+   Subscribe to Angular's router `NavigationEnd` events in the reused component. When detecting a re-entry to the component's route, explicitly call a data-loading method (e.g., `loadSettings()`) to fetch fresh state.
+
+   ```typescript
+   // In the reused component (e.g., ChatComponent)
+   let previousUrl = '';
+   this.router.events.pipe(
+     filter(event => event instanceof NavigationEnd)
+   ).subscribe((event: any) => {
+     const currentUrl = event.urlAfterRedirects;
+     if (currentUrl && currentUrl.startsWith('/chat')) {
+       if (previousUrl && !previousUrl.startsWith('/chat')) {
+         // We re-entered the component. Refetch data.
+         this.loadSettings(false); 
+       }
+     }
+     previousUrl = currentUrl || '';
+   });
+   ```
+   **CRITICAL**: Extract your initialization logic from `ngOnInit()` into a dedicated `loadSettings(isInit: boolean)` method so it can be called safely on both initial load and re-entry.
+
+2. **Shared RxJS State (Recommended for single-value live UI updates)**
+   Use `BehaviorSubject` or `Subject` in shared services (like `SettingsService` or `AuthService`). The reused component should subscribe to these observables in `ngOnInit()` so that any updates pushed by other pages automatically trigger UI updates in the background.
+
+   ```typescript
+   // In SettingsService
+   public showThoughtsAndToolsUpdated = new Subject<number>();
+   
+   // In SettingsComponent (firing the change)
+   this.settingsService.showThoughtsAndToolsUpdated.next(newValue);
+   
+   // In ChatComponent (listening)
+   this.settingsService.showThoughtsAndToolsUpdated.subscribe(val => {
+     this.showThoughtsAndTools = val;
+   });
+   ```
+
+3. **Prevent HTTP Caching**
+   When explicitly re-fetching data via HTTP GET upon component re-entry, ensure the request includes `no-cache` headers. Otherwise, the browser may return a stale cached response from before the settings were changed.
+
+   ```typescript
+   this.http.get<MyData>('/api/data', {
+     headers: {
+       'Cache-Control': 'no-cache',
+       'Pragma': 'no-cache',
+       'Expires': '0'
+     }
+   });
+   ```
