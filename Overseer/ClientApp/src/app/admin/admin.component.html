@@ -41,7 +41,7 @@
                     <td>{{ user.userName }}</td>
                     <td class="text-muted">{{ user.email }}</td>
                     <td>
-                      <span *ngFor="let g of user.groups" class="group-badge">{{ g.name }}</span>
+                      <span *ngFor="let g of user.groups" class="group-badge">{{ g.displayName }}</span>
                       <span *ngIf="!user.groups || user.groups.length === 0" class="text-muted italic">None</span>
                     </td>
                     <td style="text-align: right;">
@@ -74,7 +74,7 @@
                 <tbody>
                   <tr *ngFor="let group of groups">
                     <td>{{ group.id }}</td>
-                    <td>{{ group.name }}</td>
+                    <td>{{ group.displayName }}</td>
                     <td style="text-align: right;">
                       <button class="btn-gh btn-gh-small btn-gh-delete" (click)="deleteGroup(group)">Delete</button>
                     </td>
@@ -124,15 +124,23 @@
       <div class="dialog-content flex-col" *ngIf="selectedUser">
         <h3>Manage Groups for {{ selectedUser.userName }}</h3>
         <div class="mt-20">
-          <div *ngFor="let group of groups" class="d-flex align-items-center mb-10">
-            <input type="checkbox" [id]="'group_' + group.id" 
-                   [checked]="isUserInGroup(selectedUser, group.id)"
-                   (change)="toggleUserGroup(selectedUser, group, $event)">
-            <label [for]="'group_' + group.id" class="ml-10">{{ group.name }}</label>
+          <div *ngIf="groups.length === 0" class="text-muted italic" style="padding: 10px 0;">
+            No groups available.
+          </div>
+          <div *ngFor="let group of groups" class="mb-10">
+            <label class="gh-switch-wrapper d-flex align-items-center">
+              <div class="gh-switch">
+                <input type="checkbox" [id]="'group_' + group.id" 
+                       [checked]="isUserInGroup(selectedUser, group.id)"
+                       (change)="toggleUserGroup(selectedUser, group, $event)">
+                <span class="gh-slider"></span>
+              </div>
+              <span class="ml-10" style="font-size: 1.1em;">{{ group.displayName }}</span>
+            </label>
           </div>
         </div>
         <div class="dialog-actions mt-auto pt-20">
-          <button class="btn-gh btn-gh-cancel" (click)="closeManageGroups()">Close</button>
+          <button class="btn-gh" (click)="closeManageGroups()">Done</button>
         </div>
       </div>
     </dialog>
@@ -142,7 +150,10 @@
         <h3>Create Group</h3>
         <div class="form-group mt-20">
           <label for="newGroupName">Group Name</label>
-          <input type="text" id="newGroupName" [(ngModel)]="newGroupName" class="gh-input w-100">
+          <input type="text" id="newGroupName" [(ngModel)]="newGroupName" (keyup.enter)="saveCreateGroup()" class="gh-input w-100">
+          <div *ngIf="createGroupError" class="text-danger mt-10" style="color: #ff4d4d; font-size: 0.9em;">
+            {{ createGroupError }}
+          </div>
         </div>
         <div class="dialog-actions mt-auto pt-20">
           <button class="btn-gh btn-gh-cancel" (click)="closeCreateGroup()">Cancel</button>
@@ -183,6 +194,19 @@
         <div class="dialog-actions mt-auto pt-20">
           <button class="btn-gh btn-gh-cancel" (click)="closeConfig()">Cancel</button>
           <button class="btn-gh" (click)="saveConfig()">Save</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog #confirmDialog class="gh-dialog">
+      <div class="dialog-content flex-col">
+        <h3>Confirm Action</h3>
+        <div class="mt-20">
+          {{ confirmMessage }}
+        </div>
+        <div class="dialog-actions mt-auto pt-20">
+          <button class="btn-gh btn-gh-cancel" (click)="closeConfirmDialog()">Cancel</button>
+          <button class="btn-gh btn-gh-delete" (click)="executeConfirmAction()">Confirm</button>
         </div>
       </div>
     </dialog>

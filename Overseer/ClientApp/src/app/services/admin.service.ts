@@ -11,7 +11,7 @@ export interface UserDto {
 
 export interface GroupDto {
   id: number;
-  name: string;
+  displayName: string;
 }
 
 export interface SystemAiConfigDto {
@@ -69,8 +69,8 @@ export class AdminService {
     return this.http.get<GroupDto[]>('/api/admin/groups');
   }
   
-  createGroup(name: string): Observable<GroupDto> {
-    return this.http.post<GroupDto>('/api/admin/groups', { name });
+  createGroup(displayName: string): Observable<GroupDto> {
+    return this.http.post<GroupDto>('/api/admin/groups', { displayName });
   }
 
   deleteGroup(id: number): Observable<void> {

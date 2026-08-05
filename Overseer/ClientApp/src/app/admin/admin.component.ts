@@ -38,11 +38,17 @@ export class AdminComponent implements OnInit {
   selectedUser: UserDto | null = null;
 
   @ViewChild('createGroupDialog') createGroupDialog!: ElementRef<HTMLDialogElement>;
-  newGroupName = '';
-
   @ViewChild('configDialog') configDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('confirmDialog') confirmDialog!: ElementRef<HTMLDialogElement>;
+
+  // Generic Confirm State
+  confirmMessage: string = '';
+  confirmAction: (() => void) | null = null;
   editingConfig: any = null;
   isNewConfig = false;
+
+  newGroupName: string = '';
+  createGroupError: string = '';
 
   ngOnInit() {
     this.loadData();
@@ -93,6 +99,7 @@ export class AdminComponent implements OnInit {
 
   openCreateGroup() {
     this.newGroupName = '';
+    this.createGroupError = '';
     this.createGroupDialog.nativeElement.showModal();
   }
 
@@ -101,22 +108,42 @@ export class AdminComponent implements OnInit {
   }
 
   saveCreateGroup() {
-    if (!this.newGroupName) return;
-    this.adminService.createGroup(this.newGroupName).subscribe(g => {
-      this.groups.push(g);
-      this.closeCreateGroup();
+    this.newGroupName = this.newGroupName?.trim() || '';
+    this.createGroupError = '';
+    
+    if (!this.newGroupName) {
+      this.createGroupError = 'Group name cannot be empty.';
+      return;
+    }
+
+    const validRegex = /^[a-zA-Z0-9 _\-]+$/;
+    if (!validRegex.test(this.newGroupName)) {
+      this.createGroupError = "Only letters, numbers, spaces, underscores, and dashes are allowed.";
+      return;
+    }
+
+    this.adminService.createGroup(this.newGroupName).subscribe({
+      next: (g) => {
+        this.groups.push(g);
+        this.closeCreateGroup();
+      },
+      error: (err) => {
+        this.createGroupError = err.error || 'An error occurred while creating the group.';
+      }
     });
   }
 
   deleteGroup(group: GroupDto) {
-    if (confirm(`Are you sure you want to delete group ${group.name}?`)) {
+    this.confirmMessage = `Are you sure you want to delete group ${group.displayName}?`;
+    this.confirmAction = () => {
       this.adminService.deleteGroup(group.id).subscribe(() => {
         this.groups = this.groups.filter(g => g.id !== group.id);
         this.users.forEach(u => {
           if (u.groups) u.groups = u.groups.filter(g => g.id !== group.id);
         });
       });
-    }
+    };
+    this.confirmDialog.nativeElement.showModal();
   }
 
   // --- Configs ---
@@ -160,10 +187,25 @@ export class AdminComponent implements OnInit {
   }
 
   deleteConfig(config: SystemAiConfigDto) {
-    if (confirm(`Delete config ${config.displayName}?`)) {
+    this.confirmMessage = `Are you sure you want to delete config ${config.displayName}?`;
+    this.confirmAction = () => {
       this.adminService.deleteSystemConfig(config.id).subscribe(() => {
         this.configs = this.configs.filter(c => c.id !== config.id);
       });
+    };
+    this.confirmDialog.nativeElement.showModal();
+  }
+
+  // --- Confirm Dialog ---
+  closeConfirmDialog() {
+    this.confirmDialog.nativeElement.close();
+    this.confirmAction = null;
+  }
+
+  executeConfirmAction() {
+    if (this.confirmAction) {
+      this.confirmAction();
     }
+    this.closeConfirmDialog();
   }
 }

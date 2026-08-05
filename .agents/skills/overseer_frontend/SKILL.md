@@ -8,7 +8,8 @@ When working on the frontend for the Overseer project within MobileGnollHackLogg
 
 1. **Prefer Angular Components**: Whenever implementing frontend features or UI elements, always prefer using Angular components.
 2. **Component Structure**: Always use separate files for templates (`.html`) and styles (`.scss`). Do not use inline templates or styles in the component TypeScript file.
-3. **Follow Google's Modern Web Guidance**: Ensure that the frontend design and implementation adhere strictly to Google's Modern Web Guidance. This includes utilizing modern web development best practices for UI/Layout, Scroll/Motion, Performance, and System/APIs.
+3. **No Basic JS Popups**: NEVER use `alert()`, `confirm()`, or `prompt()` JavaScript popups under any circumstances. When these are needed, handle them using Modern Web Guidance best practices (e.g., inline error messages, custom `<dialog>` components for confirmations/inputs).
+4. **Follow Google's Modern Web Guidance**: Ensure that the frontend design and implementation adhere strictly to Google's Modern Web Guidance. This includes utilizing modern web development best practices for UI/Layout, Scroll/Motion, Performance, and System/APIs.
 
 **IMPORTANT**: When working on HTML/CSS and client-side JS tasks, you MUST execute the `modern-web-guidance` skill FIRST to ensure up-to-date best practices are applied.
 
@@ -39,8 +40,8 @@ When creating UI elements in the Overseer frontend, adhere to the following stan
 - **CRITICAL**: Never use the `title` attribute in conjunction with a custom tooltip, as they will conflict and overlap.
 
 ### Error Handling & User Prompts
-- **Avoid Basic JS Dialogs**: Do NOT use basic JavaScript `alert()`, `prompt()`, or `confirm()` dialogs. They disrupt user flow, unfocus elements, and look outdated.
-- **Use Modern Equivalents**: Implement inline error messaging (e.g., displaying error text near an input field) or use styled `<dialog>` modals for confirmation prompts, ensuring integration with Angular state and modern web guidance.
+- **Avoid Basic JS Dialogs**: As stated in the main rules, do NOT use basic JavaScript `alert()`, `prompt()`, or `confirm()` dialogs. They disrupt user flow, unfocus elements, and look outdated.
+- **Use Modern Equivalents**: Implement inline error messaging (e.g., displaying error text near an input field) or use styled `<dialog>` modals for confirmation/input prompts, ensuring integration with Angular state and modern web guidance.
 
 ## Component Reuse and State Management
 

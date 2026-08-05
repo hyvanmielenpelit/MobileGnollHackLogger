@@ -57,16 +57,32 @@ public class AdminController : ControllerBase
     {
         if (!CheckAdmin()) return Forbid();
 
+        var displayName = request.DisplayName?.Trim();
+        if (string.IsNullOrWhiteSpace(displayName))
+        {
+            return BadRequest("Group name cannot be empty.");
+        }
+        if (!System.Text.RegularExpressions.Regex.IsMatch(displayName, @"^[a-zA-Z0-9 _\-]+$"))
+        {
+            return BadRequest("Group name contains invalid characters.");
+        }
+
         var group = new Group
         {
-            DisplayName = request.DisplayName,
+            DisplayName = displayName,
             CreatedAtUtc = DateTime.UtcNow
         };
 
         _dbContext.Groups.Add(group);
         await _dbContext.SaveChangesAsync();
 
-        return Ok(new { id = group.Id });
+        return Ok(new AdminGroupDto
+        {
+            Id = group.Id,
+            DisplayName = group.DisplayName,
+            CreatedAtUtc = group.CreatedAtUtc,
+            UserCount = 0
+        });
     }
 
     [HttpDelete("groups/{id}")]
