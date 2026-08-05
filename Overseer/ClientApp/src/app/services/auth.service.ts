@@ -12,7 +12,13 @@ export class AuthService {
   user$ = this.userSubject.asObservable();
 
   checkAuth() {
-    return this.http.get<any>('/api/auth/me').pipe(
+    return this.http.get<any>('/api/auth/me', {
+      headers: {
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    }).pipe(
       tap(res => this.userSubject.next(res)),
       catchError(() => {
         this.userSubject.next(null);

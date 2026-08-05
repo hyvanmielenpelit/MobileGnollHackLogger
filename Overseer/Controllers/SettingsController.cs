@@ -161,6 +161,7 @@ public class SettingsController : ControllerBase
 
 
     [HttpGet("apikeys")]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     public async Task<IActionResult> GetApiKeys()
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -192,6 +193,7 @@ public class SettingsController : ControllerBase
     }
 
     [HttpGet("usermodels")]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     public async Task<IActionResult> GetUserModels()
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);

@@ -394,31 +394,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     }, 1000);
   }
 
-  ngOnInit() {
-    this.settingsService.showThoughtsAndToolsUpdated.subscribe(val => {
-      this.showThoughtsAndTools = val;
-    });
-
-    let previousUrl = '';
-    this.router.events.pipe(
-      filter(event => event instanceof NavigationEnd)
-    ).subscribe((event: any) => {
-      const currentUrl = event.urlAfterRedirects;
-      if (currentUrl && currentUrl.startsWith('/chat')) {
-        if (previousUrl && previousUrl.startsWith('/settings')) {
-          this.debugService.log(`[Overseer] showThoughtsAndTools after re-entering the chat window: ` + this.showThoughtsAndTools);
-        }
-      }
-      previousUrl = currentUrl || '';
-    });
-
-    window.addEventListener('online', this.onlineHandler);
-    window.addEventListener('offline', this.offlineHandler);
-
-    if (!("popover" in HTMLElement.prototype)) {
-      import("@oddbird/popover-polyfill").catch(err => console.warn('Failed to load popover polyfill', err));
-    }
-    
+  loadSettings(isInit: boolean = false) {
     this.settingsService.getSettings().subscribe(settings => {
       if (settings) {
         this.hasApiKey = settings.hasApiKey;
@@ -434,42 +410,80 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.debugService.log(`[Overseer] showThoughtsAndTools loaded: ${this.showThoughtsAndTools} (type: ${typeof this.showThoughtsAndTools})`);
 
         this.settingsService.getUserModels().subscribe(models => {
-          this.userModels = models;
+          this.debugService.log(`[Overseer] Retrieved ${models.length} models from server: ` + models.map(m => m.provider + '/' + m.modelId).join(', '));
+          this.debugService.log(`[Overseer] Configured providers from settings: ` + (settings.configuredProviders?.join(', ') || 'none'));
+          
+          this.userModels = models.filter(m => settings.configuredProviders?.includes(m.provider));
+          this.debugService.log(`[Overseer] Models after filtering by configured providers: ${this.userModels.length}`);
+
           this.hasModel = this.userModels.length > 0;
           if (this.userModels.length > 0) {
             this.applySavedModelPreference();
+          } else {
+            this.selectedUserModelId = null;
           }
         });
       }
 
-      // Load sessions and handle route AFTER settings are loaded to avoid
-      // showThoughtsAndTools race condition (defaulting to 0 before settings arrive)
-      this.debugService.log(`[Overseer] Settings loaded, now loading sessions. showThoughtsAndTools=${this.showThoughtsAndTools}`);
-      this.loadSessions();
-      this.route.queryParams.subscribe(params => {
-        const idParam = params['sessionId'];
-        if (idParam) {
-          const id = Number(idParam);
-          if (isNaN(id)) {
-            this.navigateToNewSession();
-          } else if (this.currentSessionId !== id) {
-            if (this.isStreaming) {
-              this.debugService.log(`[Frontend] Navigating away from session ${this.currentSessionId} while streaming. Generation continues in background.`);
+      if (isInit) {
+        // Load sessions and handle route AFTER settings are loaded to avoid
+        // showThoughtsAndTools race condition (defaulting to 0 before settings arrive)
+        this.debugService.log(`[Overseer] Settings loaded, now loading sessions. showThoughtsAndTools=${this.showThoughtsAndTools}`);
+        this.loadSessions();
+        this.route.queryParams.subscribe(params => {
+          const idParam = params['sessionId'];
+          if (idParam) {
+            const id = Number(idParam);
+            if (isNaN(id)) {
+              this.navigateToNewSession();
+            } else if (this.currentSessionId !== id) {
+              if (this.isStreaming) {
+                this.debugService.log(`[Frontend] Navigating away from session ${this.currentSessionId} while streaming. Generation continues in background.`);
+              }
+              this.loadSession(id);
             }
-            this.loadSession(id);
-          }
-        } else {
-          if (this.currentSessionId !== null || this.messages.length > 0) {
-            if (this.isStreaming) {
-              this.debugService.log('[Frontend] Navigating to new session, clearing local streaming state. Generation continues in background.');
-            }
-            this.newSession();
           } else {
-            this.loadDraft();
+            if (this.currentSessionId !== null || this.messages.length > 0) {
+              if (this.isStreaming) {
+                this.debugService.log('[Frontend] Navigating to new session, clearing local streaming state. Generation continues in background.');
+              }
+              this.newSession();
+            } else {
+              this.loadDraft();
+            }
           }
-        }
-      });
+        });
+      }
     });
+  }
+
+  ngOnInit() {
+    this.settingsService.showThoughtsAndToolsUpdated.subscribe(val => {
+      this.showThoughtsAndTools = val;
+    });
+
+    let previousUrl = '';
+    this.router.events.pipe(
+      filter(event => event instanceof NavigationEnd)
+    ).subscribe((event: any) => {
+      const currentUrl = event.urlAfterRedirects;
+      if (currentUrl && currentUrl.startsWith('/chat')) {
+        if (previousUrl && !previousUrl.startsWith('/chat')) {
+          this.debugService.log(`[Overseer] Re-entered chat window from ${previousUrl}. Refetching settings and models.`);
+          this.loadSettings(false);
+        }
+      }
+      previousUrl = currentUrl || '';
+    });
+
+    window.addEventListener('online', this.onlineHandler);
+    window.addEventListener('offline', this.offlineHandler);
+
+    if (!("popover" in HTMLElement.prototype)) {
+      import("@oddbird/popover-polyfill").catch(err => console.warn('Failed to load popover polyfill', err));
+    }
+    
+    this.loadSettings(true);
 
     const savedWidth = localStorage.getItem('overseer_sidebar_width');
     if (savedWidth) {

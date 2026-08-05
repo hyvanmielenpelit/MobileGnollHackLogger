@@ -57,11 +57,23 @@ export class ChatService {
     if (take) {
       url += `&take=${take}`;
     }
-    return this.http.get<ChatSessionsResponse>(url);
+    return this.http.get<ChatSessionsResponse>(url, {
+      headers: {
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    });
   }
 
   getSession(id: number) {
-    return this.http.get<{ id: number, title: string, messages: ChatMessage[], ongoingGeneration?: { events: ChatStreamEvent[] } }>(`/api/chat/sessions/${id}`);
+    return this.http.get<{ id: number, title: string, messages: ChatMessage[], ongoingGeneration?: { events: ChatStreamEvent[] } }>(`/api/chat/sessions/${id}`, {
+      headers: {
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    });
   }
 
   deleteSession(id: number) {

@@ -92,7 +92,13 @@ export class SettingsService {
   }
 
   getApiKeys() {
-    return this.http.get<ApiKeyStatus[]>('/api/settings/apikeys');
+    return this.http.get<ApiKeyStatus[]>('/api/settings/apikeys', {
+      headers: {
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    });
   }
 
   saveApiKey(provider: string, apiKey: string) {
@@ -104,7 +110,13 @@ export class SettingsService {
   }
 
   getUserModels() {
-    return this.http.get<UserAiModel[]>('/api/settings/usermodels');
+    return this.http.get<UserAiModel[]>('/api/settings/usermodels', {
+      headers: {
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    });
   }
 
   addUserModel(provider: string, modelId: string, displayName?: string, thinkingLevel?: string, maxInputTokens?: number | null, maxOutputTokens?: number | null) {
