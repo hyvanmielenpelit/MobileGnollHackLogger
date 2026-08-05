@@ -383,7 +383,21 @@ public class AdminController : ControllerBase
         _dbContext.UserSystemAiApiConfigurations.Add(assignment);
         await _dbContext.SaveChangesAsync();
 
-        return Ok(new { id = assignment.Id });
+        return Ok(new UserSystemAiConfigDto
+        {
+            Id = assignment.Id,
+            UserId = assignment.AspNetUserId,
+            SystemAiApiConfigurationId = assignment.SystemAiApiConfigurationId,
+            IsEnabled = assignment.IsEnabled,
+            OrderIndex = assignment.OrderIndex,
+            MaxDailyRequests = assignment.MaxDailyRequests,
+            MaxMonthlyRequests = assignment.MaxMonthlyRequests,
+            MaxTotalRequests = assignment.MaxTotalRequests,
+            DailyRequestsCount = assignment.DailyRequestsCount,
+            MonthlyRequestsCount = assignment.MonthlyRequestsCount,
+            TotalRequestsCount = assignment.TotalRequestsCount,
+            ModelRole = assignment.ModelRole
+        });
     }
     
     [HttpDelete("user-systemconfigs/{id}")]
@@ -510,7 +524,21 @@ public class AdminController : ControllerBase
         _dbContext.GroupSystemAiApiConfigurations.Add(assignment);
         await _dbContext.SaveChangesAsync();
 
-        return Ok(new { id = assignment.Id });
+        return Ok(new GroupSystemAiConfigDto
+        {
+            Id = assignment.Id,
+            GroupId = assignment.GroupId,
+            SystemAiApiConfigurationId = assignment.SystemAiApiConfigurationId,
+            IsEnabled = assignment.IsEnabled,
+            OrderIndex = assignment.OrderIndex,
+            MaxDailyRequests = assignment.MaxDailyRequests,
+            MaxMonthlyRequests = assignment.MaxMonthlyRequests,
+            MaxTotalRequests = assignment.MaxTotalRequests,
+            DailyRequestsCount = assignment.DailyRequestsCount,
+            MonthlyRequestsCount = assignment.MonthlyRequestsCount,
+            TotalRequestsCount = assignment.TotalRequestsCount,
+            ModelRole = assignment.ModelRole
+        });
     }
 
     [HttpDelete("group-systemconfigs/{id}")]

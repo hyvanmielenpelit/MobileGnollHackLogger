@@ -65,6 +65,8 @@ export class AdminComponent implements OnInit {
   editingOverride: any = null;
   overrideContext: 'user' | 'group' = 'user';
 
+  processingConfigs: number[] = [];
+
   ngOnInit() {
     this.loadData();
   }
@@ -289,8 +291,15 @@ export class AdminComponent implements OnInit {
     const isChecked = event.target.checked;
     const assignment = this.getUserAssignment(config.id);
     
+    if (this.processingConfigs.includes(config.id)) {
+      // Revert the visual change because we are ignoring this click
+      event.target.checked = !isChecked;
+      return;
+    }
+
     if (isChecked) {
       if (!assignment) {
+        this.processingConfigs = [...this.processingConfigs, config.id];
         this.adminService.createUserSystemConfig(this.selectedUserForConfigs!.id, {
           systemAiApiConfigurationId: config.id,
           isEnabled: true,
@@ -301,14 +310,29 @@ export class AdminComponent implements OnInit {
           maxDailyRequests: null,
           maxMonthlyRequests: null,
           maxTotalRequests: null
-        }).subscribe(res => {
-          this.userConfigAssignments.push(res);
+        }).subscribe({
+          next: res => {
+            this.userConfigAssignments = [...this.userConfigAssignments, res];
+            this.processingConfigs = this.processingConfigs.filter(id => id !== config.id);
+          },
+          error: () => {
+            this.processingConfigs = this.processingConfigs.filter(id => id !== config.id);
+            event.target.checked = false; // revert
+          }
         });
       }
     } else {
       if (assignment) {
-        this.adminService.deleteUserSystemConfig(assignment.id).subscribe(() => {
-          this.userConfigAssignments = this.userConfigAssignments.filter(a => a.id !== assignment.id);
+        this.processingConfigs = [...this.processingConfigs, config.id];
+        this.adminService.deleteUserSystemConfig(assignment.id).subscribe({
+          next: () => {
+            this.userConfigAssignments = this.userConfigAssignments.filter(a => a.id !== assignment.id);
+            this.processingConfigs = this.processingConfigs.filter(id => id !== config.id);
+          },
+          error: () => {
+            this.processingConfigs = this.processingConfigs.filter(id => id !== config.id);
+            event.target.checked = true; // revert
+          }
         });
       }
     }
@@ -340,8 +364,15 @@ export class AdminComponent implements OnInit {
     const isChecked = event.target.checked;
     const assignment = this.getGroupAssignment(config.id);
     
+    if (this.processingConfigs.includes(config.id)) {
+      // Revert the visual change because we are ignoring this click
+      event.target.checked = !isChecked;
+      return;
+    }
+
     if (isChecked) {
       if (!assignment) {
+        this.processingConfigs = [...this.processingConfigs, config.id];
         this.adminService.createGroupSystemConfig(this.selectedGroupForConfigs!.id, {
           systemAiApiConfigurationId: config.id,
           isEnabled: true,
@@ -352,14 +383,29 @@ export class AdminComponent implements OnInit {
           maxDailyRequests: null,
           maxMonthlyRequests: null,
           maxTotalRequests: null
-        }).subscribe(res => {
-          this.groupConfigAssignments.push(res);
+        }).subscribe({
+          next: res => {
+            this.groupConfigAssignments = [...this.groupConfigAssignments, res];
+            this.processingConfigs = this.processingConfigs.filter(id => id !== config.id);
+          },
+          error: () => {
+            this.processingConfigs = this.processingConfigs.filter(id => id !== config.id);
+            event.target.checked = false; // revert
+          }
         });
       }
     } else {
       if (assignment) {
-        this.adminService.deleteGroupSystemConfig(assignment.id).subscribe(() => {
-          this.groupConfigAssignments = this.groupConfigAssignments.filter(a => a.id !== assignment.id);
+        this.processingConfigs = [...this.processingConfigs, config.id];
+        this.adminService.deleteGroupSystemConfig(assignment.id).subscribe({
+          next: () => {
+            this.groupConfigAssignments = this.groupConfigAssignments.filter(a => a.id !== assignment.id);
+            this.processingConfigs = this.processingConfigs.filter(id => id !== config.id);
+          },
+          error: () => {
+            this.processingConfigs = this.processingConfigs.filter(id => id !== config.id);
+            event.target.checked = true; // revert
+          }
         });
       }
     }

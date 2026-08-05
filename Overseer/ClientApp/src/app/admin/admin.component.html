@@ -219,7 +219,7 @@
           <div *ngFor="let config of configs" class="mb-15" style="padding: 15px 20px; background: rgba(255,255,255,0.05); border: 1px solid var(--border-glass); border-radius: 6px; display: flex; justify-content: space-between; align-items: center;">
             <label class="gh-switch-wrapper d-flex align-items-center m-0">
               <div class="gh-switch">
-                <input type="checkbox" [checked]="isConfigAssignedToUser(config.id)" (change)="toggleUserConfig(config, $event)" />
+                <input type="checkbox" [checked]="isConfigAssignedToUser(config.id)" [disabled]="processingConfigs.includes(config.id)" (change)="toggleUserConfig(config, $event)" />
                 <span class="gh-slider"></span>
               </div>
               <div style="margin-left: 20px;">
@@ -247,7 +247,7 @@
           <div *ngFor="let config of configs" class="mb-15" style="padding: 15px 20px; background: rgba(255,255,255,0.05); border: 1px solid var(--border-glass); border-radius: 6px; display: flex; justify-content: space-between; align-items: center;">
             <label class="gh-switch-wrapper d-flex align-items-center m-0">
               <div class="gh-switch">
-                <input type="checkbox" [checked]="isConfigAssignedToGroup(config.id)" (change)="toggleGroupConfig(config, $event)" />
+                <input type="checkbox" [checked]="isConfigAssignedToGroup(config.id)" [disabled]="processingConfigs.includes(config.id)" (change)="toggleGroupConfig(config, $event)" />
                 <span class="gh-slider"></span>
               </div>
               <div style="margin-left: 20px;">
