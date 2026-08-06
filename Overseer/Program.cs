@@ -54,7 +54,11 @@ builder.Services.AddAntiforgery(options =>
     options.HeaderName = "X-XSRF-TOKEN"; // Expected by Angular
 });
 
-builder.Services.AddAuthorization();
+builder.Services.AddSingleton<Microsoft.AspNetCore.Authorization.IAuthorizationHandler, Overseer.Security.AdminHandler>();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("AdminOnly", policy => policy.AddRequirements(new Overseer.Security.AdminRequirement()));
+});
 builder.Services.AddControllersWithViews(options => 
 {
     options.Filters.Add(new Microsoft.AspNetCore.Mvc.AutoValidateAntiforgeryTokenAttribute()); // CRITICAL: Enforce CSRF validation globally
@@ -148,3 +152,5 @@ app.MapHub<Overseer.Hubs.ChatHub>("/chathub");
 app.MapFallbackToFile("index.html");
 
 app.Run();
+
+public partial class Program { }

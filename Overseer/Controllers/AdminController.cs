@@ -11,7 +11,7 @@ namespace Overseer.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize]
+[Authorize(Policy = "AdminOnly")]
 public class AdminController : ControllerBase
 {
     private readonly ApplicationDbContext _dbContext;
@@ -27,18 +27,19 @@ public class AdminController : ControllerBase
         _cryptoService = cryptoService;
     }
 
-    private bool CheckAdmin()
+    private static readonly System.Collections.Generic.HashSet<string> AllowedCounters = new(System.StringComparer.OrdinalIgnoreCase)
     {
-        return _configuration.IsAdmin(User.Identity?.Name);
-    }
+        "DailyChatRequestsCount", "MonthlyChatRequestsCount", "TotalChatRequestsCount",
+        "DailyTitleRequestsCount", "MonthlyTitleRequestsCount", "TotalTitleRequestsCount",
+        "DailyChatTokensCount", "MonthlyChatTokensCount", "TotalChatTokensCount",
+        "DailyTitleTokensCount", "MonthlyTitleTokensCount", "TotalTitleTokensCount"
+    };
 
     // --- Groups ---
 
     [HttpGet("groups")]
     public async Task<IActionResult> GetGroups()
     {
-        if (!CheckAdmin()) return Forbid();
-
         var groups = await _dbContext.Groups
             .Select(g => new AdminGroupDto
             {
@@ -55,8 +56,6 @@ public class AdminController : ControllerBase
     [HttpPost("groups")]
     public async Task<IActionResult> CreateGroup([FromBody] CreateGroupRequest request)
     {
-        if (!CheckAdmin()) return Forbid();
-
         var displayName = request.DisplayName?.Trim();
         if (string.IsNullOrWhiteSpace(displayName))
         {
@@ -88,8 +87,6 @@ public class AdminController : ControllerBase
     [HttpDelete("groups/{id}")]
     public async Task<IActionResult> DeleteGroup(long id)
     {
-        if (!CheckAdmin()) return Forbid();
-
         var group = await _dbContext.Groups.FindAsync(id);
         if (group == null) return NotFound();
 
@@ -104,8 +101,6 @@ public class AdminController : ControllerBase
     [HttpGet("users")]
     public async Task<IActionResult> GetUsers([FromQuery] int page = 1, [FromQuery] int pageSize = 10, [FromQuery] string? usernameFilter = null, [FromQuery] string sortColumn = "UserName", [FromQuery] string sortOrder = "asc")
     {
-        if (!CheckAdmin()) return Forbid();
-
         var query = _userManager.Users.AsQueryable();
         if (!string.IsNullOrWhiteSpace(usernameFilter))
         {
@@ -150,8 +145,6 @@ public class AdminController : ControllerBase
     [HttpPost("users/{userId}/groups")]
     public async Task<IActionResult> AssignGroupToUser(string userId, [FromBody] AssignGroupRequest request)
     {
-        if (!CheckAdmin()) return Forbid();
-
         var exists = await _dbContext.UserGroups.AnyAsync(ug => ug.AspNetUserId == userId && ug.GroupId == request.GroupId);
         if (!exists)
         {
@@ -164,8 +157,6 @@ public class AdminController : ControllerBase
     [HttpDelete("users/{userId}/groups/{groupId}")]
     public async Task<IActionResult> RemoveGroupFromUser(string userId, long groupId)
     {
-        if (!CheckAdmin()) return Forbid();
-
         var ug = await _dbContext.UserGroups.FirstOrDefaultAsync(u => u.AspNetUserId == userId && u.GroupId == groupId);
         if (ug != null)
         {
@@ -180,8 +171,6 @@ public class AdminController : ControllerBase
     [HttpGet("systemconfigs")]
     public async Task<IActionResult> GetSystemConfigs()
     {
-        if (!CheckAdmin()) return Forbid();
-
         var configs = await _dbContext.SystemAiApiConfigurations
             .OrderBy(c => c.OrderIndex)
             .Select(c => new SystemAiApiConfigurationDto
@@ -231,8 +220,6 @@ public class AdminController : ControllerBase
     [HttpPost("systemconfigs")]
     public async Task<IActionResult> CreateSystemConfig([FromBody] CreateSystemAiApiConfigurationRequest request)
     {
-        if (!CheckAdmin()) return Forbid();
-
         var orderIndex = await _dbContext.SystemAiApiConfigurations.AnyAsync() 
             ? await _dbContext.SystemAiApiConfigurations.MaxAsync(c => c.OrderIndex) + 1 
             : 0;
@@ -277,8 +264,6 @@ public class AdminController : ControllerBase
     [HttpPut("systemconfigs/{id}")]
     public async Task<IActionResult> UpdateSystemConfig(long id, [FromBody] UpdateSystemAiApiConfigurationRequest request)
     {
-        if (!CheckAdmin()) return Forbid();
-
         var config = await _dbContext.SystemAiApiConfigurations.FindAsync(id);
         if (config == null) return NotFound();
 
@@ -326,13 +311,15 @@ public class AdminController : ControllerBase
     [HttpPost("systemconfigs/{id}/reset")]
     public async Task<IActionResult> ResetSystemConfigRateLimits(long id, [FromBody] ResetCounterRequest? request = null)
     {
-        if (!CheckAdmin()) return Forbid();
-
         var config = await _dbContext.SystemAiApiConfigurations.FindAsync(id);
         if (config == null) return NotFound();
 
         if (request?.CounterName != null)
         {
+            if (!AllowedCounters.Contains(request.CounterName))
+            {
+                return BadRequest("Invalid counter name.");
+            }
             var prop = config.GetType().GetProperty(request.CounterName);
             if (prop != null && prop.CanWrite)
             {
@@ -363,8 +350,6 @@ public class AdminController : ControllerBase
     [HttpDelete("systemconfigs/{id}")]
     public async Task<IActionResult> DeleteSystemConfig(long id)
     {
-        if (!CheckAdmin()) return Forbid();
-
         var config = await _dbContext.SystemAiApiConfigurations.FindAsync(id);
         if (config == null) return NotFound();
 
@@ -376,8 +361,6 @@ public class AdminController : ControllerBase
     [HttpPut("systemconfigs/reorder")]
     public async Task<IActionResult> ReorderSystemConfigs([FromBody] ReorderRequest request)
     {
-        if (!CheckAdmin()) return Forbid();
-
         var configs = await _dbContext.SystemAiApiConfigurations.ToListAsync();
         var idDict = configs.ToDictionary(c => c.Id);
 
@@ -398,8 +381,6 @@ public class AdminController : ControllerBase
     [HttpGet("users/{userId}/systemconfigs")]
     public async Task<IActionResult> GetUserSystemConfigs(string userId)
     {
-        if (!CheckAdmin()) return Forbid();
-
         var assignments = await _dbContext.UserSystemAiApiConfigurations
             .Where(a => a.AspNetUserId == userId)
             .OrderBy(a => a.OrderIndex)
@@ -444,8 +425,6 @@ public class AdminController : ControllerBase
     [HttpPost("users/{userId}/systemconfigs")]
     public async Task<IActionResult> AssignSystemConfigToUser(string userId, [FromBody] AssignConfigToUserRequest request)
     {
-        if (!CheckAdmin()) return Forbid();
-
         if (await _dbContext.UserSystemAiApiConfigurations.AnyAsync(a => a.AspNetUserId == userId && a.SystemAiApiConfigurationId == request.SystemAiApiConfigurationId))
         {
             return BadRequest("This configuration is already assigned to the user.");
@@ -517,7 +496,6 @@ public class AdminController : ControllerBase
     [HttpDelete("user-systemconfigs/{id}")]
     public async Task<IActionResult> RemoveSystemConfigFromUser(long id)
     {
-        if (!CheckAdmin()) return Forbid();
         var assignment = await _dbContext.UserSystemAiApiConfigurations.FindAsync(id);
         if (assignment != null)
         {
@@ -530,7 +508,6 @@ public class AdminController : ControllerBase
     [HttpPut("user-systemconfigs/{id}")]
     public async Task<IActionResult> UpdateUserSystemConfig(long id, [FromBody] UpdateUserSystemAiConfigRequest request)
     {
-        if (!CheckAdmin()) return Forbid();
         var assignment = await _dbContext.UserSystemAiApiConfigurations.FindAsync(id);
         if (assignment == null) return NotFound();
 
@@ -556,12 +533,15 @@ public class AdminController : ControllerBase
     [HttpPost("user-systemconfigs/{id}/reset")]
     public async Task<IActionResult> ResetUserSystemConfigRateLimits(long id, [FromBody] ResetCounterRequest? request = null)
     {
-        if (!CheckAdmin()) return Forbid();
         var assignment = await _dbContext.UserSystemAiApiConfigurations.FindAsync(id);
         if (assignment == null) return NotFound();
 
         if (request?.CounterName != null)
         {
+            if (!AllowedCounters.Contains(request.CounterName))
+            {
+                return BadRequest("Invalid counter name.");
+            }
             var prop = assignment.GetType().GetProperty(request.CounterName);
             if (prop != null && prop.CanWrite)
             {
@@ -592,8 +572,6 @@ public class AdminController : ControllerBase
     [HttpPut("users/{userId}/systemconfigs/reorder")]
     public async Task<IActionResult> ReorderUserSystemConfigs(string userId, [FromBody] ReorderRequest request)
     {
-        if (!CheckAdmin()) return Forbid();
-
         var configs = await _dbContext.UserSystemAiApiConfigurations.Where(a => a.AspNetUserId == userId).ToListAsync();
         var idDict = configs.ToDictionary(c => c.Id);
 
@@ -614,8 +592,6 @@ public class AdminController : ControllerBase
     [HttpGet("groups/{groupId}/systemconfigs")]
     public async Task<IActionResult> GetGroupSystemConfigs(long groupId)
     {
-        if (!CheckAdmin()) return Forbid();
-
         var assignments = await _dbContext.GroupSystemAiApiConfigurations
             .Where(a => a.GroupId == groupId)
             .OrderBy(a => a.OrderIndex)
@@ -660,8 +636,6 @@ public class AdminController : ControllerBase
     [HttpPost("groups/{groupId}/systemconfigs")]
     public async Task<IActionResult> AssignSystemConfigToGroup(long groupId, [FromBody] AssignConfigToGroupRequest request)
     {
-        if (!CheckAdmin()) return Forbid();
-
         if (await _dbContext.GroupSystemAiApiConfigurations.AnyAsync(a => a.GroupId == groupId && a.SystemAiApiConfigurationId == request.SystemAiApiConfigurationId))
         {
             return BadRequest("This configuration is already assigned to the group.");
@@ -733,7 +707,6 @@ public class AdminController : ControllerBase
     [HttpDelete("group-systemconfigs/{id}")]
     public async Task<IActionResult> RemoveSystemConfigFromGroup(long id)
     {
-        if (!CheckAdmin()) return Forbid();
         var assignment = await _dbContext.GroupSystemAiApiConfigurations.FindAsync(id);
         if (assignment != null)
         {
@@ -746,7 +719,6 @@ public class AdminController : ControllerBase
     [HttpPut("group-systemconfigs/{id}")]
     public async Task<IActionResult> UpdateGroupSystemConfig(long id, [FromBody] UpdateGroupSystemAiConfigRequest request)
     {
-        if (!CheckAdmin()) return Forbid();
         var assignment = await _dbContext.GroupSystemAiApiConfigurations.FindAsync(id);
         if (assignment == null) return NotFound();
 
@@ -772,12 +744,15 @@ public class AdminController : ControllerBase
     [HttpPost("group-systemconfigs/{id}/reset")]
     public async Task<IActionResult> ResetGroupSystemConfigRateLimits(long id, [FromBody] ResetCounterRequest? request = null)
     {
-        if (!CheckAdmin()) return Forbid();
         var assignment = await _dbContext.GroupSystemAiApiConfigurations.FindAsync(id);
         if (assignment == null) return NotFound();
 
         if (request?.CounterName != null)
         {
+            if (!AllowedCounters.Contains(request.CounterName))
+            {
+                return BadRequest("Invalid counter name.");
+            }
             var prop = assignment.GetType().GetProperty(request.CounterName);
             if (prop != null && prop.CanWrite)
             {
@@ -808,8 +783,6 @@ public class AdminController : ControllerBase
     [HttpPut("groups/{groupId}/systemconfigs/reorder")]
     public async Task<IActionResult> ReorderGroupSystemConfigs(long groupId, [FromBody] ReorderRequest request)
     {
-        if (!CheckAdmin()) return Forbid();
-
         var configs = await _dbContext.GroupSystemAiApiConfigurations.Where(a => a.GroupId == groupId).ToListAsync();
         var idDict = configs.ToDictionary(c => c.Id);
 
@@ -830,8 +803,6 @@ public class AdminController : ControllerBase
     [HttpGet("errors")]
     public async Task<IActionResult> GetErrors()
     {
-        if (!CheckAdmin()) return Forbid();
-
         var errors = await _dbContext.SystemAiErrorLogs
             .Include(e => e.SystemAiApiConfiguration)
             .Where(e => !e.IsDismissed)
@@ -853,8 +824,6 @@ public class AdminController : ControllerBase
     [HttpPost("errors/{id}/dismiss")]
     public async Task<IActionResult> DismissError(long id)
     {
-        if (!CheckAdmin()) return Forbid();
-
         var error = await _dbContext.SystemAiErrorLogs.FindAsync(id);
         if (error == null) return NotFound();
 
@@ -876,8 +845,6 @@ public class AdminController : ControllerBase
         [FromQuery] string? mode, [FromQuery] string? usernameFilter,
         [FromQuery] int? page, [FromQuery] int? pageSize)
     {
-        if (!CheckAdmin()) return Forbid();
-
         var query = _dbContext.SystemAiUsageLogs
             .Where(l => l.SystemAiApiConfigurationId == id);
 
