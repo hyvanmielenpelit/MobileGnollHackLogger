@@ -13,9 +13,18 @@ export interface AiModelFormResult {
   apiKey?: string;
   isEnabled?: boolean;
   isSystemWide?: boolean;
-  maxDailyRequests?: number | null;
-  maxMonthlyRequests?: number | null;
-  maxTotalRequests?: number | null;
+  maxDailyChatRequests?: number | null;
+  maxMonthlyChatRequests?: number | null;
+  maxTotalChatRequests?: number | null;
+  maxDailyTitleRequests?: number | null;
+  maxMonthlyTitleRequests?: number | null;
+  maxTotalTitleRequests?: number | null;
+  maxDailyChatTokens?: number | null;
+  maxMonthlyChatTokens?: number | null;
+  maxTotalChatTokens?: number | null;
+  maxDailyTitleTokens?: number | null;
+  maxMonthlyTitleTokens?: number | null;
+  maxTotalTitleTokens?: number | null;
   modelRole?: number;
 }
 
@@ -54,9 +63,18 @@ export class AiModelFormComponent implements OnInit {
   hasApiKey = false;
   isEnabled = true;
   isSystemWide = false;
-  maxDailyRequests: number | null = null;
-  maxMonthlyRequests: number | null = null;
-  maxTotalRequests: number | null = null;
+  maxDailyChatRequests: number | null = null;
+  maxMonthlyChatRequests: number | null = null;
+  maxTotalChatRequests: number | null = null;
+  maxDailyTitleRequests: number | null = null;
+  maxMonthlyTitleRequests: number | null = null;
+  maxTotalTitleRequests: number | null = null;
+  maxDailyChatTokens: number | null = null;
+  maxMonthlyChatTokens: number | null = null;
+  maxTotalChatTokens: number | null = null;
+  maxDailyTitleTokens: number | null = null;
+  maxMonthlyTitleTokens: number | null = null;
+  maxTotalTitleTokens: number | null = null;
   modelRole: number = 3;
 
   // State
@@ -113,9 +131,18 @@ export class AiModelFormComponent implements OnInit {
         this.editingApiKey = !this.hasApiKey;
         this.isEnabled = this.initialData.isEnabled ?? true;
         this.isSystemWide = this.initialData.isSystemWide ?? false;
-        this.maxDailyRequests = this.initialData.maxDailyRequests || null;
-        this.maxMonthlyRequests = this.initialData.maxMonthlyRequests || null;
-        this.maxTotalRequests = this.initialData.maxTotalRequests || null;
+        this.maxDailyChatRequests = this.initialData.maxDailyChatRequests || null;
+        this.maxMonthlyChatRequests = this.initialData.maxMonthlyChatRequests || null;
+        this.maxTotalChatRequests = this.initialData.maxTotalChatRequests || null;
+        this.maxDailyTitleRequests = this.initialData.maxDailyTitleRequests || null;
+        this.maxMonthlyTitleRequests = this.initialData.maxMonthlyTitleRequests || null;
+        this.maxTotalTitleRequests = this.initialData.maxTotalTitleRequests || null;
+        this.maxDailyChatTokens = this.initialData.maxDailyChatTokens || null;
+        this.maxMonthlyChatTokens = this.initialData.maxMonthlyChatTokens || null;
+        this.maxTotalChatTokens = this.initialData.maxTotalChatTokens || null;
+        this.maxDailyTitleTokens = this.initialData.maxDailyTitleTokens || null;
+        this.maxMonthlyTitleTokens = this.initialData.maxMonthlyTitleTokens || null;
+        this.maxTotalTitleTokens = this.initialData.maxTotalTitleTokens || null;
         this.modelRole = this.initialData.modelRole ?? 3;
       }
 
@@ -327,9 +354,18 @@ export class AiModelFormComponent implements OnInit {
       }
       result.isEnabled = this.isEnabled;
       result.isSystemWide = this.isSystemWide;
-      result.maxDailyRequests = this.maxDailyRequests;
-      result.maxMonthlyRequests = this.maxMonthlyRequests;
-      result.maxTotalRequests = this.maxTotalRequests;
+      result.maxDailyChatRequests = this.maxDailyChatRequests;
+      result.maxMonthlyChatRequests = this.maxMonthlyChatRequests;
+      result.maxTotalChatRequests = this.maxTotalChatRequests;
+      result.maxDailyTitleRequests = this.maxDailyTitleRequests;
+      result.maxMonthlyTitleRequests = this.maxMonthlyTitleRequests;
+      result.maxTotalTitleRequests = this.maxTotalTitleRequests;
+      result.maxDailyChatTokens = this.maxDailyChatTokens;
+      result.maxMonthlyChatTokens = this.maxMonthlyChatTokens;
+      result.maxTotalChatTokens = this.maxTotalChatTokens;
+      result.maxDailyTitleTokens = this.maxDailyTitleTokens;
+      result.maxMonthlyTitleTokens = this.maxMonthlyTitleTokens;
+      result.maxTotalTitleTokens = this.maxTotalTitleTokens;
       result.modelRole = this.modelRole;
     }
 

@@ -24,4 +24,6 @@ public class SystemAiUsageLog
 
     public int? InputTokens { get; set; }
     public int? OutputTokens { get; set; }
+    
+    public int RoleContext { get; set; } = 1; // 1 = Chat, 2 = Title Generation
 }

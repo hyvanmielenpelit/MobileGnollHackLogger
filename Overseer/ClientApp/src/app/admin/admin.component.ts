@@ -41,6 +41,7 @@ export class AdminComponent implements OnInit {
   @ViewChild('createGroupDialog') createGroupDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('configDialog') configDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('confirmDialog') confirmDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('rateLimitsDialog') rateLimitsDialog!: ElementRef<HTMLDialogElement>;
   
   @ViewChild('manageUserConfigsDialog') manageUserConfigsDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('manageGroupConfigsDialog') manageGroupConfigsDialog!: ElementRef<HTMLDialogElement>;
@@ -233,18 +234,37 @@ export class AdminComponent implements OnInit {
     this.confirmDialog.nativeElement.showModal();
   }
 
-  resetConfig(config: SystemAiConfigDto) {
-    this.confirmMessage = `Are you sure you want to reset all rate limits (Daily, Monthly, Total) for the System Config '${config.displayName}'?`;
+  selectedConfigForLimits: any = null;
+  limitContext: 'system' | 'user' | 'group' = 'system';
+  limitEntityId: number = 0;
+
+  openRateLimitsDialog(context: 'system' | 'user' | 'group', entity: any) {
+    this.limitContext = context;
+    this.selectedConfigForLimits = entity;
+    this.limitEntityId = entity.id;
+    this.rateLimitsDialog.nativeElement.showModal();
+  }
+
+  closeRateLimitsDialog() {
+    this.rateLimitsDialog.nativeElement.close();
+    this.selectedConfigForLimits = null;
+  }
+
+  resetSingleCounter(counterName: string) {
+    this.confirmMessage = `Are you sure you want to reset the counter?`;
     this.confirmAction = () => {
-      this.adminService.resetSystemConfig(config.id).subscribe({
+      let req;
+      if (this.limitContext === 'system') req = this.adminService.resetSystemConfig(this.limitEntityId, counterName);
+      else if (this.limitContext === 'user') req = this.adminService.resetUserSystemConfig(this.limitEntityId, counterName);
+      else req = this.adminService.resetGroupSystemConfig(this.limitEntityId, counterName);
+
+      req.subscribe({
         next: () => {
-          config.dailyRequestsCount = 0;
-          config.monthlyRequestsCount = 0;
-          config.totalRequestsCount = 0;
+          if (this.selectedConfigForLimits) {
+            this.selectedConfigForLimits[counterName] = 0;
+          }
         },
-        error: (err) => {
-          console.error("Failed to reset config rate limits", err);
-        }
+        error: (err) => console.error("Failed to reset counter", err)
       });
     };
     this.confirmDialog.nativeElement.showModal();
@@ -307,9 +327,18 @@ export class AdminComponent implements OnInit {
           maxResultLength: null,
           maxCallsPerSession: null,
           maxToolIterations: null,
-          maxDailyRequests: null,
-          maxMonthlyRequests: null,
-          maxTotalRequests: null
+          maxDailyChatRequests: null,
+          maxMonthlyChatRequests: null,
+          maxTotalChatRequests: null,
+          maxDailyTitleRequests: null,
+          maxMonthlyTitleRequests: null,
+          maxTotalTitleRequests: null,
+          maxDailyChatTokens: null,
+          maxMonthlyChatTokens: null,
+          maxTotalChatTokens: null,
+          maxDailyTitleTokens: null,
+          maxMonthlyTitleTokens: null,
+          maxTotalTitleTokens: null
         }).subscribe({
           next: res => {
             this.userConfigAssignments = [...this.userConfigAssignments, res];
@@ -380,9 +409,18 @@ export class AdminComponent implements OnInit {
           maxResultLength: null,
           maxCallsPerSession: null,
           maxToolIterations: null,
-          maxDailyRequests: null,
-          maxMonthlyRequests: null,
-          maxTotalRequests: null
+          maxDailyChatRequests: null,
+          maxMonthlyChatRequests: null,
+          maxTotalChatRequests: null,
+          maxDailyTitleRequests: null,
+          maxMonthlyTitleRequests: null,
+          maxTotalTitleRequests: null,
+          maxDailyChatTokens: null,
+          maxMonthlyChatTokens: null,
+          maxTotalChatTokens: null,
+          maxDailyTitleTokens: null,
+          maxMonthlyTitleTokens: null,
+          maxTotalTitleTokens: null
         }).subscribe({
           next: res => {
             this.groupConfigAssignments = [...this.groupConfigAssignments, res];
@@ -426,17 +464,26 @@ export class AdminComponent implements OnInit {
       maxResultLength: assignment.maxResultLength,
       maxCallsPerSession: assignment.maxCallsPerSession,
       maxToolIterations: assignment.maxToolIterations,
-      maxDailyRequests: assignment.maxDailyRequests,
-      maxMonthlyRequests: assignment.maxMonthlyRequests,
-      maxTotalRequests: assignment.maxTotalRequests
+      maxDailyChatRequests: assignment.maxDailyChatRequests,
+      maxMonthlyChatRequests: assignment.maxMonthlyChatRequests,
+      maxTotalChatRequests: assignment.maxTotalChatRequests,
+      maxDailyTitleRequests: assignment.maxDailyTitleRequests,
+      maxMonthlyTitleRequests: assignment.maxMonthlyTitleRequests,
+      maxTotalTitleRequests: assignment.maxTotalTitleRequests,
+      maxDailyChatTokens: assignment.maxDailyChatTokens,
+      maxMonthlyChatTokens: assignment.maxMonthlyChatTokens,
+      maxTotalChatTokens: assignment.maxTotalChatTokens,
+      maxDailyTitleTokens: assignment.maxDailyTitleTokens,
+      maxMonthlyTitleTokens: assignment.maxMonthlyTitleTokens,
+      maxTotalTitleTokens: assignment.maxTotalTitleTokens
     };
     this.editConfigOverrideDialog.nativeElement.showModal();
   }
 
   formatModelRole(role: number): string {
     switch (role) {
-      case 1: return 'Title Generation';
-      case 2: return 'Main Chat';
+      case 1: return 'Chat Only';
+      case 2: return 'Title Generation Only';
       case 3: return 'All (Chat & Title)';
       default: return 'Unknown';
     }
@@ -462,9 +509,18 @@ export class AdminComponent implements OnInit {
       maxResultLength: sanitize(this.editingOverride.maxResultLength),
       maxCallsPerSession: sanitize(this.editingOverride.maxCallsPerSession),
       maxToolIterations: sanitize(this.editingOverride.maxToolIterations),
-      maxDailyRequests: sanitize(this.editingOverride.maxDailyRequests),
-      maxMonthlyRequests: sanitize(this.editingOverride.maxMonthlyRequests),
-      maxTotalRequests: sanitize(this.editingOverride.maxTotalRequests)
+      maxDailyChatRequests: sanitize(this.editingOverride.maxDailyChatRequests),
+      maxMonthlyChatRequests: sanitize(this.editingOverride.maxMonthlyChatRequests),
+      maxTotalChatRequests: sanitize(this.editingOverride.maxTotalChatRequests),
+      maxDailyTitleRequests: sanitize(this.editingOverride.maxDailyTitleRequests),
+      maxMonthlyTitleRequests: sanitize(this.editingOverride.maxMonthlyTitleRequests),
+      maxTotalTitleRequests: sanitize(this.editingOverride.maxTotalTitleRequests),
+      maxDailyChatTokens: sanitize(this.editingOverride.maxDailyChatTokens),
+      maxMonthlyChatTokens: sanitize(this.editingOverride.maxMonthlyChatTokens),
+      maxTotalChatTokens: sanitize(this.editingOverride.maxTotalChatTokens),
+      maxDailyTitleTokens: sanitize(this.editingOverride.maxDailyTitleTokens),
+      maxMonthlyTitleTokens: sanitize(this.editingOverride.maxMonthlyTitleTokens),
+      maxTotalTitleTokens: sanitize(this.editingOverride.maxTotalTitleTokens)
     };
 
     if (this.overrideContext === 'user') {

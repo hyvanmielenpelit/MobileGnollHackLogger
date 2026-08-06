@@ -690,7 +690,7 @@ public class ChatService
                 {
                     var systemAiConfigService = scope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
                     int outputTokens = fullResponse.Length / 4;
-                    await systemAiConfigService.RecordUsageAsync(systemModelId.Value, userId, estimatedInputTokens, outputTokens);
+                    await systemAiConfigService.RecordUsageAsync(systemModelId.Value, userId, estimatedInputTokens, outputTokens, roleContext: 1);
                 }
 
                 await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -1396,6 +1396,14 @@ public class ChatService
                 else
                 {
                     if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {provider}] Generated Title: \"{generatedTitle}\"" }, CancellationToken.None);
+                    
+                    if (settings?.TitleGenerationSystemModelId != null)
+                    {
+                        var systemAiConfigService = startScope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
+                        int estimatedInputTokens = (prompt.Length + userMessage.Length) / 4;
+                        int outputTokens = generatedTitle.Length / 4;
+                        await systemAiConfigService.RecordUsageAsync(settings.TitleGenerationSystemModelId.Value, userId, estimatedInputTokens, outputTokens, roleContext: 2);
+                    }
                 }
             }
             else if (response != null)

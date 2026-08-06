@@ -19,14 +19,38 @@ public class GroupSystemAiApiConfiguration : IRateLimitedEntity
     public int OrderIndex { get; set; }
 
     // Rate limits (null means use system defaults)
-    public int? MaxDailyRequests { get; set; }
-    public int? MaxMonthlyRequests { get; set; }
-    public int? MaxTotalRequests { get; set; }
+    public int? MaxDailyChatRequests { get; set; }
+    public int? MaxMonthlyChatRequests { get; set; }
+    public int? MaxTotalChatRequests { get; set; }
+
+    public int? MaxDailyTitleRequests { get; set; }
+    public int? MaxMonthlyTitleRequests { get; set; }
+    public int? MaxTotalTitleRequests { get; set; }
+
+    public long? MaxDailyChatTokens { get; set; }
+    public long? MaxMonthlyChatTokens { get; set; }
+    public long? MaxTotalChatTokens { get; set; }
+
+    public long? MaxDailyTitleTokens { get; set; }
+    public long? MaxMonthlyTitleTokens { get; set; }
+    public long? MaxTotalTitleTokens { get; set; }
 
     // Usage tracking
-    public int DailyRequestsCount { get; set; }
-    public int MonthlyRequestsCount { get; set; }
-    public int TotalRequestsCount { get; set; }
+    public int DailyChatRequestsCount { get; set; }
+    public int MonthlyChatRequestsCount { get; set; }
+    public int TotalChatRequestsCount { get; set; }
+
+    public int DailyTitleRequestsCount { get; set; }
+    public int MonthlyTitleRequestsCount { get; set; }
+    public int TotalTitleRequestsCount { get; set; }
+
+    public long DailyChatTokensCount { get; set; }
+    public long MonthlyChatTokensCount { get; set; }
+    public long TotalChatTokensCount { get; set; }
+
+    public long DailyTitleTokensCount { get; set; }
+    public long MonthlyTitleTokensCount { get; set; }
+    public long TotalTitleTokensCount { get; set; }
 
     public DateTime? LastDailyReset { get; set; }
     public DateTime? LastMonthlyReset { get; set; }

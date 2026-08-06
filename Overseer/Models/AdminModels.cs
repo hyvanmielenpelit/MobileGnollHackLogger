@@ -42,12 +42,30 @@ public class SystemAiApiConfigurationDto
     public bool IsEnabled { get; set; }
     public bool HasApiKey { get; set; }
     public bool IsSystemWide { get; set; }
-    public int? MaxDailyRequests { get; set; }
-    public int? MaxMonthlyRequests { get; set; }
-    public int? MaxTotalRequests { get; set; }
-    public int DailyRequestsCount { get; set; }
-    public int MonthlyRequestsCount { get; set; }
-    public int TotalRequestsCount { get; set; }
+    public int? MaxDailyChatRequests { get; set; }
+    public int? MaxMonthlyChatRequests { get; set; }
+    public int? MaxTotalChatRequests { get; set; }
+    public int DailyChatRequestsCount { get; set; }
+    public int MonthlyChatRequestsCount { get; set; }
+    public int TotalChatRequestsCount { get; set; }
+    public int? MaxDailyTitleRequests { get; set; }
+    public int? MaxMonthlyTitleRequests { get; set; }
+    public int? MaxTotalTitleRequests { get; set; }
+    public int DailyTitleRequestsCount { get; set; }
+    public int MonthlyTitleRequestsCount { get; set; }
+    public int TotalTitleRequestsCount { get; set; }
+    public long? MaxDailyChatTokens { get; set; }
+    public long? MaxMonthlyChatTokens { get; set; }
+    public long? MaxTotalChatTokens { get; set; }
+    public long DailyChatTokensCount { get; set; }
+    public long MonthlyChatTokensCount { get; set; }
+    public long TotalChatTokensCount { get; set; }
+    public long? MaxDailyTitleTokens { get; set; }
+    public long? MaxMonthlyTitleTokens { get; set; }
+    public long? MaxTotalTitleTokens { get; set; }
+    public long DailyTitleTokensCount { get; set; }
+    public long MonthlyTitleTokensCount { get; set; }
+    public long TotalTitleTokensCount { get; set; }
     public int ModelRole { get; set; }
 }
 
@@ -62,9 +80,18 @@ public class CreateSystemAiApiConfigurationRequest
     public bool IsEnabled { get; set; }
     public string? ApiKey { get; set; }
     public bool IsSystemWide { get; set; }
-    public int? MaxDailyRequests { get; set; }
-    public int? MaxMonthlyRequests { get; set; }
-    public int? MaxTotalRequests { get; set; }
+    public int? MaxDailyChatRequests { get; set; }
+    public int? MaxMonthlyChatRequests { get; set; }
+    public int? MaxTotalChatRequests { get; set; }
+    public int? MaxDailyTitleRequests { get; set; }
+    public int? MaxMonthlyTitleRequests { get; set; }
+    public int? MaxTotalTitleRequests { get; set; }
+    public long? MaxDailyChatTokens { get; set; }
+    public long? MaxMonthlyChatTokens { get; set; }
+    public long? MaxTotalChatTokens { get; set; }
+    public long? MaxDailyTitleTokens { get; set; }
+    public long? MaxMonthlyTitleTokens { get; set; }
+    public long? MaxTotalTitleTokens { get; set; }
     public int ModelRole { get; set; } = 3;
 }
 
@@ -85,12 +112,30 @@ public class UserSystemAiConfigDto
     public long SystemAiApiConfigurationId { get; set; }
     public bool IsEnabled { get; set; }
     public int OrderIndex { get; set; }
-    public int? MaxDailyRequests { get; set; }
-    public int? MaxMonthlyRequests { get; set; }
-    public int? MaxTotalRequests { get; set; }
-    public int DailyRequestsCount { get; set; }
-    public int MonthlyRequestsCount { get; set; }
-    public int TotalRequestsCount { get; set; }
+    public int? MaxDailyChatRequests { get; set; }
+    public int? MaxMonthlyChatRequests { get; set; }
+    public int? MaxTotalChatRequests { get; set; }
+    public int DailyChatRequestsCount { get; set; }
+    public int MonthlyChatRequestsCount { get; set; }
+    public int TotalChatRequestsCount { get; set; }
+    public int? MaxDailyTitleRequests { get; set; }
+    public int? MaxMonthlyTitleRequests { get; set; }
+    public int? MaxTotalTitleRequests { get; set; }
+    public int DailyTitleRequestsCount { get; set; }
+    public int MonthlyTitleRequestsCount { get; set; }
+    public int TotalTitleRequestsCount { get; set; }
+    public long? MaxDailyChatTokens { get; set; }
+    public long? MaxMonthlyChatTokens { get; set; }
+    public long? MaxTotalChatTokens { get; set; }
+    public long DailyChatTokensCount { get; set; }
+    public long MonthlyChatTokensCount { get; set; }
+    public long TotalChatTokensCount { get; set; }
+    public long? MaxDailyTitleTokens { get; set; }
+    public long? MaxMonthlyTitleTokens { get; set; }
+    public long? MaxTotalTitleTokens { get; set; }
+    public long DailyTitleTokensCount { get; set; }
+    public long MonthlyTitleTokensCount { get; set; }
+    public long TotalTitleTokensCount { get; set; }
     public int ModelRole { get; set; }
 }
 
@@ -101,12 +146,30 @@ public class GroupSystemAiConfigDto
     public long SystemAiApiConfigurationId { get; set; }
     public bool IsEnabled { get; set; }
     public int OrderIndex { get; set; }
-    public int? MaxDailyRequests { get; set; }
-    public int? MaxMonthlyRequests { get; set; }
-    public int? MaxTotalRequests { get; set; }
-    public int DailyRequestsCount { get; set; }
-    public int MonthlyRequestsCount { get; set; }
-    public int TotalRequestsCount { get; set; }
+    public int? MaxDailyChatRequests { get; set; }
+    public int? MaxMonthlyChatRequests { get; set; }
+    public int? MaxTotalChatRequests { get; set; }
+    public int DailyChatRequestsCount { get; set; }
+    public int MonthlyChatRequestsCount { get; set; }
+    public int TotalChatRequestsCount { get; set; }
+    public int? MaxDailyTitleRequests { get; set; }
+    public int? MaxMonthlyTitleRequests { get; set; }
+    public int? MaxTotalTitleRequests { get; set; }
+    public int DailyTitleRequestsCount { get; set; }
+    public int MonthlyTitleRequestsCount { get; set; }
+    public int TotalTitleRequestsCount { get; set; }
+    public long? MaxDailyChatTokens { get; set; }
+    public long? MaxMonthlyChatTokens { get; set; }
+    public long? MaxTotalChatTokens { get; set; }
+    public long DailyChatTokensCount { get; set; }
+    public long MonthlyChatTokensCount { get; set; }
+    public long TotalChatTokensCount { get; set; }
+    public long? MaxDailyTitleTokens { get; set; }
+    public long? MaxMonthlyTitleTokens { get; set; }
+    public long? MaxTotalTitleTokens { get; set; }
+    public long DailyTitleTokensCount { get; set; }
+    public long MonthlyTitleTokensCount { get; set; }
+    public long TotalTitleTokensCount { get; set; }
     public int ModelRole { get; set; }
 }
 
@@ -114,9 +177,18 @@ public class AssignConfigToUserRequest
 {
     public long SystemAiApiConfigurationId { get; set; }
     public bool IsEnabled { get; set; }
-    public int? MaxDailyRequests { get; set; }
-    public int? MaxMonthlyRequests { get; set; }
-    public int? MaxTotalRequests { get; set; }
+    public int? MaxDailyChatRequests { get; set; }
+    public int? MaxMonthlyChatRequests { get; set; }
+    public int? MaxTotalChatRequests { get; set; }
+    public int? MaxDailyTitleRequests { get; set; }
+    public int? MaxMonthlyTitleRequests { get; set; }
+    public int? MaxTotalTitleRequests { get; set; }
+    public long? MaxDailyChatTokens { get; set; }
+    public long? MaxMonthlyChatTokens { get; set; }
+    public long? MaxTotalChatTokens { get; set; }
+    public long? MaxDailyTitleTokens { get; set; }
+    public long? MaxMonthlyTitleTokens { get; set; }
+    public long? MaxTotalTitleTokens { get; set; }
     public int ModelRole { get; set; } = 3;
 }
 
@@ -140,4 +212,9 @@ public class SystemAiErrorLogDto
     public string? ErrorMessage { get; set; }
     public int? HttpStatusCode { get; set; }
     public DateTime TimestampUtc { get; set; }
+}
+
+public class ResetCounterRequest
+{
+    public string? CounterName { get; set; }
 }

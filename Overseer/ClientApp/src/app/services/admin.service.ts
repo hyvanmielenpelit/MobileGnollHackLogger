@@ -26,12 +26,30 @@ export interface SystemAiConfigDto {
   isEnabled: boolean;
   hasApiKey: boolean;
   isSystemWide: boolean;
-  maxDailyRequests: number | null;
-  maxMonthlyRequests: number | null;
-  maxTotalRequests: number | null;
-  dailyRequestsCount: number;
-  monthlyRequestsCount: number;
-  totalRequestsCount: number;
+  maxDailyChatRequests: number | null;
+  maxMonthlyChatRequests: number | null;
+  maxTotalChatRequests: number | null;
+  dailyChatRequestsCount: number;
+  monthlyChatRequestsCount: number;
+  totalChatRequestsCount: number;
+  maxDailyTitleRequests: number | null;
+  maxMonthlyTitleRequests: number | null;
+  maxTotalTitleRequests: number | null;
+  dailyTitleRequestsCount: number;
+  monthlyTitleRequestsCount: number;
+  totalTitleRequestsCount: number;
+  maxDailyChatTokens: number | null;
+  maxMonthlyChatTokens: number | null;
+  maxTotalChatTokens: number | null;
+  dailyChatTokensCount: number;
+  monthlyChatTokensCount: number;
+  totalChatTokensCount: number;
+  maxDailyTitleTokens: number | null;
+  maxMonthlyTitleTokens: number | null;
+  maxTotalTitleTokens: number | null;
+  dailyTitleTokensCount: number;
+  monthlyTitleTokensCount: number;
+  totalTitleTokensCount: number;
   modelRole: number;
   apiKey?: string;
 }
@@ -42,12 +60,30 @@ export interface UserSystemAiConfigDto {
   systemAiApiConfiguration?: SystemAiConfigDto;
   isEnabled: boolean;
   orderIndex: number;
-  maxDailyRequests: number | null;
-  maxMonthlyRequests: number | null;
-  maxTotalRequests: number | null;
-  dailyRequestsCount: number;
-  monthlyRequestsCount: number;
-  totalRequestsCount: number;
+  maxDailyChatRequests: number | null;
+  maxMonthlyChatRequests: number | null;
+  maxTotalChatRequests: number | null;
+  dailyChatRequestsCount: number;
+  monthlyChatRequestsCount: number;
+  totalChatRequestsCount: number;
+  maxDailyTitleRequests: number | null;
+  maxMonthlyTitleRequests: number | null;
+  maxTotalTitleRequests: number | null;
+  dailyTitleRequestsCount: number;
+  monthlyTitleRequestsCount: number;
+  totalTitleRequestsCount: number;
+  maxDailyChatTokens: number | null;
+  maxMonthlyChatTokens: number | null;
+  maxTotalChatTokens: number | null;
+  dailyChatTokensCount: number;
+  monthlyChatTokensCount: number;
+  totalChatTokensCount: number;
+  maxDailyTitleTokens: number | null;
+  maxMonthlyTitleTokens: number | null;
+  maxTotalTitleTokens: number | null;
+  dailyTitleTokensCount: number;
+  monthlyTitleTokensCount: number;
+  totalTitleTokensCount: number;
   modelRole: number;
 }
 
@@ -57,12 +93,30 @@ export interface GroupSystemAiConfigDto {
   systemAiApiConfiguration?: SystemAiConfigDto;
   isEnabled: boolean;
   orderIndex: number;
-  maxDailyRequests: number | null;
-  maxMonthlyRequests: number | null;
-  maxTotalRequests: number | null;
-  dailyRequestsCount: number;
-  monthlyRequestsCount: number;
-  totalRequestsCount: number;
+  maxDailyChatRequests: number | null;
+  maxMonthlyChatRequests: number | null;
+  maxTotalChatRequests: number | null;
+  dailyChatRequestsCount: number;
+  monthlyChatRequestsCount: number;
+  totalChatRequestsCount: number;
+  maxDailyTitleRequests: number | null;
+  maxMonthlyTitleRequests: number | null;
+  maxTotalTitleRequests: number | null;
+  dailyTitleRequestsCount: number;
+  monthlyTitleRequestsCount: number;
+  totalTitleRequestsCount: number;
+  maxDailyChatTokens: number | null;
+  maxMonthlyChatTokens: number | null;
+  maxTotalChatTokens: number | null;
+  dailyChatTokensCount: number;
+  monthlyChatTokensCount: number;
+  totalChatTokensCount: number;
+  maxDailyTitleTokens: number | null;
+  maxMonthlyTitleTokens: number | null;
+  maxTotalTitleTokens: number | null;
+  dailyTitleTokensCount: number;
+  monthlyTitleTokensCount: number;
+  totalTitleTokensCount: number;
   modelRole: number;
 }
 
@@ -116,8 +170,8 @@ export class AdminService {
     return this.http.delete<void>(`/api/admin/systemconfigs/${id}`);
   }
 
-  resetSystemConfig(id: number): Observable<void> {
-    return this.http.post<void>(`/api/admin/systemconfigs/${id}/reset`, {});
+  resetSystemConfig(id: number, counterName?: string): Observable<void> {
+    return this.http.post<void>(`/api/admin/systemconfigs/${id}/reset`, { counterName });
   }
 
   reorderSystemConfigs(ids: number[]): Observable<void> {
@@ -141,8 +195,8 @@ export class AdminService {
     return this.http.put<void>(`/api/admin/user-systemconfigs/${id}`, config);
   }
 
-  resetUserSystemConfig(id: number): Observable<void> {
-    return this.http.post<void>(`/api/admin/user-systemconfigs/${id}/reset`, {});
+  resetUserSystemConfig(id: number, counterName?: string): Observable<void> {
+    return this.http.post<void>(`/api/admin/user-systemconfigs/${id}/reset`, { counterName });
   }
 
   reorderUserSystemConfigs(userId: string, ids: number[]): Observable<void> {
@@ -166,8 +220,8 @@ export class AdminService {
     return this.http.put<void>(`/api/admin/group-systemconfigs/${id}`, config);
   }
 
-  resetGroupSystemConfig(id: number): Observable<void> {
-    return this.http.post<void>(`/api/admin/group-systemconfigs/${id}/reset`, {});
+  resetGroupSystemConfig(id: number, counterName?: string): Observable<void> {
+    return this.http.post<void>(`/api/admin/group-systemconfigs/${id}/reset`, { counterName });
   }
 
   reorderGroupSystemConfigs(groupId: number, ids: number[]): Observable<void> {

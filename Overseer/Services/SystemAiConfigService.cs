@@ -30,9 +30,9 @@ public class SystemAiConfigService
         // Check if config limits need reset
         ResetCountersIfNeeded(config, now);
 
-        if (IsRateLimited(config.DailyRequestsCount, config.MaxDailyRequests) ||
-            IsRateLimited(config.MonthlyRequestsCount, config.MaxMonthlyRequests) ||
-            IsRateLimited(config.TotalRequestsCount, config.MaxTotalRequests))
+        int checkRole = requiredRoleFilter ?? 1;
+
+        if (IsRateLimitedForRole(config, checkRole))
         {
             return (null, "System-wide rate limit exceeded for this model.");
         }
@@ -47,9 +47,7 @@ public class SystemAiConfigService
         if (userAssignment != null && userAssignment.IsEnabled)
         {
             ResetCountersIfNeeded(userAssignment, now);
-            if (IsRateLimited(userAssignment.DailyRequestsCount, userAssignment.MaxDailyRequests) ||
-                IsRateLimited(userAssignment.MonthlyRequestsCount, userAssignment.MaxMonthlyRequests) ||
-                IsRateLimited(userAssignment.TotalRequestsCount, userAssignment.MaxTotalRequests))
+            if (IsRateLimitedForRole(userAssignment, checkRole))
             {
                 return (null, "User rate limit exceeded for this model.");
             }
@@ -80,10 +78,7 @@ public class SystemAiConfigService
                 ResetCountersIfNeeded(g, now);
             }
 
-            var allowedGroup = groupAssignments.FirstOrDefault(g => 
-                !IsRateLimited(g.DailyRequestsCount, g.MaxDailyRequests) &&
-                !IsRateLimited(g.MonthlyRequestsCount, g.MaxMonthlyRequests) &&
-                !IsRateLimited(g.TotalRequestsCount, g.MaxTotalRequests));
+            var allowedGroup = groupAssignments.FirstOrDefault(g => !IsRateLimitedForRole(g, checkRole));
 
             if (allowedGroup == null)
             {
@@ -112,7 +107,29 @@ public class SystemAiConfigService
         return (config, null);
     }
 
-    public async Task RecordUsageAsync(long configId, string userId, int inputTokens, int outputTokens)
+    private bool IsRateLimitedForRole(IRateLimitedEntity entity, int role)
+    {
+        if (role == 2) // Title Generation
+        {
+            return IsRateLimited(entity.DailyTitleRequestsCount, entity.MaxDailyTitleRequests) ||
+                   IsRateLimited(entity.MonthlyTitleRequestsCount, entity.MaxMonthlyTitleRequests) ||
+                   IsRateLimited(entity.TotalTitleRequestsCount, entity.MaxTotalTitleRequests) ||
+                   IsTokenRateLimited(entity.DailyTitleTokensCount, entity.MaxDailyTitleTokens) ||
+                   IsTokenRateLimited(entity.MonthlyTitleTokensCount, entity.MaxMonthlyTitleTokens) ||
+                   IsTokenRateLimited(entity.TotalTitleTokensCount, entity.MaxTotalTitleTokens);
+        }
+        else // Chat
+        {
+            return IsRateLimited(entity.DailyChatRequestsCount, entity.MaxDailyChatRequests) ||
+                   IsRateLimited(entity.MonthlyChatRequestsCount, entity.MaxMonthlyChatRequests) ||
+                   IsRateLimited(entity.TotalChatRequestsCount, entity.MaxTotalChatRequests) ||
+                   IsTokenRateLimited(entity.DailyChatTokensCount, entity.MaxDailyChatTokens) ||
+                   IsTokenRateLimited(entity.MonthlyChatTokensCount, entity.MaxMonthlyChatTokens) ||
+                   IsTokenRateLimited(entity.TotalChatTokensCount, entity.MaxTotalChatTokens);
+        }
+    }
+
+    public async Task RecordUsageAsync(long configId, string userId, int inputTokens, int outputTokens, int roleContext = 1)
     {
         var config = await _dbContext.SystemAiApiConfigurations.FindAsync(configId);
         if (config == null) return;
@@ -120,9 +137,9 @@ public class SystemAiConfigService
         var now = DateTime.UtcNow;
         ResetCountersIfNeeded(config, now);
 
-        config.DailyRequestsCount++;
-        config.MonthlyRequestsCount++;
-        config.TotalRequestsCount++;
+        long totalTokens = inputTokens + outputTokens;
+
+        IncrementUsage(config, roleContext, totalTokens);
 
         // User specific limit
         var userAssignment = await _dbContext.UserSystemAiApiConfigurations
@@ -130,9 +147,7 @@ public class SystemAiConfigService
         if (userAssignment != null && userAssignment.IsEnabled)
         {
             ResetCountersIfNeeded(userAssignment, now);
-            userAssignment.DailyRequestsCount++;
-            userAssignment.MonthlyRequestsCount++;
-            userAssignment.TotalRequestsCount++;
+            IncrementUsage(userAssignment, roleContext, totalTokens);
         }
 
         // Group specific limit
@@ -146,9 +161,7 @@ public class SystemAiConfigService
         foreach (var g in groupAssignments)
         {
             ResetCountersIfNeeded(g, now);
-            g.DailyRequestsCount++;
-            g.MonthlyRequestsCount++;
-            g.TotalRequestsCount++;
+            IncrementUsage(g, roleContext, totalTokens);
         }
 
         var log = new SystemAiUsageLog
@@ -159,11 +172,34 @@ public class SystemAiConfigService
             InputTokens = inputTokens,
             OutputTokens = outputTokens,
             ModelId = config.ModelId,
-            Provider = config.Provider
+            Provider = config.Provider,
+            RoleContext = roleContext
         };
         _dbContext.SystemAiUsageLogs.Add(log);
 
         await _dbContext.SaveChangesAsync();
+    }
+
+    private void IncrementUsage(IRateLimitedEntity entity, int roleContext, long totalTokens)
+    {
+        if (roleContext == 2)
+        {
+            entity.DailyTitleRequestsCount++;
+            entity.MonthlyTitleRequestsCount++;
+            entity.TotalTitleRequestsCount++;
+            entity.DailyTitleTokensCount += totalTokens;
+            entity.MonthlyTitleTokensCount += totalTokens;
+            entity.TotalTitleTokensCount += totalTokens;
+        }
+        else
+        {
+            entity.DailyChatRequestsCount++;
+            entity.MonthlyChatRequestsCount++;
+            entity.TotalChatRequestsCount++;
+            entity.DailyChatTokensCount += totalTokens;
+            entity.MonthlyChatTokensCount += totalTokens;
+            entity.TotalChatTokensCount += totalTokens;
+        }
     }
 
     public async Task RecordErrorAsync(long configId, string errorMessage)
@@ -198,17 +234,32 @@ public class SystemAiConfigService
         return false;
     }
 
+    private bool IsTokenRateLimited(long currentCount, long? maxCount)
+    {
+        if (maxCount.HasValue && maxCount.Value > 0)
+        {
+            return currentCount >= maxCount.Value;
+        }
+        return false;
+    }
+
     private void ResetCountersIfNeeded(IRateLimitedEntity entity, DateTime now)
     {
         if (entity.LastDailyReset == null || entity.LastDailyReset.Value.Date < now.Date)
         {
-            entity.DailyRequestsCount = 0;
+            entity.DailyChatRequestsCount = 0;
+            entity.DailyTitleRequestsCount = 0;
+            entity.DailyChatTokensCount = 0;
+            entity.DailyTitleTokensCount = 0;
             entity.LastDailyReset = now;
         }
 
         if (entity.LastMonthlyReset == null || entity.LastMonthlyReset.Value.Year < now.Year || entity.LastMonthlyReset.Value.Month < now.Month)
         {
-            entity.MonthlyRequestsCount = 0;
+            entity.MonthlyChatRequestsCount = 0;
+            entity.MonthlyTitleRequestsCount = 0;
+            entity.MonthlyChatTokensCount = 0;
+            entity.MonthlyTitleTokensCount = 0;
             entity.LastMonthlyReset = now;
         }
     }

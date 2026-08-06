@@ -185,12 +185,30 @@ public class AdminController : ControllerBase
                 IsEnabled = c.IsEnabled,
                 HasApiKey = !string.IsNullOrEmpty(c.EncryptedApiKey),
                 IsSystemWide = c.IsSystemWide,
-                MaxDailyRequests = c.MaxDailyRequests,
-                MaxMonthlyRequests = c.MaxMonthlyRequests,
-                MaxTotalRequests = c.MaxTotalRequests,
-                DailyRequestsCount = c.DailyRequestsCount,
-                MonthlyRequestsCount = c.MonthlyRequestsCount,
-                TotalRequestsCount = c.TotalRequestsCount,
+                MaxDailyChatRequests = c.MaxDailyChatRequests,
+                MaxMonthlyChatRequests = c.MaxMonthlyChatRequests,
+                MaxTotalChatRequests = c.MaxTotalChatRequests,
+                MaxDailyTitleRequests = c.MaxDailyTitleRequests,
+                MaxMonthlyTitleRequests = c.MaxMonthlyTitleRequests,
+                MaxTotalTitleRequests = c.MaxTotalTitleRequests,
+                MaxDailyChatTokens = c.MaxDailyChatTokens,
+                MaxMonthlyChatTokens = c.MaxMonthlyChatTokens,
+                MaxTotalChatTokens = c.MaxTotalChatTokens,
+                MaxDailyTitleTokens = c.MaxDailyTitleTokens,
+                MaxMonthlyTitleTokens = c.MaxMonthlyTitleTokens,
+                MaxTotalTitleTokens = c.MaxTotalTitleTokens,
+                DailyChatRequestsCount = c.DailyChatRequestsCount,
+                MonthlyChatRequestsCount = c.MonthlyChatRequestsCount,
+                TotalChatRequestsCount = c.TotalChatRequestsCount,
+                DailyTitleRequestsCount = c.DailyTitleRequestsCount,
+                MonthlyTitleRequestsCount = c.MonthlyTitleRequestsCount,
+                TotalTitleRequestsCount = c.TotalTitleRequestsCount,
+                DailyChatTokensCount = c.DailyChatTokensCount,
+                MonthlyChatTokensCount = c.MonthlyChatTokensCount,
+                TotalChatTokensCount = c.TotalChatTokensCount,
+                DailyTitleTokensCount = c.DailyTitleTokensCount,
+                MonthlyTitleTokensCount = c.MonthlyTitleTokensCount,
+                TotalTitleTokensCount = c.TotalTitleTokensCount,
                 ModelRole = c.ModelRole
             })
             .ToListAsync();
@@ -217,9 +235,18 @@ public class AdminController : ControllerBase
             MaxOutputTokens = request.MaxOutputTokens,
             IsEnabled = request.IsEnabled,
             IsSystemWide = request.IsSystemWide,
-            MaxDailyRequests = request.MaxDailyRequests,
-            MaxMonthlyRequests = request.MaxMonthlyRequests,
-            MaxTotalRequests = request.MaxTotalRequests,
+            MaxDailyChatRequests = request.MaxDailyChatRequests,
+            MaxMonthlyChatRequests = request.MaxMonthlyChatRequests,
+            MaxTotalChatRequests = request.MaxTotalChatRequests,
+            MaxDailyTitleRequests = request.MaxDailyTitleRequests,
+            MaxMonthlyTitleRequests = request.MaxMonthlyTitleRequests,
+            MaxTotalTitleRequests = request.MaxTotalTitleRequests,
+            MaxDailyChatTokens = request.MaxDailyChatTokens,
+            MaxMonthlyChatTokens = request.MaxMonthlyChatTokens,
+            MaxTotalChatTokens = request.MaxTotalChatTokens,
+            MaxDailyTitleTokens = request.MaxDailyTitleTokens,
+            MaxMonthlyTitleTokens = request.MaxMonthlyTitleTokens,
+            MaxTotalTitleTokens = request.MaxTotalTitleTokens,
             ModelRole = request.ModelRole,
             OrderIndex = orderIndex
         };
@@ -251,9 +278,18 @@ public class AdminController : ControllerBase
         config.MaxOutputTokens = request.MaxOutputTokens;
         config.IsEnabled = request.IsEnabled;
         config.IsSystemWide = request.IsSystemWide;
-        config.MaxDailyRequests = request.MaxDailyRequests;
-        config.MaxMonthlyRequests = request.MaxMonthlyRequests;
-        config.MaxTotalRequests = request.MaxTotalRequests;
+        config.MaxDailyChatRequests = request.MaxDailyChatRequests;
+        config.MaxMonthlyChatRequests = request.MaxMonthlyChatRequests;
+        config.MaxTotalChatRequests = request.MaxTotalChatRequests;
+        config.MaxDailyTitleRequests = request.MaxDailyTitleRequests;
+        config.MaxMonthlyTitleRequests = request.MaxMonthlyTitleRequests;
+        config.MaxTotalTitleRequests = request.MaxTotalTitleRequests;
+        config.MaxDailyChatTokens = request.MaxDailyChatTokens;
+        config.MaxMonthlyChatTokens = request.MaxMonthlyChatTokens;
+        config.MaxTotalChatTokens = request.MaxTotalChatTokens;
+        config.MaxDailyTitleTokens = request.MaxDailyTitleTokens;
+        config.MaxMonthlyTitleTokens = request.MaxMonthlyTitleTokens;
+        config.MaxTotalTitleTokens = request.MaxTotalTitleTokens;
         config.ModelRole = request.ModelRole;
 
         if (request.ApiKey != null)
@@ -276,16 +312,37 @@ public class AdminController : ControllerBase
     }
 
     [HttpPost("systemconfigs/{id}/reset")]
-    public async Task<IActionResult> ResetSystemConfigRateLimits(long id)
+    public async Task<IActionResult> ResetSystemConfigRateLimits(long id, [FromBody] ResetCounterRequest? request = null)
     {
         if (!CheckAdmin()) return Forbid();
 
         var config = await _dbContext.SystemAiApiConfigurations.FindAsync(id);
         if (config == null) return NotFound();
 
-        config.DailyRequestsCount = 0;
-        config.MonthlyRequestsCount = 0;
-        config.TotalRequestsCount = 0;
+        if (request?.CounterName != null)
+        {
+            var prop = config.GetType().GetProperty(request.CounterName);
+            if (prop != null && prop.CanWrite)
+            {
+                if (prop.PropertyType == typeof(int)) prop.SetValue(config, 0);
+                else if (prop.PropertyType == typeof(long)) prop.SetValue(config, 0L);
+            }
+        }
+        else
+        {
+            config.DailyChatRequestsCount = 0;
+            config.MonthlyChatRequestsCount = 0;
+            config.TotalChatRequestsCount = 0;
+            config.DailyTitleRequestsCount = 0;
+            config.MonthlyTitleRequestsCount = 0;
+            config.TotalTitleRequestsCount = 0;
+            config.DailyChatTokensCount = 0;
+            config.MonthlyChatTokensCount = 0;
+            config.TotalChatTokensCount = 0;
+            config.DailyTitleTokensCount = 0;
+            config.MonthlyTitleTokensCount = 0;
+            config.TotalTitleTokensCount = 0;
+        }
         
         await _dbContext.SaveChangesAsync();
         return Ok();
@@ -341,12 +398,30 @@ public class AdminController : ControllerBase
                 SystemAiApiConfigurationId = a.SystemAiApiConfigurationId,
                 IsEnabled = a.IsEnabled,
                 OrderIndex = a.OrderIndex,
-                MaxDailyRequests = a.MaxDailyRequests,
-                MaxMonthlyRequests = a.MaxMonthlyRequests,
-                MaxTotalRequests = a.MaxTotalRequests,
-                DailyRequestsCount = a.DailyRequestsCount,
-                MonthlyRequestsCount = a.MonthlyRequestsCount,
-                TotalRequestsCount = a.TotalRequestsCount,
+                MaxDailyChatRequests = a.MaxDailyChatRequests,
+                MaxMonthlyChatRequests = a.MaxMonthlyChatRequests,
+                MaxTotalChatRequests = a.MaxTotalChatRequests,
+                MaxDailyTitleRequests = a.MaxDailyTitleRequests,
+                MaxMonthlyTitleRequests = a.MaxMonthlyTitleRequests,
+                MaxTotalTitleRequests = a.MaxTotalTitleRequests,
+                MaxDailyChatTokens = a.MaxDailyChatTokens,
+                MaxMonthlyChatTokens = a.MaxMonthlyChatTokens,
+                MaxTotalChatTokens = a.MaxTotalChatTokens,
+                MaxDailyTitleTokens = a.MaxDailyTitleTokens,
+                MaxMonthlyTitleTokens = a.MaxMonthlyTitleTokens,
+                MaxTotalTitleTokens = a.MaxTotalTitleTokens,
+                DailyChatRequestsCount = a.DailyChatRequestsCount,
+                MonthlyChatRequestsCount = a.MonthlyChatRequestsCount,
+                TotalChatRequestsCount = a.TotalChatRequestsCount,
+                DailyTitleRequestsCount = a.DailyTitleRequestsCount,
+                MonthlyTitleRequestsCount = a.MonthlyTitleRequestsCount,
+                TotalTitleRequestsCount = a.TotalTitleRequestsCount,
+                DailyChatTokensCount = a.DailyChatTokensCount,
+                MonthlyChatTokensCount = a.MonthlyChatTokensCount,
+                TotalChatTokensCount = a.TotalChatTokensCount,
+                DailyTitleTokensCount = a.DailyTitleTokensCount,
+                MonthlyTitleTokensCount = a.MonthlyTitleTokensCount,
+                TotalTitleTokensCount = a.TotalTitleTokensCount,
                 ModelRole = a.ModelRole
             })
             .ToListAsync();
@@ -373,9 +448,18 @@ public class AdminController : ControllerBase
             AspNetUserId = userId,
             SystemAiApiConfigurationId = request.SystemAiApiConfigurationId,
             IsEnabled = request.IsEnabled,
-            MaxDailyRequests = request.MaxDailyRequests,
-            MaxMonthlyRequests = request.MaxMonthlyRequests,
-            MaxTotalRequests = request.MaxTotalRequests,
+            MaxDailyChatRequests = request.MaxDailyChatRequests,
+            MaxMonthlyChatRequests = request.MaxMonthlyChatRequests,
+            MaxTotalChatRequests = request.MaxTotalChatRequests,
+            MaxDailyTitleRequests = request.MaxDailyTitleRequests,
+            MaxMonthlyTitleRequests = request.MaxMonthlyTitleRequests,
+            MaxTotalTitleRequests = request.MaxTotalTitleRequests,
+            MaxDailyChatTokens = request.MaxDailyChatTokens,
+            MaxMonthlyChatTokens = request.MaxMonthlyChatTokens,
+            MaxTotalChatTokens = request.MaxTotalChatTokens,
+            MaxDailyTitleTokens = request.MaxDailyTitleTokens,
+            MaxMonthlyTitleTokens = request.MaxMonthlyTitleTokens,
+            MaxTotalTitleTokens = request.MaxTotalTitleTokens,
             ModelRole = request.ModelRole,
             OrderIndex = orderIndex
         };
@@ -390,12 +474,30 @@ public class AdminController : ControllerBase
             SystemAiApiConfigurationId = assignment.SystemAiApiConfigurationId,
             IsEnabled = assignment.IsEnabled,
             OrderIndex = assignment.OrderIndex,
-            MaxDailyRequests = assignment.MaxDailyRequests,
-            MaxMonthlyRequests = assignment.MaxMonthlyRequests,
-            MaxTotalRequests = assignment.MaxTotalRequests,
-            DailyRequestsCount = assignment.DailyRequestsCount,
-            MonthlyRequestsCount = assignment.MonthlyRequestsCount,
-            TotalRequestsCount = assignment.TotalRequestsCount,
+            MaxDailyChatRequests = assignment.MaxDailyChatRequests,
+            MaxMonthlyChatRequests = assignment.MaxMonthlyChatRequests,
+            MaxTotalChatRequests = assignment.MaxTotalChatRequests,
+            MaxDailyTitleRequests = assignment.MaxDailyTitleRequests,
+            MaxMonthlyTitleRequests = assignment.MaxMonthlyTitleRequests,
+            MaxTotalTitleRequests = assignment.MaxTotalTitleRequests,
+            MaxDailyChatTokens = assignment.MaxDailyChatTokens,
+            MaxMonthlyChatTokens = assignment.MaxMonthlyChatTokens,
+            MaxTotalChatTokens = assignment.MaxTotalChatTokens,
+            MaxDailyTitleTokens = assignment.MaxDailyTitleTokens,
+            MaxMonthlyTitleTokens = assignment.MaxMonthlyTitleTokens,
+            MaxTotalTitleTokens = assignment.MaxTotalTitleTokens,
+            DailyChatRequestsCount = assignment.DailyChatRequestsCount,
+            MonthlyChatRequestsCount = assignment.MonthlyChatRequestsCount,
+            TotalChatRequestsCount = assignment.TotalChatRequestsCount,
+            DailyTitleRequestsCount = assignment.DailyTitleRequestsCount,
+            MonthlyTitleRequestsCount = assignment.MonthlyTitleRequestsCount,
+            TotalTitleRequestsCount = assignment.TotalTitleRequestsCount,
+            DailyChatTokensCount = assignment.DailyChatTokensCount,
+            MonthlyChatTokensCount = assignment.MonthlyChatTokensCount,
+            TotalChatTokensCount = assignment.TotalChatTokensCount,
+            DailyTitleTokensCount = assignment.DailyTitleTokensCount,
+            MonthlyTitleTokensCount = assignment.MonthlyTitleTokensCount,
+            TotalTitleTokensCount = assignment.TotalTitleTokensCount,
             ModelRole = assignment.ModelRole
         });
     }
@@ -421,9 +523,18 @@ public class AdminController : ControllerBase
         if (assignment == null) return NotFound();
 
         assignment.IsEnabled = request.IsEnabled;
-        assignment.MaxDailyRequests = request.MaxDailyRequests;
-        assignment.MaxMonthlyRequests = request.MaxMonthlyRequests;
-        assignment.MaxTotalRequests = request.MaxTotalRequests;
+        assignment.MaxDailyChatRequests = request.MaxDailyChatRequests;
+        assignment.MaxMonthlyChatRequests = request.MaxMonthlyChatRequests;
+        assignment.MaxTotalChatRequests = request.MaxTotalChatRequests;
+        assignment.MaxDailyTitleRequests = request.MaxDailyTitleRequests;
+        assignment.MaxMonthlyTitleRequests = request.MaxMonthlyTitleRequests;
+        assignment.MaxTotalTitleRequests = request.MaxTotalTitleRequests;
+        assignment.MaxDailyChatTokens = request.MaxDailyChatTokens;
+        assignment.MaxMonthlyChatTokens = request.MaxMonthlyChatTokens;
+        assignment.MaxTotalChatTokens = request.MaxTotalChatTokens;
+        assignment.MaxDailyTitleTokens = request.MaxDailyTitleTokens;
+        assignment.MaxMonthlyTitleTokens = request.MaxMonthlyTitleTokens;
+        assignment.MaxTotalTitleTokens = request.MaxTotalTitleTokens;
         assignment.ModelRole = request.ModelRole;
 
         await _dbContext.SaveChangesAsync();
@@ -431,15 +542,36 @@ public class AdminController : ControllerBase
     }
 
     [HttpPost("user-systemconfigs/{id}/reset")]
-    public async Task<IActionResult> ResetUserSystemConfigRateLimits(long id)
+    public async Task<IActionResult> ResetUserSystemConfigRateLimits(long id, [FromBody] ResetCounterRequest? request = null)
     {
         if (!CheckAdmin()) return Forbid();
         var assignment = await _dbContext.UserSystemAiApiConfigurations.FindAsync(id);
         if (assignment == null) return NotFound();
 
-        assignment.DailyRequestsCount = 0;
-        assignment.MonthlyRequestsCount = 0;
-        assignment.TotalRequestsCount = 0;
+        if (request?.CounterName != null)
+        {
+            var prop = assignment.GetType().GetProperty(request.CounterName);
+            if (prop != null && prop.CanWrite)
+            {
+                if (prop.PropertyType == typeof(int)) prop.SetValue(assignment, 0);
+                else if (prop.PropertyType == typeof(long)) prop.SetValue(assignment, 0L);
+            }
+        }
+        else
+        {
+            assignment.DailyChatRequestsCount = 0;
+            assignment.MonthlyChatRequestsCount = 0;
+            assignment.TotalChatRequestsCount = 0;
+            assignment.DailyTitleRequestsCount = 0;
+            assignment.MonthlyTitleRequestsCount = 0;
+            assignment.TotalTitleRequestsCount = 0;
+            assignment.DailyChatTokensCount = 0;
+            assignment.MonthlyChatTokensCount = 0;
+            assignment.TotalChatTokensCount = 0;
+            assignment.DailyTitleTokensCount = 0;
+            assignment.MonthlyTitleTokensCount = 0;
+            assignment.TotalTitleTokensCount = 0;
+        }
         
         await _dbContext.SaveChangesAsync();
         return Ok();
@@ -482,12 +614,30 @@ public class AdminController : ControllerBase
                 SystemAiApiConfigurationId = a.SystemAiApiConfigurationId,
                 IsEnabled = a.IsEnabled,
                 OrderIndex = a.OrderIndex,
-                MaxDailyRequests = a.MaxDailyRequests,
-                MaxMonthlyRequests = a.MaxMonthlyRequests,
-                MaxTotalRequests = a.MaxTotalRequests,
-                DailyRequestsCount = a.DailyRequestsCount,
-                MonthlyRequestsCount = a.MonthlyRequestsCount,
-                TotalRequestsCount = a.TotalRequestsCount,
+                MaxDailyChatRequests = a.MaxDailyChatRequests,
+                MaxMonthlyChatRequests = a.MaxMonthlyChatRequests,
+                MaxTotalChatRequests = a.MaxTotalChatRequests,
+                MaxDailyTitleRequests = a.MaxDailyTitleRequests,
+                MaxMonthlyTitleRequests = a.MaxMonthlyTitleRequests,
+                MaxTotalTitleRequests = a.MaxTotalTitleRequests,
+                MaxDailyChatTokens = a.MaxDailyChatTokens,
+                MaxMonthlyChatTokens = a.MaxMonthlyChatTokens,
+                MaxTotalChatTokens = a.MaxTotalChatTokens,
+                MaxDailyTitleTokens = a.MaxDailyTitleTokens,
+                MaxMonthlyTitleTokens = a.MaxMonthlyTitleTokens,
+                MaxTotalTitleTokens = a.MaxTotalTitleTokens,
+                DailyChatRequestsCount = a.DailyChatRequestsCount,
+                MonthlyChatRequestsCount = a.MonthlyChatRequestsCount,
+                TotalChatRequestsCount = a.TotalChatRequestsCount,
+                DailyTitleRequestsCount = a.DailyTitleRequestsCount,
+                MonthlyTitleRequestsCount = a.MonthlyTitleRequestsCount,
+                TotalTitleRequestsCount = a.TotalTitleRequestsCount,
+                DailyChatTokensCount = a.DailyChatTokensCount,
+                MonthlyChatTokensCount = a.MonthlyChatTokensCount,
+                TotalChatTokensCount = a.TotalChatTokensCount,
+                DailyTitleTokensCount = a.DailyTitleTokensCount,
+                MonthlyTitleTokensCount = a.MonthlyTitleTokensCount,
+                TotalTitleTokensCount = a.TotalTitleTokensCount,
                 ModelRole = a.ModelRole
             })
             .ToListAsync();
@@ -514,9 +664,18 @@ public class AdminController : ControllerBase
             GroupId = groupId,
             SystemAiApiConfigurationId = request.SystemAiApiConfigurationId,
             IsEnabled = request.IsEnabled,
-            MaxDailyRequests = request.MaxDailyRequests,
-            MaxMonthlyRequests = request.MaxMonthlyRequests,
-            MaxTotalRequests = request.MaxTotalRequests,
+            MaxDailyChatRequests = request.MaxDailyChatRequests,
+            MaxMonthlyChatRequests = request.MaxMonthlyChatRequests,
+            MaxTotalChatRequests = request.MaxTotalChatRequests,
+            MaxDailyTitleRequests = request.MaxDailyTitleRequests,
+            MaxMonthlyTitleRequests = request.MaxMonthlyTitleRequests,
+            MaxTotalTitleRequests = request.MaxTotalTitleRequests,
+            MaxDailyChatTokens = request.MaxDailyChatTokens,
+            MaxMonthlyChatTokens = request.MaxMonthlyChatTokens,
+            MaxTotalChatTokens = request.MaxTotalChatTokens,
+            MaxDailyTitleTokens = request.MaxDailyTitleTokens,
+            MaxMonthlyTitleTokens = request.MaxMonthlyTitleTokens,
+            MaxTotalTitleTokens = request.MaxTotalTitleTokens,
             ModelRole = request.ModelRole,
             OrderIndex = orderIndex
         };
@@ -531,12 +690,30 @@ public class AdminController : ControllerBase
             SystemAiApiConfigurationId = assignment.SystemAiApiConfigurationId,
             IsEnabled = assignment.IsEnabled,
             OrderIndex = assignment.OrderIndex,
-            MaxDailyRequests = assignment.MaxDailyRequests,
-            MaxMonthlyRequests = assignment.MaxMonthlyRequests,
-            MaxTotalRequests = assignment.MaxTotalRequests,
-            DailyRequestsCount = assignment.DailyRequestsCount,
-            MonthlyRequestsCount = assignment.MonthlyRequestsCount,
-            TotalRequestsCount = assignment.TotalRequestsCount,
+            MaxDailyChatRequests = assignment.MaxDailyChatRequests,
+            MaxMonthlyChatRequests = assignment.MaxMonthlyChatRequests,
+            MaxTotalChatRequests = assignment.MaxTotalChatRequests,
+            MaxDailyTitleRequests = assignment.MaxDailyTitleRequests,
+            MaxMonthlyTitleRequests = assignment.MaxMonthlyTitleRequests,
+            MaxTotalTitleRequests = assignment.MaxTotalTitleRequests,
+            MaxDailyChatTokens = assignment.MaxDailyChatTokens,
+            MaxMonthlyChatTokens = assignment.MaxMonthlyChatTokens,
+            MaxTotalChatTokens = assignment.MaxTotalChatTokens,
+            MaxDailyTitleTokens = assignment.MaxDailyTitleTokens,
+            MaxMonthlyTitleTokens = assignment.MaxMonthlyTitleTokens,
+            MaxTotalTitleTokens = assignment.MaxTotalTitleTokens,
+            DailyChatRequestsCount = assignment.DailyChatRequestsCount,
+            MonthlyChatRequestsCount = assignment.MonthlyChatRequestsCount,
+            TotalChatRequestsCount = assignment.TotalChatRequestsCount,
+            DailyTitleRequestsCount = assignment.DailyTitleRequestsCount,
+            MonthlyTitleRequestsCount = assignment.MonthlyTitleRequestsCount,
+            TotalTitleRequestsCount = assignment.TotalTitleRequestsCount,
+            DailyChatTokensCount = assignment.DailyChatTokensCount,
+            MonthlyChatTokensCount = assignment.MonthlyChatTokensCount,
+            TotalChatTokensCount = assignment.TotalChatTokensCount,
+            DailyTitleTokensCount = assignment.DailyTitleTokensCount,
+            MonthlyTitleTokensCount = assignment.MonthlyTitleTokensCount,
+            TotalTitleTokensCount = assignment.TotalTitleTokensCount,
             ModelRole = assignment.ModelRole
         });
     }
@@ -562,9 +739,18 @@ public class AdminController : ControllerBase
         if (assignment == null) return NotFound();
 
         assignment.IsEnabled = request.IsEnabled;
-        assignment.MaxDailyRequests = request.MaxDailyRequests;
-        assignment.MaxMonthlyRequests = request.MaxMonthlyRequests;
-        assignment.MaxTotalRequests = request.MaxTotalRequests;
+        assignment.MaxDailyChatRequests = request.MaxDailyChatRequests;
+        assignment.MaxMonthlyChatRequests = request.MaxMonthlyChatRequests;
+        assignment.MaxTotalChatRequests = request.MaxTotalChatRequests;
+        assignment.MaxDailyTitleRequests = request.MaxDailyTitleRequests;
+        assignment.MaxMonthlyTitleRequests = request.MaxMonthlyTitleRequests;
+        assignment.MaxTotalTitleRequests = request.MaxTotalTitleRequests;
+        assignment.MaxDailyChatTokens = request.MaxDailyChatTokens;
+        assignment.MaxMonthlyChatTokens = request.MaxMonthlyChatTokens;
+        assignment.MaxTotalChatTokens = request.MaxTotalChatTokens;
+        assignment.MaxDailyTitleTokens = request.MaxDailyTitleTokens;
+        assignment.MaxMonthlyTitleTokens = request.MaxMonthlyTitleTokens;
+        assignment.MaxTotalTitleTokens = request.MaxTotalTitleTokens;
         assignment.ModelRole = request.ModelRole;
 
         await _dbContext.SaveChangesAsync();
@@ -572,15 +758,36 @@ public class AdminController : ControllerBase
     }
 
     [HttpPost("group-systemconfigs/{id}/reset")]
-    public async Task<IActionResult> ResetGroupSystemConfigRateLimits(long id)
+    public async Task<IActionResult> ResetGroupSystemConfigRateLimits(long id, [FromBody] ResetCounterRequest? request = null)
     {
         if (!CheckAdmin()) return Forbid();
         var assignment = await _dbContext.GroupSystemAiApiConfigurations.FindAsync(id);
         if (assignment == null) return NotFound();
 
-        assignment.DailyRequestsCount = 0;
-        assignment.MonthlyRequestsCount = 0;
-        assignment.TotalRequestsCount = 0;
+        if (request?.CounterName != null)
+        {
+            var prop = assignment.GetType().GetProperty(request.CounterName);
+            if (prop != null && prop.CanWrite)
+            {
+                if (prop.PropertyType == typeof(int)) prop.SetValue(assignment, 0);
+                else if (prop.PropertyType == typeof(long)) prop.SetValue(assignment, 0L);
+            }
+        }
+        else
+        {
+            assignment.DailyChatRequestsCount = 0;
+            assignment.MonthlyChatRequestsCount = 0;
+            assignment.TotalChatRequestsCount = 0;
+            assignment.DailyTitleRequestsCount = 0;
+            assignment.MonthlyTitleRequestsCount = 0;
+            assignment.TotalTitleRequestsCount = 0;
+            assignment.DailyChatTokensCount = 0;
+            assignment.MonthlyChatTokensCount = 0;
+            assignment.TotalChatTokensCount = 0;
+            assignment.DailyTitleTokensCount = 0;
+            assignment.MonthlyTitleTokensCount = 0;
+            assignment.TotalTitleTokensCount = 0;
+        }
         
         await _dbContext.SaveChangesAsync();
         return Ok();
