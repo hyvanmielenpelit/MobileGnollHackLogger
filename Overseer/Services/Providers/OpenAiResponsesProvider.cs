@@ -176,6 +176,18 @@ public class OpenAiResponsesProvider : IAiProvider
                                 }
                             }
                         }
+                        else if (eventType == "response.function_call_arguments.done")
+                        {
+                            if (json.TryGetProperty("call_id", out var callIdProp) && json.TryGetProperty("arguments", out var argsProp) && argsProp.ValueKind == JsonValueKind.String)
+                            {
+                                var callId = callIdProp.GetString() ?? "";
+                                if (toolCallsInProgress.ContainsKey(callId))
+                                {
+                                    toolCallsInProgress[callId].args.Clear();
+                                    toolCallsInProgress[callId].args.Append(argsProp.GetString());
+                                }
+                            }
+                        }
                         else if (eventType == "response.output_item.done")
                         {
                             if (json.TryGetProperty("item", out var item))
@@ -188,7 +200,13 @@ public class OpenAiResponsesProvider : IAiProvider
                                         if (toolCallsInProgress.ContainsKey(callId))
                                         {
                                             var callData = toolCallsInProgress[callId];
-                                            var callObj = new { id = callId, name = callData.name, arguments = callData.args.ToString() };
+                                            var argsStr = callData.args.ToString();
+                                            if (item.TryGetProperty("arguments", out var finalArgs) && finalArgs.ValueKind == JsonValueKind.String)
+                                            {
+                                                argsStr = finalArgs.GetString() ?? argsStr;
+                                            }
+                                            
+                                            var callObj = new { id = callId, name = callData.name, arguments = argsStr };
                                             toolCallEvt = new ChatEvent { Type = "tool_call_complete", Data = JsonSerializer.Serialize(callObj) };
                                             toolCallsInProgress.Remove(callId);
                                         }
