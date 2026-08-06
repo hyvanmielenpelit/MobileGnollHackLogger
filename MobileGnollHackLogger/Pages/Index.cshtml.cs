@@ -85,7 +85,7 @@ namespace MobileGnollHackLogger.Pages
                         var myBestScore = await _dbContext.GameLog.Where(gl => gl.AspNetUserId == userId && gl.Scoring == "yes").MaxAsync(gl => (long?)gl.Points);
                         if (myBestScore.HasValue)
                         {
-                            Dashboard.Rank = await _dbContext.GameLog.Where(gl => gl.Scoring == "yes" && gl.Points > myBestScore).CountAsync() + 1;
+                            Dashboard.Rank = await _dbContext.GameLog.Where(gl => gl.AspNetUserId != null && gl.Scoring == "yes" && gl.Points > myBestScore).CountAsync() + 1;
                         }
 
                         var lastLog = await _dbContext.GameLog.Where(gl => gl.AspNetUserId == userId).OrderByDescending(gl => gl.EndTimeUTC).FirstOrDefaultAsync();
@@ -179,7 +179,7 @@ namespace MobileGnollHackLogger.Pages
 
                             foreach (var log in myTopScores)
                             {
-                                IQueryable<GameLog> rankQuery = _dbContext.GameLog.Where(gl => gl.Scoring == "yes" && gl.Points > log.Points);
+                                IQueryable<GameLog> rankQuery = _dbContext.GameLog.Where(gl => gl.AspNetUserId != null && gl.Scoring == "yes" && gl.Points > log.Points);
                                 if (Dashboard.TopScoreMode == TopScoreMode.Ascensions)
                                 {
                                     rankQuery = rankQuery.Where(gl => gl.DeathText == "ascended");

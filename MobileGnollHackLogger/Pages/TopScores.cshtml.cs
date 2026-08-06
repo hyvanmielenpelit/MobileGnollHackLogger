@@ -34,6 +34,7 @@ namespace MobileGnollHackLogger.Pages
             }
 
             IQueryable<GameLog> gameLogs = _dbContext.GameLog
+                .Where(gl => gl.AspNetUserId != null)
                 .OrderByDescending(gl => gl.Points)
                 .Where(gl => gl.Scoring == "yes");
 

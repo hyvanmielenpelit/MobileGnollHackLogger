@@ -57,7 +57,7 @@ namespace MobileGnollHackLogger.Pages
                     break;
             }
 
-            GameLogs = _dbContext.GameLog.Where(gl => (Mode == null || gl.Mode == Mode) && gl.Mode != "debug" && gl.Mode != "explore" && gl.Scoring == "yes" && gl.Turns >= MinTurns && gl.CreatedDate != null && gl.CreatedDate >= CutOffDate);
+            GameLogs = _dbContext.GameLog.Where(gl => gl.AspNetUserId != null && (Mode == null || gl.Mode == Mode) && gl.Mode != "debug" && gl.Mode != "explore" && gl.Scoring == "yes" && gl.Turns >= MinTurns && gl.CreatedDate != null && gl.CreatedDate >= CutOffDate);
             GroupByRole = await GameLogs.GroupBy(gl => gl.Role).ToListAsync();
             GroupByRoleAscended = await GameLogs.Where(gl=>gl.DeathText == "ascended").GroupBy(gl => gl.Role).ToListAsync();
         }
