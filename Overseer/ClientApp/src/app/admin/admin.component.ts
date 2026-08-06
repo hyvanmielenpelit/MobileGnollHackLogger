@@ -1,10 +1,12 @@
-import { Component, OnInit, inject, ViewChild, ElementRef, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject, ViewChild, ElementRef, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import { AdminService, UserDto, GroupDto, SystemAiConfigDto, UserSystemAiConfigDto, GroupSystemAiConfigDto } from '../services/admin.service';
 import { AiModelFormComponent, AiModelFormResult } from '../shared/ai-model-form/ai-model-form.component';
 import { ConfigAnalyticsComponent } from './config-analytics/config-analytics.component';
+import { Subject, Subscription } from 'rxjs';
+import { debounceTime } from 'rxjs/operators';
 
 @Component({
     selector: 'app-admin',
@@ -13,27 +15,65 @@ import { ConfigAnalyticsComponent } from './config-analytics/config-analytics.co
     changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './admin.component.scss'
 })
-export class AdminComponent implements OnInit {
+export class AdminComponent implements OnInit, OnDestroy {
   private adminService = inject(AdminService);
   
   activeTab: 'users' | 'groups' | 'configs' = 'users';
   loading = false;
+  usersLoading = false;
 
   users: UserDto[] = [];
   groups: GroupDto[] = [];
   configs: SystemAiConfigDto[] = [];
 
-  // Pagination state
-  currentPage = 1;
-  itemsPerPage = 10;
+  // Pagination & Sorting state
+  page = 1;
+  pageSize = 10;
+  totalCount = 0;
+  pageSizes = [10, 25, 50, 100];
+  
+  sortColumn: string = 'UserName';
+  sortOrder: 'asc' | 'desc' = 'asc';
+
+  usernameFilter: string = '';
+  private filterSubject = new Subject<string>();
+  private filterSub?: Subscription;
 
   get totalPages(): number {
-    return Math.ceil(this.users.length / this.itemsPerPage);
+    return Math.max(1, Math.ceil(this.totalCount / this.pageSize));
   }
 
-  get paginatedUsers(): UserDto[] {
-    const startIndex = (this.currentPage - 1) * this.itemsPerPage;
-    return this.users.slice(startIndex, startIndex + this.itemsPerPage);
+  get pageNumbers(): number[] {
+    const pages = [];
+    for (let i = 1; i <= this.totalPages; i++) pages.push(i);
+    return pages;
+  }
+
+  onPageChange(newPage: number) {
+    if (newPage >= 1 && newPage <= this.totalPages && newPage !== this.page) {
+      this.page = newPage;
+      this.loadUsers();
+    }
+  }
+
+  onPageSizeChange() {
+    this.page = 1;
+    this.loadUsers();
+  }
+
+  onUsernameFilterChange(val: string) {
+    this.filterSubject.next(val);
+  }
+
+  sortBy(column: string) {
+    if (this.sortColumn === column) {
+      this.sortOrder = this.sortOrder === 'asc' ? 'desc' : 'asc';
+    } else {
+      this.sortColumn = column;
+      this.sortOrder = 'asc';
+    }
+    this.page = 1;
+    this.loadUsers();
   }
 
   @ViewChild('manageGroupsDialog') manageGroupsDialog!: ElementRef<HTMLDialogElement>;
@@ -91,7 +131,19 @@ export class AdminComponent implements OnInit {
   processingConfigs: number[] = [];
 
   ngOnInit() {
+    this.filterSub = this.filterSubject.pipe(
+      debounceTime(400)
+    ).subscribe(val => {
+      this.usernameFilter = val;
+      this.page = 1;
+      this.loadUsers();
+    });
+
     this.loadData();
+  }
+
+  ngOnDestroy() {
+    this.filterSub?.unsubscribe();
   }
 
   openAnalytics(config: SystemAiConfigDto) {
@@ -105,10 +157,20 @@ export class AdminComponent implements OnInit {
     this.analyticsConfigId = 0;
   }
 
+  loadUsers() {
+    this.usersLoading = true;
+    this.adminService.getUsers(this.page, this.pageSize, this.usernameFilter, this.sortColumn, this.sortOrder).subscribe(res => {
+      this.users = res.rows;
+      this.totalCount = res.totalCount;
+      this.usersLoading = false;
+    });
+  }
+
   loadData() {
     this.loading = true;
-    this.adminService.getUsers().subscribe(u => {
-      this.users = u;
+    this.adminService.getUsers(this.page, this.pageSize, this.usernameFilter, this.sortColumn, this.sortOrder).subscribe(res => {
+      this.users = res.rows;
+      this.totalCount = res.totalCount;
       this.adminService.getGroups().subscribe(g => {
         this.groups = g;
         this.adminService.getSystemConfigs().subscribe(c => {
@@ -189,9 +251,7 @@ export class AdminComponent implements OnInit {
     this.confirmAction = () => {
       this.adminService.deleteGroup(group.id).subscribe(() => {
         this.groups = this.groups.filter(g => g.id !== group.id);
-        this.users.forEach(u => {
-          if (u.groups) u.groups = u.groups.filter(g => g.id !== group.id);
-        });
+        this.loadUsers(); // Reload users to update their groups correctly
       });
     };
     this.confirmDialog.nativeElement.showModal();
@@ -270,11 +330,13 @@ export class AdminComponent implements OnInit {
   selectedConfigForLimits: any = null;
   limitContext: 'system' | 'user' | 'group' = 'system';
   limitEntityId: number = 0;
+  activeRateLimitTab: 'chat' | 'title' = 'chat';
 
   openRateLimitsDialog(context: 'system' | 'user' | 'group', entity: any) {
     this.limitContext = context;
     this.selectedConfigForLimits = entity;
     this.limitEntityId = entity.id;
+    this.activeRateLimitTab = 'chat';
     this.rateLimitsDialog.nativeElement.showModal();
   }
 

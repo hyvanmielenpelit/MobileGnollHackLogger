@@ -9,6 +9,11 @@ export interface UserDto {
   groups: GroupDto[];
 }
 
+export interface UsersResponse {
+  rows: UserDto[];
+  totalCount: number;
+}
+
 export interface GroupDto {
   id: number;
   displayName: string;
@@ -160,8 +165,12 @@ export class AdminService {
   }
 
   // Users
-  getUsers(): Observable<UserDto[]> {
-    return this.http.get<UserDto[]>('/api/admin/users');
+  getUsers(page: number = 1, pageSize: number = 10, usernameFilter: string = '', sortColumn: string = 'UserName', sortOrder: string = 'asc'): Observable<UsersResponse> {
+    const params: any = { page, pageSize, sortColumn, sortOrder };
+    if (usernameFilter) {
+      params.usernameFilter = usernameFilter;
+    }
+    return this.http.get<UsersResponse>('/api/admin/users', { params });
   }
 
   // Groups

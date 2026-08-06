@@ -102,17 +102,29 @@ public class AdminController : ControllerBase
     // --- Users ---
 
     [HttpGet("users")]
-    public async Task<IActionResult> GetUsers([FromQuery] string? search)
+    public async Task<IActionResult> GetUsers([FromQuery] int page = 1, [FromQuery] int pageSize = 10, [FromQuery] string? usernameFilter = null, [FromQuery] string sortColumn = "UserName", [FromQuery] string sortOrder = "asc")
     {
         if (!CheckAdmin()) return Forbid();
 
         var query = _userManager.Users.AsQueryable();
-        if (!string.IsNullOrWhiteSpace(search))
+        if (!string.IsNullOrWhiteSpace(usernameFilter))
         {
-            query = query.Where(u => (u.UserName != null && u.UserName.Contains(search)) || (u.Email != null && u.Email.Contains(search)));
+            query = query.Where(u => (u.UserName != null && u.UserName.Contains(usernameFilter)) || (u.Email != null && u.Email.Contains(usernameFilter)));
         }
 
-        var users = await query.Take(50).ToListAsync();
+        var totalCount = await query.CountAsync();
+        
+        bool isDesc = sortOrder.ToLower() == "desc";
+        if (sortColumn.Equals("Email", StringComparison.OrdinalIgnoreCase))
+        {
+            query = isDesc ? query.OrderByDescending(u => u.Email) : query.OrderBy(u => u.Email);
+        }
+        else // default to UserName
+        {
+            query = isDesc ? query.OrderByDescending(u => u.UserName) : query.OrderBy(u => u.UserName);
+        }
+
+        var users = await query.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
         var dtos = new List<AdminUserDto>();
 
         foreach(var u in users)
@@ -132,7 +144,7 @@ public class AdminController : ControllerBase
             });
         }
 
-        return Ok(dtos);
+        return Ok(new { TotalCount = totalCount, Rows = dtos });
     }
 
     [HttpPost("users/{userId}/groups")]

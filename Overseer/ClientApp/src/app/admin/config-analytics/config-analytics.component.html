@@ -65,10 +65,14 @@
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
         </button>
       </div>
+      
+      <div class="page-info text-muted ml-15" style="font-size: 0.9em; display: flex; align-items: center;">
+        Showing {{ chartData.labels?.length || 0 }} of {{ totalCount }} users (Page {{ page }} of {{ totalPages }})
+      </div>
     </div>
     
     <div class="search-controls">
-      <input type="text" class="gh-input" placeholder="Search for username..."
+      <input type="text" class="gh-input" placeholder="Search username"
              [(ngModel)]="usernameFilter" (ngModelChange)="onUsernameFilterChange($event)">
     </div>
   </div>
