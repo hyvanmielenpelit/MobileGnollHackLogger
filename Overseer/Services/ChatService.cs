@@ -109,8 +109,8 @@ public class ChatService
 
         long currentSessionId = 0;
         string? apiKey = null;
-        string provider = "OpenAI";
-        string model = "gpt-4o-mini";
+        string? provider = null;
+        string? model = null;
         string? thinkingLevel = null;
         IAiProvider? aiProvider = null;
         List<object> messageHistory = new();
@@ -189,6 +189,24 @@ public class ChatService
                     if (userModel.MaxInputTokens.HasValue) maxInputTokens = userModel.MaxInputTokens.Value;
                     if (userModel.MaxOutputTokens.HasValue) maxOutputTokens = userModel.MaxOutputTokens.Value;
                 }
+            }
+            if (string.IsNullOrEmpty(provider) || string.IsNullOrEmpty(model))
+            {
+                var defaultModel = await dbContext.UserAiModels.OrderBy(m => m.OrderIndex).FirstOrDefaultAsync(m => m.AspNetUserId == userId);
+                if (defaultModel != null)
+                {
+                    provider = defaultModel.Provider;
+                    model = defaultModel.ModelId;
+                    thinkingLevel = defaultModel.ThinkingLevel;
+                    if (defaultModel.MaxInputTokens.HasValue) maxInputTokens = defaultModel.MaxInputTokens.Value;
+                    if (defaultModel.MaxOutputTokens.HasValue) maxOutputTokens = defaultModel.MaxOutputTokens.Value;
+                }
+            }
+
+            if (string.IsNullOrEmpty(provider) || string.IsNullOrEmpty(model))
+            {
+                yield return new ChatEvent { Type = "error", Data = "Error: No AI provider configured. Please select a model." };
+                yield break;
             }
 
             if (!systemModelId.HasValue)

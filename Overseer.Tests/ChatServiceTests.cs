@@ -74,9 +74,9 @@ namespace Overseer.Tests
 
             var serviceProvider = services.BuildServiceProvider();
 
-            // 3. Seed Database
             var userId = Guid.NewGuid().ToString();
             long testSessionId = 0;
+            long testUserModelId = 0;
             using (var scope = serviceProvider.CreateScope())
             {
                 var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -126,6 +126,7 @@ namespace Overseer.Tests
                 await dbContext.SaveChangesAsync();
 
                 testSessionId = session.Id;
+                testUserModelId = aiModel.Id;
             }
 
             // 4. Test StreamMessageAsync
@@ -150,7 +151,7 @@ namespace Overseer.Tests
             
             try
             {
-                await foreach (var chunk in chatService.StreamMessageAsync(testSessionId, "Say hello in exactly one sentence.", null, claimsPrincipal.FindFirstValue(ClaimTypes.NameIdentifier), false, cts.Token))
+                await foreach (var chunk in chatService.StreamMessageAsync(testSessionId, "Say hello in exactly one sentence.", null, claimsPrincipal.FindFirstValue(ClaimTypes.NameIdentifier) ?? userId, false, cts.Token, testUserModelId))
                 {
                     _output.WriteLine(chunk.Data);
                     fullResponse += chunk.Data;
