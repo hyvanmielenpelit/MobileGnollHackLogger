@@ -232,4 +232,5 @@ public class AnalyticsUserRow
 public class AnalyticsResponse
 {
     public List<AnalyticsUserRow> Rows { get; set; } = new();
+    public int TotalCount { get; set; }
 }

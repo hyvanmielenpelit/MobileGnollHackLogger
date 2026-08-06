@@ -861,7 +861,8 @@ public class AdminController : ControllerBase
     [HttpGet("systemconfigs/{id}/analytics")]
     public async Task<IActionResult> GetConfigAnalytics(long id,
         [FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate,
-        [FromQuery] string? mode, [FromQuery] string? usernameFilter)
+        [FromQuery] string? mode, [FromQuery] string? usernameFilter,
+        [FromQuery] int? page, [FromQuery] int? pageSize)
     {
         if (!CheckAdmin()) return Forbid();
 
@@ -882,6 +883,11 @@ public class AdminController : ControllerBase
                 userQuery = userQuery.Where(x =>
                     x.User.UserName!.Contains(usernameFilter));
 
+            int size = Math.Clamp(pageSize ?? 10, 1, 100);
+            int pg = Math.Max(1, page ?? 1);
+
+            var totalCount = await userQuery.Select(x => x.User.Id).Distinct().CountAsync();
+
             var rows = await userQuery
                 .GroupBy(x => new { x.User.Id, x.User.UserName })
                 .Select(g => new AnalyticsUserRow
@@ -894,10 +900,11 @@ public class AdminController : ControllerBase
                     OutputTokens = g.Sum(x => (long)(x.Log.OutputTokens ?? 0))
                 })
                 .OrderByDescending(r => r.ChatRequests + r.TitleRequests)
-                .Take(50)
+                .Skip((pg - 1) * size)
+                .Take(size)
                 .ToListAsync();
 
-            return Ok(new AnalyticsResponse { Rows = rows });
+            return Ok(new AnalyticsResponse { Rows = rows, TotalCount = totalCount });
         }
         else
         {
@@ -916,7 +923,8 @@ public class AdminController : ControllerBase
 
             return Ok(new AnalyticsResponse
             {
-                Rows = row != null ? new List<AnalyticsUserRow> { row } : new()
+                Rows = row != null ? new List<AnalyticsUserRow> { row } : new(),
+                TotalCount = row != null ? 1 : 0
             });
         }
     }

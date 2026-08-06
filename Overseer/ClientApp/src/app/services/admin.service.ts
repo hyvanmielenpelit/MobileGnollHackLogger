@@ -131,6 +131,7 @@ export interface AnalyticsUserRow {
 
 export interface AnalyticsResponse {
   rows: AnalyticsUserRow[];
+  totalCount: number;
 }
 
 @Injectable({
@@ -143,12 +144,15 @@ export class AdminService {
   getConfigAnalytics(configId: number, params: {
     startDate?: string; endDate?: string;
     mode?: string; usernameFilter?: string;
+    page?: number; pageSize?: number;
   }): Observable<AnalyticsResponse> {
     const httpParams: any = {};
     if (params.startDate) httpParams.startDate = params.startDate;
     if (params.endDate) httpParams.endDate = params.endDate;
     if (params.mode) httpParams.mode = params.mode;
     if (params.usernameFilter) httpParams.usernameFilter = params.usernameFilter;
+    if (params.page) httpParams.page = params.page;
+    if (params.pageSize) httpParams.pageSize = params.pageSize;
     return this.http.get<AnalyticsResponse>(
       `/api/admin/systemconfigs/${configId}/analytics`,
       { params: httpParams }

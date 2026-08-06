@@ -43,11 +43,32 @@
     </div>
   </div>
 
-  <!-- Username filter (shown when mode === 'individual') -->
-  <div class="analytics-controls" *ngIf="mode === 'individual'">
-    <div class="control-group control-group-wide">
-      <label>Filter by username</label>
-      <input type="text" class="gh-input" placeholder="Search username..."
+  <!-- Individual Users Toolbar -->
+  <div class="chart-toolbar" *ngIf="mode === 'individual'">
+    <div class="pagination-controls">
+      <div class="page-size-wrapper">
+        <select class="gh-input page-size-select" [(ngModel)]="pageSize" (ngModelChange)="onPageSizeChange()">
+          <option *ngFor="let size of pageSizes" [value]="size">{{ size }}</option>
+        </select>
+        <span class="page-size-label">per page</span>
+      </div>
+      
+      <div class="pagination-buttons">
+        <button class="page-btn" [disabled]="page === 1" (click)="onPageChange(page - 1)" title="Previous Page">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+        </button>
+        <button class="page-btn" 
+                *ngFor="let p of pageNumbers" 
+                [class.active]="p === page"
+                (click)="onPageChange(p)">{{ p }}</button>
+        <button class="page-btn" [disabled]="page === totalPages" (click)="onPageChange(page + 1)" title="Next Page">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        </button>
+      </div>
+    </div>
+    
+    <div class="search-controls">
+      <input type="text" class="gh-input" placeholder="Search for username..."
              [(ngModel)]="usernameFilter" (ngModelChange)="onUsernameFilterChange($event)">
     </div>
   </div>

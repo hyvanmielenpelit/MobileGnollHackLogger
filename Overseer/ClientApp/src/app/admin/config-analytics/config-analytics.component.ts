@@ -38,6 +38,12 @@ export class ConfigAnalyticsComponent implements OnInit, OnChanges, OnDestroy {
   customStart: string = '';
   customEnd: string = '';
   
+  // Pagination
+  page: number = 1;
+  pageSize: number = 10;
+  totalCount: number = 0;
+  pageSizes: number[] = [10, 25, 50, 100];
+  
   // Username filter
   usernameFilter: string = '';
   private filterSubject = new Subject<string>();
@@ -116,6 +122,7 @@ export class ConfigAnalyticsComponent implements OnInit, OnChanges, OnDestroy {
       debounceTime(400)
     ).subscribe(val => {
       this.usernameFilter = val;
+      this.page = 1; // Reset to page 1 on filter
       this.triggerLoad();
     });
 
@@ -134,6 +141,7 @@ export class ConfigAnalyticsComponent implements OnInit, OnChanges, OnDestroy {
     ).subscribe(res => {
       this.loading = false;
       if (res) {
+        this.totalCount = res.totalCount || 0;
         this.updateChart(res);
       }
       this.cdr.detectChanges();
@@ -155,12 +163,34 @@ export class ConfigAnalyticsComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   onFilterChange() {
-    // If switching out of individual, reset username filter implicitly by reloading
+    this.page = 1;
     this.triggerLoad();
   }
 
   onUsernameFilterChange(val: string) {
     this.filterSubject.next(val);
+  }
+  
+  get totalPages(): number {
+    return Math.max(1, Math.ceil(this.totalCount / this.pageSize));
+  }
+
+  get pageNumbers(): number[] {
+    const pages = [];
+    for (let i = 1; i <= this.totalPages; i++) pages.push(i);
+    return pages;
+  }
+
+  onPageChange(newPage: number) {
+    if (newPage >= 1 && newPage <= this.totalPages && newPage !== this.page) {
+      this.page = newPage;
+      this.triggerLoad();
+    }
+  }
+
+  onPageSizeChange() {
+    this.page = 1;
+    this.triggerLoad();
   }
 
   private triggerLoad() {
@@ -193,7 +223,9 @@ export class ConfigAnalyticsComponent implements OnInit, OnChanges, OnDestroy {
       startDate: startDateStr,
       endDate: endDateStr,
       mode: this.mode,
-      usernameFilter: this.mode === 'individual' ? this.usernameFilter : ''
+      usernameFilter: this.mode === 'individual' ? this.usernameFilter : '',
+      page: this.page,
+      pageSize: this.pageSize
     };
   }
 
