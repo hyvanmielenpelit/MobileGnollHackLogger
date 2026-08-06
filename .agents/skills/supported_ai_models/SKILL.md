@@ -17,3 +17,6 @@ When working on AI integration within the Overseer project (e.g., `ChatService.c
 
 3. **Model Metadata Registration**:
    - Do not add regexes or metadata parsers for legacy models into `ModelMetadataService.cs`. Keep the codebase clean and focused on modern capabilities.
+
+4. **OpenAI Provider**:
+   - Always use the new `OpenAiResponsesProvider` instead of the old, deprecated `OpenAiProvider`. The legacy `OpenAiProvider` is kept only for reference and should not be used in new code or when updating existing services.

@@ -37,9 +37,9 @@ namespace Overseer.Tests
                 .Build();
 
             // Read AI config
-            var testProvider = config["AI:Provider"];
-            var testApiKey = config["AI:APIKey"];
-            var testModel = config["AI:Model"];
+            var testProvider = config["AI:Provider"] ?? "";
+            var testApiKey = config["AI:APIKey"] ?? "";
+            var testModel = config["AI:Model"] ?? "";
             var testThinkingLevel = config["AI:ThinkingLevel"];
 
             Assert.False(string.IsNullOrEmpty(testProvider), "AI:Provider is not configured in User Secrets.");
@@ -67,7 +67,7 @@ namespace Overseer.Tests
             services.AddScoped<ModelMetadataService>();
             services.AddScoped<KnowledgeBaseService>();
             services.AddScoped<OngoingChatManager>();
-            services.AddScoped<Overseer.Services.Providers.IAiProvider, Overseer.Services.Providers.OpenAiProvider>();
+            services.AddScoped<Overseer.Services.Providers.IAiProvider, Overseer.Services.Providers.OpenAiResponsesProvider>();
             services.AddScoped<Overseer.Services.Providers.IAiProvider, Overseer.Services.Providers.AnthropicProvider>();
             services.AddScoped<Overseer.Services.Providers.IAiProvider, Overseer.Services.Providers.GoogleProvider>();
             services.AddScoped<ChatService>();
