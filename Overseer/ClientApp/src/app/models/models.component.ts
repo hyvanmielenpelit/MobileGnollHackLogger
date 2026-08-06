@@ -17,6 +17,7 @@ export class ModelsComponent implements OnInit {
 
   @ViewChild('modelPickerDialog') modelPickerDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('editModelDialog') editModelDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('deleteModelConfirmDialog') deleteModelConfirmDialog!: ElementRef<HTMLDialogElement>;
 
   userModels: UserAiModel[] = [];
   systemModels: UserAiModel[] = [];
@@ -37,6 +38,7 @@ export class ModelsComponent implements OnInit {
   // Edit State
   editingModel: UserAiModel | null = null;
   editFormData: any = null;
+  modelToDeleteId: number | undefined = undefined;
 
   ngOnInit() {
     this.settingsService.getSettings().subscribe({
@@ -81,33 +83,40 @@ export class ModelsComponent implements OnInit {
 
   deleteModel(id: number | undefined) {
     if (!id) return;
-    if (confirm("Are you sure you want to remove this model from your list?")) {
-      this.saving = true;
-      this.settingsService.deleteUserModel(id).subscribe({
-        next: () => {
-          if (this.titleModelSelection === 'u_' + id) {
-            this.titleModelSelection = null;
-          }
-          this.loadModels();
-          this.settingsService.getSettings().subscribe({
-            next: (settings) => {
-              if (settings.titleGenerationModelId) {
-                this.titleModelSelection = 'u_' + settings.titleGenerationModelId;
-              } else if (settings.titleGenerationSystemModelId) {
-                this.titleModelSelection = 's_' + settings.titleGenerationSystemModelId;
-              } else {
-                this.titleModelSelection = null;
-              }
-            }
-          });
-          this.saving = false;
-        },
-        error: (err) => {
-          console.error("Failed to delete model", err);
-          this.saving = false;
+    this.modelToDeleteId = id;
+    this.deleteModelConfirmDialog.nativeElement.showModal();
+  }
+
+  confirmDelete() {
+    const id = this.modelToDeleteId;
+    if (!id) return;
+    this.saving = true;
+    this.settingsService.deleteUserModel(id).subscribe({
+      next: () => {
+        if (this.titleModelSelection === 'u_' + id) {
+          this.titleModelSelection = null;
         }
-      });
-    }
+        this.loadModels();
+        this.settingsService.getSettings().subscribe({
+          next: (settings) => {
+            if (settings.titleGenerationModelId) {
+              this.titleModelSelection = 'u_' + settings.titleGenerationModelId;
+            } else if (settings.titleGenerationSystemModelId) {
+              this.titleModelSelection = 's_' + settings.titleGenerationSystemModelId;
+            } else {
+              this.titleModelSelection = null;
+            }
+          }
+        });
+        this.saving = false;
+        this.deleteModelConfirmDialog.nativeElement.close();
+      },
+      error: (err) => {
+        console.error("Failed to delete model", err);
+        this.saving = false;
+        this.deleteModelConfirmDialog.nativeElement.close();
+      }
+    });
   }
 
   moveUp(index: number) {

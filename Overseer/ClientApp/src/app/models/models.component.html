@@ -66,7 +66,7 @@
 
   @if (systemModels.length > 0) {
     <div class="mt-30">
-      <div class="actions-header">
+      <div class="section-header">
         <h3>System-Provided Models</h3>
       </div>
       <div class="models-list">
@@ -182,4 +182,13 @@
       (cancel)="closeEdit()">
     </app-ai-model-form>
   }
+</dialog>
+
+<dialog #deleteModelConfirmDialog class="gh-dialog">
+  <h3>Delete Model</h3>
+  <p>Are you sure you want to remove this model from your list?</p>
+  <div class="dialog-actions">
+    <button class="btn-gh btn-gh-cancel" (click)="deleteModelConfirmDialog.close()">Cancel</button>
+    <button class="btn-gh btn-gh-delete" (click)="confirmDelete()">Delete</button>
+  </div>
 </dialog>

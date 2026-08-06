@@ -73,7 +73,7 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<SourceCodeService>
 
 
 builder.Services.AddSingleton<CryptoService>();
-builder.Services.AddScoped<Overseer.Services.Providers.IAiProvider, Overseer.Services.Providers.OpenAiProvider>();
+builder.Services.AddScoped<Overseer.Services.Providers.IAiProvider, Overseer.Services.Providers.OpenAiResponsesProvider>();
 builder.Services.AddScoped<Overseer.Services.Providers.IAiProvider, Overseer.Services.Providers.AnthropicProvider>();
 builder.Services.AddScoped<Overseer.Services.Providers.IAiProvider, Overseer.Services.Providers.GoogleProvider>();
 builder.Services.AddScoped<ChatService>();

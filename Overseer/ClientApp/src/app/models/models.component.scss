@@ -4,6 +4,8 @@
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
 }
 
 
@@ -15,6 +17,11 @@
   padding: 0 30px;
   display: flex;
   justify-content: flex-end;
+}
+
+.section-header {
+  margin-bottom: 20px;
+  padding: 0 30px;
 }
 .models-list {
   padding: 0 30px 30px 30px;

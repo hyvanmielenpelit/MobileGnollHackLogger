@@ -19,7 +19,7 @@ public class ModelMetadataService
         {
             var version = openaiMatch.Groups[1].Value;
             var tier = openaiMatch.Groups[2].Success ? char.ToUpper(openaiMatch.Groups[2].Value[0]) + openaiMatch.Groups[2].Value.Substring(1) : "";
-            metadata.Description = string.IsNullOrWhiteSpace(tier) ? $"OpenAI GPT-5.{version} Model" : $"OpenAI GPT-5.{version} {tier}";
+            metadata.Description = string.IsNullOrWhiteSpace(tier) ? $"GPT-5.{version} Model" : $"GPT-5.{version} {tier}";
             metadata.SupportedThinkingLevels = new List<string> { "low", "medium", "high" };
             metadata.ContextWindowSize = 1048576;
             metadata.MaxOutputTokens = 128000;

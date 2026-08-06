@@ -13,9 +13,10 @@ using Overseer.Services.Tools;
 
 namespace Overseer.Services.Providers;
 
+[Obsolete("Use OpenAiResponsesProvider. Kept for reference.")]
 public class OpenAiProvider : IAiProvider
 {
-    public string ProviderName => "OpenAI";
+    public string ProviderName => "OpenAI-Legacy";
 
     public void ConfigureRequest(HttpRequestMessage request, string apiKey)
     {
@@ -268,7 +269,7 @@ public class OpenAiProvider : IAiProvider
 
     public object? BuildWebSearchTool()
     {
-        return new { type = "web_search" };
+        return null;
     }
 
     public object BuildFunctionDeclaration(string name, string description, object parameterSchema)
