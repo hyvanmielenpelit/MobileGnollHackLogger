@@ -5,160 +5,184 @@
   </div>
   <form (ngSubmit)="saveSettings()" class="settings-form">
     <div class="form-content">
-      
 
-    <div class="margin-y-20">
-      <label class="checkbox-label align-start">
-        <input type="checkbox" [(ngModel)]="spoilerFreeMode" name="spoilerFreeMode" class="w-auto m-0 mt-5" aria-describedby="spoilerFreeHint" />
-        <span class="d-block">
-          <span>Spoiler-Free Mode</span>
-          <span id="spoilerFreeHint" class="form-hint mt-5 d-block">Limit hints to avoid spoiling secrets</span>
-        </span>
-      </label>
-    </div>
 
-    <div class="margin-y-20">
-      <label class="checkbox-label align-start">
-        <input type="checkbox" [(ngModel)]="showSourceCodeReferences" name="showSourceCodeReferences" class="w-auto m-0 mt-5" aria-describedby="sourceCodeRefsHint" />
-        <span class="d-block">
-          <span>Show Source Code References</span>
-          <span id="sourceCodeRefsHint" class="form-hint mt-5 d-block">Allow AI to cite source file names and line numbers in replies (overridden by Developer Mode)</span>
-        </span>
-      </label>
-    </div>
-
-    <div class="margin-y-20 form-group-stacked">
-      <label class="block fw-bold">Show Thinking and Tool Use</label>
-      <span class="form-hint mt-5 d-block mb-10">Control what is shown while the AI is executing tools or thinking in the background.</span>
-      <select class="form-input form-select" [(ngModel)]="showThoughtsAndTools" name="showThoughtsAndTools">
-        <option [ngValue]="0">Minimal</option>
-        <option [ngValue]="1">Blocks</option>
-        <option [ngValue]="2">Text</option>
-        <option [ngValue]="3">Blocks and text</option>
-      </select>
-    </div>
-
-    <fieldset class="permissions-fieldset">
-      <legend>AI Permissions</legend>
-
-      <div class="margin-y-20 mt-5">
+      <div class="margin-y-20">
         <label class="checkbox-label align-start">
-          <input type="checkbox" [(ngModel)]="enableWebSearch" name="enableWebSearch" class="w-auto m-0 mt-5" aria-describedby="webSearchHint" />
-        <span class="d-block">
-          <span>Enable Web Search <span class="tier-badge tier-1">Tier 1</span></span>
-          <span id="webSearchHint" class="form-hint mt-5 d-block">Allow the AI to search the public internet for external information. Lowest risk.</span>
-        </span>
-      </label>
-    </div>
+          <input type="checkbox" [(ngModel)]="spoilerFreeMode" name="spoilerFreeMode" class="w-auto m-0 mt-5" aria-describedby="spoilerFreeHint" />
+          <span class="d-block">
+            <span>Spoiler-Free Mode</span>
+            <span id="spoilerFreeHint" class="form-hint mt-5 d-block">Limit hints to avoid spoiling secrets</span>
+          </span>
+        </label>
+      </div>
 
-    <div class="margin-y-20">
-      <label class="checkbox-label align-start">
-        <input type="checkbox" [(ngModel)]="enableToolUse" name="enableToolUse" class="w-auto m-0 mt-5" aria-describedby="toolUseHint" />
-        <span class="d-block">
-          <span>Enable Server Tools <span class="tier-badge tier-2">Tier 2</span></span>
-          <span id="toolUseHint" class="form-hint mt-5 d-block">Allow the AI to use internal Overseer server tools (e.g., GnollHack Wiki search). No game client access.</span>
-        </span>
-      </label>
-    </div>
+      <div class="margin-y-20">
+        <label class="checkbox-label align-start">
+          <input type="checkbox" [(ngModel)]="showSourceCodeReferences" name="showSourceCodeReferences" class="w-auto m-0 mt-5" aria-describedby="sourceCodeRefsHint" />
+          <span class="d-block">
+            <span>Show Source Code References</span>
+            <span id="sourceCodeRefsHint" class="form-hint mt-5 d-block">Allow AI to cite source file names and line numbers in replies (overridden by Developer Mode)</span>
+          </span>
+        </label>
+      </div>
 
-    <div class="margin-y-20">
-      <label class="checkbox-label align-start">
-        <input type="checkbox" [(ngModel)]="enableClientTools" name="enableClientTools" class="w-auto m-0 mt-5" aria-describedby="clientToolsHint" (change)="!enableClientTools ? enableGameActions = false : null" />
-        <span class="d-block">
-          <span>Enable Client Data Access <span class="tier-badge tier-3">Tier 3</span></span>
-          <span id="clientToolsHint" class="form-hint mt-5 d-block">Allow the AI to read your live game state, inventory, and device logs.</span>
-        </span>
-      </label>
-    </div>
+      <div class="margin-y-20 form-group-stacked">
+        <label class="block fw-bold">Show Thinking and Tool Use</label>
+        <span class="form-hint mt-5 d-block mb-10">Control what is shown while the AI is executing tools or thinking in the background.</span>
+        <select class="form-input form-select" [(ngModel)]="showThoughtsAndTools" name="showThoughtsAndTools">
+          <option [ngValue]="0">Minimal</option>
+          <option [ngValue]="1">Blocks</option>
+          <option [ngValue]="2">Text</option>
+          <option [ngValue]="3">Blocks and text</option>
+        </select>
+      </div>
 
-    <div class="margin-y-20 mb-5">
-      <label class="checkbox-label align-start">
-        <input type="checkbox" [(ngModel)]="enableGameActions" name="enableGameActions" class="w-auto m-0 mt-5" aria-describedby="gameActionsHint" [disabled]="!enableClientTools" />
-        <span class="d-block">
-          <span>Enable Game Actions <span class="tier-badge tier-4">Tier 4</span></span>
-          <span id="gameActionsHint" class="form-hint mt-5 d-block">Allow the AI to execute commands in your game (e.g., movement, attacks). Requires Tier 3. Highest risk.</span>
-        </span>
-      </label>
-    </div>
+      <fieldset class="permissions-fieldset">
+        <legend>AI Permissions</legend>
 
-    </fieldset>
+        <div class="margin-y-20 mt-5">
+          <label class="checkbox-label align-start">
+            <input type="checkbox" [(ngModel)]="enableWebSearch" name="enableWebSearch" class="w-auto m-0 mt-5" aria-describedby="webSearchHint" />
+            <span class="d-block">
+              <span>Enable Web Search <span class="tier-badge tier-1">Tier 1</span></span>
+              <span id="webSearchHint" class="form-hint mt-5 d-block">Allow the AI to search the public internet for external information. Lowest risk.</span>
+            </span>
+          </label>
+        </div>
 
-    <fieldset class="permissions-fieldset mt-20">
-      <legend>AI Performance Settings</legend>
+        <div class="margin-y-20">
+          <label class="checkbox-label align-start">
+            <input type="checkbox" [(ngModel)]="enableToolUse" name="enableToolUse" class="w-auto m-0 mt-5" aria-describedby="toolUseHint" />
+            <span class="d-block">
+              <span>Enable Server Tools <span class="tier-badge tier-2">Tier 2</span></span>
+              <span id="toolUseHint" class="form-hint mt-5 d-block">Allow the AI to use internal Overseer server tools (e.g., GnollHack Wiki search). No game client access.</span>
+            </span>
+          </label>
+        </div>
 
-      <div class="margin-y-20 mt-5 form-group-stacked">
-        <label class="block fw-bold">Max Result Length</label>
-        <span class="form-hint mt-5 d-block mb-10">Maximum length of text the AI will process per tool result (truncated if longer).</span>
-        
-        <button type="button" class="form-input form-select popover-trigger-btn popover-anchor-len" popovertarget="maxResultLengthPopover">
-          <span class="opt-label">{{ getSelectedOptionDisplay('maxResultLength').label }}</span>
-          <span class="opt-val color-inherit" *ngIf="getSelectedOptionDisplay('maxResultLength').valueText">{{ getSelectedOptionDisplay('maxResultLength').valueText }}</span>
-        </button>
-        <div id="maxResultLengthPopover" popover class="custom-select-popover popover-target-len">
-          <div class="popover-option" *ngFor="let o of resultLengthOptions" (click)="selectCustomOption('maxResultLength', o.value, 'maxResultLengthPopover')" [class.selected]="o.value === maxResultLengthSelect">
-            <span class="opt-label">{{o.label}}</span>
-            <span class="opt-val" *ngIf="o.value !== 'custom'">{{o.value ?? performanceLimits?.maxResultLength?.defaultValue}} chars</span>
+        <div class="margin-y-20">
+          <label class="checkbox-label align-start">
+            <input type="checkbox" [(ngModel)]="enableClientTools" name="enableClientTools" class="w-auto m-0 mt-5" aria-describedby="clientToolsHint" (change)="!enableClientTools ? enableGameActions = false : null" />
+            <span class="d-block">
+              <span>Enable Client Data Access <span class="tier-badge tier-3">Tier 3</span></span>
+              <span id="clientToolsHint" class="form-hint mt-5 d-block">Allow the AI to read your live game state, inventory, and device logs.</span>
+            </span>
+          </label>
+        </div>
+
+        <div class="margin-y-20 mb-5">
+          <label class="checkbox-label align-start">
+            <input type="checkbox" [(ngModel)]="enableGameActions" name="enableGameActions" class="w-auto m-0 mt-5" aria-describedby="gameActionsHint" [disabled]="!enableClientTools" />
+            <span class="d-block">
+              <span>Enable Game Actions <span class="tier-badge tier-4">Tier 4</span></span>
+              <span id="gameActionsHint" class="form-hint mt-5 d-block">Allow the AI to execute commands in your game (e.g., movement, attacks). Requires Tier 3. Highest risk.</span>
+            </span>
+          </label>
+        </div>
+
+      </fieldset>
+
+      <fieldset class="permissions-fieldset mt-20">
+        <legend>AI Performance Settings</legend>
+
+        <div class="margin-y-20 mt-5 form-group-stacked">
+          <label class="block fw-bold">Max Result Length</label>
+          <span class="form-hint mt-5 d-block mb-10">Maximum length of text the AI will process per tool result (truncated if longer).</span>
+
+          <button type="button" class="form-input form-select popover-trigger-btn popover-anchor-len" popovertarget="maxResultLengthPopover">
+            <span class="opt-label">{{ getSelectedOptionDisplay('maxResultLength').label }}</span>
+            @if (getSelectedOptionDisplay('maxResultLength').valueText) {
+              <span class="opt-val color-inherit">{{ getSelectedOptionDisplay('maxResultLength').valueText }}</span>
+            }
+          </button>
+          <div id="maxResultLengthPopover" popover class="custom-select-popover popover-target-len">
+            @for (o of resultLengthOptions; track o) {
+              <div class="popover-option" (click)="selectCustomOption('maxResultLength', o.value, 'maxResultLengthPopover')" [class.selected]="o.value === maxResultLengthSelect">
+                <span class="opt-label">{{o.label}}</span>
+                @if (o.value !== 'custom') {
+                  <span class="opt-val">{{o.value ?? performanceLimits?.maxResultLength?.defaultValue}} chars</span>
+                }
+              </div>
+            }
+          </div>
+
+          @if (maxResultLengthSelect === 'custom') {
+            <div class="mt-10 custom-input-wrapper">
+              <input type="number" [(ngModel)]="maxResultLength" name="maxResultLength" class="form-input w-100" [min]="$safeNavigationMigration(performanceLimits?.maxResultLength?.min)" [max]="$safeNavigationMigration(performanceLimits?.maxResultLength?.max)" placeholder="Custom value" />
+              <span class="form-hint mt-5 d-block">Allowed range: {{performanceLimits?.maxResultLength?.min}}–{{performanceLimits?.maxResultLength?.max}}</span>
+            </div>
+          }
+        </div>
+
+        <div class="margin-y-20 mt-15 form-group-stacked">
+          <label class="block fw-bold">Max Calls Per Session</label>
+          <span class="form-hint mt-5 d-block mb-10">Maximum number of interactions permitted in a single chat session.</span>
+
+          <button type="button" class="form-input form-select popover-trigger-btn popover-anchor-calls" popovertarget="maxCallsPerSessionPopover">
+            <span class="opt-label">{{ getSelectedOptionDisplay('maxCallsPerSession').label }}</span>
+            @if (getSelectedOptionDisplay('maxCallsPerSession').valueText) {
+              <span class="opt-val color-inherit">{{ getSelectedOptionDisplay('maxCallsPerSession').valueText }}</span>
+            }
+          </button>
+          <div id="maxCallsPerSessionPopover" popover class="custom-select-popover popover-target-calls">
+            @for (o of callsOptions; track o) {
+              <div class="popover-option" (click)="selectCustomOption('maxCallsPerSession', o.value, 'maxCallsPerSessionPopover')" [class.selected]="o.value === maxCallsPerSessionSelect">
+                <span class="opt-label">{{o.label}}</span>
+                @if (o.value !== 'custom') {
+                  <span class="opt-val">{{o.value ?? performanceLimits?.maxCallsPerSession?.defaultValue}}</span>
+                }
+              </div>
+            }
+          </div>
+
+          @if (maxCallsPerSessionSelect === 'custom') {
+            <div class="mt-10 custom-input-wrapper">
+              <input type="number" [(ngModel)]="maxCallsPerSession" name="maxCallsPerSession" class="form-input w-100" [min]="$safeNavigationMigration(performanceLimits?.maxCallsPerSession?.min)" [max]="$safeNavigationMigration(performanceLimits?.maxCallsPerSession?.max)" placeholder="Custom value" />
+              <span class="form-hint mt-5 d-block">Allowed range: {{performanceLimits?.maxCallsPerSession?.min}} - {{performanceLimits?.maxCallsPerSession?.max}}</span>
+            </div>
+          }
+        </div>
+
+        <div class="margin-y-20 mt-15 form-group-stacked">
+          <label class="block fw-bold">Max Tool Iterations</label>
+          <span class="form-hint mt-5 d-block mb-10">Maximum number of consecutive tool calls the AI can make before stopping.</span>
+
+          <button type="button" class="form-input form-select popover-trigger-btn popover-anchor-iters" popovertarget="maxToolIterationsPopover">
+            <span class="opt-label">{{ getSelectedOptionDisplay('maxToolIterations').label }}</span>
+            @if (getSelectedOptionDisplay('maxToolIterations').valueText) {
+              <span class="opt-val color-inherit">{{ getSelectedOptionDisplay('maxToolIterations').valueText }}</span>
+            }
+          </button>
+          <div id="maxToolIterationsPopover" popover class="custom-select-popover popover-target-iters">
+            @for (o of iterationsOptions; track o) {
+              <div class="popover-option" (click)="selectCustomOption('maxToolIterations', o.value, 'maxToolIterationsPopover')" [class.selected]="o.value === maxToolIterationsSelect">
+                <span class="opt-label">{{o.label}}</span>
+                @if (o.value !== 'custom') {
+                  <span class="opt-val">{{o.value ?? performanceLimits?.maxToolIterations?.defaultValue}}</span>
+                }
+              </div>
+            }
+          </div>
+
+          @if (maxToolIterationsSelect === 'custom') {
+            <div class="mt-10 custom-input-wrapper">
+              <input type="number" [(ngModel)]="maxToolIterations" name="maxToolIterations" class="form-input w-100" [min]="$safeNavigationMigration(performanceLimits?.maxToolIterations?.min)" [max]="$safeNavigationMigration(performanceLimits?.maxToolIterations?.max)" placeholder="Custom value" />
+              <span class="form-hint mt-5 d-block">Allowed range: {{performanceLimits?.maxToolIterations?.min}} - {{performanceLimits?.maxToolIterations?.max}}</span>
+            </div>
+          }
+        </div>
+
+        <div class="margin-y-20 mt-15 form-group-stacked">
+          <label for="requestTimeout" class="block fw-bold">API Request Timeout</label>
+          <span class="form-hint mt-5 d-block mb-10">Maximum time to wait for a chat message response before aborting.</span>
+
+          <div class="custom-input-wrapper" style="animation: none;">
+            <input type="number" id="requestTimeout" [(ngModel)]="requestTimeout" name="requestTimeout" class="form-input w-100" [min]="$safeNavigationMigration(performanceLimits?.requestTimeout?.min)" [max]="$safeNavigationMigration(performanceLimits?.requestTimeout?.max)" [placeholder]="'Default (' + $safeNavigationMigration(performanceLimits?.requestTimeout?.defaultValue) + 's)'" />
+            <span class="form-hint mt-5 d-block" style="margin-left: 0;">Allowed range: {{performanceLimits?.requestTimeout?.min}} - {{performanceLimits?.requestTimeout?.max}} seconds</span>
           </div>
         </div>
-
-        <div *ngIf="maxResultLengthSelect === 'custom'" class="mt-10 custom-input-wrapper">
-          <input type="number" [(ngModel)]="maxResultLength" name="maxResultLength" class="form-input w-100" [min]="performanceLimits?.maxResultLength?.min" [max]="performanceLimits?.maxResultLength?.max" placeholder="Custom value" />
-          <span class="form-hint mt-5 d-block">Allowed range: {{performanceLimits?.maxResultLength?.min}}–{{performanceLimits?.maxResultLength?.max}}</span>
-        </div>
-      </div>
-
-      <div class="margin-y-20 mt-15 form-group-stacked">
-        <label class="block fw-bold">Max Calls Per Session</label>
-        <span class="form-hint mt-5 d-block mb-10">Maximum number of interactions permitted in a single chat session.</span>
-        
-        <button type="button" class="form-input form-select popover-trigger-btn popover-anchor-calls" popovertarget="maxCallsPerSessionPopover">
-          <span class="opt-label">{{ getSelectedOptionDisplay('maxCallsPerSession').label }}</span>
-          <span class="opt-val color-inherit" *ngIf="getSelectedOptionDisplay('maxCallsPerSession').valueText">{{ getSelectedOptionDisplay('maxCallsPerSession').valueText }}</span>
-        </button>
-        <div id="maxCallsPerSessionPopover" popover class="custom-select-popover popover-target-calls">
-          <div class="popover-option" *ngFor="let o of callsOptions" (click)="selectCustomOption('maxCallsPerSession', o.value, 'maxCallsPerSessionPopover')" [class.selected]="o.value === maxCallsPerSessionSelect">
-            <span class="opt-label">{{o.label}}</span>
-            <span class="opt-val" *ngIf="o.value !== 'custom'">{{o.value ?? performanceLimits?.maxCallsPerSession?.defaultValue}}</span>
-          </div>
-        </div>
-
-        <div *ngIf="maxCallsPerSessionSelect === 'custom'" class="mt-10 custom-input-wrapper">
-          <input type="number" [(ngModel)]="maxCallsPerSession" name="maxCallsPerSession" class="form-input w-100" [min]="performanceLimits?.maxCallsPerSession?.min" [max]="performanceLimits?.maxCallsPerSession?.max" placeholder="Custom value" />
-          <span class="form-hint mt-5 d-block">Allowed range: {{performanceLimits?.maxCallsPerSession?.min}} - {{performanceLimits?.maxCallsPerSession?.max}}</span>
-        </div>
-      </div>
-
-      <div class="margin-y-20 mt-15 form-group-stacked">
-        <label class="block fw-bold">Max Tool Iterations</label>
-        <span class="form-hint mt-5 d-block mb-10">Maximum number of consecutive tool calls the AI can make before stopping.</span>
-        
-        <button type="button" class="form-input form-select popover-trigger-btn popover-anchor-iters" popovertarget="maxToolIterationsPopover">
-          <span class="opt-label">{{ getSelectedOptionDisplay('maxToolIterations').label }}</span>
-          <span class="opt-val color-inherit" *ngIf="getSelectedOptionDisplay('maxToolIterations').valueText">{{ getSelectedOptionDisplay('maxToolIterations').valueText }}</span>
-        </button>
-        <div id="maxToolIterationsPopover" popover class="custom-select-popover popover-target-iters">
-          <div class="popover-option" *ngFor="let o of iterationsOptions" (click)="selectCustomOption('maxToolIterations', o.value, 'maxToolIterationsPopover')" [class.selected]="o.value === maxToolIterationsSelect">
-            <span class="opt-label">{{o.label}}</span>
-            <span class="opt-val" *ngIf="o.value !== 'custom'">{{o.value ?? performanceLimits?.maxToolIterations?.defaultValue}}</span>
-          </div>
-        </div>
-
-        <div *ngIf="maxToolIterationsSelect === 'custom'" class="mt-10 custom-input-wrapper">
-          <input type="number" [(ngModel)]="maxToolIterations" name="maxToolIterations" class="form-input w-100" [min]="performanceLimits?.maxToolIterations?.min" [max]="performanceLimits?.maxToolIterations?.max" placeholder="Custom value" />
-          <span class="form-hint mt-5 d-block">Allowed range: {{performanceLimits?.maxToolIterations?.min}} - {{performanceLimits?.maxToolIterations?.max}}</span>
-        </div>
-      </div>
-
-      <div class="margin-y-20 mt-15 form-group-stacked">
-        <label for="requestTimeout" class="block fw-bold">API Request Timeout</label>
-        <span class="form-hint mt-5 d-block mb-10">Maximum time to wait for a chat message response before aborting.</span>
-        
-        <div class="custom-input-wrapper" style="animation: none;">
-          <input type="number" id="requestTimeout" [(ngModel)]="requestTimeout" name="requestTimeout" class="form-input w-100" [min]="performanceLimits?.requestTimeout?.min" [max]="performanceLimits?.requestTimeout?.max" [placeholder]="'Default (' + performanceLimits?.requestTimeout?.defaultValue + 's)'" />
-          <span class="form-hint mt-5 d-block" style="margin-left: 0;">Allowed range: {{performanceLimits?.requestTimeout?.min}} - {{performanceLimits?.requestTimeout?.max}} seconds</span>
-        </div>
-      </div>
-    </fieldset>
+      </fieldset>
 
     </div>
     <div class="form-footer">
@@ -167,7 +191,9 @@
         &#10004; Settings saved successfully!
       </div>
       <!-- Fallback if polyfill completely fails -->
-      <span *ngIf="saved" class="success">Settings saved successfully!</span>
+      @if (saved) {
+        <span class="success">Settings saved successfully!</span>
+      }
     </div>
   </form>
 </div>

@@ -1,16 +1,16 @@
-import { Component, OnInit, inject, ViewChild, ElementRef, HostListener } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, OnInit, inject, ViewChild, ElementRef, HostListener, ChangeDetectionStrategy } from '@angular/core';
+
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import { SettingsService, UserAiModel, ApiModelDto } from '../services/settings.service';
 import { AiModelFormComponent, AiModelFormResult } from '../shared/ai-model-form/ai-model-form.component';
 
 @Component({
-  selector: 'app-models',
-  standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, AiModelFormComponent],
-  templateUrl: './models.component.html',
-  styleUrl: './models.component.scss'
+    selector: 'app-models',
+    imports: [FormsModule, RouterModule, AiModelFormComponent],
+    templateUrl: './models.component.html',
+    changeDetection: ChangeDetectionStrategy.Eager,
+    styleUrl: './models.component.scss'
 })
 export class ModelsComponent implements OnInit {
   settingsService = inject(SettingsService);

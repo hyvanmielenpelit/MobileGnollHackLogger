@@ -120,11 +120,40 @@ export interface GroupSystemAiConfigDto {
   modelRole: number;
 }
 
+export interface AnalyticsUserRow {
+  userId: string;
+  userName: string;
+  chatRequests: number;
+  titleRequests: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+export interface AnalyticsResponse {
+  rows: AnalyticsUserRow[];
+}
+
 @Injectable({
   providedIn: 'root'
 })
 export class AdminService {
   private http = inject(HttpClient);
+
+  // Analytics
+  getConfigAnalytics(configId: number, params: {
+    startDate?: string; endDate?: string;
+    mode?: string; usernameFilter?: string;
+  }): Observable<AnalyticsResponse> {
+    const httpParams: any = {};
+    if (params.startDate) httpParams.startDate = params.startDate;
+    if (params.endDate) httpParams.endDate = params.endDate;
+    if (params.mode) httpParams.mode = params.mode;
+    if (params.usernameFilter) httpParams.usernameFilter = params.usernameFilter;
+    return this.http.get<AnalyticsResponse>(
+      `/api/admin/systemconfigs/${configId}/analytics`,
+      { params: httpParams }
+    );
+  }
 
   // Users
   getUsers(): Observable<UserDto[]> {

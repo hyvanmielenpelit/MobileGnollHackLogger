@@ -856,6 +856,71 @@ public class AdminController : ControllerBase
         return Ok();
     }
 
+    // --- Analytics ---
+
+    [HttpGet("systemconfigs/{id}/analytics")]
+    public async Task<IActionResult> GetConfigAnalytics(long id,
+        [FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate,
+        [FromQuery] string? mode, [FromQuery] string? usernameFilter)
+    {
+        if (!CheckAdmin()) return Forbid();
+
+        var query = _dbContext.SystemAiUsageLogs
+            .Where(l => l.SystemAiApiConfigurationId == id);
+
+        if (startDate.HasValue) query = query.Where(l => l.TimestampUtc >= startDate.Value);
+        if (endDate.HasValue) query = query.Where(l => l.TimestampUtc < endDate.Value.AddDays(1));
+
+        if (mode == "individual")
+        {
+            // Group by user, with optional username filter
+            var userQuery = query
+                .Join(_dbContext.Users, l => l.AspNetUserId, u => u.Id,
+                      (l, u) => new { Log = l, User = u });
+
+            if (!string.IsNullOrWhiteSpace(usernameFilter))
+                userQuery = userQuery.Where(x =>
+                    x.User.UserName!.Contains(usernameFilter));
+
+            var rows = await userQuery
+                .GroupBy(x => new { x.User.Id, x.User.UserName })
+                .Select(g => new AnalyticsUserRow
+                {
+                    UserId = g.Key.Id,
+                    UserName = g.Key.UserName ?? "",
+                    ChatRequests = g.Count(x => x.Log.RoleContext == 1),
+                    TitleRequests = g.Count(x => x.Log.RoleContext == 2),
+                    InputTokens = g.Sum(x => (long)(x.Log.InputTokens ?? 0)),
+                    OutputTokens = g.Sum(x => (long)(x.Log.OutputTokens ?? 0))
+                })
+                .OrderByDescending(r => r.ChatRequests + r.TitleRequests)
+                .Take(50)
+                .ToListAsync();
+
+            return Ok(new AnalyticsResponse { Rows = rows });
+        }
+        else
+        {
+            // Aggregate all users into a single row
+            var row = await query
+                .GroupBy(l => 1)
+                .Select(g => new AnalyticsUserRow
+                {
+                    UserName = "All Users",
+                    ChatRequests = g.Count(l => l.RoleContext == 1),
+                    TitleRequests = g.Count(l => l.RoleContext == 2),
+                    InputTokens = g.Sum(l => (long)(l.InputTokens ?? 0)),
+                    OutputTokens = g.Sum(l => (long)(l.OutputTokens ?? 0))
+                })
+                .FirstOrDefaultAsync();
+
+            return Ok(new AnalyticsResponse
+            {
+                Rows = row != null ? new List<AnalyticsUserRow> { row } : new()
+            });
+        }
+    }
+
     // --- Helper Methods ---
 
     private void EncryptApiKey(SystemAiApiConfiguration config, string plainText)

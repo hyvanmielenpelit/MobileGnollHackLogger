@@ -7,81 +7,94 @@
     Manage your API keys for different AI providers. Keys are encrypted before being stored in the database.
   </p>
 
-  <div *ngIf="loading" class="loading-state">
-    <span class="sidebar-spinner"></span> Loading API Keys...
-  </div>
-
-  <div *ngIf="!loading" class="api-keys-list">
-    <div *ngFor="let provider of providers" class="provider-card">
-      <div class="provider-header">
-        <div class="provider-title">
-          <h3>{{ provider }}</h3>
-          <button type="button" class="btn-info" (click)="apiKeyInfoDialog.showModal()">
-            <span class="info-icon">i</span>
-          </button>
-        </div>
-        <span class="status-badge" [class.has-key]="keyStatuses[provider]">
-          {{ keyStatuses[provider] ? 'Key Saved' : 'No Key' }}
-        </span>
-      </div>
-
-      <div class="provider-body">
-        <div *ngIf="keyStatuses[provider]" class="api-key-grid">
-          <p class="key-info-text">You have a saved API key for this provider.</p>
-          <button class="btn-gh btn-gh-delete btn-action" (click)="deleteKey(provider)" [disabled]="savingProvider === provider">
-            <span *ngIf="savingProvider === provider" class="sidebar-spinner small-spinner"></span>
-            Delete Key
-          </button>
-        </div>
-
-        <div *ngIf="!keyStatuses[provider]" class="api-key-grid">
-          <label class="sr-only" [for]="'key-' + provider">API Key</label>
-          <input type="password" [id]="'key-' + provider" [(ngModel)]="newKeys[provider]" placeholder="Enter API Key" class="gh-input m-0">
-          <button class="btn-gh btn-action" (click)="saveKey(provider)" [disabled]="!newKeys[provider] || savingProvider === provider">
-            <span *ngIf="savingProvider === provider" class="sidebar-spinner small-spinner"></span>
-            Save Key
-          </button>
-        </div>
-      </div>
-
-      <!-- API Key Info Dialog -->
-      <dialog #apiKeyInfoDialog class="gh-dialog">
-        <h3 class="modal-title">How to get an API Key</h3>
-        
-        <div *ngIf="provider === 'OpenAI'">
-          <p>To use OpenAI models, you need an API key from your OpenAI account.</p>
-          <ol class="api-instructions">
-            <li>Go to <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com/api-keys</a></li>
-            <li>Log in or sign up.</li>
-            <li>Click <strong>Create new secret key</strong>.</li>
-            <li>Copy the key and paste it here.</li>
-          </ol>
-        </div>
-        
-        <div *ngIf="provider === 'Anthropic'">
-          <p>To use Anthropic models, you need an API key from the Anthropic Console.</p>
-          <ol class="api-instructions">
-            <li>Go to <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com/settings/keys</a></li>
-            <li>Log in or sign up.</li>
-            <li>Click <strong>Create Key</strong>.</li>
-            <li>Copy the key and paste it here.</li>
-          </ol>
-        </div>
-        
-        <div *ngIf="provider === 'Google'">
-          <p>To use Google Gemini models, you need an API key from Google AI Studio.</p>
-          <ol class="api-instructions">
-            <li>Go to <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">aistudio.google.com/app/apikey</a></li>
-            <li>Log in with your Google account.</li>
-            <li>Click <strong>Create API key</strong>.</li>
-            <li>Copy the key and paste it here.</li>
-          </ol>
-        </div>
-        
-        <form method="dialog" class="modal-actions mt-20">
-          <button class="btn-gh">Close</button>
-        </form>
-      </dialog>
+  @if (loading) {
+    <div class="loading-state">
+      <span class="sidebar-spinner"></span> Loading API Keys...
     </div>
-  </div>
+  }
+
+  @if (!loading) {
+    <div class="api-keys-list">
+      @for (provider of providers; track provider) {
+        <div class="provider-card">
+          <div class="provider-header">
+            <div class="provider-title">
+              <h3>{{ provider }}</h3>
+              <button type="button" class="btn-info" (click)="apiKeyInfoDialog.showModal()">
+                <span class="info-icon">i</span>
+              </button>
+            </div>
+            <span class="status-badge" [class.has-key]="keyStatuses[provider]">
+              {{ keyStatuses[provider] ? 'Key Saved' : 'No Key' }}
+            </span>
+          </div>
+          <div class="provider-body">
+            @if (keyStatuses[provider]) {
+              <div class="api-key-grid">
+                <p class="key-info-text">You have a saved API key for this provider.</p>
+                <button class="btn-gh btn-gh-delete btn-action" (click)="deleteKey(provider)" [disabled]="savingProvider === provider">
+                  @if (savingProvider === provider) {
+                    <span class="sidebar-spinner small-spinner"></span>
+                  }
+                  Delete Key
+                </button>
+              </div>
+            }
+            @if (!keyStatuses[provider]) {
+              <div class="api-key-grid">
+                <label class="sr-only" [for]="'key-' + provider">API Key</label>
+                <input type="password" [id]="'key-' + provider" [(ngModel)]="newKeys[provider]" placeholder="Enter API Key" class="gh-input m-0">
+                <button class="btn-gh btn-action" (click)="saveKey(provider)" [disabled]="!newKeys[provider] || savingProvider === provider">
+                  @if (savingProvider === provider) {
+                    <span class="sidebar-spinner small-spinner"></span>
+                  }
+                  Save Key
+                </button>
+              </div>
+            }
+          </div>
+          <!-- API Key Info Dialog -->
+          <dialog #apiKeyInfoDialog class="gh-dialog">
+            <h3 class="modal-title">How to get an API Key</h3>
+            @if (provider === 'OpenAI') {
+              <div>
+                <p>To use OpenAI models, you need an API key from your OpenAI account.</p>
+                <ol class="api-instructions">
+                  <li>Go to <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com/api-keys</a></li>
+                  <li>Log in or sign up.</li>
+                  <li>Click <strong>Create new secret key</strong>.</li>
+                  <li>Copy the key and paste it here.</li>
+                </ol>
+              </div>
+            }
+            @if (provider === 'Anthropic') {
+              <div>
+                <p>To use Anthropic models, you need an API key from the Anthropic Console.</p>
+                <ol class="api-instructions">
+                  <li>Go to <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com/settings/keys</a></li>
+                  <li>Log in or sign up.</li>
+                  <li>Click <strong>Create Key</strong>.</li>
+                  <li>Copy the key and paste it here.</li>
+                </ol>
+              </div>
+            }
+            @if (provider === 'Google') {
+              <div>
+                <p>To use Google Gemini models, you need an API key from Google AI Studio.</p>
+                <ol class="api-instructions">
+                  <li>Go to <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">aistudio.google.com/app/apikey</a></li>
+                  <li>Log in with your Google account.</li>
+                  <li>Click <strong>Create API key</strong>.</li>
+                  <li>Copy the key and paste it here.</li>
+                </ol>
+              </div>
+            }
+            <form method="dialog" class="modal-actions mt-20">
+              <button class="btn-gh">Close</button>
+            </form>
+          </dialog>
+        </div>
+      }
+    </div>
+  }
 </div>

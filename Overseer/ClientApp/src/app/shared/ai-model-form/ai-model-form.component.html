@@ -1,143 +1,197 @@
 <div class="dialog-content flex-col">
   <div class="dialog-header">
-    <h3 *ngIf="mode === 'add' && !isAdmin">Add Model</h3>
-    <h3 *ngIf="mode === 'edit' && !isAdmin">Edit Model</h3>
-    <h3 *ngIf="mode === 'add' && isAdmin">Create System AI Config</h3>
-    <h3 *ngIf="mode === 'edit' && isAdmin">Edit System AI Config</h3>
+    @if (mode === 'add' && !isAdmin) {
+      <h3>Add Model</h3>
+    }
+    @if (mode === 'edit' && !isAdmin) {
+      <h3>Edit Model</h3>
+    }
+    @if (mode === 'add' && isAdmin) {
+      <h3>Create System AI Config</h3>
+    }
+    @if (mode === 'edit' && isAdmin) {
+      <h3>Edit System AI Config</h3>
+    }
   </div>
 
   <div class="form-scroll-area">
     <!-- Admin Display Name -->
-    <div class="form-group flex-col" *ngIf="isAdmin">
-      <label>Display Name</label>
-      <input type="text" class="gh-input w-100" [(ngModel)]="displayName" placeholder="Leave empty to use the AI model name">
-    </div>
+    @if (isAdmin) {
+      <div class="form-group flex-col">
+        <label>Display Name</label>
+        <input type="text" class="gh-input w-100" [(ngModel)]="displayName" placeholder="Leave empty to use the AI model name">
+      </div>
+    }
 
     <div class="form-group flex-col">
       <label>Provider</label>
       <select class="gh-input w-100" [(ngModel)]="provider" (change)="onProviderChange()">
-        <option *ngFor="let p of providers" [value]="p">{{ p }}</option>
+        @for (p of providers; track p) {
+          <option [value]="p">{{ p }}</option>
+        }
       </select>
     </div>
 
     <!-- Admin only: API Key -->
-    <div class="form-group flex-col" *ngIf="isAdmin">
-      <div class="flex-between">
-        <label>API Key 
-          <span *ngIf="hasApiKey && !deleteApiKey" class="status-badge badge-success">Key Saved</span>
-          <span *ngIf="hasApiKey && deleteApiKey" class="status-badge badge-danger">Will Be Deleted</span>
-          <span *ngIf="!hasApiKey" class="status-badge badge-warning">No Key</span>
-        </label>
-        <button class="icon-btn" (click)="toggleApiKeyInfo()" title="Provider Instructions">
-          <i class="gh-icon">info</i>
-        </button>
+    @if (isAdmin) {
+      <div class="form-group flex-col">
+        <div class="flex-between">
+          <label>API Key
+            @if (hasApiKey && !deleteApiKey) {
+              <span class="status-badge badge-success">Key Saved</span>
+            }
+            @if (hasApiKey && deleteApiKey) {
+              <span class="status-badge badge-danger">Will Be Deleted</span>
+            }
+            @if (!hasApiKey) {
+              <span class="status-badge badge-warning">No Key</span>
+            }
+          </label>
+          <button class="icon-btn" (click)="toggleApiKeyInfo()" title="Provider Instructions">
+            <i class="gh-icon">info</i>
+          </button>
+        </div>
+        <!-- API Key Actions (if key exists) -->
+        @if (hasApiKey) {
+          <div class="api-key-actions mt-5" style="display: flex; align-items: center; gap: 8px;">
+            @if (!deleteApiKey) {
+              <button class="btn-gh" (click)="editingApiKey = !editingApiKey; deleteApiKey = false">
+                {{ editingApiKey ? 'Cancel Edit' : 'Edit Key' }}
+              </button>
+            }
+            @if (!deleteApiKey) {
+              <button class="btn-gh btn-gh-delete" (click)="deleteApiKey = true; editingApiKey = false">
+                Delete Key
+              </button>
+            }
+            @if (deleteApiKey) {
+              <button class="btn-gh btn-gh-cancel" (click)="deleteApiKey = false">
+                Cancel Deletion
+              </button>
+            }
+            <!-- Warning when deleting -->
+            @if (deleteApiKey) {
+              <span class="ml-10" style="font-size: 0.9em; color: #e74c3c; align-self: center;">
+                ⚠️ <span style="font-style: italic;">API key will be deleted upon save</span>
+              </span>
+            }
+          </div>
+        }
+        @if (!deleteApiKey) {
+          <div class="api-key-row mt-5">
+            @if (editingApiKey) {
+              <input type="password" class="gh-input w-100" [(ngModel)]="apiKey" placeholder="Enter API Key" (keyup.enter)="onCheckModels()" />
+            }
+            <button class="btn-gh" style="white-space: nowrap;" (click)="onCheckModels()">Check Models</button>
+          </div>
+        }
+        <!-- Instructions Expandable -->
+        @if (showApiKeyInfo) {
+          <div class="api-key-info">
+            @if (provider === 'OpenAI') {
+              <p>
+                Create an API key at <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">platform.openai.com/api-keys</a>.
+                Make sure your account is funded.
+              </p>
+            }
+            @if (provider === 'Anthropic') {
+              <p>
+                Create an API key at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer">console.anthropic.com/settings/keys</a>.
+                Make sure your account is funded.
+              </p>
+            }
+            @if (provider === 'Google') {
+              <p>
+                Create an API key at <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer">aistudio.google.com/app/apikey</a>.
+                You can use a free tier key, but it will be subject to rate limits.
+              </p>
+            }
+          </div>
+        }
       </div>
-
-      <!-- API Key Actions (if key exists) -->
-      <div class="api-key-actions mt-5" *ngIf="hasApiKey" style="display: flex; align-items: center; gap: 8px;">
-        <button class="btn-gh" (click)="editingApiKey = !editingApiKey; deleteApiKey = false" *ngIf="!deleteApiKey">
-          {{ editingApiKey ? 'Cancel Edit' : 'Edit Key' }}
-        </button>
-        <button class="btn-gh btn-gh-delete" (click)="deleteApiKey = true; editingApiKey = false" *ngIf="!deleteApiKey">
-          Delete Key
-        </button>
-        <button class="btn-gh btn-gh-cancel" (click)="deleteApiKey = false" *ngIf="deleteApiKey">
-          Cancel Deletion
-        </button>
-        
-        <!-- Warning when deleting -->
-        <span class="ml-10" *ngIf="deleteApiKey" style="font-size: 0.9em; color: #e74c3c; align-self: center;">
-          ⚠️ <span style="font-style: italic;">API key will be deleted upon save</span>
-        </span>
-      </div>
-
-      <div class="api-key-row mt-5" *ngIf="!deleteApiKey">
-        <input *ngIf="editingApiKey" type="password" class="gh-input w-100" [(ngModel)]="apiKey" placeholder="Enter API Key" (keyup.enter)="onCheckModels()" />
-        <button class="btn-gh" style="white-space: nowrap;" (click)="onCheckModels()">Check Models</button>
-      </div>
-      
-      <!-- Instructions Expandable -->
-      <div class="api-key-info" *ngIf="showApiKeyInfo">
-        <p *ngIf="provider === 'OpenAI'">
-          Create an API key at <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">platform.openai.com/api-keys</a>. 
-          Make sure your account is funded.
-        </p>
-        <p *ngIf="provider === 'Anthropic'">
-          Create an API key at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer">console.anthropic.com/settings/keys</a>. 
-          Make sure your account is funded.
-        </p>
-        <p *ngIf="provider === 'Google'">
-          Create an API key at <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer">aistudio.google.com/app/apikey</a>. 
-          You can use a free tier key, but it will be subject to rate limits.
-        </p>
-      </div>
-    </div>
+    }
 
     <!-- Models List -->
     <div class="form-group flex-col">
       <div class="flex-between">
         <label>Models</label>
-        <div class="sort-options" *ngIf="availableModels.length > 0">
-          <label>
-            <input type="radio" name="sort" value="alphabetical" [(ngModel)]="sortMode" (change)="onSortChange()"> A-Z
-          </label>
-          <label>
-            <input type="radio" name="sort" value="newest" [(ngModel)]="sortMode" (change)="onSortChange()"> Newest
-          </label>
-        </div>
+        @if (availableModels.length > 0) {
+          <div class="sort-options">
+            <label>
+              <input type="radio" name="sort" value="alphabetical" [(ngModel)]="sortMode" (change)="onSortChange()"> A-Z
+            </label>
+            <label>
+              <input type="radio" name="sort" value="newest" [(ngModel)]="sortMode" (change)="onSortChange()"> Newest
+            </label>
+          </div>
+        }
       </div>
 
-      <div *ngIf="loadingModels" class="loading-spinner-container">
-        <div class="gh-loading-spinner small"></div>
-      </div>
-      
-      <div class="error-message" *ngIf="modelError">
-        <strong>Error:</strong>
-        <span>{{ modelError }}</span>
-      </div>
+      @if (loadingModels) {
+        <div class="loading-spinner-container">
+          <div class="gh-loading-spinner small"></div>
+        </div>
+      }
+
+      @if (modelError) {
+        <div class="error-message">
+          <strong>Error:</strong>
+          <span>{{ modelError }}</span>
+        </div>
+      }
 
       <select class="gh-input w-100 picker-model-select" size="8"
-              [(ngModel)]="pickerModelSelect" 
-              (change)="onPickerModelSelect()"
-              [disabled]="loadingModels || (isAdmin && !apiKey && !hasApiKey)">
-        <option *ngFor="let model of sortedModels" [value]="model.id">
-          {{ model.id }} {{ model.isRecommended ? '⭐' : '' }}
-        </option>
+        [(ngModel)]="pickerModelSelect"
+        (change)="onPickerModelSelect()"
+        [disabled]="loadingModels || (isAdmin && !apiKey && !hasApiKey)">
+        @for (model of sortedModels; track model) {
+          <option [value]="model.id">
+            {{ model.id }} {{ model.isRecommended ? '⭐' : '' }}
+          </option>
+        }
         <option value="custom">Custom...</option>
       </select>
     </div>
 
-    <div class="form-group flex-col" *ngIf="pickerModelSelect === 'custom'">
-      <label>Model ID</label>
-      <input type="text" class="gh-input w-100" [(ngModel)]="customModelId" placeholder="e.g. custom-model-v1">
-    </div>
-    
-    <div class="model-meta model-meta-box" *ngIf="selectedModelObj?.contextWindowSize">
+    @if (pickerModelSelect === 'custom') {
+      <div class="form-group flex-col">
+        <label>Model ID</label>
+        <input type="text" class="gh-input w-100" [(ngModel)]="customModelId" placeholder="e.g. custom-model-v1">
+      </div>
+    }
+
+    @if (selectedModelObj?.contextWindowSize) {
+      <div class="model-meta model-meta-box">
         <span class="d-inline-block">
-          <span class="detail-label color-gh-gold">Context Window:</span> 
+          <span class="detail-label color-gh-gold">Context Window:</span>
           {{ selectedModelObj!.contextWindowSize | number }} tokens
         </span>
-    </div>
+      </div>
+    }
 
     <!-- Thinking Level -->
     <div class="form-group flex-col">
       <label>Thinking Level</label>
       <select class="gh-input w-100" [(ngModel)]="pickerThinkingLevelSelect" (change)="onPickerThinkingLevelChange()">
         <option value="">None</option>
-        <ng-container *ngIf="selectedModelObj">
-          <option *ngFor="let level of selectedModelObj.supportedThinkingLevels" [value]="level">
-            {{ formatThinkingLevel(level) }}
-            {{ level === selectedModelObj.recommendedThinkingLevel ? '⭐' : '' }}
-          </option>
-        </ng-container>
+        @if (selectedModelObj) {
+          @for (level of selectedModelObj.supportedThinkingLevels; track level) {
+            <option [value]="level">
+              {{ formatThinkingLevel(level) }}
+              {{ level === selectedModelObj.recommendedThinkingLevel ? '⭐' : '' }}
+            </option>
+          }
+        }
         <option value="custom">Custom...</option>
       </select>
     </div>
-    
-    <div class="form-group flex-col" *ngIf="pickerThinkingLevelSelect === 'custom'">
-      <label>Thinking Level Name</label>
-      <input type="text" class="gh-input w-100" [(ngModel)]="customThinkingLevel" placeholder="e.g. high">
-    </div>
+
+    @if (pickerThinkingLevelSelect === 'custom') {
+      <div class="form-group flex-col">
+        <label>Thinking Level Name</label>
+        <input type="text" class="gh-input w-100" [(ngModel)]="customThinkingLevel" placeholder="e.g. high">
+      </div>
+    }
 
     <!-- Tokens -->
     <div class="token-row">
@@ -152,8 +206,7 @@
     </div>
 
     <!-- Admin only fields: Status, Rate Limits -->
-    <ng-container *ngIf="isAdmin">
-      
+    @if (isAdmin) {
       <div class="checkbox-row" style="flex-direction: row; gap: 20px;">
         <label class="gh-checkbox-label">
           <input type="checkbox" [(ngModel)]="isEnabled"> Enabled
@@ -162,7 +215,6 @@
           <input type="checkbox" [(ngModel)]="isSystemWide"> System Wide
         </label>
       </div>
-
       <div class="form-group flex-col mt-10">
         <label>Model Role</label>
         <select class="gh-input w-100" [(ngModel)]="modelRole">
@@ -171,23 +223,28 @@
           <option [ngValue]="3">Chat & Title Generation</option>
         </select>
       </div>
-
-    </ng-container>
+    }
     <!-- Non-admin edit display name is handled elsewhere or not used? Wait, user models also have a display name in edit mode! -->
-    <!-- Ah, the Models page Add Model dialog has a "Title" field? No, users don't set title explicitly usually, except wait - yes they do! The models component has editDisplayName. 
-         Let's add Display Name for both edit modes, and admin add mode. -->
-    <div class="form-group flex-col" *ngIf="!isAdmin && mode === 'edit'">
-      <label>Display Name</label>
-      <input type="text" class="gh-input w-100" [(ngModel)]="displayName">
-    </div>
+    <!-- Ah, the Models page Add Model dialog has a "Title" field? No, users don't set title explicitly usually, except wait - yes they do! The models component has editDisplayName.
+    Let's add Display Name for both edit modes, and admin add mode. -->
+    @if (!isAdmin && mode === 'edit') {
+      <div class="form-group flex-col">
+        <label>Display Name</label>
+        <input type="text" class="gh-input w-100" [(ngModel)]="displayName">
+      </div>
+    }
 
   </div>
 
   <div class="dialog-actions">
     <button class="btn-gh btn-gh-cancel" (click)="onCancel()" [disabled]="saving">Cancel</button>
     <button class="btn-gh" (click)="onSave()" [disabled]="saving">
-      <span *ngIf="!saving">{{ mode === 'edit' ? 'Save Changes' : (isAdmin ? 'Create Config' : 'Add Model') }}</span>
-      <span *ngIf="saving"><div class="gh-loading-spinner small white"></div> Saving...</span>
+      @if (!saving) {
+        <span>{{ mode === 'edit' ? 'Save Changes' : (isAdmin ? 'Create Config' : 'Add Model') }}</span>
+      }
+      @if (saving) {
+        <span><div class="gh-loading-spinner small white"></div> Saving...</span>
+      }
     </button>
   </div>
 </div>

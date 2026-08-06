@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, OnInit, Output, inject } from '@angular/core';
+import { Component, EventEmitter, Input, OnInit, Output, inject, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SettingsService, ApiModelDto } from '../../services/settings.service';
@@ -17,11 +17,11 @@ export interface AiModelFormResult {
 }
 
 @Component({
-  selector: 'app-ai-model-form',
-  standalone: true,
-  imports: [CommonModule, FormsModule],
-  templateUrl: './ai-model-form.component.html',
-  styleUrl: './ai-model-form.component.scss'
+    selector: 'app-ai-model-form',
+    imports: [CommonModule, FormsModule],
+    templateUrl: './ai-model-form.component.html',
+    changeDetection: ChangeDetectionStrategy.Eager,
+    styleUrl: './ai-model-form.component.scss'
 })
 export class AiModelFormComponent implements OnInit {
   private settingsService = inject(SettingsService);

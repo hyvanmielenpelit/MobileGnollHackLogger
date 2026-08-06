@@ -67,6 +67,10 @@ namespace MobileGnollHackLogger.Data
                 .HasForeignKey(l => l.AspNetUserId)
                 .HasPrincipalKey(u => u.Id);
 
+            modelBuilder.Entity<SystemAiUsageLog>()
+                .HasIndex(l => new { l.SystemAiApiConfigurationId, l.TimestampUtc })
+                .IncludeProperties(l => new { l.AspNetUserId, l.RoleContext, l.InputTokens, l.OutputTokens });
+
             modelBuilder.Entity<SystemAiErrorLog>()
                 .HasOne(l => l.DismissedByUser)
                 .WithMany()

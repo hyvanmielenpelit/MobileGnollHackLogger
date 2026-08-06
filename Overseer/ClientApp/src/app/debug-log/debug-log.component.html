@@ -10,17 +10,27 @@
     </div>
   </div>
   <div class="log-viewer gh-main-container">
-    <div *ngIf="logs.length === 0" class="empty">No debug logs yet.</div>
-    <div class="debug-line" *ngFor="let log of logs">
-      <span class="time">[{{ log.timestamp | date:'HH:mm:ss.SSS' }}]</span> 
-      <ng-container *ngIf="!isLongLog(log.message)">{{ log.message }}</ng-container>
-      <ng-container *ngIf="isLongLog(log.message)">
-        <span>{{ getShortMessage(log.message) }}</span>
-        <button class="copy-btn" (click)="copyToClipboard(log)" [title]="copiedLog === log ? 'Copied!' : 'Copy full message'">
-          <svg *ngIf="copiedLog !== log" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-          <svg *ngIf="copiedLog === log" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#28a745" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-        </button>
-      </ng-container>
-    </div>
+    @if (logs.length === 0) {
+      <div class="empty">No debug logs yet.</div>
+    }
+    @for (log of logs; track log) {
+      <div class="debug-line">
+        <span class="time">[{{ log.timestamp | date:'HH:mm:ss.SSS' }}]</span>
+        @if (!isLongLog(log.message)) {
+          {{ log.message }}
+        }
+        @if (isLongLog(log.message)) {
+          <span>{{ getShortMessage(log.message) }}</span>
+          <button class="copy-btn" (click)="copyToClipboard(log)" [title]="copiedLog === log ? 'Copied!' : 'Copy full message'">
+            @if (copiedLog !== log) {
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            }
+            @if (copiedLog === log) {
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#28a745" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            }
+          </button>
+        }
+      </div>
+    }
   </div>
 </div>

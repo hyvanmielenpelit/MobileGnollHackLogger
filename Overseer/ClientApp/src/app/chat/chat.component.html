@@ -1,329 +1,496 @@
-<div *ngIf="!isOffline" class="layout" [class.is-resizing]="isResizing" [class.sidebar-open]="isSidebarOpen">
-  <div class="sidebar gh-main-container" #sidebar [style.width.px]="sidebarWidth">
-    <button class="sidebar-close-btn" (click)="closeSidebar()" title="Close Sidebar" aria-label="Close sidebar">
-      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-    </button>
-    <h3 class="sidebar-title">Conversations</h3>
-    <button class="btn-gh btn-new-chat" (click)="navigateToNewSession()">New Chat</button>
-    <ul>
-      <div *ngIf="loadingSessions" class="sessions-loader">
-        <div class="sidebar-spinner"></div>
-        <span>Loading Conversations...</span>
-      </div>
-      <li *ngIf="!loadingSessions && sessions.length === 0" class="empty-sessions-msg">
-        No conversations yet.
-      </li>
-      <li *ngFor="let s of sessions" [class.active]="s.id === currentSessionId" (click)="navigateToSession(s.id)">
-        <div class="session-info">
-          <div class="session-title" title="{{ s.title }}">{{ s.title }}</div>
-          <div class="session-time" *ngIf="s.lastMessageUtc">{{ s.lastMessageUtc | relativeTime }}</div>
-        </div>
-        <button class="session-delete-btn" (click)="requestDeleteSession(s.id, $event)" title="Delete Session">X</button>
-      </li>
-      <!-- Load More link -->
-      <li *ngIf="hasMoreSessions && !loadingMoreSessions && !loadingSessions"
-          class="load-more-item" (click)="loadMoreSessions()">
-        Load more
-      </li>
-      <!-- Loading spinner for additional pages -->
-      <li *ngIf="loadingMoreSessions" class="load-more-spinner-item">
-        <div class="sidebar-spinner load-more-spinner"></div>
-      </li>
-    </ul>
-    <div class="bottom-links">
-      <a routerLink="/settings" queryParamsHandling="preserve">Settings</a>
-      <a routerLink="/api-keys" queryParamsHandling="preserve">API Keys</a>
-      <a routerLink="/models" queryParamsHandling="preserve">Models</a>
-      <ng-container *ngIf="authService.user$ | async as user">
-        <a *ngIf="user.isAdmin" routerLink="/admin" queryParamsHandling="preserve">Admin</a>
-      </ng-container>
-      <a *ngIf="showDebugLog" routerLink="/debug-log" queryParamsHandling="preserve">Debug Log</a>
-      <a href="#" (click)="logout($event)">Logout</a>
-    </div>
-  </div>
-  <div class="resizer" (mousedown)="startResize($event)" (touchstart)="startResize($event)"></div>
-  <div class="sidebar-backdrop" [class.visible]="isSidebarOpen" (click)="closeSidebar()"></div>
-  <div class="chat-area gh-main-container">
-    <div class="chat-header">
-      <button class="sidebar-toggle" (click)="toggleSidebar()">☰</button>
-      
-      <div class="chat-title-container" *ngIf="currentSessionId; else newChatHeader">
-        <ng-container *ngIf="!isRenamingTitle">
-          <span class="chat-title" title="{{ currentTitle }}">{{ currentTitle }}</span>
-          <button class="rename-btn" (click)="startRename()" title="Rename Chat">✏️</button>
-        </ng-container>
-        
-        <ng-container *ngIf="isRenamingTitle">
-          <div class="rename-container">
-            <div class="rename-input-wrapper" [class.has-error]="renameError">
-              <input type="text" class="rename-input" [value]="renameTitleValue" (input)="renameTitleValue = $any($event.target).value" (input)="renameError = null" (keydown.enter)="saveRename()" (keydown.esc)="cancelRename()" #renameInput autofocus>
-              <button class="rename-action-btn ok-btn" (click)="saveRename()" title="Save">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-              </button>
-              <button class="rename-action-btn cancel-btn" (click)="cancelRename()" title="Cancel">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-              </button>
-            </div>
-            <div class="rename-error-msg" *ngIf="renameError">
-              {{ renameError }}
-            </div>
+@if (!isOffline) {
+  <div class="layout" [class.is-resizing]="isResizing" [class.sidebar-open]="isSidebarOpen">
+    <div class="sidebar gh-main-container" #sidebar [style.width.px]="sidebarWidth">
+      <button class="sidebar-close-btn" (click)="closeSidebar()" title="Close Sidebar" aria-label="Close sidebar">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </button>
+      <h3 class="sidebar-title">Conversations</h3>
+      <button class="btn-gh btn-new-chat" (click)="navigateToNewSession()">New Chat</button>
+      <ul>
+        @if (loadingSessions) {
+          <div class="sessions-loader">
+            <div class="sidebar-spinner"></div>
+            <span>Loading Conversations...</span>
           </div>
-        </ng-container>
+        }
+        @if (!loadingSessions && sessions.length === 0) {
+          <li class="empty-sessions-msg">
+            No conversations yet.
+          </li>
+        }
+        @for (s of sessions; track s) {
+          <li [class.active]="s.id === currentSessionId" (click)="navigateToSession(s.id)">
+            <div class="session-info">
+              <div class="session-title" title="{{ s.title }}">{{ s.title }}</div>
+              @if (s.lastMessageUtc) {
+                <div class="session-time">{{ s.lastMessageUtc | relativeTime }}</div>
+              }
+            </div>
+            <button class="session-delete-btn" (click)="requestDeleteSession(s.id, $event)" title="Delete Session">X</button>
+          </li>
+        }
+        <!-- Load More link -->
+        @if (hasMoreSessions && !loadingMoreSessions && !loadingSessions) {
+          <li
+            class="load-more-item" (click)="loadMoreSessions()">
+            Load more
+          </li>
+        }
+        <!-- Loading spinner for additional pages -->
+        @if (loadingMoreSessions) {
+          <li class="load-more-spinner-item">
+            <div class="sidebar-spinner load-more-spinner"></div>
+          </li>
+        }
+      </ul>
+      <div class="bottom-links">
+        <a routerLink="/settings" queryParamsHandling="preserve">Settings</a>
+        <a routerLink="/api-keys" queryParamsHandling="preserve">API Keys</a>
+        <a routerLink="/models" queryParamsHandling="preserve">Models</a>
+        @if (authService.user$ | async; as user) {
+          @if (user.isAdmin) {
+            <a routerLink="/admin" queryParamsHandling="preserve">Admin</a>
+          }
+        }
+        @if (showDebugLog) {
+          <a routerLink="/debug-log" queryParamsHandling="preserve">Debug Log</a>
+        }
+        <a href="#" (click)="logout($event)">Logout</a>
       </div>
-      
-      <ng-template #newChatHeader>
-        <div class="chat-title-container">
-          <span class="chat-title">New Chat</span>
-        </div>
-      </ng-template>
     </div>
-    <div class="messages" #messagesContainer (wheel)="onUserInteraction()" (touchstart)="onUserInteraction()" (scroll)="onScroll()" [class.hide-thoughts]="showThoughtsAndTools === 0 || showThoughtsAndTools === 1">
-      <div *ngIf="messages.length === 0 && (!hasApiKey || !hasModel)" class="chat-alert-box gh-main-container">
-        <div class="alert-icon">⚠️</div>
-        <h3>Settings Missing</h3>
-        <p>Please configure your AI Provider settings to start chatting.</p>
-        <ul class="missing-settings-list">
-           <li *ngIf="!hasApiKey">API Key is not set.</li>
-           <li *ngIf="!hasModel">Model is not set.</li>
-        </ul>
-        <a [routerLink]="!hasApiKey ? '/api-keys' : '/models'" queryParamsHandling="preserve" class="btn-gh mt-10">
-          {{ !hasApiKey ? 'Go to API Keys' : 'Go to Models' }}
-        </a>
-      </div>
-      <div *ngIf="isHandoffWaiting && hasApiKey && hasModel" class="handoff-loading-box gh-main-container">
-        <div class="handoff-avatar-container">
-          <img src="/img/gnoll-overseer-avatar-256x256-static.webp" alt="Gnoll Overseer" class="overseer-avatar-large" width="128" height="128" />
-        </div>
-        <h3 class="handoff-loading-title">Consulting the Overseer...</h3>
-        <div class="handoff-spinner-container">
-          <div class="sidebar-spinner handoff-spinner"></div>
-        </div>
-      </div>
-      <div *ngFor="let msg of messages; let i = index" class="message-box" [ngClass]="msg.role">
-        <div class="message-header">
-          <img *ngIf="msg.role === 'assistant'" src="/img/gnoll-overseer-avatar-128x128-static.webp" class="overseer-avatar" alt="Overseer" width="64" height="64" />
-          <strong *ngIf="msg.role === 'assistant'">Overseer</strong>
-          <strong *ngIf="msg.role === 'user'">You</strong>
-          <span class="msg-time" *ngIf="msg.timestampUtc">{{ msg.timestampUtc | relativeTime }}</span>
-          <div class="header-right-container">
-            <div *ngIf="msg.role === 'assistant' && msg.modelDisplayName" class="model-name-container">
-              <span class="model-name-subtext">{{ msg.modelDisplayName }}</span>
-              <span class="msg-model-badge" *ngIf="msg.thinkingLevel">{{ formatThinkingLevel(msg.thinkingLevel) }}</span>
-            </div>
-            <div *ngIf="msg.role === 'assistant' && msg.timeToFirstTokenMs != null" class="ttft-container" style="text-align: right; margin-top: 2px;">
-              <span class="model-name-subtext">{{ formatTtft(msg.timeToFirstTokenMs) }}</span>
-            </div>
-          </div>
-        </div>
-        <div *ngIf="msg.attachments && msg.attachments.length > 0" class="msg-attachments">
-          <ng-container *ngFor="let att of msg.attachments">
-            <a *ngIf="att.id && isImage(att.fileName)" class="msg-att-item" (click)="openImagePreview(att, $event)" href="javascript:void(0)" title="Preview {{ att.fileName }}">
-              <div><span class="file-type-badge">{{ getFileExtension(att.fileName) }}</span><span class="file-name-text">{{ att.fileName }}</span></div>
-            </a>
-            <a *ngIf="att.id && !isImage(att.fileName)" class="msg-att-item" [href]="'/api/chat/attachments/' + att.id" [download]="att.fileName" rel="noopener" title="Download {{ att.fileName }}">
-              <div><span class="file-type-badge">{{ getFileExtension(att.fileName) }}</span><span class="file-name-text">{{ att.fileName }}</span></div>
-            </a>
-            <span *ngIf="!att.id" class="msg-att-item msg-att-pending" title="Uploading {{ att.fileName }}...">
-              <div><span class="file-type-badge">{{ getFileExtension(att.fileName) }}</span><span class="file-name-text">{{ att.fileName }}</span></div>
-            </span>
-          </ng-container>
-        </div>
-        <div *ngIf="msg.toolCalls && msg.toolCalls.length > 0 && (showThoughtsAndTools === 1 || showThoughtsAndTools === 3)" class="tool-calls-container">
-          <div *ngFor="let tc of msg.toolCalls; let tIndex = index" class="tool-call" [ngClass]="tc.status">
-            <div class="tool-call-header">
-              <span class="tool-icon">🛠️</span>
-              <span class="tool-name">{{ tc.displayName || tc.name }}</span>
-              <span class="tool-args" *ngIf="tc.argsText"> ({{ tc.argsText }})</span>
-              <span class="tool-status" *ngIf="tc.status === 'running'"><span class="gh-spinner-small"></span></span>
-              <span class="tool-status" *ngIf="tc.status === 'completed'">✅</span>
-              <span class="tool-status" *ngIf="tc.status === 'error'">❌</span>
-            </div>
-            <div class="tool-call-result" *ngIf="tc.status === 'completed'">
-              <details>
-                <summary>
-                  <span>Result</span>
-                  <button class="tool-copy-btn" (click)="copyToolResult(tc.result, i + '-' + tIndex, $event)" title="Copy Result">
-                    <span *ngIf="copiedToolCallId === (i + '-' + tIndex)">✅</span>
-                    <svg *ngIf="copiedToolCallId !== (i + '-' + tIndex)" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+    <div class="resizer" (mousedown)="startResize($event)" (touchstart)="startResize($event)"></div>
+    <div class="sidebar-backdrop" [class.visible]="isSidebarOpen" (click)="closeSidebar()"></div>
+    <div class="chat-area gh-main-container">
+      <div class="chat-header">
+        <button class="sidebar-toggle" (click)="toggleSidebar()">☰</button>
+        @if (currentSessionId) {
+          <div class="chat-title-container">
+            @if (!isRenamingTitle) {
+              <span class="chat-title" title="{{ currentTitle }}">{{ currentTitle }}</span>
+              <button class="rename-btn" (click)="startRename()" title="Rename Chat">✏️</button>
+            }
+            @if (isRenamingTitle) {
+              <div class="rename-container">
+                <div class="rename-input-wrapper" [class.has-error]="renameError">
+                  <input type="text" class="rename-input" [value]="renameTitleValue" (input)="renameTitleValue = $any($event.target).value" (input)="renameError = null" (keydown.enter)="saveRename()" (keydown.esc)="cancelRename()" #renameInput autofocus>
+                  <button class="rename-action-btn ok-btn" (click)="saveRename()" title="Save">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
                   </button>
-                </summary>
-                <pre>{{ tc.result }}</pre>
-              </details>
-            </div>
-            <div class="tool-call-result error" *ngIf="tc.status === 'error'">
-              <details>
-                <summary>Error</summary>
-                <pre>{{ tc.error }}</pre>
-              </details>
-            </div>
-          </div>
-        </div>
-        <div [innerHTML]="msg.content | markdown" class="markdown-body"></div>
-        <button *ngIf="msg.role === 'assistant' && msg.id" class="report-btn" (click)="requestReportMessage(msg.id, i)" title="Report message">
-          <span *ngIf="reportSuccessIndex === i">✅</span>
-          <svg *ngIf="reportSuccessIndex !== i" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>
-        </button>
-        <button class="copy-btn" (click)="copyToClipboard(msg.content, i)" title="Copy">
-          <span *ngIf="copiedMsgIndex === i">✅</span>
-          <svg *ngIf="copiedMsgIndex !== i" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-        </button>
-      </div>
-      <div *ngIf="isStreaming || streamingMessage" class="message-box assistant">
-        <div class="message-header">
-          <img [src]="timeToFirstTokenMs === null ? '/img/gnoll-overseer-avatar-128x128-static.webp' : '/img/GnollOverseerAvatar-128x128-animated.webp'" class="overseer-avatar" alt="Overseer" width="64" height="64" />
-          <strong>Overseer</strong>
-          <span class="msg-time">just now</span>
-          <div class="header-right-container">
-            <div *ngIf="selectedModel?.displayName || selectedModel?.modelId || singleModelInfo?.modelId" class="model-name-container">
-               <span class="model-name-subtext">{{ selectedModel?.displayName || selectedModel?.modelId || singleModelInfo?.modelId }}</span>
-               <span class="msg-model-badge" *ngIf="selectedModel?.thinkingLevel || singleModelInfo?.thinkingLevel">{{ formatThinkingLevel(selectedModel?.thinkingLevel || singleModelInfo?.thinkingLevel) }}</span>
-            </div>
-            <div class="ttft-container" style="text-align: right; margin-top: 2px;">
-               <span class="model-name-subtext" *ngIf="timeToFirstTokenMs === null"><span class="gh-spinner-small" style="display:inline-block; width: 10px; height: 10px; border-width: 1.5px;"></span></span>
-               <span class="model-name-subtext" *ngIf="timeToFirstTokenMs !== null">{{ formatTtft(timeToFirstTokenMs) }}</span>
-            </div>
-          </div>
-        </div>
-        <div *ngIf="streamingToolCalls.length > 0 && (showThoughtsAndTools === 1 || showThoughtsAndTools === 3)" class="tool-calls-container">
-          <div *ngFor="let tc of streamingToolCalls; let tIndex = index" class="tool-call" [ngClass]="tc.status">
-            <div class="tool-call-header">
-              <span class="tool-icon">🛠️</span>
-              <span class="tool-name">{{ tc.displayName || tc.name }}</span>
-              <span class="tool-args" *ngIf="tc.argsText"> ({{ tc.argsText }})</span>
-              <span class="tool-status" *ngIf="tc.status === 'running'"><span class="gh-spinner-small"></span></span>
-              <span class="tool-status" *ngIf="tc.status === 'completed'">✅</span>
-              <span class="tool-status" *ngIf="tc.status === 'error'">❌</span>
-            </div>
-            <div class="tool-call-result" *ngIf="tc.status === 'completed'">
-              <details>
-                <summary>
-                  <span>Result</span>
-                  <button class="tool-copy-btn" (click)="copyToolResult(tc.result, 'stream-' + tIndex, $event)" title="Copy Result">
-                    <span *ngIf="copiedToolCallId === ('stream-' + tIndex)">✅</span>
-                    <svg *ngIf="copiedToolCallId !== ('stream-' + tIndex)" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                  <button class="rename-action-btn cancel-btn" (click)="cancelRename()" title="Cancel">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                   </button>
-                </summary>
-                <pre>{{ tc.result }}</pre>
-              </details>
-            </div>
-            <div class="tool-call-result error" *ngIf="tc.status === 'error'">
-              <details>
-                <summary>Error</summary>
-                <pre>{{ tc.error }}</pre>
-              </details>
-            </div>
-          </div>
-        </div>
-        <div class="thinking-placeholder" *ngIf="isStreaming && showThoughtsAndTools === 0 && !hasRealContent">
-          <span class="gh-spinner-small" style="display:inline-block; margin-inline-end: 8px;"></span> 
-          <em>{{ getMinimalStatusLabel() }}</em>
-        </div>
-        <div [innerHTML]="streamingMessage | markdown" class="markdown-body" [style.display]="(isStreaming && (showThoughtsAndTools === 0 || showThoughtsAndTools === 1) && !hasRealContent) ? 'none' : 'block'"></div>
-        <button class="copy-btn" (click)="copyToClipboard(streamingMessage, null)" title="Copy">
-          <span *ngIf="copiedStreamMsg">✅</span>
-          <svg *ngIf="!copiedStreamMsg" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-        </button>
-      </div>
-    </div>
-    <div class="input-area-container">
-      <!-- Progress Indicator at the top of the prompt box -->
-      <div class="progress-bar" *ngIf="isStreaming || currentStatusText">
-        <span class="status-icon spin" *ngIf="showSpinner">↻</span>
-        <span class="status-icon" *ngIf="!showSpinner && !isStreaming">✅</span>
-        <span class="status-text">{{ currentStatusText }}</span>
-        <button *ngIf="isStreaming" class="stop-btn" (click)="stopRequest()" title="Stop Request">■</button>
-      </div>
-      
-      <div class="progress-bar title-progress" *ngIf="isGeneratingTitle || titleStatusText">
-        <span class="status-icon spin" *ngIf="isGeneratingTitle">↻</span>
-        <span class="status-icon" *ngIf="!isGeneratingTitle && titleStatusText">✅</span>
-        <span class="status-text">{{ titleStatusText }}</span>
-        <button *ngIf="isGeneratingTitle" class="stop-btn" (click)="cancelTitleGeneration()" title="Cancel Title Generation">■</button>
-      </div>
-
-      <div class="attachments-preview" *ngIf="pendingAttachments.length > 0">
-        <div class="attachment-chip" *ngFor="let att of pendingAttachments; let i = index">
-          <a *ngIf="isImage(att.name)" class="att-name preview-link" (click)="openImagePreview(att, $event, true)" href="javascript:void(0)" title="Preview {{ att.name }}">{{ att.name }}</a>
-          <a *ngIf="!isImage(att.name)" class="att-name preview-link" [href]="att.base64" [download]="att.name" title="Download {{ att.name }}">{{ att.name }}</a>
-          <button (click)="removeAttachment(i)">x</button>
-        </div>
-      </div>
-      <div class="input-area">
-        <div class="input-area-top">
-          <div *ngIf="hasModel" class="custom-model-selector model-selector-wrapper">
-            <ng-container *ngIf="(userModels.length + systemModels.length) > 1; else singleModelView">
-              <button class="selector-trigger" (click)="toggleModelDropdown($event)" [class.open]="isModelDropdownOpen">
-                <span class="model-name">{{ selectedModel?.displayName || selectedModel?.modelId || 'Select Model' }}</span>
-                <span class="thinking-badge" *ngIf="selectedModel?.thinkingLevel">{{ formatThinkingLevel(selectedModel?.thinkingLevel) }}</span>
-                <span class="provider-badge">{{ selectedModel?.provider }}</span>
-                <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-              </button>
-              
-              <div class="selector-dropdown" *ngIf="isModelDropdownOpen">
-                <div *ngIf="userModels.length > 0" class="model-group-title" style="padding: 4px 10px; font-size: 0.8em; color: var(--gh-gold); background-color: var(--gh-panel-bg); text-transform: uppercase;">Your Models</div>
-                <div class="model-option" *ngFor="let model of userModels" (click)="selectModel(model.id)" [class.selected]="model.id === selectedUserModelId">
-                  <span class="model-name">{{ model.displayName || model.modelId }}</span>
-                  <span class="thinking-badge" *ngIf="model.thinkingLevel">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
-                  <span class="provider-badge">{{ model.provider }}</span>
                 </div>
-                <div *ngIf="systemModels.length > 0" class="model-group-title" style="padding: 4px 10px; font-size: 0.8em; color: var(--gh-gold); background-color: var(--gh-panel-bg); text-transform: uppercase;">System Models</div>
-                <div class="model-option" *ngFor="let model of systemModels" (click)="selectModel(model.id)" [class.selected]="model.id === selectedUserModelId">
-                  <span class="model-name">{{ model.displayName || model.modelId }}</span>
-                  <span class="thinking-badge" *ngIf="model.thinkingLevel">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
-                  <span class="provider-badge">{{ model.provider }}</span>
+                @if (renameError) {
+                  <div class="rename-error-msg">
+                    {{ renameError }}
+                  </div>
+                }
+              </div>
+            }
+          </div>
+        } @else {
+          <div class="chat-title-container">
+            <span class="chat-title">New Chat</span>
+          </div>
+        }
+      </div>
+      <div class="messages" #messagesContainer (wheel)="onUserInteraction()" (touchstart)="onUserInteraction()" (scroll)="onScroll()" [class.hide-thoughts]="showThoughtsAndTools === 0 || showThoughtsAndTools === 1">
+        @if (messages.length === 0 && (!hasApiKey || !hasModel)) {
+          <div class="chat-alert-box gh-main-container">
+            <div class="alert-icon">⚠️</div>
+            <h3>Settings Missing</h3>
+            <p>Please configure your AI Provider settings to start chatting.</p>
+            <ul class="missing-settings-list">
+              @if (!hasApiKey) {
+                <li>API Key is not set.</li>
+              }
+              @if (!hasModel) {
+                <li>Model is not set.</li>
+              }
+            </ul>
+            <a [routerLink]="!hasApiKey ? '/api-keys' : '/models'" queryParamsHandling="preserve" class="btn-gh mt-10">
+              {{ !hasApiKey ? 'Go to API Keys' : 'Go to Models' }}
+            </a>
+          </div>
+        }
+        @if (isHandoffWaiting && hasApiKey && hasModel) {
+          <div class="handoff-loading-box gh-main-container">
+            <div class="handoff-avatar-container">
+              <img src="/img/gnoll-overseer-avatar-256x256-static.webp" alt="Gnoll Overseer" class="overseer-avatar-large" width="128" height="128" />
+            </div>
+            <h3 class="handoff-loading-title">Consulting the Overseer...</h3>
+            <div class="handoff-spinner-container">
+              <div class="sidebar-spinner handoff-spinner"></div>
+            </div>
+          </div>
+        }
+        @for (msg of messages; track msg; let i = $index) {
+          <div class="message-box" [ngClass]="msg.role">
+            <div class="message-header">
+              @if (msg.role === 'assistant') {
+                <img src="/img/gnoll-overseer-avatar-128x128-static.webp" class="overseer-avatar" alt="Overseer" width="64" height="64" />
+              }
+              @if (msg.role === 'assistant') {
+                <strong>Overseer</strong>
+              }
+              @if (msg.role === 'user') {
+                <strong>You</strong>
+              }
+              @if (msg.timestampUtc) {
+                <span class="msg-time">{{ msg.timestampUtc | relativeTime }}</span>
+              }
+              <div class="header-right-container">
+                @if (msg.role === 'assistant' && msg.modelDisplayName) {
+                  <div class="model-name-container">
+                    <span class="model-name-subtext">{{ msg.modelDisplayName }}</span>
+                    @if (msg.thinkingLevel) {
+                      <span class="msg-model-badge">{{ formatThinkingLevel(msg.thinkingLevel) }}</span>
+                    }
+                  </div>
+                }
+                @if (msg.role === 'assistant' && msg.timeToFirstTokenMs != null) {
+                  <div class="ttft-container" style="text-align: right; margin-top: 2px;">
+                    <span class="model-name-subtext">{{ formatTtft(msg.timeToFirstTokenMs) }}</span>
+                  </div>
+                }
+              </div>
+            </div>
+            @if (msg.attachments && msg.attachments.length > 0) {
+              <div class="msg-attachments">
+                @for (att of msg.attachments; track att) {
+                  @if (att.id && isImage(att.fileName)) {
+                    <a class="msg-att-item" (click)="openImagePreview(att, $event)" href="javascript:void(0)" title="Preview {{ att.fileName }}">
+                      <div><span class="file-type-badge">{{ getFileExtension(att.fileName) }}</span><span class="file-name-text">{{ att.fileName }}</span></div>
+                    </a>
+                  }
+                  @if (att.id && !isImage(att.fileName)) {
+                    <a class="msg-att-item" [href]="'/api/chat/attachments/' + att.id" [download]="att.fileName" rel="noopener" title="Download {{ att.fileName }}">
+                      <div><span class="file-type-badge">{{ getFileExtension(att.fileName) }}</span><span class="file-name-text">{{ att.fileName }}</span></div>
+                    </a>
+                  }
+                  @if (!att.id) {
+                    <span class="msg-att-item msg-att-pending" title="Uploading {{ att.fileName }}...">
+                      <div><span class="file-type-badge">{{ getFileExtension(att.fileName) }}</span><span class="file-name-text">{{ att.fileName }}</span></div>
+                    </span>
+                  }
+                }
+              </div>
+            }
+            @if (msg.toolCalls && msg.toolCalls.length > 0 && (showThoughtsAndTools === 1 || showThoughtsAndTools === 3)) {
+              <div class="tool-calls-container">
+                @for (tc of msg.toolCalls; track tc; let tIndex = $index) {
+                  <div class="tool-call" [ngClass]="tc.status">
+                    <div class="tool-call-header">
+                      <span class="tool-icon">🛠️</span>
+                      <span class="tool-name">{{ tc.displayName || tc.name }}</span>
+                      @if (tc.argsText) {
+                        <span class="tool-args"> ({{ tc.argsText }})</span>
+                      }
+                      @if (tc.status === 'running') {
+                        <span class="tool-status"><span class="gh-spinner-small"></span></span>
+                      }
+                      @if (tc.status === 'completed') {
+                        <span class="tool-status">✅</span>
+                      }
+                      @if (tc.status === 'error') {
+                        <span class="tool-status">❌</span>
+                      }
+                    </div>
+                    @if (tc.status === 'completed') {
+                      <div class="tool-call-result">
+                        <details>
+                          <summary>
+                            <span>Result</span>
+                            <button class="tool-copy-btn" (click)="copyToolResult(tc.result, i + '-' + tIndex, $event)" title="Copy Result">
+                              @if (copiedToolCallId === (i + '-' + tIndex)) {
+                                <span>✅</span>
+                              }
+                              @if (copiedToolCallId !== (i + '-' + tIndex)) {
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                              }
+                            </button>
+                          </summary>
+                          <pre>{{ tc.result }}</pre>
+                        </details>
+                      </div>
+                    }
+                    @if (tc.status === 'error') {
+                      <div class="tool-call-result error">
+                        <details>
+                          <summary>Error</summary>
+                          <pre>{{ tc.error }}</pre>
+                        </details>
+                      </div>
+                    }
+                  </div>
+                }
+              </div>
+            }
+            <div [innerHTML]="msg.content | markdown" class="markdown-body"></div>
+            @if (msg.role === 'assistant' && msg.id) {
+              <button class="report-btn" (click)="requestReportMessage(msg.id, i)" title="Report message">
+                @if (reportSuccessIndex === i) {
+                  <span>✅</span>
+                }
+                @if (reportSuccessIndex !== i) {
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>
+                }
+              </button>
+            }
+            <button class="copy-btn" (click)="copyToClipboard(msg.content, i)" title="Copy">
+              @if (copiedMsgIndex === i) {
+                <span>✅</span>
+              }
+              @if (copiedMsgIndex !== i) {
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              }
+            </button>
+          </div>
+        }
+        @if (isStreaming || streamingMessage) {
+          <div class="message-box assistant">
+            <div class="message-header">
+              <img [src]="timeToFirstTokenMs === null ? '/img/gnoll-overseer-avatar-128x128-static.webp' : '/img/GnollOverseerAvatar-128x128-animated.webp'" class="overseer-avatar" alt="Overseer" width="64" height="64" />
+              <strong>Overseer</strong>
+              <span class="msg-time">just now</span>
+              <div class="header-right-container">
+                @if (selectedModel?.displayName || selectedModel?.modelId || singleModelInfo?.modelId) {
+                  <div class="model-name-container">
+                    <span class="model-name-subtext">{{ selectedModel?.displayName || selectedModel?.modelId || singleModelInfo?.modelId }}</span>
+                    @if (selectedModel?.thinkingLevel || singleModelInfo?.thinkingLevel) {
+                      <span class="msg-model-badge">{{ formatThinkingLevel(selectedModel?.thinkingLevel || singleModelInfo?.thinkingLevel) }}</span>
+                    }
+                  </div>
+                }
+                <div class="ttft-container" style="text-align: right; margin-top: 2px;">
+                  @if (timeToFirstTokenMs === null) {
+                    <span class="model-name-subtext"><span class="gh-spinner-small" style="display:inline-block; width: 10px; height: 10px; border-width: 1.5px;"></span></span>
+                  }
+                  @if (timeToFirstTokenMs !== null) {
+                    <span class="model-name-subtext">{{ formatTtft(timeToFirstTokenMs) }}</span>
+                  }
                 </div>
               </div>
-            </ng-container>
-            <ng-template #singleModelView>
-              <div class="single-model-display">
-                <span class="model-name">{{ selectedModel?.displayName || selectedModel?.modelId || singleModelInfo?.modelId || 'Model' }}</span>
-                <span class="thinking-badge" *ngIf="selectedModel?.thinkingLevel || singleModelInfo?.thinkingLevel">{{ formatThinkingLevel(selectedModel?.thinkingLevel || singleModelInfo?.thinkingLevel) }}</span>
-                <span class="provider-badge">{{ selectedModel?.provider || singleModelInfo?.provider }}</span>
+            </div>
+            @if (streamingToolCalls.length > 0 && (showThoughtsAndTools === 1 || showThoughtsAndTools === 3)) {
+              <div class="tool-calls-container">
+                @for (tc of streamingToolCalls; track tc; let tIndex = $index) {
+                  <div class="tool-call" [ngClass]="tc.status">
+                    <div class="tool-call-header">
+                      <span class="tool-icon">🛠️</span>
+                      <span class="tool-name">{{ tc.displayName || tc.name }}</span>
+                      @if (tc.argsText) {
+                        <span class="tool-args"> ({{ tc.argsText }})</span>
+                      }
+                      @if (tc.status === 'running') {
+                        <span class="tool-status"><span class="gh-spinner-small"></span></span>
+                      }
+                      @if (tc.status === 'completed') {
+                        <span class="tool-status">✅</span>
+                      }
+                      @if (tc.status === 'error') {
+                        <span class="tool-status">❌</span>
+                      }
+                    </div>
+                    @if (tc.status === 'completed') {
+                      <div class="tool-call-result">
+                        <details>
+                          <summary>
+                            <span>Result</span>
+                            <button class="tool-copy-btn" (click)="copyToolResult(tc.result, 'stream-' + tIndex, $event)" title="Copy Result">
+                              @if (copiedToolCallId === ('stream-' + tIndex)) {
+                                <span>✅</span>
+                              }
+                              @if (copiedToolCallId !== ('stream-' + tIndex)) {
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                              }
+                            </button>
+                          </summary>
+                          <pre>{{ tc.result }}</pre>
+                        </details>
+                      </div>
+                    }
+                    @if (tc.status === 'error') {
+                      <div class="tool-call-result error">
+                        <details>
+                          <summary>Error</summary>
+                          <pre>{{ tc.error }}</pre>
+                        </details>
+                      </div>
+                    }
+                  </div>
+                }
               </div>
-            </ng-template>
+            }
+            @if (isStreaming && showThoughtsAndTools === 0 && !hasRealContent) {
+              <div class="thinking-placeholder">
+                <span class="gh-spinner-small" style="display:inline-block; margin-inline-end: 8px;"></span>
+                <em>{{ getMinimalStatusLabel() }}</em>
+              </div>
+            }
+            <div [innerHTML]="streamingMessage | markdown" class="markdown-body" [style.display]="(isStreaming && (showThoughtsAndTools === 0 || showThoughtsAndTools === 1) && !hasRealContent) ? 'none' : 'block'"></div>
+            <button class="copy-btn" (click)="copyToClipboard(streamingMessage, null)" title="Copy">
+              @if (copiedStreamMsg) {
+                <span>✅</span>
+              }
+              @if (!copiedStreamMsg) {
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              }
+            </button>
           </div>
-          
-          <div class="vertical-separator" *ngIf="hasModel && showThoughtsAndTools !== undefined"></div>
-          
-          <div class="setting-indicator" *ngIf="showThoughtsAndTools !== undefined" [ngSwitch]="showThoughtsAndTools">
-            <span *ngSwitchCase="0" class="setting-badge badge-none" title="Show Thinking and Tool Use">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
-              Minimal
-            </span>
-            <span *ngSwitchCase="1" class="setting-badge badge-tools" title="Show Thinking and Tool Use">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
-              Blocks
-            </span>
-            <span *ngSwitchCase="2" class="setting-badge badge-text" title="Show Thinking and Tool Use">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1"><line x1="21" y1="6" x2="3" y2="6"></line><line x1="21" y1="12" x2="3" y2="12"></line><line x1="21" y1="18" x2="3" y2="18"></line></svg>
-              Text
-            </span>
-            <span *ngSwitchCase="3" class="setting-badge badge-all" title="Show Thinking and Tool Use">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 12 12 17 22 12"></polyline><polyline points="2 17 12 22 22 17"></polyline></svg>
-              Blocks and text
-            </span>
+        }
+      </div>
+      <div class="input-area-container">
+        <!-- Progress Indicator at the top of the prompt box -->
+        @if (isStreaming || currentStatusText) {
+          <div class="progress-bar">
+            @if (showSpinner) {
+              <span class="status-icon spin">↻</span>
+            }
+            @if (!showSpinner && !isStreaming) {
+              <span class="status-icon">✅</span>
+            }
+            <span class="status-text">{{ currentStatusText }}</span>
+            @if (isStreaming) {
+              <button class="stop-btn" (click)="stopRequest()" title="Stop Request">■</button>
+            }
           </div>
-        </div>
-        
-        <div class="input-row">
-          <button class="add-media-btn" (click)="triggerFileInput()" [disabled]="pendingAttachments.length >= 5">+</button>
-          <input type="file" id="fileInput" hidden multiple accept=".html,.htm,.txt,.md,.png,.jpg,.jpeg,.webp" (change)="onFileSelected($event)">
-          
-          <div class="chat-input-wrapper">
-            <textarea #promptInput [(ngModel)]="currentInput" (ngModelChange)="saveDraft()" (keydown.enter)="onEnter($event)" (paste)="onPaste($event)" placeholder="Ask the Overseer" autofocus class="w-100"></textarea>
+        }
+        @if (isGeneratingTitle || titleStatusText) {
+          <div class="progress-bar title-progress">
+            @if (isGeneratingTitle) {
+              <span class="status-icon spin">↻</span>
+            }
+            @if (!isGeneratingTitle && titleStatusText) {
+              <span class="status-icon">✅</span>
+            }
+            <span class="status-text">{{ titleStatusText }}</span>
+            @if (isGeneratingTitle) {
+              <button class="stop-btn" (click)="cancelTitleGeneration()" title="Cancel Title Generation">■</button>
+            }
           </div>
-          
-          <button class="btn-gh ms-10" (click)="sendMessage()" [disabled]="isStreaming || (!currentInput.trim() && pendingAttachments.length === 0)">Send</button>
+        }
+        @if (pendingAttachments.length > 0) {
+          <div class="attachments-preview">
+            @for (att of pendingAttachments; track att; let i = $index) {
+              <div class="attachment-chip">
+                @if (isImage(att.name)) {
+                  <a class="att-name preview-link" (click)="openImagePreview(att, $event, true)" href="javascript:void(0)" title="Preview {{ att.name }}">{{ att.name }}</a>
+                }
+                @if (!isImage(att.name)) {
+                  <a class="att-name preview-link" [href]="att.base64" [download]="att.name" title="Download {{ att.name }}">{{ att.name }}</a>
+                }
+                <button (click)="removeAttachment(i)">x</button>
+              </div>
+            }
+          </div>
+        }
+        <div class="input-area">
+          <div class="input-area-top">
+            @if (hasModel) {
+              <div class="custom-model-selector model-selector-wrapper">
+                @if ((userModels.length + systemModels.length) > 1) {
+                  <button class="selector-trigger" (click)="toggleModelDropdown($event)" [class.open]="isModelDropdownOpen">
+                    <span class="model-name">{{ selectedModel?.displayName || selectedModel?.modelId || 'Select Model' }}</span>
+                    @if (selectedModel?.thinkingLevel) {
+                      <span class="thinking-badge">{{ formatThinkingLevel($safeNavigationMigration(selectedModel?.thinkingLevel)) }}</span>
+                    }
+                    <span class="provider-badge">{{ selectedModel?.provider }}</span>
+                    <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                  </button>
+                  @if (isModelDropdownOpen) {
+                    <div class="selector-dropdown">
+                      @if (userModels.length > 0) {
+                        <div class="model-group-title" style="padding: 4px 10px; font-size: 0.8em; color: var(--gh-gold); background-color: var(--gh-panel-bg); text-transform: uppercase;">Your Models</div>
+                      }
+                      @for (model of userModels; track model) {
+                        <div class="model-option" (click)="selectModel(model.id)" [class.selected]="model.id === selectedUserModelId">
+                          <span class="model-name">{{ model.displayName || model.modelId }}</span>
+                          @if (model.thinkingLevel) {
+                            <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
+                          }
+                          <span class="provider-badge">{{ model.provider }}</span>
+                        </div>
+                      }
+                      @if (systemModels.length > 0) {
+                        <div class="model-group-title" style="padding: 4px 10px; font-size: 0.8em; color: var(--gh-gold); background-color: var(--gh-panel-bg); text-transform: uppercase;">System Models</div>
+                      }
+                      @for (model of systemModels; track model) {
+                        <div class="model-option" (click)="selectModel(model.id)" [class.selected]="model.id === selectedUserModelId">
+                          <span class="model-name">{{ model.displayName || model.modelId }}</span>
+                          @if (model.thinkingLevel) {
+                            <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
+                          }
+                          <span class="provider-badge">{{ model.provider }}</span>
+                        </div>
+                      }
+                    </div>
+                  }
+                } @else {
+                  <div class="single-model-display">
+                    <span class="model-name">{{ selectedModel?.displayName || selectedModel?.modelId || singleModelInfo?.modelId || 'Model' }}</span>
+                    @if (selectedModel?.thinkingLevel || singleModelInfo?.thinkingLevel) {
+                      <span class="thinking-badge">{{ formatThinkingLevel(selectedModel?.thinkingLevel || singleModelInfo?.thinkingLevel) }}</span>
+                    }
+                    <span class="provider-badge">{{ selectedModel?.provider || singleModelInfo?.provider }}</span>
+                  </div>
+                }
+              </div>
+            }
+            @if (hasModel && showThoughtsAndTools !== undefined) {
+              <div class="vertical-separator"></div>
+            }
+            @if (showThoughtsAndTools !== undefined) {
+              <div class="setting-indicator">
+                @switch (showThoughtsAndTools) {
+                  @case (0) {
+                    <span class="setting-badge badge-none" title="Show Thinking and Tool Use">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+                      Minimal
+                    </span>
+                  }
+                  @case (1) {
+                    <span class="setting-badge badge-tools" title="Show Thinking and Tool Use">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
+                      Blocks
+                    </span>
+                  }
+                  @case (2) {
+                    <span class="setting-badge badge-text" title="Show Thinking and Tool Use">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1"><line x1="21" y1="6" x2="3" y2="6"></line><line x1="21" y1="12" x2="3" y2="12"></line><line x1="21" y1="18" x2="3" y2="18"></line></svg>
+                      Text
+                    </span>
+                  }
+                  @case (3) {
+                    <span class="setting-badge badge-all" title="Show Thinking and Tool Use">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 12 12 17 22 12"></polyline><polyline points="2 17 12 22 22 17"></polyline></svg>
+                      Blocks and text
+                    </span>
+                  }
+                }
+              </div>
+            }
+          </div>
+          <div class="input-row">
+            <button class="add-media-btn" (click)="triggerFileInput()" [disabled]="pendingAttachments.length >= 5">+</button>
+            <input type="file" id="fileInput" hidden multiple accept=".html,.htm,.txt,.md,.png,.jpg,.jpeg,.webp" (change)="onFileSelected($event)">
+            <div class="chat-input-wrapper">
+              <textarea #promptInput [(ngModel)]="currentInput" (ngModelChange)="saveDraft()" (keydown.enter)="onEnter($event)" (paste)="onPaste($event)" placeholder="Ask the Overseer" autofocus class="w-100"></textarea>
+            </div>
+            <button class="btn-gh ms-10" (click)="sendMessage()" [disabled]="isStreaming || (!currentInput.trim() && pendingAttachments.length === 0)">Send</button>
+          </div>
         </div>
       </div>
     </div>
   </div>
-</div>
+}
 
-<div *ngIf="isOffline" class="offline-notice">
-  <h2>Overseer requires an internet connection</h2>
-  <p>Please check your connection and try again.</p>
-</div>
+@if (isOffline) {
+  <div class="offline-notice">
+    <h2>Overseer requires an internet connection</h2>
+    <p>Please check your connection and try again.</p>
+  </div>
+}
 
 <dialog #deleteConfirmDialog class="gh-dialog">
   <h3>Delete Conversation</h3>
@@ -335,22 +502,28 @@
 </dialog>
 
 <dialog #imagePreviewDialog class="gh-dialog image-preview-dialog" (click)="onDialogClick($event)">
-  <div class="dialog-content" *ngIf="previewAttachment">
-    <div class="dialog-header">
-      <div class="preview-title-container">
-        <span class="file-type-badge">{{ getFileExtension(previewAttachment.fileName) }}</span>
-        <span class="preview-title">{{ previewAttachment.fileName }}</span>
+  @if (previewAttachment) {
+    <div class="dialog-content">
+      <div class="dialog-header">
+        <div class="preview-title-container">
+          <span class="file-type-badge">{{ getFileExtension(previewAttachment.fileName) }}</span>
+          <span class="preview-title">{{ previewAttachment.fileName }}</span>
+        </div>
+        <div class="preview-actions">
+          <a class="btn-gh btn-gh-download" [href]="previewAttachment.downloadUrl" [download]="previewAttachment.fileName">Download</a>
+          <button class="btn-gh btn-gh-close" (click)="closeImagePreview()">Close</button>
+        </div>
       </div>
-      <div class="preview-actions">
-        <a class="btn-gh btn-gh-download" [href]="previewAttachment.downloadUrl" [download]="previewAttachment.fileName">Download</a>
-        <button class="btn-gh btn-gh-close" (click)="closeImagePreview()">Close</button>
+      <div class="image-container">
+        @if (previewAttachment.isPending) {
+          <img [src]="previewAttachment.base64" alt="{{ previewAttachment.fileName }}" />
+        }
+        @if (!previewAttachment.isPending) {
+          <img [src]="'/api/chat/attachments/' + previewAttachment.id + '?inline=true'" alt="{{ previewAttachment.fileName }}" />
+        }
       </div>
     </div>
-    <div class="image-container">
-      <img *ngIf="previewAttachment.isPending" [src]="previewAttachment.base64" alt="{{ previewAttachment.fileName }}" />
-      <img *ngIf="!previewAttachment.isPending" [src]="'/api/chat/attachments/' + previewAttachment.id + '?inline=true'" alt="{{ previewAttachment.fileName }}" />
-    </div>
-  </div>
+  }
 </dialog>
 
 <div #errorToast popover="manual" class="toast-error">
@@ -373,12 +546,20 @@
   <div class="dialog-actions">
     <button class="btn-gh btn-gh-cancel" (click)="closeReportConfirm()" [disabled]="isReporting">Cancel</button>
     <button class="btn-gh" (click)="confirmReport()" [disabled]="isReporting">
-      <span *ngIf="isReporting" class="gh-spinner-small"></span>
-      <span *ngIf="isReporting" class="ms-10">Sending...</span>
-      <span *ngIf="!isReporting">OK</span>
+      @if (isReporting) {
+        <span class="gh-spinner-small"></span>
+      }
+      @if (isReporting) {
+        <span class="ms-10">Sending...</span>
+      }
+      @if (!isReporting) {
+        <span>OK</span>
+      }
     </button>
   </div>
-  <div *ngIf="reportError" class="report-error-msg">
-    {{ reportError }}
-  </div>
+  @if (reportError) {
+    <div class="report-error-msg">
+      {{ reportError }}
+    </div>
+  }
 </dialog>

@@ -1,15 +1,15 @@
-import { Component, OnInit, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, OnInit, inject, ChangeDetectionStrategy } from '@angular/core';
+
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import { SettingsService, ApiKeyStatus } from '../services/settings.service';
 
 @Component({
-  selector: 'app-api-keys',
-  standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule],
-  templateUrl: './api-keys.component.html',
-  styleUrl: './api-keys.component.scss'
+    selector: 'app-api-keys',
+    imports: [FormsModule, RouterModule],
+    templateUrl: './api-keys.component.html',
+    changeDetection: ChangeDetectionStrategy.Eager,
+    styleUrl: './api-keys.component.scss'
 })
 export class ApiKeysComponent implements OnInit {
   settingsService = inject(SettingsService);

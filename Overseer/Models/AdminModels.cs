@@ -218,3 +218,18 @@ public class ResetCounterRequest
 {
     public string? CounterName { get; set; }
 }
+
+public class AnalyticsUserRow
+{
+    public string UserId { get; set; } = string.Empty;
+    public string UserName { get; set; } = string.Empty;
+    public int ChatRequests { get; set; }
+    public int TitleRequests { get; set; }
+    public long InputTokens { get; set; }
+    public long OutputTokens { get; set; }
+}
+
+public class AnalyticsResponse
+{
+    public List<AnalyticsUserRow> Rows { get; set; } = new();
+}

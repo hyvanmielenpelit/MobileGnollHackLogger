@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, inject, ChangeDetectorRef, ViewChild, ElementRef, HostListener, NgZone, AfterViewInit } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject, ChangeDetectorRef, ViewChild, ElementRef, HostListener, NgZone, AfterViewInit, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ChatService, ChatSession, ChatMessage, ChatMessageToolCall } from '../services/chat.service';
@@ -26,11 +26,11 @@ export interface ToolResponse {
 }
 
 @Component({
-  selector: 'app-chat',
-  standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, MarkdownPipe, RelativeTimePipe],
-  styleUrl: './chat.component.scss',
-  templateUrl: './chat.component.html'
+    selector: 'app-chat',
+    imports: [CommonModule, FormsModule, RouterModule, MarkdownPipe, RelativeTimePipe],
+    styleUrl: './chat.component.scss',
+    changeDetection: ChangeDetectionStrategy.Eager,
+    templateUrl: './chat.component.html'
 })
 export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   private static readonly TOOL_DISPLAY_NAMES: Record<string, string> = {
@@ -310,7 +310,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     return false;
   }
 
-  @HostListener('window:focus', ['$event'])
+  @HostListener('window:focus')
   onWindowFocus() {
     this.focusPromptInput();
   }

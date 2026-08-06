@@ -1,15 +1,15 @@
-import { Component, OnInit, inject, ViewChild, ElementRef } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, OnInit, inject, ViewChild, ElementRef, ChangeDetectionStrategy } from '@angular/core';
+
 import { FormsModule } from '@angular/forms';
 import { SettingsService, UserAiSettings, ApiModelDto } from '../services/settings.service';
 import { RouterModule } from '@angular/router';
 
 @Component({
-  selector: 'app-settings',
-  standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule],
-  styleUrl: './settings.component.scss',
-  templateUrl: './settings.component.html'
+    selector: 'app-settings',
+    imports: [FormsModule, RouterModule],
+    styleUrl: './settings.component.scss',
+    changeDetection: ChangeDetectionStrategy.Eager,
+    templateUrl: './settings.component.html'
 })
 export class SettingsComponent implements OnInit {
   settingsService = inject(SettingsService);

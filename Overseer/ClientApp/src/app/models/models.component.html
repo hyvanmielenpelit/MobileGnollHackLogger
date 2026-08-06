@@ -11,139 +11,175 @@
     <button class="btn-gh" (click)="openModelPicker()">Add Model</button>
   </div>
 
-  <div *ngIf="loading" class="loading-state">
-    <span class="sidebar-spinner"></span> Loading Models...
-  </div>
-
-  <div *ngIf="!loading" class="models-list">
-    <div *ngIf="userModels.length === 0" class="empty-state">
-      You haven't added any models yet. Click "Add Model" to get started.
+  @if (loading) {
+    <div class="loading-state">
+      <span class="sidebar-spinner"></span> Loading Models...
     </div>
+  }
 
-    <div *ngFor="let model of userModels; let i = index" 
-         class="model-item"
-         draggable="true"
-         (dragstart)="onDragStart($event, i)"
-         (dragend)="onDragEnd($event)"
-         (dragover)="onDragOver($event)"
-         (dragleave)="onDragLeave($event)"
-         (drop)="onDrop($event, i)">
-         
-      <div class="drag-handle" title="Drag to reorder">
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-      </div>
-
-      <div class="model-info">
-        <div class="model-title">
-          <h3>{{ model.displayName || model.modelId }}</h3>
-        </div>
-        <div class="model-details">
-          <div class="mb-4">{{ model.modelId }} <span class="provider-badge ml-8">{{ model.provider }}</span></div>
-          <div *ngIf="model.thinkingLevel">
-            <span class="detail-label thinking ml-0">Thinking Level:</span> {{ formatThinkingLevel(model.thinkingLevel) }}
-          </div>
-        </div>
-      </div>
-
-      <div class="model-actions">
-        <button class="btn-gh btn-icon btn-gh-icon-small" (click)="moveUp(i)" [disabled]="i === 0 || saving" title="Move Up">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>
-        </button>
-        <button class="btn-gh btn-icon btn-gh-icon-small" (click)="moveDown(i)" [disabled]="i === userModels.length - 1 || saving" title="Move Down">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-        </button>
-        <button class="btn-gh" (click)="openEdit(model)" [disabled]="saving">Edit</button>
-        <button class="btn-gh btn-gh-delete" (click)="deleteModel(model.id)" [disabled]="saving">Delete</button>
-      </div>
-    </div>
-  </div>
-
-  <div *ngIf="systemModels.length > 0" class="mt-30">
-    <div class="actions-header">
-      <h3>System-Provided Models</h3>
-    </div>
+  @if (!loading) {
     <div class="models-list">
-      <div *ngFor="let model of systemModels" class="model-item system-model-item">
-        <div class="model-info">
-          <div class="model-title d-flex align-items-center">
-            <h3>{{ model.displayName || model.modelId }}</h3>
-            <span class="badge-system-wide ml-10" style="background-color: #28a745; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.8em;">System Config</span>
+      @if (userModels.length === 0) {
+        <div class="empty-state">
+          You haven't added any models yet. Click "Add Model" to get started.
+        </div>
+      }
+      @for (model of userModels; track model; let i = $index) {
+        <div
+          class="model-item"
+          draggable="true"
+          (dragstart)="onDragStart($event, i)"
+          (dragend)="onDragEnd($event)"
+          (dragover)="onDragOver($event)"
+          (dragleave)="onDragLeave($event)"
+          (drop)="onDrop($event, i)">
+          <div class="drag-handle" title="Drag to reorder">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
           </div>
-          <div class="model-details">
-            <div class="mb-4">{{ model.modelId }} <span class="provider-badge ml-8">{{ model.provider }}</span></div>
-            <div *ngIf="model.thinkingLevel">
-              <span class="detail-label thinking ml-0">Thinking Level:</span> {{ formatThinkingLevel(model.thinkingLevel) }}
+          <div class="model-info">
+            <div class="model-title">
+              <h3>{{ model.displayName || model.modelId }}</h3>
+            </div>
+            <div class="model-details">
+              <div class="mb-4">{{ model.modelId }} <span class="provider-badge ml-8">{{ model.provider }}</span></div>
+              @if (model.thinkingLevel) {
+                <div>
+                  <span class="detail-label thinking ml-0">Thinking Level:</span> {{ formatThinkingLevel(model.thinkingLevel) }}
+                </div>
+              }
             </div>
           </div>
+          <div class="model-actions">
+            <button class="btn-gh btn-icon btn-gh-icon-small" (click)="moveUp(i)" [disabled]="i === 0 || saving" title="Move Up">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>
+            </button>
+            <button class="btn-gh btn-icon btn-gh-icon-small" (click)="moveDown(i)" [disabled]="i === userModels.length - 1 || saving" title="Move Down">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </button>
+            <button class="btn-gh" (click)="openEdit(model)" [disabled]="saving">Edit</button>
+            <button class="btn-gh btn-gh-delete" (click)="deleteModel(model.id)" [disabled]="saving">Delete</button>
+          </div>
         </div>
-      </div>
+      }
     </div>
-  </div>
+  }
 
-  <div class="title-gen-section" *ngIf="userModels.length > 0 || systemModels.length > 0">
-    <div class="title-gen-header">
-      <h3>Title Generation</h3>
-      <p>Select which AI model is used to automatically generate chat titles from your initial prompts.</p>
+  @if (systemModels.length > 0) {
+    <div class="mt-30">
+      <div class="actions-header">
+        <h3>System-Provided Models</h3>
+      </div>
+      <div class="models-list">
+        @for (model of systemModels; track model) {
+          <div class="model-item system-model-item">
+            <div class="model-info">
+              <div class="model-title d-flex align-items-center">
+                <h3>{{ model.displayName || model.modelId }}</h3>
+                <span class="badge-system-wide ml-10" style="background-color: #28a745; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.8em;">System Config</span>
+              </div>
+              <div class="model-details">
+                <div class="mb-4">{{ model.modelId }} <span class="provider-badge ml-8">{{ model.provider }}</span></div>
+                @if (model.thinkingLevel) {
+                  <div>
+                    <span class="detail-label thinking ml-0">Thinking Level:</span> {{ formatThinkingLevel(model.thinkingLevel) }}
+                  </div>
+                }
+              </div>
+            </div>
+          </div>
+        }
+      </div>
     </div>
-    <div class="form-group title-gen-form">
-      <div class="d-flex align-items-center flex-gap-15">
-        <div class="custom-model-selector title-model-selector-wrapper">
-      <button type="button" class="selector-trigger" (click)="toggleTitleDropdown($event)" [class.open]="isTitleDropdownOpen">
-        <span class="model-name">{{ selectedTitleModelDisplay }}</span>
-        <span class="thinking-badge" *ngIf="selectedTitleModel?.thinkingLevel">{{ formatThinkingLevel(selectedTitleModel?.thinkingLevel) }}</span>
-        <span class="provider-badge" *ngIf="selectedTitleModel?.provider">{{ selectedTitleModel?.provider }}</span>
-        <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-      </button>
-      <div class="selector-dropdown" *ngIf="isTitleDropdownOpen">
-        <div class="model-option" (click)="selectTitleModel(null, false)" [class.selected]="!titleModelSelection">
-          <span class="model-name">Default (First Available Chat Model)</span>
-        </div>
-        
-        <div *ngIf="titleUserModels.length > 0" class="model-group-title" style="padding: 4px 10px; font-size: 0.8em; color: var(--gh-gold); background-color: var(--gh-panel-bg); text-transform: uppercase;">Your Models</div>
-        <div class="model-option" *ngFor="let m of titleUserModels" (click)="selectTitleModel(m.id ?? null, false)" [class.selected]="titleModelSelection === 'u_' + m.id">
-          <span class="model-name">{{ m.displayName || m.modelId }}</span>
-          <span class="thinking-badge" *ngIf="m.thinkingLevel">{{ formatThinkingLevel(m.thinkingLevel) }}</span>
-          <span class="provider-badge">{{ m.provider }}</span>
-        </div>
-        
-        <div *ngIf="titleSystemModels.length > 0" class="model-group-title" style="padding: 4px 10px; font-size: 0.8em; color: var(--gh-gold); background-color: var(--gh-panel-bg); text-transform: uppercase;">System Models</div>
-        <div class="model-option" *ngFor="let m of titleSystemModels" (click)="selectTitleModel(m.id ?? null, true)" [class.selected]="titleModelSelection === 's_' + m.id">
-          <span class="model-name">{{ m.displayName || m.modelId }}</span>
-          <span class="thinking-badge" *ngIf="m.thinkingLevel">{{ formatThinkingLevel(m.thinkingLevel) }}</span>
-          <span class="provider-badge">{{ m.provider }}</span>
+  }
+
+  @if (userModels.length > 0 || systemModels.length > 0) {
+    <div class="title-gen-section">
+      <div class="title-gen-header">
+        <h3>Title Generation</h3>
+        <p>Select which AI model is used to automatically generate chat titles from your initial prompts.</p>
+      </div>
+      <div class="form-group title-gen-form">
+        <div class="d-flex align-items-center flex-gap-15">
+          <div class="custom-model-selector title-model-selector-wrapper">
+            <button type="button" class="selector-trigger" (click)="toggleTitleDropdown($event)" [class.open]="isTitleDropdownOpen">
+              <span class="model-name">{{ selectedTitleModelDisplay }}</span>
+              @if (selectedTitleModel?.thinkingLevel) {
+                <span class="thinking-badge">{{ formatThinkingLevel($safeNavigationMigration(selectedTitleModel?.thinkingLevel)) }}</span>
+              }
+              @if (selectedTitleModel?.provider) {
+                <span class="provider-badge">{{ selectedTitleModel?.provider }}</span>
+              }
+              <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </button>
+            @if (isTitleDropdownOpen) {
+              <div class="selector-dropdown">
+                <div class="model-option" (click)="selectTitleModel(null, false)" [class.selected]="!titleModelSelection">
+                  <span class="model-name">Default (First Available Chat Model)</span>
+                </div>
+                @if (titleUserModels.length > 0) {
+                  <div class="model-group-title" style="padding: 4px 10px; font-size: 0.8em; color: var(--gh-gold); background-color: var(--gh-panel-bg); text-transform: uppercase;">Your Models</div>
+                }
+                @for (m of titleUserModels; track m) {
+                  <div class="model-option" (click)="selectTitleModel(m.id ?? null, false)" [class.selected]="titleModelSelection === 'u_' + m.id">
+                    <span class="model-name">{{ m.displayName || m.modelId }}</span>
+                    @if (m.thinkingLevel) {
+                      <span class="thinking-badge">{{ formatThinkingLevel(m.thinkingLevel) }}</span>
+                    }
+                    <span class="provider-badge">{{ m.provider }}</span>
+                  </div>
+                }
+                @if (titleSystemModels.length > 0) {
+                  <div class="model-group-title" style="padding: 4px 10px; font-size: 0.8em; color: var(--gh-gold); background-color: var(--gh-panel-bg); text-transform: uppercase;">System Models</div>
+                }
+                @for (m of titleSystemModels; track m) {
+                  <div class="model-option" (click)="selectTitleModel(m.id ?? null, true)" [class.selected]="titleModelSelection === 's_' + m.id">
+                    <span class="model-name">{{ m.displayName || m.modelId }}</span>
+                    @if (m.thinkingLevel) {
+                      <span class="thinking-badge">{{ formatThinkingLevel(m.thinkingLevel) }}</span>
+                    }
+                    <span class="provider-badge">{{ m.provider }}</span>
+                  </div>
+                }
+              </div>
+            }
+          </div>
+          <div class="save-indicator" style="width: 24px; display: flex; justify-content: center;">
+            @if (savingTitleModel) {
+              <span class="sidebar-spinner" style="margin: 0;"></span>
+            }
+            @if (savedTitleModelSuccess && !savingTitleModel) {
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#28a745" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" title="Saved!"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            }
+          </div>
         </div>
       </div>
     </div>
-        <div class="save-indicator" style="width: 24px; display: flex; justify-content: center;">
-          <span *ngIf="savingTitleModel" class="sidebar-spinner" style="margin: 0;"></span>
-          <svg *ngIf="savedTitleModelSuccess && !savingTitleModel" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#28a745" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" title="Saved!"><polyline points="20 6 9 17 4 12"></polyline></svg>
-        </div>
-      </div>
-    </div>
-  </div>
+  }
 </div>
 
 <dialog #modelPickerDialog class="settings-dialog">
-  <app-ai-model-form
-    *ngIf="isAddingModel"
-    mode="add"
-    [providers]="providers"
-    [initialProvider]="pickerProvider"
-    [saving]="saving"
-    (save)="onAddModel($event)"
-    (cancel)="closeModelPicker()">
-  </app-ai-model-form>
+  @if (isAddingModel) {
+    <app-ai-model-form
+      mode="add"
+      [providers]="providers"
+      [initialProvider]="pickerProvider"
+      [saving]="saving"
+      (save)="onAddModel($event)"
+      (cancel)="closeModelPicker()">
+    </app-ai-model-form>
+  }
 </dialog>
 
 <dialog #editModelDialog class="settings-dialog">
-  <app-ai-model-form
-    *ngIf="editingModel && editFormData"
-    mode="edit"
-    [providers]="providers"
-    [initialProvider]="editingModel.provider"
-    [initialData]="editFormData"
-    [saving]="saving"
-    (save)="onEditSave($event)"
-    (cancel)="closeEdit()">
-  </app-ai-model-form>
+  @if (editingModel && editFormData) {
+    <app-ai-model-form
+      mode="edit"
+      [providers]="providers"
+      [initialProvider]="editingModel.provider"
+      [initialData]="editFormData"
+      [saving]="saving"
+      (save)="onEditSave($event)"
+      (cancel)="closeEdit()">
+    </app-ai-model-form>
+  }
 </dialog>

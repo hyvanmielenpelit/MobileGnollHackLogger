@@ -29,8 +29,8 @@
         </div>
         <input type="password" id="password" class="gh-input" [(ngModel)]="password" name="password" placeholder="Password" required aria-errormessage="password-error" aria-label="Password" />
       </div>
-        <div id="password-error" class="error-msg">
-          <span aria-hidden="true">❌</span> Password is required.
+      <div id="password-error" class="error-msg">
+        <span aria-hidden="true">❌</span> Password is required.
       </div>
     </div>
 
@@ -47,6 +47,8 @@
       <div class="info-text">(This link leads to GnollHack Account)</div>
     </div>
 
-    <p *ngIf="error" class="error">{{ error }}</p>
-</form>
+    @if (error) {
+      <p class="error">{{ error }}</p>
+    }
+  </form>
 </div>

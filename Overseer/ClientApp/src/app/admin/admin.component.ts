@@ -1,16 +1,17 @@
-import { Component, OnInit, inject, ViewChild, ElementRef } from '@angular/core';
+import { Component, OnInit, inject, ViewChild, ElementRef, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import { AdminService, UserDto, GroupDto, SystemAiConfigDto, UserSystemAiConfigDto, GroupSystemAiConfigDto } from '../services/admin.service';
 import { AiModelFormComponent, AiModelFormResult } from '../shared/ai-model-form/ai-model-form.component';
+import { ConfigAnalyticsComponent } from './config-analytics/config-analytics.component';
 
 @Component({
-  selector: 'app-admin',
-  standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, AiModelFormComponent],
-  templateUrl: './admin.component.html',
-  styleUrl: './admin.component.scss'
+    selector: 'app-admin',
+    imports: [CommonModule, FormsModule, RouterModule, AiModelFormComponent, ConfigAnalyticsComponent],
+    templateUrl: './admin.component.html',
+    changeDetection: ChangeDetectionStrategy.Eager,
+    styleUrl: './admin.component.scss'
 })
 export class AdminComponent implements OnInit {
   private adminService = inject(AdminService);
@@ -46,6 +47,10 @@ export class AdminComponent implements OnInit {
   @ViewChild('manageUserConfigsDialog') manageUserConfigsDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('manageGroupConfigsDialog') manageGroupConfigsDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('editConfigOverrideDialog') editConfigOverrideDialog!: ElementRef<HTMLDialogElement>;
+  
+  @ViewChild('analyticsDialog') analyticsDialog!: ElementRef<HTMLDialogElement>;
+  analyticsConfigId: number = 0;
+  analyticsConfigName: string = '';
 
   // Generic Confirm State
   confirmMessage: string = '';
@@ -87,6 +92,17 @@ export class AdminComponent implements OnInit {
 
   ngOnInit() {
     this.loadData();
+  }
+
+  openAnalytics(config: SystemAiConfigDto) {
+    this.analyticsConfigId = config.id;
+    this.analyticsConfigName = config.displayName || config.modelId;
+    this.analyticsDialog.nativeElement.showModal();
+  }
+
+  closeAnalytics() {
+    this.analyticsDialog.nativeElement.close();
+    this.analyticsConfigId = 0;
   }
 
   loadData() {

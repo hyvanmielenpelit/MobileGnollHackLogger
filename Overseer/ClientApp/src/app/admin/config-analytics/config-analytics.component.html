@@ -1,0 +1,77 @@
+<div class="dialog-content flex-col">
+  <h3>Analytics: {{ configName }}</h3>
+
+  <!-- Controls row -->
+  <div class="analytics-controls">
+    <div class="control-group">
+      <label>Users</label>
+      <select class="gh-input" [(ngModel)]="mode" (ngModelChange)="onFilterChange()">
+        <option value="all">All Users</option>
+        <option value="individual">Individual Users</option>
+      </select>
+    </div>
+    <div class="control-group">
+      <label>Data</label>
+      <select class="gh-input" [(ngModel)]="dataType" (ngModelChange)="onFilterChange()">
+        <option value="requests">Requests</option>
+        <option value="tokens">Chat Tokens</option>
+      </select>
+    </div>
+    <div class="control-group">
+      <label>Time Span</label>
+      <select class="gh-input" [(ngModel)]="timeSpan" (ngModelChange)="onFilterChange()">
+        <option value="7d">Last 7 days</option>
+        <option value="30d">Last 30 days</option>
+        <option value="90d">Last 90 days</option>
+        <option value="1y">Last year</option>
+        <option value="custom">Custom</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Custom date range (shown when timeSpan === 'custom') -->
+  <div class="analytics-controls" *ngIf="timeSpan === 'custom'">
+    <div class="control-group">
+      <label>Start Date</label>
+      <input type="date" class="gh-input" [(ngModel)]="customStart"
+             (ngModelChange)="onFilterChange()">
+    </div>
+    <div class="control-group">
+      <label>End Date</label>
+      <input type="date" class="gh-input" [(ngModel)]="customEnd"
+             (ngModelChange)="onFilterChange()">
+    </div>
+  </div>
+
+  <!-- Username filter (shown when mode === 'individual') -->
+  <div class="analytics-controls" *ngIf="mode === 'individual'">
+    <div class="control-group control-group-wide">
+      <label>Filter by username</label>
+      <input type="text" class="gh-input" placeholder="Search username..."
+             [(ngModel)]="usernameFilter" (ngModelChange)="onUsernameFilterChange($event)">
+    </div>
+  </div>
+
+  <!-- Chart area -->
+  <div class="chart-wrapper">
+    <div class="chart-container">
+      <canvas baseChart
+        [data]="chartData"
+        [options]="chartOptions"
+        [plugins]="chartPlugins"
+        [type]="chartType">
+      </canvas>
+    </div>
+    
+    <div class="loading-overlay" *ngIf="loading">
+      <div class="loading-content">
+        <div class="professional-spinner"></div>
+        <span>Loading chart component...</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="dialog-actions mt-auto pt-20">
+    <button class="btn-gh btn-gh-cancel" (click)="close.emit()">Close</button>
+  </div>
+</div>
