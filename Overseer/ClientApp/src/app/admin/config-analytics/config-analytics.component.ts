@@ -27,6 +27,13 @@ export class ConfigAnalyticsComponent implements OnInit, OnChanges, OnDestroy {
   dataType: 'requests' | 'tokens' = 'requests';
   timeSpan: '7d' | '30d' | '90d' | '1y' | 'custom' = '30d';
   
+  // Chart sizing and gap configuration (easily configurable exact pixel values)
+  readonly BAR_THICKNESS = 20; // Thickness of each individual bar
+  readonly BAR_GAP_PX = 4;     // Gap between bars of the same user (e.g. Chat vs Title requests)
+  readonly USER_GAP_PX = 8;   // Gap between different users
+  
+  chartHeight = 250; // Dynamically calculated below
+  
   // Custom dates
   customStart: string = '';
   customEnd: string = '';
@@ -61,25 +68,43 @@ export class ConfigAnalyticsComponent implements OnInit, OnChanges, OnDestroy {
     scales: {
       x: { 
         beginAtZero: true, 
-        grid: { color: 'rgba(255,255,255,0.05)' } 
+        grid: { color: 'rgba(255,255,255,0.05)' },
+        ticks: { color: '#b0b0b0', font: { family: "'Inter', 'Segoe UI', Roboto, sans-serif" } }
       },
       y: { 
-        grid: { display: false } 
+        grid: { display: false },
+        ticks: { 
+          color: '#ffffff', 
+          font: { size: 14, weight: 'bold', family: "'Inter', 'Segoe UI', Roboto, sans-serif" } 
+        }
       }
     },
     plugins: {
       legend: { 
         display: true, 
         position: 'top', 
-        labels: { color: '#ccc' } 
+        labels: { color: '#ffffff', font: { size: 13, family: "'Inter', 'Segoe UI', Roboto, sans-serif" } } 
       },
       datalabels: {
         clip: false, // Prevent cutting off labels near the edge
         anchor: 'end',
         align: 'end',
-        color: '#ccc',
-        font: { weight: 'bold', size: 11 },
+        color: '#ffffff',
+        font: { weight: 'bold', size: 12, family: "'Inter', 'Segoe UI', Roboto, sans-serif" },
         formatter: (value) => value.toLocaleString()
+      },
+      tooltip: {
+        backgroundColor: 'rgba(22, 22, 22, 0.95)', // Opaque dark background
+        titleColor: '#ffffff',
+        bodyColor: '#e0e0e0',
+        borderColor: 'rgba(224, 186, 109, 0.4)', // Clear gold border
+        borderWidth: 1,
+        padding: 10,
+        cornerRadius: 6,
+        displayColors: true,
+        boxPadding: 5, // space between color box and text
+        titleFont: { family: "'Inter', 'Segoe UI', Roboto, sans-serif", size: 14, weight: 'bold' },
+        bodyFont: { family: "'Inter', 'Segoe UI', Roboto, sans-serif", size: 13 }
       }
     }
   };
@@ -91,19 +116,14 @@ export class ConfigAnalyticsComponent implements OnInit, OnChanges, OnDestroy {
       debounceTime(400)
     ).subscribe(val => {
       this.usernameFilter = val;
-      console.log('Username filter changed, triggering load:', val);
       this.triggerLoad();
     });
 
     this.loadRequestSub = this.loadRequestSubject.pipe(
       debounceTime(100),
-      tap(() => {
-        console.log('Load request triggered. Setting loading = true');
-        this.loading = true;
-      }),
+      tap(() => this.loading = true),
       switchMap(() => {
         const req = this.buildRequest();
-        console.log('Sending request to getConfigAnalytics:', req);
         return this.adminService.getConfigAnalytics(this.configId, req).pipe(
           catchError(err => {
             console.error('Failed to load analytics', err);
@@ -114,22 +134,17 @@ export class ConfigAnalyticsComponent implements OnInit, OnChanges, OnDestroy {
     ).subscribe(res => {
       this.loading = false;
       if (res) {
-        console.log('Received analytics response:', res);
         this.updateChart(res);
-      } else {
-        console.log('Received empty/null analytics response.');
       }
       this.cdr.detectChanges();
     });
 
     // Initial load
-    console.log('ngOnInit initialized. Triggering initial load.');
     this.triggerLoad();
   }
 
   ngOnChanges(changes: SimpleChanges) {
     if (changes['configId'] && this.configId && !changes['configId'].isFirstChange()) {
-      console.log('configId changed, triggering reload.');
       this.triggerLoad();
     }
   }
@@ -140,7 +155,6 @@ export class ConfigAnalyticsComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   onFilterChange() {
-    console.log('Filter changed manually (mode/dataType/timeSpan)');
     // If switching out of individual, reset username filter implicitly by reloading
     this.triggerLoad();
   }
@@ -185,6 +199,18 @@ export class ConfigAnalyticsComponent implements OnInit, OnChanges, OnDestroy {
 
   private updateChart(res: AnalyticsResponse) {
     const labels = res.rows.map(r => r.userName || r.userId);
+    const numUsers = labels.length || 1;
+    
+    // Calculate required height mathematically to guarantee exact pixel sizes in Chart.js
+    const heightPerUser = (2 * this.BAR_THICKNESS) + this.BAR_GAP_PX + this.USER_GAP_PX;
+    this.chartHeight = (numUsers * heightPerUser) + 70; // +70px for axes and padding
+    
+    // Chart.js requires percentage configurations. We can perfectly reverse-engineer them 
+    // from our pixel requirements to force the exact gaps we want.
+    const barSpace = (2 * this.BAR_THICKNESS) + this.BAR_GAP_PX;
+    const calcCategoryPercentage = barSpace / heightPerUser;
+    const calcBarPercentage = (2 * this.BAR_THICKNESS) / barSpace;
+
     let datasets: any[] = [];
 
     if (this.dataType === 'requests') {
@@ -195,7 +221,9 @@ export class ConfigAnalyticsComponent implements OnInit, OnChanges, OnDestroy {
           backgroundColor: 'rgba(224, 186, 109, 0.85)', // gold
           borderColor: 'rgba(224, 186, 109, 1)',
           borderWidth: 1,
-          maxBarThickness: 30
+          borderRadius: 4,
+          barPercentage: calcBarPercentage,
+          categoryPercentage: calcCategoryPercentage
         },
         {
           data: res.rows.map(r => r.titleRequests),
@@ -203,7 +231,9 @@ export class ConfigAnalyticsComponent implements OnInit, OnChanges, OnDestroy {
           backgroundColor: 'rgba(100, 181, 246, 0.85)', // blue
           borderColor: 'rgba(100, 181, 246, 1)',
           borderWidth: 1,
-          maxBarThickness: 30
+          borderRadius: 4,
+          barPercentage: calcBarPercentage,
+          categoryPercentage: calcCategoryPercentage
         }
       ];
     } else {
@@ -214,7 +244,9 @@ export class ConfigAnalyticsComponent implements OnInit, OnChanges, OnDestroy {
           backgroundColor: 'rgba(224, 186, 109, 0.85)', // gold
           borderColor: 'rgba(224, 186, 109, 1)',
           borderWidth: 1,
-          maxBarThickness: 30
+          borderRadius: 4,
+          barPercentage: calcBarPercentage,
+          categoryPercentage: calcCategoryPercentage
         },
         {
           data: res.rows.map(r => r.outputTokens),
@@ -222,7 +254,9 @@ export class ConfigAnalyticsComponent implements OnInit, OnChanges, OnDestroy {
           backgroundColor: 'rgba(129, 199, 132, 0.85)', // green
           borderColor: 'rgba(129, 199, 132, 1)',
           borderWidth: 1,
-          maxBarThickness: 30
+          borderRadius: 4,
+          barPercentage: calcBarPercentage,
+          categoryPercentage: calcCategoryPercentage
         }
       ];
     }

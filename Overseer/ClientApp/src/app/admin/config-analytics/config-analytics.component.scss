@@ -33,50 +33,10 @@ $analytics-bar-thickness: 30;
 }
 
 .chart-container {
-  min-height: 250px;
-  max-height: 50vh;
   width: 100%;
   margin-top: 1rem;
   border-radius: 8px;
   background-color: transparent;
-}
-
-.loading-overlay {
-  position: absolute;
-  top: 1rem; /* matches chart-container margin-top */
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(22, 22, 22, 0.7);
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 10;
-  backdrop-filter: blur(2px);
-}
-
-.loading-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 15px;
-  color: #ccc;
-  font-weight: 500;
-  font-size: 1.1rem;
-}
-
-.professional-spinner {
-  width: 48px;
-  height: 48px;
-  border: 4px solid rgba(224, 186, 109, 0.15); /* light gold track */
-  border-top-color: rgba(224, 186, 109, 1); /* solid gold spinner */
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
 }
 
 .loading-state {
