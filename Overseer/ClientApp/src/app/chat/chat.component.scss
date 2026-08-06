@@ -226,7 +226,9 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
 .empty-sessions-msg {
   color: #666;
   text-align: center;
+  justify-content: center !important; /* Override sidebar li flex space-between */
   margin-block-start: 10px;
+  cursor: default !important; /* Make it look like plain text, not clickable */
 }
 
 .thinking-placeholder {

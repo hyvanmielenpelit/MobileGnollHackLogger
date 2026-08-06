@@ -130,7 +130,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   sessions: ChatSession[] = [];
   hasMoreSessions = false;
   loadingMoreSessions = false;
-  loadingSessions = false;
+  loadingSessions = true;
   private sessionLoadSub: Subscription | null = null;
   currentSessionId: number | null = null;
   sessionToDelete: number | null = null;
