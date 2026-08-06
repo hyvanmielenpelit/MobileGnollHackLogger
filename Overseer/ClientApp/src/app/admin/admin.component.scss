@@ -187,3 +187,79 @@
   }
 }
 
+.action-btn-success {
+  &:hover {
+    background: rgba(46, 204, 113, 0.15);
+    border-color: #2ecc71;
+    color: #2ecc71;
+  }
+}
+
+.limit-display {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.limit-edit-input {
+  width: 100px;
+  padding: 4px 8px;
+  min-height: 32px;
+}
+
+.tab-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 0 0 15px 0;
+  border: none;
+  min-height: 36px;
+  
+  h3 {
+    margin: 0;
+    line-height: 1;
+    padding-top: 12px;
+  }
+}
+
+.btn-gh-wide {
+  padding: 10px 40px !important;
+}
+
+.empty-state-msg {
+  text-align: center;
+  padding: 30px;
+}
+
+.actions-cell {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.scrollable-list {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.config-list-item {
+  padding: 15px 20px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-glass);
+  border-radius: 6px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.dialog-wide {
+  min-width: 550px;
+}
+
+.dialog-extra-wide {
+  min-width: 600px;
+}
+
+.error-text {
+  color: #ff4d4d;
+  font-size: 0.9em;
+}

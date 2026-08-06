@@ -18,7 +18,7 @@
         <div *ngIf="!loading" class="tab-content mt-20">
           <!-- USERS TAB -->
           <div *ngIf="activeTab === 'users'">
-            <div class="header-row" style="padding: 0 0 15px 0; border: none; min-height: 36px;">
+            <div class="tab-header-row">
               <h3 class="m-0">Manage Users</h3>
               <div class="pagination-controls" *ngIf="totalPages > 1">
                 <button class="btn-gh btn-gh-small" [disabled]="currentPage === 1" (click)="currentPage = currentPage - 1">&larr; Prev</button>
@@ -44,7 +44,7 @@
                       <span *ngFor="let g of user.groups" class="group-badge">{{ g.displayName }}</span>
                       <span *ngIf="!user.groups || user.groups.length === 0" class="text-muted italic">None</span>
                     </td>
-                    <td style="text-align: right; white-space: nowrap;">
+                    <td class="actions-cell">
                       <button class="action-btn" title="Manage Groups" (click)="openManageUserGroups(user)">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
                       </button>
@@ -60,11 +60,11 @@
 
           <!-- GROUPS TAB -->
           <div *ngIf="activeTab === 'groups'">
-            <div class="header-row" style="padding: 0 0 15px 0; border: none; min-height: 36px;">
+            <div class="tab-header-row">
               <h3 class="m-0">Manage Groups</h3>
-              <button class="btn-gh btn-gh-small" (click)="openCreateGroup()">Create Group</button>
+              <button class="btn-gh btn-gh-wide" (click)="openCreateGroup()">Create Group</button>
             </div>
-            <div *ngIf="groups.length === 0" class="text-muted italic mt-20" style="text-align: center; padding: 30px;">
+            <div *ngIf="groups.length === 0" class="text-muted italic mt-20 empty-state-msg">
               No groups
             </div>
             <div class="table-responsive" *ngIf="groups.length > 0">
@@ -80,7 +80,7 @@
                   <tr *ngFor="let group of groups">
                     <td>{{ group.id }}</td>
                     <td>{{ group.displayName }}</td>
-                    <td style="text-align: right; white-space: nowrap;">
+                    <td class="actions-cell">
                       <button class="action-btn" title="Manage Configs" (click)="openManageGroupConfigs(group)">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
                       </button>
@@ -96,12 +96,12 @@
 
           <!-- CONFIGS TAB -->
           <div *ngIf="activeTab === 'configs'">
-            <div class="header-row" style="padding: 0 0 15px 0; border: none; min-height: 36px;">
+            <div class="tab-header-row">
               <h3 class="m-0">System AI Configurations</h3>
-              <button class="btn-gh btn-gh-small" (click)="openCreateConfig()">Create Config</button>
+              <button class="btn-gh btn-gh-wide" (click)="openCreateConfig()">Create Config</button>
             </div>
             
-            <div *ngIf="configs.length === 0" class="text-muted italic mt-20" style="text-align: center; padding: 30px;">
+            <div *ngIf="configs.length === 0" class="text-muted italic mt-20 empty-state-msg">
               No system configurations
             </div>
             <div class="models-list" *ngIf="configs.length > 0">
@@ -131,9 +131,15 @@
                   </div>
                 </div>
                 <div class="model-actions">
-                   <button class="btn-gh btn-gh-small" (click)="openEditConfig(config)">Edit</button>
-                   <button class="btn-gh btn-gh-small" style="background-color: #f39c12; color: #fff; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8em;" (click)="openRateLimitsDialog('system', config)">Rate Limits</button>
-                   <button class="btn-gh btn-gh-small btn-gh-delete" (click)="deleteConfig(config)">Delete</button>
+                   <button class="action-btn" title="Edit Config" (click)="openEditConfig(config)">
+                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                   </button>
+                   <button class="action-btn" title="Rate Limits" (click)="openRateLimitsDialog('system', config)">
+                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20v-6M6 20V10M18 20V4"/></svg>
+                   </button>
+                   <button class="action-btn action-btn-danger" title="Delete Config" (click)="deleteConfig(config)">
+                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                   </button>
                 </div>
               </div>
             </div>
@@ -174,7 +180,7 @@
         <div class="form-group mt-20">
           <label for="newGroupName">Group Name</label>
           <input type="text" id="newGroupName" [(ngModel)]="newGroupName" (keyup.enter)="saveCreateGroup()" class="gh-input w-100">
-          <div *ngIf="createGroupError" class="text-danger mt-10" style="color: #ff4d4d; font-size: 0.9em;">
+          <div *ngIf="createGroupError" class="error-text mt-10">
             {{ createGroupError }}
           </div>
         </div>
@@ -212,11 +218,11 @@
       </div>
     </dialog>
 
-    <dialog #manageUserConfigsDialog class="gh-dialog" style="min-width: 550px;">
+    <dialog #manageUserConfigsDialog class="gh-dialog dialog-wide">
       <div class="dialog-content flex-col">
         <h3>Manage User Configs: {{ selectedUserForConfigs?.userName }}</h3>
-        <div class="form-group mt-20" style="max-height: 400px; overflow-y: auto;">
-          <div *ngFor="let config of configs" class="mb-15" style="padding: 15px 20px; background: rgba(255,255,255,0.05); border: 1px solid var(--border-glass); border-radius: 6px; display: flex; justify-content: space-between; align-items: center;">
+        <div class="form-group mt-20 scrollable-list">
+          <div *ngFor="let config of configs" class="mb-15 config-list-item">
             <label class="gh-switch-wrapper d-flex align-items-center m-0">
               <div class="gh-switch">
                 <input type="checkbox" [checked]="isConfigAssignedToUser(config.id)" [disabled]="processingConfigs.includes(config.id)" (change)="toggleUserConfig(config, $event)" />
@@ -245,11 +251,11 @@
       </div>
     </dialog>
 
-    <dialog #manageGroupConfigsDialog class="gh-dialog" style="min-width: 550px;">
+    <dialog #manageGroupConfigsDialog class="gh-dialog dialog-wide">
       <div class="dialog-content flex-col">
         <h3>Manage Group Configs: {{ selectedGroupForConfigs?.displayName }}</h3>
-        <div class="form-group mt-20" style="max-height: 400px; overflow-y: auto;">
-          <div *ngFor="let config of configs" class="mb-15" style="padding: 15px 20px; background: rgba(255,255,255,0.05); border: 1px solid var(--border-glass); border-radius: 6px; display: flex; justify-content: space-between; align-items: center;">
+        <div class="form-group mt-20 scrollable-list">
+          <div *ngFor="let config of configs" class="mb-15 config-list-item">
             <label class="gh-switch-wrapper d-flex align-items-center m-0">
               <div class="gh-switch">
                 <input type="checkbox" [checked]="isConfigAssignedToGroup(config.id)" [disabled]="processingConfigs.includes(config.id)" (change)="toggleGroupConfig(config, $event)" />
@@ -304,78 +310,6 @@
           </select>
         </div>
 
-        <div class="form-group mt-15">
-          <label>Max Result Length (Tokens)</label>
-          <input type="number" [(ngModel)]="editingOverride.maxResultLength" class="gh-input w-100" placeholder="Inherit">
-        </div>
-
-        <div class="form-group mt-15">
-          <label>Max Calls Per Session</label>
-          <input type="number" [(ngModel)]="editingOverride.maxCallsPerSession" class="gh-input w-100" placeholder="Inherit">
-        </div>
-
-        <div class="form-group mt-15">
-          <label>Max Tool Iterations</label>
-          <input type="number" [(ngModel)]="editingOverride.maxToolIterations" class="gh-input w-100" placeholder="Inherit">
-        </div>
-
-        <ng-container *ngIf="editingOverride.modelRole === 1 || editingOverride.modelRole === 3">
-          <h4 class="mt-15 mb-5" style="border-bottom: 1px solid #333; padding-bottom: 5px;">Chat Overrides</h4>
-          <div class="form-group mt-15">
-            <label>Max Daily Requests</label>
-            <input type="number" [(ngModel)]="editingOverride.maxDailyChatRequests" class="gh-input w-100" placeholder="Inherit">
-          </div>
-          <div class="form-group mt-15">
-            <label>Max Monthly Requests</label>
-            <input type="number" [(ngModel)]="editingOverride.maxMonthlyChatRequests" class="gh-input w-100" placeholder="Inherit">
-          </div>
-          <div class="form-group mt-15">
-            <label>Max Total Requests</label>
-            <input type="number" [(ngModel)]="editingOverride.maxTotalChatRequests" class="gh-input w-100" placeholder="Inherit">
-          </div>
-          
-          <div class="form-group mt-15">
-            <label>Max Daily Tokens</label>
-            <input type="number" [(ngModel)]="editingOverride.maxDailyChatTokens" class="gh-input w-100" placeholder="Inherit">
-          </div>
-          <div class="form-group mt-15">
-            <label>Max Monthly Tokens</label>
-            <input type="number" [(ngModel)]="editingOverride.maxMonthlyChatTokens" class="gh-input w-100" placeholder="Inherit">
-          </div>
-          <div class="form-group mt-15">
-            <label>Max Total Tokens</label>
-            <input type="number" [(ngModel)]="editingOverride.maxTotalChatTokens" class="gh-input w-100" placeholder="Inherit">
-          </div>
-        </ng-container>
-
-        <ng-container *ngIf="editingOverride.modelRole === 2 || editingOverride.modelRole === 3">
-          <h4 class="mt-15 mb-5" style="border-bottom: 1px solid #333; padding-bottom: 5px;">Title Generation Overrides</h4>
-          <div class="form-group mt-15">
-            <label>Max Daily Requests</label>
-            <input type="number" [(ngModel)]="editingOverride.maxDailyTitleRequests" class="gh-input w-100" placeholder="Inherit">
-          </div>
-          <div class="form-group mt-15">
-            <label>Max Monthly Requests</label>
-            <input type="number" [(ngModel)]="editingOverride.maxMonthlyTitleRequests" class="gh-input w-100" placeholder="Inherit">
-          </div>
-          <div class="form-group mt-15">
-            <label>Max Total Requests</label>
-            <input type="number" [(ngModel)]="editingOverride.maxTotalTitleRequests" class="gh-input w-100" placeholder="Inherit">
-          </div>
-          
-          <div class="form-group mt-15">
-            <label>Max Daily Tokens</label>
-            <input type="number" [(ngModel)]="editingOverride.maxDailyTitleTokens" class="gh-input w-100" placeholder="Inherit">
-          </div>
-          <div class="form-group mt-15">
-            <label>Max Monthly Tokens</label>
-            <input type="number" [(ngModel)]="editingOverride.maxMonthlyTitleTokens" class="gh-input w-100" placeholder="Inherit">
-          </div>
-          <div class="form-group mt-15">
-            <label>Max Total Tokens</label>
-            <input type="number" [(ngModel)]="editingOverride.maxTotalTitleTokens" class="gh-input w-100" placeholder="Inherit">
-          </div>
-        </ng-container>
 
         <div class="dialog-actions mt-auto pt-20">
           <button class="btn-gh btn-gh-cancel" (click)="closeEditOverride()">Cancel</button>
@@ -384,7 +318,7 @@
       </div>
     </dialog>
 
-    <dialog #rateLimitsDialog class="gh-dialog" style="min-width: 600px;">
+    <dialog #rateLimitsDialog class="gh-dialog dialog-extra-wide">
       <div class="dialog-content flex-col" *ngIf="selectedConfigForLimits">
         <h3>Rate Limits for {{ selectedConfigForLimits.displayName || 'Config' }} ({{ limitContext }})</h3>
         
@@ -400,41 +334,31 @@
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td>Daily Requests</td>
-                <td>{{ selectedConfigForLimits.dailyChatRequestsCount || 0 }}</td>
-                <td>{{ selectedConfigForLimits.maxDailyChatRequests === null ? 'Unlimited' : selectedConfigForLimits.maxDailyChatRequests }}</td>
-                <td style="text-align: right;"><button class="btn-gh btn-gh-small" (click)="resetSingleCounter('dailyChatRequestsCount')">Reset</button></td>
-              </tr>
-              <tr>
-                <td>Monthly Requests</td>
-                <td>{{ selectedConfigForLimits.monthlyChatRequestsCount || 0 }}</td>
-                <td>{{ selectedConfigForLimits.maxMonthlyChatRequests === null ? 'Unlimited' : selectedConfigForLimits.maxMonthlyChatRequests }}</td>
-                <td style="text-align: right;"><button class="btn-gh btn-gh-small" (click)="resetSingleCounter('monthlyChatRequestsCount')">Reset</button></td>
-              </tr>
-              <tr>
-                <td>Total Requests</td>
-                <td>{{ selectedConfigForLimits.totalChatRequestsCount || 0 }}</td>
-                <td>{{ selectedConfigForLimits.maxTotalChatRequests === null ? 'Unlimited' : selectedConfigForLimits.maxTotalChatRequests }}</td>
-                <td style="text-align: right;"><button class="btn-gh btn-gh-small" (click)="resetSingleCounter('totalChatRequestsCount')">Reset</button></td>
-              </tr>
-              <tr>
-                <td>Daily Tokens</td>
-                <td>{{ selectedConfigForLimits.dailyChatTokensCount || 0 }}</td>
-                <td>{{ selectedConfigForLimits.maxDailyChatTokens === null ? 'Unlimited' : selectedConfigForLimits.maxDailyChatTokens }}</td>
-                <td style="text-align: right;"><button class="btn-gh btn-gh-small" (click)="resetSingleCounter('dailyChatTokensCount')">Reset</button></td>
-              </tr>
-              <tr>
-                <td>Monthly Tokens</td>
-                <td>{{ selectedConfigForLimits.monthlyChatTokensCount || 0 }}</td>
-                <td>{{ selectedConfigForLimits.maxMonthlyChatTokens === null ? 'Unlimited' : selectedConfigForLimits.maxMonthlyChatTokens }}</td>
-                <td style="text-align: right;"><button class="btn-gh btn-gh-small" (click)="resetSingleCounter('monthlyChatTokensCount')">Reset</button></td>
-              </tr>
-              <tr>
-                <td>Total Tokens</td>
-                <td>{{ selectedConfigForLimits.totalChatTokensCount || 0 }}</td>
-                <td>{{ selectedConfigForLimits.maxTotalChatTokens === null ? 'Unlimited' : selectedConfigForLimits.maxTotalChatTokens }}</td>
-                <td style="text-align: right;"><button class="btn-gh btn-gh-small" (click)="resetSingleCounter('totalChatTokensCount')">Reset</button></td>
+              <tr *ngFor="let limit of chatLimitsMap">
+                <td>{{ limit.label }}</td>
+                <td>{{ selectedConfigForLimits[limit.countField] || 0 }}</td>
+                <td>
+                  <div class="limit-display" *ngIf="editingLimitField !== limit.limitField">
+                    {{ selectedConfigForLimits[limit.limitField] === null ? 'Unlimited' : selectedConfigForLimits[limit.limitField] }}
+                    <button class="action-btn" (click)="startEditLimit(limit.limitField, selectedConfigForLimits[limit.limitField])" title="Edit Limit">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                    </button>
+                  </div>
+                  <div class="limit-display" *ngIf="editingLimitField === limit.limitField">
+                    <input type="number" class="gh-input limit-edit-input" [(ngModel)]="editingLimitValue" placeholder="Unlimited" (keyup.enter)="saveEditLimit()">
+                    <button class="action-btn action-btn-success" (click)="saveEditLimit()" title="Save">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    </button>
+                    <button class="action-btn btn-gh-cancel-icon" (click)="cancelEditLimit()" title="Cancel">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    </button>
+                  </div>
+                </td>
+                <td style="text-align: right;">
+                  <button class="action-btn" (click)="resetSingleCounter(limit.countField, limit.backendCounterName)" title="Reset Counter">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M3 22v-6h6"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path></svg>
+                  </button>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -450,41 +374,31 @@
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td>Daily Requests</td>
-                <td>{{ selectedConfigForLimits.dailyTitleRequestsCount || 0 }}</td>
-                <td>{{ selectedConfigForLimits.maxDailyTitleRequests === null ? 'Unlimited' : selectedConfigForLimits.maxDailyTitleRequests }}</td>
-                <td style="text-align: right;"><button class="btn-gh btn-gh-small" (click)="resetSingleCounter('dailyTitleRequestsCount')">Reset</button></td>
-              </tr>
-              <tr>
-                <td>Monthly Requests</td>
-                <td>{{ selectedConfigForLimits.monthlyTitleRequestsCount || 0 }}</td>
-                <td>{{ selectedConfigForLimits.maxMonthlyTitleRequests === null ? 'Unlimited' : selectedConfigForLimits.maxMonthlyTitleRequests }}</td>
-                <td style="text-align: right;"><button class="btn-gh btn-gh-small" (click)="resetSingleCounter('monthlyTitleRequestsCount')">Reset</button></td>
-              </tr>
-              <tr>
-                <td>Total Requests</td>
-                <td>{{ selectedConfigForLimits.totalTitleRequestsCount || 0 }}</td>
-                <td>{{ selectedConfigForLimits.maxTotalTitleRequests === null ? 'Unlimited' : selectedConfigForLimits.maxTotalTitleRequests }}</td>
-                <td style="text-align: right;"><button class="btn-gh btn-gh-small" (click)="resetSingleCounter('totalTitleRequestsCount')">Reset</button></td>
-              </tr>
-              <tr>
-                <td>Daily Tokens</td>
-                <td>{{ selectedConfigForLimits.dailyTitleTokensCount || 0 }}</td>
-                <td>{{ selectedConfigForLimits.maxDailyTitleTokens === null ? 'Unlimited' : selectedConfigForLimits.maxDailyTitleTokens }}</td>
-                <td style="text-align: right;"><button class="btn-gh btn-gh-small" (click)="resetSingleCounter('dailyTitleTokensCount')">Reset</button></td>
-              </tr>
-              <tr>
-                <td>Monthly Tokens</td>
-                <td>{{ selectedConfigForLimits.monthlyTitleTokensCount || 0 }}</td>
-                <td>{{ selectedConfigForLimits.maxMonthlyTitleTokens === null ? 'Unlimited' : selectedConfigForLimits.maxMonthlyTitleTokens }}</td>
-                <td style="text-align: right;"><button class="btn-gh btn-gh-small" (click)="resetSingleCounter('monthlyTitleTokensCount')">Reset</button></td>
-              </tr>
-              <tr>
-                <td>Total Tokens</td>
-                <td>{{ selectedConfigForLimits.totalTitleTokensCount || 0 }}</td>
-                <td>{{ selectedConfigForLimits.maxTotalTitleTokens === null ? 'Unlimited' : selectedConfigForLimits.maxTotalTitleTokens }}</td>
-                <td style="text-align: right;"><button class="btn-gh btn-gh-small" (click)="resetSingleCounter('totalTitleTokensCount')">Reset</button></td>
+              <tr *ngFor="let limit of titleLimitsMap">
+                <td>{{ limit.label }}</td>
+                <td>{{ selectedConfigForLimits[limit.countField] || 0 }}</td>
+                <td>
+                  <div class="limit-display" *ngIf="editingLimitField !== limit.limitField">
+                    {{ selectedConfigForLimits[limit.limitField] === null ? 'Unlimited' : selectedConfigForLimits[limit.limitField] }}
+                    <button class="action-btn" (click)="startEditLimit(limit.limitField, selectedConfigForLimits[limit.limitField])" title="Edit Limit">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                    </button>
+                  </div>
+                  <div class="limit-display" *ngIf="editingLimitField === limit.limitField">
+                    <input type="number" class="gh-input limit-edit-input" [(ngModel)]="editingLimitValue" placeholder="Unlimited" (keyup.enter)="saveEditLimit()">
+                    <button class="action-btn action-btn-success" (click)="saveEditLimit()" title="Save">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    </button>
+                    <button class="action-btn btn-gh-cancel-icon" (click)="cancelEditLimit()" title="Cancel">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    </button>
+                  </div>
+                </td>
+                <td style="text-align: right;">
+                  <button class="action-btn" (click)="resetSingleCounter(limit.countField, limit.backendCounterName)" title="Reset Counter">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M3 22v-6h6"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path></svg>
+                  </button>
+                </td>
               </tr>
             </tbody>
           </table>

@@ -55,6 +55,23 @@ export class AdminComponent implements OnInit {
   adminProviders = ['Anthropic', 'Google', 'OpenAI'];
   savingConfig = false;
 
+  chatLimitsMap = [
+    { label: 'Daily Requests', countField: 'dailyChatRequestsCount', limitField: 'maxDailyChatRequests', backendCounterName: 'DailyChatRequestsCount' },
+    { label: 'Monthly Requests', countField: 'monthlyChatRequestsCount', limitField: 'maxMonthlyChatRequests', backendCounterName: 'MonthlyChatRequestsCount' },
+    { label: 'Total Requests', countField: 'totalChatRequestsCount', limitField: 'maxTotalChatRequests', backendCounterName: 'TotalChatRequestsCount' },
+    { label: 'Daily Tokens', countField: 'dailyChatTokensCount', limitField: 'maxDailyChatTokens', backendCounterName: 'DailyChatTokensCount' },
+    { label: 'Monthly Tokens', countField: 'monthlyChatTokensCount', limitField: 'maxMonthlyChatTokens', backendCounterName: 'MonthlyChatTokensCount' },
+    { label: 'Total Tokens', countField: 'totalChatTokensCount', limitField: 'maxTotalChatTokens', backendCounterName: 'TotalChatTokensCount' },
+  ];
+  titleLimitsMap = [
+    { label: 'Daily Requests', countField: 'dailyTitleRequestsCount', limitField: 'maxDailyTitleRequests', backendCounterName: 'DailyTitleRequestsCount' },
+    { label: 'Monthly Requests', countField: 'monthlyTitleRequestsCount', limitField: 'maxMonthlyTitleRequests', backendCounterName: 'MonthlyTitleRequestsCount' },
+    { label: 'Total Requests', countField: 'totalTitleRequestsCount', limitField: 'maxTotalTitleRequests', backendCounterName: 'TotalTitleRequestsCount' },
+    { label: 'Daily Tokens', countField: 'dailyTitleTokensCount', limitField: 'maxDailyTitleTokens', backendCounterName: 'DailyTitleTokensCount' },
+    { label: 'Monthly Tokens', countField: 'monthlyTitleTokensCount', limitField: 'maxMonthlyTitleTokens', backendCounterName: 'MonthlyTitleTokensCount' },
+    { label: 'Total Tokens', countField: 'totalTitleTokensCount', limitField: 'maxTotalTitleTokens', backendCounterName: 'TotalTitleTokensCount' },
+  ];
+
   newGroupName: string = '';
   createGroupError: string = '';
 
@@ -248,15 +265,71 @@ export class AdminComponent implements OnInit {
   closeRateLimitsDialog() {
     this.rateLimitsDialog.nativeElement.close();
     this.selectedConfigForLimits = null;
+    this.cancelEditLimit();
   }
 
-  resetSingleCounter(counterName: string) {
+  editingLimitField: string | null = null;
+  editingLimitValue: number | null = null;
+
+  startEditLimit(limitField: string, currentValue: number | null) {
+    this.editingLimitField = limitField;
+    this.editingLimitValue = currentValue;
+  }
+
+  cancelEditLimit() {
+    this.editingLimitField = null;
+    this.editingLimitValue = null;
+  }
+
+  saveEditLimit() {
+    if (!this.editingLimitField || !this.selectedConfigForLimits) return;
+
+    // Use full assignment for user/group, or find full config object for system
+    const basePayload = this.limitContext === 'system' 
+      ? this.configs.find(c => c.id === this.limitEntityId) 
+      : this.selectedConfigForLimits;
+
+    if (!basePayload) return;
+
+    const payload = {
+      ...basePayload,
+      [this.editingLimitField]: this.editingLimitValue === null || this.editingLimitValue === undefined || (this.editingLimitValue as any) === '' ? null : Number(this.editingLimitValue)
+    };
+
+    let req: any;
+    if (this.limitContext === 'system') {
+      req = this.adminService.updateSystemConfig(this.limitEntityId, payload as any);
+    } else if (this.limitContext === 'user') {
+      req = this.adminService.updateUserSystemConfig(this.limitEntityId, payload as any);
+    } else {
+      req = this.adminService.updateGroupSystemConfig(this.limitEntityId, payload as any);
+    }
+
+    req.subscribe({
+      next: () => {
+        this.selectedConfigForLimits[this.editingLimitField!] = payload[this.editingLimitField!];
+        
+        // Also update the underlying local list if it's a system config
+        if (this.limitContext === 'system') {
+          const idx = this.configs.findIndex(c => c.id === this.limitEntityId);
+          if (idx !== -1) {
+            this.configs[idx] = { ...this.configs[idx], ...payload } as any;
+          }
+        }
+        
+        this.cancelEditLimit();
+      },
+      error: (err: any) => console.error("Failed to update limit", err)
+    });
+  }
+
+  resetSingleCounter(counterName: string, backendCounterName: string) {
     this.confirmMessage = `Are you sure you want to reset the counter?`;
     this.confirmAction = () => {
       let req;
-      if (this.limitContext === 'system') req = this.adminService.resetSystemConfig(this.limitEntityId, counterName);
-      else if (this.limitContext === 'user') req = this.adminService.resetUserSystemConfig(this.limitEntityId, counterName);
-      else req = this.adminService.resetGroupSystemConfig(this.limitEntityId, counterName);
+      if (this.limitContext === 'system') req = this.adminService.resetSystemConfig(this.limitEntityId, backendCounterName);
+      else if (this.limitContext === 'user') req = this.adminService.resetUserSystemConfig(this.limitEntityId, backendCounterName);
+      else req = this.adminService.resetGroupSystemConfig(this.limitEntityId, backendCounterName);
 
       req.subscribe({
         next: () => {
@@ -457,26 +530,7 @@ export class AdminComponent implements OnInit {
 
   openEditGroupOverride(assignment: any) {
     this.overrideContext = 'group';
-    this.editingOverride = {
-      id: assignment.id,
-      isEnabled: assignment.isEnabled,
-      modelRole: assignment.modelRole || 3,
-      maxResultLength: assignment.maxResultLength,
-      maxCallsPerSession: assignment.maxCallsPerSession,
-      maxToolIterations: assignment.maxToolIterations,
-      maxDailyChatRequests: assignment.maxDailyChatRequests,
-      maxMonthlyChatRequests: assignment.maxMonthlyChatRequests,
-      maxTotalChatRequests: assignment.maxTotalChatRequests,
-      maxDailyTitleRequests: assignment.maxDailyTitleRequests,
-      maxMonthlyTitleRequests: assignment.maxMonthlyTitleRequests,
-      maxTotalTitleRequests: assignment.maxTotalTitleRequests,
-      maxDailyChatTokens: assignment.maxDailyChatTokens,
-      maxMonthlyChatTokens: assignment.maxMonthlyChatTokens,
-      maxTotalChatTokens: assignment.maxTotalChatTokens,
-      maxDailyTitleTokens: assignment.maxDailyTitleTokens,
-      maxMonthlyTitleTokens: assignment.maxMonthlyTitleTokens,
-      maxTotalTitleTokens: assignment.maxTotalTitleTokens
-    };
+    this.editingOverride = { ...assignment };
     this.editConfigOverrideDialog.nativeElement.showModal();
   }
 
@@ -497,30 +551,10 @@ export class AdminComponent implements OnInit {
   saveOverride() {
     if (!this.editingOverride) return;
 
-    // Convert string limits to numbers or nulls
-    const sanitize = (val: any) => {
-      if (val === null || val === undefined || val === '') return null;
-      return Number(val);
-    };
-
     const payload = {
+      ...this.editingOverride,
       isEnabled: this.editingOverride.isEnabled,
-      modelRole: Number(this.editingOverride.modelRole),
-      maxResultLength: sanitize(this.editingOverride.maxResultLength),
-      maxCallsPerSession: sanitize(this.editingOverride.maxCallsPerSession),
-      maxToolIterations: sanitize(this.editingOverride.maxToolIterations),
-      maxDailyChatRequests: sanitize(this.editingOverride.maxDailyChatRequests),
-      maxMonthlyChatRequests: sanitize(this.editingOverride.maxMonthlyChatRequests),
-      maxTotalChatRequests: sanitize(this.editingOverride.maxTotalChatRequests),
-      maxDailyTitleRequests: sanitize(this.editingOverride.maxDailyTitleRequests),
-      maxMonthlyTitleRequests: sanitize(this.editingOverride.maxMonthlyTitleRequests),
-      maxTotalTitleRequests: sanitize(this.editingOverride.maxTotalTitleRequests),
-      maxDailyChatTokens: sanitize(this.editingOverride.maxDailyChatTokens),
-      maxMonthlyChatTokens: sanitize(this.editingOverride.maxMonthlyChatTokens),
-      maxTotalChatTokens: sanitize(this.editingOverride.maxTotalChatTokens),
-      maxDailyTitleTokens: sanitize(this.editingOverride.maxDailyTitleTokens),
-      maxMonthlyTitleTokens: sanitize(this.editingOverride.maxMonthlyTitleTokens),
-      maxTotalTitleTokens: sanitize(this.editingOverride.maxTotalTitleTokens)
+      modelRole: Number(this.editingOverride.modelRole)
     };
 
     if (this.overrideContext === 'user') {
