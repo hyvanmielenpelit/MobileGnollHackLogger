@@ -38,7 +38,7 @@ export class DebugLogComponent implements OnInit {
 
   private getClientBridge(): 'webview2' | 'android' | 'ios' | null {
     if ((window as any).chrome?.webview) return 'webview2';
-    if ((window as any).GnollHackBridge?.onToolRequest) return 'android';
+    if ((window as any).GnollHackBridge?.onWebMessage) return 'android';
     if ((window as any).webkit?.messageHandlers?.gnollhackBridge) return 'ios';
     return null;
   }
@@ -83,7 +83,7 @@ export class DebugLogComponent implements OnInit {
           (window as any).chrome.webview.postMessage(request);
           break;
         case 'android':
-          (window as any).GnollHackBridge.onToolRequest(JSON.stringify(request));
+          (window as any).GnollHackBridge.onWebMessage(JSON.stringify(request));
           break;
         case 'ios':
           (window as any).webkit.messageHandlers.gnollhackBridge.postMessage(JSON.stringify(request));
@@ -114,37 +114,19 @@ export class DebugLogComponent implements OnInit {
     const pad = (n: number) => n.toString().padStart(2, '0');
     const timestamp = `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
     const filename = `overseer-debug-log-${timestamp}.txt`;
-    const bridge = this.getClientBridge();
 
-    if (bridge) {
-      const request = { type: 'download_text_file', filename, content };
-      switch (bridge) {
-        case 'webview2':
-          (window as any).chrome.webview.postMessage(request);
-          break;
-        case 'android':
-          (window as any).GnollHackBridge.onToolRequest(JSON.stringify(request));
-          break;
-        case 'ios':
-          (window as any).webkit.messageHandlers.gnollhackBridge.postMessage(JSON.stringify(request));
-          break;
-      }
-      this.isDownloaded = true;
-      setTimeout(() => this.isDownloaded = false, 2000);
-    } else {
-      const blob = new Blob([content], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      
-      this.isDownloaded = true;
-      setTimeout(() => this.isDownloaded = false, 2000);
-    }
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    this.isDownloaded = true;
+    setTimeout(() => this.isDownloaded = false, 2000);
   }
 
   copyAllLogs(): void {

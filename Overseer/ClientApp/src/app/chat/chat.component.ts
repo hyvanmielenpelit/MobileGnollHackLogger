@@ -1394,7 +1394,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     if ((window as any).chrome?.webview) {
         return 'webview2';
     }
-    if ((window as any).GnollHackBridge?.onToolRequest) {
+    if ((window as any).GnollHackBridge?.onWebMessage) {
         return 'android';
     }
     if ((window as any).webkit?.messageHandlers?.gnollhackBridge) {
@@ -1417,7 +1417,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
             (window as any).chrome.webview.postMessage(request);
             break;
         case 'android':
-            (window as any).GnollHackBridge.onToolRequest(JSON.stringify(request));
+            (window as any).GnollHackBridge.onWebMessage(JSON.stringify(request));
             break;
         case 'ios':
             (window as any).webkit.messageHandlers.gnollhackBridge.postMessage(JSON.stringify(request));
