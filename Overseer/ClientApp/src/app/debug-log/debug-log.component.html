@@ -1,16 +1,37 @@
 <div class="debug-container">
-  <div class="header">
-    <div class="header-left">
-      <button (click)="goBack()" class="nav-back-link">&larr; Back</button>
-      <h2>Debug Log</h2>
-    </div>
-    <div class="header-right">
+  <div class="header-row">
+    <h2>Debug Log</h2>
+    <div class="header-actions">
       @if (canShare) {
-        <button (click)="shareLogs()" class="nav-back-link">{{ isShared ? 'Shared!' : 'Share' }}</button>
+        <button (click)="shareLogs()" class="icon-btn" [title]="isShared ? 'Shared!' : 'Share logs'">
+          @if (!isShared) {
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
+          }
+          @if (isShared) {
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#28a745" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          }
+        </button>
       }
-      <button (click)="downloadLogs()" class="nav-back-link">{{ isDownloaded ? 'Downloaded!' : 'Download' }}</button>
-      <button (click)="copyAllLogs()" class="nav-back-link">{{ isCopiedAll ? 'Copied!' : 'Copy All' }}</button>
-      <button (click)="clearLogs()" class="nav-back-link btn-clear">Clear</button>
+      <button (click)="downloadLogs()" class="icon-btn" [title]="isDownloaded ? 'Downloaded!' : 'Download logs'">
+        @if (!isDownloaded) {
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        }
+        @if (isDownloaded) {
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#28a745" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        }
+      </button>
+      <button (click)="copyAllLogs()" class="icon-btn" [title]="isCopiedAll ? 'Copied!' : 'Copy all logs'">
+        @if (!isCopiedAll) {
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+        }
+        @if (isCopiedAll) {
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#28a745" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        }
+      </button>
+      <button (click)="clearLogs()" class="icon-btn btn-clear" title="Clear logs">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+      </button>
+      <button (click)="goBack()" class="nav-back-link">&larr; Back</button>
     </div>
   </div>
   <div class="log-viewer gh-main-container">

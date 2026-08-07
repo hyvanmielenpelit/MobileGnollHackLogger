@@ -362,6 +362,22 @@ a:hover {
   }
 }
 
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+@media (max-width: 600px) {
+  .header-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 15px;
+  }
+}
+
 /* Settings Description */
 .settings-description {
   color: #ccc;

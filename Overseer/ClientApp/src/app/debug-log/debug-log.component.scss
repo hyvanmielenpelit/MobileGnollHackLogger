@@ -6,34 +6,38 @@
   box-sizing: border-box;
 }
 
-.header {
-  display: flex;
-  justify-content: space-between;
+.icon-btn {
+  background: transparent;
+  color: var(--link-color);
+  border: 1px solid var(--border-glass);
+  border-radius: 4px;
+  padding: 5px;
+  cursor: pointer;
+  display: inline-flex;
   align-items: center;
-  margin-block-end: 10px;
+  justify-content: center;
+  transition: all 0.2s ease;
+  height: 32px;
+  width: 32px;
 
-  .header-left {
-    display: flex;
-    align-items: center;
-    gap: 15px; /* Use gap instead of margin on button */
+  svg {
+    width: 18px;
+    height: 18px;
   }
 
-  .header-right {
-    display: flex;
-    align-items: center;
-    gap: 10px;
+  &:hover {
+    background: rgba(212, 160, 23, 0.1);
+    color: #fce6a8;
+    box-shadow: 0 0 10px var(--gold-glow);
   }
 
-  h2 {
-    margin: 0;
-  }
-
-  .btn-clear {
+  &.btn-clear {
     color: var(--color-error);
     border-color: var(--color-error);
     
     &:hover {
       background-color: rgba(220, 53, 69, 0.1);
+      box-shadow: 0 0 10px rgba(220, 53, 69, 0.3);
     }
   }
 }
@@ -93,9 +97,5 @@
 @media (max-width: 600px) {
   .debug-container {
     padding: 10px;
-  }
-  .header {
-    flex-wrap: wrap;
-    gap: 8px;
   }
 }
