@@ -100,7 +100,6 @@ public class CreateSystemAiApiConfigurationRequest
 public class UpdateSystemAiApiConfigurationRequest : CreateSystemAiApiConfigurationRequest
 {
     // ApiKey is optional. If null, don't update it. If empty string, clear it.
-    public bool ConfirmRemoveAssignments { get; set; }
 }
 
 public class ReorderRequest

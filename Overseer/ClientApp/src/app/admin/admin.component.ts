@@ -307,37 +307,18 @@ export class AdminComponent implements OnInit, OnDestroy {
         }
       });
     } else {
-      this.executeConfigUpdate(payload);
-    }
-  }
-
-  private executeConfigUpdate(payload: any) {
-    this.adminService.updateSystemConfig(payload.id!, payload).subscribe({
-      next: (c) => {
-        this.loadData();
-        this.savingConfig = false;
-        this.closeConfig();
-      },
-      error: (err) => {
-        this.savingConfig = false;
-        if (err.status === 409 && err.error?.requiresConfirmation) {
-          const uCount = err.error.userCount;
-          const gCount = err.error.groupCount;
-          let msgParts = [];
-          if (uCount > 0) msgParts.push(`${uCount} user assignment${uCount === 1 ? '' : 's'}`);
-          if (gCount > 0) msgParts.push(`${gCount} group assignment${gCount === 1 ? '' : 's'}`);
-          this.confirmMessage = `Making this configuration System Wide will remove ${msgParts.join(' and ')}. Do you want to proceed?`;
-          this.confirmAction = () => {
-            payload.confirmRemoveAssignments = true;
-            this.savingConfig = true;
-            this.executeConfigUpdate(payload);
-          };
-          this.confirmDialog.nativeElement.showModal();
-        } else {
+      this.adminService.updateSystemConfig(payload.id!, payload).subscribe({
+        next: (c) => {
+          this.loadData();
+          this.savingConfig = false;
+          this.closeConfig();
+        },
+        error: (err) => {
+          this.savingConfig = false;
           alert(err.error?.message || 'Error updating config');
         }
-      }
-    });
+      });
+    }
   }
 
   deleteConfig(config: SystemAiConfigDto) {

@@ -319,7 +319,7 @@
   <div class="dialog-content flex-col">
     <h3>Manage User Configs: {{ selectedUserForConfigs?.userName }}</h3>
     <div class="form-group mt-20 scrollable-list">
-      @for (config of assignableConfigs; track config) {
+      @for (config of configs; track config) {
         <div class="mb-15 config-list-item">
           <label class="gh-switch-wrapper d-flex align-items-center m-0">
             <div class="gh-switch">
@@ -327,7 +327,12 @@
               <span class="gh-slider"></span>
             </div>
             <div style="margin-left: 20px;">
-              <div style="font-weight: 500; font-size: 1.1em;">{{ config.displayName }}</div>
+              <div style="font-weight: 500; font-size: 1.1em;">
+                {{ config.displayName }}
+                @if (config.isSystemWide) {
+                  <span class="badge-system-wide ml-8">System Wide</span>
+                }
+              </div>
               @if (config.note) {
                 <div class="text-muted mt-5" style="font-size: 0.9em; font-style: italic;">
                   {{ config.note }}
@@ -353,7 +358,7 @@
         </div>
       } @empty {
         <div class="text-muted italic text-center p-20">
-          No user-assignable system configurations available.
+          No system configurations available.
         </div>
       }
     </div>
@@ -367,7 +372,7 @@
   <div class="dialog-content flex-col">
     <h3>Manage Group Configs: {{ selectedGroupForConfigs?.displayName }}</h3>
     <div class="form-group mt-20 scrollable-list">
-      @for (config of assignableConfigs; track config) {
+      @for (config of configs; track config) {
         <div class="mb-15 config-list-item">
           <label class="gh-switch-wrapper d-flex align-items-center m-0">
             <div class="gh-switch">
@@ -375,7 +380,12 @@
               <span class="gh-slider"></span>
             </div>
             <div style="margin-left: 20px;">
-              <div style="font-weight: 500; font-size: 1.1em;">{{ config.displayName }}</div>
+              <div style="font-weight: 500; font-size: 1.1em;">
+                {{ config.displayName }}
+                @if (config.isSystemWide) {
+                  <span class="badge-system-wide ml-8">System Wide</span>
+                }
+              </div>
               @if (config.note) {
                 <div class="text-muted mt-5" style="font-size: 0.9em; font-style: italic;">
                   {{ config.note }}
@@ -401,7 +411,7 @@
         </div>
       } @empty {
         <div class="text-muted italic text-center p-20">
-          No group-assignable system configurations available.
+          No system configurations available.
         </div>
       }
     </div>
