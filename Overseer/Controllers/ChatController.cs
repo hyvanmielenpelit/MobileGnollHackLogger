@@ -55,7 +55,7 @@ public class ChatController : ControllerBase
             .OrderByDescending(s => s.LastMessageUtc)
             .Skip(skip)
             .Take(effectiveTake)
-            .Select(s => new { s.Id, s.Title, s.LastMessageUtc })
+            .Select(s => new { s.Id, s.Title, s.LastMessageUtc, s.IsGnollHackSession })
             .ToListAsync();
 
         var totalCount = await _dbContext.ChatSession.CountAsync(s => s.AspNetUserId == userId);
@@ -176,6 +176,7 @@ public class ChatController : ControllerBase
         {
             session.Id,
             session.Title,
+            session.IsGnollHackSession,
             Messages = formattedMessages,
             OngoingGeneration = ongoing != null ? new {
                 events = ongoing.AccumulatedEvents
@@ -301,8 +302,7 @@ public class ChatController : ControllerBase
             {
                 using var scope = _scopeFactory.CreateScope();
                 var chatService = scope.ServiceProvider.GetRequiredService<ChatService>();
-                await chatService.GenerateAndBroadcastMessageAsync(
-                    sessionId, message, attachments, userId, false, cts.Token, userModelId, systemModelId);
+                await chatService.GenerateAndBroadcastMessageAsync(sessionId, message, attachments, userId, false, cts.Token, userModelId, systemModelId, request.HasGreeted);
             }
             finally
             {
@@ -464,6 +464,8 @@ public class SendMessageRequest
     public long? SessionId { get; set; }
     public string Message { get; set; } = string.Empty;
     public List<SendMessageAttachment>? Attachments { get; set; }
+    
     public long? UserModelId { get; set; }
     public long? SystemModelId { get; set; }
+    public bool HasGreeted { get; set; }
 }

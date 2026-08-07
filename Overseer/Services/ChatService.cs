@@ -69,11 +69,11 @@ public class ChatService
         return text.Trim();
     }
 
-    public async Task GenerateAndBroadcastMessageAsync(long sessionId, string message, List<SendMessageAttachment>? attachments, string userId, bool isHidden, CancellationToken cancellationToken, long? userModelId = null, long? systemModelId = null)
+    public async Task GenerateAndBroadcastMessageAsync(long sessionId, string message, List<SendMessageAttachment>? attachments, string userId, bool isHidden, CancellationToken cancellationToken, long? userModelId = null, long? systemModelId = null, bool hasGreeted = false)
     {
         try
         {
-            await foreach (var evt in StreamMessageAsync(sessionId, message, attachments, userId, isHidden, cancellationToken, userModelId, systemModelId))
+            await foreach (var evt in StreamMessageAsync(sessionId, message, attachments, userId, isHidden, cancellationToken, userModelId, systemModelId, hasGreeted))
             {
                 evt.SessionId = sessionId;
                 _ongoingChatManager.ProcessEvent(sessionId, evt);
@@ -102,7 +102,7 @@ public class ChatService
         }
     }
 
-    public async IAsyncEnumerable<ChatEvent> StreamMessageAsync(long sessionId, string message, List<SendMessageAttachment>? attachments, string userId, bool isHidden, [EnumeratorCancellation] CancellationToken cancellationToken, long? userModelId = null, long? systemModelId = null)
+    public async IAsyncEnumerable<ChatEvent> StreamMessageAsync(long sessionId, string message, List<SendMessageAttachment>? attachments, string userId, bool isHidden, [EnumeratorCancellation] CancellationToken cancellationToken, long? userModelId = null, long? systemModelId = null, bool hasGreeted = false)
     {
         if (string.IsNullOrEmpty(userId)) yield break;
 
@@ -438,6 +438,18 @@ public class ChatService
             if (textAttachmentsContent.Length > 0)
             {
                 finalMessageText += "\n\n" + textAttachmentsContent.ToString();
+            }
+
+            if (!hasGreeted)
+            {
+                if (!isGnollHackSession)
+                {
+                    finalMessageText += "\n\n[System instruction: Greet me.]";
+                }
+            }
+            else
+            {
+                finalMessageText += "\n\n[System instruction: You do not need to greet me anymore.]";
             }
 
             messageHistory.Add(aiProvider.FormatMessage("user", finalMessageText, imageAttachments));

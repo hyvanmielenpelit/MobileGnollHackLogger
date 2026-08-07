@@ -892,6 +892,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         }
 
         this.currentSessionId = s.id;
+        
+        if (s.isGnollHackSession) {
+          this.chatService.hasGreeted = true;
+        }
+
         this.messages = s.messages || [];
         this.messages.forEach(msg => {
           if (msg.toolCalls) {
@@ -1118,7 +1123,9 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         }
       }
 
-      const res = await firstValueFrom(this.chatService.sendMessage(this.currentSessionId, message, attachmentsPayload, uId, sId));
+      const currentHasGreeted = this.chatService.hasGreeted;
+      const res = await firstValueFrom(this.chatService.sendMessage(this.currentSessionId, message, attachmentsPayload, uId, sId, currentHasGreeted));
+      this.chatService.hasGreeted = true;
       const newSessionId = res.sessionId;
       
       if (this.currentSessionId !== newSessionId) {

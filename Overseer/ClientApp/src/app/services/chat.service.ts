@@ -5,6 +5,7 @@ export interface ChatSession {
   id: number;
   title: string;
   lastMessageUtc: string;
+  isGnollHackSession?: boolean;
 }
 
 export interface ChatMessageAttachment {
@@ -52,6 +53,8 @@ export interface ChatSessionsResponse {
 })
 export class ChatService {
   private http = inject(HttpClient);
+  
+  public hasGreeted: boolean = false;
 
   getSessions(skip: number = 0, take?: number) {
     let url = `/api/chat/sessions?skip=${skip}`;
@@ -68,7 +71,7 @@ export class ChatService {
   }
 
   getSession(id: number) {
-    return this.http.get<{ id: number, title: string, messages: ChatMessage[], ongoingGeneration?: { events: ChatStreamEvent[] } }>(`/api/chat/sessions/${id}`, {
+    return this.http.get<{ id: number, title: string, isGnollHackSession?: boolean, messages: ChatMessage[], ongoingGeneration?: { events: ChatStreamEvent[] } }>(`/api/chat/sessions/${id}`, {
       headers: {
         'Cache-Control': 'no-cache',
         'Pragma': 'no-cache',
@@ -89,13 +92,14 @@ export class ChatService {
     return this.http.put(`/api/chat/sessions/${sessionId}/title`, { title: newTitle });
   }
 
-  sendMessage(sessionId: number | null, message: string, attachments?: ChatMessageAttachment[], userModelId?: number, systemModelId?: number) {
+  sendMessage(sessionId: number | null, message: string, attachments?: ChatMessageAttachment[], userModelId?: number, systemModelId?: number, hasGreeted?: boolean) {
     return this.http.post<{sessionId: number}>('/api/chat/send', {
       sessionId,
       message,
       attachments: attachments || [],
       userModelId,
-      systemModelId
+      systemModelId,
+      hasGreeted
     });
   }
   
