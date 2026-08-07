@@ -113,7 +113,7 @@ public class UserSystemAiConfigDto
     public string UserId { get; set; } = string.Empty;
     public long SystemAiApiConfigurationId { get; set; }
     public bool IsEnabled { get; set; }
-    public int OrderIndex { get; set; }
+    public int? OrderIndex { get; set; }
     public int? MaxDailyChatRequests { get; set; }
     public int? MaxMonthlyChatRequests { get; set; }
     public int? MaxTotalChatRequests { get; set; }

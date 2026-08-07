@@ -137,9 +137,9 @@ export class ModelsComponent implements OnInit {
     }
   }
 
-  onDragStart(event: DragEvent, index: number) {
+  onDragStart(event: DragEvent, index: number, type: 'user' | 'system' = 'user') {
     if (event.dataTransfer) {
-      event.dataTransfer.setData('text/plain', index.toString());
+      event.dataTransfer.setData('text/plain', JSON.stringify({ index, type }));
       event.dataTransfer.effectAllowed = 'move';
       const target = event.target as HTMLElement;
       setTimeout(() => target.classList.add('dragging'), 0);
@@ -178,20 +178,26 @@ export class ModelsComponent implements OnInit {
     }
   }
 
-  onDrop(event: DragEvent, dropIndex: number) {
+  onDrop(event: DragEvent, dropIndex: number, type: 'user' | 'system' = 'user') {
     event.preventDefault();
-    const targetItem = (event.target as HTMLElement).closest('.model-item');
+    const targetItem = (event.target as HTMLElement).closest('.model-item, .system-model-item');
     if (targetItem) {
       targetItem.classList.remove('drag-over-top', 'drag-over-bottom');
     }
     
     if (event.dataTransfer) {
-      const dragIndexStr = event.dataTransfer.getData('text/plain');
-      if (dragIndexStr !== undefined && dragIndexStr !== '') {
-        const dragIndex = parseInt(dragIndexStr, 10);
-        if (dragIndex !== dropIndex) {
-          const item = this.userModels[dragIndex];
-          this.userModels.splice(dragIndex, 1);
+      const dataStr = event.dataTransfer.getData('text/plain');
+      if (dataStr) {
+        try {
+          const data = JSON.parse(dataStr);
+          if (data.type !== type) return; // Prevent cross-list dragging
+          
+          const dragIndex = data.index;
+          if (dragIndex !== dropIndex) {
+          const isUser = type === 'user';
+          const list = isUser ? this.userModels : this.systemModels;
+          const item = list[dragIndex];
+          list.splice(dragIndex, 1);
           
           // Determine if we drop before or after based on the mouse position relative to the element
           let insertIndex = dropIndex;
@@ -208,8 +214,15 @@ export class ModelsComponent implements OnInit {
              }
           }
           
-          this.userModels.splice(insertIndex, 0, item);
-          this.saveOrder();
+          list.splice(insertIndex, 0, item as any);
+          if (isUser) {
+            this.saveOrder();
+          } else {
+            this.saveSystemOrder();
+          }
+        }
+        } catch (e) {
+          console.error("Invalid drag data", e);
         }
       }
     }
@@ -224,6 +237,20 @@ export class ModelsComponent implements OnInit {
       },
       error: (err) => {
         console.error("Failed to save order", err);
+        this.saving = false;
+      }
+    });
+  }
+
+  saveSystemOrder() {
+    this.saving = true;
+    const orderedIds = this.systemModels.map(m => m.id!);
+    this.settingsService.reorderSystemModels(orderedIds).subscribe({
+      next: () => {
+        this.saving = false;
+      },
+      error: (err) => {
+        console.error("Failed to save system order", err);
         this.saving = false;
       }
     });

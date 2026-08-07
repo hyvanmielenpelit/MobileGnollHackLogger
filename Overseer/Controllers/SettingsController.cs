@@ -283,6 +283,17 @@ public class SettingsController : ControllerBase
         return Ok();
     }
 
+    [HttpPut("systemmodels/reorder")]
+    public async Task<IActionResult> ReorderUserSystemModels([FromBody] ReorderModelsRequest request)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId == null) return Unauthorized();
+        if (request.OrderedIds == null) return BadRequest();
+
+        await _settingsService.ReorderUserSystemModelsAsync(userId, request.OrderedIds);
+        return Ok();
+    }
+
     [HttpPost("models")]
     public async Task<IActionResult> GetModels([FromBody] GetModelsRequest request)
     {

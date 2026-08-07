@@ -218,7 +218,7 @@ export class AdminService {
   }
 
   reorderSystemConfigs(ids: number[]): Observable<void> {
-    return this.http.put<void>('/api/admin/systemconfigs/reorder', ids);
+    return this.http.put<void>('/api/admin/systemconfigs/reorder', { orderedIds: ids });
   }
 
   // User System AI Configs
@@ -243,7 +243,7 @@ export class AdminService {
   }
 
   reorderUserSystemConfigs(userId: string, ids: number[]): Observable<void> {
-    return this.http.put<void>(`/api/admin/users/${userId}/systemconfigs/reorder`, ids);
+    return this.http.put<void>(`/api/admin/users/${userId}/systemconfigs/reorder`, { orderedIds: ids });
   }
 
   // Group System AI Configs
@@ -268,6 +268,6 @@ export class AdminService {
   }
 
   reorderGroupSystemConfigs(groupId: number, ids: number[]): Observable<void> {
-    return this.http.put<void>(`/api/admin/groups/${groupId}/systemconfigs/reorder`, ids);
+    return this.http.put<void>(`/api/admin/groups/${groupId}/systemconfigs/reorder`, { orderedIds: ids });
   }
 }

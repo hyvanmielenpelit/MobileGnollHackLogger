@@ -657,4 +657,96 @@ export class AdminComponent implements OnInit, OnDestroy {
       });
     }
   }
+
+  // --- Drag and Drop for System Configs ---
+  onConfigDragStart(event: DragEvent, index: number) {
+    if (event.dataTransfer) {
+      event.dataTransfer.setData('text/plain', index.toString());
+      event.dataTransfer.effectAllowed = 'move';
+      const target = event.target as HTMLElement;
+      setTimeout(() => target.classList.add('dragging'), 0);
+    }
+  }
+
+  onConfigDragEnd(event: DragEvent) {
+    const target = event.target as HTMLElement;
+    target.classList.remove('dragging');
+    const items = document.querySelectorAll('.model-item');
+    items.forEach(item => item.classList.remove('drag-over-top', 'drag-over-bottom'));
+  }
+
+  onConfigDragOver(event: DragEvent) {
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'move';
+    }
+    const targetItem = (event.target as HTMLElement).closest('.model-item');
+    if (targetItem) {
+      const rect = targetItem.getBoundingClientRect();
+      const midY = rect.top + rect.height / 2;
+      targetItem.classList.remove('drag-over-top', 'drag-over-bottom');
+      if (event.clientY < midY) {
+        targetItem.classList.add('drag-over-top');
+      } else {
+        targetItem.classList.add('drag-over-bottom');
+      }
+    }
+  }
+
+  onConfigDragLeave(event: DragEvent) {
+    const targetItem = (event.target as HTMLElement).closest('.model-item');
+    if (targetItem) {
+      targetItem.classList.remove('drag-over-top', 'drag-over-bottom');
+    }
+  }
+
+  onConfigDrop(event: DragEvent, dropIndex: number) {
+    event.preventDefault();
+    const targetItem = (event.target as HTMLElement).closest('.model-item');
+    if (targetItem) {
+      targetItem.classList.remove('drag-over-top', 'drag-over-bottom');
+    }
+    
+    if (event.dataTransfer) {
+      const dragIndexStr = event.dataTransfer.getData('text/plain');
+      if (dragIndexStr !== undefined && dragIndexStr !== '') {
+        const dragIndex = parseInt(dragIndexStr, 10);
+        if (dragIndex !== dropIndex) {
+          const item = this.configs[dragIndex];
+          this.configs.splice(dragIndex, 1);
+          
+          let insertIndex = dropIndex;
+          if (targetItem) {
+             const rect = targetItem.getBoundingClientRect();
+             const midY = rect.top + rect.height / 2;
+             if (event.clientY >= midY) {
+               insertIndex++;
+             }
+             if (dragIndex < dropIndex && event.clientY < midY) {
+                // Adjustment if dragging downwards but dropping on top half
+             } else if (dragIndex < dropIndex) {
+               insertIndex--;
+             }
+          }
+          
+          this.configs.splice(insertIndex, 0, item);
+          this.saveConfigOrder();
+        }
+      }
+    }
+  }
+
+  saveConfigOrder() {
+    this.savingConfig = true;
+    const orderedIds = this.configs.map(c => c.id);
+    this.adminService.reorderSystemConfigs(orderedIds).subscribe({
+      next: () => {
+        this.savingConfig = false;
+      },
+      error: (err) => {
+        console.error("Failed to save config order", err);
+        this.savingConfig = false;
+      }
+    });
+  }
 }

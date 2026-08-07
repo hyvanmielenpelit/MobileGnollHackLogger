@@ -68,12 +68,22 @@
         <h3>System-Provided Models</h3>
       </div>
       <div class="models-list">
-        @for (model of systemModels; track model) {
-          <div class="model-item system-model-item">
+        @for (model of systemModels; track model; let i = $index) {
+          <div 
+            class="model-item system-model-item"
+            draggable="true"
+            (dragstart)="onDragStart($event, i, 'system')"
+            (dragend)="onDragEnd($event)"
+            (dragover)="onDragOver($event)"
+            (dragleave)="onDragLeave($event)"
+            (drop)="onDrop($event, i, 'system')">
+            <div class="drag-handle" title="Drag to reorder">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+            </div>
             <div class="model-info">
-              <div class="model-title d-flex align-items-center">
+              <div class="model-title d-flex align-items-center" style="flex-wrap: wrap;">
                 <h3>{{ model.displayName || model.modelId }}</h3>
-                <span class="badge-system-wide ml-10" style="background-color: #28a745; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.8em;">System Config</span>
+                <span class="badge-system-wide ml-10">System Config</span>
               </div>
               <div class="model-details">
                 <div class="mb-4">{{ model.modelId }} <span class="provider-badge ml-8">{{ model.provider }}</span></div>

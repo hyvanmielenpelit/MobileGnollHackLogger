@@ -18,7 +18,7 @@ public class UserSystemAiApiConfiguration : IRateLimitedEntity
 
     public int ModelRole { get; set; } = 3; // 1 = Chat, 2 = Title Generation, 3 = Both
 
-    public int OrderIndex { get; set; }
+    public int? OrderIndex { get; set; }
 
     // Rate limits (null means use system defaults)
     public int? MaxDailyChatRequests { get; set; }

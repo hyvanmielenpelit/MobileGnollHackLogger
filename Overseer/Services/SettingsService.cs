@@ -159,15 +159,17 @@ public class SettingsService
                     select new {
                         Config = c,
                         ResolvedRole = userAssignment != null ? userAssignment.ModelRole :
-                                       (groupAssignment != null ? groupAssignment.ModelRole : c.ModelRole)
+                                       (groupAssignment != null ? groupAssignment.ModelRole : c.ModelRole),
+                        UserOrder = userAssignment != null ? userAssignment.OrderIndex : (int?)null
                     };
 
         var rawList = await query.ToListAsync();
         
         var resultList = rawList
             .Where(x => roleFilter == null || (x.ResolvedRole & roleFilter.Value) == roleFilter.Value)
+            .OrderBy(x => x.UserOrder.HasValue ? 0 : 1)
+            .ThenBy(x => x.UserOrder ?? x.Config.OrderIndex)
             .Select(x => (x.Config, x.ResolvedRole))
-            .OrderBy(x => x.Config.OrderIndex)
             .ToList();
 
         return resultList;
@@ -250,6 +252,40 @@ public class SettingsService
             if (model != null)
             {
                 model.OrderIndex = i;
+            }
+        }
+        await _dbContext.SaveChangesAsync();
+    }
+
+    public async Task ReorderUserSystemModelsAsync(string userId, long[] orderedConfigIds)
+    {
+        var existingConfigs = await _dbContext.SystemAiApiConfigurations
+            .Where(c => orderedConfigIds.Contains(c.Id))
+            .ToDictionaryAsync(c => c.Id);
+
+        var existingAssignments = await _dbContext.UserSystemAiApiConfigurations
+            .Where(u => u.AspNetUserId == userId && orderedConfigIds.Contains(u.SystemAiApiConfigurationId))
+            .ToDictionaryAsync(u => u.SystemAiApiConfigurationId);
+
+        for (int i = 0; i < orderedConfigIds.Length; i++)
+        {
+            var configId = orderedConfigIds[i];
+            if (!existingConfigs.TryGetValue(configId, out var config)) continue;
+
+            if (existingAssignments.TryGetValue(configId, out var assignment))
+            {
+                assignment.OrderIndex = i;
+            }
+            else
+            {
+                _dbContext.UserSystemAiApiConfigurations.Add(new UserSystemAiApiConfiguration
+                {
+                    AspNetUserId = userId,
+                    SystemAiApiConfigurationId = configId,
+                    OrderIndex = i,
+                    IsEnabled = config.IsEnabled,
+                    ModelRole = config.ModelRole
+                });
             }
         }
         await _dbContext.SaveChangesAsync();
