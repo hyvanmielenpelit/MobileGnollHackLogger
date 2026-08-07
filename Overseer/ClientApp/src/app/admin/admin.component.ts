@@ -323,7 +323,10 @@ export class AdminComponent implements OnInit, OnDestroy {
         if (err.status === 409 && err.error?.requiresConfirmation) {
           const uCount = err.error.userCount;
           const gCount = err.error.groupCount;
-          this.confirmMessage = `Making this configuration System Wide will remove ${uCount} user assignment(s) and ${gCount} group assignment(s). Do you want to proceed?`;
+          let msgParts = [];
+          if (uCount > 0) msgParts.push(`${uCount} user assignment${uCount === 1 ? '' : 's'}`);
+          if (gCount > 0) msgParts.push(`${gCount} group assignment${gCount === 1 ? '' : 's'}`);
+          this.confirmMessage = `Making this configuration System Wide will remove ${msgParts.join(' and ')}. Do you want to proceed?`;
           this.confirmAction = () => {
             payload.confirmRemoveAssignments = true;
             this.savingConfig = true;
