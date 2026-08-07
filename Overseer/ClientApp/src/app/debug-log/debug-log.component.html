@@ -5,6 +5,10 @@
       <h2>Debug Log</h2>
     </div>
     <div class="header-right">
+      @if (canShare) {
+        <button (click)="shareLogs()" class="nav-back-link">{{ isShared ? 'Shared!' : 'Share' }}</button>
+      }
+      <button (click)="downloadLogs()" class="nav-back-link">{{ isDownloaded ? 'Downloaded!' : 'Download' }}</button>
       <button (click)="copyAllLogs()" class="nav-back-link">{{ isCopiedAll ? 'Copied!' : 'Copy All' }}</button>
       <button (click)="clearLogs()" class="nav-back-link btn-clear">Clear</button>
     </div>
