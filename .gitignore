@@ -399,3 +399,6 @@ FodyWeavers.xsd
 
 # local certificates
 localcert.p12
+Overseer/wwwroot/chunk-*.js
+Overseer/wwwroot/main-*.js
+Overseer/wwwroot/3rdpartylicenses.txt
