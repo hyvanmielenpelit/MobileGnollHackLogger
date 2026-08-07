@@ -44,9 +44,9 @@ export class MarkdownPipe implements PipeTransform {
         parts[i] = parts[i].replace(/([a-zA-Z0-9\)]):\s*(\d+\.\s+)/g, '$1:\n\n$2');
         
         // Fix squished sentences (e.g., LLM outputs "word.Next word" without a space)
-        // Matches any non-whitespace (excluding markdown formatting characters *, _, `), a punctuation mark (., !, ?), and a capital letter
-        // This prevents splitting terms like "**.NET" into "**.\n\nNET"
-        parts[i] = parts[i].replace(/([^\s\*\_\`][\.\!\?])([A-Z])/g, '$1\n\n$2');
+        // Matches any non-whitespace (excluding markdown formatting characters *, _, `, opening brackets (, [, {, <, and uppercase letters A-Z), a punctuation mark (., !, ?), and a capital letter
+        // This prevents splitting terms like "**.NET", "(.NET", or "ASP.NET" into "**.\n\nNET"
+        parts[i] = parts[i].replace(/([^\s\*\_\`\(\[\{\<A-Z][\.\!\?])([A-Z])/g, '$1\n\n$2');
       }
     }
     
