@@ -14,6 +14,7 @@ export interface AiModelFormResult {
   isEnabled?: boolean;
   isSystemWide?: boolean;
   modelRole?: number;
+  note?: string | null;
 }
 
 @Component({
@@ -52,6 +53,7 @@ export class AiModelFormComponent implements OnInit {
   isEnabled = true;
   isSystemWide = false;
   modelRole: number = 3;
+  note: string | null = null;
 
   // State
   loadingModels = false;
@@ -108,6 +110,7 @@ export class AiModelFormComponent implements OnInit {
         this.isEnabled = this.initialData.isEnabled ?? true;
         this.isSystemWide = this.initialData.isSystemWide ?? false;
         this.modelRole = this.initialData.modelRole ?? 3;
+        this.note = this.initialData.note || null;
       }
 
       this.pickerModelSelect = this.modelId;
@@ -319,6 +322,7 @@ export class AiModelFormComponent implements OnInit {
       result.isEnabled = this.isEnabled;
       result.isSystemWide = this.isSystemWide;
       result.modelRole = this.modelRole;
+      result.note = this.note;
     }
 
     this.save.emit(result);

@@ -173,6 +173,11 @@
                         <h3>{{ config.displayName || config.modelId }}</h3>
                       </div>
                       <div class="model-details">
+                        @if (config.note) {
+                          <div class="mb-4 text-muted" style="font-size: 0.9em; font-style: italic;">
+                            {{ config.note }}
+                          </div>
+                        }
                         <div class="mb-4">
                           {{ config.modelId }} <span class="provider-badge ml-8">{{ config.provider }}</span>
                           <span class="provider-badge ml-8" style="background-color: rgba(255, 255, 255, 0.05); color: #ccc;">{{ formatModelRole(config.modelRole) }}</span>
@@ -314,7 +319,7 @@
   <div class="dialog-content flex-col">
     <h3>Manage User Configs: {{ selectedUserForConfigs?.userName }}</h3>
     <div class="form-group mt-20 scrollable-list">
-      @for (config of configs; track config) {
+      @for (config of assignableConfigs; track config) {
         <div class="mb-15 config-list-item">
           <label class="gh-switch-wrapper d-flex align-items-center m-0">
             <div class="gh-switch">
@@ -323,6 +328,11 @@
             </div>
             <div style="margin-left: 20px;">
               <div style="font-weight: 500; font-size: 1.1em;">{{ config.displayName }}</div>
+              @if (config.note) {
+                <div class="text-muted mt-5" style="font-size: 0.9em; font-style: italic;">
+                  {{ config.note }}
+                </div>
+              }
               <div class="text-muted mt-5" style="font-size: 0.85em; font-family: monospace;">
                 Provider: {{ config.provider }} <span class="ml-10">Role: {{ formatModelRole(config.modelRole) }}</span>
               </div>
@@ -341,6 +351,10 @@
             }
           </div>
         </div>
+      } @empty {
+        <div class="text-muted italic text-center p-20">
+          No user-assignable system configurations available.
+        </div>
       }
     </div>
     <div class="dialog-actions mt-auto pt-20">
@@ -353,7 +367,7 @@
   <div class="dialog-content flex-col">
     <h3>Manage Group Configs: {{ selectedGroupForConfigs?.displayName }}</h3>
     <div class="form-group mt-20 scrollable-list">
-      @for (config of configs; track config) {
+      @for (config of assignableConfigs; track config) {
         <div class="mb-15 config-list-item">
           <label class="gh-switch-wrapper d-flex align-items-center m-0">
             <div class="gh-switch">
@@ -362,6 +376,11 @@
             </div>
             <div style="margin-left: 20px;">
               <div style="font-weight: 500; font-size: 1.1em;">{{ config.displayName }}</div>
+              @if (config.note) {
+                <div class="text-muted mt-5" style="font-size: 0.9em; font-style: italic;">
+                  {{ config.note }}
+                </div>
+              }
               <div class="text-muted mt-5" style="font-size: 0.85em; font-family: monospace;">
                 Provider: {{ config.provider }} <span class="ml-10">Role: {{ formatModelRole(config.modelRole) }}</span>
               </div>
@@ -379,6 +398,10 @@
               </button>
             }
           </div>
+        </div>
+      } @empty {
+        <div class="text-muted italic text-center p-20">
+          No group-assignable system configurations available.
         </div>
       }
     </div>

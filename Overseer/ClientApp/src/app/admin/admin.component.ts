@@ -25,6 +25,10 @@ export class AdminComponent implements OnInit, OnDestroy {
   users: UserDto[] = [];
   groups: GroupDto[] = [];
   configs: SystemAiConfigDto[] = [];
+  
+  get assignableConfigs(): SystemAiConfigDto[] {
+    return this.configs.filter(c => !c.isSystemWide);
+  }
 
   // Pagination & Sorting state
   page = 1;
@@ -303,18 +307,34 @@ export class AdminComponent implements OnInit, OnDestroy {
         }
       });
     } else {
-      this.adminService.updateSystemConfig(payload.id!, payload).subscribe({
-        next: (c) => {
-          this.loadData();
-          this.savingConfig = false;
-          this.closeConfig();
-        },
-        error: (err) => {
-          this.savingConfig = false;
+      this.executeConfigUpdate(payload);
+    }
+  }
+
+  private executeConfigUpdate(payload: any) {
+    this.adminService.updateSystemConfig(payload.id!, payload).subscribe({
+      next: (c) => {
+        this.loadData();
+        this.savingConfig = false;
+        this.closeConfig();
+      },
+      error: (err) => {
+        this.savingConfig = false;
+        if (err.status === 409 && err.error?.requiresConfirmation) {
+          const uCount = err.error.userCount;
+          const gCount = err.error.groupCount;
+          this.confirmMessage = `Making this configuration System Wide will remove ${uCount} user assignment(s) and ${gCount} group assignment(s). Do you want to proceed?`;
+          this.confirmAction = () => {
+            payload.confirmRemoveAssignments = true;
+            this.savingConfig = true;
+            this.executeConfigUpdate(payload);
+          };
+          this.confirmDialog.nativeElement.showModal();
+        } else {
           alert(err.error?.message || 'Error updating config');
         }
-      });
-    }
+      }
+    });
   }
 
   deleteConfig(config: SystemAiConfigDto) {

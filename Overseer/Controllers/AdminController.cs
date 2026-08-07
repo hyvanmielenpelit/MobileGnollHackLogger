@@ -210,7 +210,8 @@ public class AdminController : ControllerBase
                 DailyTitleTokensCount = c.DailyTitleTokensCount,
                 MonthlyTitleTokensCount = c.MonthlyTitleTokensCount,
                 TotalTitleTokensCount = c.TotalTitleTokensCount,
-                ModelRole = c.ModelRole
+                ModelRole = c.ModelRole,
+                Note = c.Note
             })
             .ToListAsync();
 
@@ -247,7 +248,8 @@ public class AdminController : ControllerBase
             MaxMonthlyTitleTokens = request.MaxMonthlyTitleTokens,
             MaxTotalTitleTokens = request.MaxTotalTitleTokens,
             ModelRole = request.ModelRole,
-            OrderIndex = orderIndex
+            OrderIndex = orderIndex,
+            Note = request.Note
         };
 
         if (!string.IsNullOrWhiteSpace(request.ApiKey))
@@ -266,6 +268,36 @@ public class AdminController : ControllerBase
     {
         var config = await _dbContext.SystemAiApiConfigurations.FindAsync(id);
         if (config == null) return NotFound();
+
+        if (!config.IsSystemWide && request.IsSystemWide)
+        {
+            int userCount = await _dbContext.UserSystemAiApiConfigurations
+                .CountAsync(x => x.SystemAiApiConfigurationId == id);
+            int groupCount = await _dbContext.GroupSystemAiApiConfigurations
+                .CountAsync(x => x.SystemAiApiConfigurationId == id);
+            
+            if ((userCount > 0 || groupCount > 0) && !request.ConfirmRemoveAssignments)
+            {
+                return Conflict(new { 
+                    requiresConfirmation = true, 
+                    userCount, 
+                    groupCount 
+                });
+            }
+            
+            if (userCount > 0)
+            {
+                var userAssignments = await _dbContext.UserSystemAiApiConfigurations
+                    .Where(x => x.SystemAiApiConfigurationId == id).ToListAsync();
+                _dbContext.UserSystemAiApiConfigurations.RemoveRange(userAssignments);
+            }
+            if (groupCount > 0)
+            {
+                var groupAssignments = await _dbContext.GroupSystemAiApiConfigurations
+                    .Where(x => x.SystemAiApiConfigurationId == id).ToListAsync();
+                _dbContext.GroupSystemAiApiConfigurations.RemoveRange(groupAssignments);
+            }
+        }
 
         config.DisplayName = request.DisplayName;
         config.Provider = request.Provider;
@@ -288,6 +320,7 @@ public class AdminController : ControllerBase
         config.MaxMonthlyTitleTokens = request.MaxMonthlyTitleTokens;
         config.MaxTotalTitleTokens = request.MaxTotalTitleTokens;
         config.ModelRole = request.ModelRole;
+        config.Note = request.Note;
 
         if (request.ApiKey != null)
         {

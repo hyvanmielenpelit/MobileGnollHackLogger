@@ -57,6 +57,7 @@ export interface SystemAiConfigDto {
   totalTitleTokensCount: number;
   modelRole: number;
   apiKey?: string;
+  note?: string | null;
 }
 
 export interface UserSystemAiConfigDto {

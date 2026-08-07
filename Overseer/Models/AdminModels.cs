@@ -67,6 +67,7 @@ public class SystemAiApiConfigurationDto
     public long MonthlyTitleTokensCount { get; set; }
     public long TotalTitleTokensCount { get; set; }
     public int ModelRole { get; set; }
+    public string? Note { get; set; }
 }
 
 public class CreateSystemAiApiConfigurationRequest
@@ -93,11 +94,13 @@ public class CreateSystemAiApiConfigurationRequest
     public long? MaxMonthlyTitleTokens { get; set; }
     public long? MaxTotalTitleTokens { get; set; }
     public int ModelRole { get; set; } = 3;
+    public string? Note { get; set; }
 }
 
 public class UpdateSystemAiApiConfigurationRequest : CreateSystemAiApiConfigurationRequest
 {
     // ApiKey is optional. If null, don't update it. If empty string, clear it.
+    public bool ConfirmRemoveAssignments { get; set; }
 }
 
 public class ReorderRequest

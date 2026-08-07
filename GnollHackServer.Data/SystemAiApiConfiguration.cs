@@ -39,6 +39,9 @@ public class SystemAiApiConfiguration : IRateLimitedEntity
 
     public int ModelRole { get; set; } = 3; // 1 = Chat, 2 = Title Generation, 3 = Both
 
+    [MaxLength(2048)]
+    public string? Note { get; set; }
+
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 
     // Rate limits
