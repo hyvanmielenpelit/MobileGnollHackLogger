@@ -620,8 +620,17 @@ export class AdminComponent implements OnInit, OnDestroy {
     switch (role) {
       case 1: return 'Chat Only';
       case 2: return 'Title Generation Only';
-      case 3: return 'All (Chat & Title)';
+      case 3: return 'Chat & Title';
       default: return 'Unknown';
+    }
+  }
+
+  getModelRoleClass(role: number): string {
+    switch (role) {
+      case 1: return 'badge-role-chat';
+      case 2: return 'badge-role-title';
+      case 3: return 'badge-role-all';
+      default: return '';
     }
   }
 

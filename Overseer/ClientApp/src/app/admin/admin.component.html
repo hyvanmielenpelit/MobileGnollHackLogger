@@ -81,9 +81,9 @@
                 <tbody>
                   @for (user of users; track user) {
                     <tr>
-                      <td>{{ user.userName }}</td>
-                      <td class="text-muted">{{ user.email }}</td>
-                      <td>
+                      <td data-label="Username">{{ user.userName }}</td>
+                      <td class="text-muted" data-label="Email">{{ user.email }}</td>
+                      <td data-label="Groups">
                         @for (g of user.groups; track g) {
                           <span class="group-badge">{{ g.displayName }}</span>
                         }
@@ -111,7 +111,7 @@
           <div>
             <div class="tab-header-row">
               <h3 class="m-0">Manage Groups</h3>
-              <button class="btn-gh btn-gh-wide" (click)="openCreateGroup()">Create Group</button>
+              <button class="btn-gh btn-gh-wide" (click)="openCreateGroup()">Create</button>
             </div>
             @if (groups.length === 0) {
               <div class="text-muted italic mt-20 empty-state-msg">
@@ -131,8 +131,8 @@
                   <tbody>
                     @for (group of groups; track group) {
                       <tr>
-                        <td>{{ group.id }}</td>
-                        <td>{{ group.displayName }}</td>
+                        <td data-label="ID">{{ group.id }}</td>
+                        <td data-label="Name">{{ group.displayName }}</td>
                         <td class="actions-cell">
                           <button class="action-btn" title="Manage Configs" (click)="openManageGroupConfigs(group)">
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
@@ -157,7 +157,7 @@
           <div>
             <div class="tab-header-row">
               <h3 class="m-0">System AI Configurations</h3>
-              <button class="btn-gh btn-gh-wide" (click)="openCreateConfig()">Create Config</button>
+              <button class="btn-gh btn-gh-wide" (click)="openCreateConfig()">Create</button>
             </div>
             @if (configs.length === 0) {
               <div class="text-muted italic mt-20 empty-state-msg">
@@ -188,21 +188,22 @@
                             {{ config.note }}
                           </div>
                         }
-                        <div class="mb-4">
-                          {{ config.modelId }} <span class="provider-badge ml-8">{{ config.provider }}</span>
-                          <span class="provider-badge ml-8" style="background-color: rgba(255, 255, 255, 0.05); color: #ccc;">{{ formatModelRole(config.modelRole) }}</span>
+                        <div class="mb-4 d-flex align-items-center" style="flex-wrap: wrap; gap: 8px;">
+                          <span>{{ config.modelId }}</span>
+                          <span class="provider-badge">{{ config.provider }}</span>
+                          <span class="status-badge" [ngClass]="getModelRoleClass(config.modelRole)">{{ formatModelRole(config.modelRole) }}</span>
                           @if (config.isSystemWide) {
-                            <span class="badge-system-wide ml-8">System Wide</span>
+                            <span class="badge-system-wide">System Wide</span>
                           }
                           @if (!config.isEnabled) {
-                            <span class="badge-disabled ml-8">Disabled</span>
+                            <span class="badge-disabled">Disabled</span>
                           }
-                          <span class="status-badge ml-8" [class.badge-success]="config.hasApiKey" [class.badge-warning]="!config.hasApiKey">
+                          <span class="status-badge" [class.badge-success]="config.hasApiKey" [class.badge-warning]="!config.hasApiKey">
                             {{ config.hasApiKey ? 'Key Saved' : 'No Key' }}
                           </span>
                         </div>
                         @if (config.thinkingLevel) {
-                          <div>
+                          <div style="margin-top: 8px;">
                             <span class="detail-label thinking ml-0">Thinking Level:</span> {{ config.thinkingLevel }}
                           </div>
                         }
@@ -337,10 +338,10 @@
               <span class="gh-slider"></span>
             </div>
             <div style="margin-left: 20px;">
-              <div style="font-weight: 500; font-size: 1.1em;">
-                {{ config.displayName }}
+              <div class="d-flex align-items-center" style="font-weight: 500; font-size: 1.1em; flex-wrap: wrap; gap: 8px;">
+                <span>{{ config.displayName }}</span>
                 @if (config.isSystemWide) {
-                  <span class="badge-system-wide ml-8">System Wide</span>
+                  <span class="badge-system-wide">System Wide</span>
                 }
               </div>
               @if (config.note) {
@@ -390,10 +391,10 @@
               <span class="gh-slider"></span>
             </div>
             <div style="margin-left: 20px;">
-              <div style="font-weight: 500; font-size: 1.1em;">
-                {{ config.displayName }}
+              <div class="d-flex align-items-center" style="font-weight: 500; font-size: 1.1em; flex-wrap: wrap; gap: 8px;">
+                <span>{{ config.displayName }}</span>
                 @if (config.isSystemWide) {
-                  <span class="badge-system-wide ml-8">System Wide</span>
+                  <span class="badge-system-wide">System Wide</span>
                 }
               </div>
               @if (config.note) {
