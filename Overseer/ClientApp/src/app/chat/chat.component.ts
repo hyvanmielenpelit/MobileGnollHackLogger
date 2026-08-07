@@ -1138,9 +1138,34 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       }
     } catch (e: any) {
       console.error(e);
-      this.currentStatusText = `Error: ${e.message}`;
-      this.messages.push({ role: 'assistant', content: 'Error: ' + e, timestampUtc: new Date().toISOString() });
-      this.debugService.log(`Frontend Error: ${e.message}`);
+      let errorDisplay = e.message || 'Unknown error';
+      if (e.name === 'HttpErrorResponse') {
+         errorDisplay = `Network error: ${e.message} (Status: ${e.status} ${e.statusText})`;
+         if (e.error) {
+             try {
+                 errorDisplay += ` - Details: ${typeof e.error === 'string' ? e.error : JSON.stringify(e.error)}`;
+             } catch (stringifyErr) {
+                 errorDisplay += ` - Details: [Unserializable Error Object]`;
+             }
+         }
+      } else if (typeof e === 'string') {
+          errorDisplay = e;
+      } else if (e && typeof e === 'object' && !e.message) {
+          try {
+              errorDisplay = JSON.stringify(e);
+          } catch(err) {
+              errorDisplay = 'Unknown error object';
+          }
+      }
+
+      this.currentStatusText = `Error: ${e.message || 'Unknown error'}`;
+      this.messages.push({ role: 'assistant', content: '**Error:**\n\n```text\n' + errorDisplay + '\n```', timestampUtc: new Date().toISOString() });
+      
+      try {
+          this.debugService.log(`Frontend Error: ${JSON.stringify(e, Object.getOwnPropertyNames(e))}`);
+      } catch (err) {
+          this.debugService.log(`Frontend Error: ${e.toString()}`);
+      }
       
       this.isStreaming = false;
       this.showSpinner = false;
