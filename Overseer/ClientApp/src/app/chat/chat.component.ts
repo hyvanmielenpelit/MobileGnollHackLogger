@@ -245,7 +245,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   applySavedModelPreference() {
-    if (this.userModels.length === 0) return;
+    if (this.userModels.length === 0 && this.systemModels.length === 0) return;
 
     let targetId: number | null = null;
 

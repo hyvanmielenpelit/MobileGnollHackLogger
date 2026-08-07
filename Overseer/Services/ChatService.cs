@@ -1375,6 +1375,8 @@ public class ChatService
             string modelId = "";
             string apiKey = "";
 
+            long? usedSystemModelId = settings?.TitleGenerationSystemModelId;
+
             if (settings?.TitleGenerationSystemModelId != null)
             {
                 var systemAiConfigService = scope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
@@ -1416,6 +1418,20 @@ public class ChatService
                     if (apiKeyEntry != null && !string.IsNullOrEmpty(apiKeyEntry.EncryptedApiKey) && !string.IsNullOrEmpty(apiKeyEntry.ApiKeyNonce) && !string.IsNullOrEmpty(apiKeyEntry.ApiKeyTag))
                     {
                         apiKey = cryptoService.Decrypt(apiKeyEntry.EncryptedApiKey, apiKeyEntry.ApiKeyNonce, apiKeyEntry.ApiKeyTag, userId);
+                    }
+                }
+
+                if (string.IsNullOrEmpty(provider) || string.IsNullOrEmpty(apiKey))
+                {
+                    var settingsService = scope.ServiceProvider.GetRequiredService<SettingsService>();
+                    var resolvedSystemModels = await settingsService.GetResolvedSystemModelsAsync(userId, roleFilter: 2);
+                    var firstSystemModel = resolvedSystemModels.FirstOrDefault();
+                    if (firstSystemModel.Config != null && !string.IsNullOrEmpty(firstSystemModel.Config.EncryptedApiKey) && !string.IsNullOrEmpty(firstSystemModel.Config.ApiKeyNonce) && !string.IsNullOrEmpty(firstSystemModel.Config.ApiKeyTag))
+                    {
+                        provider = firstSystemModel.Config.Provider;
+                        modelId = firstSystemModel.Config.ModelId;
+                        apiKey = cryptoService.Decrypt(firstSystemModel.Config.EncryptedApiKey, firstSystemModel.Config.ApiKeyNonce, firstSystemModel.Config.ApiKeyTag, "SYSTEM_API_KEY");
+                        usedSystemModelId = firstSystemModel.Config.Id;
                     }
                 }
             }
@@ -1507,12 +1523,12 @@ public class ChatService
                 {
                     if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {provider}] Generated Title: \"{generatedTitle}\"" }, CancellationToken.None);
                     
-                    if (settings?.TitleGenerationSystemModelId != null)
+                    if (usedSystemModelId != null)
                     {
                         var systemAiConfigService = startScope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
                         int estimatedInputTokens = (prompt.Length + userMessage.Length) / 4;
                         int outputTokens = generatedTitle.Length / 4;
-                        await systemAiConfigService.RecordUsageAsync(settings.TitleGenerationSystemModelId.Value, userId, estimatedInputTokens, outputTokens, roleContext: 2);
+                        await systemAiConfigService.RecordUsageAsync(usedSystemModelId.Value, userId, estimatedInputTokens, outputTokens, roleContext: 2);
                     }
                 }
             }
