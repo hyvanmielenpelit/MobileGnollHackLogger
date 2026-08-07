@@ -13,17 +13,29 @@ marked.use(markedKatex({ throwOnError: false, nonStandard: true }));
 export class MarkdownPipe implements PipeTransform {
   transform(value: string): string {
     if (!value) return '';
-    // Fix missing newlines before headings (e.g. LLM outputs "TEXT#### HEADING")
-    // Only apply if the # is preceded by a non-newline character and followed by a space
-    let processed = value.replace(/([^\n])(#{1,6}\s+)/g, '$1\n\n$2');
+    // Split the string into code blocks/inline code and normal text
+    // This ensures we don't accidentally modify code snippets
+    const codeRegex = /(```[\s\S]*?```|`[^`]*`)/g;
+    const parts = value.split(codeRegex);
+
+    for (let i = 0; i < parts.length; i++) {
+      // Even indices are normal text, odd indices are code blocks/inline code
+      if (i % 2 === 0) {
+        // Fix missing newlines before headings (e.g. LLM outputs "TEXT#### HEADING")
+        // Only apply if the # is preceded by a non-newline character and followed by a space
+        parts[i] = parts[i].replace(/([^\n])(#{1,6}\s+)/g, '$1\n\n$2');
+        
+        // Fix missing newlines before lists following a colon (e.g. "text):1. Item")
+        parts[i] = parts[i].replace(/([a-zA-Z0-9\)]):\s*(\d+\.\s+)/g, '$1:\n\n$2');
+        
+        // Fix squished sentences (e.g., LLM outputs "word.Next word" without a space)
+        // Matches any non-whitespace (excluding markdown formatting characters *, _, `), a punctuation mark (., !, ?), and a capital letter
+        // This prevents splitting terms like "**.NET" into "**.\n\nNET"
+        parts[i] = parts[i].replace(/([^\s\*\_\`][\.\!\?])([A-Z])/g, '$1\n\n$2');
+      }
+    }
     
-    // Fix missing newlines before lists following a colon (e.g. "text):1. Item")
-    processed = processed.replace(/([a-zA-Z0-9\)]):\s*(\d+\.\s+)/g, '$1:\n\n$2');
-    
-    // Fix squished sentences (e.g., LLM outputs "word.Next word" without a space)
-    // Matches any non-whitespace (excluding markdown formatting characters *, _, `), a punctuation mark (., !, ?), and a capital letter
-    // This prevents splitting terms like "**.NET" into "**.\n\nNET"
-    processed = processed.replace(/([^\s\*\_\`][\.\!\?])([A-Z])/g, '$1\n\n$2');
+    let processed = parts.join('');
 
     const parsed = marked.parse(processed);
     // marked.parse can return a Promise if async options are used, but by default it returns a string
