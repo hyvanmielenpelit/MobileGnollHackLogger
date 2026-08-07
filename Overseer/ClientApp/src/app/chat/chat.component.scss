@@ -813,11 +813,11 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
 .selector-trigger {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   background: rgba(0, 0, 0, 0.6);
   border: 1px solid var(--border-glass);
   border-radius: 4px;
-  padding: 4px 10px;
+  padding: 4px 8px;
   color: #fff;
   cursor: pointer;
   font-family: inherit;
@@ -842,7 +842,6 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
   }
 
   .chevron {
-    margin-left: 4px;
     transition: transform 0.2s ease;
     stroke: var(--gh-gold);
   }
@@ -853,7 +852,6 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
   bottom: 100%;
   left: 0;
   width: max-content;
-  min-width: 100%;
   max-height: 300px;
   overflow-y: auto;
   background: var(--bg-glass);
