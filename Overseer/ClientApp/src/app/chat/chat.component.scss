@@ -644,7 +644,8 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
 @media (max-width: 768px) {
   .provider-badge,
   .setting-indicator,
-  .vertical-separator {
+  .vertical-separator,
+  .model-name-container {
     display: none !important;
   }
   .layout {
