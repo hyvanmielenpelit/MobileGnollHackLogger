@@ -59,7 +59,9 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     'get_function_definition': 'Reading function definition',
     'get_item_stats': 'Reading item stats',
     'get_monster_stats': 'Reading monster stats',
-    'get_artifact_stats': 'Reading artifact stats'
+    'get_artifact_stats': 'Reading artifact stats',
+    'get_github_repo_info': 'Retrieving GitHub repository information',
+    'search_github': 'Searching GitHub'
   };
 
   private buildToolArgsText(name: string, args: any): string {

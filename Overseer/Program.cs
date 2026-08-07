@@ -67,6 +67,12 @@ builder.Services.AddMemoryCache(options => options.SizeLimit = 10000); // Size l
 
 // Register Overseer services
 builder.Services.AddHttpClient();
+builder.Services.AddHttpClient("GitHub", client =>
+{
+    client.BaseAddress = new Uri("https://api.github.com");
+    client.DefaultRequestHeaders.Add("Accept", "application/vnd.github+json");
+    client.DefaultRequestHeaders.Add("User-Agent", "GnollHack-Overseer");
+});
 builder.Services.AddSingleton<WikiService>();
 builder.Services.AddSingleton<SourceCodeService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<SourceCodeService>());
@@ -118,6 +124,13 @@ builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Ser
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.GetArtifactStatsTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.WikiViewTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.SearchDefinitionsTool>();
+
+// GitHub API service
+builder.Services.AddSingleton<Overseer.Services.GitHubApiService>();
+
+// GitHub tools
+builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.GetGitHubRepoInfoTool>();
+builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.SearchGitHubTool>();
 
 var app = builder.Build();
 

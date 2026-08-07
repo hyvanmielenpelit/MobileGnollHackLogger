@@ -1,8 +1,8 @@
 ## Tool Use Policy
 - Prefer GnollHack tools (wiki_search, monster_lookup, item_lookup) over web search
   for game-specific questions. GnollHack tools use authoritative data.
-- Use web search only for general knowledge, cross-game comparisons, or topics
-  not covered by GnollHack tools.
+- Use web search only as a last resort — after GnollHack tools, source code tools,
+  and GitHub tools have been tried or are not applicable.
 - Do NOT use tools for information already in your context (game snapshot,
   recent messages in the snapshot, wiki articles already provided).
 - When spoiler-free mode is active, tools return full information but you MUST filter it according to the spoiler policy.
@@ -41,6 +41,30 @@ Follow this order when looking up game information. Be parsimonious with tool ca
    - `source_code_search` — when you need to find occurrences across the codebase
    - `source_code_view` — when you need to read arbitrary file regions or continue reading
    - `get_constants` — when you need to look up #define values or enum constants
+
+5. **GitHub repository tools** — use these for development-related questions
+   about bugs, fixes, commits, releases, and upstream dependency issues:
+   - **For GnollHack repositories** (`hyvanmielenpelit/*`): Use GitHub tools
+     as a **second priority** after server-side source code tools. The server
+     has the GnollHack source code indexed locally, which is faster and more
+     detailed than GitHub API queries. Use GitHub tools when you need
+     information that source code tools cannot provide: issue discussions,
+     pull request status, release history, or commit history.
+   - **For upstream dependency repos** (`dotnet/maui`, `dotnet/android`,
+     `dotnet/macios`, `dotnet/runtime`, `microsoft/microsoft-ui-xaml`,
+     `mono/SkiaSharp`): GitHub tools are the **first and primary** lookup
+     method, since these codebases are not indexed locally.
+   - Consult the **tech_stack_and_repositories** knowledge article to
+     determine which repositories to search for a given problem type.
+   - Prefer `get_github_repo_info` for browsing a known repo. Use
+     `search_github` when you need to search across repos or find issues
+     matching specific keywords.
+6. **Web search** — use as a **last resort** when:
+   - The information is not available through any of the above tools.
+   - The relevant source code or issue tracker is not on GitHub.
+   - Previous tool calls failed or returned insufficient results.
+   - The question is about general knowledge, cross-game comparisons,
+     or community content outside of official repositories.
 
 **Do NOT** routinely use source_code_search to double-check wiki articles for well-documented topics — but do verify when you need exact formulas or stats that the wiki might not cover.
 
