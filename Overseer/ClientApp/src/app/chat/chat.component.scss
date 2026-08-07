@@ -539,6 +539,10 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
 }
 
 @media (max-width: 768px) {
+  .provider-badge,
+  .setting-indicator {
+    display: none !important;
+  }
   .layout {
     padding: 0;
     gap: 0;
@@ -790,6 +794,12 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
   background: rgba(255, 167, 38, 0.15);
   border: 1px solid rgba(255, 167, 38, 0.4);
   color: #ffcc80;
+}
+
+.badge-spoiler {
+  background: rgba(92, 107, 192, 0.15);
+  border: 1px solid rgba(92, 107, 192, 0.4);
+  color: #9fa8da;
 }
 
 /* Custom Model Selector */

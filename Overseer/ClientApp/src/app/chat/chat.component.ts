@@ -162,6 +162,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   hasModel = true;
   isTitleGenerationInProgress = false;
   showThoughtsAndTools = 0;
+  spoilerFreeMode = false;
 
   userModels: import('../services/settings.service').UserAiModel[] = [];
   systemModels: import('../services/settings.service').UserAiModel[] = [];
@@ -416,6 +417,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.debugService.setEnabled(this.showDebugLog);
         
         this.showThoughtsAndTools = Number(settings.showThoughtsAndTools ?? 0);
+        this.spoilerFreeMode = settings.spoilerFreeMode === true;
         this.debugService.log(`[Overseer] showThoughtsAndTools loaded: ${this.showThoughtsAndTools} (type: ${typeof this.showThoughtsAndTools})`);
 
         this.settingsService.getUserModels().subscribe({ next: (models) => {
@@ -1095,6 +1097,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       const settings = await firstValueFrom(this.settingsService.getSettings());
       if (settings) {
         this.showThoughtsAndTools = Number(settings.showThoughtsAndTools ?? 0);
+        this.spoilerFreeMode = settings.spoilerFreeMode === true;
       }
     } catch { /* use cached value */ }
 
