@@ -48,7 +48,7 @@ public class ChatController : ControllerBase
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
         int pageSize = _configuration.GetValue<int>("ConversationListPageSize", 20);
-        int effectiveTake = Math.Min(take ?? pageSize, 500);
+        int effectiveTake = Math.Min(Math.Max(take ?? pageSize, pageSize), 500);
 
         var sessions = await _dbContext.ChatSession
             .Where(s => s.AspNetUserId == userId)
