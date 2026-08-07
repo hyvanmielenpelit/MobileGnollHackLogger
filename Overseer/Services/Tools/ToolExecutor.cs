@@ -27,7 +27,7 @@ namespace Overseer.Services.Tools
             _cache = cache;
         }
 
-        public async Task<ToolResult> ExecuteAsync(string toolName, JsonElement parameters, ToolExecutionContext context)
+        public async Task<ToolResult> ExecuteAsync(string toolName, JsonElement parameters, ToolExecutionContext context, CancellationToken cancellationToken = default)
         {
             _logger.LogInformation("Executing tool {ToolName} for Session {SessionId}", toolName, context.SessionId);
 
@@ -66,18 +66,19 @@ namespace Overseer.Services.Tools
             }
 
             // 3. Execution
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(handler.TimeoutSeconds));
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(handler.TimeoutSeconds));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
             ToolResult result;
 
             try
             {
                 if (handler.ExecutionLocation == ToolExecutionLocation.Server)
                 {
-                    result = await handler.ExecuteAsync(parameters, context, cts.Token);
+                    result = await handler.ExecuteAsync(parameters, context, linkedCts.Token);
                 }
                 else if (handler.ExecutionLocation == ToolExecutionLocation.Client)
                 {
-                    result = await _clientBridge.SendToolRequestAsync(context.SessionId, toolName, parameters, cts.Token);
+                    result = await _clientBridge.SendToolRequestAsync(context.SessionId, toolName, parameters, linkedCts.Token);
                 }
                 else
                 {
@@ -86,8 +87,16 @@ namespace Overseer.Services.Tools
             }
             catch (OperationCanceledException)
             {
-                _logger.LogWarning("Tool {ToolName} timed out for Session {SessionId}", toolName, context.SessionId);
-                result = new ToolResult { Success = false, ErrorMessage = "Tool execution timed out." };
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    _logger.LogInformation("Tool {ToolName} canceled by outer request for Session {SessionId}", toolName, context.SessionId);
+                    result = new ToolResult { Success = false, ErrorMessage = "Tool execution was canceled (request stopped)." };
+                }
+                else
+                {
+                    _logger.LogWarning("Tool {ToolName} timed out after {Timeout}s for Session {SessionId}", toolName, handler.TimeoutSeconds, context.SessionId);
+                    result = new ToolResult { Success = false, ErrorMessage = $"Tool execution timed out after {handler.TimeoutSeconds} seconds." };
+                }
             }
             catch (Exception ex)
             {

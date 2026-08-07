@@ -84,6 +84,11 @@ namespace Overseer.Services
 
                 return formattedResult;
             }
+            catch (OperationCanceledException)
+            {
+                _logger.LogWarning("GitHub API call to {Url} was canceled or timed out.", url);
+                return $"Error: The GitHub API request timed out or was canceled. The API may be slow or the tool execution time limit was reached.";
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error calling GitHub API at {Url}", url);
@@ -313,7 +318,7 @@ namespace Overseer.Services
 
                 if (commentsCount > 0)
                 {
-                    string commentsUrl = $"{url}/comments";
+                    string commentsUrl = $"{url}/comments?per_page=30";
                     string commentsRaw = await FetchFromGitHubAsync(commentsUrl, ct);
                     if (!commentsRaw.StartsWith("Error:"))
                     {

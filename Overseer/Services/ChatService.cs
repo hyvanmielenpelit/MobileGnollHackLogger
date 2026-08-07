@@ -79,22 +79,26 @@ public class ChatService
                 _ongoingChatManager.ProcessEvent(sessionId, evt);
                 await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", evt, CancellationToken.None);
             }
-            var doneEvt = new ChatEvent { Type = "done", Data = "", SessionId = sessionId };
-            _ongoingChatManager.ProcessEvent(sessionId, doneEvt);
-            await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", doneEvt, CancellationToken.None);
-        }
-        catch (OperationCanceledException)
-        {
-            var canceledEvt = new ChatEvent { Type = "title_status", Data = "{\"status\":\"canceled\",\"sessionId\":" + sessionId + "}", SessionId = sessionId };
-            var doneEvt = new ChatEvent { Type = "done", Data = "", SessionId = sessionId };
-            _ongoingChatManager.ProcessEvent(sessionId, doneEvt);
-            await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", doneEvt, CancellationToken.None);
         }
         catch (Exception ex)
         {
             var errEvt = new ChatEvent { Type = "error", Data = ex.Message, SessionId = sessionId };
             _ongoingChatManager.ProcessEvent(sessionId, errEvt);
             await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", errEvt, CancellationToken.None);
+        }
+        finally
+        {
+            bool isUserCancel = _ongoingChatManager.TryGet(sessionId) == null;
+            if (isUserCancel || cancellationToken.IsCancellationRequested)
+            {
+                var canceledEvt = new ChatEvent { Type = "title_status", Data = "{\"status\":\"canceled\",\"sessionId\":" + sessionId + "}", SessionId = sessionId };
+                _ongoingChatManager.ProcessEvent(sessionId, canceledEvt);
+                await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", canceledEvt, CancellationToken.None);
+            }
+
+            var doneEvt = new ChatEvent { Type = "done", Data = "", SessionId = sessionId };
+            _ongoingChatManager.ProcessEvent(sessionId, doneEvt);
+            await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", doneEvt, CancellationToken.None);
         }
     }
 
@@ -583,6 +587,11 @@ public class ChatService
                     iterationText += evt.Data;
                 }
 
+                if (evt.Type == "error")
+                {
+                    fullResponse += $"\n\n**Error:** {evt.Data}";
+                }
+
                 if (evt.Type == "tool_call_complete")
                 {
                     hasToolsToRun = true;
@@ -626,7 +635,11 @@ public class ChatService
                     JsonElement tArgs = JsonDocument.Parse("{}").RootElement;
                     try { tArgs = JsonSerializer.Deserialize<JsonElement>(tArgsStr); } catch { }
 
-                    var res = await _toolExecutor.ExecuteAsync(tName, tArgs, execContext);
+                    var swTool = System.Diagnostics.Stopwatch.StartNew();
+                    var res = await _toolExecutor.ExecuteAsync(tName, tArgs, execContext, cancellationToken);
+                    swTool.Stop();
+                    if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat] Tool '{tName}' completed in {swTool.ElapsedMilliseconds}ms. Success={res.Success}" };
+
                     var resContent = res.Content ?? (res.Success ? "Success" : (res.ErrorMessage ?? "Unknown error"));
 
                     providerResults.Add(new ProviderToolResult
@@ -666,6 +679,17 @@ public class ChatService
         if (thinkingStartIndex != -1)
         {
             thinkingBoundaries.Add((thinkingStartIndex, fullResponse.Length));
+        }
+
+        if (cancellationToken.IsCancellationRequested)
+        {
+            bool isUserCancel = _ongoingChatManager.TryGet(currentSessionId) == null;
+            if (!isUserCancel)
+            {
+                string errMsg = "The request timed out. The AI provider may be overloaded. Please try again.";
+                fullResponse += $"\n\n**Error:** {errMsg}";
+                yield return new ChatEvent { Type = "error", Data = errMsg };
+            }
         }
         
         if (thinkingBoundaries.Count > 0)
@@ -748,14 +772,22 @@ public class ChatService
             if (requestException != null)
             {
                 sw.Stop();
-                if (cancellationToken.IsCancellationRequested)
+                bool isHttpClientTimeout = requestException is TaskCanceledException tce
+                    && (tce.InnerException is TimeoutException || requestException.Message.Contains("HttpClient.Timeout"));
+
+                int elapsedSeconds = (int)(sw.ElapsedMilliseconds / 1000);
+                if (isHttpClientTimeout)
                 {
-                    if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] Request canceled by user in {sw.ElapsedMilliseconds}ms" };
-                    yield return new ChatEvent { Type = "error", Data = "Request canceled." };
+                    if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] HTTP request timed out after {elapsedSeconds}s (HttpClient.Timeout). Exception: {requestException.Message}" };
+                    yield return new ChatEvent { Type = "error", Data = $"The request to {providerName} timed out after {elapsedSeconds} seconds. The AI provider may be overloaded or unresponsive. Please try again." };
+                }
+                else if (cancellationToken.IsCancellationRequested)
+                {
+                    if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] Request canceled in {elapsedSeconds}s" };
                 }
                 else
                 {
-                    if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] Request failed in {sw.ElapsedMilliseconds}ms: {requestException.Message}" };
+                    if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] Request failed in {elapsedSeconds}s: {requestException.GetType().Name}: {requestException.Message}" };
                     yield return new ChatEvent { Type = "error", Data = $"Request failed: {requestException.Message}" };
                 }
                 yield break;
@@ -769,52 +801,100 @@ public class ChatService
                 yield return new ChatEvent { Type = "status", Data = $"Streaming response..." };
                 
                 bool hasYieldedChunks = false;
+                bool firstChunkReceived = false;
                 bool retryTriggered = false;
+                IAsyncEnumerator<ChatEvent>? enumerator = null;
+                Exception? streamException = null;
 
-                await foreach (var evt in streamParser(response, cancellationToken))
+                try
                 {
-                    if (evt.Type == "chunk" || evt.Type == "thinking_chunk" || evt.Type == "tool_call_complete")
+                    enumerator = streamParser(response, cancellationToken).GetAsyncEnumerator(cancellationToken);
+                    while (true)
                     {
-                        hasYieldedChunks = true;
-                    }
-
-                    if (evt.Type == "error" && !hasYieldedChunks)
-                    {
-                        // Anthropic sends some errors (e.g. overloaded_error) inside HTTP 200 streams. We must retry these.
-                        bool isRetryable = evt.Data != null && (
-                            evt.Data.Contains("[overloaded_error]") || 
-                            evt.Data.Contains("[rate_limit_error]") || 
-                            evt.Data.Contains("[api_error]") ||
-                            evt.Data.Contains("529") || 
-                            evt.Data.Contains("503") || 
-                            evt.Data.Contains("502"));
-                            
-                        if (isRetryable && attempt < retryDelays.Length)
+                        bool hasNext = false;
+                        try
                         {
-                            int delaySeconds = retryDelays[attempt];
-                            yield return new ChatEvent { Type = "status", Data = $"API Overloaded (attempt {attempt + 1}/{retryDelays.Length + 1}). Retrying in {delaySeconds}s..." };
-                            if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] Sleeping for {delaySeconds}s before retry due to stream error: {evt.Data}" };
-                            
-                            try {
-                                await Task.Delay(delaySeconds * 1000, cancellationToken);
-                            } catch(TaskCanceledException) { yield break; }
-                            
-                            attempt++;
-                            retryTriggered = true;
-                            break; // break out of await foreach to restart request
+                            hasNext = await enumerator.MoveNextAsync();
                         }
-                        else if (isRetryable)
+                        catch (Exception ex) when (ex is OperationCanceledException || ex is System.IO.IOException)
                         {
-                            // Retries exhausted — replace the raw stream error with a user-friendly message
-                            if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] Max retries exhausted for stream error: {evt.Data}" };
-                            yield return new ChatEvent { Type = "error", Data = $"The {providerName} API is currently overloaded. Max retries ({retryDelays.Length + 1}) exceeded. Please try again later." };
-                            yield break;
+                            streamException = ex;
+                            break;
+                        }
+
+                        if (!hasNext) break;
+                        var evt = enumerator.Current;
+
+                        if (!firstChunkReceived && (evt.Type == "chunk" || evt.Type == "thinking_chunk" || evt.Type == "tool_call_complete"))
+                        {
+                            firstChunkReceived = true;
+                            if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] First token received after {sw.ElapsedMilliseconds}ms" };
+                        }
+
+                        if (evt.Type == "chunk" || evt.Type == "thinking_chunk" || evt.Type == "tool_call_complete")
+                        {
+                            hasYieldedChunks = true;
+                        }
+
+                        if (evt.Type == "error" && !hasYieldedChunks)
+                        {
+                            bool isRetryable = evt.Data != null && (
+                                evt.Data.Contains("[overloaded_error]") || 
+                                evt.Data.Contains("[rate_limit_error]") || 
+                                evt.Data.Contains("[api_error]") ||
+                                evt.Data.Contains("529") || 
+                                evt.Data.Contains("503") || 
+                                evt.Data.Contains("502"));
+                                
+                            if (isRetryable && attempt < retryDelays.Length)
+                            {
+                                int delaySeconds = retryDelays[attempt];
+                                yield return new ChatEvent { Type = "status", Data = $"API Overloaded (attempt {attempt + 1}/{retryDelays.Length + 1}). Retrying in {delaySeconds}s..." };
+                                if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] Sleeping for {delaySeconds}s before retry due to stream error: {evt.Data}" };
+                                
+                                bool shouldBreak = false;
+                                try {
+                                    await Task.Delay(delaySeconds * 1000, cancellationToken);
+                                } catch(TaskCanceledException) { shouldBreak = true; }
+                                
+                                if (shouldBreak) break;
+                                
+                                attempt++;
+                                retryTriggered = true;
+                                break; // break out of while loop to restart request
+                            }
+                            else if (isRetryable)
+                            {
+                                if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] Max retries exhausted for stream error: {evt.Data}" };
+                                yield return new ChatEvent { Type = "error", Data = $"The {providerName} API is currently overloaded. Max retries ({retryDelays.Length + 1}) exceeded. Please try again later." };
+                                break;
+                            }
+                        }
+
+                        if (!retryTriggered)
+                        {
+                            yield return evt;
                         }
                     }
+                }
+                finally
+                {
+                    if (enumerator != null) await enumerator.DisposeAsync();
+                }
 
-                    if (!retryTriggered)
+                if (streamException != null)
+                {
+                    int elapsedSeconds = (int)(sw.ElapsedMilliseconds / 1000);
+                    if (cancellationToken.IsCancellationRequested)
                     {
-                        yield return evt;
+                        if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] Stream interrupted after {elapsedSeconds}s — request timeout reached." };
+                        System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(streamException).Throw();
+                    }
+                    else
+                    {
+                        if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] Stream reading failed after {elapsedSeconds}s: {streamException.GetType().Name}: {streamException.Message}" };
+                        yield return new ChatEvent { Type = "error", Data = $"Stream interrupted: {streamException.Message}" };
+                        System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(streamException).Throw();
                     }
                 }
                 

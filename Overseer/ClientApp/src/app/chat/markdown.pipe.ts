@@ -21,8 +21,9 @@ export class MarkdownPipe implements PipeTransform {
     processed = processed.replace(/([a-zA-Z0-9\)]):\s*(\d+\.\s+)/g, '$1:\n\n$2');
     
     // Fix squished sentences (e.g., LLM outputs "word.Next word" without a space)
-    // Matches any non-whitespace character, a punctuation mark (., !, ?), and a capital letter
-    processed = processed.replace(/(\S[\.\!\?])([A-Z])/g, '$1\n\n$2');
+    // Matches any non-whitespace (excluding markdown formatting characters *, _, `), a punctuation mark (., !, ?), and a capital letter
+    // This prevents splitting terms like "**.NET" into "**.\n\nNET"
+    processed = processed.replace(/([^\s\*\_\`][\.\!\?])([A-Z])/g, '$1\n\n$2');
 
     const parsed = marked.parse(processed);
     // marked.parse can return a Promise if async options are used, but by default it returns a string

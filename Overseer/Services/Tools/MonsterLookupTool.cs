@@ -11,7 +11,7 @@ namespace Overseer.Services.Tools
         private readonly WikiService _wikiService;
 
         public string ToolName => "monster_lookup";
-        public string Description { get; set; } = "Look up a monster in the GnollHack database.";
+        public string Description { get; set; } = "Look up a monster in the GnollHack wiki database.";
         public ToolExecutionLocation ExecutionLocation => ToolExecutionLocation.Server;
         public ToolCategory Category => ToolCategory.InformationRetrieval;
 

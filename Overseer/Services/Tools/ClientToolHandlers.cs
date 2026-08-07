@@ -8,7 +8,7 @@ namespace Overseer.Services.Tools
     public abstract class ClientToolHandlerBase : IToolHandler
     {
         public abstract string ToolName { get; }
-        public string Description { get; set; } = "Client tool";
+        public virtual string Description { get; set; } = "Client tool";
         public ToolExecutionLocation ExecutionLocation => ToolExecutionLocation.Client;
         public virtual ToolCategory Category => ToolCategory.ClientActiveSessionQuery;
 
@@ -26,6 +26,7 @@ namespace Overseer.Services.Tools
     public class GetFullMessageHistoryTool : ClientToolHandlerBase
     {
         public override string ToolName => "get_full_message_history";
+        public override string Description { get; set; } = "Retrieve the full message history of the current game session from the client.";
 
         public override JsonElement ParameterSchema { get; } = JsonDocument.Parse(@"{
             ""type"": ""object"",
@@ -39,17 +40,20 @@ namespace Overseer.Services.Tools
     public class GetDirectoryListingTool : ClientToolHandlerBase
     {
         public override string ToolName => "get_directory_listing";
+        public override string Description { get; set; } = "Get a directory listing of files on the client device.";
         public override ToolCategory Category => ToolCategory.ClientPersistentDataQuery;
     }
 
     public class RefreshSnapshotTool : ClientToolHandlerBase
     {
         public override string ToolName => "refresh_snapshot";
+        public override string Description { get; set; } = "Request the client to take and upload a fresh snapshot of the game state.";
     }
 
     public class GetSaveInfoTool : ClientToolHandlerBase
     {
         public override string ToolName => "get_save_info";
+        public override string Description { get; set; } = "Retrieve information about a specific game save file on the client device.";
         public override ToolCategory Category => ToolCategory.ClientPersistentDataQuery;
 
         public override JsonElement ParameterSchema { get; } = JsonDocument.Parse(@"{
@@ -64,6 +68,7 @@ namespace Overseer.Services.Tools
     public class GetPlayerLibraryTool : ClientToolHandlerBase
     {
         public override string ToolName => "get_player_library";
+        public override string Description { get; set; } = "Read the contents of a discovered game manual from the player's library.";
         public override ToolCategory Category => ToolCategory.ClientPersistentDataQuery;
 
         public override JsonElement ParameterSchema { get; } = JsonDocument.Parse(@"{
@@ -77,6 +82,7 @@ namespace Overseer.Services.Tools
     public class GetOracleConsultationsTool : ClientToolHandlerBase
     {
         public override string ToolName => "get_oracle_consultations";
+        public override string Description { get; set; } = "Read the text of a received Oracle consultation.";
         public override ToolCategory Category => ToolCategory.ClientPersistentDataQuery;
 
         public override JsonElement ParameterSchema { get; } = JsonDocument.Parse(@"{
@@ -90,6 +96,7 @@ namespace Overseer.Services.Tools
     public class GetPlayerXlogTool : ClientToolHandlerBase
     {
         public override string ToolName => "get_player_xlog";
+        public override string Description { get; set; } = "Retrieve the player's local xlog containing game statistics and past runs.";
         public override ToolCategory Category => ToolCategory.ClientPersistentDataQuery;
 
         public override JsonElement ParameterSchema { get; } = JsonDocument.Parse(@"{
@@ -104,6 +111,7 @@ namespace Overseer.Services.Tools
     public class GetPlayerDumplogsTool : ClientToolHandlerBase
     {
         public override string ToolName => "get_player_dumplogs";
+        public override string Description { get; set; } = "Retrieve dumplogs of the player's past games from the client device.";
         public override ToolCategory Category => ToolCategory.ClientPersistentDataQuery;
 
         public override JsonElement ParameterSchema { get; } = JsonDocument.Parse(@"{
@@ -118,6 +126,7 @@ namespace Overseer.Services.Tools
     public class GetAppLogTool : ClientToolHandlerBase
     {
         public override string ToolName => "get_app_log";
+        public override string Description { get; set; } = "Retrieve the application log (applog) from the client device to diagnose issues.";
         public override ToolCategory Category => ToolCategory.ClientPersistentDataQuery;
 
         public override JsonElement ParameterSchema { get; } = JsonDocument.Parse(@"{
@@ -132,6 +141,7 @@ namespace Overseer.Services.Tools
     public class GetPanicLogTool : ClientToolHandlerBase
     {
         public override string ToolName => "get_panic_log";
+        public override string Description { get; set; } = "Retrieve the panic log from the client device to diagnose crashes.";
         public override ToolCategory Category => ToolCategory.ClientPersistentDataQuery;
     }
 }
