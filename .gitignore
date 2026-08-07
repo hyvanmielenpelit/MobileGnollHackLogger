@@ -401,4 +401,5 @@ FodyWeavers.xsd
 localcert.p12
 Overseer/wwwroot/chunk-*.js
 Overseer/wwwroot/main-*.js
+Overseer/wwwroot/styles-*.css
 Overseer/wwwroot/3rdpartylicenses.txt
