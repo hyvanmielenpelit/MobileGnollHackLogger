@@ -136,6 +136,8 @@ a:hover {
   cursor: pointer;
   font-family: "Cinzel", serif;
   transition: all 0.2s ease;
+  white-space: nowrap;
+  text-decoration: none;
 }
 .nav-back-link:hover {
   background: rgba(212, 160, 23, 0.1);
