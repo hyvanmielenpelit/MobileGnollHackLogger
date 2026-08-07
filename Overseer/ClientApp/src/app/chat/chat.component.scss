@@ -211,6 +211,10 @@
 .send-icon {
   background: var(--primary-color);
   color: #000;
+
+  svg {
+    transform: translate(-1px, 1px); /* Optically center the paper airplane */
+  }
 }
 .send-icon:hover:not(:disabled) {
   background: #fce6a8;
@@ -639,7 +643,8 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
 
 @media (max-width: 768px) {
   .provider-badge,
-  .setting-indicator {
+  .setting-indicator,
+  .vertical-separator {
     display: none !important;
   }
   .layout {
