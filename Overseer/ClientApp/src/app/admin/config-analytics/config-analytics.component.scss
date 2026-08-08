@@ -26,21 +26,16 @@ $analytics-bar-thickness: 30;
 .chart-toolbar {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   margin: 1.5rem 0 0.5rem;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 1rem;
-  overflow-x: auto;
-  
-  &::-webkit-scrollbar {
-    display: none;
-  }
 
   .pagination-controls {
     display: flex;
     align-items: center;
     gap: 1.5rem;
-    flex-shrink: 0;
+    flex-wrap: wrap;
     
     .page-size-wrapper {
       display: flex;
@@ -64,6 +59,7 @@ $analytics-bar-thickness: 30;
     .pagination-buttons {
       display: flex;
       gap: 0.25rem;
+      flex-wrap: wrap;
       background: rgba(0, 0, 0, 0.2);
       padding: 0.25rem;
       border-radius: 6px;
@@ -106,6 +102,18 @@ $analytics-bar-thickness: 30;
           width: 16px;
           height: 16px;
         }
+      }
+
+      .page-ellipsis {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 32px;
+        height: 32px;
+        color: #a0a0a0;
+        user-select: none;
+        font-weight: bold;
+        font-size: 14px;
       }
     }
   }

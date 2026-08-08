@@ -57,17 +57,15 @@
         <button class="page-btn" [disabled]="page === 1" (click)="onPageChange(page - 1)" title="Previous Page">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
         </button>
-        <button class="page-btn" 
-                *ngFor="let p of pageNumbers" 
-                [class.active]="p === page"
-                (click)="onPageChange(p)">{{ p }}</button>
+        <ng-container *ngFor="let p of pageNumbers; trackBy: trackByPage">
+          <span *ngIf="p === '…'" class="page-ellipsis">…</span>
+          <button *ngIf="p !== '…'" class="page-btn"
+                  [class.active]="p === page"
+                  (click)="onPageNumberClick(p)">{{ p }}</button>
+        </ng-container>
         <button class="page-btn" [disabled]="page === totalPages" (click)="onPageChange(page + 1)" title="Next Page">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
         </button>
-      </div>
-      
-      <div class="page-info text-muted ml-15" style="font-size: 0.9em; display: flex; align-items: center;">
-        Showing {{ chartData.labels?.length || 0 }} of {{ totalCount }} users (Page {{ page }} of {{ totalPages }})
       </div>
     </div>
     
@@ -87,6 +85,10 @@
         [type]="chartType">
       </canvas>
     </div>
+  </div>
+
+  <div class="page-info text-muted mt-10" *ngIf="mode === 'individual'" style="font-size: 0.9em; margin-bottom: 20px;">
+    Showing {{ chartData.labels?.length || 0 }} of {{ totalCount }} users (Page {{ page }} of {{ totalPages }})
   </div>
 
   <div class="dialog-actions mt-auto pt-20">

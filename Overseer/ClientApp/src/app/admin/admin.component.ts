@@ -47,10 +47,38 @@ export class AdminComponent implements OnInit, OnDestroy {
     return Math.max(1, Math.ceil(this.totalCount / this.pageSize));
   }
 
-  get pageNumbers(): number[] {
-    const pages = [];
-    for (let i = 1; i <= this.totalPages; i++) pages.push(i);
-    return pages;
+  get pageNumbers(): (number | string)[] {
+    const total = this.totalPages;
+    const current = this.page;
+    const sibling = 1;
+
+    // If few enough pages, show them all (up to 7 pages fits in our 7 slots)
+    if (total <= 7) {
+      return Array.from({ length: total }, (_, i) => i + 1);
+    }
+
+    const left = Math.max(current - sibling, 1);
+    const right = Math.min(current + sibling, total);
+    const showLeftDots = left > 2;
+    const showRightDots = right < total - 1;
+
+    if (!showLeftDots && showRightDots) {
+      const count = 3 + 2 * sibling;
+      return [...Array.from({ length: count }, (_, i) => i + 1), '…', total];
+    }
+    if (showLeftDots && !showRightDots) {
+      const count = 3 + 2 * sibling;
+      return [1, '…', ...Array.from({ length: count }, (_, i) => total - count + 1 + i)];
+    }
+    // Both ellipses
+    const mid = Array.from({ length: right - left + 1 }, (_, i) => left + i);
+    return [1, '…', ...mid, '…', total];
+  }
+
+  onPageNumberClick(p: number | string) {
+    if (typeof p === 'number') {
+      this.onPageChange(p);
+    }
   }
 
   onPageChange(newPage: number) {
