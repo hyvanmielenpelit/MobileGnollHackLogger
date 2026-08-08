@@ -102,8 +102,88 @@ MobileGnollHackLogger/          # Solution root
 
 - [.NET 10.0 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
 - [Node.js](https://nodejs.org/) (LTS) and npm — required for the Overseer Angular frontend
-- SQL Server (or SQL Server LocalDB for development)
+- [SQL Server Express](https://www.microsoft.com/en-us/sql-server/sql-server-downloads) — free edition of SQL Server for local development
+- [SQL Server Management Studio (SSMS)](https://learn.microsoft.com/en-us/ssms/download-sql-server-management-studio-ssms) — for creating and managing the database
 - Visual Studio 2026 (recommended) or any compatible .NET IDE
+
+### Database Setup
+
+1. **Install SQL Server Express** if you haven't already. During installation, note the instance name (the default is `SQLEXPRESS`).
+
+2. **Create the database** using SQL Server Management Studio (SSMS):
+   - Open SSMS and connect to your SQL Server Express instance (the server name is typically `.\SQLEXPRESS` or `localhost\SQLEXPRESS`).
+   - Right-click on **Databases** in the Object Explorer and select **New Database...**.
+   - Enter `GnollHackDb` as the database name and click **OK**.
+
+3. **Apply Entity Framework migrations** to create the schema (after building the solution — see [Building](#building) below):
+   ```bash
+   dotnet ef database update -p MobileGnollHackLogger -s MobileGnollHackLogger
+   ```
+
+### Configuration
+
+Sensitive configuration data should not be stored in `appsettings.json`. Instead, this project uses [.NET User Secrets](https://learn.microsoft.com/en-us/aspnet/core/security/app-secrets) for local development.
+
+To configure secrets in Visual Studio, right-click on the project in the Solution Explorer, select **Manage User Secrets**, and paste the following JSON templates. Replace the placeholder values with your actual data.
+
+**For MobileGnollHackLogger:**
+Right-click on the `MobileGnollHackLogger` project → **Manage User Secrets**, and paste:
+```json
+{
+  "ConnectionStrings": {
+    "SqlDatabaseConnection": "Server=.\\SQLEXPRESS;Database=GnollHackDb;Trusted_Connection=True;MultipleActiveResultSets=true;TrustServerCertificate=True",
+    "EmailConnection": "endpoint=https://<your-communication-service>.communication.azure.com/;accesskey=<your-access-key>"
+  },
+  "ReplayPath": "C:\\path\\to\\replays",
+  "LogFile": "C:\\path\\to\\logs\\gnollhack_account.log",
+  "GoogleTagManagerID": "",
+  "EncryptionKeyString": "<32-character-key>",
+  "EncryptionIVString": "<16-character-iv>",
+  "DumpLogPath": "C:\\path\\to\\dumplogs",
+  "BonesPath": "C:\\path\\to\\bones",
+  "AntiForgeryToken": "<anti-forgery-token>",
+  "BonesVersionCompatibilityInfo": [
+    {
+      "Version": 0,
+      "Label": "Older"
+    },
+    {
+      "Version": 67239937,
+      "Label": "4.2.0"
+    },
+    {
+      "Version": 67305473,
+      "Label": "4.3.0"
+    }
+  ]
+}
+```
+
+**For Overseer:**
+Right-click on the `Overseer` project → **Manage User Secrets**, and paste:
+```json
+{
+  "ConnectionStrings": {
+    "SqlDatabaseConnection": "Server=.\\SQLEXPRESS;Database=GnollHackDb;Trusted_Connection=True;MultipleActiveResultSets=true;TrustServerCertificate=True",
+    "EmailConnection": "endpoint=https://<your-communication-service>.communication.azure.com/;accesskey=<your-access-key>"
+  },
+  "GitHub": {
+    "PersonalAccessToken": "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  "WikiPath": "C:\\path\\to\\GnollHackWiki",
+  "SourceCodePath": "C:\\path\\to\\GnollHack",
+  "MaxWikiFileSizeKB": 100,
+  "KbPath": "C:\\path\\to\\overseer_knowledgebase",
+  "DumpLogPath": "C:\\path\\to\\dumplogs",
+  "ConversationsDataLocation": "C:\\path\\to\\overseer_data\\conversations",
+  "AntiForgeryToken": "<anti-forgery-token>",
+  "AesEncryptionKey": "<base64-encoded-key>",
+  "Admins": "AdminUser1,AdminUser2",
+  "AdminNotificationEmail": "admin@example.com"
+}
+```
+
+> **Note:** If your SQL Server Express instance uses a different name, replace `.\SQLEXPRESS` with the correct server and instance name (e.g., `localhost\MYINSTANCE`).
 
 ### Building
 
@@ -113,20 +193,23 @@ MobileGnollHackLogger/          # Solution root
    cd MobileGnollHackLogger
    ```
 
-2. **Restore and build:**
+2. **Build the ASP.NET Core backends:**
+   The Overseer and GnollHack Account ASP.NET Core backends are built with:
    ```bash
    dotnet build
    ```
 
-3. **Set up the database** — configure your SQL Server connection string in User Secrets or `appsettings.json`, then run migrations:
+3. **Apply database migrations** (see [Database Setup](#database-setup) above):
    ```bash
    dotnet ef database update -p MobileGnollHackLogger -s MobileGnollHackLogger
    ```
 
-4. **Install Overseer frontend dependencies:**
+4. **Build the Overseer Angular frontend:**
+   The frontend's Angular application is built with `npm run build` in the `Overseer/ClientApp` directory:
    ```bash
    cd Overseer/ClientApp
    npm ci
+   npm run build
    ```
 
 ### Running Locally
@@ -141,6 +224,13 @@ MobileGnollHackLogger/          # Solution root
   dotnet run --project Overseer
   ```
   The Angular dev server will start automatically via the SPA proxy.
+
+### Publishing
+
+To publish the web applications (GnollHack Account or Overseer) to a production environment, use Visual Studio:
+1. Right-click on the respective project (`MobileGnollHackLogger` or `Overseer`) in the Solution Explorer.
+2. Select **Publish...** from the context menu.
+3. Follow the wizard to configure your publish profile (e.g., to a local folder, Azure, IIS) and click **Publish**.
 
 ## Related Repositories
 
