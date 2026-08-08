@@ -469,7 +469,7 @@ public class ChatService
             }
             else
             {
-                finalMessageText += "\n\n[System instruction: Do not greet me.]";
+                finalMessageText += "\n\n[System instruction: Do not greet me, unless I greet you first.]";
             }
 
             messageHistory.Add(aiProvider.FormatMessage("user", finalMessageText, imageAttachments));
