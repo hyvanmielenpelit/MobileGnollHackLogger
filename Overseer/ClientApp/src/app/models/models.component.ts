@@ -29,6 +29,7 @@ export class ModelsComponent implements OnInit {
   savingTitleModel = false;
   savedTitleModelSuccess = false;
   isTitleDropdownOpen = false;
+  titleGenerationEnabled = true;
   
   // Model Picker State
   providers = ['OpenAI', 'Anthropic', 'Google'];
@@ -43,6 +44,7 @@ export class ModelsComponent implements OnInit {
   ngOnInit() {
     this.settingsService.getSettings().subscribe({
       next: (settings) => {
+        this.titleGenerationEnabled = !settings.titleGenerationDisabled;
         if (settings.titleGenerationModelId) {
           this.titleModelSelection = 'u_' + settings.titleGenerationModelId;
         } else if (settings.titleGenerationSystemModelId) {
@@ -269,6 +271,25 @@ export class ModelsComponent implements OnInit {
     this.isTitleDropdownOpen = !this.isTitleDropdownOpen;
   }
 
+  toggleTitleGeneration() {
+    this.savingTitleModel = true;
+    this.savedTitleModelSuccess = false;
+    const disabled = !this.titleGenerationEnabled;
+    
+    this.settingsService.saveTitleGenerationModel(null, false, disabled).subscribe({
+      next: () => {
+        this.savingTitleModel = false;
+        this.savedTitleModelSuccess = true;
+        setTimeout(() => this.savedTitleModelSuccess = false, 3000);
+      },
+      error: (err) => {
+        this.titleGenerationEnabled = !this.titleGenerationEnabled; // revert on error
+        this.savingTitleModel = false;
+        console.error("Failed to save title generation toggle", err);
+      }
+    });
+  }
+
   selectTitleModel(id: number | null, isSystem: boolean) {
     if (id === null) {
       this.titleModelSelection = null;
@@ -314,7 +335,7 @@ export class ModelsComponent implements OnInit {
   get selectedTitleModelDisplay(): string {
     const model = this.selectedTitleModel;
     if (!model) {
-      return 'Default (First Available Chat Model)';
+      return 'Default (First Available)';
     }
     return model.displayName || model.modelId;
   }

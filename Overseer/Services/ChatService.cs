@@ -1375,6 +1375,18 @@ public class ChatService
         {
             using var startScope = _scopeFactory.CreateScope();
             var startDbContext = startScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+            var settingsCheck = await startDbContext.UserAiSettings.FindAsync(new object[] { userId }, cancellationToken);
+            if (settingsCheck?.TitleGenerationDisabled == true)
+            {
+                var titleUserNameCheck = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(System.Linq.Queryable.Select(System.Linq.Queryable.Where(startDbContext.Users, u => u.Id == userId), u => u.UserName), cancellationToken);
+                if (_configuration.ShouldShowDebugLog(titleUserNameCheck))
+                {
+                    await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen] Skipped: Disabled by user." }, CancellationToken.None);
+                }
+                return;
+            }
+
             var titleUserName = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(System.Linq.Queryable.Select(System.Linq.Queryable.Where(startDbContext.Users, u => u.Id == userId), u => u.UserName), cancellationToken);
             _showDebugLog = _configuration.ShouldShowDebugLog(titleUserName);
 
@@ -1445,6 +1457,10 @@ public class ChatService
                 {
                     var settingsService = scope.ServiceProvider.GetRequiredService<SettingsService>();
                     var resolvedSystemModels = await settingsService.GetResolvedSystemModelsAsync(userId, roleFilter: 2);
+                    if (!resolvedSystemModels.Any())
+                    {
+                        resolvedSystemModels = await settingsService.GetResolvedSystemModelsAsync(userId, roleFilter: 1);
+                    }
                     var firstSystemModel = resolvedSystemModels.FirstOrDefault();
                     if (firstSystemModel.Config != null && !string.IsNullOrEmpty(firstSystemModel.Config.EncryptedApiKey) && !string.IsNullOrEmpty(firstSystemModel.Config.ApiKeyNonce) && !string.IsNullOrEmpty(firstSystemModel.Config.ApiKeyTag))
                     {

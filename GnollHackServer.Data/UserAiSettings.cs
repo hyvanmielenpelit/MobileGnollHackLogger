@@ -25,6 +25,7 @@ public class UserAiSettings
 
     public long? TitleGenerationModelId { get; set; }
     public long? TitleGenerationSystemModelId { get; set; }
+    public bool TitleGenerationDisabled { get; set; } = false;
 
     public int? RequestTimeout { get; set; }
 }

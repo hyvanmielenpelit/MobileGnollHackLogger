@@ -22,6 +22,7 @@ export interface UserAiSettings {
   performanceLimits?: any;
   titleGenerationModelId?: number | null;
   titleGenerationSystemModelId?: number | null;
+  titleGenerationDisabled?: boolean;
 }
 
 export interface ApiModelDto {
@@ -88,8 +89,8 @@ export class SettingsService {
     });
   }
 
-  saveTitleGenerationModel(modelId: number | null, isSystem: boolean = false) {
-    return this.http.put('/api/settings/titlemodel', { modelId, isSystem });
+  saveTitleGenerationModel(modelId: number | null, isSystem: boolean = false, disabled?: boolean) {
+    return this.http.put('/api/settings/titlemodel', { modelId, isSystem, disabled });
   }
 
   getApiKeys() {

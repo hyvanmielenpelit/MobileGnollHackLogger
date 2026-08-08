@@ -45,7 +45,7 @@ public class SettingsService
         await _dbContext.SaveChangesAsync();
     }
 
-    public async Task SaveTitleGenerationModelAsync(string userId, long? modelId, bool isSystem = false)
+    public async Task SaveTitleGenerationModelAsync(string userId, long? modelId, bool isSystem = false, bool? disabled = null)
     {
         var settings = await _dbContext.UserAiSettings.FindAsync(userId);
         if (settings == null)
@@ -54,30 +54,39 @@ public class SettingsService
             _dbContext.UserAiSettings.Add(settings);
         }
 
-        if (modelId.HasValue)
+        if (disabled.HasValue)
         {
-            if (isSystem)
-            {
-                // Note: Security check happens at runtime when using the model. We can just set it here.
-                settings.TitleGenerationSystemModelId = modelId;
-                settings.TitleGenerationModelId = null;
-            }
-            else
-            {
-                // Verify model belongs to user
-                var modelExists = await _dbContext.UserAiModels.AnyAsync(m => m.Id == modelId.Value && m.AspNetUserId == userId);
-                if (!modelExists)
-                {
-                    throw new ArgumentException("Model does not exist or does not belong to user.");
-                }
-                settings.TitleGenerationModelId = modelId;
-                settings.TitleGenerationSystemModelId = null;
-            }
+            settings.TitleGenerationDisabled = disabled.Value;
         }
         else
         {
-            settings.TitleGenerationModelId = null;
-            settings.TitleGenerationSystemModelId = null;
+            settings.TitleGenerationDisabled = false;
+
+            if (modelId.HasValue)
+            {
+                if (isSystem)
+                {
+                    // Note: Security check happens at runtime when using the model. We can just set it here.
+                    settings.TitleGenerationSystemModelId = modelId;
+                    settings.TitleGenerationModelId = null;
+                }
+                else
+                {
+                    // Verify model belongs to user
+                    var modelExists = await _dbContext.UserAiModels.AnyAsync(m => m.Id == modelId.Value && m.AspNetUserId == userId);
+                    if (!modelExists)
+                    {
+                        throw new ArgumentException("Model does not exist or does not belong to user.");
+                    }
+                    settings.TitleGenerationModelId = modelId;
+                    settings.TitleGenerationSystemModelId = null;
+                }
+            }
+            else
+            {
+                settings.TitleGenerationModelId = null;
+                settings.TitleGenerationSystemModelId = null;
+            }
         }
 
         await _dbContext.SaveChangesAsync();

@@ -88,7 +88,8 @@ public class SettingsController : ControllerBase
                 }
             },
             titleGenerationModelId = settings?.TitleGenerationModelId,
-            titleGenerationSystemModelId = settings?.TitleGenerationSystemModelId
+            titleGenerationSystemModelId = settings?.TitleGenerationSystemModelId,
+            titleGenerationDisabled = settings?.TitleGenerationDisabled ?? false
         });
     }
 
@@ -150,7 +151,7 @@ public class SettingsController : ControllerBase
 
         try
         {
-            await _settingsService.SaveTitleGenerationModelAsync(userId, request.ModelId, request.IsSystem);
+            await _settingsService.SaveTitleGenerationModelAsync(userId, request.ModelId, request.IsSystem, request.Disabled);
             return Ok();
         }
         catch (ArgumentException ex)
@@ -537,5 +538,6 @@ public class UpdateTitleModelRequest
 {
     public long? ModelId { get; set; }
     public bool IsSystem { get; set; }
+    public bool? Disabled { get; set; }
 }
 

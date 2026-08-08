@@ -108,55 +108,12 @@
 
   @if (userModels.length > 0 || systemModels.length > 0) {
     <div class="title-gen-section">
-      <div class="title-gen-header">
-        <h3>Title Generation</h3>
-        <p>Select which AI model is used to automatically generate chat titles from your initial prompts.</p>
-      </div>
-      <div class="form-group title-gen-form">
-        <div class="d-flex align-items-center flex-gap-15">
-          <div class="custom-model-selector title-model-selector-wrapper">
-            <button type="button" class="selector-trigger" (click)="toggleTitleDropdown($event)" [class.open]="isTitleDropdownOpen">
-              <span class="model-name">{{ selectedTitleModelDisplay }}</span>
-              @if (selectedTitleModel?.thinkingLevel) {
-                <span class="thinking-badge">{{ formatThinkingLevel($safeNavigationMigration(selectedTitleModel?.thinkingLevel)) }}</span>
-              }
-              @if (selectedTitleModel?.provider) {
-                <span class="provider-badge">{{ selectedTitleModel?.provider }}</span>
-              }
-              <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-            </button>
-            @if (isTitleDropdownOpen) {
-              <div class="selector-dropdown">
-                <div class="model-option" (click)="selectTitleModel(null, false)" [class.selected]="!titleModelSelection">
-                  <span class="model-name">Default (First Available Chat Model)</span>
-                </div>
-                @if (titleUserModels.length > 0) {
-                  <div class="model-group-title" style="padding: 4px 10px; font-size: 0.8em; color: var(--gh-gold); background-color: var(--gh-panel-bg); text-transform: uppercase;">Your Models</div>
-                }
-                @for (m of titleUserModels; track m) {
-                  <div class="model-option" (click)="selectTitleModel(m.id ?? null, false)" [class.selected]="titleModelSelection === 'u_' + m.id">
-                    <span class="model-name">{{ m.displayName || m.modelId }}</span>
-                    @if (m.thinkingLevel) {
-                      <span class="thinking-badge">{{ formatThinkingLevel(m.thinkingLevel) }}</span>
-                    }
-                    <span class="provider-badge">{{ m.provider }}</span>
-                  </div>
-                }
-                @if (titleSystemModels.length > 0) {
-                  <div class="model-group-title" style="padding: 4px 10px; font-size: 0.8em; color: var(--gh-gold); background-color: var(--gh-panel-bg); text-transform: uppercase;">System Models</div>
-                }
-                @for (m of titleSystemModels; track m) {
-                  <div class="model-option" (click)="selectTitleModel(m.id ?? null, true)" [class.selected]="titleModelSelection === 's_' + m.id">
-                    <span class="model-name">{{ m.displayName || m.modelId }}</span>
-                    @if (m.thinkingLevel) {
-                      <span class="thinking-badge">{{ formatThinkingLevel(m.thinkingLevel) }}</span>
-                    }
-                    <span class="provider-badge">{{ m.provider }}</span>
-                  </div>
-                }
-              </div>
-            }
-          </div>
+      <div class="title-gen-header d-flex justify-content-between align-items-start" style="gap: 15px;">
+        <div style="flex: 1;">
+          <h3>Title Generation</h3>
+          <p>Automatically generate a chat title from your first message. By default, it uses the first available title generation model. If none is available, it falls back to the first available chat model.</p>
+        </div>
+        <div class="d-flex align-items-center" style="gap: 10px; padding-top: 2px;">
           <div class="save-indicator" style="width: 24px; display: flex; justify-content: center;">
             @if (savingTitleModel) {
               <span class="sidebar-spinner" style="margin: 0;"></span>
@@ -165,8 +122,61 @@
               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#28a745" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" title="Saved!"><polyline points="20 6 9 17 4 12"></polyline></svg>
             }
           </div>
+          <label class="gh-toggle-switch">
+            <input type="checkbox" [(ngModel)]="titleGenerationEnabled" (change)="toggleTitleGeneration()">
+            <span class="gh-slider"></span>
+          </label>
         </div>
       </div>
+      @if (titleGenerationEnabled) {
+        <div class="form-group title-gen-form">
+          <div class="d-flex align-items-center flex-gap-15">
+            <div class="custom-model-selector title-model-selector-wrapper">
+              <button type="button" class="selector-trigger" (click)="toggleTitleDropdown($event)" [class.open]="isTitleDropdownOpen">
+                <span class="model-name">{{ selectedTitleModelDisplay }}</span>
+                @if (selectedTitleModel?.thinkingLevel) {
+                  <span class="thinking-badge">{{ formatThinkingLevel($safeNavigationMigration(selectedTitleModel?.thinkingLevel)) }}</span>
+                }
+                @if (selectedTitleModel?.provider) {
+                  <span class="provider-badge">{{ selectedTitleModel?.provider }}</span>
+                }
+                <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </button>
+              @if (isTitleDropdownOpen) {
+                <div class="selector-dropdown">
+                  <div class="model-option" (click)="selectTitleModel(null, false)" [class.selected]="!titleModelSelection">
+                    <span class="model-name">Default (First Available)</span>
+                  </div>
+                  @if (titleUserModels.length > 0) {
+                    <div class="model-group-title" style="padding: 4px 10px; font-size: 0.8em; color: var(--gh-gold); background-color: var(--gh-panel-bg); text-transform: uppercase;">Your Models</div>
+                  }
+                  @for (m of titleUserModels; track m) {
+                    <div class="model-option" (click)="selectTitleModel(m.id ?? null, false)" [class.selected]="titleModelSelection === 'u_' + m.id">
+                      <span class="model-name">{{ m.displayName || m.modelId }}</span>
+                      @if (m.thinkingLevel) {
+                        <span class="thinking-badge">{{ formatThinkingLevel(m.thinkingLevel) }}</span>
+                      }
+                      <span class="provider-badge">{{ m.provider }}</span>
+                    </div>
+                  }
+                  @if (titleSystemModels.length > 0) {
+                    <div class="model-group-title" style="padding: 4px 10px; font-size: 0.8em; color: var(--gh-gold); background-color: var(--gh-panel-bg); text-transform: uppercase;">System Models</div>
+                  }
+                  @for (m of titleSystemModels; track m) {
+                    <div class="model-option" (click)="selectTitleModel(m.id ?? null, true)" [class.selected]="titleModelSelection === 's_' + m.id">
+                      <span class="model-name">{{ m.displayName || m.modelId }}</span>
+                      @if (m.thinkingLevel) {
+                        <span class="thinking-badge">{{ formatThinkingLevel(m.thinkingLevel) }}</span>
+                      }
+                      <span class="provider-badge">{{ m.provider }}</span>
+                    </div>
+                  }
+                </div>
+              }
+            </div>
+          </div>
+        </div>
+      }
     </div>
   }
 </div>
