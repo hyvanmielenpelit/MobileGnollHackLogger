@@ -449,7 +449,7 @@ public class ChatService
             }
             else
             {
-                finalMessageText += "\n\n[System instruction: You do not need to greet me anymore.]";
+                finalMessageText += "\n\n[System instruction: Do not greet me.]";
             }
 
             messageHistory.Add(aiProvider.FormatMessage("user", finalMessageText, imageAttachments));
