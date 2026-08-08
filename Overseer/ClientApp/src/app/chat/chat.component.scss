@@ -709,13 +709,10 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
     background: transparent;
     border: 1px solid var(--border-glass);
     color: var(--primary-color);
-    font-size: 1.4em;
-    line-height: 1em;
     width: 40px;
     height: 40px;
     border-radius: 50%;
     cursor: pointer;
-    display: flex;
     align-items: center;
     justify-content: center;
     transition: background 0.2s;

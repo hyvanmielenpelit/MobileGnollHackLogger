@@ -62,7 +62,9 @@
     <div class="sidebar-backdrop" [class.visible]="isSidebarOpen" (click)="closeSidebar()"></div>
     <div class="chat-area gh-main-container">
       <div class="chat-header">
-        <button class="sidebar-toggle" (click)="toggleSidebar()">☰</button>
+        <button class="sidebar-toggle" (click)="toggleSidebar()" title="Toggle Sidebar" aria-label="Toggle sidebar">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+        </button>
         @if (currentSessionId) {
           <div class="chat-title-container">
             @if (!isRenamingTitle) {
