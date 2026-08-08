@@ -102,6 +102,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   @ViewChild('errorToast') errorToast!: ElementRef<HTMLElement>;
   @ViewChild('promptInput') promptInput!: ElementRef<HTMLTextAreaElement>;
   @ViewChild('renameInput') renameInput!: ElementRef<HTMLInputElement>;
+  @ViewChild('logoutDialog') logoutDialog!: ElementRef<HTMLDialogElement>;
   autoScrollEnabled = true;
 
   private hubConnection: signalR.HubConnection | null = null;
@@ -405,6 +406,25 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
   ngAfterViewInit() {
     this.focusPromptInput();
+    
+    if (this.logoutDialog && this.logoutDialog.nativeElement) {
+      if (!('closedBy' in HTMLDialogElement.prototype)) {
+        this.logoutDialog.nativeElement.addEventListener('click', (event: MouseEvent) => {
+          const dialog = this.logoutDialog.nativeElement;
+          if (event.target !== dialog) return;
+          const rect = dialog.getBoundingClientRect();
+          const isDialogContent = (
+            rect.top <= event.clientY &&
+            event.clientY <= rect.top + rect.height &&
+            rect.left <= event.clientX &&
+            event.clientX <= rect.left + rect.width
+          );
+          if (!isDialogContent) {
+            dialog.close();
+          }
+        });
+      }
+    }
   }
 
   private focusPromptInput() {
@@ -1225,8 +1245,21 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     }
   }
 
-  logout(event: Event) {
+  confirmLogout(event: Event) {
     event.preventDefault();
+    if (this.logoutDialog && this.logoutDialog.nativeElement) {
+      this.logoutDialog.nativeElement.showModal();
+    }
+  }
+
+  closeLogoutConfirm() {
+    if (this.logoutDialog && this.logoutDialog.nativeElement) {
+      this.logoutDialog.nativeElement.close();
+    }
+  }
+
+  executeLogout() {
+    this.closeLogoutConfirm();
     this.authService.logout().subscribe(() => this.router.navigate(['/login']));
   }
 

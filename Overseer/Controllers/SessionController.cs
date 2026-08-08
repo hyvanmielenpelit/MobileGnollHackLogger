@@ -16,14 +16,16 @@ public class SessionController : ControllerBase
     private readonly IMemoryCache _cache;
     private readonly IConfiguration _configuration;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly OngoingChatManager _ongoingChatManager;
 
-    public SessionController(SignInManager<ApplicationUser> signInManager, ApplicationDbContext dbContext, IMemoryCache cache, IConfiguration configuration, IServiceScopeFactory scopeFactory)
+    public SessionController(SignInManager<ApplicationUser> signInManager, ApplicationDbContext dbContext, IMemoryCache cache, IConfiguration configuration, IServiceScopeFactory scopeFactory, OngoingChatManager ongoingChatManager)
     {
         _signInManager = signInManager;
         _dbContext = dbContext;
         _cache = cache;
         _configuration = configuration;
         _scopeFactory = scopeFactory;
+        _ongoingChatManager = ongoingChatManager;
     }
 
     [HttpPost("create")]
@@ -161,11 +163,23 @@ public class SessionController : ControllerBase
             var sessionId = session.Id;
             var initialPrompt = request.InitialPrompt;
 
+            var settings = await _dbContext.UserAiSettings.FindAsync(userId);
+            int timeoutSeconds = settings?.RequestTimeout ?? _configuration.GetValue<int>("AiPerformanceSettings:ChatRequestTimeout:Default", 300);
+            var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
+            _ongoingChatManager.TryStart(sessionId, cts, out _);
+
             _ = Task.Run(async () =>
             {
-                using var scope = _scopeFactory.CreateScope();
-                var chatService = scope.ServiceProvider.GetRequiredService<ChatService>();
-                await chatService.GenerateAndBroadcastMessageAsync(sessionId, initialPrompt, null, userId, true, CancellationToken.None);
+                try
+                {
+                    using var scope = _scopeFactory.CreateScope();
+                    var chatService = scope.ServiceProvider.GetRequiredService<ChatService>();
+                    await chatService.GenerateAndBroadcastMessageAsync(sessionId, initialPrompt, null, userId, true, cts.Token);
+                }
+                finally
+                {
+                    _ongoingChatManager.Complete(sessionId);
+                }
             });
         }
 

@@ -55,7 +55,7 @@
         @if (showDebugLog) {
           <a routerLink="/debug-log" queryParamsHandling="preserve">Debug Log</a>
         }
-        <a href="#" (click)="logout($event)">Logout</a>
+        <a href="#" (click)="confirmLogout($event)">Logout</a>
       </div>
     </div>
     <div class="resizer" (mousedown)="startResize($event)" (touchstart)="startResize($event)"></div>
@@ -581,4 +581,13 @@
       {{ reportError }}
     </div>
   }
+</dialog>
+
+<dialog #logoutDialog class="gh-dialog logout-dialog" closedby="any">
+  <h3>Confirm Logout</h3>
+  <p>Are you sure you want to log out?</p>
+  <div class="dialog-actions">
+    <button class="btn-gh btn-gh-cancel" (click)="closeLogoutConfirm()">Cancel</button>
+    <button class="btn-gh btn-gh-delete" (click)="executeLogout()">Log Out</button>
+  </div>
 </dialog>
