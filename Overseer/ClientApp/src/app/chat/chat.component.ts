@@ -350,7 +350,26 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.pendingRequests.clear();
     if (this.timeUpdateInterval) clearInterval(this.timeUpdateInterval);
     if (this.handoffTimeoutHandle) { clearTimeout(this.handoffTimeoutHandle); this.handoffTimeoutHandle = null; }
+
+    // Restore document overflow and clean up viewport listener
+    document.documentElement.style.overflow = '';
+    if (window.visualViewport) {
+      window.visualViewport.removeEventListener('resize', this.onVisualViewportResize);
+    }
+    document.documentElement.style.removeProperty('--viewport-height');
   }
+
+  private onVisualViewportResize = () => {
+    if (window.visualViewport) {
+      document.documentElement.style.setProperty(
+        '--viewport-height',
+        `${window.visualViewport.height}px`
+      );
+      // Defensive: force document scroll to top in case any browser behavior
+      // manages to scroll despite overflow:hidden
+      requestAnimationFrame(() => window.scrollTo(0, 0));
+    }
+  };
 
   getHubConnection() {
     return this.hubConnection;
@@ -533,6 +552,13 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         });
       }, 30000);
     });
+
+    // Prevent document-level scrolling (fixes Android WebView keyboard push)
+    document.documentElement.style.overflow = 'hidden';
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', this.onVisualViewportResize);
+      this.onVisualViewportResize(); // set initial value
+    }
   }
 
   updateHasRealContent() {
