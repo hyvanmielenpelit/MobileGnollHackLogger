@@ -71,7 +71,7 @@ export class ChatService {
   }
 
   getSession(id: number) {
-    return this.http.get<{ id: number, title: string, isGnollHackSession?: boolean, messages: ChatMessage[], ongoingGeneration?: { events: ChatStreamEvent[] } }>(`/api/chat/sessions/${id}`, {
+    return this.http.get<{ id: number, title: string, isGnollHackSession?: boolean, messages: ChatMessage[], hasOngoingGeneration?: boolean, ongoingGeneration?: { events: ChatStreamEvent[] } }>(`/api/chat/sessions/${id}`, {
       headers: {
         'Cache-Control': 'no-cache',
         'Pragma': 'no-cache',

@@ -1536,11 +1536,6 @@ public class ChatService
             {
                 var errorStr = await response.Content.ReadAsStringAsync(CancellationToken.None);
                 if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {provider}] API Error: {errorStr}" }, CancellationToken.None);
-                try
-                {
-                    System.IO.File.WriteAllText($@"C:\Users\TommiGustafsson\.gemini\antigravity\brain\527f1941-808c-47af-84c6-4f4161647aea\scratch\api_error_{Guid.NewGuid()}.txt", errorStr);
-                }
-                catch { }
             }
 
             if (!string.IsNullOrWhiteSpace(generatedTitle))
@@ -1556,6 +1551,24 @@ public class ChatService
                     await _hubContext.Clients.User(userId).SendAsync("ReceiveChatEvent", evt, CancellationToken.None);
                 }
             }
+            else
+            {
+                // Fallback: use truncated user message so the title doesn't stay as "GnollHack..."
+                var fallbackTitle = userMessage.Length > 50 ? userMessage.Substring(0, 47) + "..." : userMessage;
+                if (!string.IsNullOrWhiteSpace(fallbackTitle))
+                {
+                    var session = await dbContext.ChatSession.FindAsync(new object[] { sessionId }, cancellationToken);
+                    if (session != null && session.Title?.StartsWith("GnollHack", StringComparison.OrdinalIgnoreCase) == true)
+                    {
+                        session.Title = fallbackTitle;
+                        await dbContext.SaveChangesAsync(cancellationToken);
+                        
+                        var titleUpdateData = new { sessionId = sessionId, title = fallbackTitle };
+                        var evt = new ChatEvent { Type = "title_update", Data = System.Text.Json.JsonSerializer.Serialize(titleUpdateData) };
+                        await _hubContext.Clients.User(userId).SendAsync("ReceiveChatEvent", evt, CancellationToken.None);
+                    }
+                }
+            }
             
             var successStatus = new { sessionId = sessionId, status = "" };
             await _hubContext.Clients.User(userId).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "title_status", Data = System.Text.Json.JsonSerializer.Serialize(successStatus) }, CancellationToken.None);
@@ -1569,6 +1582,27 @@ public class ChatService
         {
             if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - Exception] {ex.GetType().Name}: {ex.Message}" }, CancellationToken.None);
             
+            // Fallback title on exception
+            try
+            {
+                using var fallbackScope = _scopeFactory.CreateScope();
+                var fallbackDb = fallbackScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var session = await fallbackDb.ChatSession.FindAsync(new object[] { sessionId });
+                if (session != null && session.Title?.StartsWith("GnollHack", StringComparison.OrdinalIgnoreCase) == true)
+                {
+                    var fallbackTitle = userMessage.Length > 50 ? userMessage.Substring(0, 47) + "..." : userMessage;
+                    if (!string.IsNullOrWhiteSpace(fallbackTitle))
+                    {
+                        session.Title = fallbackTitle;
+                        await fallbackDb.SaveChangesAsync();
+                        
+                        var titleUpdateData = new { sessionId = sessionId, title = fallbackTitle };
+                        await _hubContext.Clients.User(userId).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "title_update", Data = System.Text.Json.JsonSerializer.Serialize(titleUpdateData) }, CancellationToken.None);
+                    }
+                }
+            }
+            catch { /* best-effort */ }
+
             var errorStatus = new { sessionId = sessionId, status = "" };
             await _hubContext.Clients.User(userId).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "title_status", Data = System.Text.Json.JsonSerializer.Serialize(errorStatus) }, CancellationToken.None);
         }

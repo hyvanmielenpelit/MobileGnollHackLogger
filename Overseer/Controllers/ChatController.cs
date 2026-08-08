@@ -178,6 +178,7 @@ public class ChatController : ControllerBase
             session.Title,
             session.IsGnollHackSession,
             Messages = formattedMessages,
+            HasOngoingGeneration = ongoing != null,
             OngoingGeneration = ongoing != null ? new {
                 events = ongoing.AccumulatedEvents
                     .Where(e => showDebugLog || e.Type != "debug")

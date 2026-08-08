@@ -157,6 +157,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   isGeneratingTitle = false;
   titleStatusText = '';
   lastSeenSeqNo: number = -1;
+  private hasOngoingGeneration = false;
+  private handoffTimeoutHandle: any = null;
 
   maxAttachmentSize = 15728640; // default 15MB
   errorMessage = '';
@@ -305,10 +307,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     if (this.streamingMessage) return false;
     if (this.currentStatusText.startsWith('Error')) return false;
     
-    if (this.isStreaming || this.showSpinner || this.currentStatusText) return true;
-    
-    const currentSession = this.sessions.find(s => s.id === this.currentSessionId);
-    if (currentSession && (currentSession.title === 'MAUI Client Handoff' || currentSession.title.startsWith('GnollHack'))) return true;
+    if (this.isStreaming || this.showSpinner || this.currentStatusText || this.hasOngoingGeneration) return true;
     
     return false;
   }
@@ -350,6 +349,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.pendingRequests.forEach(timer => clearTimeout(timer));
     this.pendingRequests.clear();
     if (this.timeUpdateInterval) clearInterval(this.timeUpdateInterval);
+    if (this.handoffTimeoutHandle) { clearTimeout(this.handoffTimeoutHandle); this.handoffTimeoutHandle = null; }
   }
 
   getHubConnection() {
@@ -593,6 +593,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.showSpinner = false;
         this.currentStatusText = 'Receiving data (background task)...';
       }
+      this.hasOngoingGeneration = false;
       this.streamingMessage += evt.data;
       this.updateHasRealContent();
       this.cdr.detectChanges();
@@ -704,6 +705,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.cdr.detectChanges();
       } catch(e) {}
     } else if (evt.type === 'done') {
+      this.hasOngoingGeneration = false;
       this.debugService.log(`[Frontend] done received. hasRealContent=${this.hasRealContent}, streamingMessage.length=${this.streamingMessage.length}`);
       if (this.realContentTimeout) {
          clearTimeout(this.realContentTimeout);
@@ -861,6 +863,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.isThinkingActive = false;
     this.titleStatusText = '';
     this.timeToFirstTokenMs = null;
+    this.hasOngoingGeneration = false;
+    if (this.handoffTimeoutHandle) { clearTimeout(this.handoffTimeoutHandle); this.handoffTimeoutHandle = null; }
     this.loadDraft();
     this.applySavedModelPreference();
     this.focusPromptInput();
@@ -898,6 +902,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         }
 
         this.messages = s.messages || [];
+        this.hasOngoingGeneration = s.hasOngoingGeneration === true;
         this.messages.forEach(msg => {
           if (msg.toolCalls) {
             msg.toolCalls.forEach(tc => {
@@ -932,6 +937,21 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           this.debugService.log(`[Frontend] Replay complete. isStreaming=${this.isStreaming}, streamingMessage length=${this.streamingMessage.length}`);
         }
         
+        // Safety timeout: if the "Consulting" overlay is still showing after 60s with no events, dismiss it
+        if (this.handoffTimeoutHandle) { clearTimeout(this.handoffTimeoutHandle); this.handoffTimeoutHandle = null; }
+        if (this.isHandoffWaiting) {
+          this.handoffTimeoutHandle = setTimeout(() => {
+            if (this.isHandoffWaiting) {
+              this.debugService.log('[Frontend] Handoff timeout reached (60s). Dismissing consulting overlay.');
+              this.hasOngoingGeneration = false;
+              this.isStreaming = false;
+              this.showSpinner = false;
+              this.currentStatusText = '';
+              this.cdr.detectChanges();
+            }
+          }, 60000);
+        }
+
         if (!this.sessions.find(x => x.id === id)) {
            this.loadSessions(true);
         }
