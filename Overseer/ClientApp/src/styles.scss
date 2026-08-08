@@ -875,3 +875,12 @@ input[type="number"] {
 .align-items-center {
   align-items: center !important;
 }
+
+.app-version-label {
+  text-align: center;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.35);
+  margin-top: 1.5rem;
+  margin-bottom: 0;
+  letter-spacing: 0.03em;
+}

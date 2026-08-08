@@ -51,4 +51,8 @@
       <p class="error">{{ error }}</p>
     }
   </form>
+
+  @if (appVersion) {
+    <p class="app-version-label">Overseer {{ appVersion }}</p>
+  }
 </div>

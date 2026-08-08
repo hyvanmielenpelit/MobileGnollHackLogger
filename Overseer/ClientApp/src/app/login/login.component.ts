@@ -2,6 +2,7 @@ import { Component, inject, OnInit, OnDestroy, ChangeDetectionStrategy } from '@
 
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../services/auth.service';
+import { SystemService } from '../services/system.service';
 import { Router, ActivatedRoute } from '@angular/router';
 
 @Component({
@@ -13,8 +14,11 @@ import { Router, ActivatedRoute } from '@angular/router';
 })
 export class LoginComponent implements OnInit, OnDestroy {
   authService = inject(AuthService);
+  systemService = inject(SystemService);
   router = inject(Router);
   route = inject(ActivatedRoute);
+
+  appVersion = '';
 
   username = '';
   password = '';
@@ -25,6 +29,11 @@ export class LoginComponent implements OnInit, OnDestroy {
   private boundSyncAriaInput: any;
 
   ngOnInit() {
+    this.systemService.getVersion().subscribe({
+      next: (v) => this.appVersion = v,
+      error: () => {}
+    });
+
     // Call checkAuth to refresh the CSRF token (useful if we just logged out, so the token resets to anonymous)
     this.authService.checkAuth().subscribe();
 

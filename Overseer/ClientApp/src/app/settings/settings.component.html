@@ -184,6 +184,18 @@
         </div>
       </fieldset>
 
+      <fieldset class="permissions-fieldset mt-20">
+        <legend>Version</legend>
+
+        <div class="margin-y-20 mt-5 form-group-stacked">
+          @if (appVersion) {
+            <p style="margin: 0; font-weight: bold;">Overseer {{ appVersion }}</p>
+          } @else {
+            <p style="margin: 0; color: #aaa;">Loading...</p>
+          }
+        </div>
+      </fieldset>
+
     </div>
     <div class="form-footer">
       <button type="submit" class="btn-gh save-btn" [disabled]="loading">Save</button>
@@ -196,6 +208,7 @@
       }
     </div>
   </form>
+
 </div>
 
 <!-- Unsaved Changes Dialog -->

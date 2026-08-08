@@ -2,6 +2,7 @@ import { Component, OnInit, inject, ViewChild, ElementRef, ChangeDetectionStrate
 
 import { FormsModule } from '@angular/forms';
 import { SettingsService, UserAiSettings, ApiModelDto } from '../services/settings.service';
+import { SystemService } from '../services/system.service';
 import { RouterModule } from '@angular/router';
 
 @Component({
@@ -13,6 +14,9 @@ import { RouterModule } from '@angular/router';
 })
 export class SettingsComponent implements OnInit {
   settingsService = inject(SettingsService);
+  systemService = inject(SystemService);
+  
+  appVersion = '';
   
   @ViewChild('successToast') successToast!: ElementRef<HTMLElement>;
   @ViewChild('confirmDialog') confirmDialog!: ElementRef<HTMLDialogElement>;
@@ -138,6 +142,11 @@ export class SettingsComponent implements OnInit {
       // @ts-ignore
       import("@oddbird/css-anchor-positioning").catch(err => console.warn('Failed to load anchor positioning polyfill', err));
     }
+
+    this.systemService.getVersion().subscribe({
+      next: (v) => this.appVersion = v,
+      error: () => {}
+    });
 
     this.settingsService.getSettings().subscribe(s => {
       if (s) {
