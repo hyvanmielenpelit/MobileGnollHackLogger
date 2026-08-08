@@ -205,6 +205,26 @@ public class ChatService
                     if (defaultModel.MaxInputTokens.HasValue) maxInputTokens = defaultModel.MaxInputTokens.Value;
                     if (defaultModel.MaxOutputTokens.HasValue) maxOutputTokens = defaultModel.MaxOutputTokens.Value;
                 }
+                else
+                {
+                    var settingsService = scope.ServiceProvider.GetRequiredService<SettingsService>();
+                    var sysModels = await settingsService.GetResolvedSystemModelsAsync(userId, 1);
+                    var firstSys = sysModels.FirstOrDefault();
+                    if (firstSys.Config != null)
+                    {
+                        var config = firstSys.Config;
+                        provider = config.Provider;
+                        model = config.ModelId;
+                        thinkingLevel = config.ThinkingLevel;
+                        if (config.MaxInputTokens.HasValue) maxInputTokens = config.MaxInputTokens.Value;
+                        if (config.MaxOutputTokens.HasValue) maxOutputTokens = config.MaxOutputTokens.Value;
+                        if (!string.IsNullOrEmpty(config.EncryptedApiKey) && !string.IsNullOrEmpty(config.ApiKeyNonce) && !string.IsNullOrEmpty(config.ApiKeyTag))
+                        {
+                            apiKey = _cryptoService.Decrypt(config.EncryptedApiKey, config.ApiKeyNonce, config.ApiKeyTag, "SYSTEM_API_KEY");
+                        }
+                        systemModelId = config.Id;
+                    }
+                }
             }
 
             if (string.IsNullOrEmpty(provider) || string.IsNullOrEmpty(model))
