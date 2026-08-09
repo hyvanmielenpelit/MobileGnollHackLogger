@@ -141,6 +141,10 @@ export class SettingsService {
     return this.http.put('/api/settings/systemmodels/reorder', { orderedIds });
   }
 
+  resetSystemModelsOrder() {
+    return this.http.put('/api/settings/systemmodels/reorder/reset', {});
+  }
+
   getAvailableModels(provider: string, apiKey: string, systemConfigId?: number) {
     return this.http.post<ApiModelDto[]>('/api/settings/models', { provider, apiKey, systemConfigId });
   }

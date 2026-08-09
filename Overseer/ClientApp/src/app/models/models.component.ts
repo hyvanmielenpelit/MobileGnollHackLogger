@@ -258,6 +258,20 @@ export class ModelsComponent implements OnInit {
     });
   }
 
+  resetSystemOrder() {
+    this.saving = true;
+    this.settingsService.resetSystemModelsOrder().subscribe({
+      next: () => {
+        this.loadModels();
+        this.saving = false;
+      },
+      error: (err) => {
+        console.error("Failed to reset system order", err);
+        this.saving = false;
+      }
+    });
+  }
+
   @HostListener('document:click', ['$event'])
   onDocumentClick(event: Event) {
     const target = event.target as HTMLElement;

@@ -433,10 +433,6 @@ public class AdminController : ControllerBase
             return BadRequest("This configuration is already assigned to the user.");
         }
 
-        var orderIndex = await _dbContext.UserSystemAiApiConfigurations.Where(a => a.AspNetUserId == userId).AnyAsync() 
-            ? await _dbContext.UserSystemAiApiConfigurations.Where(a => a.AspNetUserId == userId).MaxAsync(c => c.OrderIndex) + 1 
-            : 0;
-
         var assignment = new UserSystemAiApiConfiguration
         {
             AspNetUserId = userId,
@@ -455,7 +451,7 @@ public class AdminController : ControllerBase
             MaxMonthlyTitleTokens = request.MaxMonthlyTitleTokens,
             MaxTotalTitleTokens = request.MaxTotalTitleTokens,
             ModelRole = request.ModelRole,
-            OrderIndex = orderIndex
+            OrderIndex = null
         };
 
         _dbContext.UserSystemAiApiConfigurations.Add(assignment);

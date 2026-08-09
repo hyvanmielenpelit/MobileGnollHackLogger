@@ -300,6 +300,13 @@ public class SettingsService
         await _dbContext.SaveChangesAsync();
     }
 
+    public async Task ResetSystemModelsOrderAsync(string userId)
+    {
+        await _dbContext.UserSystemAiApiConfigurations
+            .Where(u => u.AspNetUserId == userId && u.OrderIndex != null)
+            .ExecuteUpdateAsync(s => s.SetProperty(u => u.OrderIndex, (int?)null));
+    }
+
     public async Task<string?> GetDecryptedSystemApiKeyAsync(long configId)
     {
         var config = await _dbContext.SystemAiApiConfigurations.FindAsync(configId);

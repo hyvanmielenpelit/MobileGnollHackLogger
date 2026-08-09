@@ -297,6 +297,16 @@ public class SettingsController : ControllerBase
         return Ok();
     }
 
+    [HttpPut("systemmodels/reorder/reset")]
+    public async Task<IActionResult> ResetUserSystemModels()
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId == null) return Unauthorized();
+
+        await _settingsService.ResetSystemModelsOrderAsync(userId);
+        return Ok();
+    }
+
     [HttpPost("models")]
     public async Task<IActionResult> GetModels([FromBody] GetModelsRequest request)
     {
