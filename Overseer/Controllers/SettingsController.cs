@@ -18,14 +18,16 @@ public class SettingsController : ControllerBase
     private readonly IConfiguration _configuration;
     private readonly ModelMetadataService _modelMetadataService;
     private readonly RecommendedModelService _recommendedModelService;
+    private readonly IAuthorizationService _authorizationService;
 
-    public SettingsController(SettingsService settingsService, IHttpClientFactory httpClientFactory, IConfiguration configuration, ModelMetadataService modelMetadataService, RecommendedModelService recommendedModelService)
+    public SettingsController(SettingsService settingsService, IHttpClientFactory httpClientFactory, IConfiguration configuration, ModelMetadataService modelMetadataService, RecommendedModelService recommendedModelService, IAuthorizationService authorizationService)
     {
         _settingsService = settingsService;
         _httpClientFactory = httpClientFactory;
         _configuration = configuration;
         _modelMetadataService = modelMetadataService;
         _recommendedModelService = recommendedModelService;
+        _authorizationService = authorizationService;
     }
 
     [HttpGet]
@@ -304,6 +306,15 @@ public class SettingsController : ControllerBase
         var provider = request.Provider ?? "OpenAI";
         var apiKey = request.ApiKey;
 
+        if (string.IsNullOrEmpty(apiKey) && request.SystemConfigId.HasValue)
+        {
+            var authResult = await _authorizationService.AuthorizeAsync(User, "AdminOnly");
+            if (authResult.Succeeded)
+            {
+                apiKey = await _settingsService.GetDecryptedSystemApiKeyAsync(request.SystemConfigId.Value);
+            }
+        }
+
         if (string.IsNullOrEmpty(apiKey))
         {
             apiKey = await _settingsService.GetDecryptedApiKeyForProviderAsync(userId, provider);
@@ -532,6 +543,7 @@ public class GetModelsRequest
 {
     public string? Provider { get; set; }
     public string? ApiKey { get; set; }
+    public long? SystemConfigId { get; set; }
 }
 
 public class UpdateTitleModelRequest

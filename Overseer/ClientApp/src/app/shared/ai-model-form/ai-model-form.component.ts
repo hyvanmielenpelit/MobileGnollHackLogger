@@ -65,6 +65,7 @@ export class AiModelFormComponent implements OnInit {
   pickerModelSelect = '';
   pickerThinkingLevelSelect = '';
   sortMode: 'alphabetical' | 'newest' = 'alphabetical';
+  lastAutoDisplayName = '';
   showApiKeyInfo = false;
   editingApiKey = false;
   deleteApiKey = false;
@@ -170,8 +171,9 @@ export class AiModelFormComponent implements OnInit {
     this.modelError = '';
     
     const keyToSend = this.isAdmin ? this.apiKey : '';
+    const systemConfigId = this.isAdmin ? this.initialData?.id : undefined;
 
-    this.settingsService.getAvailableModels(this.provider, keyToSend).subscribe({
+    this.settingsService.getAvailableModels(this.provider, keyToSend, systemConfigId).subscribe({
       next: (models) => {
         this.availableModels = models;
         this.loadingModels = false;
@@ -245,8 +247,11 @@ export class AiModelFormComponent implements OnInit {
       this.maxInputTokens = this.selectedModelObj.maxInputTokens || null;
       this.maxOutputTokens = this.selectedModelObj.maxOutputTokens || null;
       
-      if (this.isAdmin && !this.displayName && this.mode === 'add') {
-          this.displayName = this.selectedModelObj.description || this.selectedModelObj.id;
+      if (this.isAdmin) {
+          if (!this.displayName || this.displayName === this.lastAutoDisplayName) {
+              this.displayName = this.selectedModelObj.description || this.selectedModelObj.id;
+              this.lastAutoDisplayName = this.displayName;
+          }
       }
     } else {
       this.thinkingLevel = '';

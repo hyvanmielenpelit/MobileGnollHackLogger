@@ -299,4 +299,14 @@ public class SettingsService
         }
         await _dbContext.SaveChangesAsync();
     }
+
+    public async Task<string?> GetDecryptedSystemApiKeyAsync(long configId)
+    {
+        var config = await _dbContext.SystemAiApiConfigurations.FindAsync(configId);
+        if (config != null && !string.IsNullOrEmpty(config.EncryptedApiKey) && !string.IsNullOrEmpty(config.ApiKeyNonce) && !string.IsNullOrEmpty(config.ApiKeyTag))
+        {
+            return _cryptoService.Decrypt(config.EncryptedApiKey, config.ApiKeyNonce, config.ApiKeyTag, "SYSTEM_API_KEY");
+        }
+        return null;
+    }
 }
