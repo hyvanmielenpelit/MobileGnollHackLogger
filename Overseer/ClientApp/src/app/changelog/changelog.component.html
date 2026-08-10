@@ -1,0 +1,56 @@
+<div class="settings-container gh-main-container">
+  @if (loading) {
+    <div class="loading-state">
+      <span class="gh-spinner-small"></span> Loading release notes...
+    </div>
+  }
+
+  @if (error) {
+    <div class="error-state">
+      Failed to load release notes. Please try again later.
+      @if (errorMessage) { <div style="font-size: 0.8em; margin-top: 10px; color: #ff6b6b;">{{ errorMessage }}</div> }
+      <br/><a routerLink="/chat" queryParamsHandling="preserve">&larr; Back to Chat</a>
+    </div>
+  }
+
+  @if (!loading && !error && paginatedNotes.length > 0) {
+    <div class="header-row">
+      <h2>Changelog</h2>
+      <div class="header-actions">
+        <a routerLink="/chat" queryParamsHandling="preserve" class="nav-back-link">&larr; Back</a>
+      </div>
+    </div>
+
+    <div class="settings-body changelog-body">
+      @for (note of paginatedNotes; track note.version) {
+        <div class="release-note-card">
+          <div class="release-note-header">
+            <h3>v{{ note.version }}</h3>
+            <span class="release-date" [title]="note.date | date:'d MMM yyyy'">
+              {{ note.date | relativeTime:'changelog' }}
+            </span>
+          </div>
+          
+          <p class="release-summary">{{ note.summary }}</p>
+
+          <div class="highlights-list">
+            @for (highlight of note.highlights; track highlight.text) {
+              <div class="highlight-item">
+                <span class="highlight-type-badge">
+                  <svg class="highlight-icon" viewBox="0 0 24 24" fill="currentColor" [innerHTML]="getIconSvgForType(highlight.type)"></svg>
+                  {{ highlight.type }}
+                </span>
+                <span class="highlight-text">{{ highlight.text }}</span>
+              </div>
+            }
+          </div>
+        </div>
+      }
+    </div>
+    <div class="pagination-footer form-footer">
+      <button class="btn-gh pagination-btn" (click)="nextPage()" [disabled]="(currentPage + 1) * pageSize >= notes.length" title="Older Versions">&larr; Older</button>
+      <span class="pagination-info">Page {{ currentPage + 1 }} of {{ Math.ceil(notes.length / pageSize) || 1 }}</span>
+      <button class="btn-gh pagination-btn" (click)="previousPage()" [disabled]="currentPage === 0" title="Newer Versions">Newer &rarr;</button>
+    </div>
+  }
+</div>

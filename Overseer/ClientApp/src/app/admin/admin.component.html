@@ -6,9 +6,12 @@
 
   <div class="settings-body">
     <div class="admin-tabs">
+      <div class="indicator-left"></div>
       <button class="admin-tab" [class.admin-tab-active]="activeTab === 'users'" (click)="activeTab = 'users'">Users</button>
       <button class="admin-tab" [class.admin-tab-active]="activeTab === 'groups'" (click)="activeTab = 'groups'">Groups</button>
       <button class="admin-tab" [class.admin-tab-active]="activeTab === 'configs'" (click)="activeTab = 'configs'">System Configs</button>
+      <button class="admin-tab" [class.admin-tab-active]="activeTab === 'devtools'" (click)="activeTab = 'devtools'">Developer Tools</button>
+      <div class="indicator-right"></div>
     </div>
 
     @if (loading) {
@@ -246,9 +249,33 @@
             }
           </div>
         }
+        <!-- DEV TOOLS TAB -->
+        @if (activeTab === 'devtools') {
+          <div>
+            <div class="tab-header-row">
+              <h3 class="m-0">Developer Tools</h3>
+            </div>
+            <div class="mt-20">
+              <button class="btn-gh btn-secondary" (click)="testChangelogAnimation()">
+                Test Changelog Badge
+              </button>
+              <p class="text-muted mt-10" style="font-size: 0.9em;">
+                Click this button to reset the Changelog update badge in the sidebar.
+              </p>
+            </div>
+          </div>
+        }
       </div>
     }
   </div>
+</div>
+
+<div id="dev-toast" popover="manual" role="status" class="toast toast-success">
+  <svg class="icon" aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+  </svg>
+  <span>Update badge reset successfully!</span>
 </div>
 
 <!-- DIALOGS -->

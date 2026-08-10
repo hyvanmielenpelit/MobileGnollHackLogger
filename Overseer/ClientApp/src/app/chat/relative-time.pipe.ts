@@ -6,7 +6,7 @@ import { Pipe, PipeTransform } from '@angular/core';
   pure: false
 })
 export class RelativeTimePipe implements PipeTransform {
-  transform(value: string | Date | null | undefined): string {
+  transform(value: string | Date | null | undefined, mode: 'chat' | 'changelog' = 'chat'): string {
     if (!value) return '';
     
     let dateStr = value;
@@ -17,6 +17,21 @@ export class RelativeTimePipe implements PipeTransform {
     const date = new Date(dateStr);
     const now = new Date();
     const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+    
+    if (mode === 'changelog') {
+      const diffInDays = Math.floor(diffInSeconds / (24 * 3600));
+      if (diffInDays === 0) return 'Today';
+      if (diffInDays < 7) return `${diffInDays}d ago`;
+      
+      const diffInWeeks = Math.floor(diffInDays / 7);
+      if (diffInDays < 30) return `${diffInWeeks}w ago`;
+      
+      const diffInMonths = Math.floor(diffInDays / 30);
+      if (diffInDays < 365) return `${diffInMonths}mo ago`;
+      
+      const diffInYears = Math.floor(diffInDays / 365);
+      return `${diffInYears}y ago`;
+    }
     
     // For future dates (e.g., slightly off clocks) or very recent
     if (diffInSeconds < 60) {

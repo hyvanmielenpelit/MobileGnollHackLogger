@@ -18,7 +18,7 @@ import { debounceTime } from 'rxjs/operators';
 export class AdminComponent implements OnInit, OnDestroy {
   private adminService = inject(AdminService);
   
-  activeTab: 'users' | 'groups' | 'configs' = 'users';
+  activeTab: 'users' | 'groups' | 'configs' | 'devtools' = 'users';
   loading = false;
   usersLoading = false;
 
@@ -172,6 +172,23 @@ export class AdminComponent implements OnInit, OnDestroy {
     });
 
     this.loadData();
+  }
+
+  testChangelogAnimation() {
+    localStorage.setItem('overseer_last_seen_changelog', '0.0.0');
+    
+    // Dispatch an event so the sidebar can update without a page reload
+    window.dispatchEvent(new Event('changelog_badge_reset'));
+
+    const toast = document.getElementById('dev-toast');
+    if (toast && 'showPopover' in toast) {
+      (toast as any).showPopover();
+      setTimeout(() => {
+        if (toast.matches(':popover-open')) {
+          (toast as any).hidePopover();
+        }
+      }, 3000);
+    }
   }
 
   ngOnDestroy() {

@@ -8,6 +8,7 @@ import { Router, ActivatedRoute, RouterModule, NavigationEnd } from '@angular/ro
 import { MarkdownPipe } from './markdown.pipe';
 import { RelativeTimePipe } from './relative-time.pipe';
 import { SettingsService } from '../services/settings.service';
+import { ChangelogService } from '../services/changelog.service';
 import * as signalR from '@microsoft/signalr';
 import { firstValueFrom, filter, Subscription } from 'rxjs';
 export interface ToolClientRequest {
@@ -94,6 +95,9 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   }
   chatService = inject(ChatService);
   settingsService = inject(SettingsService);
+  changelogService = inject(ChangelogService);
+  
+  showChangelogAnimation = false;
   
   @ViewChild('messagesContainer') messagesContainer!: ElementRef;
   @ViewChild('deleteConfirmDialog') deleteConfirmDialog!: ElementRef<HTMLDialogElement>;
@@ -342,6 +346,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   ngOnDestroy() {
     window.removeEventListener('online', this.onlineHandler);
     window.removeEventListener('offline', this.offlineHandler);
+    window.removeEventListener('changelog_badge_reset', this.changelogBadgeResetHandler);
     if (this.hubConnection) {
       this.hubConnection.stop();
     }
@@ -521,6 +526,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         if (previousUrl && !previousUrl.startsWith('/chat')) {
           this.debugService.log(`[Overseer] Re-entered chat window from ${previousUrl}. Refetching settings and models.`);
           this.loadSettings(false);
+          this.checkChangelogAnimation();
         }
       }
       previousUrl = currentUrl || '';
@@ -579,6 +585,27 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       window.visualViewport.addEventListener('resize', this.onVisualViewportResize);
       this.onVisualViewportResize(); // set initial value
     }
+
+    // Listen for custom events to reset the changelog badge
+    this.changelogBadgeResetHandler = () => this.checkChangelogAnimation();
+    window.addEventListener('changelog_badge_reset', this.changelogBadgeResetHandler);
+    
+    this.checkChangelogAnimation();
+  }
+
+  private changelogBadgeResetHandler!: () => void;
+
+  private checkChangelogAnimation() {
+    this.changelogService.getReleaseNotes().subscribe({
+      next: (notes) => {
+        if (notes && notes.length > 0) {
+          const latestVersion = notes[0].version;
+          this.showChangelogAnimation = this.changelogService.hasNewMajorOrMinorVersion(latestVersion);
+          this.cdr.detectChanges();
+        }
+      },
+      error: (err) => console.error('Failed to check release notes for animation', err)
+    });
   }
 
   updateHasRealContent() {

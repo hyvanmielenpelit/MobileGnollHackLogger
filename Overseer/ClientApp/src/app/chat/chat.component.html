@@ -47,6 +47,15 @@
         <a routerLink="/settings" queryParamsHandling="preserve">Settings</a>
         <a routerLink="/api-keys" queryParamsHandling="preserve">API Keys</a>
         <a routerLink="/models" queryParamsHandling="preserve">Models</a>
+        <a routerLink="/changelog" queryParamsHandling="preserve" 
+           (click)="showChangelogAnimation = false">
+          Changelog
+          @if (showChangelogAnimation) { 
+            <svg class="sparkle-icon" viewBox="0 0 24 24" fill="#FACC15" style="filter: drop-shadow(0 0 3px rgba(250,204,21,0.6));">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+            </svg>
+          }
+        </a>
         @if (authService.user$ | async; as user) {
           @if (user.isAdmin) {
             <a routerLink="/admin" queryParamsHandling="preserve">Admin</a>

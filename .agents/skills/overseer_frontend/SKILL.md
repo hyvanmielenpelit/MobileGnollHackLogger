@@ -43,6 +43,10 @@ When creating UI elements in the Overseer frontend, adhere to the following stan
 - **Avoid Basic JS Dialogs**: As stated in the main rules, do NOT use basic JavaScript `alert()`, `prompt()`, or `confirm()` dialogs. They disrupt user flow, unfocus elements, and look outdated.
 - **Use Modern Equivalents**: Implement inline error messaging (e.g., displaying error text near an input field) or use styled `<dialog>` modals for confirmation/input prompts, ensuring integration with Angular state and modern web guidance.
 
+### Icons
+- **Use SVGs exclusively**: DO NOT use Unicode emojis (e.g., ✨, 🐛, 🚀) for UI elements or icons. They are notoriously difficult to align correctly, render inconsistently across operating systems, and look unprofessional.
+- Always use precise `<svg>` icons configured with `fill="currentColor"` so they seamlessly match the surrounding text color and align perfectly using Flexbox (`display: flex; align-items: center`).
+
 ## Component Reuse and State Management
 
 The Overseer frontend utilizes a custom `RouteReuseStrategy` (indicated by `data: { reuse: true }` in `app.routes.ts`) for primary views like the `ChatComponent`. This prevents the component from being destroyed when navigating away, ensuring chat history and UI state are preserved.

@@ -14,8 +14,50 @@
   margin-bottom: 20px;
   border-bottom: 1px solid var(--border-glass);
   padding-bottom: 0;
+  
+  /* Scrollable tabs */
+  overflow-x: auto;
+  scroll-behavior: smooth;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+  
+  container-type: scroll-state;
+  position: relative;
+}
+.indicator-left, .indicator-right {
+  position: sticky;
+  top: 0;
+  bottom: 0;
+  width: 30px;
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+  z-index: 2;
+  flex-shrink: 0;
+}
+.indicator-left {
+  left: 0;
+  background: linear-gradient(to right, rgba(20,20,20,0.9), transparent);
+  margin-right: -30px;
+}
+.indicator-right {
+  right: 0;
+  background: linear-gradient(to left, rgba(20,20,20,0.9), transparent);
+  margin-left: -30px;
+}
+@container scroll-state(scrollable: left) {
+  .indicator-left { opacity: 1; }
+}
+@container scroll-state(scrollable: right) {
+  .indicator-right { opacity: 1; }
 }
 .admin-tab {
+  flex-shrink: 0;
+  scroll-snap-align: start;
   background: transparent;
   color: #ccc;
   border: none;
@@ -167,15 +209,16 @@
 .tab-header-row {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 15px;
   padding: 0 0 15px 0;
   border: none;
-  min-height: 36px;
+  min-height: 44px;
   
   h3 {
     margin: 0;
-    line-height: 1;
-    padding-top: 12px;
+    line-height: 1.2;
   }
 }
 
@@ -461,6 +504,46 @@
       max-width: 100%;
     }
   }
+}
+
+/* Toast Popover styling based on modern web guidance */
+.toast[popover] {
+  position: fixed;
+  top: 1.5rem;
+  right: 1.5rem;
+  margin: 0;
+  padding: 0.75rem 1.25rem;
+  border: 1px solid var(--color-success, #28a745);
+  border-radius: 8px;
+  background: rgba(40, 167, 69, 0.15);
+  backdrop-filter: blur(10px);
+  color: #fff;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  z-index: 1000;
+  
+  /* Smooth entry/exit using @starting-style */
+  transition: opacity 0.25s ease, transform 0.25s ease, display 0.25s allow-discrete;
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+.toast[popover]:popover-open {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@starting-style {
+  .toast[popover]:popover-open {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+}
+
+.toast .icon {
+  color: var(--color-success, #28a745);
 }
 
 

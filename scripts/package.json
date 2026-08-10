@@ -1,0 +1,17 @@
+{
+  "name": "changelog-scripts",
+  "version": "1.0.0",
+  "description": "Scripts for automated changelog generation",
+  "main": "generate-release-notes.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "@google/genai": "^0.1.1",
+    "openai": "^4.50.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "private": true
+}
