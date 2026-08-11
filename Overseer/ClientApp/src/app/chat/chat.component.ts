@@ -110,6 +110,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   autoScrollEnabled = true;
 
   private hubConnection: signalR.HubConnection | null = null;
+  private hubStartPromise: Promise<void> | null = null;
 
   sidebarWidth = 250;
   isResizing = false;
@@ -844,6 +845,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.hubConnection.on('ReceiveChatEvent', (evt: any) => {
       this.ngZone.run(() => {
         if (this.isLoadingSession) {
+          this.debugService.log(`[Frontend] Buffered live event seqNo=${evt.seqNo} type=${evt.type}`);
           this.liveEventBuffer.push(evt);
         } else {
           this.processChatEvent(evt);
@@ -851,7 +853,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       });
     });
 
-    this.hubConnection.start().then(() => {
+    this.hubStartPromise = this.hubConnection.start();
+    this.hubStartPromise.then(() => {
       if (this.currentSessionId) {
         this.hubConnection?.invoke("JoinSession", this.currentSessionId).catch(console.error);
       }
@@ -980,6 +983,14 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.currentSessionId = id;
     this.isLoadingSession = true;
     this.liveEventBuffer = [];
+
+    if (this.hubStartPromise) {
+      try {
+        await this.hubStartPromise;
+      } catch {
+        // Connection failed — proceed without SignalR
+      }
+    }
 
     if (this.hubConnection?.state === signalR.HubConnectionState.Connected) {
       try {
