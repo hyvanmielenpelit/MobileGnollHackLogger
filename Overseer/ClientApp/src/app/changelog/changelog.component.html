@@ -9,7 +9,12 @@
     <div class="error-state">
       Failed to load release notes. Please try again later.
       @if (errorMessage) { <div style="font-size: 0.8em; margin-top: 10px; color: #ff6b6b;">{{ errorMessage }}</div> }
-      <br/><a routerLink="/chat" queryParamsHandling="preserve">&larr; Back to Chat</a>
+      <br/><a routerLink="/chat" queryParamsHandling="preserve" class="nav-back-link">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="btn-icon">
+          <path d="M19 12H5M12 19l-7-7 7-7"/>
+        </svg>
+        Back to Chat
+      </a>
     </div>
   }
 
@@ -17,7 +22,12 @@
     <div class="header-row">
       <h2>Changelog</h2>
       <div class="header-actions">
-        <a routerLink="/chat" queryParamsHandling="preserve" class="nav-back-link">&larr; Back</a>
+        <a routerLink="/chat" queryParamsHandling="preserve" class="nav-back-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="btn-icon">
+            <path d="M19 12H5M12 19l-7-7 7-7"/>
+          </svg>
+          Back
+        </a>
       </div>
     </div>
 
@@ -52,9 +62,19 @@
       }
     </div>
     <div class="pagination-footer form-footer">
-      <button class="btn-gh pagination-btn" (click)="nextPage()" [disabled]="(currentPage + 1) * pageSize >= notes.length" title="Older Versions">&larr; Older</button>
+      <button class="btn-gh pagination-btn" (click)="nextPage()" [disabled]="(currentPage + 1) * pageSize >= notes.length" title="Older Versions">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="btn-icon">
+          <path d="M19 12H5M12 19l-7-7 7-7"/>
+        </svg>
+        Older
+      </button>
       <span class="pagination-info">Page {{ currentPage + 1 }} of {{ Math.ceil(notes.length / pageSize) || 1 }}</span>
-      <button class="btn-gh pagination-btn" (click)="previousPage()" [disabled]="currentPage === 0" title="Newer Versions">Newer &rarr;</button>
+      <button class="btn-gh pagination-btn" (click)="previousPage()" [disabled]="currentPage === 0" title="Newer Versions">
+        Newer
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="btn-icon">
+          <path d="M5 12h14M12 5l7 7-7 7"/>
+        </svg>
+      </button>
     </div>
   }
 </div>
