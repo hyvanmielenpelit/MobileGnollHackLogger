@@ -8,7 +8,7 @@ description: Instructions and guidelines for autonomously generating and appendi
 > [!WARNING]
 > **CRITICAL PROHIBITION:** You must **never** create Git tags (`git tag`) or push to the repository (`git push`) yourself. Your job is only to generate the `release-notes.json` entry and remind the developer to perform the tagging and pushing (as described in Step 9).
 
-When instructed to add a new release notes entry to `Overseer/Data/release-notes.json`, follow this step-by-step procedure strictly to generate and insert the entry autonomously. This process bypasses the GitHub Actions script by utilizing your contextual reasoning to classify commits.
+When instructed to add a new release notes entry to `Overseer/Data/release-notes.json`, follow this step-by-step procedure strictly to generate and insert the entry autonomously. This process utilizes your contextual reasoning to classify commits.
 
 ## Step 1: Determine the Version Number
 
@@ -57,7 +57,7 @@ Review the commit log you fetched. Based on the commit messages and your knowled
 Do **not** create changelog items for:
 - Version number bumps (e.g., "bump version to 1.0.3")
 - Dependency or NuGet/npm package updates
-- CI/CD pipeline, GitHub Actions, or build system changes
+- CI/CD pipeline or build system changes
 - Merge commits or branch housekeeping
 - Code formatting, linting, whitespace-only changes, or minor typos
 - Internal refactoring with no user-visible effect
