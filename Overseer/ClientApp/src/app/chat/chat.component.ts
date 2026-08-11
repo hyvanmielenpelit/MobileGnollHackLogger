@@ -662,7 +662,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       this.timeToFirstTokenMs = parseInt(evt.data, 10);
       this.cdr.detectChanges();
     } else if (evt.type === 'chunk') {
-      this.debugService.log(`[Frontend] chunk received: "${evt.data}". isThinkingActive=${this.isThinkingActive}, hasRealContent=${this.hasRealContent}`);
+      this.debugService.log(`[Frontend] chunk received: seqNo=${evt.seqNo} "${evt.data}" streamingMessage.length=${this.streamingMessage.length}`);
       if (this.isThinkingActive) {
           this.debugService.log(`[Frontend] closing ai-thought div before chunk.`);
           this.isThinkingActive = false;
@@ -984,6 +984,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.isLoadingSession = true;
     this.liveEventBuffer = [];
 
+    this.debugService.log(`[Frontend] loadSession(${id}): hub state BEFORE await = ${this.hubConnection?.state ?? 'null'}`);
+
     if (this.hubStartPromise) {
       try {
         await this.hubStartPromise;
@@ -992,12 +994,18 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       }
     }
 
+    this.debugService.log(`[Frontend] loadSession(${id}): hub state AFTER await = ${this.hubConnection?.state ?? 'null'}`);
+
     if (this.hubConnection?.state === signalR.HubConnectionState.Connected) {
       try {
         await this.hubConnection.invoke("JoinSession", id);
+        this.debugService.log(`[Frontend] loadSession(${id}): JoinSession succeeded`);
       } catch (err) {
+        this.debugService.log(`[Frontend] loadSession(${id}): JoinSession FAILED: ${err}`);
         console.error('JoinSession failed:', err);
       }
+    } else {
+      this.debugService.log(`[Frontend] loadSession(${id}): JoinSession SKIPPED — hub not connected`);
     }
 
     if (this.currentSessionId !== id) {
@@ -1034,7 +1042,12 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.loadDraft();
 
         if (s.ongoingGeneration && s.ongoingGeneration.events) {
-          this.debugService.log(`[Frontend] Session ${id} has ongoing generation with ${s.ongoingGeneration.events.length} buffered events. Replaying...`);
+          const seqNos = s.ongoingGeneration.events
+            .filter((e: any) => e.seqNo != null)
+            .map((e: any) => e.seqNo);
+          const minSeq = seqNos.length > 0 ? Math.min(...seqNos) : 'none';
+          const maxSeq = seqNos.length > 0 ? Math.max(...seqNos) : 'none';
+          this.debugService.log(`[Frontend] Session ${id} has ongoing generation with ${s.ongoingGeneration.events.length} buffered events (seqNo range: ${minSeq}–${maxSeq}). Replaying...`);
           this.isStreaming = true;
           for (const evt of s.ongoingGeneration.events) {
             if (evt.seqNo !== undefined && evt.seqNo !== null && evt.seqNo <= this.lastSeenSeqNo) {
@@ -1048,10 +1061,17 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         
         this.isLoadingSession = false;
         if (this.liveEventBuffer.length > 0) {
-          this.debugService.log(`[Frontend] Flushing ${this.liveEventBuffer.length} buffered live events.`);
+          const seqNos = this.liveEventBuffer
+              .filter((e: any) => e.seqNo != null)
+              .map((e: any) => e.seqNo);
+          const minSeq = seqNos.length > 0 ? Math.min(...seqNos) : 'none';
+          const maxSeq = seqNos.length > 0 ? Math.max(...seqNos) : 'none';
+          this.debugService.log(`[Frontend] Flushing ${this.liveEventBuffer.length} buffered live events (seqNo range: ${minSeq}–${maxSeq}, lastSeenSeqNo=${this.lastSeenSeqNo}).`);
           for (const evt of this.liveEventBuffer) {
             this.processChatEvent(evt);
           }
+        } else {
+          this.debugService.log(`[Frontend] No buffered live events to flush. lastSeenSeqNo=${this.lastSeenSeqNo}`);
         }
         this.liveEventBuffer = [];
 

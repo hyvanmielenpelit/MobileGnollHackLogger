@@ -88,6 +88,16 @@ public class ChatService
         }
         finally
         {
+            var finalState = _ongoingChatManager.TryGet(sessionId);
+            if (finalState != null)
+            {
+                var totalEvents = finalState.AccumulatedEvents.Count;
+                var lastSeq = finalState.EventSequence;
+                var statsEvt = new ChatEvent { Type = "debug", Data = $"[Backend] Generation complete. Total events={totalEvents}, lastSeqNo={lastSeq}", SessionId = sessionId };
+                _ongoingChatManager.ProcessEvent(sessionId, statsEvt);
+                await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", statsEvt, CancellationToken.None);
+            }
+
             bool isUserCancel = _ongoingChatManager.TryGet(sessionId) == null;
             if (isUserCancel || cancellationToken.IsCancellationRequested)
             {
