@@ -63,14 +63,26 @@ Here is the git commit log since the last release:
 
 ${gitLog}
 
-Based on these commits, write a brief, user-friendly summary of the overall changes, and categorize the key updates into a list of highlights.
+Based on these commits, write a brief, user-friendly summary of the overall changes, and categorize the key updates into a list of changes.
+
+Classification Rules:
+- "feature": Entirely new functionality or capability that did not exist before.
+- "improvement": Enhancement to an existing feature (e.g., performance, UX polish, refactoring that is user-visible).
+- "fix": A bug correction or defect resolution.
+- "security": Security-related fix or hardening.
+
+Exclusion Rules:
+Do NOT include version bumps, dependency updates, CI/CD pipeline changes, merge commits, code formatting/linting, or other housekeeping commits that don't affect the end user.
+
+Note: Each item must be independently classified. A single release can have items of different types.
+
 Your output MUST be a valid JSON object following this exact schema:
 
 {
   "version": "${newVersion}",
   "date": "${today}",
   "summary": "A 1-3 sentence summary of the release.",
-  "highlights": [
+  "changes": [
     {
       "type": "feature", // MUST be one of: "feature", "fix", "improvement", "security"
       "text": "User friendly description of the change."

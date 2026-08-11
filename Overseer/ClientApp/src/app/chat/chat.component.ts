@@ -597,9 +597,9 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
   private checkChangelogAnimation() {
     this.changelogService.getReleaseNotes().subscribe({
-      next: (notes) => {
-        if (notes && notes.length > 0) {
-          const latestVersion = notes[0].version;
+      next: (response) => {
+        if (response.notes && response.notes.length > 0) {
+          const latestVersion = response.notes[0].version;
           this.showChangelogAnimation = this.changelogService.hasNewMajorOrMinorVersion(latestVersion);
           this.cdr.detectChanges();
         }

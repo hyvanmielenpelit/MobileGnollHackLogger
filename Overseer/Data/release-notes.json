@@ -3,7 +3,7 @@
     "version": "1.0.2",
     "date": "2026-08-10",
     "summary": "Added Changelog Feature",
-    "highlights": [
+    "changes": [
       {
         "type": "feature",
         "text": "Gnoll Overseer's changelog is now available through a dedicated Changelog link in the main chat window's sidebar. If the changelog has an important update, a yellow star will appear next to it as well."

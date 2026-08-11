@@ -33,14 +33,18 @@
           
           <p class="release-summary">{{ note.summary }}</p>
 
-          <div class="highlights-list">
-            @for (highlight of note.highlights; track highlight.text) {
-              <div class="highlight-item">
-                <span class="highlight-type-badge">
-                  <svg class="highlight-icon" viewBox="0 0 24 24" fill="currentColor" [innerHTML]="getIconSvgForType(highlight.type)"></svg>
-                  {{ highlight.type }}
-                </span>
-                <span class="highlight-text">{{ highlight.text }}</span>
+          <div class="changes-list">
+            @for (group of getGroupedChanges(note); track group.type) {
+              <div class="change-category">
+                <h4 class="category-header">
+                  <svg class="category-icon" viewBox="0 0 24 24" fill="currentColor" [innerHTML]="getIconSvgForType(group.type)"></svg>
+                  {{ group.label }}
+                </h4>
+                <ul class="change-items">
+                  @for (item of group.items; track item.text) {
+                    <li>{{ item.text }}</li>
+                  }
+                </ul>
               </div>
             }
           </div>

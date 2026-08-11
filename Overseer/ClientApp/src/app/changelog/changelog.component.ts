@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { ChangelogService } from '../services/changelog.service';
-import { ReleaseNote } from '../services/release-note.model';
+import { ReleaseNote, ReleaseChange } from '../services/release-note.model';
 import { RelativeTimePipe } from '../chat/relative-time.pipe';
 
 @Component({
@@ -34,7 +34,8 @@ export class ChangelogComponent implements OnInit {
   ngOnInit(): void {
     this.changelogService.getReleaseNotes().subscribe({
       next: (data) => {
-        this.notes = data;
+        this.pageSize = data.pageSize || 10;
+        this.notes = data.notes;
         this.loading = false;
         if (this.notes && this.notes.length > 0) {
           // Stop animation once the user opens the page for the newest version
@@ -62,6 +63,20 @@ export class ChangelogComponent implements OnInit {
     if ((this.currentPage + 1) * this.pageSize < this.notes.length) {
       this.currentPage++;
     }
+  }
+
+  getGroupedChanges(note: ReleaseNote): { type: string; label: string; items: ReleaseChange[] }[] {
+    const featureItems = note.changes?.filter(c => c.type === 'feature') || [];
+    const improvementItems = note.changes?.filter(c => c.type === 'improvement') || [];
+    const fixItems = note.changes?.filter(c => c.type === 'fix') || [];
+    const securityItems = note.changes?.filter(c => c.type === 'security') || [];
+    
+    const groups = [];
+    if (featureItems.length > 0) groups.push({ type: 'feature', label: 'Features', items: featureItems });
+    if (improvementItems.length > 0) groups.push({ type: 'improvement', label: 'Improvements', items: improvementItems });
+    if (fixItems.length > 0) groups.push({ type: 'fix', label: 'Bug Fixes', items: fixItems });
+    if (securityItems.length > 0) groups.push({ type: 'security', label: 'Security', items: securityItems });
+    return groups;
   }
 
   getIconSvgForType(type: string): SafeHtml {

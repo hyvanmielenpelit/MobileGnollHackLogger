@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { ReleaseNote } from './release-note.model';
+import { ReleaseNote, ChangelogResponse } from './release-note.model';
 
 @Injectable({
   providedIn: 'root'
@@ -10,8 +10,8 @@ export class ChangelogService {
   private http = inject(HttpClient);
   private storageKey = 'overseer_last_seen_changelog';
 
-  getReleaseNotes(): Observable<ReleaseNote[]> {
-    return this.http.get<ReleaseNote[]>('/api/changelog');
+  getReleaseNotes(): Observable<ChangelogResponse> {
+    return this.http.get<ChangelogResponse>('/api/changelog');
   }
 
   hasNewMajorOrMinorVersion(latestVersion: string): boolean {

@@ -1,4 +1,4 @@
-export interface ReleaseHighlight {
+export interface ReleaseChange {
   type: 'feature' | 'fix' | 'improvement' | 'security';
   text: string;
 }
@@ -7,5 +7,10 @@ export interface ReleaseNote {
   version: string;
   date: string;
   summary: string;
-  highlights: ReleaseHighlight[];
+  changes: ReleaseChange[];
+}
+
+export interface ChangelogResponse {
+  pageSize: number;
+  notes: ReleaseNote[];
 }

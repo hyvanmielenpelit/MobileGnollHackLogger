@@ -9,6 +9,13 @@ namespace Overseer.Controllers;
 [IgnoreAntiforgeryToken]
 public class ChangelogController : ControllerBase
 {
+    private readonly IConfiguration _configuration;
+
+    public ChangelogController(IConfiguration configuration)
+    {
+        _configuration = configuration;
+    }
+
     [HttpGet]
     public IActionResult GetReleaseNotes()
     {
@@ -18,12 +25,15 @@ public class ChangelogController : ControllerBase
         Response.Headers["Pragma"] = "no-cache";
         Response.Headers["Expires"] = "0";
 
+        int pageSize = _configuration.GetValue<int>("ChangelogPageSize", 10);
+
         if (!System.IO.File.Exists(path))
         {
-            return Ok(new List<object>());
+            return Ok(new { pageSize = pageSize, notes = new List<object>() });
         }
 
-        var json = System.IO.File.ReadAllText(path);
-        return Content(json, "application/json");
+        string json = System.IO.File.ReadAllText(path);
+        string resultJson = $"{{\"pageSize\":{pageSize},\"notes\":{json}}}";
+        return Content(resultJson, "application/json");
     }
 }
