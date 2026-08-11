@@ -123,7 +123,7 @@ The changelog link in the chat sidebar displays a yellow star animation when a n
 
 ## AI-Generated Changelogs
 
-For the full release process, including instructions on how to use AI (both Local AI Agents and GitHub Actions) to generate changelog entries automatically, please see the [Release Process Guide](RELEASING.md).
+For instructions on how to use a Local AI Agent to generate changelog entries automatically, please see the [AI Changelog Generation Guide](AI_CHANGELOG.md).
 
 ## Configuration
 

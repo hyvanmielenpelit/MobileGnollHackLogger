@@ -10,7 +10,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		.gitignore = .gitignore
 		LICENSE = LICENSE
 		README.md = README.md
-		RELEASING.md = RELEASING.md
 	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GnollHackServer.Data", "GnollHackServer.Data\GnollHackServer.Data.csproj", "{E5A945EF-09A3-44F6-9720-771CAE3B6E70}"
