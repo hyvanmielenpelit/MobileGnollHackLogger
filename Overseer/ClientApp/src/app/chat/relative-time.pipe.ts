@@ -11,7 +11,10 @@ export class RelativeTimePipe implements PipeTransform {
     
     let dateStr = value;
     if (typeof dateStr === 'string' && !dateStr.endsWith('Z') && !dateStr.includes('+') && !dateStr.match(/-\d{2}:\d{2}$/)) {
-      dateStr += 'Z';
+      // Don't append 'Z' for date-only strings (YYYY-MM-DD), which parse as UTC correctly
+      if (dateStr.length > 10 || dateStr.includes('T') || dateStr.includes(' ')) {
+        dateStr += 'Z';
+      }
     }
     
     const date = new Date(dateStr);

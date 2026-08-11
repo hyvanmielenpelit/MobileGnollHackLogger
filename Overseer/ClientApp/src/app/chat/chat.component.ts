@@ -634,7 +634,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     if (typeof evt.sessionId === 'number' && evt.sessionId !== this.currentSessionId) return;
 
     if (evt.seqNo !== undefined && evt.seqNo !== null) {
-      this.lastSeenSeqNo = Math.max(this.lastSeenSeqNo, evt.seqNo);
+      if (evt.seqNo <= this.lastSeenSeqNo) {
+        this.debugService.log(`[Frontend] Skipping duplicate event seqNo=${evt.seqNo} (lastSeen=${this.lastSeenSeqNo})`);
+        return;
+      }
+      this.lastSeenSeqNo = evt.seqNo;
     }
 
     if (evt.type === 'debug') {
@@ -951,7 +955,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.focusPromptInput();
   }
 
-  loadSession(id: number) {
+  async loadSession(id: number) {
     this.sessionLoadSub?.unsubscribe();
 
     this.isStreaming = false;
@@ -971,12 +975,23 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       if (this.currentSessionId && this.currentSessionId !== id) {
         this.hubConnection.invoke("LeaveSession", this.currentSessionId).catch(console.error);
       }
-      this.hubConnection.invoke("JoinSession", id).catch(console.error);
     }
     
     this.currentSessionId = id;
     this.isLoadingSession = true;
     this.liveEventBuffer = [];
+
+    if (this.hubConnection?.state === signalR.HubConnectionState.Connected) {
+      try {
+        await this.hubConnection.invoke("JoinSession", id);
+      } catch (err) {
+        console.error('JoinSession failed:', err);
+      }
+    }
+
+    if (this.currentSessionId !== id) {
+      return;
+    }
 
     this.sessionLoadSub = this.chatService.getSession(id).subscribe({
       next: (s) => {

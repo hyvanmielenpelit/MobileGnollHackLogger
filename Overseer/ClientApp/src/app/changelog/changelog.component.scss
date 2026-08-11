@@ -161,23 +161,6 @@
   }
 }
 
-.nav-back-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  text-decoration: none;
-  
-  &:hover {
-    text-decoration: underline;
-  }
-}
-
-.btn-icon {
-  width: 16px;
-  height: 16px;
-  /* Visually center the icon with the Cinzel font which has a lower visual baseline */
-  transform: translateY(-0.5px);
-}
 
 .error-state {
   text-align: center;
