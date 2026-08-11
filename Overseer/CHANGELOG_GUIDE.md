@@ -82,6 +82,7 @@ The changelog link in the chat sidebar displays a yellow star animation when a n
 4. Each item in `changes` must have a `type` and `text`.
 5. A single release can mix different types (e.g., one feature and two fixes).
 6. Validate that the file is valid JSON before committing.
+7. After committing, create the release tag: `git tag overseer/vX.Y.Z` and push both the commit and tag: `git push` followed by `git push origin overseer/vX.Y.Z`.
 
 ### Example
 
@@ -122,18 +123,7 @@ The changelog link in the chat sidebar displays a yellow star animation when a n
 
 ## AI-Generated Changelogs
 
-### Using Local AI Agents
-You can use your local AI agent (like Antigravity) to automatically generate the changelog. The agent uses the `overseer_changelog` skill to fetch the git log, classify the commits, and correctly format and prepend the JSON entry.
-
-To do this, use the following prompt template in your chat with the AI agent:
-```text
-Generate a new changelog entry for Overseer version X.Y.Z.
-Use the overseer_changelog skill.
-```
-*(Replace `X.Y.Z` with your actual target version.)*
-
-### Using GitHub Actions
-Release notes can also be generated automatically via the GitHub Actions workflow **Draft Release Notes** (`generate-release-notes.yml`). This workflow reads the git commit history since the last tag and uses an AI model via an external API to produce a draft `release-notes.json` entry, which is submitted as a pull request for human review.
+For the full release process, including instructions on how to use AI (both Local AI Agents and GitHub Actions) to generate changelog entries automatically, please see the [Release Process Guide](RELEASING.md).
 
 ## Configuration
 

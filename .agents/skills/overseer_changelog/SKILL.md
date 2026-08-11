@@ -5,6 +5,9 @@ description: Instructions and guidelines for autonomously generating and appendi
 
 # Overseer Changelog Generation Guide
 
+> [!WARNING]
+> **CRITICAL PROHIBITION:** You must **never** create Git tags (`git tag`) or push to the repository (`git push`) yourself. Your job is only to generate the `release-notes.json` entry and remind the developer to perform the tagging and pushing (as described in Step 9).
+
 When instructed to add a new release notes entry to `Overseer/Data/release-notes.json`, follow this step-by-step procedure strictly to generate and insert the entry autonomously. This process bypasses the GitHub Actions script by utilizing your contextual reasoning to classify commits.
 
 ## Step 1: Determine the Version Number
@@ -97,3 +100,15 @@ Modify `Overseer/Data/release-notes.json` to insert your newly generated JSON ob
 ## Step 8: Validate the File
 
 After modifying the file, always re-read or parse it to ensure it is valid, well-formed JSON. If you introduced a syntax error, fix it immediately before notifying the user of success.
+
+## Step 9: Remind the Developer to Tag
+
+After successfully generating and validating the entry, output a final message reminding the developer that they must manually commit, tag, and push the release. Include the following explicit commands in your message:
+
+1. Commit the changes: `git commit -am "Add changelog entry for vX.Y.Z"`
+2. Create the release tag: `git tag overseer/vX.Y.Z` (Make sure to replace `X.Y.Z` with the actual version).
+3. Push both the commit and the tag:
+   `git push`
+   `git push origin overseer/vX.Y.Z`
+
+Do not execute these commands yourself. Only output them as instructions for the developer.
