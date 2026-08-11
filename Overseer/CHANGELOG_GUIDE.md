@@ -122,7 +122,18 @@ The changelog link in the chat sidebar displays a yellow star animation when a n
 
 ## AI-Generated Changelogs
 
-Release notes can also be generated automatically via the GitHub Actions workflow **Draft Release Notes** (`generate-release-notes.yml`). This workflow reads the git commit history since the last tag and uses an AI model to produce a draft `release-notes.json` entry, which is submitted as a pull request for human review.
+### Using Local AI Agents
+You can use your local AI agent (like Antigravity) to automatically generate the changelog. The agent uses the `overseer_changelog` skill to fetch the git log, classify the commits, and correctly format and prepend the JSON entry.
+
+To do this, use the following prompt template in your chat with the AI agent:
+```text
+Generate a new changelog entry for Overseer version X.Y.Z.
+Use the overseer_changelog skill.
+```
+*(Replace `X.Y.Z` with your actual target version.)*
+
+### Using GitHub Actions
+Release notes can also be generated automatically via the GitHub Actions workflow **Draft Release Notes** (`generate-release-notes.yml`). This workflow reads the git commit history since the last tag and uses an AI model via an external API to produce a draft `release-notes.json` entry, which is submitted as a pull request for human review.
 
 ## Configuration
 

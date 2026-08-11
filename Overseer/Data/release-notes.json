@@ -1,5 +1,20 @@
 [
   {
+    "version": "1.0.3",
+    "date": "2026-08-11",
+    "summary": "Various Improvements",
+    "changes": [
+      {
+        "type": "improvement",
+        "text": "Use a better theme color, when may be applied to the browser bar when accessing the Overseer on the web."
+      },
+      {
+        "type": "improvement",
+        "text": "Improve the changelog page with better styling and groupping of similar items."
+      }
+    ]
+  },
+  {
     "version": "1.0.2",
     "date": "2026-08-10",
     "summary": "Added Changelog Feature",

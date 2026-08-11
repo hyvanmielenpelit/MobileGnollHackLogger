@@ -104,9 +104,33 @@
   color: var(--text-color, #ddd);
 
   li {
+    position: relative;
+    /* Use hanging punctuation: align text with header, pull dash into margin */
+    margin-left: 24px;
     font-size: 1em;
-    line-height: 1.5;
-    margin-bottom: 8px;
+    line-height: 1.6;
+    margin-bottom: 16px;
+    color: rgba(255, 255, 255, 0.85);
+    text-wrap: pretty;
+    transition: color 0.2s ease;
+
+    &::before {
+      content: "—";
+      position: absolute;
+      left: -24px;
+      color: var(--title-color, #e0ba6d);
+      opacity: 0.5;
+      font-weight: bold;
+      transition: all 0.2s ease;
+    }
+
+    &:hover {
+      color: rgba(255, 255, 255, 1);
+      &::before {
+        opacity: 1;
+        text-shadow: 0 0 8px rgba(224, 186, 109, 0.4);
+      }
+    }
 
     &:last-child {
       margin-bottom: 0;
