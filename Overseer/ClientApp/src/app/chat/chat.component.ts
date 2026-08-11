@@ -1252,6 +1252,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.hasRealContent = false;
     this.streamingToolCalls = [];
     this.timeToFirstTokenMs = null;
+    this.lastSeenSeqNo = -1; // [NEW] Reset sequence tracker for new generation
 
     this.focusPromptInput();
 

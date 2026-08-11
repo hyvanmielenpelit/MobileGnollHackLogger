@@ -1,20 +1,8 @@
-.settings-container {
-  max-width: 600px;
-  margin: 20px auto;
-  max-height: calc(100dvh - 40px);
+:host {
   display: flex;
   flex-direction: column;
-  box-sizing: border-box;
+  flex: 1;
   overflow: hidden;
-}
-
-@media (max-width: 600px) {
-  .settings-container {
-    margin: 0;
-    height: 100dvh;
-    border-radius: 0;
-    border: none;
-  }
 }
 
 .changelog-body {
@@ -145,7 +133,8 @@
   margin-top: 0;
   padding: 20px 30px;
   border-top: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
-  background: rgba(17, 17, 17, 0.4);
+  background: var(--gh-panel-bg, #1a1a1a);
+  flex-shrink: 0;
 
   .pagination-info {
     font-size: 0.9em;

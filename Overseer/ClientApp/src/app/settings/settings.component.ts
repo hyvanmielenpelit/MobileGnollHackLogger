@@ -1,25 +1,33 @@
-import { Component, OnInit, inject, ViewChild, ElementRef, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject, ViewChild, ElementRef, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 
 import { FormsModule } from '@angular/forms';
 import { SettingsService, UserAiSettings, ApiModelDto } from '../services/settings.service';
 import { SystemService } from '../services/system.service';
+import { ChangelogService } from '../services/changelog.service';
 import { RouterModule } from '@angular/router';
+import { ChangelogComponent } from '../changelog/changelog.component';
 
 @Component({
     selector: 'app-settings',
-    imports: [FormsModule, RouterModule],
+    imports: [FormsModule, RouterModule, ChangelogComponent],
     styleUrl: './settings.component.scss',
     changeDetection: ChangeDetectionStrategy.Eager,
     templateUrl: './settings.component.html'
 })
-export class SettingsComponent implements OnInit {
+export class SettingsComponent implements OnInit, OnDestroy {
   settingsService = inject(SettingsService);
   systemService = inject(SystemService);
+  changelogService = inject(ChangelogService);
+  cdr = inject(ChangeDetectorRef);
   
   appVersion = '';
   
   @ViewChild('successToast') successToast!: ElementRef<HTMLElement>;
   @ViewChild('confirmDialog') confirmDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('changelogDialog') changelogDialog!: ElementRef<HTMLDialogElement>;
+
+  showChangelogBadge = false;
+  private changelogBadgeResetHandler!: () => void;
 
   spoilerFreeMode = true;
   initSpoilerFreeMode = true;
@@ -131,6 +139,11 @@ export class SettingsComponent implements OnInit {
   }
 
   ngOnInit() {
+    this.checkChangelogBadge();
+    
+    this.changelogBadgeResetHandler = () => this.checkChangelogBadge();
+    window.addEventListener('changelog_badge_reset', this.changelogBadgeResetHandler);
+
     if (!("popover" in HTMLElement.prototype)) {
       import("@oddbird/popover-polyfill").catch(err => console.warn('Failed to load popover polyfill', err));
     }
@@ -279,5 +292,57 @@ export class SettingsComponent implements OnInit {
       this.initMaxToolIterations = this.maxToolIterations;
       this.initRequestTimeout = this.requestTimeout;
     }, err => {});
+  }
+
+  checkChangelogBadge() {
+    this.changelogService.getReleaseNotes().subscribe({
+      next: (response) => {
+        if (response.notes && response.notes.length > 0) {
+          const latestVersion = response.notes[0].version;
+          this.showChangelogBadge = this.changelogService.hasNewMajorOrMinorVersion(latestVersion);
+          this.cdr.detectChanges();
+        }
+      },
+      error: (err) => console.error('Failed to check release notes for animation', err)
+    });
+  }
+
+  openChangelog() {
+    if (this.changelogDialog?.nativeElement) {
+      this.changelogDialog.nativeElement.showModal();
+    }
+  }
+
+  closeChangelogDialog(event: Event) {
+    event.stopPropagation();
+    event.preventDefault();
+    if (this.changelogDialog?.nativeElement) {
+      this.changelogDialog.nativeElement.close();
+    }
+  }
+
+  onChangelogDialogClose() {
+    this.checkChangelogBadge();
+  }
+
+  onChangelogDialogClick(event: MouseEvent) {
+    if (!('closedBy' in HTMLDialogElement.prototype)) {
+      const dialog = this.changelogDialog.nativeElement;
+      if (event.target !== dialog) return;
+      const rect = dialog.getBoundingClientRect();
+      const isInside = (
+        rect.top <= event.clientY &&
+        event.clientY <= rect.top + rect.height &&
+        rect.left <= event.clientX &&
+        event.clientX <= rect.left + rect.width
+      );
+      if (!isInside) {
+        dialog.close();
+      }
+    }
+  }
+
+  ngOnDestroy() {
+    window.removeEventListener('changelog_badge_reset', this.changelogBadgeResetHandler);
   }
 }

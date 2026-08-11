@@ -187,12 +187,20 @@
       <fieldset class="permissions-fieldset mt-20">
         <legend>Version</legend>
 
-        <div class="margin-y-20 mt-5 form-group-stacked">
+        <div class="margin-y-20 mt-5" style="display: flex; align-items: center; justify-content: space-between;">
           @if (appVersion) {
             <p style="margin: 0; font-weight: bold;">Overseer {{ appVersion }}</p>
           } @else {
             <p style="margin: 0; color: #aaa;">Loading...</p>
           }
+          <button type="button" class="btn-gh" (click)="openChangelog()" style="display: flex; align-items: center; gap: 8px;">
+            View Release Notes
+            @if (showChangelogBadge) {
+              <svg class="sparkle-icon" viewBox="0 0 24 24" fill="#FACC15" style="filter: drop-shadow(0 0 3px rgba(250,204,21,0.6)); width: 16px; height: 16px;">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+              </svg>
+            }
+          </button>
         </div>
       </fieldset>
 
@@ -221,4 +229,20 @@
       <button value="discard" class="btn-gh">Discard</button>
     </div>
   </form>
+</dialog>
+
+<!-- Changelog Dialog -->
+<dialog #changelogDialog class="gh-dialog changelog-dialog" closedby="any" (click)="onChangelogDialogClick($event)" (close)="onChangelogDialogClose()">
+  <div class="changelog-dialog-header">
+    <h3 style="margin: 0; color: var(--title-color, #e0ba6d);">Release Notes</h3>
+    <button type="button" class="btn-icon-action" aria-label="Close dialog" (click)="closeChangelogDialog($event)" title="Close">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 24px; height: 24px;">
+        <line x1="18" y1="6" x2="6" y2="18"></line>
+        <line x1="6" y1="6" x2="18" y2="18"></line>
+      </svg>
+    </button>
+  </div>
+  <div class="changelog-dialog-body">
+    <app-changelog></app-changelog>
+  </div>
 </dialog>

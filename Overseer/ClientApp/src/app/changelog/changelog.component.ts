@@ -9,7 +9,7 @@ import { RelativeTimePipe } from '../chat/relative-time.pipe';
 @Component({
   selector: 'app-changelog',
   standalone: true,
-  imports: [CommonModule, RouterModule, RelativeTimePipe],
+  imports: [CommonModule, RelativeTimePipe],
   templateUrl: './changelog.component.html',
   styleUrl: './changelog.component.scss'
 })
