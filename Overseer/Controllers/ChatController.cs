@@ -182,7 +182,7 @@ public class ChatController : ControllerBase
             OngoingGeneration = ongoing != null ? new {
                 events = ongoing.AccumulatedEvents
                     .Where(e => showDebugLog || e.Type != "debug")
-                    .Select(e => new { type = e.Type, data = e.Data }).ToList()
+                    .Select(e => new { type = e.Type, data = e.Data, seqNo = e.SeqNo }).ToList()
             } : null
         });
     }

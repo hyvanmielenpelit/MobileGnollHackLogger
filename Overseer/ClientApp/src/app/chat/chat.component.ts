@@ -163,6 +163,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   titleStatusText = '';
   lastSeenSeqNo: number = -1;
   private hasOngoingGeneration = false;
+  private isLoadingSession = false;
+  private liveEventBuffer: any[] = [];
   private handoffTimeoutHandle: any = null;
 
   maxAttachmentSize = 15728640; // default 15MB
@@ -837,7 +839,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
     this.hubConnection.on('ReceiveChatEvent', (evt: any) => {
       this.ngZone.run(() => {
-        this.processChatEvent(evt);
+        if (this.isLoadingSession) {
+          this.liveEventBuffer.push(evt);
+        } else {
+          this.processChatEvent(evt);
+        }
       });
     });
 
@@ -937,6 +943,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.titleStatusText = '';
     this.timeToFirstTokenMs = null;
     this.hasOngoingGeneration = false;
+    this.isLoadingSession = false;
+    this.liveEventBuffer = [];
     if (this.handoffTimeoutHandle) { clearTimeout(this.handoffTimeoutHandle); this.handoffTimeoutHandle = null; }
     this.loadDraft();
     this.applySavedModelPreference();
@@ -959,17 +967,19 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.isThinkingActive = false;
     this.timeToFirstTokenMs = null;
 
+    if (this.hubConnection?.state === signalR.HubConnectionState.Connected) {
+      if (this.currentSessionId && this.currentSessionId !== id) {
+        this.hubConnection.invoke("LeaveSession", this.currentSessionId).catch(console.error);
+      }
+      this.hubConnection.invoke("JoinSession", id).catch(console.error);
+    }
+    
+    this.currentSessionId = id;
+    this.isLoadingSession = true;
+    this.liveEventBuffer = [];
+
     this.sessionLoadSub = this.chatService.getSession(id).subscribe({
       next: (s) => {
-        if (this.hubConnection?.state === signalR.HubConnectionState.Connected) {
-          if (this.currentSessionId && this.currentSessionId !== id) {
-            this.hubConnection.invoke("LeaveSession", this.currentSessionId).catch(console.error);
-          }
-          this.hubConnection.invoke("JoinSession", id).catch(console.error);
-        }
-
-        this.currentSessionId = s.id;
-        
         if (s.isGnollHackSession) {
           this.chatService.hasGreeted = true;
         }
@@ -1010,6 +1020,15 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           this.debugService.log(`[Frontend] Replay complete. isStreaming=${this.isStreaming}, streamingMessage length=${this.streamingMessage.length}`);
         }
         
+        this.isLoadingSession = false;
+        if (this.liveEventBuffer.length > 0) {
+          this.debugService.log(`[Frontend] Flushing ${this.liveEventBuffer.length} buffered live events.`);
+          for (const evt of this.liveEventBuffer) {
+            this.processChatEvent(evt);
+          }
+        }
+        this.liveEventBuffer = [];
+
         // Safety timeout: if the "Consulting" overlay is still showing after 60s with no events, dismiss it
         if (this.handoffTimeoutHandle) { clearTimeout(this.handoffTimeoutHandle); this.handoffTimeoutHandle = null; }
         if (this.isHandoffWaiting) {
@@ -1032,6 +1051,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.focusPromptInput();
       },
       error: (err) => {
+        this.isLoadingSession = false;
+        this.liveEventBuffer = [];
         console.warn(`Failed to load session ${id}. Bouncing to new chat.`, err);
         this.navigateToNewSession();
       }
