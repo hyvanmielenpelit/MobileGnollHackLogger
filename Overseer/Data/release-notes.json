@@ -1,5 +1,20 @@
 [
   {
+    "version": "1.0.5",
+    "date": "2026-08-11",
+    "summary": "Fixes for chat message duplication and date parsing",
+    "changes": [
+      {
+        "type": "fix",
+        "text": "Resolved an issue where live chat messages could sometimes be duplicated or processed out of order."
+      },
+      {
+        "type": "fix",
+        "text": "Fixed a date parsing issue that caused relative times to display incorrectly for certain date formats."
+      }
+    ]
+  },
+  {
     "version": "1.0.4",
     "date": "2026-08-11",
     "summary": "Fixed a missing message chunk issue",
