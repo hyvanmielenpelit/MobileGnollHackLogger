@@ -6,7 +6,7 @@
     "changes": [
       {
         "type": "improvement",
-        "text": "Use a better theme color, when may be applied to the browser bar when accessing the Overseer on the web."
+        "text": "Use a better theme color for the browser bar. This color may be applied when accessing the Overseer via the web."
       },
       {
         "type": "improvement",
