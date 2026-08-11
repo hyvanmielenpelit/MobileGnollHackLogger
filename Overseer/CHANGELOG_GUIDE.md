@@ -52,7 +52,7 @@ Each object in the `changes` array describes a single user-facing change.
 |------|------|-------------|
 | `feature` | ⭐ Star | **Entirely new functionality** that did not exist before. |
 | `improvement` | 📄 Document | **Enhancement to an existing feature** — performance gains, UX polish, visual refinements. |
-| `fix` | 🐛 Bug | **Bug correction** — something was broken and is now fixed. |
+| `fix` | 🔧 Wrench | **Bug correction** — something was broken and is now fixed. |
 | `security` | 🛡️ Shield | **Security-related fix or hardening** — patching a vulnerability, adding input validation, etc. |
 
 > **Tip:** When in doubt between `feature` and `improvement`, ask: "Could a user have done this before?" If yes → `improvement`. If no → `feature`.
