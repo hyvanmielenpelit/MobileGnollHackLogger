@@ -8,15 +8,14 @@ This guide explains how to automatically generate release notes for the Overseer
 
 The agent utilizes the dedicated `overseer_changelog` AI skill to analyze local commits, classify changes, and format the JSON.
 
-1. **Push Changes**: Ensure all code changes for the new version are pushed to the `main` branch.
-2. **Prompt the AI**: In your local AI chat (e.g., Antigravity), use a prompt like:
+1. **Prompt the AI**: In your local AI chat (e.g., Antigravity), use a prompt like:
    `Generate a new changelog entry for Overseer version 1.0.3. Use the overseer_changelog skill.`
-3. **Review the JSON**: The AI will update `Overseer/Data/release-notes.json`. Verify the changes look correct.
-4. **Commit the Changes**: Commit the updated `release-notes.json` file.
+2. **Review the JSON**: The AI will update `Overseer/Data/release-notes.json`. Verify the changes look correct.
+3. **Commit the Changes**: Commit the updated `release-notes.json` file.
    `git commit -am "Add changelog entry for v1.0.3"`
-5. **Create Tag**: You MUST create a prefixed Git tag so the AI knows where to start for the *next* release.
+4. **Create Tag**: You MUST create a prefixed Git tag so the AI knows where to start for the *next* release.
    `git tag overseer/v1.0.3`
-6. **Push Everything**: 
+5. **Push Everything**: 
    - `git push`
    - `git push origin overseer/v1.0.3`
 
