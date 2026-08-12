@@ -225,7 +225,7 @@
     <div class="form-group flex-col">
       <label>Reasoning Summary</label>
       <select class="gh-input w-100" [(ngModel)]="pickerReasoningSummarySelect" (change)="onPickerReasoningSummaryChange()">
-        <option value="">None</option>
+        <option value="">{{ getReasoningSummaryDefaultLabel() }}</option>
         @if (selectedModelObj) {
           @for (level of selectedModelObj.supportedReasoningSummaries; track level) {
             <option [value]="level">

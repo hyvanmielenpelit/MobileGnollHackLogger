@@ -4,6 +4,7 @@
     "displayName": "Claude 4.6 Opus",
     "releaseDate": "2026-02-05",
     "thinkingLevels": ["low", "medium", "high", "max"],
+    "reasoningSummaries": ["summarized", "omitted"],
     "contextWindowSize": 1000000,
     "maxOutputTokens": 128000
   },
@@ -12,6 +13,7 @@
     "displayName": "Claude 4.6 Sonnet",
     "releaseDate": "2026-02-17",
     "thinkingLevels": ["low", "medium", "high", "max"],
+    "reasoningSummaries": ["summarized", "omitted"],
     "contextWindowSize": 1000000,
     "maxOutputTokens": 128000
   },
@@ -20,6 +22,7 @@
     "displayName": "Claude 4.7 Opus",
     "releaseDate": "2026-04-16",
     "thinkingLevels": ["low", "medium", "high", "max"],
+    "reasoningSummaries": ["summarized", "omitted"],
     "contextWindowSize": 1000000,
     "maxOutputTokens": 128000
   },
@@ -28,6 +31,7 @@
     "displayName": "Claude 4.8 Opus",
     "releaseDate": "2026-05-28",
     "thinkingLevels": ["low", "medium", "high", "max"],
+    "reasoningSummaries": ["summarized", "omitted"],
     "contextWindowSize": 1000000,
     "maxOutputTokens": 128000
   },
@@ -36,6 +40,7 @@
     "displayName": "Claude 5 Opus",
     "releaseDate": "2026-07-24",
     "thinkingLevels": ["low", "medium", "high", "max"],
+    "reasoningSummaries": ["summarized", "omitted"],
     "contextWindowSize": 1000000,
     "maxOutputTokens": 128000
   },
@@ -44,6 +49,7 @@
     "displayName": "Claude 5 Sonnet",
     "releaseDate": "2026-06-30",
     "thinkingLevels": ["low", "medium", "high", "max"],
+    "reasoningSummaries": ["summarized", "omitted"],
     "contextWindowSize": 1000000,
     "maxOutputTokens": 128000
   },
@@ -52,6 +58,7 @@
     "displayName": "Claude 5 Fable",
     "releaseDate": "2026-06-09",
     "thinkingLevels": ["low", "medium", "high", "max"],
+    "reasoningSummaries": ["summarized", "omitted"],
     "contextWindowSize": 1000000,
     "maxOutputTokens": 128000
   }

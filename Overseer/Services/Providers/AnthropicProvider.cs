@@ -64,7 +64,14 @@ public class AnthropicProvider : IAiProvider
 
         if (!string.IsNullOrEmpty(thinkingLevel))
         {
-            req["thinking"] = new { type = "adaptive" };
+            if (!string.IsNullOrEmpty(reasoningSummary) && reasoningSummary != "default")
+            {
+                req["thinking"] = new { type = "adaptive", display = reasoningSummary };
+            }
+            else
+            {
+                req["thinking"] = new { type = "adaptive" };
+            }
             req["output_config"] = new { effort = thinkingLevel };
         }
 

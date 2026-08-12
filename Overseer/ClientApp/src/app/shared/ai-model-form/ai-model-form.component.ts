@@ -413,4 +413,11 @@ export class AiModelFormComponent implements OnInit {
 
     this.save.emit(result);
   }
+
+  getReasoningSummaryDefaultLabel(): string {
+    if (this.provider === 'Anthropic') {
+      return 'Default (Full Thinking)';
+    }
+    return 'None';
+  }
 }
