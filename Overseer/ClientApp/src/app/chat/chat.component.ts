@@ -536,6 +536,13 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           this.debugService.log(`[Overseer] Re-entered chat window from ${previousUrl}. Refetching settings and models.`);
           this.loadSettings(false);
           this.checkChangelogAnimation();
+          
+          // Re-join SignalR group in case connection was silently reset during navigation
+          if (this.currentSessionId && this.hubConnection?.state === signalR.HubConnectionState.Connected) {
+            this.hubConnection.invoke("JoinSession", this.currentSessionId).catch(err => {
+              this.debugService.log(`[Frontend] Re-join after route re-entry failed: ${err}`);
+            });
+          }
         }
       }
       previousUrl = currentUrl || '';
@@ -857,6 +864,27 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           this.processChatEvent(evt);
         }
       });
+    });
+
+    this.hubConnection.onreconnecting((error) => {
+      this.debugService.log(`[Frontend] SignalR reconnecting... Error: ${error?.message ?? 'none'}`);
+    });
+
+    this.hubConnection.onreconnected(async (connectionId) => {
+      this.debugService.log(`[Frontend] SignalR reconnected with connectionId=${connectionId}. Re-joining session ${this.currentSessionId}.`);
+      if (this.currentSessionId) {
+        try {
+          await this.hubConnection!.invoke("JoinSession", this.currentSessionId);
+          this.debugService.log(`[Frontend] Re-joined session ${this.currentSessionId} after reconnect.`);
+        } catch (err) {
+          this.debugService.log(`[Frontend] Failed to re-join session ${this.currentSessionId} after reconnect: ${err}`);
+          console.error('JoinSession after reconnect failed:', err);
+        }
+      }
+    });
+
+    this.hubConnection.onclose((error) => {
+      this.debugService.log(`[Frontend] SignalR connection closed. Error: ${error?.message ?? 'none'}`);
     });
 
     this.hubStartPromise = this.hubConnection.start();
@@ -1300,6 +1328,16 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           sId = selectedModelObj.id;
         } else {
           uId = selectedModelObj.id;
+        }
+      }
+
+      // Ensure SignalR group membership before sending — guards against silent reconnects
+      if (this.currentSessionId && this.hubConnection?.state === signalR.HubConnectionState.Connected) {
+        try {
+          await this.hubConnection.invoke("JoinSession", this.currentSessionId);
+          this.debugService.log(`[Frontend] sendMessage: Pre-send JoinSession(${this.currentSessionId}) succeeded.`);
+        } catch (err) {
+          this.debugService.log(`[Frontend] sendMessage: Pre-send JoinSession(${this.currentSessionId}) failed: ${err}`);
         }
       }
 
