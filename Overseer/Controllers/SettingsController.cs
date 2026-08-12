@@ -355,12 +355,7 @@ public class SettingsController : ControllerBase
             var client = _httpClientFactory.CreateClient();
             var models = new List<ApiModelDto>();
 
-            var cutoffStr = _configuration["ModelCutoffDate"] ?? "2026-01-01";
-            long cutoffTimestamp = 0;
-            if (DateTimeOffset.TryParse(cutoffStr, out var cutoffDto))
-            {
-                cutoffTimestamp = cutoffDto.ToUnixTimeSeconds();
-            }
+
 
             if (provider == "OpenAI")
             {
@@ -379,27 +374,21 @@ public class SettingsController : ControllerBase
                         if (modelElement.TryGetProperty("id", out var idElement))
                         {
                             var name = idElement.GetString() ?? "";
-                            if (name.StartsWith("gpt-") || name.StartsWith("chatgpt-") || name.StartsWith("o1-") || name.StartsWith("o3-"))
+                            if (!_modelMetadataService.IsWhitelisted(provider, name))
+                                continue;
+
+                            var meta = _modelMetadataService.GetMetadata(provider, name);
+                            long created = 0;
+                            if (!string.IsNullOrEmpty(meta.ReleaseDate) && DateTimeOffset.TryParse(meta.ReleaseDate, out var dto))
                             {
-                                // Specifically exclude audio/tts/dall-e if they ever accidentally get prefixed
-                                if (!name.Contains("audio") && !name.Contains("realtime"))
-                                {
-                                    var meta = _modelMetadataService.GetMetadata(provider, name);
-                                    long created = 0;
-                                    if (!string.IsNullOrEmpty(meta.ReleaseDate) && DateTimeOffset.TryParse(meta.ReleaseDate, out var dto))
-                                    {
-                                        created = dto.ToUnixTimeSeconds();
-                                    }
-                                    else if (modelElement.TryGetProperty("created", out var createdElement) && createdElement.ValueKind == JsonValueKind.Number)
-                                    {
-                                        created = createdElement.GetInt64();
-                                    }
-                                    if (created == 0 || created >= cutoffTimestamp)
-                                    {
-                                        models.Add(new ApiModelDto { Id = name, DisplayName = meta.DisplayName, CreatedAt = created, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels, SupportedReasoningModes = meta.SupportedReasoningModes, SupportedReasoningSummaries = meta.SupportedReasoningSummaries, ContextWindowSize = meta.ContextWindowSize, MaxInputTokens = meta.MaxInputTokens, MaxOutputTokens = meta.MaxOutputTokens });
-                                    }
-                                }
+                                created = dto.ToUnixTimeSeconds();
                             }
+                            else if (modelElement.TryGetProperty("created", out var createdElement) && createdElement.ValueKind == JsonValueKind.Number)
+                            {
+                                created = createdElement.GetInt64();
+                            }
+                            
+                            models.Add(new ApiModelDto { Id = name, DisplayName = meta.DisplayName, CreatedAt = created, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels, SupportedReasoningModes = meta.SupportedReasoningModes, SupportedReasoningSummaries = meta.SupportedReasoningSummaries, ContextWindowSize = meta.ContextWindowSize, MaxInputTokens = meta.MaxInputTokens, MaxOutputTokens = meta.MaxOutputTokens });
                         }
                     }
                 }
@@ -422,27 +411,25 @@ public class SettingsController : ControllerBase
                         if (modelElement.TryGetProperty("id", out var idElement))
                         {
                             var name = idElement.GetString() ?? "";
-                            if (name.StartsWith("claude-"))
+                            if (!_modelMetadataService.IsWhitelisted(provider, name))
+                                continue;
+
+                            var meta = _modelMetadataService.GetMetadata(provider, name);
+                            long created = 0;
+                            if (!string.IsNullOrEmpty(meta.ReleaseDate) && DateTimeOffset.TryParse(meta.ReleaseDate, out var dtoDate))
                             {
-                                var meta = _modelMetadataService.GetMetadata(provider, name);
-                                long created = 0;
-                                if (!string.IsNullOrEmpty(meta.ReleaseDate) && DateTimeOffset.TryParse(meta.ReleaseDate, out var dtoDate))
+                                created = dtoDate.ToUnixTimeSeconds();
+                            }
+                            else if (modelElement.TryGetProperty("created_at", out var createdElement))
+                            {
+                                var dateStr = createdElement.GetString();
+                                if (!string.IsNullOrEmpty(dateStr) && DateTimeOffset.TryParse(dateStr, out var dto))
                                 {
-                                    created = dtoDate.ToUnixTimeSeconds();
-                                }
-                                else if (modelElement.TryGetProperty("created_at", out var createdElement))
-                                {
-                                    var dateStr = createdElement.GetString();
-                                    if (!string.IsNullOrEmpty(dateStr) && DateTimeOffset.TryParse(dateStr, out var dto))
-                                    {
-                                        created = dto.ToUnixTimeSeconds();
-                                    }
-                                }
-                                if (created == 0 || created >= cutoffTimestamp)
-                                {
-                                    models.Add(new ApiModelDto { Id = name, DisplayName = meta.DisplayName, CreatedAt = created, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels, SupportedReasoningModes = meta.SupportedReasoningModes, SupportedReasoningSummaries = meta.SupportedReasoningSummaries, ContextWindowSize = meta.ContextWindowSize, MaxInputTokens = meta.MaxInputTokens, MaxOutputTokens = meta.MaxOutputTokens });
+                                    created = dto.ToUnixTimeSeconds();
                                 }
                             }
+                            
+                            models.Add(new ApiModelDto { Id = name, DisplayName = meta.DisplayName, CreatedAt = created, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels, SupportedReasoningModes = meta.SupportedReasoningModes, SupportedReasoningSummaries = meta.SupportedReasoningSummaries, ContextWindowSize = meta.ContextWindowSize, MaxInputTokens = meta.MaxInputTokens, MaxOutputTokens = meta.MaxOutputTokens });
                         }
                     }
                 }
@@ -465,23 +452,17 @@ public class SettingsController : ControllerBase
                             var name = idElement.GetString() ?? "";
                             if (name.StartsWith("models/")) name = name.Substring(7);
                             
-                            // Keep gemini models, exclude embedding, aqa, tunedModels unless they are gemini
-                            if (name.StartsWith("gemini-") || name.StartsWith("learnlm-"))
+                            if (!_modelMetadataService.IsWhitelisted(provider, name))
+                                continue;
+
+                            var meta = _modelMetadataService.GetMetadata(provider, name);
+                            long created = 0;
+                            if (!string.IsNullOrEmpty(meta.ReleaseDate) && DateTimeOffset.TryParse(meta.ReleaseDate, out var dto))
                             {
-                                if (!name.Contains("embedding") && !name.Contains("robotics") && !name.Contains("omni") && !name.EndsWith("-latest"))
-                                {
-                                    var meta = _modelMetadataService.GetMetadata(provider, name);
-                                    long created = 0;
-                                    if (!string.IsNullOrEmpty(meta.ReleaseDate) && DateTimeOffset.TryParse(meta.ReleaseDate, out var dto))
-                                    {
-                                        created = dto.ToUnixTimeSeconds();
-                                    }
-                                    if (created == 0 || created >= cutoffTimestamp)
-                                    {
-                                        models.Add(new ApiModelDto { Id = name, DisplayName = meta.DisplayName, CreatedAt = created, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels, SupportedReasoningModes = meta.SupportedReasoningModes, SupportedReasoningSummaries = meta.SupportedReasoningSummaries, ContextWindowSize = meta.ContextWindowSize, MaxInputTokens = meta.MaxInputTokens, MaxOutputTokens = meta.MaxOutputTokens });
-                                    }
-                                }
+                                created = dto.ToUnixTimeSeconds();
                             }
+                            
+                            models.Add(new ApiModelDto { Id = name, DisplayName = meta.DisplayName, CreatedAt = created, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels, SupportedReasoningModes = meta.SupportedReasoningModes, SupportedReasoningSummaries = meta.SupportedReasoningSummaries, ContextWindowSize = meta.ContextWindowSize, MaxInputTokens = meta.MaxInputTokens, MaxOutputTokens = meta.MaxOutputTokens });
                         }
                     }
                 }

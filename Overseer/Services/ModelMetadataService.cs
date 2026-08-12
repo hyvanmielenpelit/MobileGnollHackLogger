@@ -46,6 +46,50 @@ public class ModelMetadataService
         }
     }
 
+    public bool IsWhitelisted(string provider, string modelId)
+    {
+        if (string.IsNullOrEmpty(provider) || string.IsNullOrEmpty(modelId))
+            return false;
+
+        if (!_providerCatalogs.TryGetValue(provider, out var catalogEntries))
+            return false;
+
+        foreach (var entry in catalogEntries)
+        {
+            if (entry.Prefixes == null) continue;
+            foreach (var prefix in entry.Prefixes)
+            {
+                if (modelId.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    var suffix = modelId.Substring(prefix.Length);
+                    if (IsVersionSuffix(suffix))
+                        return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static bool IsVersionSuffix(string suffix)
+    {
+        if (suffix.Length == 0)
+            return true; /* exact match */
+
+        if (suffix[0] != '-')
+            return false;
+
+        if (suffix.Length == 1)
+            return false; /* lone hyphen */
+
+        for (int i = 1; i < suffix.Length; i++)
+        {
+            char c = suffix[i];
+            if (!char.IsDigit(c) && c != '-' && c != '.')
+                return false;
+        }
+        return true;
+    }
+
     public ModelMetadata GetMetadata(string provider, string modelId)
     {
         var metadata = new ModelMetadata
