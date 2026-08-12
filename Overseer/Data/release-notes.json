@@ -1,5 +1,16 @@
 [
   {
+    "version": "1.0.9",
+    "date": "2026-08-13",
+    "summary": "Fixed an issue with the media picker on iOS.",
+    "changes": [
+      {
+        "type": "fix",
+        "text": "Fixed an issue with the media picker on iOS showing a Take Photo option that crashed GnollHack if clicked."
+      }
+    ]
+  },
+  {
     "version": "1.0.8",
     "date": "2026-08-12",
     "summary": "Various UI improvements and a fix for reconnection issues.",
