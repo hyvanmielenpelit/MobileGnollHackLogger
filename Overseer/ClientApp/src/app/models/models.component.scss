@@ -36,15 +36,6 @@
 }
 
 .model-details {
-  .detail-label {
-    font-weight: 500;
-    margin-right: 4px;
-    
-    &.thinking {
-      margin-left: 15px;
-      color: #7dd3fc;
-    }
-  }
 }
 .empty-state {
   text-align: center;
@@ -133,17 +124,11 @@
   white-space: nowrap;
 }
 
-.ml-0 {
-  margin-left: 0 !important;
-}
 
 .ml-8 {
   margin-left: 8px;
 }
 
-.mb-4 {
-  margin-bottom: 4px;
-}
 
 .title-gen-section {
   margin: 30px 30px;

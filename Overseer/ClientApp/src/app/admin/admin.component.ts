@@ -675,8 +675,18 @@ export class AdminComponent implements OnInit, OnDestroy {
     return level.charAt(0).toUpperCase() + level.slice(1);
   }
 
-  formatReasoningSummary(level: string | null | undefined): string {
-    if (!level) return 'None';
+  formatReasoningMode(level: string | null | undefined): string {
+    if (!level) return 'Default';
+    return level.charAt(0).toUpperCase() + level.slice(1);
+  }
+
+  formatReasoningSummary(level: string | null | undefined, provider: string): string {
+    if (!level) {
+      if (provider === 'Anthropic') {
+        return 'Default';
+      }
+      return 'None';
+    }
     return level.charAt(0).toUpperCase() + level.slice(1);
   }
 

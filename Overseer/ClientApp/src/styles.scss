@@ -894,3 +894,21 @@ input[type="number"] {
   margin-bottom: 0;
   letter-spacing: 0.03em;
 }
+
+.detail-label {
+  font-weight: 500;
+  margin-right: 4px;
+
+  &.thinking {
+    margin-left: 15px;
+    color: #7dd3fc;
+  }
+}
+
+.ml-0 {
+  margin-left: 0 !important;
+}
+
+.mb-4 {
+  margin-bottom: 4px;
+}

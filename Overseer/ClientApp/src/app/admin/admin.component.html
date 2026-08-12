@@ -210,20 +210,16 @@
                           </span>
                         </div>
                         @if (config.thinkingLevel) {
-                          <div style="margin-top: 8px;">
+                          <div>
                             <span class="detail-label thinking ml-0">Thinking Level:</span> {{ formatLevel(config.thinkingLevel) }}
                           </div>
                         }
-                        @if (config.reasoningMode) {
-                          <div style="margin-top: 4px;">
-                            <span class="detail-label thinking ml-0">Reasoning Mode:</span> {{ formatLevel(config.reasoningMode) }}
-                          </div>
-                        }
-                        @if (config.reasoningSummary) {
-                          <div>
-                            <span class="detail-label thinking ml-0">Reasoning Summary:</span> {{ formatReasoningSummary(config.reasoningSummary) }}
-                          </div>
-                        }
+                        <div>
+                          <span class="detail-label thinking ml-0">Reasoning Mode:</span> {{ formatReasoningMode(config.reasoningMode) }}
+                        </div>
+                        <div>
+                          <span class="detail-label thinking ml-0">Reasoning Summary:</span> {{ formatReasoningSummary(config.reasoningSummary, config.provider) }}
+                        </div>
                         @if (config.maxInputTokens || config.maxOutputTokens) {
                           <div style="font-size: 0.85em; margin-top: 4px; color: var(--gh-text-secondary);">
                             @if (config.maxInputTokens) {

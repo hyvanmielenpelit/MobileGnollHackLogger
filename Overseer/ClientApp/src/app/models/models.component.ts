@@ -433,8 +433,13 @@ export class ModelsComponent implements OnInit {
     return level.charAt(0).toUpperCase() + level.slice(1);
   }
 
-  formatReasoningSummary(level: string | null | undefined): string {
-    if (!level) return 'None';
+  formatReasoningSummary(level: string | null | undefined, provider?: string): string {
+    if (!level) {
+      if (provider === 'Anthropic') {
+        return 'Default';
+      }
+      return 'None';
+    }
     return level.charAt(0).toUpperCase() + level.slice(1);
   }
 
