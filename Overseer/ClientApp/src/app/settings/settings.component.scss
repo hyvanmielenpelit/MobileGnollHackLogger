@@ -108,6 +108,14 @@ label { display: block; margin-bottom: 5px; font-weight: bold; }
   align-items: center;
   gap: 10px;
   cursor: pointer;
+
+  input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    accent-color: var(--primary-color, #d4af37);
+    cursor: pointer;
+  }
 }
 
 .tier-badge {
