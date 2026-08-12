@@ -47,6 +47,58 @@ When creating UI elements in the Overseer frontend, adhere to the following stan
 - **Use SVGs exclusively**: DO NOT use Unicode emojis (e.g., ✨, 🐛, 🚀) for UI elements or icons. They are notoriously difficult to align correctly, render inconsistently across operating systems, and look unprofessional.
 - Always use precise `<svg>` icons configured with `fill="currentColor"` so they seamlessly match the surrounding text color and align perfectly using Flexbox (`display: flex; align-items: center`).
 
+## Project Structure and Navigation
+
+The Overseer project is an ASP.NET Core backend serving an Angular frontend.
+- **Frontend (Angular)**: Located in `Overseer/ClientApp/src/app/`. Contains all components, services, and routes.
+- **Backend (ASP.NET Core)**: 
+  - `Overseer/Controllers/`: API Endpoints
+  - `Overseer/Hubs/`: SignalR Hubs (e.g., for real-time chat)
+  - `Overseer/Services/`: Backend business logic
+  - `Overseer/Models/`: Data Models
+
+### Pages (Routes)
+The Angular application's routes are defined in `app.routes.ts`. The primary pages include:
+- `/chat` (`chat.component`): The main chat interface.
+- `/settings` (`settings.component`): User preferences.
+- `/api-keys` (`api-keys.component`): Management of user API keys.
+- `/models` (`models.component`): AI Model selection and configuration.
+- `/admin` (`admin.component`): System administration (groups, configs, rate limits).
+- `/debug-log` (`debug-log.component`): Developer debug logs.
+- `/login` (`login.component`): Authentication entry point.
+
+### Popups (`<dialog>` elements)
+To find specific popups, look in the corresponding component's `.html` template:
+
+- **Admin Component (`admin.component.html`)**
+  - `#manageGroupsDialog`: Manage Groups
+  - `#createGroupDialog`: Create Group
+  - `#configDialog`: Config
+  - `#confirmDialog`: Confirm
+  - `#manageUserConfigsDialog`: Manage User Configs
+  - `#manageGroupConfigsDialog`: Manage Group Configs
+  - `#editConfigOverrideDialog`: Edit Config Override
+  - `#rateLimitsDialog`: Rate Limits
+  - `#analyticsDialog`: Analytics
+
+- **API Keys Component (`api-keys.component.html`)**
+  - `#apiKeyInfoDialog`: API Key Info
+
+- **Chat Component (`chat.component.html`)**
+  - `#deleteConfirmDialog`: Delete Confirm
+  - `#imagePreviewDialog`: Image Preview
+  - `#reportConfirmDialog`: Report Confirm
+  - `#logoutDialog`: Logout
+
+- **Models Component (`models.component.html`)**
+  - `#modelPickerDialog`: Model Picker
+  - `#editModelDialog`: Edit Model
+  - `#deleteModelConfirmDialog`: Delete Model Confirm
+
+- **Settings Component (`settings.component.html`)**
+  - `#confirmDialog`: Confirm
+  - `#changelogDialog`: Changelog
+
 ## Component Reuse and State Management
 
 The Overseer frontend utilizes a custom `RouteReuseStrategy` (indicated by `data: { reuse: true }` in `app.routes.ts`) for primary views like the `ChatComponent`. This prevents the component from being destroyed when navigating away, ensuring chat history and UI state are preserved.

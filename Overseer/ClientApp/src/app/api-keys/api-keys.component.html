@@ -3,18 +3,19 @@
     <h2>API Keys</h2>
     <a routerLink="/chat" queryParamsHandling="preserve" class="nav-back-link">&larr; Back</a>
   </div>
-  <p class="settings-description">
-    Manage your API keys for different AI providers. Keys are encrypted before being stored in the database.
-  </p>
+  <div class="api-keys-scroll-area">
+    <p class="settings-description" style="padding: 0; margin-top: 0;">
+      Manage your API keys for different AI providers. Keys are encrypted before being stored in the database.
+    </p>
 
-  @if (loading) {
-    <div class="loading-state">
-      <span class="sidebar-spinner"></span> Loading API Keys...
-    </div>
-  }
+    @if (loading) {
+      <div class="loading-state">
+        <span class="sidebar-spinner"></span> Loading API Keys...
+      </div>
+    }
 
-  @if (!loading) {
-    <div class="api-keys-list">
+    @if (!loading) {
+      <div class="api-keys-list">
       @for (provider of providers; track provider) {
         <div class="provider-card">
           <div class="provider-header">
@@ -97,4 +98,5 @@
       }
     </div>
   }
+  </div>
 </div>
