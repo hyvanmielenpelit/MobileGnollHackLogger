@@ -371,7 +371,9 @@ export class ModelsComponent implements OnInit {
       formData.provider, 
       formData.modelId, 
       formData.displayName, 
-      formData.thinkingLevel || undefined, 
+      formData.thinkingLevel || undefined,
+      formData.reasoningMode || undefined,
+      formData.reasoningSummary || undefined,
       formData.maxInputTokens, 
       formData.maxOutputTokens
     ).subscribe({
@@ -407,6 +409,8 @@ export class ModelsComponent implements OnInit {
         this.editingModel.id, 
         formData.displayName, 
         formData.thinkingLevel || undefined, 
+        formData.reasoningMode || undefined,
+        formData.reasoningSummary || undefined,
         formData.maxInputTokens, 
         formData.maxOutputTokens
       ).subscribe({

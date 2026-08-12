@@ -33,7 +33,9 @@ public class OpenAiProvider : IAiProvider
         List<object> messageHistory,
         int? maxOutputTokens,
         string? thinkingLevel,
-        ToolsForRequest requestTools)
+        ToolsForRequest requestTools,
+        string? reasoningMode = null,
+        string? reasoningSummary = null)
     {
         var req = new Dictionary<string, object>
         {

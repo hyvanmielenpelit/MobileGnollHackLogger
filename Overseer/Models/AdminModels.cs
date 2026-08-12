@@ -36,6 +36,8 @@ public class SystemAiApiConfigurationDto
     public string Provider { get; set; } = string.Empty;
     public string ModelId { get; set; } = string.Empty;
     public string? ThinkingLevel { get; set; }
+    public string? ReasoningMode { get; set; }
+    public string? ReasoningSummary { get; set; }
     public int? MaxInputTokens { get; set; }
     public int? MaxOutputTokens { get; set; }
     public int OrderIndex { get; set; }
@@ -76,6 +78,8 @@ public class CreateSystemAiApiConfigurationRequest
     public string Provider { get; set; } = string.Empty;
     public string ModelId { get; set; } = string.Empty;
     public string? ThinkingLevel { get; set; }
+    public string? ReasoningMode { get; set; }
+    public string? ReasoningSummary { get; set; }
     public int? MaxInputTokens { get; set; }
     public int? MaxOutputTokens { get; set; }
     public bool IsEnabled { get; set; }

@@ -30,6 +30,8 @@ export interface ApiModelDto {
   createdAt: number;
   description: string;
   supportedThinkingLevels: string[];
+  supportedReasoningModes: string[];
+  supportedReasoningSummaries: string[];
   contextWindowSize: number;
   maxInputTokens: number;
   maxOutputTokens: number;
@@ -44,6 +46,8 @@ export interface UserAiModel {
   modelId: string;
   displayName?: string;
   thinkingLevel?: string;
+  reasoningMode?: string;
+  reasoningSummary?: string;
   orderIndex?: number;
   maxInputTokens?: number | null;
   maxOutputTokens?: number | null;
@@ -121,12 +125,12 @@ export class SettingsService {
     });
   }
 
-  addUserModel(provider: string, modelId: string, displayName?: string, thinkingLevel?: string, maxInputTokens?: number | null, maxOutputTokens?: number | null) {
-    return this.http.post<{ id: number }>('/api/settings/usermodels', { provider, modelId, displayName, thinkingLevel, maxInputTokens, maxOutputTokens });
+  addUserModel(provider: string, modelId: string, displayName?: string, thinkingLevel?: string, reasoningMode?: string, reasoningSummary?: string, maxInputTokens?: number | null, maxOutputTokens?: number | null) {
+    return this.http.post<{ id: number }>('/api/settings/usermodels', { provider, modelId, displayName, thinkingLevel, reasoningMode, reasoningSummary, maxInputTokens, maxOutputTokens });
   }
 
-  updateUserModel(id: number, displayName?: string, thinkingLevel?: string, maxInputTokens?: number | null, maxOutputTokens?: number | null) {
-    return this.http.put(`/api/settings/usermodels/${id}`, { displayName, thinkingLevel, maxInputTokens, maxOutputTokens });
+  updateUserModel(id: number, displayName?: string, thinkingLevel?: string, reasoningMode?: string, reasoningSummary?: string, maxInputTokens?: number | null, maxOutputTokens?: number | null) {
+    return this.http.put(`/api/settings/usermodels/${id}`, { displayName, thinkingLevel, reasoningMode, reasoningSummary, maxInputTokens, maxOutputTokens });
   }
 
   deleteUserModel(id: number) {

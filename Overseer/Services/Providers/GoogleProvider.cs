@@ -40,7 +40,9 @@ public class GoogleProvider : IAiProvider
         List<object> messageHistory,
         int? maxOutputTokens,
         string? thinkingLevel,
-        ToolsForRequest requestTools)
+        ToolsForRequest requestTools,
+        string? reasoningMode = null,
+        string? reasoningSummary = null)
     {
         var (systemParts, contents) = ExtractSystemAndContents(messageHistory);
 

@@ -20,6 +20,12 @@ public class SystemAiApiConfiguration : IRateLimitedEntity
     [MaxLength(32)]
     public string? ThinkingLevel { get; set; }
 
+    [MaxLength(32)]
+    public string? ReasoningMode { get; set; }
+
+    [MaxLength(32)]
+    public string? ReasoningSummary { get; set; }
+
     public int? MaxInputTokens { get; set; }
     public int? MaxOutputTokens { get; set; }
 

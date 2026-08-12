@@ -33,7 +33,9 @@ public class OpenAiResponsesProvider : IAiProvider
         List<object> messageHistory,
         int? maxOutputTokens,
         string? thinkingLevel,
-        ToolsForRequest requestTools)
+        ToolsForRequest requestTools,
+        string? reasoningMode = null,
+        string? reasoningSummary = null)
     {
         // Extract system message
         string systemContent = "";
@@ -84,7 +86,17 @@ public class OpenAiResponsesProvider : IAiProvider
             req["max_output_tokens"] = maxOutputTokens.Value;
         }
 
-        if (!string.IsNullOrEmpty(thinkingLevel))
+        if (!string.IsNullOrEmpty(reasoningMode) && reasoningMode != "none")
+        {
+            var reasoningObj = new Dictionary<string, string>();
+            reasoningObj["mode"] = reasoningMode;
+            if (!string.IsNullOrEmpty(reasoningSummary) && reasoningSummary != "auto")
+            {
+                reasoningObj["summary"] = reasoningSummary;
+            }
+            req["reasoning"] = reasoningObj;
+        }
+        else if (!string.IsNullOrEmpty(thinkingLevel))
         {
             req["reasoning"] = new 
             {

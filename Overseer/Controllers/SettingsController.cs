@@ -212,6 +212,8 @@ public class SettingsController : ControllerBase
             OrderIndex = m.OrderIndex,
             MaxInputTokens = (int?)m.MaxInputTokens,
             MaxOutputTokens = (int?)m.MaxOutputTokens,
+            ReasoningMode = m.ReasoningMode,
+            ReasoningSummary = m.ReasoningSummary,
             IsSystem = false,
             ModelRole = 3
         }).ToList();
@@ -226,6 +228,8 @@ public class SettingsController : ControllerBase
             OrderIndex = x.Config.OrderIndex,
             MaxInputTokens = (int?)x.Config.MaxInputTokens,
             MaxOutputTokens = (int?)x.Config.MaxOutputTokens,
+            ReasoningMode = x.Config.ReasoningMode,
+            ReasoningSummary = x.Config.ReasoningSummary,
             IsSystem = true,
             ModelRole = x.ResolvedRole
         });
@@ -248,6 +252,8 @@ public class SettingsController : ControllerBase
             ModelId = request.ModelId,
             DisplayName = request.DisplayName,
             ThinkingLevel = request.ThinkingLevel,
+            ReasoningMode = request.ReasoningMode,
+            ReasoningSummary = request.ReasoningSummary,
             MaxInputTokens = request.MaxInputTokens,
             MaxOutputTokens = request.MaxOutputTokens
         };
@@ -261,7 +267,16 @@ public class SettingsController : ControllerBase
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (userId == null) return Unauthorized();
 
-        await _settingsService.UpdateUserModelAsync(userId, id, request.DisplayName, request.ThinkingLevel, request.MaxInputTokens, request.MaxOutputTokens);
+        await _settingsService.UpdateUserModelAsync(
+            userId,
+            id,
+            request.DisplayName,
+            request.ThinkingLevel,
+            request.ReasoningMode,
+            request.ReasoningSummary,
+            request.MaxInputTokens,
+            request.MaxOutputTokens
+        );
         return Ok();
     }
 
@@ -381,7 +396,7 @@ public class SettingsController : ControllerBase
                                     }
                                     if (created == 0 || created >= cutoffTimestamp)
                                     {
-                                        models.Add(new ApiModelDto { Id = name, CreatedAt = created, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels, ContextWindowSize = meta.ContextWindowSize, MaxInputTokens = meta.MaxInputTokens, MaxOutputTokens = meta.MaxOutputTokens });
+                                        models.Add(new ApiModelDto { Id = name, CreatedAt = created, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels, SupportedReasoningModes = meta.SupportedReasoningModes, SupportedReasoningSummaries = meta.SupportedReasoningSummaries, ContextWindowSize = meta.ContextWindowSize, MaxInputTokens = meta.MaxInputTokens, MaxOutputTokens = meta.MaxOutputTokens });
                                     }
                                 }
                             }
@@ -425,7 +440,7 @@ public class SettingsController : ControllerBase
                                 }
                                 if (created == 0 || created >= cutoffTimestamp)
                                 {
-                                    models.Add(new ApiModelDto { Id = name, CreatedAt = created, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels, ContextWindowSize = meta.ContextWindowSize, MaxInputTokens = meta.MaxInputTokens, MaxOutputTokens = meta.MaxOutputTokens });
+                                    models.Add(new ApiModelDto { Id = name, CreatedAt = created, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels, SupportedReasoningModes = meta.SupportedReasoningModes, SupportedReasoningSummaries = meta.SupportedReasoningSummaries, ContextWindowSize = meta.ContextWindowSize, MaxInputTokens = meta.MaxInputTokens, MaxOutputTokens = meta.MaxOutputTokens });
                                 }
                             }
                         }
@@ -463,7 +478,7 @@ public class SettingsController : ControllerBase
                                     }
                                     if (created == 0 || created >= cutoffTimestamp)
                                     {
-                                        models.Add(new ApiModelDto { Id = name, CreatedAt = created, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels, ContextWindowSize = meta.ContextWindowSize, MaxInputTokens = meta.MaxInputTokens, MaxOutputTokens = meta.MaxOutputTokens });
+                                        models.Add(new ApiModelDto { Id = name, CreatedAt = created, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels, SupportedReasoningModes = meta.SupportedReasoningModes, SupportedReasoningSummaries = meta.SupportedReasoningSummaries, ContextWindowSize = meta.ContextWindowSize, MaxInputTokens = meta.MaxInputTokens, MaxOutputTokens = meta.MaxOutputTokens });
                                     }
                                 }
                             }
@@ -504,7 +519,9 @@ public class ApiModelDto
     public string Id { get; set; } = string.Empty;
     public long CreatedAt { get; set; }
     public string Description { get; set; } = string.Empty;
-    public List<string> SupportedThinkingLevels { get; set; } = new List<string>();
+    public List<string> SupportedThinkingLevels { get; set; } = new();
+    public List<string> SupportedReasoningModes { get; set; } = new();
+    public List<string> SupportedReasoningSummaries { get; set; } = new();
     
     public int ContextWindowSize { get; set; }
     public int MaxInputTokens { get; set; }
@@ -542,6 +559,8 @@ public class AddUserModelRequest
     public string ModelId { get; set; } = string.Empty;
     public string? DisplayName { get; set; }
     public string? ThinkingLevel { get; set; }
+    public string? ReasoningMode { get; set; }
+    public string? ReasoningSummary { get; set; }
     public int? MaxInputTokens { get; set; }
     public int? MaxOutputTokens { get; set; }
 }
@@ -550,6 +569,8 @@ public class UpdateUserModelRequest
 {
     public string? DisplayName { get; set; }
     public string? ThinkingLevel { get; set; }
+    public string? ReasoningMode { get; set; }
+    public string? ReasoningSummary { get; set; }
     public int? MaxInputTokens { get; set; }
     public int? MaxOutputTokens { get; set; }
 }

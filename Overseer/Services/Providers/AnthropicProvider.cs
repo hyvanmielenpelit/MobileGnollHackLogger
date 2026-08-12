@@ -40,7 +40,9 @@ public class AnthropicProvider : IAiProvider
         List<object> messageHistory,
         int? maxOutputTokens,
         string? thinkingLevel,
-        ToolsForRequest requestTools)
+        ToolsForRequest requestTools,
+        string? reasoningMode = null,
+        string? reasoningSummary = null)
     {
         var (systemContent, nonSystemMessages) = ExtractSystemAndNonSystemMessages(messageHistory);
 

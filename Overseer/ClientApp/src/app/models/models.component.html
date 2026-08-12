@@ -50,6 +50,16 @@
                   <span class="detail-label thinking ml-0">Thinking Level:</span> {{ formatThinkingLevel(model.thinkingLevel) }}
                 </div>
               }
+              @if (model.reasoningMode) {
+                <div>
+                  <span class="detail-label thinking ml-0">Reasoning Mode:</span> {{ formatThinkingLevel(model.reasoningMode) }}
+                </div>
+              }
+              @if (model.reasoningSummary) {
+                <div>
+                  <span class="detail-label thinking ml-0">Reasoning Summary:</span> {{ formatThinkingLevel(model.reasoningSummary) }}
+                </div>
+              }
             </div>
           </div>
           <div class="model-actions">
@@ -99,6 +109,16 @@
                 @if (model.thinkingLevel) {
                   <div>
                     <span class="detail-label thinking ml-0">Thinking Level:</span> {{ formatThinkingLevel(model.thinkingLevel) }}
+                  </div>
+                }
+                @if (model.reasoningMode) {
+                  <div>
+                    <span class="detail-label thinking ml-0">Reasoning Mode:</span> {{ formatThinkingLevel(model.reasoningMode) }}
+                  </div>
+                }
+                @if (model.reasoningSummary) {
+                  <div>
+                    <span class="detail-label thinking ml-0">Reasoning Summary:</span> {{ formatThinkingLevel(model.reasoningSummary) }}
                   </div>
                 }
               </div>

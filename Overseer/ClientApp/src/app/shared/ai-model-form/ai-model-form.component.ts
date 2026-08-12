@@ -8,6 +8,8 @@ export interface AiModelFormResult {
   provider: string;
   modelId: string;
   thinkingLevel: string | null;
+  reasoningMode: string | null;
+  reasoningSummary: string | null;
   maxInputTokens: number | null;
   maxOutputTokens: number | null;
   apiKey?: string;
@@ -44,6 +46,10 @@ export class AiModelFormComponent implements OnInit {
   customModelId = '';
   thinkingLevel = '';
   customThinkingLevel = '';
+  reasoningMode = '';
+  customReasoningMode = '';
+  reasoningSummary = '';
+  customReasoningSummary = '';
   maxInputTokens: number | null = null;
   maxOutputTokens: number | null = null;
 
@@ -64,6 +70,8 @@ export class AiModelFormComponent implements OnInit {
   // UI Selection State
   pickerModelSelect = '';
   pickerThinkingLevelSelect = '';
+  pickerReasoningModeSelect = '';
+  pickerReasoningSummarySelect = '';
   sortMode: 'alphabetical' | 'newest' = 'alphabetical';
   lastAutoDisplayName = '';
   showApiKeyInfo = false;
@@ -101,6 +109,8 @@ export class AiModelFormComponent implements OnInit {
       this.displayName = this.initialData.displayName || '';
       this.modelId = this.initialData.modelId || '';
       this.thinkingLevel = this.initialData.thinkingLevel || '';
+      this.reasoningMode = this.initialData.reasoningMode || '';
+      this.reasoningSummary = this.initialData.reasoningSummary || '';
       this.maxInputTokens = this.initialData.maxInputTokens || null;
       this.maxOutputTokens = this.initialData.maxOutputTokens || null;
       
@@ -116,6 +126,8 @@ export class AiModelFormComponent implements OnInit {
 
       this.pickerModelSelect = this.modelId;
       this.pickerThinkingLevelSelect = this.thinkingLevel;
+      this.pickerReasoningModeSelect = this.reasoningMode;
+      this.pickerReasoningSummarySelect = this.reasoningSummary;
       
       if (!this.isAdmin || this.hasApiKey) {
         this.fetchModels(true);
@@ -127,6 +139,14 @@ export class AiModelFormComponent implements OnInit {
         if (this.thinkingLevel) {
            this.pickerThinkingLevelSelect = 'custom';
            this.customThinkingLevel = this.thinkingLevel;
+        }
+        if (this.reasoningMode) {
+           this.pickerReasoningModeSelect = 'custom';
+           this.customReasoningMode = this.reasoningMode;
+        }
+        if (this.reasoningSummary) {
+           this.pickerReasoningSummarySelect = 'custom';
+           this.customReasoningSummary = this.reasoningSummary;
         }
       }
     } else {
@@ -195,6 +215,14 @@ export class AiModelFormComponent implements OnInit {
               this.pickerThinkingLevelSelect = 'custom';
               this.customThinkingLevel = this.thinkingLevel;
            }
+           if (this.reasoningMode && this.selectedModelObj && !this.selectedModelObj.supportedReasoningModes?.includes(this.reasoningMode)) {
+              this.pickerReasoningModeSelect = 'custom';
+              this.customReasoningMode = this.reasoningMode;
+           }
+           if (this.reasoningSummary && this.selectedModelObj && !this.selectedModelObj.supportedReasoningSummaries?.includes(this.reasoningSummary)) {
+              this.pickerReasoningSummarySelect = 'custom';
+              this.customReasoningSummary = this.reasoningSummary;
+           }
         } else {
            if (this.sortedModels.length > 0) {
              this.pickerModelSelect = this.sortedModels[0].id;
@@ -216,6 +244,14 @@ export class AiModelFormComponent implements OnInit {
             if (this.thinkingLevel) {
                 this.pickerThinkingLevelSelect = 'custom';
                 this.customThinkingLevel = this.thinkingLevel;
+            }
+            if (this.reasoningMode) {
+                this.pickerReasoningModeSelect = 'custom';
+                this.customReasoningMode = this.reasoningMode;
+            }
+            if (this.reasoningSummary) {
+                this.pickerReasoningSummarySelect = 'custom';
+                this.customReasoningSummary = this.reasoningSummary;
             }
         }
       }
@@ -244,6 +280,27 @@ export class AiModelFormComponent implements OnInit {
         this.thinkingLevel = '';
         this.pickerThinkingLevelSelect = '';
       }
+      
+      if (this.selectedModelObj.supportedReasoningModes && this.selectedModelObj.supportedReasoningModes.length > 0) {
+        this.reasoningMode = this.selectedModelObj.supportedReasoningModes.includes('medium') 
+          ? 'medium' 
+          : this.selectedModelObj.supportedReasoningModes[0];
+        this.pickerReasoningModeSelect = this.reasoningMode;
+      } else {
+        this.reasoningMode = '';
+        this.pickerReasoningModeSelect = '';
+      }
+
+      if (this.selectedModelObj.supportedReasoningSummaries && this.selectedModelObj.supportedReasoningSummaries.length > 0) {
+        this.reasoningSummary = this.selectedModelObj.supportedReasoningSummaries.includes('auto') 
+          ? 'auto' 
+          : this.selectedModelObj.supportedReasoningSummaries[0];
+        this.pickerReasoningSummarySelect = this.reasoningSummary;
+      } else {
+        this.reasoningSummary = '';
+        this.pickerReasoningSummarySelect = '';
+      }
+      
       this.maxInputTokens = this.selectedModelObj.maxInputTokens || null;
       this.maxOutputTokens = this.selectedModelObj.maxOutputTokens || null;
       
@@ -256,6 +313,10 @@ export class AiModelFormComponent implements OnInit {
     } else {
       this.thinkingLevel = '';
       this.pickerThinkingLevelSelect = '';
+      this.reasoningMode = '';
+      this.pickerReasoningModeSelect = '';
+      this.reasoningSummary = '';
+      this.pickerReasoningSummarySelect = '';
     }
   }
 
@@ -264,6 +325,22 @@ export class AiModelFormComponent implements OnInit {
       this.thinkingLevel = this.pickerThinkingLevelSelect;
     } else {
       this.thinkingLevel = ''; 
+    }
+  }
+
+  onPickerReasoningModeChange() {
+    if (this.pickerReasoningModeSelect !== 'custom') {
+      this.reasoningMode = this.pickerReasoningModeSelect;
+    } else {
+      this.reasoningMode = ''; 
+    }
+  }
+
+  onPickerReasoningSummaryChange() {
+    if (this.pickerReasoningSummarySelect !== 'custom') {
+      this.reasoningSummary = this.pickerReasoningSummarySelect;
+    } else {
+      this.reasoningSummary = ''; 
     }
   }
 
@@ -291,6 +368,8 @@ export class AiModelFormComponent implements OnInit {
     this.modelError = '';
     const finalModelId = this.pickerModelSelect === 'custom' ? this.customModelId : this.modelId;
     const finalThinkingLevel = this.pickerThinkingLevelSelect === 'custom' ? this.customThinkingLevel : this.thinkingLevel;
+    const finalReasoningMode = this.pickerReasoningModeSelect === 'custom' ? this.customReasoningMode : this.reasoningMode;
+    const finalReasoningSummary = this.pickerReasoningSummarySelect === 'custom' ? this.customReasoningSummary : this.reasoningSummary;
     
     if (!finalModelId) {
         this.modelError = 'Model is required.';
@@ -314,6 +393,8 @@ export class AiModelFormComponent implements OnInit {
       provider: this.provider,
       modelId: finalModelId,
       thinkingLevel: finalThinkingLevel || null,
+      reasoningMode: finalReasoningMode || null,
+      reasoningSummary: finalReasoningSummary || null,
       maxInputTokens: this.maxInputTokens,
       maxOutputTokens: this.maxOutputTokens
     };

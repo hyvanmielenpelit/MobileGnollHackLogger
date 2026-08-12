@@ -87,6 +87,8 @@ public class ModelMetadataService
             metadata.Description = bestEntry.DisplayName;
             metadata.ReleaseDate = bestEntry.ReleaseDate;
             metadata.SupportedThinkingLevels = new List<string>(bestEntry.ThinkingLevels ?? new List<string>());
+            metadata.SupportedReasoningModes = new List<string>(bestEntry.ReasoningModes ?? new List<string>());
+            metadata.SupportedReasoningSummaries = new List<string>(bestEntry.ReasoningSummaries ?? new List<string>());
             metadata.ContextWindowSize = bestEntry.ContextWindowSize;
             metadata.MaxOutputTokens = bestEntry.MaxOutputTokens;
             metadata.MaxInputTokens = metadata.ContextWindowSize - metadata.MaxOutputTokens;
@@ -103,6 +105,8 @@ public class ModelMetadata
     public string Description { get; set; } = string.Empty;
     public string ReleaseDate { get; set; } = string.Empty;
     public List<string> SupportedThinkingLevels { get; set; } = new List<string>();
+    public List<string> SupportedReasoningModes { get; set; } = new List<string>();
+    public List<string> SupportedReasoningSummaries { get; set; } = new List<string>();
     
     public int ContextWindowSize { get; set; }
     public int MaxInputTokens { get; set; }

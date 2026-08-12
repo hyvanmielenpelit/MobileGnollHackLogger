@@ -126,6 +126,8 @@ public class ChatService
         string? provider = null;
         string? model = null;
         string? thinkingLevel = null;
+        string? reasoningMode = null;
+        string? reasoningSummary = null;
         IAiProvider? aiProvider = null;
         List<object> messageHistory = new();
         bool spoilerFreeMode = false;
@@ -184,6 +186,8 @@ public class ChatService
                 provider = config.Provider;
                 model = config.ModelId;
                 thinkingLevel = config.ThinkingLevel;
+                reasoningMode = config.ReasoningMode;
+                reasoningSummary = config.ReasoningSummary;
                 if (config.MaxInputTokens.HasValue) maxInputTokens = config.MaxInputTokens.Value;
                 if (config.MaxOutputTokens.HasValue) maxOutputTokens = config.MaxOutputTokens.Value;
                 
@@ -200,6 +204,8 @@ public class ChatService
                     provider = userModel.Provider;
                     model = userModel.ModelId;
                     thinkingLevel = userModel.ThinkingLevel;
+                    reasoningMode = userModel.ReasoningMode;
+                    reasoningSummary = userModel.ReasoningSummary;
                     if (userModel.MaxInputTokens.HasValue) maxInputTokens = userModel.MaxInputTokens.Value;
                     if (userModel.MaxOutputTokens.HasValue) maxOutputTokens = userModel.MaxOutputTokens.Value;
                 }
@@ -212,6 +218,8 @@ public class ChatService
                     provider = defaultModel.Provider;
                     model = defaultModel.ModelId;
                     thinkingLevel = defaultModel.ThinkingLevel;
+                    reasoningMode = defaultModel.ReasoningMode;
+                    reasoningSummary = defaultModel.ReasoningSummary;
                     if (defaultModel.MaxInputTokens.HasValue) maxInputTokens = defaultModel.MaxInputTokens.Value;
                     if (defaultModel.MaxOutputTokens.HasValue) maxOutputTokens = defaultModel.MaxOutputTokens.Value;
                 }
@@ -226,6 +234,8 @@ public class ChatService
                         provider = config.Provider;
                         model = config.ModelId;
                         thinkingLevel = config.ThinkingLevel;
+                        reasoningMode = config.ReasoningMode;
+                        reasoningSummary = config.ReasoningSummary;
                         if (config.MaxInputTokens.HasValue) maxInputTokens = config.MaxInputTokens.Value;
                         if (config.MaxOutputTokens.HasValue) maxOutputTokens = config.MaxOutputTokens.Value;
                         if (!string.IsNullOrEmpty(config.EncryptedApiKey) && !string.IsNullOrEmpty(config.ApiKeyNonce) && !string.IsNullOrEmpty(config.ApiKeyTag))
@@ -569,7 +579,7 @@ public class ChatService
             var requestTools = _toolRegistry.BuildToolsForRequest(aiProvider, execContext, enableWebSearch, enableToolUse, enableClientTools, enableGameActions);
             var currentIterationToolCalls = new List<JsonElement>();
 
-            var requestBody = aiProvider.BuildChatRequestBody(model, messageHistory, maxOutputTokens, thinkingLevel, requestTools);
+            var requestBody = aiProvider.BuildChatRequestBody(model, messageHistory, maxOutputTokens, thinkingLevel, requestTools, reasoningMode, reasoningSummary);
             var jsonRequest = JsonSerializer.Serialize(requestBody);
             if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {aiProvider.ProviderName}] Request Body: {jsonRequest}" };
 

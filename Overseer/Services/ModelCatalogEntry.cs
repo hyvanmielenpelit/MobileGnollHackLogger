@@ -8,6 +8,8 @@ public class ModelCatalogEntry
     public string DisplayName { get; set; } = string.Empty;
     public string ReleaseDate { get; set; } = string.Empty;
     public List<string> ThinkingLevels { get; set; } = new();
+    public List<string> ReasoningModes { get; set; } = new();
+    public List<string> ReasoningSummaries { get; set; } = new();
     public int ContextWindowSize { get; set; }
     public int MaxOutputTokens { get; set; }
 }

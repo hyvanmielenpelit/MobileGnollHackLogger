@@ -11,13 +11,14 @@ public interface IAiProvider
 {
     string ProviderName { get; }
 
-    // Request building
     Dictionary<string, object> BuildChatRequestBody(
         string modelId,
         List<object> messageHistory,
         int? maxOutputTokens,
         string? thinkingLevel,
-        ToolsForRequest requestTools);
+        ToolsForRequest requestTools,
+        string? reasoningMode = null,
+        string? reasoningSummary = null);
 
     string GetChatStreamUrl(string modelId, string apiKey);
 
