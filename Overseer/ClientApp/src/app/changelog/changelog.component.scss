@@ -130,23 +130,17 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
   margin-top: 0;
-  padding: 20px 30px;
+  padding: 12px 20px;
   border-top: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
   background: var(--gh-panel-bg, #1a1a1a);
   flex-shrink: 0;
 
   .pagination-info {
-    font-size: 0.9em;
+    font-size: 0.85em;
     color: var(--text-color-secondary, #999);
-  }
-
-  .pagination-btn {
-    min-width: 100px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
+    white-space: nowrap;
   }
 }
 

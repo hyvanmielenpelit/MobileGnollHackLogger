@@ -47,16 +47,14 @@
       }
     </div>
     <div class="pagination-footer form-footer">
-      <button class="btn-gh pagination-btn" (click)="nextPage()" [disabled]="(currentPage + 1) * pageSize >= notes.length" title="Older Versions">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="btn-icon">
+      <button class="btn-icon-action" (click)="nextPage()" [disabled]="(currentPage + 1) * pageSize >= notes.length" aria-label="Older versions" title="Older Versions">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
           <path d="M19 12H5M12 19l-7-7 7-7"/>
         </svg>
-        Older
       </button>
       <span class="pagination-info">Page {{ currentPage + 1 }} of {{ Math.ceil(notes.length / pageSize) || 1 }}</span>
-      <button class="btn-gh pagination-btn" (click)="previousPage()" [disabled]="currentPage === 0" title="Newer Versions">
-        Newer
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="btn-icon">
+      <button class="btn-icon-action" (click)="previousPage()" [disabled]="currentPage === 0" aria-label="Newer versions" title="Newer Versions">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
           <path d="M5 12h14M12 5l7 7-7 7"/>
         </svg>
       </button>
