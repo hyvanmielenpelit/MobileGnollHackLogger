@@ -422,14 +422,15 @@ label { display: block; margin-bottom: 5px; font-weight: bold; }
 .changelog-dialog {
   width: min(800px, 90vw);
   max-width: none;
-  max-height: 85dvh;
+  height: 85dvh;
   padding: 0;
   overflow: hidden;
   background: var(--gh-panel-bg, #1a1a1a);
   border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
 }
 
-.changelog-dialog[open] {
+.changelog-dialog[open],
+.changelog-dialog:modal {
   display: flex;
   flex-direction: column;
 }
