@@ -1,10 +1,52 @@
-using System.Text.RegularExpressions;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Text.Json;
 
 namespace Overseer.Services;
 
 public class ModelMetadataService
 {
-    public ModelMetadata GetMetadata(string modelId)
+    private readonly Dictionary<string, List<ModelCatalogEntry>> _providerCatalogs = new(StringComparer.OrdinalIgnoreCase);
+
+    public ModelMetadataService()
+    {
+        LoadCatalogs();
+    }
+
+    private void LoadCatalogs()
+    {
+        var assembly = Assembly.GetExecutingAssembly();
+        var serializerOptions = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true
+        };
+
+        var resourceMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "OpenAI", "Overseer.Services.ModelCatalogs.OpenAiModelCatalog.json" },
+            { "Anthropic", "Overseer.Services.ModelCatalogs.AnthropicModelCatalog.json" },
+            { "Google", "Overseer.Services.ModelCatalogs.GoogleModelCatalog.json" }
+        };
+
+        foreach (var (provider, resourceName) in resourceMap)
+        {
+            using var stream = assembly.GetManifestResourceStream(resourceName);
+            if (stream == null) continue;
+
+            using var reader = new StreamReader(stream);
+            var json = reader.ReadToEnd();
+            var entries = JsonSerializer.Deserialize<List<ModelCatalogEntry>>(json, serializerOptions);
+
+            if (entries == null) continue;
+
+            _providerCatalogs[provider] = entries;
+        }
+    }
+
+    public ModelMetadata GetMetadata(string provider, string modelId)
     {
         var metadata = new ModelMetadata
         {
@@ -13,65 +55,41 @@ public class ModelMetadataService
             SupportedThinkingLevels = new List<string>()
         };
 
-        var openaiRegex = new Regex(@"^gpt-5\.([4-6])(?:-(sol|terra|luna|mini|nano|pro))?$");
-        var openaiMatch = openaiRegex.Match(modelId);
-        if (openaiMatch.Success)
+        if (string.IsNullOrEmpty(modelId))
         {
-            var version = openaiMatch.Groups[1].Value;
-            var tier = openaiMatch.Groups[2].Success ? char.ToUpper(openaiMatch.Groups[2].Value[0]) + openaiMatch.Groups[2].Value.Substring(1) : "";
-            metadata.Description = string.IsNullOrWhiteSpace(tier) ? $"GPT-5.{version} Model" : $"GPT-5.{version} {tier}";
-            metadata.SupportedThinkingLevels = new List<string> { "low", "medium", "high" };
-            metadata.ContextWindowSize = 1048576;
-            metadata.MaxOutputTokens = 128000;
-            metadata.MaxInputTokens = metadata.ContextWindowSize - metadata.MaxOutputTokens;
             return metadata;
         }
 
+        ModelCatalogEntry? bestEntry = null;
+        int maxPrefixLength = 0;
 
-
-        var anthropicRegex = new Regex(@"^claude-(?:(opus|sonnet|fable|mythos)-)?(5|4(?:[.-])[6-8])(?:-(opus|sonnet|fable|mythos))?$");
-        var anthropicMatch = anthropicRegex.Match(modelId);
-        if (anthropicMatch.Success)
+        if (!string.IsNullOrEmpty(provider) && _providerCatalogs.TryGetValue(provider, out var catalogEntries))
         {
-            var prefixTier = anthropicMatch.Groups[1].Value;
-            var version = anthropicMatch.Groups[2].Value.Replace("-", ".");
-            var suffixTier = anthropicMatch.Groups[3].Value;
-            
-            var tierStr = !string.IsNullOrEmpty(prefixTier) ? prefixTier : suffixTier;
-            var formattedTier = !string.IsNullOrEmpty(tierStr) ? char.ToUpper(tierStr[0]) + tierStr.Substring(1) : "Model";
-            
-            metadata.Description = $"Claude {version} {formattedTier}";
-            metadata.SupportedThinkingLevels = new List<string> { "minimal", "low", "medium", "high", "max" };
-            metadata.ContextWindowSize = 1000000;
-            metadata.MaxOutputTokens = 128000;
-            metadata.MaxInputTokens = metadata.ContextWindowSize - metadata.MaxOutputTokens;
-            return metadata;
-        }
-
-
-
-        var googleRegex = new Regex(@"^gemini-(3(?:\.[1-6])?)-(pro|flash(?:-lite|-cyber|-tts)?)(?:-(.*))?$");
-        var googleMatch = googleRegex.Match(modelId);
-        if (googleMatch.Success)
-        {
-            var version = googleMatch.Groups[1].Value;
-            var rawTier = googleMatch.Groups[2].Value;
-            var suffixes = googleMatch.Groups[3].Value;
-            
-            // Title case the tier parts (e.g. flash-lite -> Flash-Lite)
-            var formattedTier = string.Join("-", rawTier.Split('-').Select(part => char.ToUpper(part[0]) + part.Substring(1)));
-            var formattedSuffixes = string.IsNullOrEmpty(suffixes) ? "" : " " + string.Join(" ", suffixes.Split('-').Select(part => char.ToUpper(part[0]) + part.Substring(1)));
-            
-            metadata.Description = $"Gemini {version} {formattedTier}{formattedSuffixes}";
-            if (version.StartsWith("3"))
+            foreach (var entry in catalogEntries)
             {
-                metadata.SupportedThinkingLevels = new List<string> { "minimal", "low", "medium", "high" };
+                if (entry.Prefixes == null) continue;
+                foreach (var prefix in entry.Prefixes)
+                {
+                    if (modelId.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (prefix.Length > maxPrefixLength)
+                        {
+                            maxPrefixLength = prefix.Length;
+                            bestEntry = entry;
+                        }
+                    }
+                }
             }
-            
-            metadata.ContextWindowSize = 1048576;
-            metadata.MaxOutputTokens = 65536;
+        }
+
+        if (bestEntry != null)
+        {
+            metadata.Description = bestEntry.DisplayName;
+            metadata.ReleaseDate = bestEntry.ReleaseDate;
+            metadata.SupportedThinkingLevels = new List<string>(bestEntry.ThinkingLevels ?? new List<string>());
+            metadata.ContextWindowSize = bestEntry.ContextWindowSize;
+            metadata.MaxOutputTokens = bestEntry.MaxOutputTokens;
             metadata.MaxInputTokens = metadata.ContextWindowSize - metadata.MaxOutputTokens;
-            
             return metadata;
         }
 
@@ -83,6 +101,7 @@ public class ModelMetadata
 {
     public string Id { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
+    public string ReleaseDate { get; set; } = string.Empty;
     public List<string> SupportedThinkingLevels { get; set; } = new List<string>();
     
     public int ContextWindowSize { get; set; }

@@ -60,14 +60,9 @@ public class GoogleProvider : IAiProvider
             genConfig["maxOutputTokens"] = maxOutputTokens.Value;
         }
 
-        int budget = ProviderHelper.MapThinkingBudget(thinkingLevel ?? "");
-        if (budget > 0)
+        if (!string.IsNullOrEmpty(thinkingLevel))
         {
-            genConfig["thinkingConfig"] = new { thinkingBudget = budget };
-        }
-        else if (budget == 0 || thinkingLevel == "none" || thinkingLevel == "disabled")
-        {
-            genConfig["thinkingConfig"] = new { thinkingBudget = 0 };
+            genConfig["thinkingConfig"] = new { thinkingLevel = thinkingLevel.ToUpperInvariant() };
         }
 
         if (genConfig.Count > 0)

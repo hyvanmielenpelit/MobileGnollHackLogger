@@ -1,0 +1,42 @@
+[
+  {
+    "prefixes": ["claude-4.6-opus", "claude-4-6-opus", "claude-opus-4.6", "claude-opus-4-6"],
+    "displayName": "Claude 4.6 Opus",
+    "releaseDate": "2026-02-05",
+    "thinkingLevels": ["low", "medium", "high", "xhigh", "max"],
+    "contextWindowSize": 1000000,
+    "maxOutputTokens": 128000
+  },
+  {
+    "prefixes": ["claude-4.6-sonnet", "claude-4-6-sonnet", "claude-sonnet-4.6", "claude-sonnet-4-6"],
+    "displayName": "Claude 4.6 Sonnet",
+    "releaseDate": "2026-02-17",
+    "thinkingLevels": ["low", "medium", "high", "xhigh", "max"],
+    "contextWindowSize": 1000000,
+    "maxOutputTokens": 128000
+  },
+  {
+    "prefixes": ["claude-5-opus", "claude-opus-5"],
+    "displayName": "Claude 5 Opus",
+    "releaseDate": "2026-07-24",
+    "thinkingLevels": ["low", "medium", "high", "xhigh", "max"],
+    "contextWindowSize": 1000000,
+    "maxOutputTokens": 128000
+  },
+  {
+    "prefixes": ["claude-5-sonnet", "claude-sonnet-5"],
+    "displayName": "Claude 5 Sonnet",
+    "releaseDate": "2026-06-30",
+    "thinkingLevels": ["low", "medium", "high", "xhigh", "max"],
+    "contextWindowSize": 1000000,
+    "maxOutputTokens": 128000
+  },
+  {
+    "prefixes": ["claude-5-fable", "claude-fable-5"],
+    "displayName": "Claude 5 Fable",
+    "releaseDate": "2026-06-09",
+    "thinkingLevels": ["low", "medium", "high", "xhigh", "max"],
+    "contextWindowSize": 1000000,
+    "maxOutputTokens": 128000
+  }
+]

@@ -275,7 +275,7 @@ export class AiModelFormComponent implements OnInit {
   }
 
   formatThinkingLevel(level: string): string {
-    if (!level) return 'None';
+    if (!level) return 'Default';
     return level.charAt(0).toUpperCase() + level.slice(1);
   }
 

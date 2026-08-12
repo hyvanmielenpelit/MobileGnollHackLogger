@@ -1,0 +1,42 @@
+[
+  {
+    "prefixes": ["gpt-5.4"],
+    "displayName": "GPT-5.4",
+    "releaseDate": "2026-03-05",
+    "thinkingLevels": ["minimal", "low", "medium", "high", "pro", "xhigh", "max"],
+    "contextWindowSize": 1050000,
+    "maxOutputTokens": 128000
+  },
+  {
+    "prefixes": ["gpt-5.5"],
+    "displayName": "GPT-5.5",
+    "releaseDate": "2026-04-23",
+    "thinkingLevels": ["minimal", "low", "medium", "high", "pro", "xhigh", "max"],
+    "contextWindowSize": 1050000,
+    "maxOutputTokens": 128000
+  },
+  {
+    "prefixes": ["gpt-5.6-sol"],
+    "displayName": "GPT-5.6 Sol",
+    "releaseDate": "2026-06-26",
+    "thinkingLevels": ["minimal", "low", "medium", "high", "pro", "xhigh", "max"],
+    "contextWindowSize": 1050000,
+    "maxOutputTokens": 128000
+  },
+  {
+    "prefixes": ["gpt-5.6-terra"],
+    "displayName": "GPT-5.6 Terra",
+    "releaseDate": "2026-06-26",
+    "thinkingLevels": ["minimal", "low", "medium", "high", "pro", "xhigh", "max"],
+    "contextWindowSize": 1050000,
+    "maxOutputTokens": 128000
+  },
+  {
+    "prefixes": ["gpt-5.6-luna"],
+    "displayName": "GPT-5.6 Luna",
+    "releaseDate": "2026-06-26",
+    "thinkingLevels": ["minimal", "low", "medium", "high", "pro", "xhigh", "max"],
+    "contextWindowSize": 1050000,
+    "maxOutputTokens": 128000
+  }
+]

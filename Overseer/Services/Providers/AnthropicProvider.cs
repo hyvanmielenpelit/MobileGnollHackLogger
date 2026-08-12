@@ -60,10 +60,10 @@ public class AnthropicProvider : IAiProvider
             req["system"] = systemContent;
         }
 
-        int budget = ProviderHelper.MapThinkingBudget(thinkingLevel ?? "");
-        if (budget > 0)
+        if (!string.IsNullOrEmpty(thinkingLevel))
         {
-            req["thinking"] = new { type = "enabled", budget_tokens = budget };
+            req["thinking"] = new { type = "adaptive" };
+            req["output_config"] = new { effort = thinkingLevel };
         }
 
         var toolsPayload = BuildToolsPayload(requestTools.ProviderTools, requestTools.FunctionDeclarations);

@@ -369,14 +369,18 @@ public class SettingsController : ControllerBase
                                 // Specifically exclude audio/tts/dall-e if they ever accidentally get prefixed
                                 if (!name.Contains("audio") && !name.Contains("realtime"))
                                 {
+                                    var meta = _modelMetadataService.GetMetadata(provider, name);
                                     long created = 0;
-                                    if (modelElement.TryGetProperty("created", out var createdElement) && createdElement.ValueKind == JsonValueKind.Number)
+                                    if (!string.IsNullOrEmpty(meta.ReleaseDate) && DateTimeOffset.TryParse(meta.ReleaseDate, out var dto))
+                                    {
+                                        created = dto.ToUnixTimeSeconds();
+                                    }
+                                    else if (modelElement.TryGetProperty("created", out var createdElement) && createdElement.ValueKind == JsonValueKind.Number)
                                     {
                                         created = createdElement.GetInt64();
                                     }
-                                    if (created >= cutoffTimestamp)
+                                    if (created == 0 || created >= cutoffTimestamp)
                                     {
-                                        var meta = _modelMetadataService.GetMetadata(name);
                                         models.Add(new ApiModelDto { Id = name, CreatedAt = created, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels, ContextWindowSize = meta.ContextWindowSize, MaxInputTokens = meta.MaxInputTokens, MaxOutputTokens = meta.MaxOutputTokens });
                                     }
                                 }
@@ -405,8 +409,13 @@ public class SettingsController : ControllerBase
                             var name = idElement.GetString() ?? "";
                             if (name.StartsWith("claude-"))
                             {
+                                var meta = _modelMetadataService.GetMetadata(provider, name);
                                 long created = 0;
-                                if (modelElement.TryGetProperty("created_at", out var createdElement))
+                                if (!string.IsNullOrEmpty(meta.ReleaseDate) && DateTimeOffset.TryParse(meta.ReleaseDate, out var dtoDate))
+                                {
+                                    created = dtoDate.ToUnixTimeSeconds();
+                                }
+                                else if (modelElement.TryGetProperty("created_at", out var createdElement))
                                 {
                                     var dateStr = createdElement.GetString();
                                     if (!string.IsNullOrEmpty(dateStr) && DateTimeOffset.TryParse(dateStr, out var dto))
@@ -414,9 +423,8 @@ public class SettingsController : ControllerBase
                                         created = dto.ToUnixTimeSeconds();
                                     }
                                 }
-                                if (created >= cutoffTimestamp)
+                                if (created == 0 || created >= cutoffTimestamp)
                                 {
-                                    var meta = _modelMetadataService.GetMetadata(name);
                                     models.Add(new ApiModelDto { Id = name, CreatedAt = created, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels, ContextWindowSize = meta.ContextWindowSize, MaxInputTokens = meta.MaxInputTokens, MaxOutputTokens = meta.MaxOutputTokens });
                                 }
                             }
@@ -447,13 +455,15 @@ public class SettingsController : ControllerBase
                             {
                                 if (!name.Contains("embedding") && !name.Contains("robotics") && !name.Contains("omni") && !name.EndsWith("-latest"))
                                 {
-                                    var meta = _modelMetadataService.GetMetadata(name);
-                                    // If strict pattern doesn't match, Description == Id. 
-                                    // For Google, we'll exclude if it's older than Jan 1, 2026 (gemini-1.0, gemini-1.5, gemini-2.0, gemini-2.5) by manually filtering based on name prefix
-                                    bool isOldModel = name.StartsWith("gemini-1.") || name.StartsWith("gemini-2.");
-                                    if (!isOldModel)
+                                    var meta = _modelMetadataService.GetMetadata(provider, name);
+                                    long created = 0;
+                                    if (!string.IsNullOrEmpty(meta.ReleaseDate) && DateTimeOffset.TryParse(meta.ReleaseDate, out var dto))
                                     {
-                                        models.Add(new ApiModelDto { Id = name, CreatedAt = 0, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels, ContextWindowSize = meta.ContextWindowSize, MaxInputTokens = meta.MaxInputTokens, MaxOutputTokens = meta.MaxOutputTokens });
+                                        created = dto.ToUnixTimeSeconds();
+                                    }
+                                    if (created == 0 || created >= cutoffTimestamp)
+                                    {
+                                        models.Add(new ApiModelDto { Id = name, CreatedAt = created, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels, ContextWindowSize = meta.ContextWindowSize, MaxInputTokens = meta.MaxInputTokens, MaxOutputTokens = meta.MaxOutputTokens });
                                     }
                                 }
                             }

@@ -177,7 +177,7 @@
     <div class="form-group flex-col">
       <label>Thinking Level</label>
       <select class="gh-input w-100" [(ngModel)]="pickerThinkingLevelSelect" (change)="onPickerThinkingLevelChange()">
-        <option value="">None</option>
+        <option value="">Default</option>
         @if (selectedModelObj) {
           @for (level of selectedModelObj.supportedThinkingLevels; track level) {
             <option [value]="level">

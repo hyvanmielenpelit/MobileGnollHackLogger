@@ -485,7 +485,7 @@ public class ChatService
             messageHistory.Add(aiProvider.FormatMessage("user", finalMessageText, imageAttachments));
             
             // Truncation logic
-            var meta = _modelMetadataService.GetMetadata(model);
+            var meta = _modelMetadataService.GetMetadata(provider ?? "", model);
             int effectiveInputLimit = maxInputTokens ?? meta.MaxInputTokens;
             if (effectiveInputLimit <= 0) effectiveInputLimit = 100000;
             

@@ -21,6 +21,7 @@
   <ItemGroup>
     <Content Include="ToolGuides\**" CopyToOutputDirectory="PreserveNewest" />
     <Content Update="Data\**" CopyToOutputDirectory="PreserveNewest" />
+    <EmbeddedResource Include="Services\ModelCatalogs\*.json" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,0 +1,50 @@
+[
+  {
+    "prefixes": ["gemini-3.1-pro"],
+    "displayName": "Gemini 3.1 Pro",
+    "releaseDate": "2026-02-19",
+    "thinkingLevels": ["minimal", "low", "medium", "high"],
+    "contextWindowSize": 1048576,
+    "maxOutputTokens": 65536
+  },
+  {
+    "prefixes": ["gemini-3.1-flash-lite"],
+    "displayName": "Gemini 3.1 Flash-Lite",
+    "releaseDate": "2026-02-19",
+    "thinkingLevels": ["minimal", "low", "medium", "high"],
+    "contextWindowSize": 1048576,
+    "maxOutputTokens": 65536
+  },
+  {
+    "prefixes": ["gemini-3.1-flash"],
+    "displayName": "Gemini 3.1 Flash",
+    "releaseDate": "2026-02-19",
+    "thinkingLevels": ["minimal", "low", "medium", "high"],
+    "contextWindowSize": 1048576,
+    "maxOutputTokens": 65536
+  },
+  {
+    "prefixes": ["gemini-3.5-flash-lite"],
+    "displayName": "Gemini 3.5 Flash-Lite",
+    "releaseDate": "2026-07-21",
+    "thinkingLevels": ["minimal", "low", "medium", "high"],
+    "contextWindowSize": 1048576,
+    "maxOutputTokens": 65536
+  },
+  {
+    "prefixes": ["gemini-3.5-flash"],
+    "displayName": "Gemini 3.5 Flash",
+    "releaseDate": "2026-05-19",
+    "thinkingLevels": ["minimal", "low", "medium", "high"],
+    "contextWindowSize": 1048576,
+    "maxOutputTokens": 65536
+  },
+  {
+    "prefixes": ["gemini-3.6-flash"],
+    "displayName": "Gemini 3.6 Flash",
+    "releaseDate": "2026-07-21",
+    "thinkingLevels": ["minimal", "low", "medium", "high"],
+    "contextWindowSize": 1048576,
+    "maxOutputTokens": 65536
+  }
+]

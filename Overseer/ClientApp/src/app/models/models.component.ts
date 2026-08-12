@@ -425,7 +425,7 @@ export class ModelsComponent implements OnInit {
   }
 
   formatThinkingLevel(level: string | undefined): string {
-    if (!level) return 'None';
+    if (!level) return 'Default';
     return level.charAt(0).toUpperCase() + level.slice(1);
   }
 }
