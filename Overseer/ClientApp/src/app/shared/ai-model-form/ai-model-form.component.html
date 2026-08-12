@@ -151,7 +151,7 @@
         [disabled]="loadingModels || (isAdmin && !apiKey && !hasApiKey)">
         @for (model of sortedModels; track model) {
           <option [value]="model.id">
-            {{ model.id }} {{ model.isRecommended ? '⭐' : '' }}
+            {{ model.displayName || model.id }} {{ model.isRecommended ? '⭐' : '' }}
           </option>
         }
         <option value="custom">Custom...</option>
@@ -275,9 +275,6 @@
         </select>
       </div>
     }
-    <!-- Non-admin edit display name is handled elsewhere or not used? Wait, user models also have a display name in edit mode! -->
-    <!-- Ah, the Models page Add Model dialog has a "Title" field? No, users don't set title explicitly usually, except wait - yes they do! The models component has editDisplayName.
-    Let's add Display Name for both edit modes, and admin add mode. -->
     @if (!isAdmin && mode === 'edit') {
       <div class="form-group flex-col">
         <label>Display Name</label>

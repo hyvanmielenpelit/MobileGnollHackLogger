@@ -84,6 +84,7 @@ public class ModelMetadataService
 
         if (bestEntry != null)
         {
+            metadata.DisplayName = bestEntry.DisplayName;
             metadata.Description = bestEntry.DisplayName;
             metadata.ReleaseDate = bestEntry.ReleaseDate;
             metadata.SupportedThinkingLevels = new List<string>(bestEntry.ThinkingLevels ?? new List<string>());
@@ -102,6 +103,7 @@ public class ModelMetadataService
 public class ModelMetadata
 {
     public string Id { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public string ReleaseDate { get; set; } = string.Empty;
     public List<string> SupportedThinkingLevels { get; set; } = new List<string>();

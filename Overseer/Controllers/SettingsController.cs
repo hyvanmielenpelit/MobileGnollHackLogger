@@ -396,7 +396,7 @@ public class SettingsController : ControllerBase
                                     }
                                     if (created == 0 || created >= cutoffTimestamp)
                                     {
-                                        models.Add(new ApiModelDto { Id = name, CreatedAt = created, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels, SupportedReasoningModes = meta.SupportedReasoningModes, SupportedReasoningSummaries = meta.SupportedReasoningSummaries, ContextWindowSize = meta.ContextWindowSize, MaxInputTokens = meta.MaxInputTokens, MaxOutputTokens = meta.MaxOutputTokens });
+                                        models.Add(new ApiModelDto { Id = name, DisplayName = meta.DisplayName, CreatedAt = created, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels, SupportedReasoningModes = meta.SupportedReasoningModes, SupportedReasoningSummaries = meta.SupportedReasoningSummaries, ContextWindowSize = meta.ContextWindowSize, MaxInputTokens = meta.MaxInputTokens, MaxOutputTokens = meta.MaxOutputTokens });
                                     }
                                 }
                             }
@@ -440,7 +440,7 @@ public class SettingsController : ControllerBase
                                 }
                                 if (created == 0 || created >= cutoffTimestamp)
                                 {
-                                    models.Add(new ApiModelDto { Id = name, CreatedAt = created, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels, SupportedReasoningModes = meta.SupportedReasoningModes, SupportedReasoningSummaries = meta.SupportedReasoningSummaries, ContextWindowSize = meta.ContextWindowSize, MaxInputTokens = meta.MaxInputTokens, MaxOutputTokens = meta.MaxOutputTokens });
+                                    models.Add(new ApiModelDto { Id = name, DisplayName = meta.DisplayName, CreatedAt = created, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels, SupportedReasoningModes = meta.SupportedReasoningModes, SupportedReasoningSummaries = meta.SupportedReasoningSummaries, ContextWindowSize = meta.ContextWindowSize, MaxInputTokens = meta.MaxInputTokens, MaxOutputTokens = meta.MaxOutputTokens });
                                 }
                             }
                         }
@@ -478,7 +478,7 @@ public class SettingsController : ControllerBase
                                     }
                                     if (created == 0 || created >= cutoffTimestamp)
                                     {
-                                        models.Add(new ApiModelDto { Id = name, CreatedAt = created, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels, SupportedReasoningModes = meta.SupportedReasoningModes, SupportedReasoningSummaries = meta.SupportedReasoningSummaries, ContextWindowSize = meta.ContextWindowSize, MaxInputTokens = meta.MaxInputTokens, MaxOutputTokens = meta.MaxOutputTokens });
+                                        models.Add(new ApiModelDto { Id = name, DisplayName = meta.DisplayName, CreatedAt = created, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels, SupportedReasoningModes = meta.SupportedReasoningModes, SupportedReasoningSummaries = meta.SupportedReasoningSummaries, ContextWindowSize = meta.ContextWindowSize, MaxInputTokens = meta.MaxInputTokens, MaxOutputTokens = meta.MaxOutputTokens });
                                     }
                                 }
                             }
@@ -517,6 +517,7 @@ public class SettingsController : ControllerBase
 public class ApiModelDto
 {
     public string Id { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
     public long CreatedAt { get; set; }
     public string Description { get; set; } = string.Empty;
     public List<string> SupportedThinkingLevels { get; set; } = new();

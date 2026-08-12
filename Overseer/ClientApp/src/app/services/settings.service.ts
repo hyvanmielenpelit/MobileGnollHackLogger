@@ -27,6 +27,7 @@ export interface UserAiSettings {
 
 export interface ApiModelDto {
   id: string;
+  displayName: string;
   createdAt: number;
   description: string;
   supportedThinkingLevels: string[];
