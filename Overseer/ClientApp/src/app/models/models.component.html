@@ -118,7 +118,7 @@
                 }
                 @if (model.reasoningSummary) {
                   <div>
-                    <span class="detail-label thinking ml-0">Reasoning Summary:</span> {{ formatThinkingLevel(model.reasoningSummary) }}
+                    <span class="detail-label thinking ml-0">Reasoning Summary:</span> {{ formatReasoningSummary(model.reasoningSummary) }}
                   </div>
                 }
               </div>
@@ -160,6 +160,9 @@
                 @if (selectedTitleModel?.thinkingLevel) {
                   <span class="thinking-badge">{{ formatThinkingLevel($safeNavigationMigration(selectedTitleModel?.thinkingLevel)) }}</span>
                 }
+                @if (showReasoningBadge(selectedTitleModel?.reasoningMode)) {
+                  <span class="reasoning-badge">{{ selectedTitleModel?.reasoningMode }}</span>
+                }
                 @if (selectedTitleModel?.provider) {
                   <span class="provider-badge">{{ selectedTitleModel?.provider }}</span>
                 }
@@ -179,6 +182,9 @@
                       @if (m.thinkingLevel) {
                         <span class="thinking-badge">{{ formatThinkingLevel(m.thinkingLevel) }}</span>
                       }
+                      @if (showReasoningBadge(m.reasoningMode)) {
+                        <span class="reasoning-badge">{{ m.reasoningMode }}</span>
+                      }
                       <span class="provider-badge">{{ m.provider }}</span>
                     </div>
                   }
@@ -190,6 +196,9 @@
                       <span class="model-name">{{ m.displayName || m.modelId }}</span>
                       @if (m.thinkingLevel) {
                         <span class="thinking-badge">{{ formatThinkingLevel(m.thinkingLevel) }}</span>
+                      }
+                      @if (showReasoningBadge(m.reasoningMode)) {
+                        <span class="reasoning-badge">{{ m.reasoningMode }}</span>
                       }
                       <span class="provider-badge">{{ m.provider }}</span>
                     </div>

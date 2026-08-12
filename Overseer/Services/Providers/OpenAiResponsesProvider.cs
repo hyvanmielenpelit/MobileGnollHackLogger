@@ -86,23 +86,22 @@ public class OpenAiResponsesProvider : IAiProvider
             req["max_output_tokens"] = maxOutputTokens.Value;
         }
 
+        var reasoningObj = new Dictionary<string, object>();
+        if (!string.IsNullOrEmpty(thinkingLevel) && thinkingLevel != "none")
+        {
+            reasoningObj["effort"] = thinkingLevel;
+        }
         if (!string.IsNullOrEmpty(reasoningMode) && reasoningMode != "none")
         {
-            var reasoningObj = new Dictionary<string, string>();
             reasoningObj["mode"] = reasoningMode;
-            if (!string.IsNullOrEmpty(reasoningSummary) && reasoningSummary != "auto")
-            {
-                reasoningObj["summary"] = reasoningSummary;
-            }
-            req["reasoning"] = reasoningObj;
         }
-        else if (!string.IsNullOrEmpty(thinkingLevel))
+        if (!string.IsNullOrEmpty(reasoningSummary) && reasoningSummary != "default")
         {
-            req["reasoning"] = new 
-            {
-                effort = thinkingLevel,
-                summary = "auto"
-            };
+            reasoningObj["summary"] = reasoningSummary;
+        }
+        if (reasoningObj.Count > 0)
+        {
+            req["reasoning"] = reasoningObj;
         }
 
         var toolsPayload = BuildToolsPayload(requestTools.ProviderTools, requestTools.FunctionDeclarations);

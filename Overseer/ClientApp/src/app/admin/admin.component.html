@@ -220,8 +220,8 @@
                           </div>
                         }
                         @if (config.reasoningSummary) {
-                          <div style="margin-top: 4px;">
-                            <span class="detail-label thinking ml-0">Reasoning Summary:</span> {{ formatLevel(config.reasoningSummary) }}
+                          <div>
+                            <span class="detail-label thinking ml-0">Reasoning Summary:</span> {{ formatReasoningSummary(config.reasoningSummary) }}
                           </div>
                         }
                         @if (config.maxInputTokens || config.maxOutputTokens) {

@@ -132,8 +132,9 @@
       </div>
 
       @if (loadingModels) {
-        <div class="loading-spinner-container">
-          <div class="gh-loading-spinner small"></div>
+        <div class="loading-spinner-container d-flex align-items-center" style="gap: 10px; margin-bottom: 10px;">
+          <div class="gh-spinner-small"></div>
+          <span style="font-weight: 500; color: var(--gh-text-secondary);">Loading available models...</span>
         </div>
       }
 
@@ -224,7 +225,7 @@
     <div class="form-group flex-col">
       <label>Reasoning Summary</label>
       <select class="gh-input w-100" [(ngModel)]="pickerReasoningSummarySelect" (change)="onPickerReasoningSummaryChange()">
-        <option value="">Default</option>
+        <option value="">None</option>
         @if (selectedModelObj) {
           @for (level of selectedModelObj.supportedReasoningSummaries; track level) {
             <option [value]="level">
@@ -293,7 +294,7 @@
         <span>{{ mode === 'edit' ? 'Save Changes' : (isAdmin ? 'Create Config' : 'Add Model') }}</span>
       }
       @if (saving) {
-        <span><div class="gh-loading-spinner small white"></div> Saving...</span>
+        <span><div class="gh-spinner-small" style="margin-right: 5px;"></div> Saving...</span>
       }
     </button>
   </div>

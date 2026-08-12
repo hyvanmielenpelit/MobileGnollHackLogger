@@ -1015,6 +1015,17 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
   text-transform: uppercase;
 }
 
+.reasoning-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #c084fc;
+  border: 1px solid rgba(192, 132, 252, 0.4);
+  background: rgba(192, 132, 252, 0.05);
+  padding: 1px 5px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
 .model-selector-wrapper {
   align-self: flex-start;
   margin-left: 0;

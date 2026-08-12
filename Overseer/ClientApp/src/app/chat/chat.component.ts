@@ -285,6 +285,12 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     return level.charAt(0).toUpperCase() + level.slice(1);
   }
 
+  showReasoningBadge(mode: string | null | undefined): boolean {
+    if (!mode) return false;
+    const lower = mode.toLowerCase();
+    return lower !== 'default' && lower !== 'standard';
+  }
+
 
 
   @HostListener('document:click', ['$event'])

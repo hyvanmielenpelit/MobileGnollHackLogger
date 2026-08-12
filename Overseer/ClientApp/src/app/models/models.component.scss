@@ -279,6 +279,17 @@
   text-transform: uppercase;
 }
 
+.reasoning-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #c084fc;
+  border: 1px solid rgba(192, 132, 252, 0.4);
+  background: rgba(192, 132, 252, 0.05);
+  padding: 1px 5px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
 /* Toggle Switch */
 .gh-toggle-switch {
   position: relative;

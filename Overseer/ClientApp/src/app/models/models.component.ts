@@ -432,4 +432,15 @@ export class ModelsComponent implements OnInit {
     if (!level) return 'Default';
     return level.charAt(0).toUpperCase() + level.slice(1);
   }
+
+  formatReasoningSummary(level: string | null | undefined): string {
+    if (!level) return 'None';
+    return level.charAt(0).toUpperCase() + level.slice(1);
+  }
+
+  showReasoningBadge(mode: string | null | undefined): boolean {
+    if (!mode) return false;
+    const lower = mode.toLowerCase();
+    return lower !== 'default' && lower !== 'standard';
+  }
 }

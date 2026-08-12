@@ -411,6 +411,9 @@
                     @if (selectedModel?.thinkingLevel) {
                       <span class="thinking-badge">{{ formatThinkingLevel($safeNavigationMigration(selectedModel?.thinkingLevel)) }}</span>
                     }
+                    @if (showReasoningBadge(selectedModel?.reasoningMode)) {
+                      <span class="reasoning-badge">{{ selectedModel?.reasoningMode }}</span>
+                    }
                     <span class="provider-badge">{{ selectedModel?.provider }}</span>
                     <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
                   </button>
@@ -425,6 +428,9 @@
                           @if (model.thinkingLevel) {
                             <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
                           }
+                          @if (showReasoningBadge(model.reasoningMode)) {
+                            <span class="reasoning-badge">{{ model.reasoningMode }}</span>
+                          }
                           <span class="provider-badge">{{ model.provider }}</span>
                         </div>
                       }
@@ -437,6 +443,9 @@
                           @if (model.thinkingLevel) {
                             <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
                           }
+                          @if (showReasoningBadge(model.reasoningMode)) {
+                            <span class="reasoning-badge">{{ model.reasoningMode }}</span>
+                          }
                           <span class="provider-badge">{{ model.provider }}</span>
                         </div>
                       }
@@ -447,6 +456,9 @@
                     <span class="model-name">{{ selectedModel?.displayName || selectedModel?.modelId || singleModelInfo?.modelId || 'Model' }}</span>
                     @if (selectedModel?.thinkingLevel || singleModelInfo?.thinkingLevel) {
                       <span class="thinking-badge">{{ formatThinkingLevel(selectedModel?.thinkingLevel || singleModelInfo?.thinkingLevel) }}</span>
+                    }
+                    @if (showReasoningBadge(selectedModel?.reasoningMode || singleModelInfo?.reasoningMode)) {
+                      <span class="reasoning-badge">{{ selectedModel?.reasoningMode || singleModelInfo?.reasoningMode }}</span>
                     }
                     <span class="provider-badge">{{ selectedModel?.provider || singleModelInfo?.provider }}</span>
                   </div>
