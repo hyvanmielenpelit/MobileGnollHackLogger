@@ -164,7 +164,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   titleStatusText = '';
   lastSeenSeqNo: number = -1;
   private hasOngoingGeneration = false;
-  private isLoadingSession = false;
+  isLoadingSession = false;
   private liveEventBuffer: any[] = [];
   private handoffTimeoutHandle: any = null;
 
@@ -1095,12 +1095,25 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         }
         this.applySavedModelPreference();
         this.focusPromptInput();
+        this.forceWebViewRepaint();
       },
       error: (err) => {
         this.isLoadingSession = false;
         this.liveEventBuffer = [];
         console.warn(`Failed to load session ${id}. Bouncing to new chat.`, err);
         this.navigateToNewSession();
+        this.forceWebViewRepaint();
+      }
+    });
+  }
+
+  private forceWebViewRepaint() {
+    requestAnimationFrame(() => {
+      this.cdr.detectChanges();
+      const el = this.messagesContainer?.nativeElement;
+      if (el) {
+        el.style.transform = 'translateZ(0)';
+        requestAnimationFrame(() => { el.style.transform = ''; });
       }
     });
   }

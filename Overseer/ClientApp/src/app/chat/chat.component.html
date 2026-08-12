@@ -123,6 +123,12 @@
             </a>
           </div>
         }
+        @if (isLoadingSession) {
+          <div style="display: flex; justify-content: center; align-items: center; padding: 20px; color: var(--gh-text-secondary);">
+            <div class="sidebar-spinner"></div>
+            <span style="margin-left: 10px;">Loading conversation...</span>
+          </div>
+        }
         @if (isHandoffWaiting && hasApiKey && hasModel) {
           <div class="handoff-loading-box gh-main-container">
             <div class="handoff-avatar-container">
