@@ -1,5 +1,20 @@
 [
   {
+    "version": "1.0.6",
+    "date": "2026-08-12",
+    "summary": "Moved changelog to settings and general fixes",
+    "changes": [
+      {
+        "type": "improvement",
+        "text": "Moved the changelog link to the settings menu."
+      },
+      {
+        "type": "fix",
+        "text": "Applied various stability fixes."
+      }
+    ]
+  },
+  {
     "version": "1.0.5",
     "date": "2026-08-11",
     "summary": "Fixes for chat message duplication and date parsing",
