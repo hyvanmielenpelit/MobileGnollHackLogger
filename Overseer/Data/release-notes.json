@@ -1,5 +1,32 @@
 [
   {
+    "version": "1.0.7",
+    "date": "2026-08-12",
+    "summary": "Added support for reasoning modes and summaries. Various fixes.",
+    "changes": [
+      {
+        "type": "feature",
+        "text": "Added support for reasoning modes and reasoning summaries."
+      },
+      {
+        "type": "improvement",
+        "text": "Improved the changelog feature by adding better pagination."
+      },
+      {
+        "type": "fix",
+        "text": "Fixed several UI layout issues that occurred on iOS devices."
+      },
+      {
+        "type": "fix",
+        "text": "Fixed cold start problems to improve initial loading times."
+      },
+      {
+        "type": "fix",
+        "text": "Fixed an issue with checkboxes not showing correctly on iOS."
+      }
+    ]
+  },
+  {
     "version": "1.0.6",
     "date": "2026-08-12",
     "summary": "Moved changelog to settings and general fixes",
