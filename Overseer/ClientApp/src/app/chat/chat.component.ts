@@ -157,7 +157,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   realContentTimeout: any = null;
   streamingMessage = '';
   streamingToolCalls: ChatMessageToolCall[] = [];
-  pendingAttachments: { file: File, base64: string, name: string, type: string }[] = [];
+  pendingAttachments: { file: File | null, base64: string, name: string, type: string }[] = [];
   timeToFirstTokenMs: number | null = null;
   
   isGeneratingTitle = false;
@@ -361,6 +361,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     }
     
     (window as any).onGnollHackToolResponse = undefined;
+    (window as any).__gnollhackReceiveFiles = undefined;
     this.pendingRequests.forEach(timer => clearTimeout(timer));
     this.pendingRequests.clear();
     if (this.timeUpdateInterval) clearInterval(this.timeUpdateInterval);
@@ -583,6 +584,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       } catch (e) {
           console.error('Failed to parse tool response:', e);
       }
+    };
+
+    (window as any).__gnollhackReceiveFiles = (json: string) => {
+      this.ngZone.run(() => this.receiveNativeFiles(json));
     };
 
     this.setupSignalR();
@@ -1416,8 +1421,41 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   triggerFileInput() {
+    /* On iOS inside GnollHack, bypass the built-in WKWebView file picker
+     * (which shows "Take Photo" and crashes without NSCameraUsageDescription)
+     * and use the native bridge to present our own picker instead. */
+    if (this.getClientBridge() === 'ios') {
+        (window as any).webkit.messageHandlers.gnollhackBridge.postMessage(
+            JSON.stringify({ type: 'pick_files' }));
+        return;
+    }
     const el = document.getElementById('fileInput') as HTMLInputElement;
     if (el) el.click();
+  }
+
+  /* Called from native iOS code after the user picks files via PHPicker
+   * or UIDocumentPicker. Each entry has { name, type, dataUrl }. */
+  receiveNativeFiles(filesJson: string) {
+      try {
+          const files: Array<{ name: string, type: string, dataUrl: string }> =
+              JSON.parse(filesJson);
+          for (const f of files) {
+              if (this.pendingAttachments.length >= 5) break;
+              /* Validate extension against the allowed list */
+              const ext = f.name.split('.').pop()?.toLowerCase();
+              if (!['html', 'htm', 'txt', 'md', 'png', 'jpg', 'jpeg', 'webp']
+                  .includes(ext || '')) continue;
+              this.pendingAttachments.push({
+                  file: null,
+                  base64: f.dataUrl,  /* already a data:... URL */
+                  name: f.name,
+                  type: f.type || 'application/octet-stream'
+              });
+          }
+          this.cdr.detectChanges();
+      } catch (e) {
+          console.error('receiveNativeFiles error:', e);
+      }
   }
 
   onFileSelected(event: any) {
