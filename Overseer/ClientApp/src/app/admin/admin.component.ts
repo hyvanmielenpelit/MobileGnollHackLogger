@@ -670,6 +670,11 @@ export class AdminComponent implements OnInit, OnDestroy {
     }
   }
 
+  formatLevel(level: string | null | undefined): string {
+    if (!level) return '';
+    return level.charAt(0).toUpperCase() + level.slice(1);
+  }
+
   getModelRoleClass(role: number): string {
     switch (role) {
       case 1: return 'badge-role-chat';

@@ -211,7 +211,17 @@
                         </div>
                         @if (config.thinkingLevel) {
                           <div style="margin-top: 8px;">
-                            <span class="detail-label thinking ml-0">Thinking Level:</span> {{ config.thinkingLevel }}
+                            <span class="detail-label thinking ml-0">Thinking Level:</span> {{ formatLevel(config.thinkingLevel) }}
+                          </div>
+                        }
+                        @if (config.reasoningMode) {
+                          <div style="margin-top: 4px;">
+                            <span class="detail-label thinking ml-0">Reasoning Mode:</span> {{ formatLevel(config.reasoningMode) }}
+                          </div>
+                        }
+                        @if (config.reasoningSummary) {
+                          <div style="margin-top: 4px;">
+                            <span class="detail-label thinking ml-0">Reasoning Summary:</span> {{ formatLevel(config.reasoningSummary) }}
                           </div>
                         }
                         @if (config.maxInputTokens || config.maxOutputTokens) {

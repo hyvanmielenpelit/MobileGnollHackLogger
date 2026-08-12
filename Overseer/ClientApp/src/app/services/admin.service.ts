@@ -25,6 +25,8 @@ export interface SystemAiConfigDto {
   provider: string;
   modelId: string;
   thinkingLevel: string | null;
+  reasoningMode: string | null;
+  reasoningSummary: string | null;
   maxInputTokens: number | null;
   maxOutputTokens: number | null;
   orderIndex: number;
