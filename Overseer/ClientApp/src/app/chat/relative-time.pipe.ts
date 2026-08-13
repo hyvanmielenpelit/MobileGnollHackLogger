@@ -1,17 +1,50 @@
-import { Pipe, PipeTransform } from '@angular/core';
+import { Pipe, PipeTransform, ChangeDetectorRef, OnDestroy } from '@angular/core';
+import { Subscription } from 'rxjs';
+import { RelativeTimeTickerService } from '../services/relative-time-ticker.service';
 
 @Pipe({
   name: 'relativeTime',
   standalone: true,
   pure: false
 })
-export class RelativeTimePipe implements PipeTransform {
-  transform(value: string | Date | null | undefined, mode: 'chat' | 'changelog' = 'chat'): string {
+export class RelativeTimePipe implements PipeTransform, OnDestroy {
+  private rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+  private tickerSub: Subscription | null = null;
+  private lastFormattedTime = '';
+  private lastValue: string | Date | null | undefined = undefined;
+
+  constructor(
+    private cdr: ChangeDetectorRef,
+    private ticker: RelativeTimeTickerService
+  ) {}
+
+  transform(value: string | Date | null | undefined): string {
     if (!value) return '';
     
+    // Store the value so the ticker can re-evaluate it
+    this.lastValue = value;
+    
+    // Subscribe to the ticker on first use
+    if (!this.tickerSub) {
+      this.tickerSub = this.ticker.tick$.subscribe(() => {
+        if (this.lastValue) {
+          const newFormattedTime = this.calculateRelativeTime(this.lastValue);
+          if (newFormattedTime !== this.lastFormattedTime) {
+            this.lastFormattedTime = newFormattedTime;
+            this.cdr.markForCheck();
+          }
+        }
+      });
+    }
+
+    const currentFormattedTime = this.calculateRelativeTime(value);
+    this.lastFormattedTime = currentFormattedTime;
+    return currentFormattedTime;
+  }
+
+  private calculateRelativeTime(value: string | Date): string {
     let dateStr = value;
     if (typeof dateStr === 'string' && !dateStr.endsWith('Z') && !dateStr.includes('+') && !dateStr.match(/-\d{2}:\d{2}$/)) {
-      // Don't append 'Z' for date-only strings (YYYY-MM-DD), which parse as UTC correctly
       if (dateStr.length > 10 || dateStr.includes('T') || dateStr.includes(' ')) {
         dateStr += 'Z';
       }
@@ -19,44 +52,45 @@ export class RelativeTimePipe implements PipeTransform {
     
     const date = new Date(dateStr);
     const now = new Date();
-    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+    // Use Math.max(0, ...) to clamp future dates (from clock skew) to 0
+    const diffInSeconds = Math.max(0, Math.floor((now.getTime() - date.getTime()) / 1000));
     
-    if (mode === 'changelog') {
-      const diffInDays = Math.floor(diffInSeconds / (24 * 3600));
-      if (diffInDays === 0) return 'Today';
-      if (diffInDays < 7) return `${diffInDays}d ago`;
-      
-      const diffInWeeks = Math.floor(diffInDays / 7);
-      if (diffInDays < 30) return `${diffInWeeks}w ago`;
-      
-      const diffInMonths = Math.floor(diffInDays / 30);
-      if (diffInDays < 365) return `${diffInMonths}mo ago`;
-      
-      const diffInYears = Math.floor(diffInDays / 365);
-      return `${diffInYears}y ago`;
-    }
-    
-    // For future dates (e.g., slightly off clocks) or very recent
     if (diffInSeconds < 60) {
       return 'just now';
     }
     
     const diffInMinutes = Math.floor(diffInSeconds / 60);
     if (diffInMinutes < 60) {
-      return `${diffInMinutes} min ago`;
+      return this.rtf.format(-diffInMinutes, 'minute');
     }
     
     const diffInHours = Math.floor(diffInMinutes / 60);
     if (diffInHours < 24) {
-      return `${diffInHours} hr ago`;
+      return this.rtf.format(-diffInHours, 'hour');
     }
     
     const diffInDays = Math.floor(diffInHours / 24);
     if (diffInDays < 7) {
-      return `${diffInDays} day${diffInDays > 1 ? 's' : ''} ago`;
+      return this.rtf.format(-diffInDays, 'day');
     }
     
-    // For older messages, use absolute date
-    return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    const diffInWeeks = Math.floor(diffInDays / 7);
+    if (diffInDays < 30) {
+      return this.rtf.format(-diffInWeeks, 'week');
+    }
+
+    const diffInMonths = Math.floor(diffInDays / 30);
+    if (diffInDays < 365) {
+      return this.rtf.format(-diffInMonths, 'month');
+    }
+
+    const diffInYears = Math.floor(diffInDays / 365);
+    return this.rtf.format(-diffInYears, 'year');
+  }
+
+  ngOnDestroy(): void {
+    if (this.tickerSub) {
+      this.tickerSub.unsubscribe();
+    }
   }
 }

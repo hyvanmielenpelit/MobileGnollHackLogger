@@ -16,7 +16,7 @@ The file is a JSON array of release objects. **Entries must be in descending ver
 [
   {
     "version": "1.1.0",
-    "date": "2026-08-11",
+    "date": "2026-08-11T12:00:00Z",
     "summary": "A brief 1–3 sentence overview of the release.",
     "changes": [
       {
@@ -33,7 +33,7 @@ The file is a JSON array of release objects. **Entries must be in descending ver
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `version` | string | Yes | Semantic version number (e.g., `"1.2.0"`). |
-| `date` | string | Yes | Release date in `YYYY-MM-DD` format. |
+| `date` | string | Yes | Release date and time in `YYYY-MM-DDTHH:mm:ssZ` format (exact UTC timestamp). |
 | `summary` | string | Yes | A brief 1–3 sentence summary of the overall release. |
 | `changes` | array | Yes | One or more change items (see below). |
 
@@ -90,7 +90,7 @@ The changelog link in the chat sidebar displays a yellow star animation when a n
 [
   {
     "version": "1.1.0",
-    "date": "2026-08-15",
+    "date": "2026-08-15T15:30:00Z",
     "summary": "Improved changelog display and fixed authentication issues.",
     "changes": [
       {
@@ -109,7 +109,7 @@ The changelog link in the chat sidebar displays a yellow star animation when a n
   },
   {
     "version": "1.0.2",
-    "date": "2026-08-10",
+    "date": "2026-08-10T12:00:00Z",
     "summary": "Added Changelog Feature",
     "changes": [
       {

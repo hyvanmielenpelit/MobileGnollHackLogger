@@ -21,8 +21,8 @@
         <div class="release-note-card">
           <div class="release-note-header">
             <h3>v{{ note.version }}</h3>
-            <span class="release-date" [title]="note.date | date:'d MMM yyyy'">
-              {{ note.date | relativeTime:'changelog' }}
+            <span class="release-date" [title]="note.date | date:'medium'">
+              {{ note.date | relativeTime }}
             </span>
           </div>
           

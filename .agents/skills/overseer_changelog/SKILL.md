@@ -72,7 +72,7 @@ Format your compiled changes into a JSON object strictly following this schema:
 ```json
 {
   "version": "<version>",
-  "date": "<YYYY-MM-DD>",
+  "date": "<YYYY-MM-DDTHH:mm:ssZ>",
   "summary": "A brief 1-3 sentence summary of the overall release.",
   "changes": [
     {
@@ -83,7 +83,7 @@ Format your compiled changes into a JSON object strictly following this schema:
 }
 ```
 
-- **Date:** Use today's date in `YYYY-MM-DD` format.
+- **Date:** Use the current date and time in exact UTC ISO-8601 format (e.g., `2026-08-13T15:30:00Z`).
 - **Summary:** Must be a brief, high-level overview of the release, not a repetition of the individual change items.
 - **Text:** Must be written for end users, not developers. Make it clear and easy to understand.
 - **Type:** Must be exactly one of: `"feature"`, `"improvement"`, `"fix"`, or `"security"`.
