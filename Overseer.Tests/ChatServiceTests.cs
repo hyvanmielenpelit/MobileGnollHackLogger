@@ -7,7 +7,6 @@ using Overseer.Services;
 using Overseer.Hubs;
 using Microsoft.AspNetCore.SignalR;
 using Xunit;
-using Xunit.Abstractions;
 
 // ====================================================================================
 // IMPORTANT: This test file connects to external AI APIs and consumes quota.
@@ -123,7 +122,7 @@ namespace Overseer.Tests
                     LastMessageUtc = DateTime.UtcNow
                 };
                 dbContext.ChatSession.Add(session);
-                await dbContext.SaveChangesAsync();
+                await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
 
                 testSessionId = session.Id;
                 testUserModelId = aiModel.Id;
@@ -153,7 +152,7 @@ namespace Overseer.Tests
             {
                 await foreach (var chunk in chatService.StreamMessageAsync(testSessionId, "Say hello in exactly one sentence.", null, claimsPrincipal.FindFirstValue(ClaimTypes.NameIdentifier) ?? userId, false, cts.Token, testUserModelId))
                 {
-                    _output.WriteLine(chunk.Data);
+                    _output.WriteLine(chunk.Data ?? string.Empty);
                     fullResponse += chunk.Data;
                     if (chunk.Data != null && (chunk.Data.StartsWith("Error:") || chunk.Data.StartsWith("API Error:")))
                     {

@@ -24,7 +24,7 @@ namespace Overseer.Tests.IntegrationTests
         [Fact]
         public async Task GetGroups_Unauthenticated_Returns401()
         {
-            var response = await _client.GetAsync("/api/admin/groups");
+            var response = await _client.GetAsync("/api/admin/groups", TestContext.Current.CancellationToken);
             Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         }
 
@@ -34,7 +34,7 @@ namespace Overseer.Tests.IntegrationTests
             var request = new HttpRequestMessage(HttpMethod.Get, "/api/admin/groups");
             request.Headers.Add("X-Test-User", "NormalUser");
             
-            var response = await _client.SendAsync(request);
+            var response = await _client.SendAsync(request, TestContext.Current.CancellationToken);
             Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         }
 
@@ -44,7 +44,7 @@ namespace Overseer.Tests.IntegrationTests
             var request = new HttpRequestMessage(HttpMethod.Get, "/api/admin/groups");
             request.Headers.Add("X-Test-User", "TestAdmin");
             
-            var response = await _client.SendAsync(request);
+            var response = await _client.SendAsync(request, TestContext.Current.CancellationToken);
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         }
 
@@ -57,7 +57,7 @@ namespace Overseer.Tests.IntegrationTests
             };
             request.Headers.Add("X-Test-User", "NormalUser");
             
-            var response = await _client.SendAsync(request);
+            var response = await _client.SendAsync(request, TestContext.Current.CancellationToken);
             Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         }
 
@@ -70,7 +70,7 @@ namespace Overseer.Tests.IntegrationTests
             };
             request.Headers.Add("X-Test-User", "TestAdmin");
             
-            var response = await _client.SendAsync(request);
+            var response = await _client.SendAsync(request, TestContext.Current.CancellationToken);
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         }
 
@@ -101,7 +101,7 @@ namespace Overseer.Tests.IntegrationTests
             };
             request.Headers.Add("X-Test-User", "TestAdmin");
 
-            var response = await _client.SendAsync(request);
+            var response = await _client.SendAsync(request, TestContext.Current.CancellationToken);
             Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         }
 
@@ -116,7 +116,7 @@ namespace Overseer.Tests.IntegrationTests
             };
             request.Headers.Add("X-Test-User", "TestAdmin");
 
-            var response = await _client.SendAsync(request);
+            var response = await _client.SendAsync(request, TestContext.Current.CancellationToken);
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         }
     }
