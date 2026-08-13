@@ -201,16 +201,20 @@
 
 @section Styles
 {
-    <link rel="stylesheet" href="~/lib/datatables/dist/datatables.min.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/lib/datatables/css/dataTables.bootstrap5.min.css" asp-append-version="true" />
 }
 
 @section Scripts
 {
-    <script src="~/lib/datatables/dist/datatables.min.js"></script>
+    <script src="~/lib/datatables/js/dataTables.min.js"></script>
+    <script src="~/lib/datatables/js/dataTables.bootstrap5.min.js"></script>
     <script>
-        $(".rpg-table").dataTable({
-            order: [],
-            autoWidth: false
-        }).show();
+        document.querySelectorAll('.rpg-table').forEach(function(el) {
+            new DataTable(el, {
+                order: [],
+                autoWidth: false
+            });
+            el.style.display = '';
+        });
     </script>
 }

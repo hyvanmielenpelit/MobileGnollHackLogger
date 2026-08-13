@@ -113,31 +113,36 @@
 
 @section Styles
 {
-    <link rel="stylesheet" href="~/lib/datatables/dist/datatables.min.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/lib/datatables/css/dataTables.bootstrap5.min.css" asp-append-version="true" />
 }
 
 @section Scripts
 {
-    <script src="~/lib/datatables/dist/datatables.min.js"></script>
+    <script src="~/lib/datatables/js/dataTables.min.js"></script>
+    <script src="~/lib/datatables/js/dataTables.bootstrap5.min.js"></script>
     <script>
-        $(document).ready(function () {
-            if ($("#questLogsTable").length) {
-                $("#questLogsTable").dataTable({
+        document.addEventListener('DOMContentLoaded', function () {
+            if (document.getElementById('questLogsTable')) {
+                new DataTable('#questLogsTable', {
                     order: [],
                     autoWidth: false,
                     pageLength: 5,
                     lengthMenu: [[5, 10, 25, 50, 100, -1], [5, 10, 25, 50, 100, "All"]]
-                }).show();
+                });
+                document.getElementById('questLogsTable').style.display = '';
             }
-            if ($("#topScoresTable").length) {
-                $("#topScoresTable").dataTable({
+            if (document.getElementById('topScoresTable')) {
+                new DataTable('#topScoresTable', {
                     order: [],
                     autoWidth: false,
                     pageLength: 5,
                     lengthMenu: [[5, 10, 25, 50, 100, -1], [5, 10, 25, 50, 100, "All"]]
-                }).show();
+                });
+                document.getElementById('topScoresTable').style.display = '';
             }
-            $("#loadingIndicator").hide();
+            if (document.getElementById('loadingIndicator')) {
+                document.getElementById('loadingIndicator').style.display = 'none';
+            }
         });
     </script>
 }

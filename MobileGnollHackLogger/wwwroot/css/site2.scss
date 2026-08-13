@@ -20,7 +20,7 @@ $pagination-bg-light: #3d4349; // ~lighten(rgb(33,37,41), 10%)
 
 html, body {
     max-width: 100vw;
-    overflow-x: hidden;
+    overflow-x: clip;
 }
 
 .table-responsive {
@@ -736,15 +736,15 @@ div.container.xxlMaxWidth {
 }
 
 /* DataTables Overrides */
-.dataTables_wrapper {
+.dt-container {
     max-width: 100%;
 
-    .dataTables_length, .dataTables_filter, .dataTables_info, .dataTables_processing, .dataTables_paginate {
+    .dt-length, .dt-search, .dt-info, .dt-processing, .dt-paging {
         color: #a0aec0 !important;
         font-size: 0.85rem;
     }
 
-        .dataTables_filter input, .dataTables_length select {
+        .dt-search input, .dt-length select {
             background-color: rgba(15, 20, 30, 0.8) !important;
             border: 1px solid rgba(0, 240, 255, 0.2) !important;
             color: white !important;
@@ -758,19 +758,19 @@ div.container.xxlMaxWidth {
             }
         }
 
-        .dataTables_length select {
+        .dt-length select {
             padding-right: 2rem !important;
             width: auto !important;
         }
 
-    .dataTables_info {
+    .dt-info {
         @media (max-width: 768px) {
             margin-bottom: 15px !important;
             text-align: center;
         }
     }
 
-    .dataTables_paginate {
+    .dt-paging {
         white-space: normal !important;
 
         @media (max-width: 768px) {

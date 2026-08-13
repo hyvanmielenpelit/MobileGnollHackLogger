@@ -186,22 +186,25 @@ else
 
 @section Styles
 {
-    <link rel="stylesheet" href="~/lib/datatables/dist/datatables.min.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/lib/datatables/css/dataTables.bootstrap5.min.css" asp-append-version="true" />
 }
 
 @section Scripts
 {
-    <script src="~/lib/datatables/dist/datatables.min.js"></script>
+    <script src="~/lib/datatables/js/dataTables.min.js"></script>
+    <script src="~/lib/datatables/js/dataTables.bootstrap5.min.js"></script>
     <script>
-        $("#topScoreTable>tbody").on("click", "tr", function () {
-            var id = $(this).attr("data-id");
-            var href = "/dumplog/" + id;
-            window.location.href = href;
+        document.querySelector('#topScoreTable tbody').addEventListener('click', function(e) {
+            var tr = e.target.closest('tr');
+            if (tr && tr.dataset.id) {
+                window.location.href = '/dumplog/' + tr.dataset.id;
+            }
         });
-        $("#topScoreTable").dataTable({
+        new DataTable('#topScoreTable', {
             order: [],
             autoWidth: false
-        }).show();
+        });
+        document.querySelector('#topScoreTable').style.display = '';
         $("#loadingIndicator").hide();
     </script>
 }
