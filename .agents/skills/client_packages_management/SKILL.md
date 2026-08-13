@@ -19,7 +19,8 @@ We use `libman` to manage the following standard dependencies from `cdnjs`:
 To update these packages:
 1. Open `MobileGnollHackLogger/libman.json`.
 2. Update the version string in the `"library"` field to the latest available version on `cdnjs`.
-3. Run the following command from the `MobileGnollHackLogger` project root to restore the files:
+3. Verify that the `"files"` array still correctly lists the minified JS/CSS and font files required by the project. The `"files"` array ensures we only download the files we actually use, rather than syncing thousands of unused source maps, SCSS files, localization variants, or SVG icons.
+4. Run the following command from the `MobileGnollHackLogger` project root to restore the files:
    ```bash
    dotnet tool install -g Microsoft.Web.LibraryManager.Cli
    libman restore
