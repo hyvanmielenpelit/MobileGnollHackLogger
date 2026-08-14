@@ -1,4 +1,4 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
+// Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 #nullable disable
 
@@ -64,6 +64,7 @@ namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
             [Required]
             [StringLength(31, ErrorMessage = "Maximum length is 31 characters.")]
             [RegularExpression($"^[a-zA-Z0-9][a-zA-Z0-9_]*$", ErrorMessage = "Only alphanumeric characters and underscore allowed. Can't start with an underscore.")]
+            [Display(Name = "User Name")]
             public string UserName { get; set; }
 
             ///// <summary>

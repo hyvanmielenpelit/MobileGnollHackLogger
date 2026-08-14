@@ -18,29 +18,37 @@
                 <div class="login-form-inner">
                     <div asp-validation-summary="ModelOnly" class="text-danger" role="alert"></div>
                 
-                    <div class="input-group mb-4 login-input-group">
-                        <span class="input-group-text"><i class="bi bi-person-fill"></i></span>
-                        <input asp-for="Input.UserName" class="form-control" autocomplete="username" aria-required="true" placeholder="User Name" />
+                    <div class="mb-4">
+                        <div class="input-group login-input-group">
+                            <span class="input-group-text"><i class="bi bi-person-fill"></i></span>
+                            <input asp-for="Input.UserName" class="form-control" autocomplete="username" aria-required="true" placeholder="User Name" />
+                        </div>
+                        <span asp-validation-for="Input.UserName" class="text-danger"></span>
                     </div>
-                    <span asp-validation-for="Input.UserName" class="text-danger"></span>
 
-                    <div class="input-group mb-4 login-input-group">
-                        <span class="input-group-text"><i class="bi bi-envelope-fill"></i></span>
-                        <input asp-for="Input.Email" class="form-control" autocomplete="email" aria-required="true" placeholder="Email" />
+                    <div class="mb-4">
+                        <div class="input-group login-input-group">
+                            <span class="input-group-text"><i class="bi bi-envelope-fill"></i></span>
+                            <input asp-for="Input.Email" class="form-control" autocomplete="email" aria-required="true" placeholder="Email" />
+                        </div>
+                        <span asp-validation-for="Input.Email" class="text-danger"></span>
                     </div>
-                    <span asp-validation-for="Input.Email" class="text-danger"></span>
 
-                    <div class="input-group mb-4 login-input-group">
-                        <span class="input-group-text"><i class="bi bi-key-fill"></i></span>
-                        <input asp-for="Input.Password" class="form-control" autocomplete="new-password" aria-required="true" placeholder="Password" />
+                    <div class="mb-4">
+                        <div class="input-group login-input-group">
+                            <span class="input-group-text"><i class="bi bi-key-fill"></i></span>
+                            <input asp-for="Input.Password" class="form-control" autocomplete="new-password" aria-required="true" placeholder="Password" />
+                        </div>
+                        <span asp-validation-for="Input.Password" class="text-danger"></span>
                     </div>
-                    <span asp-validation-for="Input.Password" class="text-danger"></span>
 
-                    <div class="input-group mb-4 login-input-group">
-                        <span class="input-group-text"><i class="bi bi-key-fill"></i></span>
-                        <input asp-for="Input.ConfirmPassword" class="form-control" autocomplete="new-password" aria-required="true" placeholder="Confirm Password" />
+                    <div class="mb-4">
+                        <div class="input-group login-input-group">
+                            <span class="input-group-text"><i class="bi bi-key-fill"></i></span>
+                            <input asp-for="Input.ConfirmPassword" class="form-control" autocomplete="new-password" aria-required="true" placeholder="Confirm Password" />
+                        </div>
+                        <span asp-validation-for="Input.ConfirmPassword" class="text-danger"></span>
                     </div>
-                    <span asp-validation-for="Input.ConfirmPassword" class="text-danger"></span>
 
                     <div class="login-button-container text-center mb-3">
                         <button id="registerSubmit" type="submit" class="btn btn-fantasy-login w-100">
