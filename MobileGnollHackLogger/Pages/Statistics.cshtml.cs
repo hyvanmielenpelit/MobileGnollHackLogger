@@ -1,9 +1,5 @@
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.RazorPages;
-using Microsoft.CodeAnalysis.Host.Mef;
 using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
-using MobileGnollHackLogger.Data.Migrations;
 
 namespace MobileGnollHackLogger.Pages
 {

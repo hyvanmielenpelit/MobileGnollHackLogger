@@ -1,17 +1,11 @@
-﻿using Microsoft.AspNetCore.Http.Extensions;
+using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.CodeAnalysis;
 using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
-using MobileGnollHackLogger.Data.Migrations;
 using System.Globalization;
-
-
-//using MobileGnollHackLogger.Data.Migrations;
 using System.Text;
-
-// For more information on enabling Web API for empty projects, visit https://go.microsoft.com/fwlink/?LinkID=397860
 
 namespace MobileGnollHackLogger.Areas.API
 {

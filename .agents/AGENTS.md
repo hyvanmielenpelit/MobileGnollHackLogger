@@ -38,9 +38,9 @@ To compile SCSS files:
 ## Entity Framework Core Migrations
 
 When making changes to database models that require EF Core migrations, you MUST observe the following rules:
-- **Correct Project**: Migrations MUST be targeted to the `MobileGnollHackLogger` project. Use the `-p` and `-s` flags to explicitly point to `MobileGnollHackLogger`.
-- **Add Migration**: `dotnet ef migrations add <MigrationName> -p MobileGnollHackLogger -s MobileGnollHackLogger -o Data/Migrations`
-- **Update Database**: After generating a migration, you MUST run a separate command to apply it to the database: `dotnet ef database update -p MobileGnollHackLogger -s MobileGnollHackLogger`
+- **Correct Project**: Migrations MUST be targeted to the `GnollHackServer.Data` project. Use the `-p GnollHackServer.Data -s MobileGnollHackLogger` flags.
+- **Add Migration**: `dotnet ef migrations add <MigrationName> -p GnollHackServer.Data -s MobileGnollHackLogger -o Migrations`
+- **Update Database**: After generating a migration, you MUST run a separate command to apply it to the database: `dotnet ef database update -p GnollHackServer.Data -s MobileGnollHackLogger`
 
 ## File Organization
 
