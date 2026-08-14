@@ -1,5 +1,20 @@
 [
   {
+    "version": "1.0.10",
+    "date": "2026-08-14T10:58:10.000Z",
+    "summary": "Improved styling for the Add Model popup and added time to the release notes.",
+    "changes": [
+      {
+        "type": "improvement",
+        "text": "Improved the styling of the Add Model popup."
+      },
+      {
+        "type": "improvement",
+        "text": "Added the release time to the release notes."
+      }
+    ]
+  },
+  {
     "version": "1.0.9",
     "date": "2026-08-12T21:06:05.000Z",
     "summary": "Fixed an issue with the media picker on iOS.",
