@@ -176,3 +176,30 @@
   justify-content: center;
   padding: 15px;
 }
+
+.settings-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 15px;
+  margin-bottom: 15px;
+  
+  .form-group {
+    margin-bottom: 0;
+  }
+}
+
+.compound-input {
+  display: flex;
+  gap: 10px;
+  
+  select {
+    flex: 1;
+    min-width: 0;
+  }
+  
+  input {
+    flex: 1;
+    min-width: 0;
+  }
+}
+

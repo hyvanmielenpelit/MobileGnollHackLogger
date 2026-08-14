@@ -174,75 +174,71 @@
       </div>
     }
 
-    <!-- Thinking Level -->
-    <div class="form-group flex-col">
-      <label>Thinking Level</label>
-      <select class="gh-input w-100" [(ngModel)]="pickerThinkingLevelSelect" (change)="onPickerThinkingLevelChange()">
-        <option value="">Default</option>
-        @if (selectedModelObj) {
-          @for (level of selectedModelObj.supportedThinkingLevels; track level) {
-            <option [value]="level">
-              {{ formatThinkingLevel(level) }}
-              {{ level === selectedModelObj.recommendedThinkingLevel ? '⭐' : '' }}
-            </option>
-          }
-        }
-        <option value="custom">Custom...</option>
-      </select>
-    </div>
-
-    @if (pickerThinkingLevelSelect === 'custom') {
+    <div class="settings-row mb-15">
+      <!-- Thinking Level -->
       <div class="form-group flex-col">
-        <label>Thinking Level Name</label>
-        <input type="text" class="gh-input w-100" [(ngModel)]="customThinkingLevel" placeholder="e.g. high">
-      </div>
-    }
-
-    <!-- Reasoning Mode -->
-    <div class="form-group flex-col">
-      <label>Reasoning Mode</label>
-      <select class="gh-input w-100" [(ngModel)]="pickerReasoningModeSelect" (change)="onPickerReasoningModeChange()">
-        <option value="">Default</option>
-        @if (selectedModelObj) {
-          @for (level of selectedModelObj.supportedReasoningModes; track level) {
-            <option [value]="level">
-              {{ formatThinkingLevel(level) }}
-            </option>
+        <label>Thinking Level</label>
+        <div class="compound-input">
+          <select class="gh-input w-100" [(ngModel)]="pickerThinkingLevelSelect" (change)="onPickerThinkingLevelChange()">
+            <option value="">Default</option>
+            @if (selectedModelObj) {
+              @for (level of selectedModelObj.supportedThinkingLevels; track level) {
+                <option [value]="level">
+                  {{ formatThinkingLevel(level) }}
+                  {{ level === selectedModelObj.recommendedThinkingLevel ? '⭐' : '' }}
+                </option>
+              }
+            }
+            <option value="custom">Custom...</option>
+          </select>
+          @if (pickerThinkingLevelSelect === 'custom') {
+            <input type="text" class="gh-input w-100" [(ngModel)]="customThinkingLevel" placeholder="E.g. high">
           }
-        }
-        <option value="custom">Custom...</option>
-      </select>
-    </div>
-
-    @if (pickerReasoningModeSelect === 'custom') {
-      <div class="form-group flex-col">
-        <label>Reasoning Mode Name</label>
-        <input type="text" class="gh-input w-100" [(ngModel)]="customReasoningMode" placeholder="e.g. medium">
+        </div>
       </div>
-    }
 
-    <!-- Reasoning Summary -->
-    <div class="form-group flex-col">
-      <label>Reasoning Summary</label>
-      <select class="gh-input w-100" [(ngModel)]="pickerReasoningSummarySelect" (change)="onPickerReasoningSummaryChange()">
-        <option value="">{{ getReasoningSummaryDefaultLabel() }}</option>
-        @if (selectedModelObj) {
-          @for (level of selectedModelObj.supportedReasoningSummaries; track level) {
-            <option [value]="level">
-              {{ formatThinkingLevel(level) }}
-            </option>
+      <!-- Reasoning Mode -->
+      <div class="form-group flex-col">
+        <label>Reasoning Mode</label>
+        <div class="compound-input">
+          <select class="gh-input w-100" [(ngModel)]="pickerReasoningModeSelect" (change)="onPickerReasoningModeChange()">
+            <option value="">Default</option>
+            @if (selectedModelObj) {
+              @for (level of selectedModelObj.supportedReasoningModes; track level) {
+                <option [value]="level">
+                  {{ formatThinkingLevel(level) }}
+                </option>
+              }
+            }
+            <option value="custom">Custom...</option>
+          </select>
+          @if (pickerReasoningModeSelect === 'custom') {
+            <input type="text" class="gh-input w-100" [(ngModel)]="customReasoningMode" placeholder="E.g. pro">
           }
-        }
-        <option value="custom">Custom...</option>
-      </select>
-    </div>
-
-    @if (pickerReasoningSummarySelect === 'custom') {
-      <div class="form-group flex-col">
-        <label>Reasoning Summary Name</label>
-        <input type="text" class="gh-input w-100" [(ngModel)]="customReasoningSummary" placeholder="e.g. auto">
+        </div>
       </div>
-    }
+
+      <!-- Reasoning Summary -->
+      <div class="form-group flex-col">
+        <label>Reasoning Summary</label>
+        <div class="compound-input">
+          <select class="gh-input w-100" [(ngModel)]="pickerReasoningSummarySelect" (change)="onPickerReasoningSummaryChange()">
+            <option value="">{{ getReasoningSummaryDefaultLabel() }}</option>
+            @if (selectedModelObj) {
+              @for (level of selectedModelObj.supportedReasoningSummaries; track level) {
+                <option [value]="level">
+                  {{ formatThinkingLevel(level) }}
+                </option>
+              }
+            }
+            <option value="custom">Custom...</option>
+          </select>
+          @if (pickerReasoningSummarySelect === 'custom') {
+            <input type="text" class="gh-input w-100" [(ngModel)]="customReasoningSummary" placeholder="E.g. auto">
+          }
+        </div>
+      </div>
+    </div>
 
     <!-- Tokens -->
     <div class="token-row">
