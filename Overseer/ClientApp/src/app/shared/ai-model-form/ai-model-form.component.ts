@@ -72,7 +72,7 @@ export class AiModelFormComponent implements OnInit {
   pickerThinkingLevelSelect = '';
   pickerReasoningModeSelect = '';
   pickerReasoningSummarySelect = '';
-  sortMode: 'alphabetical' | 'newest' = 'alphabetical';
+  sortMode: 'alphabetical_asc' | 'alphabetical_desc' | 'created_asc' | 'created_desc' = 'created_desc';
   lastAutoDisplayName = '';
   showApiKeyInfo = false;
   editingApiKey = false;
@@ -86,10 +86,19 @@ export class AiModelFormComponent implements OnInit {
         return (a.recommendationRank || 0) - (b.recommendationRank || 0);
       }
 
-      if (this.sortMode === 'newest') {
+      if (this.sortMode === 'created_desc') {
         if (b.createdAt !== a.createdAt) {
           return b.createdAt - a.createdAt;
         }
+        return b.id.localeCompare(a.id, undefined, { numeric: true, sensitivity: 'base' });
+      }
+      if (this.sortMode === 'created_asc') {
+        if (a.createdAt !== b.createdAt) {
+          return a.createdAt - b.createdAt;
+        }
+        return a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' });
+      }
+      if (this.sortMode === 'alphabetical_desc') {
         return b.id.localeCompare(a.id, undefined, { numeric: true, sensitivity: 'base' });
       }
       return a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' });

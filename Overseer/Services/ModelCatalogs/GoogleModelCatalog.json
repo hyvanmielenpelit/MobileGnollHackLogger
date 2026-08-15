@@ -38,5 +38,13 @@
     "thinkingLevels": ["minimal", "low", "medium", "high"],
     "contextWindowSize": 1048576,
     "maxOutputTokens": 65536
+  },
+  {
+    "prefixes": ["gemini-3.7-flash"],
+    "displayName": "Gemini 3.7 Flash",
+    "releaseDate": "2026-08-15",
+    "thinkingLevels": ["minimal", "low", "medium", "high"],
+    "contextWindowSize": 1048576,
+    "maxOutputTokens": 65536
   }
 ]

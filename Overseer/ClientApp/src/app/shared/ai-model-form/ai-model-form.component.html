@@ -121,12 +121,12 @@
         <label>Models</label>
         @if (availableModels.length > 0) {
           <div class="sort-options">
-            <label>
-              <input type="radio" name="sort" value="alphabetical" [(ngModel)]="sortMode" (change)="onSortChange()"> A-Z
-            </label>
-            <label>
-              <input type="radio" name="sort" value="newest" [(ngModel)]="sortMode" (change)="onSortChange()"> Newest
-            </label>
+            <select class="gh-input" [(ngModel)]="sortMode" (change)="onSortChange()">
+              <option value="created_desc">Newest First</option>
+              <option value="created_asc">Oldest First</option>
+              <option value="alphabetical_asc">A &rarr; Z</option>
+              <option value="alphabetical_desc">Z &rarr; A</option>
+            </select>
           </div>
         }
       </div>
