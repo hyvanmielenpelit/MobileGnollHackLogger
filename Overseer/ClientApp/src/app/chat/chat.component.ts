@@ -1425,8 +1425,18 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
      * (which shows "Take Photo" and crashes without NSCameraUsageDescription)
      * and use the native bridge to present our own picker instead. */
     if (this.getClientBridge() === 'ios') {
+        /* Pass the + button's bounding rect so MAUI can anchor the
+         * iOS popover arrow to the correct position.
+         * getBoundingClientRect() returns CSS pixels relative to the
+         * viewport, which map 1:1 to WKWebView points. */
+        const btn = document.querySelector('.add-media-icon') as HTMLElement;
+        let sourceRect = { x: 0, y: 0, width: 0, height: 0 };
+        if (btn) {
+            const r = btn.getBoundingClientRect();
+            sourceRect = { x: r.left, y: r.top, width: r.width, height: r.height };
+        }
         (window as any).webkit.messageHandlers.gnollhackBridge.postMessage(
-            JSON.stringify({ type: 'pick_files' }));
+            JSON.stringify({ type: 'pick_files', sourceRect }));
         return;
     }
     const el = document.getElementById('fileInput') as HTMLInputElement;
