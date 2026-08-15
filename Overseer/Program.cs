@@ -32,6 +32,7 @@ builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme)
         // Explicitly configure session lifetime
         options.ExpireTimeSpan = TimeSpan.FromDays(14);
         options.SlidingExpiration = true; // Refresh the cookie if accessed past halfway point
+        options.Cookie.MaxAge = options.ExpireTimeSpan; // CRITICAL: Fix for iOS WKWebView dropping cookies when backgrounded
 
         options.Events.OnValidatePrincipal = SecurityStampValidator.ValidatePrincipalAsync; // CRITICAL: Prevent stale cookies
         // Override default cookie behavior for SPA — return 401/403 instead of HTML redirects
@@ -151,7 +152,7 @@ app.Use((context, next) =>
     {
         var antiforgery = context.RequestServices.GetRequiredService<Microsoft.AspNetCore.Antiforgery.IAntiforgery>();
         var tokens = antiforgery.GetAndStoreTokens(context);
-        context.Response.Cookies.Append("XSRF-TOKEN", tokens.RequestToken!, new CookieOptions { HttpOnly = false, Secure = true });
+        context.Response.Cookies.Append("XSRF-TOKEN", tokens.RequestToken!, new CookieOptions { HttpOnly = false, Secure = true, MaxAge = TimeSpan.FromDays(14) });
     }
     return next(context);
 });
