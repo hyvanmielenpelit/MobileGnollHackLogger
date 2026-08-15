@@ -1,5 +1,16 @@
 [
   {
+    "version": "1.0.12",
+    "date": "2026-08-15T15:41:00Z",
+    "summary": "Improved iOS attachment handling.",
+    "changes": [
+      {
+        "type": "improvement",
+        "text": "Improved attachment handling on iOS."
+      }
+    ]
+  },
+  {
     "version": "1.0.11",
     "date": "2026-08-15T10:56:02.000Z",
     "summary": "Added support for Gemini 3.7 Flash and fixed an iOS logout issue.",
