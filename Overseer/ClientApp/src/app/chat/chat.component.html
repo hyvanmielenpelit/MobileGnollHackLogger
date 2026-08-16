@@ -8,10 +8,10 @@
       <button class="btn-gh btn-new-chat" (click)="navigateToNewSession()">New Chat</button>
       <ul>
         @if (loadingSessions) {
-          <div class="sessions-loader">
+          <li class="sessions-loader">
             <div class="sidebar-spinner"></div>
             <span>Loading Conversations...</span>
-          </div>
+          </li>
         }
         @if (!loadingSessions && sessions.length === 0) {
           <li class="empty-sessions-msg">
@@ -82,7 +82,7 @@
             @if (isRenamingTitle) {
               <div class="rename-container">
                 <div class="rename-input-wrapper" [class.has-error]="renameError">
-                  <input type="text" class="rename-input" [value]="renameTitleValue" (input)="renameTitleValue = $any($event.target).value" (input)="renameError = null" (keydown.enter)="saveRename()" (keydown.esc)="cancelRename()" #renameInput autofocus>
+                  <input type="text" class="rename-input" [value]="renameTitleValue" (input)="renameTitleValue = $any($event.target).value; renameError = null" (keydown.enter)="saveRename()" (keydown.esc)="cancelRename()" #renameInput autofocus>
                   <button class="rename-action-btn ok-btn" (click)="saveRename()" title="Save">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
                   </button>
@@ -180,14 +180,14 @@
                     </a>
                   }
                   @if (att.id && !isImage(att.fileName)) {
-                    <a class="msg-att-item" [href]="'/api/chat/attachments/' + att.id" [download]="att.fileName" rel="noopener" title="Download {{ att.fileName }}">
+                    <a class="msg-att-item" href="/api/chat/attachments/{{ att.id }}" [download]="att.fileName" rel="noopener" title="Download {{ att.fileName }}">
                       <div><span class="file-type-badge">{{ getFileExtension(att.fileName) }}</span><span class="file-name-text">{{ att.fileName }}</span></div>
                     </a>
                   }
                   @if (!att.id) {
-                    <span class="msg-att-item msg-att-pending" title="Uploading {{ att.fileName }}...">
+                    <div class="msg-att-item msg-att-pending" title="Uploading {{ att.fileName }}...">
                       <div><span class="file-type-badge">{{ getFileExtension(att.fileName) }}</span><span class="file-name-text">{{ att.fileName }}</span></div>
-                    </span>
+                    </div>
                   }
                 }
               </div>

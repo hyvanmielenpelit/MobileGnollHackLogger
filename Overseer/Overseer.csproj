@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -9,6 +9,7 @@
     <SpaProxyLaunchCommand>npm start</SpaProxyLaunchCommand>
     <UserSecretsId>e5696576-54da-4b91-af38-1aae06a0dd05</UserSecretsId>
     <Version>1.0.13</Version>
+    <TypeScriptToolsVersion>Latest</TypeScriptToolsVersion>
   </PropertyGroup>
 
   <ItemGroup>
