@@ -144,7 +144,7 @@
           <div class="message-box" [ngClass]="msg.role">
             <div class="message-header">
               @if (msg.role === 'assistant') {
-                <img src="/img/gnoll-overseer-avatar-128x128-static.webp" class="overseer-avatar" alt="Overseer" width="64" height="64" />
+                <img src="/img/gnoll-overseer-avatar-128x128-static.webp" class="overseer-avatar" alt="Overseer" width="64" height="64" decoding="sync" />
               }
               @if (msg.role === 'assistant') {
                 <strong>Overseer</strong>
@@ -266,7 +266,7 @@
         @if (isStreaming || streamingMessage) {
           <div class="message-box assistant">
             <div class="message-header">
-              <img [src]="hasRealContent ? '/img/GnollOverseerAvatar-128x128-animated.webp' : '/img/gnoll-overseer-avatar-128x128-animated-thinking.webp'" class="overseer-avatar" alt="Overseer" width="64" height="64" />
+              <img [src]="hasRealContent ? '/img/GnollOverseerAvatar-128x128-animated.webp' : '/img/gnoll-overseer-avatar-128x128-animated-thinking.webp'" class="overseer-avatar" alt="Overseer" width="64" height="64" decoding="sync" />
               <strong>Overseer</strong>
               <span class="msg-time">just now</span>
               <div class="header-right-container">
@@ -617,3 +617,10 @@
     <button class="btn-gh btn-gh-delete" (click)="executeLogout()">Log Out</button>
   </div>
 </dialog>
+
+<!-- Hidden container to keep avatar bitmaps decoded in memory -->
+<div aria-hidden="true" style="position: absolute; width: 0; height: 0; overflow: hidden; pointer-events: none;">
+  <img src="/img/gnoll-overseer-avatar-128x128-static.webp" alt="" width="1" height="1" decoding="sync" />
+  <img src="/img/GnollOverseerAvatar-128x128-animated.webp" alt="" width="1" height="1" decoding="sync" />
+  <img src="/img/gnoll-overseer-avatar-128x128-animated-thinking.webp" alt="" width="1" height="1" decoding="sync" />
+</div>
