@@ -1,5 +1,20 @@
 [
   {
+    "version": "1.0.15",
+    "date": "2026-08-16T21:14:09Z",
+    "summary": "Added new animations to the Gnoll Overseer avatar.",
+    "changes": [
+      {
+        "type": "improvement",
+        "text": "Added two new animations to the Gnoll Overseer avatar."
+      },
+      {
+        "type": "fix",
+        "text": "Fixed an issue with tool boxes."
+      }
+    ]
+  },
+  {
     "version": "1.0.14",
     "date": "2026-08-16T16:01:00Z",
     "summary": "Fixed an issue with immediate attachment loading.",
