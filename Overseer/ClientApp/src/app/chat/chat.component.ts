@@ -153,10 +153,34 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   currentInput = '';
   isStreaming = false;
   isThinkingActive = false;
+  
+  /* Avatar animation state */
+  currentAvatarState: 'thinking' | 'talking' | 'toolUse' | 'yawning' = 'thinking';
+  private pendingAvatarState: string | null = null;
+  private avatarSwapTimeout: any = null;
+  private animStartTime: number = 0;
+
+  /* Flags that drive desired avatar state */
   hasActiveToolCall = false;
   isYawning = false;
   private yawningTimeout: any = null;
   private static readonly YAWNING_DELAY_MS = 30000;
+  private static readonly IMMEDIATE_SWAP_THRESHOLD_MS = 250;
+
+  private static readonly AVATAR_LOOP_DURATIONS: Record<string, number> = {
+    thinking: 3569,  // 43 frames × 83ms
+    talking:  3735,  // 45 frames × 83ms
+    toolUse:  3818,  // 46 frames × 83ms
+    yawning:  3735,  // 45 frames × 83ms
+  };
+
+  private static readonly AVATAR_SRCS: Record<string, string> = {
+    thinking: '/img/gnoll-overseer-avatar-128x128-animated-thinking.webp',
+    talking:  '/img/GnollOverseerAvatar-128x128-animated.webp',
+    toolUse:  '/img/gnoll-overseer-avatar-128x128-animated-tools2.webp',
+    yawning:  '/img/gnoll-overseer-avatar-128x128-animated-yawning.webp',
+  };
+
   hasRealContent = false;
   realContentTimeout: any = null;
   streamingMessage = '';
@@ -191,16 +215,99 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   renameError: string | null = null;
 
   get streamingAvatarSrc(): string {
-    if (this.isYawning) return '/img/gnoll-overseer-avatar-128x128-animated-yawning.webp';
-    if (this.hasActiveToolCall) return '/img/gnoll-overseer-avatar-128x128-animated-tools2.webp';
-    if (this.hasRealContent) return '/img/GnollOverseerAvatar-128x128-animated.webp';
-    return '/img/gnoll-overseer-avatar-128x128-animated-thinking.webp';
+    return ChatComponent.AVATAR_SRCS[this.currentAvatarState] || ChatComponent.AVATAR_SRCS['thinking'];
+  }
+
+  /**
+   * Determines the desired avatar state from the current flags
+   * and requests a loop-boundary-aware transition if it differs
+   * from the current state.
+   */
+  private updateDesiredAvatarState() {
+    let desired: 'thinking' | 'talking' | 'toolUse' | 'yawning';
+    if (this.isYawning) {
+      desired = 'yawning';
+    } else if (this.hasActiveToolCall) {
+      desired = 'toolUse';
+    } else if (this.hasRealContent) {
+      desired = 'talking';
+    } else {
+      desired = 'thinking';
+    }
+    this.requestAvatarTransition(desired);
+  }
+
+  /**
+   * Schedules an avatar swap at the next loop boundary of the
+   * currently playing animation. If a transition is already
+   * pending, it is replaced (the timer still fires at the
+   * original boundary, but applies the latest desired state).
+   *
+   * If the current animation has been playing for less than
+   * IMMEDIATE_SWAP_THRESHOLD_MS, it is replaced immediately
+   * (the user barely saw it). This prevents rapid state
+   * changes from locking in the first animation for a full
+   * loop while subsequent changes queue up.
+   */
+  private requestAvatarTransition(newState: string) {
+    if (newState === this.currentAvatarState && !this.pendingAvatarState) return;
+
+    // If no animation is playing yet, switch immediately
+    if (this.animStartTime === 0) {
+      this.applyAvatarState(newState);
+      return;
+    }
+
+    const elapsed = performance.now() - this.animStartTime;
+
+    // If current animation just started, swap immediately —
+    // no value in waiting for a loop the user barely saw
+    if (elapsed < ChatComponent.IMMEDIATE_SWAP_THRESHOLD_MS) {
+      if (this.avatarSwapTimeout) {
+        clearTimeout(this.avatarSwapTimeout);
+        this.avatarSwapTimeout = null;
+      }
+      this.pendingAvatarState = null;
+      this.applyAvatarState(newState);
+      return;
+    }
+
+    // Update the pending state (timer will pick up the latest)
+    this.pendingAvatarState = newState;
+
+    // Only schedule a new timer if one isn't already running
+    if (this.avatarSwapTimeout) return;
+
+    const loopDuration = ChatComponent.AVATAR_LOOP_DURATIONS[this.currentAvatarState] || 1000;
+    const timeInLoop = elapsed % loopDuration;
+    const timeUntilLoopEnd = loopDuration - timeInLoop;
+
+    this.avatarSwapTimeout = setTimeout(() => {
+      this.avatarSwapTimeout = null;
+      if (this.pendingAvatarState && this.pendingAvatarState !== this.currentAvatarState) {
+        this.applyAvatarState(this.pendingAvatarState);
+      }
+      this.pendingAvatarState = null;
+    }, timeUntilLoopEnd);
+  }
+
+  private applyAvatarState(state: string) {
+    this.currentAvatarState = state as any;
+    // animStartTime will be set precisely by the (load) event
+    this.animStartTime = performance.now(); // fallback in case load doesn't fire (cached)
+    this.cdr.detectChanges();
+  }
+
+  /** Called by the <img (load)> event to precisely record when playback starts */
+  onAvatarLoaded() {
+    this.animStartTime = performance.now();
   }
 
   private startYawningTimer() {
     this.clearYawningTimer();
     this.yawningTimeout = setTimeout(() => {
       this.isYawning = true;
+      this.updateDesiredAvatarState();
       this.cdr.detectChanges();
     }, ChatComponent.YAWNING_DELAY_MS);
   }
@@ -210,7 +317,30 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       clearTimeout(this.yawningTimeout);
       this.yawningTimeout = null;
     }
+    if (this.isYawning) {
+      this.isYawning = false;
+      // Don't call updateDesiredAvatarState here — callers will do it
+    }
+  }
+
+  private resetAvatarState() {
+    this.hasActiveToolCall = false;
     this.isYawning = false;
+    this.currentAvatarState = 'thinking';
+    this.pendingAvatarState = null;
+    this.animStartTime = 0;
+    this.clearYawningTimer();
+    if (this.avatarSwapTimeout) {
+      clearTimeout(this.avatarSwapTimeout);
+      this.avatarSwapTimeout = null;
+    }
+  }
+
+  private preloadAvatarImages() {
+    Object.values(ChatComponent.AVATAR_SRCS).forEach(src => {
+      const img = new Image();
+      img.src = src;
+    });
   }
 
   get currentTitle(): string {
@@ -550,6 +680,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   ngOnInit() {
+    this.preloadAvatarImages();
     this.settingsService.showThoughtsAndToolsUpdated.subscribe(val => {
       this.showThoughtsAndTools = val;
     });
@@ -673,6 +804,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.realContentTimeout = null;
       }
       this.hasRealContent = false;
+      this.updateDesiredAvatarState();
     }
   }
 
@@ -695,7 +827,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     }
 
     if (evt.type !== 'debug' && evt.type !== 'title_update' && evt.type !== 'title_status') {
-      this.clearYawningTimer();
+      const wasYawning = this.isYawning;
+      this.startYawningTimer();
+      if (wasYawning) {
+        this.updateDesiredAvatarState();
+      }
     }
 
     if (evt.type === 'debug') {
@@ -752,6 +888,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       this.cdr.detectChanges();
     } else if (evt.type === 'thinking_chunk') {
       this.hasActiveToolCall = false;
+      this.updateDesiredAvatarState();
       // Always append thinking text; CSS .hide-thoughts handles visibility
       if (!this.isThinkingActive) {
         this.debugService.log(`[Frontend] thinking_chunk started. Current streamingMessage length: ${this.streamingMessage.length}`);
@@ -780,6 +917,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       this.hasOngoingGeneration = false;
       this.streamingMessage += evt.data;
       this.updateHasRealContent();
+      this.updateDesiredAvatarState();
       this.cdr.detectChanges();
       this.scrollToBottomClamped(false);
     } else if (evt.type === 'error') {
@@ -795,6 +933,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       this.cdr.detectChanges();
     } else if (evt.type === 'tool_start') {
       this.hasActiveToolCall = true;
+      this.updateDesiredAvatarState();
       try {
         // Close any active thinking div
         if (this.isThinkingActive) {
@@ -891,7 +1030,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       } catch(e) {}
     } else if (evt.type === 'done') {
       this.hasActiveToolCall = false;
-      this.clearYawningTimer();
       this.hasOngoingGeneration = false;
       this.debugService.log(`[Frontend] done received. hasRealContent=${this.hasRealContent}, streamingMessage.length=${this.streamingMessage.length}`);
       if (this.realContentTimeout) {
@@ -922,6 +1060,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.isStreaming = false;
         this.showSpinner = false;
         this.currentStatusText = 'Generation complete.';
+        
+        // Let the avatar smoothly transition back to thinking
+        this.hasRealContent = false;
+        this.updateDesiredAvatarState();
         
         // Fallback for missing attachment IDs
         if (this.currentSessionId) {
@@ -1106,6 +1248,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.isLoadingSession = false;
     this.liveEventBuffer = [];
     if (this.handoffTimeoutHandle) { clearTimeout(this.handoffTimeoutHandle); this.handoffTimeoutHandle = null; }
+    this.resetAvatarState();
     this.loadDraft();
     this.applySavedModelPreference();
     this.focusPromptInput();
@@ -1128,6 +1271,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.showSpinner = false;
     this.isThinkingActive = false;
     this.timeToFirstTokenMs = null;
+    this.resetAvatarState();
 
     if (this.hubConnection?.state === signalR.HubConnectionState.Connected) {
       if (this.currentSessionId && this.currentSessionId !== id) {
@@ -1180,6 +1324,17 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
             msg.toolCalls.forEach(tc => {
               if (!tc.displayName && tc.name) {
                 tc.displayName = ChatComponent.TOOL_DISPLAY_NAMES[tc.name] || tc.name;
+              }
+              if (tc.argsText) {
+                const trimmed = tc.argsText.trim();
+                if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+                  try {
+                    const argsObj = JSON.parse(trimmed);
+                    tc.argsText = this.buildToolArgsText(tc.name, argsObj);
+                  } catch (e) {
+                    // Ignore JSON parsing errors and leave argsText as is
+                  }
+                }
               }
             });
           }
@@ -1426,6 +1581,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.focusPromptInput();
 
     this.requestStartTime = performance.now();
+    this.resetAvatarState();
     this.startYawningTimer();
     this.currentStatusText = 'Connecting...';
     this.showSpinner = true;

@@ -266,7 +266,7 @@
         @if (isStreaming || streamingMessage) {
           <div class="message-box assistant">
             <div class="message-header">
-              <img [src]="streamingAvatarSrc" class="overseer-avatar" alt="Overseer" width="64" height="64" decoding="sync" />
+              <img [src]="streamingAvatarSrc" (load)="onAvatarLoaded()" class="overseer-avatar" alt="Overseer" width="64" height="64" decoding="sync" />
               <strong>Overseer</strong>
               <span class="msg-time">just now</span>
               <div class="header-right-container">
