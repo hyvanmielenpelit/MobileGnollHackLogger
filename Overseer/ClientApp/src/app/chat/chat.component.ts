@@ -192,7 +192,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
   get streamingAvatarSrc(): string {
     if (this.isYawning) return '/img/gnoll-overseer-avatar-128x128-animated-yawning.webp';
-    if (this.hasActiveToolCall) return '/img/gnoll-overseer-avatar-128x128-animated-tools.webp';
+    if (this.hasActiveToolCall) return '/img/gnoll-overseer-avatar-128x128-animated-tools2.webp';
     if (this.hasRealContent) return '/img/GnollOverseerAvatar-128x128-animated.webp';
     return '/img/gnoll-overseer-avatar-128x128-animated-thinking.webp';
   }
