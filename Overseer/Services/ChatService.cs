@@ -418,6 +418,7 @@ public class ChatService
             
             var textAttachmentsContent = new StringBuilder();
             List<SendMessageAttachment> imageAttachments = new();
+            var savedDbAttachments = new List<ChatMessageAttachment>();
 
             if (attachments != null && attachments.Count > 0)
             {
@@ -448,6 +449,7 @@ public class ChatService
                                 RelativePath = relPath
                             };
                             dbContext.ChatMessageAttachment.Add(dbAtt);
+                            savedDbAttachments.Add(dbAtt);
 
                             if (att.ContentType.StartsWith("image/"))
                             {
@@ -473,6 +475,16 @@ public class ChatService
                     await dbContext.SaveChangesAsync(CancellationToken.None);
                 }
             }
+
+            yield return new ChatEvent
+            {
+                Type = "user_message_created",
+                Data = JsonSerializer.Serialize(new
+                {
+                    messageId = userMsg.Id,
+                    attachments = savedDbAttachments.Select(a => new { id = a.Id, fileName = a.FileName }).ToList()
+                })
+            };
 
             string finalMessageText = message;
             if (textAttachmentsContent.Length > 0)

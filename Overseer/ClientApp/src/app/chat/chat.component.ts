@@ -662,6 +662,29 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
     if (evt.type === 'debug') {
       this.debugService.log(`[Backend] ${evt.data}`);
+    } else if (evt.type === 'user_message_created') {
+      try {
+        const data = JSON.parse(evt.data);
+        for (let i = this.messages.length - 1; i >= 0; i--) {
+          if (this.messages[i].role === 'user') {
+            this.messages[i].id = data.messageId;
+            if (data.attachments && this.messages[i].attachments) {
+              for (const serverAtt of data.attachments) {
+                const localAtt = this.messages[i].attachments!.find(
+                  a => a.fileName === serverAtt.fileName && !a.id
+                );
+                if (localAtt) {
+                  localAtt.id = serverAtt.id;
+                }
+              }
+            }
+            break;
+          }
+        }
+        this.cdr.detectChanges();
+      } catch (e) {
+        console.error('Failed to process user_message_created event', e);
+      }
     } else if (evt.type === 'status') {
       this.currentStatusText = evt.data;
       this.debugService.log(`[Frontend] status updated to: ${evt.data}`);
