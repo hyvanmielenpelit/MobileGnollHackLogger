@@ -1,5 +1,16 @@
 [
   {
+    "version": "1.0.14",
+    "date": "2026-08-16T16:01:00Z",
+    "summary": "Fixed an issue with immediate attachment loading.",
+    "changes": [
+      {
+        "type": "fix",
+        "text": "Fixed an issue with immediate attachment loading."
+      }
+    ]
+  },
+  {
     "version": "1.0.13",
     "date": "2026-08-16T13:42:34Z",
     "summary": "Added a new thinking animation and improved the knowledge base.",
