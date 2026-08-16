@@ -153,6 +153,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   currentInput = '';
   isStreaming = false;
   isThinkingActive = false;
+  hasActiveToolCall = false;
+  isYawning = false;
+  private yawningTimeout: any = null;
+  private static readonly YAWNING_DELAY_MS = 30000;
   hasRealContent = false;
   realContentTimeout: any = null;
   streamingMessage = '';
@@ -185,6 +189,29 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   isRenamingTitle = false;
   renameTitleValue = '';
   renameError: string | null = null;
+
+  get streamingAvatarSrc(): string {
+    if (this.isYawning) return '/img/gnoll-overseer-avatar-128x128-animated-yawning.webp';
+    if (this.hasActiveToolCall) return '/img/gnoll-overseer-avatar-128x128-animated-tools.webp';
+    if (this.hasRealContent) return '/img/GnollOverseerAvatar-128x128-animated.webp';
+    return '/img/gnoll-overseer-avatar-128x128-animated-thinking.webp';
+  }
+
+  private startYawningTimer() {
+    this.clearYawningTimer();
+    this.yawningTimeout = setTimeout(() => {
+      this.isYawning = true;
+      this.cdr.detectChanges();
+    }, ChatComponent.YAWNING_DELAY_MS);
+  }
+
+  private clearYawningTimer() {
+    if (this.yawningTimeout) {
+      clearTimeout(this.yawningTimeout);
+      this.yawningTimeout = null;
+    }
+    this.isYawning = false;
+  }
 
   get currentTitle(): string {
     const session = this.sessions.find(s => s.id === this.currentSessionId);
@@ -667,6 +694,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       this.lastSeenSeqNo = evt.seqNo;
     }
 
+    if (evt.type !== 'debug' && evt.type !== 'title_update' && evt.type !== 'title_status') {
+      this.clearYawningTimer();
+    }
+
     if (evt.type === 'debug') {
       this.debugService.log(`[Backend] ${evt.data}`);
     } else if (evt.type === 'user_message_created') {
@@ -720,6 +751,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       this.debugService.log(`[Frontend] status updated to: ${evt.data}`);
       this.cdr.detectChanges();
     } else if (evt.type === 'thinking_chunk') {
+      this.hasActiveToolCall = false;
       // Always append thinking text; CSS .hide-thoughts handles visibility
       if (!this.isThinkingActive) {
         this.debugService.log(`[Frontend] thinking_chunk started. Current streamingMessage length: ${this.streamingMessage.length}`);
@@ -733,6 +765,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       this.timeToFirstTokenMs = parseInt(evt.data, 10);
       this.cdr.detectChanges();
     } else if (evt.type === 'chunk') {
+      this.hasActiveToolCall = false;
       this.debugService.log(`[Frontend] chunk received: seqNo=${evt.seqNo} "${evt.data}" streamingMessage.length=${this.streamingMessage.length}`);
       if (this.isThinkingActive) {
           this.debugService.log(`[Frontend] closing ai-thought div before chunk.`);
@@ -761,6 +794,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       }
       this.cdr.detectChanges();
     } else if (evt.type === 'tool_start') {
+      this.hasActiveToolCall = true;
       try {
         // Close any active thinking div
         if (this.isThinkingActive) {
@@ -856,6 +890,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.cdr.detectChanges();
       } catch(e) {}
     } else if (evt.type === 'done') {
+      this.hasActiveToolCall = false;
+      this.clearYawningTimer();
       this.hasOngoingGeneration = false;
       this.debugService.log(`[Frontend] done received. hasRealContent=${this.hasRealContent}, streamingMessage.length=${this.streamingMessage.length}`);
       if (this.realContentTimeout) {
@@ -1049,6 +1085,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.sessionLoadSub?.unsubscribe();
     this.currentSessionId = null;
     this.lastSeenSeqNo = -1;
+    this.hasActiveToolCall = false;
+    this.clearYawningTimer();
     this.messages = [];
     this.isStreaming = false;
     this.streamingMessage = '';
@@ -1078,6 +1116,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
     this.isStreaming = false;
     this.lastSeenSeqNo = -1;
+    this.hasActiveToolCall = false;
+    this.clearYawningTimer();
     this.streamingMessage = '';
     if (this.realContentTimeout) {
       clearTimeout(this.realContentTimeout);
@@ -1372,6 +1412,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.pendingAttachments = [];
     this.isStreaming = true;
     this.isThinkingActive = false;
+    this.hasActiveToolCall = false;
     this.streamingMessage = '';
     if (this.realContentTimeout) {
       clearTimeout(this.realContentTimeout);
@@ -1385,6 +1426,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.focusPromptInput();
 
     this.requestStartTime = performance.now();
+    this.startYawningTimer();
     this.currentStatusText = 'Connecting...';
     this.showSpinner = true;
 
