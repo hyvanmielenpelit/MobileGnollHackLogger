@@ -188,6 +188,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   hasRealContent = false;
   realContentTimeout: any = null;
   streamingMessage = '';
+  isFinishingAnimation = false;
+  finishDoneTimeout: any = null;
   streamingToolCalls: ChatMessageToolCall[] = [];
   pendingAttachments: { file: File | null, base64: string, name: string, type: string }[] = [];
   timeToFirstTokenMs: number | null = null;
@@ -1070,71 +1072,82 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
          clearTimeout(this.realContentTimeout);
          this.realContentTimeout = null;
       }
-      const stripped = this.streamingMessage.replace(/<div class="ai-thought">[\s\S]*?<\/div>/g, '').trim();
-      this.hasRealContent = stripped.length > 0;
-      const hasThinking = this.streamingMessage.includes('ai-thought');
-      this.debugService.log(`[Frontend] done: ${this.streamingMessage.length} chars, hasThinkingText=${hasThinking}, toolCalls=${this.streamingToolCalls.length}, mode=${this.showThoughtsAndTools}`);
       if (this.isStreaming) {
         if (this.isThinkingActive) {
             this.isThinkingActive = false;
             this.streamingMessage += '\n\n</div>\n\n';
         }
-        this.messages.push({ 
-          role: 'assistant', 
-          content: this.streamingMessage, 
-          timestampUtc: new Date().toISOString(), 
-          toolCalls: [...this.streamingToolCalls], 
-          timeToFirstTokenMs: this.timeToFirstTokenMs ?? undefined,
-          modelDisplayName: this.selectedModel?.displayName || this.selectedModel?.modelId || this.singleModelInfo?.modelId,
-          thinkingLevel: this.selectedModel?.thinkingLevel || this.singleModelInfo?.thinkingLevel
-        });
-        this.streamingMessage = '';
-        this.streamingToolCalls = [];
-        this.timeToFirstTokenMs = null;
-        this.isStreaming = false;
-        this.showSpinner = false;
-        this.currentStatusText = 'Generation complete.';
-        
-        // Stop any streaming animations immediately and cleanly transition
-        // to idle (or whichever static/waiting state is appropriate).
-        // We do this instantly rather than deferring to a DOM (load) event
-        // because the browser will restart the WebP animation when creating
-        // the new completed-message element, which would force the user to watch
-        // one full extra loop.
+
         this.hasRealContent = false;
         
+        // We explicitly do NOT call updateDesiredAvatarState() here because isStreaming
+        // is still true, which would cause the system to schedule a transition back to 'thinking'.
         if (this.avatarSwapTimeout) {
           clearTimeout(this.avatarSwapTimeout);
           this.avatarSwapTimeout = null;
         }
-        this.updateDesiredAvatarState();
-        this.applyAvatarState(this.currentAvatarState); // Apply instantly
         
-        // Fallback for missing attachment IDs
-        if (this.currentSessionId) {
-          const lastUserMsg = [...this.messages].reverse().find(m => m.role === 'user');
-          if (lastUserMsg && lastUserMsg.attachments && lastUserMsg.attachments.some(a => !a.id)) {
-            console.log('[Frontend Debug] Fallback: Missing attachment IDs detected. Fetching session to patch...');
-            this.debugService.log(`[Frontend] Fallback: Missing attachment IDs detected. Fetching session to patch...`);
-            this.chatService.getSession(this.currentSessionId).subscribe(s => {
-              const serverUserMsg = [...(s.messages || [])].reverse().find(m => m.role === 'user');
-              if (serverUserMsg && serverUserMsg.attachments) {
-                for (const serverAtt of serverUserMsg.attachments) {
-                  const localAtt = lastUserMsg.attachments!.find(a => a.fileName === serverAtt.fileName && !a.id);
-                  if (localAtt) {
-                    localAtt.id = serverAtt.id;
-                    console.log(`[Frontend Debug] Fallback patched attachment: ${serverAtt.fileName} (id: ${serverAtt.id})`);
-                  }
-                }
-                this.cdr.detectChanges();
-              }
-            });
-          }
-        }
+        const elapsed = performance.now() - this.animStartTime;
+        const loopDuration = ChatComponent.AVATAR_LOOP_DURATIONS[this.currentAvatarState] || 1000;
+        const timeInLoop = elapsed % loopDuration;
+        const timeUntilLoopEnd = loopDuration - timeInLoop;
 
-        this.cdr.detectChanges();
-        this.loadSessions(true);
-        this.focusPromptInput();
+        this.isFinishingAnimation = true;
+
+        const executeDone = () => {
+          if (!this.isFinishingAnimation) return;
+          
+          this.isFinishingAnimation = false;
+          this.finishDoneTimeout = null;
+          
+          // Force the state to idle instantly before the DOM swap
+          this.applyAvatarState('idle');
+          
+          this.messages.push({ 
+            role: 'assistant', 
+            content: this.streamingMessage, 
+            timestampUtc: new Date().toISOString(),
+            toolCalls: [...this.streamingToolCalls], 
+            modelDisplayName: this.selectedModel?.displayName || this.selectedModel?.modelId || this.singleModelInfo?.modelId,
+            thinkingLevel: this.selectedModel?.thinkingLevel || this.singleModelInfo?.thinkingLevel,
+            timeToFirstTokenMs: this.timeToFirstTokenMs ?? undefined
+          });
+          
+          this.isStreaming = false;
+          this.streamingMessage = '';
+          this.streamingToolCalls = [];
+          this.timeToFirstTokenMs = null;
+          this.showSpinner = false;
+          this.currentStatusText = 'Generation complete.';
+          
+          // Fallback for missing attachment IDs
+          if (this.currentSessionId) {
+            const lastUserMsg = [...this.messages].reverse().find(m => m.role === 'user');
+            if (lastUserMsg && lastUserMsg.attachments && lastUserMsg.attachments.some(a => !a.id)) {
+              console.log('[Frontend Debug] Fallback: Missing attachment IDs detected. Fetching session to patch...');
+              this.debugService.log(`[Frontend] Fallback: Missing attachment IDs detected. Fetching session to patch...`);
+              this.chatService.getSession(this.currentSessionId).subscribe(s => {
+                const serverUserMsg = [...(s.messages || [])].reverse().find(m => m.role === 'user');
+                if (serverUserMsg && serverUserMsg.attachments) {
+                  for (const serverAtt of serverUserMsg.attachments) {
+                    const localAtt = lastUserMsg.attachments!.find(a => a.fileName === serverAtt.fileName && !a.id);
+                    if (localAtt) {
+                      localAtt.id = serverAtt.id;
+                      console.log(`[Frontend Debug] Fallback patched attachment: ${serverAtt.fileName} (id: ${serverAtt.id})`);
+                    }
+                  }
+                  this.cdr.detectChanges();
+                }
+              });
+            }
+          }
+
+          this.cdr.detectChanges();
+          this.loadSessions(true);
+          this.focusPromptInput();
+        };
+
+        this.finishDoneTimeout = setTimeout(executeDone, timeUntilLoopEnd + 20);
       }
     }
   }
@@ -1274,7 +1287,19 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.lastSeenSeqNo = -1;
     this.clearYawningTimer();
     this.messages = [];
+    this.clearStreamingState();
+    this.loadDraft();
+    this.applySavedModelPreference();
+    this.focusPromptInput();
+  }
+
+  private clearStreamingState() {
     this.isStreaming = false;
+    this.isFinishingAnimation = false;
+    if (this.finishDoneTimeout) {
+      clearTimeout(this.finishDoneTimeout);
+      this.finishDoneTimeout = null;
+    }
     this.streamingMessage = '';
     if (this.realContentTimeout) {
       clearTimeout(this.realContentTimeout);
@@ -1586,7 +1611,20 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
   async sendMessage() {
     const message = this.sanitizeInput(this.currentInput).trim();
-    if ((!message && this.pendingAttachments.length === 0) || this.isStreaming) return;
+    if (!message && this.pendingAttachments.length === 0) return;
+    
+    if (this.isFinishingAnimation) {
+      if (this.finishDoneTimeout) {
+        clearTimeout(this.finishDoneTimeout);
+        this.finishDoneTimeout = null;
+      }
+      this.isFinishingAnimation = false;
+      this.isStreaming = false;
+      this.streamingMessage = '';
+      this.streamingToolCalls = [];
+    } else if (this.isStreaming) {
+      return;
+    }
 
     const attachmentsPayload = this.pendingAttachments.map(a => ({
       fileName: a.name,
