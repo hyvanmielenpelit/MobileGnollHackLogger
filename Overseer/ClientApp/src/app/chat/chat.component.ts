@@ -155,10 +155,12 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   isThinkingActive = false;
   
   /* Avatar animation state */
-  currentAvatarState: 'thinking' | 'talking' | 'toolUse' | 'yawning' = 'thinking';
+  currentAvatarState: 'idle' | 'thinking' | 'talking' | 'toolUse' | 'yawning' = 'idle';
   private pendingAvatarState: string | null = null;
   private avatarSwapTimeout: any = null;
   private animStartTime: number = 0;
+  private suppressImmediateSwap = false;
+  private waitingForAvatarLoadToTransition = false;
 
   /* Flags that drive desired avatar state */
   hasActiveToolCall = false;
@@ -215,6 +217,9 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   renameError: string | null = null;
 
   get streamingAvatarSrc(): string {
+    if (this.currentAvatarState === 'idle') {
+      return '/img/gnoll-overseer-avatar-128x128-static.webp';
+    }
     return ChatComponent.AVATAR_SRCS[this.currentAvatarState] || ChatComponent.AVATAR_SRCS['thinking'];
   }
 
@@ -224,15 +229,17 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
    * from the current state.
    */
   private updateDesiredAvatarState() {
-    let desired: 'thinking' | 'talking' | 'toolUse' | 'yawning';
+    let desired: 'idle' | 'thinking' | 'talking' | 'toolUse' | 'yawning';
     if (this.isYawning) {
       desired = 'yawning';
     } else if (this.hasActiveToolCall) {
       desired = 'toolUse';
     } else if (this.hasRealContent) {
       desired = 'talking';
-    } else {
+    } else if (this.isStreaming) {
       desired = 'thinking';
+    } else {
+      desired = 'idle';
     }
     this.requestAvatarTransition(desired);
   }
@@ -250,10 +257,14 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
    * loop while subsequent changes queue up.
    */
   private requestAvatarTransition(newState: string) {
-    if (newState === this.currentAvatarState && !this.pendingAvatarState) return;
+    if (newState === this.currentAvatarState && !this.pendingAvatarState) {
+      this.suppressImmediateSwap = false;
+      return;
+    }
 
-    // If no animation is playing yet, switch immediately
-    if (this.animStartTime === 0) {
+    // If no animation is playing yet, or current state is idle, switch immediately
+    if (this.animStartTime === 0 || this.currentAvatarState === 'idle') {
+      this.suppressImmediateSwap = false;
       this.applyAvatarState(newState);
       return;
     }
@@ -262,12 +273,13 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
     // If current animation just started, swap immediately —
     // no value in waiting for a loop the user barely saw
-    if (elapsed < ChatComponent.IMMEDIATE_SWAP_THRESHOLD_MS) {
+    if (elapsed < ChatComponent.IMMEDIATE_SWAP_THRESHOLD_MS && !this.suppressImmediateSwap) {
       if (this.avatarSwapTimeout) {
         clearTimeout(this.avatarSwapTimeout);
         this.avatarSwapTimeout = null;
       }
       this.pendingAvatarState = null;
+      this.suppressImmediateSwap = false;
       this.applyAvatarState(newState);
       return;
     }
@@ -284,6 +296,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
     this.avatarSwapTimeout = setTimeout(() => {
       this.avatarSwapTimeout = null;
+      this.suppressImmediateSwap = false;
       if (this.pendingAvatarState && this.pendingAvatarState !== this.currentAvatarState) {
         this.applyAvatarState(this.pendingAvatarState);
       }
@@ -301,6 +314,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   /** Called by the <img (load)> event to precisely record when playback starts */
   onAvatarLoaded() {
     this.animStartTime = performance.now();
+    if (this.waitingForAvatarLoadToTransition) {
+      this.waitingForAvatarLoadToTransition = false;
+      this.updateDesiredAvatarState();
+    }
   }
 
   private startYawningTimer() {
@@ -329,6 +346,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.currentAvatarState = 'thinking';
     this.pendingAvatarState = null;
     this.animStartTime = 0;
+    this.suppressImmediateSwap = false;
+    this.waitingForAvatarLoadToTransition = false;
     this.clearYawningTimer();
     if (this.avatarSwapTimeout) {
       clearTimeout(this.avatarSwapTimeout);
@@ -826,7 +845,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       this.lastSeenSeqNo = evt.seqNo;
     }
 
-    if (evt.type !== 'debug' && evt.type !== 'title_update' && evt.type !== 'title_status') {
+    if (evt.type !== 'debug' && evt.type !== 'title_update' && evt.type !== 'title_status' && evt.type !== 'status') {
       const wasYawning = this.isYawning;
       this.startYawningTimer();
       if (wasYawning) {
@@ -1061,9 +1080,22 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.showSpinner = false;
         this.currentStatusText = 'Generation complete.';
         
-        // Let the avatar smoothly transition back to thinking
+        // Let the avatar smoothly transition back to thinking.
+        // Set flags now; the actual transition is deferred until the
+        // completed-message <img> fires its (load) event, so we
+        // calculate the loop boundary against the correct animStartTime.
         this.hasRealContent = false;
-        this.updateDesiredAvatarState();
+        this.suppressImmediateSwap = true;
+        this.waitingForAvatarLoadToTransition = true;
+
+        // Fallback: if (load) doesn't fire (e.g. aggressive caching),
+        // trigger the transition after 500ms.
+        setTimeout(() => {
+          if (this.waitingForAvatarLoadToTransition) {
+            this.waitingForAvatarLoadToTransition = false;
+            this.updateDesiredAvatarState();
+          }
+        }, 500);
         
         // Fallback for missing attachment IDs
         if (this.currentSessionId) {
@@ -1529,6 +1561,16 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   private sanitizeInput(text: string): string {
     if (!text) return '';
     return text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+  }
+
+  isLastAssistantMessage(index: number): boolean {
+    if (this.isStreaming) return false;
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      if (this.messages[i].role === 'assistant') {
+        return i === index;
+      }
+    }
+    return false;
   }
 
   async sendMessage() {

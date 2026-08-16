@@ -144,7 +144,11 @@
           <div class="message-box" [ngClass]="msg.role">
             <div class="message-header">
               @if (msg.role === 'assistant') {
-                <img src="/img/gnoll-overseer-avatar-128x128-static.webp" class="overseer-avatar" alt="Overseer" width="64" height="64" decoding="sync" />
+                @if (isLastAssistantMessage(i)) {
+                  <img [src]="streamingAvatarSrc" (load)="onAvatarLoaded()" class="overseer-avatar" alt="Overseer" width="64" height="64" decoding="sync" />
+                } @else {
+                  <img src="/img/gnoll-overseer-avatar-128x128-static.webp" class="overseer-avatar" alt="Overseer" width="64" height="64" decoding="sync" />
+                }
               }
               @if (msg.role === 'assistant') {
                 <strong>Overseer</strong>
