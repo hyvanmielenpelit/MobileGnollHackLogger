@@ -163,7 +163,9 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   private waitingForAvatarLoadToTransition = false;
 
   /* Flags that drive desired avatar state */
-  hasActiveToolCall = false;
+  get hasActiveToolCall(): boolean {
+    return this.streamingToolCalls.some(tc => tc.status === 'running');
+  }
   isYawning = false;
   private yawningTimeout: any = null;
   private static readonly YAWNING_DELAY_MS = 30000;
@@ -271,9 +273,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
     const elapsed = performance.now() - this.animStartTime;
 
-    // If current animation just started, swap immediately —
-    // no value in waiting for a loop the user barely saw
-    if (elapsed < ChatComponent.IMMEDIATE_SWAP_THRESHOLD_MS && !this.suppressImmediateSwap) {
+    // We can safely interrupt 'thinking' at any time without it looking too jarring,
+    // which ensures responsive feedback when a tool starts or when the AI starts talking.
+    // However, we MUST NEVER abruptly interrupt 'toolUse' or 'talking' mid-loop, 
+    // because that looks like a jarring snap (e.g. hammer disappears mid-swing).
+    if (this.currentAvatarState === 'thinking') {
       if (this.avatarSwapTimeout) {
         clearTimeout(this.avatarSwapTimeout);
         this.avatarSwapTimeout = null;
@@ -316,6 +320,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.animStartTime = performance.now();
     if (this.waitingForAvatarLoadToTransition) {
       this.waitingForAvatarLoadToTransition = false;
+      if (this.avatarSwapTimeout) {
+        clearTimeout(this.avatarSwapTimeout);
+        this.avatarSwapTimeout = null;
+      }
       this.updateDesiredAvatarState();
     }
   }
@@ -341,7 +349,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   private resetAvatarState() {
-    this.hasActiveToolCall = false;
+    if (this.avatarSwapTimeout) {
+      clearTimeout(this.avatarSwapTimeout);
+      this.avatarSwapTimeout = null;
+    }
     this.isYawning = false;
     this.currentAvatarState = 'thinking';
     this.pendingAvatarState = null;
@@ -906,7 +917,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       this.debugService.log(`[Frontend] status updated to: ${evt.data}`);
       this.cdr.detectChanges();
     } else if (evt.type === 'thinking_chunk') {
-      this.hasActiveToolCall = false;
+      if (!this.isStreaming) {
+        this.resetAvatarState();
+        this.isStreaming = true;
+        this.showSpinner = false;
+      }
       this.updateDesiredAvatarState();
       // Always append thinking text; CSS .hide-thoughts handles visibility
       if (!this.isThinkingActive) {
@@ -921,7 +936,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       this.timeToFirstTokenMs = parseInt(evt.data, 10);
       this.cdr.detectChanges();
     } else if (evt.type === 'chunk') {
-      this.hasActiveToolCall = false;
       this.debugService.log(`[Frontend] chunk received: seqNo=${evt.seqNo} "${evt.data}" streamingMessage.length=${this.streamingMessage.length}`);
       if (this.isThinkingActive) {
           this.debugService.log(`[Frontend] closing ai-thought div before chunk.`);
@@ -929,6 +943,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           this.streamingMessage += '\n\n</div>\n\n';
       }
       if (!this.isStreaming) {
+        this.resetAvatarState();
         this.isStreaming = true;
         this.showSpinner = false;
         this.currentStatusText = 'Receiving data (background task)...';
@@ -951,8 +966,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       }
       this.cdr.detectChanges();
     } else if (evt.type === 'tool_start') {
-      this.hasActiveToolCall = true;
-      this.updateDesiredAvatarState();
       try {
         // Close any active thinking div
         if (this.isThinkingActive) {
@@ -986,6 +999,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           displayName,
           argsText
         });
+        this.updateDesiredAvatarState();
         this.cdr.detectChanges();
         this.scrollToBottomClamped(false);
       } catch(e) {}
@@ -997,6 +1011,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           tc.status = 'completed';
           tc.result = toolInfo.result;
         }
+        this.updateDesiredAvatarState();
         this.cdr.detectChanges();
         this.scrollToBottomClamped(false);
       } catch(e) {}
@@ -1008,6 +1023,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           tc.status = 'error';
           tc.error = toolInfo.error;
         }
+        this.updateDesiredAvatarState();
         this.cdr.detectChanges();
         this.scrollToBottomClamped(false);
       } catch(e) {}
@@ -1048,7 +1064,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.cdr.detectChanges();
       } catch(e) {}
     } else if (evt.type === 'done') {
-      this.hasActiveToolCall = false;
       this.hasOngoingGeneration = false;
       this.debugService.log(`[Frontend] done received. hasRealContent=${this.hasRealContent}, streamingMessage.length=${this.streamingMessage.length}`);
       if (this.realContentTimeout) {
@@ -1080,22 +1095,20 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.showSpinner = false;
         this.currentStatusText = 'Generation complete.';
         
-        // Let the avatar smoothly transition back to thinking.
-        // Set flags now; the actual transition is deferred until the
-        // completed-message <img> fires its (load) event, so we
-        // calculate the loop boundary against the correct animStartTime.
+        // Stop any streaming animations immediately and cleanly transition
+        // to idle (or whichever static/waiting state is appropriate).
+        // We do this instantly rather than deferring to a DOM (load) event
+        // because the browser will restart the WebP animation when creating
+        // the new completed-message element, which would force the user to watch
+        // one full extra loop.
         this.hasRealContent = false;
-        this.suppressImmediateSwap = true;
-        this.waitingForAvatarLoadToTransition = true;
-
-        // Fallback: if (load) doesn't fire (e.g. aggressive caching),
-        // trigger the transition after 500ms.
-        setTimeout(() => {
-          if (this.waitingForAvatarLoadToTransition) {
-            this.waitingForAvatarLoadToTransition = false;
-            this.updateDesiredAvatarState();
-          }
-        }, 500);
+        
+        if (this.avatarSwapTimeout) {
+          clearTimeout(this.avatarSwapTimeout);
+          this.avatarSwapTimeout = null;
+        }
+        this.updateDesiredAvatarState();
+        this.applyAvatarState(this.currentAvatarState); // Apply instantly
         
         // Fallback for missing attachment IDs
         if (this.currentSessionId) {
@@ -1259,7 +1272,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.sessionLoadSub?.unsubscribe();
     this.currentSessionId = null;
     this.lastSeenSeqNo = -1;
-    this.hasActiveToolCall = false;
     this.clearYawningTimer();
     this.messages = [];
     this.isStreaming = false;
@@ -1291,7 +1303,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
     this.isStreaming = false;
     this.lastSeenSeqNo = -1;
-    this.hasActiveToolCall = false;
     this.clearYawningTimer();
     this.streamingMessage = '';
     if (this.realContentTimeout) {
@@ -1609,7 +1620,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.pendingAttachments = [];
     this.isStreaming = true;
     this.isThinkingActive = false;
-    this.hasActiveToolCall = false;
     this.streamingMessage = '';
     if (this.realContentTimeout) {
       clearTimeout(this.realContentTimeout);
