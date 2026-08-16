@@ -57,6 +57,14 @@ The Overseer project is an ASP.NET Core backend serving an Angular frontend.
   - `Overseer/Services/`: Backend business logic
   - `Overseer/Models/`: Data Models
 
+### Static Assets and Build Output (`wwwroot` vs `public`)
+- **NEVER put source files, source images, or static assets directly into `Overseer/wwwroot/`.**
+- The entire `Overseer/wwwroot/` folder is a **build output directory**. It is wiped and repopulated entirely by the Angular `npm run build` process. 
+- Any files manually placed in `Overseer/wwwroot/` will be permanently deleted upon the next build.
+- **Where to put assets**: Place all new images, icons, and static files in the Angular source directory: `Overseer/ClientApp/public/` (or `Overseer/ClientApp/public/img/`).
+- During the build, Angular will automatically copy everything from `ClientApp/public/` into `wwwroot/`.
+- **Git Tracking**: Because `wwwroot/` is strictly a build output, none of its contents should be tracked by Git. The `.gitignore` at the repository root prevents it from being committed.
+
 ### Pages (Routes)
 The Angular application's routes are defined in `app.routes.ts`. The primary pages include:
 - `/chat` (`chat.component`): The main chat interface.

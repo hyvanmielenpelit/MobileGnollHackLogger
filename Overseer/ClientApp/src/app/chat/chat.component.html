@@ -266,7 +266,7 @@
         @if (isStreaming || streamingMessage) {
           <div class="message-box assistant">
             <div class="message-header">
-              <img [src]="timeToFirstTokenMs === null ? '/img/gnoll-overseer-avatar-128x128-static.webp' : '/img/GnollOverseerAvatar-128x128-animated.webp'" class="overseer-avatar" alt="Overseer" width="64" height="64" />
+              <img [src]="hasRealContent ? '/img/GnollOverseerAvatar-128x128-animated.webp' : '/img/gnoll-overseer-avatar-128x128-animated-thinking.webp'" class="overseer-avatar" alt="Overseer" width="64" height="64" />
               <strong>Overseer</strong>
               <span class="msg-time">just now</span>
               <div class="header-right-container">
