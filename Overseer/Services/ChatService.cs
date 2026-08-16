@@ -77,7 +77,15 @@ public class ChatService
             {
                 evt.SessionId = sessionId;
                 _ongoingChatManager.ProcessEvent(sessionId, evt);
-                await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", evt, CancellationToken.None);
+                
+                if (evt.Type == "user_message_created")
+                {
+                    await _hubContext.Clients.User(userId).SendAsync("ReceiveChatEvent", evt, CancellationToken.None);
+                }
+                else
+                {
+                    await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", evt, CancellationToken.None);
+                }
             }
         }
         catch (Exception ex)
@@ -475,6 +483,12 @@ public class ChatService
                     await dbContext.SaveChangesAsync(CancellationToken.None);
                 }
             }
+
+            yield return new ChatEvent
+            {
+                Type = "debug",
+                Data = $"[Backend] Emitting user_message_created for userMsg.Id={userMsg.Id}, attachmentsCount={savedDbAttachments.Count}, fileNames=[{string.Join(", ", savedDbAttachments.Select(a => a.FileName))}]"
+            };
 
             yield return new ChatEvent
             {

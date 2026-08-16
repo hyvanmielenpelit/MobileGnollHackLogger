@@ -650,7 +650,14 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   processChatEvent(evt: any) {
-    if (typeof evt.sessionId === 'number' && evt.sessionId !== this.currentSessionId) return;
+    if (typeof evt.sessionId === 'number' && evt.sessionId !== this.currentSessionId) {
+      // Accept user_message_created if we are waiting for a new session ID
+      if (evt.type === 'user_message_created' && this.currentSessionId == null && this.isStreaming) {
+         // Proceed normally
+      } else {
+         return;
+      }
+    }
 
     if (evt.seqNo !== undefined && evt.seqNo !== null) {
       if (evt.seqNo <= this.lastSeenSeqNo) {
@@ -664,10 +671,20 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       this.debugService.log(`[Backend] ${evt.data}`);
     } else if (evt.type === 'user_message_created') {
       try {
+        console.log('[Frontend Debug] Received user_message_created event:', evt.data);
+        this.debugService.log(`[Frontend] Received user_message_created event: ${evt.data}`);
+        
         const data = JSON.parse(evt.data);
+        console.log(`[Frontend Debug] Parsed data. messageId: ${data.messageId}, attachments:`, data.attachments);
+        this.debugService.log(`[Frontend] Parsed data. messageId: ${data.messageId}, attachments count: ${data.attachments ? data.attachments.length : 0}`);
+        
+        let messageFound = false;
         for (let i = this.messages.length - 1; i >= 0; i--) {
           if (this.messages[i].role === 'user') {
+            messageFound = true;
             this.messages[i].id = data.messageId;
+            console.log(`[Frontend Debug] Found latest user message at index ${i}. Updated id to ${data.messageId}`);
+            
             if (data.attachments && this.messages[i].attachments) {
               for (const serverAtt of data.attachments) {
                 const localAtt = this.messages[i].attachments!.find(
@@ -675,12 +692,25 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
                 );
                 if (localAtt) {
                   localAtt.id = serverAtt.id;
+                  console.log(`[Frontend Debug] Successfully matched and updated attachment: ${serverAtt.fileName} with id ${serverAtt.id}`);
+                  this.debugService.log(`[Frontend] Updated attachment: ${serverAtt.fileName} (id: ${serverAtt.id})`);
+                } else {
+                  console.warn(`[Frontend Debug] Failed to find local attachment matching fileName: ${serverAtt.fileName} without an id.`);
+                  this.debugService.log(`[Frontend] Warning: Failed to find matching local attachment for: ${serverAtt.fileName}`);
                 }
               }
+            } else {
+                console.log(`[Frontend Debug] No attachments to process. Data attachments: ${!!data.attachments}, Local attachments: ${!!this.messages[i].attachments}`);
             }
             break;
           }
         }
+        
+        if (!messageFound) {
+            console.warn(`[Frontend Debug] Could not find any user message in the local array! Array length: ${this.messages.length}`);
+            this.debugService.log(`[Frontend] Error: Could not find any user message in the local array.`);
+        }
+
         this.cdr.detectChanges();
       } catch (e) {
         console.error('Failed to process user_message_created event', e);
@@ -856,6 +886,29 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.isStreaming = false;
         this.showSpinner = false;
         this.currentStatusText = 'Generation complete.';
+        
+        // Fallback for missing attachment IDs
+        if (this.currentSessionId) {
+          const lastUserMsg = [...this.messages].reverse().find(m => m.role === 'user');
+          if (lastUserMsg && lastUserMsg.attachments && lastUserMsg.attachments.some(a => !a.id)) {
+            console.log('[Frontend Debug] Fallback: Missing attachment IDs detected. Fetching session to patch...');
+            this.debugService.log(`[Frontend] Fallback: Missing attachment IDs detected. Fetching session to patch...`);
+            this.chatService.getSession(this.currentSessionId).subscribe(s => {
+              const serverUserMsg = [...(s.messages || [])].reverse().find(m => m.role === 'user');
+              if (serverUserMsg && serverUserMsg.attachments) {
+                for (const serverAtt of serverUserMsg.attachments) {
+                  const localAtt = lastUserMsg.attachments!.find(a => a.fileName === serverAtt.fileName && !a.id);
+                  if (localAtt) {
+                    localAtt.id = serverAtt.id;
+                    console.log(`[Frontend Debug] Fallback patched attachment: ${serverAtt.fileName} (id: ${serverAtt.id})`);
+                  }
+                }
+                this.cdr.detectChanges();
+              }
+            });
+          }
+        }
+
         this.cdr.detectChanges();
         this.loadSessions(true);
         this.focusPromptInput();
