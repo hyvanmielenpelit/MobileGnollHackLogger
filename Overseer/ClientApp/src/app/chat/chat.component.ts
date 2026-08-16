@@ -858,7 +858,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       this.lastSeenSeqNo = evt.seqNo;
     }
 
-    if (evt.type !== 'debug' && evt.type !== 'title_update' && evt.type !== 'title_status' && evt.type !== 'status') {
+    if (evt.type !== 'debug' && evt.type !== 'title_update' && evt.type !== 'title_status' && evt.type !== 'status' && evt.type !== 'done') {
       const wasYawning = this.isYawning;
       this.startYawningTimer();
       if (wasYawning) {
@@ -1099,6 +1099,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           
           this.isFinishingAnimation = false;
           this.finishDoneTimeout = null;
+          this.clearYawningTimer();
           
           // Force the state to idle instantly before the DOM swap
           this.applyAvatarState('idle');
