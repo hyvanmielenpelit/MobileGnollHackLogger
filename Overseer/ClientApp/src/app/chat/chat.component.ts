@@ -356,7 +356,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       this.avatarSwapTimeout = null;
     }
     this.isYawning = false;
-    this.currentAvatarState = 'thinking';
+    this.currentAvatarState = 'idle';
     this.pendingAvatarState = null;
     this.animStartTime = 0;
     this.suppressImmediateSwap = false;
@@ -1326,19 +1326,9 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   async loadSession(id: number) {
     this.sessionLoadSub?.unsubscribe();
 
-    this.isStreaming = false;
     this.lastSeenSeqNo = -1;
     this.clearYawningTimer();
-    this.streamingMessage = '';
-    if (this.realContentTimeout) {
-      clearTimeout(this.realContentTimeout);
-      this.realContentTimeout = null;
-    }
-    this.hasRealContent = false;
-    this.streamingToolCalls = [];
-    this.showSpinner = false;
-    this.isThinkingActive = false;
-    this.timeToFirstTokenMs = null;
+    this.clearStreamingState();
     this.resetAvatarState();
 
     if (this.hubConnection?.state === signalR.HubConnectionState.Connected) {
@@ -1672,6 +1662,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
     this.requestStartTime = performance.now();
     this.resetAvatarState();
+    this.updateDesiredAvatarState();
     this.startYawningTimer();
     this.currentStatusText = 'Connecting...';
     this.showSpinner = true;
