@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
 
@@ -17,17 +18,20 @@ public class KnowledgeArticle
     public string Content { get; set; } = string.Empty;
 }
 
-public class KnowledgeBaseService
+public class KnowledgeBaseService : IDisposable
 {
-    private readonly Dictionary<string, KnowledgeArticle> _articles = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, KnowledgeArticle> _articles = new(StringComparer.OrdinalIgnoreCase);
     private readonly ILogger<KnowledgeBaseService> _logger;
     private readonly IConfiguration _configuration;
+    private Timer? _reloadTimer;
 
     public KnowledgeBaseService(ILogger<KnowledgeBaseService> logger, IConfiguration configuration)
     {
         _logger = logger;
         _configuration = configuration;
         LoadArticles();
+        
+        _reloadTimer = new Timer(_ => LoadArticles(), null, TimeSpan.FromMinutes(10), TimeSpan.FromMinutes(10));
     }
 
     private void LoadArticles()
@@ -35,19 +39,27 @@ public class KnowledgeBaseService
         try
         {
             var kbPath = _configuration["KbPath"];
-            if (string.IsNullOrWhiteSpace(kbPath) || !Directory.Exists(kbPath))
+            if (string.IsNullOrWhiteSpace(kbPath))
             {
-                _logger.LogWarning($"KnowledgeBase directory not found or not configured. Path: {kbPath}");
+                _logger.LogWarning("KnowledgeBase directory not configured (KbPath is empty).");
                 return;
             }
 
-            var files = Directory.GetFiles(kbPath, "*.md");
+            var contentPath = Path.Combine(kbPath, "Content");
+            if (!Directory.Exists(contentPath))
+            {
+                _logger.LogWarning($"KnowledgeBase Content directory not found. Path: {contentPath}");
+                return;
+            }
+
+            var newArticles = new Dictionary<string, KnowledgeArticle>(StringComparer.OrdinalIgnoreCase);
+            var files = Directory.GetFiles(contentPath, "*.md", SearchOption.AllDirectories);
             foreach (var file in files)
             {
                 try
                 {
-                    var article = ParseArticle(file);
-                    _articles[article.Topic] = article;
+                    var article = ParseArticle(file, contentPath);
+                    newArticles[article.Topic] = article;
                     _logger.LogInformation($"Loaded knowledge base article: {article.Topic}");
                 }
                 catch (Exception ex)
@@ -55,6 +67,8 @@ public class KnowledgeBaseService
                     _logger.LogError(ex, $"Error parsing knowledge base article: {file}");
                 }
             }
+
+            Interlocked.Exchange(ref _articles, newArticles);
         }
         catch (Exception ex)
         {
@@ -62,10 +76,16 @@ public class KnowledgeBaseService
         }
     }
 
-    private KnowledgeArticle ParseArticle(string filePath)
+    private KnowledgeArticle ParseArticle(string filePath, string contentPath)
     {
         var content = File.ReadAllText(filePath);
-        var topic = Path.GetFileNameWithoutExtension(filePath);
+        
+        var relPath = Path.GetRelativePath(contentPath, filePath);
+        var topic = relPath.Replace('\\', '/');
+        if (topic.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
+        {
+            topic = topic.Substring(0, topic.Length - 3);
+        }
 
         var article = new KnowledgeArticle
         {
@@ -108,10 +128,11 @@ public class KnowledgeBaseService
 
     public string GetTopicList()
     {
-        if (_articles.Count == 0) return string.Empty;
+        var articles = _articles;
+        if (articles.Count == 0) return string.Empty;
 
         var sb = new StringBuilder();
-        foreach (var article in _articles.Values.OrderBy(a => a.Topic))
+        foreach (var article in articles.Values.OrderBy(a => a.Topic))
         {
             sb.AppendLine($"- **{article.Topic}**: {article.Summary}");
         }
@@ -120,7 +141,8 @@ public class KnowledgeBaseService
 
     public string? GetArticleTitle(string topic)
     {
-        if (_articles.TryGetValue(topic, out var article))
+        var articles = _articles;
+        if (articles.TryGetValue(topic, out var article))
         {
             return article.Title;
         }
@@ -129,7 +151,8 @@ public class KnowledgeBaseService
 
     public string? GetArticle(string topic)
     {
-        if (_articles.TryGetValue(topic, out var article))
+        var articles = _articles;
+        if (articles.TryGetValue(topic, out var article))
         {
             return article.Content;
         }
@@ -138,6 +161,13 @@ public class KnowledgeBaseService
 
     public IEnumerable<string> GetAvailableTopics()
     {
-        return _articles.Keys.OrderBy(k => k);
+        var articles = _articles;
+        return articles.Keys.OrderBy(k => k);
+    }
+    
+    public void Dispose()
+    {
+        _reloadTimer?.Dispose();
+        _reloadTimer = null;
     }
 }
