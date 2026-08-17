@@ -28,8 +28,9 @@ public class ChatController : ControllerBase
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly OngoingChatManager _ongoingChatManager;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly SettingsService _settingsService;
 
-    public ChatController(ApplicationDbContext dbContext, ChatService chatService, IConfiguration configuration, IMemoryCache memoryCache, EmailSender emailSender, UserManager<ApplicationUser> userManager, OngoingChatManager ongoingChatManager, IServiceScopeFactory scopeFactory)
+    public ChatController(ApplicationDbContext dbContext, ChatService chatService, IConfiguration configuration, IMemoryCache memoryCache, EmailSender emailSender, UserManager<ApplicationUser> userManager, OngoingChatManager ongoingChatManager, IServiceScopeFactory scopeFactory, SettingsService settingsService)
     {
         _dbContext = dbContext;
         _chatService = chatService;
@@ -39,6 +40,7 @@ public class ChatController : ControllerBase
         _userManager = userManager;
         _ongoingChatManager = ongoingChatManager;
         _scopeFactory = scopeFactory;
+        _settingsService = settingsService;
     }
 
     [HttpGet("sessions")]
@@ -108,6 +110,8 @@ public class ChatController : ControllerBase
         var userModels = await _dbContext.UserAiModels
             .Where(um => um.AspNetUserId == userId)
             .ToListAsync();
+            
+        var systemModels = await _settingsService.GetResolvedSystemModelsAsync(userId);
 
         var messages = await _dbContext.ChatMessage
             .Where(m => m.ChatSessionId == id && m.Role != "system" && !m.IsHidden)
@@ -153,7 +157,13 @@ public class ChatController : ControllerBase
                     }
                     thinkingLevel = um.ThinkingLevel;
                 } else {
-                    modelDisplayName = m.ModelUsed;
+                    var sm = systemModels.FirstOrDefault(x => x.Config.ModelId == m.ModelUsed);
+                    if (sm.Config != null) {
+                        modelDisplayName = sm.Config.DisplayName ?? m.ModelUsed;
+                        thinkingLevel = sm.Config.ThinkingLevel;
+                    } else {
+                        modelDisplayName = m.ModelUsed;
+                    }
                 }
             }
             return new {

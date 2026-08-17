@@ -165,3 +165,64 @@ If a user changes settings, API keys, or models on a different page and navigate
      }
    });
    ```
+
+## Avatar Animation State Machine
+
+The Overseer chat interface (`chat.component.ts`) features an animated avatar that reacts to the AI's generation process. When modifying the avatar logic, adhere strictly to these rules to ensure the animations correctly represent the AI's internal state.
+
+Never use simplistic flags (like applying `thinking` for the entire streaming duration) that violate this matrix.
+
+### Animation Lifecycle
+
+The avatar follows a strict lifecycle from the moment the user clicks Send to the end of the response:
+
+1. **User clicks Send** → **Thinking** animation plays immediately (waiting for the server to respond).
+2. If the server takes longer than 30 seconds to respond → **Yawning** replaces Thinking. (Thinking and Yawning only happen in this initial wait phase).
+3. When the first `thinking_chunk` or `tool_start` event arrives → **Tool Use** animation plays.
+4. **Tool Use** animation plays continuously during all active work. It NEVER reverts to Thinking or Yawning, even if the server is silent for a long time.
+5. When the main content (final response) starts streaming → **Talking** animation plays.
+6. When the response finishes → **Static Image** (idle). This is a **terminal state** that never auto-transitions to any animation.
+
+### Animation Rules
+
+| Animation | Allowed to Play When | Angular Condition | Priority |
+| :--- | :--- | :--- | :---: |
+| **Static Image (idle)** | When no streaming is active. This is both the initial state and the **terminal state** after a response finishes. A static image NEVER auto-transitions to any animation; only a new user Send action restarts the animation cycle. | `this.isStreaming === false` | 1 (highest) |
+| **Talking** | ONLY when the main content (final response) is actively streaming to the user. | `this.hasRealContent === true` | 2 |
+| **Tool Use** | During the entire pre-response **active working phase**. This includes actively streaming native "thinking texts" (reasoning chunks), buffering pre-tool preamble text, or actively executing a tool call. Once the avatar enters Tool Use, it remains in Tool Use until Talking. | `this.hasEnteredWorkingPhase === true` | 3 |
+| **Thinking** | ONLY during the **initial wait phase** before the server has started returning any active work (tools/thinking texts). Once the working phase starts, Thinking can NEVER play again for that message. | `this.isStreaming === true`<br>AND none of the above are true | 4 |
+| **Yawning** | ONLY when the **Thinking** animation has been playing continuously for more than 30 seconds. It must NEVER trigger from any other animation state (Talking, Tool Use, or Static Image), regardless of how long those states last. | `desired === 'thinking'`<br>AND cumulative Thinking time > 30,000 ms | 5 (lowest) |
+
+### Key Constraints
+
+- **Yawning is exclusive to Thinking:** The yawning timer only counts time spent in the Thinking state. Because the server might be completely silent (e.g., repeatedly returning 503 errors and retrying) during the initial wait phase, `updateDesiredAvatarState()` schedules a dedicated `yawningCheckTimeout` exactly 30 seconds into the `thinking` state to guarantee the transition to yawning happens even without incoming server events. This timer is cleared as soon as the avatar enters `toolUse` or `idle`.
+- **All animations wait for loop end by default:** No animation is interrupted mid-loop. This is controlled by the `INTERRUPTIBLE_ANIMATIONS` static set in `ChatComponent`. By default this set is empty, meaning all animations play their current loop to completion before switching. To make an animation immediately interruptible, add its name to the set.
+- **`lastNetworkActivityTime`** was used historically but is no longer relied upon for state transitions, as the avatar is now strictly phase-locked into Tool Use once work begins.
+
+### Smooth Animation Transitions
+
+Each avatar animation is a looping animated WebP with a known loop duration (defined in `AVATAR_LOOP_DURATIONS`). To avoid jarring visual snaps (e.g., a hammer disappearing mid-swing), transitions between animations must respect loop boundaries. The `requestAvatarTransition()` method implements this system:
+
+**Architecture:**
+1. `updateDesiredAvatarState()` determines *what* the avatar should be doing based on the current flags.
+2. `requestAvatarTransition(newState)` determines *when* to switch, using loop-boundary scheduling.
+3. `applyAvatarState(state)` performs the actual DOM swap (changing `currentAvatarState`, which updates the `<img>` src).
+
+**Transition rules per animation (default configuration):**
+
+| Current Animation | Can be Interrupted Mid-Loop? | Configurable? |
+| :--- | :--- | :--- |
+| **Static Image (idle)** | Yes, always | No — idle is not an animation, so it is always immediately replaceable. |
+| **Thinking** | No — waits for loop end | Yes — add `'thinking'` to `INTERRUPTIBLE_ANIMATIONS` to allow mid-loop interrupts. |
+| **Tool Use** | No — waits for loop end | Yes — add `'toolUse'` to `INTERRUPTIBLE_ANIMATIONS` to allow mid-loop interrupts. |
+| **Talking** | No — waits for loop end | Yes — add `'talking'` to `INTERRUPTIBLE_ANIMATIONS` to allow mid-loop interrupts. |
+| **Yawning** | No — waits for loop end | Yes — add `'yawning'` to `INTERRUPTIBLE_ANIMATIONS` to allow mid-loop interrupts. |
+
+The `INTERRUPTIBLE_ANIMATIONS` set is a `static readonly` constant in `ChatComponent`, located near the other avatar constants (`AVATAR_LOOP_DURATIONS`, `AVATAR_SRCS`). To change interruptibility, simply add or remove animation names from this set.
+
+**Loop-boundary scheduling mechanism:**
+- When a non-interruptible animation is playing, `requestAvatarTransition()` calculates the time remaining until the current loop ends: `timeUntilLoopEnd = loopDuration - (elapsed % loopDuration)`.
+- It schedules a `setTimeout` for `timeUntilLoopEnd` milliseconds. When the timer fires, the latest `pendingAvatarState` is applied.
+- If multiple state change requests arrive while a timer is already pending, only the `pendingAvatarState` value is updated — the timer is not rescheduled. This ensures the swap happens at the original loop boundary with the most up-to-date desired state.
+- The `done` event handler has its own special loop-boundary wait (`executeDone` callback) that defers the final transition to idle and the commit of the message to `this.messages` until the current animation loop finishes gracefully.
+

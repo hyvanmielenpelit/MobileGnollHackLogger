@@ -166,9 +166,23 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   get hasActiveToolCall(): boolean {
     return this.streamingToolCalls.some(tc => tc.status === 'running');
   }
-  isYawning = false;
-  private yawningTimeout: any = null;
-  private static readonly YAWNING_DELAY_MS = 30000;
+  /* Network activity tracking for avatar state decisions */
+  private hasEnteredWorkingPhase = false;
+  private thinkingAnimStartTime: number = 0;
+  private yawningCheckTimeout: any = null;
+
+  /**
+   * Animations in this set can be interrupted mid-loop for an immediate swap.
+   * Animations NOT in this set will always play their current loop to completion
+   * before transitioning. Add or remove names to tune responsiveness vs. smoothness.
+   * Default: empty (all animations wait for loop end).
+   */
+  private static readonly INTERRUPTIBLE_ANIMATIONS: ReadonlySet<string> = new Set([
+    // Add animation names here to allow mid-loop interrupts, e.g.:
+    // 'thinking',
+    // 'toolUse',
+  ]);
+
   private static readonly IMMEDIATE_SWAP_THRESHOLD_MS = 250;
 
   private static readonly AVATAR_LOOP_DURATIONS: Record<string, number> = {
@@ -187,6 +201,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
   hasRealContent = false;
   realContentTimeout: any = null;
+  pendingChunkBuffer: string = '';
+  pendingChunkTimeout: any = null;
   streamingMessage = '';
   isFinishingAnimation = false;
   finishDoneTimeout: any = null;
@@ -233,18 +249,54 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
    * from the current state.
    */
   private updateDesiredAvatarState() {
-    let desired: 'idle' | 'thinking' | 'talking' | 'toolUse' | 'yawning';
-    if (this.isYawning) {
-      desired = 'yawning';
-    } else if (this.hasActiveToolCall) {
-      desired = 'toolUse';
+    let desired: 'idle' | 'thinking' | 'talking' | 'toolUse' | 'yawning' = 'idle';
+
+    if (!this.isStreaming) {
+      desired = 'idle';
     } else if (this.hasRealContent) {
       desired = 'talking';
-    } else if (this.isStreaming) {
-      desired = 'thinking';
     } else {
-      desired = 'idle';
+      // Pre-response phase: tools, thinking texts, or waiting
+      if (this.hasActiveToolCall || this.isThinkingActive || this.pendingChunkBuffer.length > 0) {
+        this.hasEnteredWorkingPhase = true;
+      }
+
+      if (this.hasEnteredWorkingPhase) {
+        desired = 'toolUse';
+      } else {
+        // Initial wait phase
+        desired = 'thinking';
+      }
     }
+
+    // Yawning override: only from Thinking state, after 30s of continuous Thinking
+    if (desired === 'thinking') {
+      if (this.currentAvatarState !== 'thinking' && this.currentAvatarState !== 'yawning') {
+        this.thinkingAnimStartTime = performance.now();
+      }
+      
+      const elapsedThinking = performance.now() - this.thinkingAnimStartTime;
+      if (elapsedThinking > 30000) {
+        desired = 'yawning';
+      } else {
+        // We are in thinking, but not yet 30s. Ensure we check exactly when 30s hits.
+        if (!this.yawningCheckTimeout) {
+          this.yawningCheckTimeout = setTimeout(() => {
+            this.yawningCheckTimeout = null;
+            if (this.isStreaming) {
+              this.updateDesiredAvatarState();
+            }
+          }, 30000 - elapsedThinking);
+        }
+      }
+    } else {
+      this.thinkingAnimStartTime = 0; // reset when leaving thinking
+      if (this.yawningCheckTimeout) {
+        clearTimeout(this.yawningCheckTimeout);
+        this.yawningCheckTimeout = null;
+      }
+    }
+
     this.requestAvatarTransition(desired);
   }
 
@@ -275,11 +327,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
     const elapsed = performance.now() - this.animStartTime;
 
-    // We can safely interrupt 'thinking' at any time without it looking too jarring,
-    // which ensures responsive feedback when a tool starts or when the AI starts talking.
-    // However, we MUST NEVER abruptly interrupt 'toolUse' or 'talking' mid-loop, 
-    // because that looks like a jarring snap (e.g. hammer disappears mid-swing).
-    if (this.currentAvatarState === 'thinking') {
+    // Check if the current animation can be interrupted mid-loop
+    if (ChatComponent.INTERRUPTIBLE_ANIMATIONS.has(this.currentAvatarState)) {
       if (this.avatarSwapTimeout) {
         clearTimeout(this.avatarSwapTimeout);
         this.avatarSwapTimeout = null;
@@ -330,38 +379,22 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     }
   }
 
-  private startYawningTimer() {
-    this.clearYawningTimer();
-    this.yawningTimeout = setTimeout(() => {
-      this.isYawning = true;
-      this.updateDesiredAvatarState();
-      this.cdr.detectChanges();
-    }, ChatComponent.YAWNING_DELAY_MS);
-  }
 
-  private clearYawningTimer() {
-    if (this.yawningTimeout) {
-      clearTimeout(this.yawningTimeout);
-      this.yawningTimeout = null;
-    }
-    if (this.isYawning) {
-      this.isYawning = false;
-      // Don't call updateDesiredAvatarState here — callers will do it
-    }
-  }
 
   private resetAvatarState() {
     if (this.avatarSwapTimeout) {
       clearTimeout(this.avatarSwapTimeout);
       this.avatarSwapTimeout = null;
     }
-    this.isYawning = false;
+    if (this.yawningCheckTimeout) {
+      clearTimeout(this.yawningCheckTimeout);
+      this.yawningCheckTimeout = null;
+    }
     this.currentAvatarState = 'idle';
     this.pendingAvatarState = null;
     this.animStartTime = 0;
     this.suppressImmediateSwap = false;
     this.waitingForAvatarLoadToTransition = false;
-    this.clearYawningTimer();
     if (this.avatarSwapTimeout) {
       clearTimeout(this.avatarSwapTimeout);
       this.avatarSwapTimeout = null;
@@ -819,6 +852,28 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     });
   }
 
+  private flushPendingChunkBuffer() {
+    if (this.pendingChunkTimeout) {
+      clearTimeout(this.pendingChunkTimeout);
+      this.pendingChunkTimeout = null;
+    }
+    if (this.pendingChunkBuffer.length > 0) {
+      this.streamingMessage += this.pendingChunkBuffer;
+      this.pendingChunkBuffer = '';
+      
+      this.hasRealContent = true;
+      if (this.realContentTimeout) {
+        clearTimeout(this.realContentTimeout);
+        this.realContentTimeout = null;
+      }
+      
+      this.updateHasRealContent();
+      this.updateDesiredAvatarState();
+      this.cdr.detectChanges();
+      this.scrollToBottomClamped(false);
+    }
+  }
+
   updateHasRealContent() {
     const stripped = this.streamingMessage.replace(/<div class="ai-thought">[\s\S]*?<\/div>/g, '').trim();
     if (stripped.length > 0) {
@@ -859,11 +914,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     }
 
     if (evt.type !== 'debug' && evt.type !== 'title_update' && evt.type !== 'title_status' && evt.type !== 'status' && evt.type !== 'done') {
-      const wasYawning = this.isYawning;
-      this.startYawningTimer();
-      if (wasYawning) {
-        this.updateDesiredAvatarState();
-      }
+      this.updateDesiredAvatarState();
     }
 
     if (evt.type === 'debug') {
@@ -951,12 +1002,25 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.currentStatusText = 'Receiving data (background task)...';
       }
       this.hasOngoingGeneration = false;
-      this.streamingMessage += evt.data;
-      this.updateHasRealContent();
-      this.updateDesiredAvatarState();
-      this.cdr.detectChanges();
-      this.scrollToBottomClamped(false);
+      
+      if ((this.showThoughtsAndTools === 0 || this.showThoughtsAndTools === 1) && !this.hasRealContent) {
+        this.pendingChunkBuffer += evt.data;
+        if (this.pendingChunkBuffer.length > 150 || this.pendingChunkBuffer.includes('\n')) {
+          this.flushPendingChunkBuffer();
+        } else if (!this.pendingChunkTimeout) {
+          this.pendingChunkTimeout = setTimeout(() => {
+            this.flushPendingChunkBuffer();
+          }, 2000);
+        }
+      } else {
+        this.streamingMessage += evt.data;
+        this.updateHasRealContent();
+        this.updateDesiredAvatarState();
+        this.cdr.detectChanges();
+        this.scrollToBottomClamped(false);
+      }
     } else if (evt.type === 'error') {
+      this.flushPendingChunkBuffer();
       this.currentStatusText = `Error: ${evt.data}`;
       this.debugService.log(`[Backend Error] ${evt.data}`);
       this.streamingMessage += `\n\n**Error:** ${evt.data}`;
@@ -973,6 +1037,16 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         if (this.isThinkingActive) {
             this.isThinkingActive = false;
             this.streamingMessage += '\n\n</div>\n\n';
+        }
+
+        if (this.pendingChunkBuffer.length > 0) {
+          if (this.pendingChunkTimeout) {
+            clearTimeout(this.pendingChunkTimeout);
+            this.pendingChunkTimeout = null;
+          }
+          this.streamingMessage += '\n\n<div class="ai-thought">\n\n' 
+            + this.pendingChunkBuffer.trim() + '\n\n</div>\n\n';
+          this.pendingChunkBuffer = '';
         }
 
         // Wrap any preceding text (reasoning before tool call) in ai-thought div
@@ -1073,13 +1147,12 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
          this.realContentTimeout = null;
       }
       if (this.isStreaming) {
+        this.flushPendingChunkBuffer();
         if (this.isThinkingActive) {
             this.isThinkingActive = false;
             this.streamingMessage += '\n\n</div>\n\n';
         }
 
-        this.hasRealContent = false;
-        
         // We explicitly do NOT call updateDesiredAvatarState() here because isStreaming
         // is still true, which would cause the system to schedule a transition back to 'thinking'.
         if (this.avatarSwapTimeout) {
@@ -1099,7 +1172,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           
           this.isFinishingAnimation = false;
           this.finishDoneTimeout = null;
-          this.clearYawningTimer();
           
           // Force the state to idle instantly before the DOM swap
           this.applyAvatarState('idle');
@@ -1115,6 +1187,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           });
           
           this.isStreaming = false;
+          this.hasRealContent = false;
           this.streamingMessage = '';
           this.streamingToolCalls = [];
           this.timeToFirstTokenMs = null;
@@ -1286,7 +1359,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.sessionLoadSub?.unsubscribe();
     this.currentSessionId = null;
     this.lastSeenSeqNo = -1;
-    this.clearYawningTimer();
     this.messages = [];
     this.clearStreamingState();
     this.loadDraft();
@@ -1300,6 +1372,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     if (this.finishDoneTimeout) {
       clearTimeout(this.finishDoneTimeout);
       this.finishDoneTimeout = null;
+    }
+    this.pendingChunkBuffer = '';
+    if (this.pendingChunkTimeout) {
+      clearTimeout(this.pendingChunkTimeout);
+      this.pendingChunkTimeout = null;
     }
     this.streamingMessage = '';
     if (this.realContentTimeout) {
@@ -1328,7 +1405,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.sessionLoadSub?.unsubscribe();
 
     this.lastSeenSeqNo = -1;
-    this.clearYawningTimer();
     this.clearStreamingState();
     this.resetAvatarState();
 
@@ -1611,6 +1687,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       }
       this.isFinishingAnimation = false;
       this.isStreaming = false;
+      this.pendingChunkBuffer = '';
+      if (this.pendingChunkTimeout) {
+        clearTimeout(this.pendingChunkTimeout);
+        this.pendingChunkTimeout = null;
+      }
       this.streamingMessage = '';
       this.streamingToolCalls = [];
     } else if (this.isStreaming) {
@@ -1649,6 +1730,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.pendingAttachments = [];
     this.isStreaming = true;
     this.isThinkingActive = false;
+    this.pendingChunkBuffer = '';
+    if (this.pendingChunkTimeout) {
+      clearTimeout(this.pendingChunkTimeout);
+      this.pendingChunkTimeout = null;
+    }
     this.streamingMessage = '';
     if (this.realContentTimeout) {
       clearTimeout(this.realContentTimeout);
@@ -1663,8 +1749,9 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
     this.requestStartTime = performance.now();
     this.resetAvatarState();
+    this.hasEnteredWorkingPhase = false;
+    this.thinkingAnimStartTime = performance.now();
     this.updateDesiredAvatarState();
-    this.startYawningTimer();
     this.currentStatusText = 'Connecting...';
     this.showSpinner = true;
 
