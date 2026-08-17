@@ -1,5 +1,16 @@
 [
   {
+    "version": "1.0.16",
+    "date": "2026-08-17T15:22:03Z",
+    "summary": "Improved the Gnoll Overseer avatar animation system.",
+    "changes": [
+      {
+        "type": "improvement",
+        "text": "Improved the Gnoll Overseer avatar animation system."
+      }
+    ]
+  },
+  {
     "version": "1.0.15",
     "date": "2026-08-16T21:14:09Z",
     "summary": "Added new animations to the Gnoll Overseer avatar.",
