@@ -170,6 +170,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   private hasEnteredWorkingPhase = false;
   private thinkingAnimStartTime: number = 0;
   private yawningCheckTimeout: any = null;
+  private sessionStateMap = new Map<number, {
+    requestStartTime: number;
+    thinkingAnimStartTime: number;
+    hasEnteredWorkingPhase: boolean;
+  }>();
 
   /**
    * Animations in this set can be interrupted mid-loop for an immediate swap.
@@ -259,6 +264,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       // Pre-response phase: tools, thinking texts, or waiting
       if (this.hasActiveToolCall || this.isThinkingActive || this.pendingChunkBuffer.length > 0) {
         this.hasEnteredWorkingPhase = true;
+        if (this.currentSessionId) {
+          const state = this.sessionStateMap.get(this.currentSessionId);
+          if (state) state.hasEnteredWorkingPhase = true;
+        }
       }
 
       if (this.hasEnteredWorkingPhase) {
@@ -271,7 +280,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
     // Yawning override: only from Thinking state, after 30s of continuous Thinking
     if (desired === 'thinking') {
-      if (this.currentAvatarState !== 'thinking' && this.currentAvatarState !== 'yawning') {
+      if (this.thinkingAnimStartTime === 0) {
         this.thinkingAnimStartTime = performance.now();
       }
       
@@ -1175,6 +1184,9 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           
           // Force the state to idle instantly before the DOM swap
           this.applyAvatarState('idle');
+          if (this.currentSessionId) {
+            this.sessionStateMap.delete(this.currentSessionId);
+          }
           
           this.messages.push({ 
             role: 'assistant', 
@@ -1417,6 +1429,13 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.currentSessionId = id;
     this.isLoadingSession = true;
     this.liveEventBuffer = [];
+
+    if (this.sessionStateMap.has(id)) {
+      const state = this.sessionStateMap.get(id)!;
+      this.requestStartTime = state.requestStartTime;
+      this.thinkingAnimStartTime = state.thinkingAnimStartTime;
+      this.hasEnteredWorkingPhase = state.hasEnteredWorkingPhase;
+    }
 
     this.debugService.log(`[Frontend] loadSession(${id}): hub state BEFORE await = ${this.hubConnection?.state ?? 'null'}`);
 
@@ -1752,6 +1771,13 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.hasEnteredWorkingPhase = false;
     this.thinkingAnimStartTime = performance.now();
     this.updateDesiredAvatarState();
+    if (this.currentSessionId) {
+      this.sessionStateMap.set(this.currentSessionId, {
+        requestStartTime: this.requestStartTime,
+        thinkingAnimStartTime: this.thinkingAnimStartTime,
+        hasEnteredWorkingPhase: this.hasEnteredWorkingPhase
+      });
+    }
     this.currentStatusText = 'Connecting...';
     this.showSpinner = true;
 
