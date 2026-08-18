@@ -78,7 +78,7 @@ sentry-cli sourcemaps inject ../wwwroot
 sentry-cli sourcemaps upload --release <version> ../wwwroot
 ```
 
-> **Important:** The `--release <version>` value (e.g., `1.0.16`) must be **identical** to the `release` property configured in your Angular app's `Sentry.init()` call. If they don't match, Sentry will not be able to link errors to their source maps.
+> **Important:** The `--release <version>` value (e.g., `1.0.17`) must be **identical** to the `release` property configured in your Angular app's `Sentry.init()` call in `main.ts` (which dynamically imports the `version` from `package.json` synchronized from `Overseer.csproj`). If they don't match, Sentry will not be able to link errors to their source maps.
 
 #### B. The Foolproof MSBuild Exclusion
 

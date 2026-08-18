@@ -91,7 +91,7 @@ namespace Overseer.Controllers
 
                 // Rewrite the envelope header with the backend's real DSN and public key
                 headerObj["dsn"] = dsnString;
-                var publicKey = dsnUri.UserInfo;
+                var publicKey = dsnUri.UserInfo?.Split(':')[0];
                 if (!string.IsNullOrEmpty(publicKey))
                 {
                     headerObj["public_key"] = publicKey;

@@ -35,7 +35,7 @@
   </Target>
 
   <Target Name="PublishAngular" BeforeTargets="ComputeFilesToPublish">
-    <Exec WorkingDirectory="ClientApp" Command="npm ci --legacy-peer-deps" />
+    <Exec WorkingDirectory="ClientApp" Command="npm ci" />
     <Exec WorkingDirectory="ClientApp" Command="npm run build -- --configuration production" />
     <ItemGroup>
       <DistFiles Include="wwwroot\**" Exclude="wwwroot\**\*.map" />

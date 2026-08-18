@@ -51,3 +51,7 @@ When making changes to database models that require EF Core migrations, you MUST
 | Generated Stylesheets (CSS) | `MobileGnollHackLogger/wwwroot/css/site2.css` & `site2.min.css` |
 | Images | `MobileGnollHackLogger/wwwroot/img/` |
 | Program Entry & Startup | `MobileGnollHackLogger/Program.cs` |
+
+## Publishing
+
+- **Do NOT publish anything** (e.g., via `dotnet publish` or similar commands) unless explicitly requested by the user.

@@ -18,11 +18,11 @@ namespace Overseer.Services
 
         public SentryEvent? Process(SentryEvent @event)
         {
-            var user = _httpContextAccessor.HttpContext?.User;
+            var httpContext = _httpContextAccessor.HttpContext;
 
-            if (user?.Identity?.IsAuthenticated != true)
+            if (httpContext != null && httpContext.User?.Identity?.IsAuthenticated != true)
             {
-                // Drop events from unauthenticated users (bots, probes)
+                // Drop events from unauthenticated web requests (bots, probes)
                 return null;
             }
 

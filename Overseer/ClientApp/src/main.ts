@@ -4,6 +4,7 @@ import { AppComponent } from './app/app.component';
 
 import * as Sentry from '@sentry/angular';
 import { HttpErrorResponse } from '@angular/common/http';
+import packageJson from '../package.json';
 
 if (!("popover" in HTMLElement.prototype)) {
   import("@oddbird/popover-polyfill");
@@ -17,7 +18,7 @@ Sentry.init({
   dsn: 'https://placeholder@placeholder.ingest.sentry.io/0',
   tunnel: '/api/sentry/log',
   transport: (options) => Sentry.makeFetchTransport(options, sentryFetchWithCredentials),
-  release: '1.0.16', // Must match --release in sentry-cli upload
+  release: packageJson.version, // Automatically matches package.json and MSBuild SyncAngularVersion
   beforeSend(event: Sentry.ErrorEvent, hint: Sentry.EventHint) {
     const error = hint.originalException;
     // Drop ALL HttpErrorResponse instances:

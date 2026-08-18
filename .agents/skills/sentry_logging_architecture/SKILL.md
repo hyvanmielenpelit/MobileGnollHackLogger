@@ -18,6 +18,7 @@ To mitigate this:
 - The backend reads the envelope, finds the first `\n` byte to separate the header JSON from the binary payload, and uses `System.Text.Json.Nodes.JsonNode` to safely parse the header.
 - The backend **must rewrite both the `dsn` and `public_key` fields** in this header JSON to match the server's real DSN, re-serialize the header, and reconstruct the binary payload. If it forwards the original placeholder DSN, Sentry's ingest servers will reject the envelope with a `401 Unauthorized`.
 - The backend also sends the `X-Sentry-Auth` and `X-Forwarded-For` headers on the outgoing `HttpRequestMessage` to guarantee authentication. (Note: These must be set on the per-request `HttpRequestMessage`, NOT on `HttpClient.DefaultRequestHeaders`, as `IHttpClientFactory` reuses client instances and would cause header accumulation/concurrency bugs).
+- The Angular frontend dynamically imports its release `version` from `package.json` (which is kept in sync with `Overseer.csproj` via the MSBuild `SyncAngularVersion` target), ensuring Sentry release tags always match the build version without manual drift.
 
 ## 2. SSRF Prevention
 
