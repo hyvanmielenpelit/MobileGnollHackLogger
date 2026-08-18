@@ -1,0 +1,77 @@
+[popover]:is(:popover-open, .\:popover-open) {
+  position: fixed;
+  top: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  z-index: 9999;
+  pointer-events: none; /* Let clicks pass through container... */
+}
+
+.admin-alert {
+  pointer-events: auto; /* ...but catch clicks on the actual alert */
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.08);
+  max-width: 90vw;
+  width: 400px;
+  
+  &.warning {
+    background: rgba(255, 170, 0, 0.15);
+    border: 1px solid rgba(255, 170, 0, 0.3);
+    color: #b77900;
+    
+    @media (prefers-color-scheme: dark) {
+      color: #ffcc66;
+    }
+  }
+  
+  &.error {
+    background: rgba(255, 50, 50, 0.15);
+    border: 1px solid rgba(255, 50, 50, 0.3);
+    color: #cc0000;
+    
+    @media (prefers-color-scheme: dark) {
+      color: #ff6666;
+    }
+  }
+}
+
+.alert-content {
+  font-size: 0.875rem;
+  line-height: 1.4;
+  
+  strong {
+    display: block;
+    margin-bottom: 0.25rem;
+  }
+}
+
+.dismiss-btn {
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0.25rem;
+  opacity: 0.6;
+  transition: opacity 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  
+  &:hover {
+    opacity: 1;
+  }
+}

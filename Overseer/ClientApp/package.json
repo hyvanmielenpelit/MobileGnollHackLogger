@@ -1,6 +1,6 @@
 {
   "name": "overseer",
-  "version": "1.0.16",
+  "version": "1.0.17",
   "scripts": {
     "ng": "ng",
     "start": "ng serve --port 44447",
@@ -10,6 +10,7 @@
   },
   "private": true,
   "dependencies": {
+    "@sentry/angular": "^9.6.0",
     "@angular/common": "^22.1.0",
     "@angular/compiler": "^22.1.0",
     "@angular/core": "^22.1.0",

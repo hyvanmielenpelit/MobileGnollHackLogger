@@ -400,3 +400,6 @@ FodyWeavers.xsd
 # local certificates
 localcert*.p12
 Overseer/wwwroot/
+
+# Sentry
+.sentryclirc

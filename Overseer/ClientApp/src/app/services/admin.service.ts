@@ -272,4 +272,8 @@ export class AdminService {
   reorderGroupSystemConfigs(groupId: number, ids: number[]): Observable<void> {
     return this.http.put<void>(`/api/admin/groups/${groupId}/systemconfigs/reorder`, { orderedIds: ids });
   }
+
+  triggerBackendSentryError(): Observable<any> {
+    return this.http.post('/api/admin/test-sentry', {});
+  }
 }

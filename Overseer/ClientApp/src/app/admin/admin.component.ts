@@ -173,22 +173,41 @@ export class AdminComponent implements OnInit, OnDestroy {
 
     this.loadData();
   }
+  devToastMessage = '';
+  private toastTimeout: any;
 
-  testChangelogAnimation() {
-    localStorage.setItem('overseer_last_seen_changelog', '0.0.0');
-    
-    // Dispatch an event so the sidebar can update without a page reload
-    window.dispatchEvent(new Event('changelog_badge_reset'));
-
+  showDevToast(message: string) {
+    this.devToastMessage = message;
     const toast = document.getElementById('dev-toast');
     if (toast && 'showPopover' in toast) {
       (toast as any).showPopover();
-      setTimeout(() => {
-        if (toast.matches(':popover-open')) {
-          (toast as any).hidePopover();
-        }
+      
+      if (this.toastTimeout) {
+        clearTimeout(this.toastTimeout);
+      }
+      
+      this.toastTimeout = setTimeout(() => {
+        (toast as any).hidePopover();
       }, 3000);
     }
+  }
+  testChangelogAnimation() {
+    localStorage.setItem('overseer_last_seen_changelog', '0.0.0');
+    window.dispatchEvent(new Event('changelog_badge_reset'));
+    this.showDevToast('Update badge reset successfully!');
+  }
+
+  triggerFrontendSentryError() {
+    this.showDevToast('Triggering frontend exception...');
+    throw new Error('Sentry Frontend Crash Test triggered by Admin');
+  }
+
+  triggerBackendSentryError() {
+    this.showDevToast('Sending backend crash request...');
+    this.adminService.triggerBackendSentryError().subscribe({
+      next: () => this.showDevToast('Backend crash request completed unexpectedly successfully.'),
+      error: (err) => this.showDevToast('Backend crash request completed (check Sentry!)')
+    });
   }
 
   ngOnDestroy() {

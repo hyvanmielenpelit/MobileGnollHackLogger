@@ -128,10 +128,41 @@ builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Ser
 
 // GitHub API service
 builder.Services.AddSingleton<Overseer.Services.GitHubApiService>();
+builder.Services.AddSingleton<Overseer.Services.ConfigHealthService>();
 
 // GitHub tools
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.GetGitHubRepoInfoTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.SearchGitHubTool>();
+
+// Sentry & Tunnel Logging Configuration
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddTransient<Sentry.Extensibility.ISentryEventProcessor, AuthSentryEventProcessor>();
+builder.WebHost.UseSentry(options =>
+{
+    // explicitly map our custom configuration key, or disable Sentry if missing
+    options.Dsn = builder.Configuration["SentryDSN"] ?? "";
+});
+
+// Rate Limiter for Sentry Tunnel
+builder.Services.AddRateLimiter(options =>
+{
+    options.AddPolicy("TunnelRateLimit", context =>
+    {
+        var username = context.User.Identity?.Name ?? "anonymous";
+        return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(username, partition => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+        {
+            AutoReplenishment = true,
+            PermitLimit = 10,
+            QueueLimit = 0,
+            Window = TimeSpan.FromMinutes(1)
+        });
+    });
+    options.OnRejected = async (context, token) =>
+    {
+        context.HttpContext.Response.StatusCode = 429;
+        await context.HttpContext.Response.WriteAsync("Too many log events. Please try again later.", token);
+    };
+});
 
 var app = builder.Build();
 
@@ -158,6 +189,7 @@ app.Use((context, next) =>
 });
 
 app.UseAuthorization();
+app.UseRateLimiter(); // CRITICAL: Must be after UseAuthorization
 
 app.MapControllers();
 app.MapHub<Overseer.Hubs.ChatHub>("/chathub");

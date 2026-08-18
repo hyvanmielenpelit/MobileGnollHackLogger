@@ -1,4 +1,5 @@
 @if (!isOffline) {
+  <app-admin-alerts></app-admin-alerts>
   <div class="layout" [class.is-resizing]="isResizing" [class.sidebar-open]="isSidebarOpen">
     <div class="sidebar gh-main-container" #sidebar [style.width.px]="sidebarWidth">
       <button class="sidebar-close-btn" (click)="closeSidebar()" title="Close Sidebar" aria-label="Close sidebar">

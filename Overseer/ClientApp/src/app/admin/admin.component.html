@@ -261,14 +261,35 @@
             <div class="tab-header-row">
               <h3 class="m-0">Developer Tools</h3>
             </div>
-            <div class="mt-20">
-              <button class="btn-gh btn-secondary" (click)="testChangelogAnimation()">
-                Test Changelog Badge
-              </button>
-              <p class="text-muted mt-10" style="font-size: 0.9em;">
-                Click this button to reset the Changelog update badge.
-              </p>
-            </div>
+            
+            <fieldset class="permissions-fieldset mt-20">
+              <legend>Sentry Crash Reporting</legend>
+              <div class="margin-y-20 mt-5">
+                <div class="devtools-button-group">
+                  <button class="btn-gh" (click)="triggerFrontendSentryError()">
+                    Test Frontend Error
+                  </button>
+                  <button class="btn-gh" (click)="triggerBackendSentryError()">
+                    Test Backend Error
+                  </button>
+                </div>
+                <p class="text-muted mt-10" style="font-size: 0.9em;">
+                  Warning: Clicking these buttons will deliberately throw unhandled exceptions and send real error reports to your configured Sentry project.
+                </p>
+              </div>
+            </fieldset>
+
+            <fieldset class="permissions-fieldset mt-20">
+              <legend>Changelog</legend>
+              <div class="margin-y-20 mt-5">
+                <button class="btn-gh btn-secondary" (click)="testChangelogAnimation()">
+                  Test Changelog Badge
+                </button>
+                <p class="text-muted mt-10" style="font-size: 0.9em;">
+                  Click this button to reset the Changelog update badge.
+                </p>
+              </div>
+            </fieldset>
           </div>
         }
       </div>
@@ -276,12 +297,15 @@
   </div>
 </div>
 
-<div id="dev-toast" popover="manual" role="status" class="toast toast-success">
-  <svg class="icon" aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-    <polyline points="22 4 12 14.01 9 11.01"></polyline>
-  </svg>
-  <span>Update badge reset successfully!</span>
+<div id="dev-toast" popover="manual" role="status" class="toast toast-success d-flex align-items-center" style="gap: 10px; justify-content: space-between;">
+  <div class="d-flex align-items-center" style="gap: 8px;">
+    <svg class="icon" aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+      <polyline points="22 4 12 14.01 9 11.01"></polyline>
+    </svg>
+    <span>{{ devToastMessage }}</span>
+  </div>
+  <button popovertarget="dev-toast" popovertargetaction="hide" class="close-btn" style="background: transparent; border: none; color: inherit; cursor: pointer; font-size: 1.2rem; line-height: 1; padding: 0 5px;" aria-label="Close">&times;</button>
 </div>
 
 <!-- DIALOGS -->

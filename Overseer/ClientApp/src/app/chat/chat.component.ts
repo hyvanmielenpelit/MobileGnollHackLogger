@@ -9,6 +9,7 @@ import { MarkdownPipe } from './markdown.pipe';
 import { RelativeTimePipe } from './relative-time.pipe';
 import { SettingsService } from '../services/settings.service';
 import { ChangelogService } from '../services/changelog.service';
+import { AdminAlertsComponent } from './admin-alerts.component';
 import * as signalR from '@microsoft/signalr';
 import { firstValueFrom, filter, Subscription } from 'rxjs';
 export interface ToolClientRequest {
@@ -28,7 +29,7 @@ export interface ToolResponse {
 
 @Component({
     selector: 'app-chat',
-    imports: [CommonModule, FormsModule, RouterModule, MarkdownPipe, RelativeTimePipe],
+    imports: [CommonModule, FormsModule, RouterModule, MarkdownPipe, RelativeTimePipe, AdminAlertsComponent],
     styleUrl: './chat.component.scss',
     changeDetection: ChangeDetectionStrategy.Eager,
     templateUrl: './chat.component.html'
