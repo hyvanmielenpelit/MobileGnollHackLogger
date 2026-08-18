@@ -13,9 +13,11 @@ The Sentry DSN is considered a highly sensitive secret in this project. Exposing
 
 To mitigate this:
 - The Angular frontend initializes Sentry with a placeholder DSN and uses the `tunnel: '/api/sentry/log'` option.
-- The `SentryTunnelController` in the ASP.NET Core backend acts as a proxy.
-- The backend requires the user to be authenticated (`[Authorize]`).
-- The backend reads the envelope, finds the first `\n` byte to separate the header from the binary payload, and **rewrites the placeholder DSN with the real DSN** from the backend's configuration before forwarding the request to Sentry.
+- **IMPORTANT:** Because Sentry uses native `fetch` instead of Angular's `HttpClient`, we provide a custom transport in `main.ts` using `Sentry.makeFetchTransport` that explicitly sets `credentials: 'include'`. Without this, the browser will not send the ASP.NET Core Identity authentication cookies to the tunnel.
+- The `SentryTunnelController` in the ASP.NET Core backend acts as a proxy, protected by `[Authorize]`.
+- The backend reads the envelope, finds the first `\n` byte to separate the header JSON from the binary payload, and uses `System.Text.Json.Nodes.JsonNode` to safely parse the header.
+- The backend **must rewrite both the `dsn` and `public_key` fields** in this header JSON to match the server's real DSN, re-serialize the header, and reconstruct the binary payload. If it forwards the original placeholder DSN, Sentry's ingest servers will reject the envelope with a `401 Unauthorized`.
+- The backend also sends the `X-Sentry-Auth` and `X-Forwarded-For` headers on the outgoing `HttpRequestMessage` to guarantee authentication. (Note: These must be set on the per-request `HttpRequestMessage`, NOT on `HttpClient.DefaultRequestHeaders`, as `IHttpClientFactory` reuses client instances and would cause header accumulation/concurrency bugs).
 
 ## 2. SSRF Prevention
 
