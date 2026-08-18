@@ -71,11 +71,11 @@ npm run build -- --configuration production
 # 2. Inject Debug IDs into the .js and .map files
 #    This adds a unique identifier that Sentry uses to match errors to source maps.
 #    Must run AFTER the build completes.
-sentry-cli sourcemaps inject ../wwwroot
+npx sentry-cli sourcemaps inject ../wwwroot
 
 # 3. Upload source maps to Sentry
 #    --release must match the 'release' property set in Sentry.init() in main.ts
-sentry-cli sourcemaps upload --release <version> ../wwwroot
+npx sentry-cli sourcemaps upload --release <version> ../wwwroot
 ```
 
 > **Important:** The `--release <version>` value (e.g., `1.0.17`) must be **identical** to the `release` property configured in your Angular app's `Sentry.init()` call in `main.ts` (which dynamically imports the `version` from `package.json` synchronized from `Overseer.csproj`). If they don't match, Sentry will not be able to link errors to their source maps.

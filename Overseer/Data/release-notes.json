@@ -1,5 +1,16 @@
 [
   {
+    "version": "1.0.17",
+    "date": "2026-08-18T15:13:00Z",
+    "summary": "Added Sentry crash reporting.",
+    "changes": [
+      {
+        "type": "feature",
+        "text": "Added Sentry crash and error reporting for both frontend and backend."
+      }
+    ]
+  },
+  {
     "version": "1.0.16",
     "date": "2026-08-17T15:22:03Z",
     "summary": "Improved the Gnoll Overseer avatar animation system.",
