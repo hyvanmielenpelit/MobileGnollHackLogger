@@ -2,6 +2,18 @@
 
 This guide explains how to properly generate, upload, and exclude Angular source maps for Sentry, ensuring that your production stack traces are readable without exposing your source code to the public.
 
+## AI Skill Automation
+
+You can ask the AI assistant to automate the production build, Debug ID injection, and source map upload process using the `overseer_sentry_sourcemaps_upload` skill.
+
+To invoke the skill, use any of the following prompts:
+- *"Upload Overseer's debug files to Sentry. Use the overseer_sentry_sourcemaps_upload skill."*
+- *"Upload Overseer source maps to Sentry"*
+- *"Upload sourcemaps for Overseer to Sentry"*
+- *"Build and upload Sentry sourcemaps for Overseer"*
+
+The skill verifies prerequisites (including `.sentryclirc` and `angular.json`), determines the release version from `Overseer.csproj` or `package.json`, runs the production build, injects Debug IDs via `sentry-cli`, and uploads the sourcemaps to Sentry.
+
 ## 1. The Problem
 
 By default, the Overseer Angular application is built using production settings (`ng build --configuration production`). Standard production settings strip out all source maps to optimize file size and hide the original source code. 
