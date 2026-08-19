@@ -1,5 +1,16 @@
 [
   {
+    "version": "1.0.18",
+    "date": "2026-08-19T08:31:47Z",
+    "summary": "Fixed the copy to clipboard button to copy only the main response.",
+    "changes": [
+      {
+        "type": "fix",
+        "text": "Fixed the copy to clipboard button to copy only the main response without internal thinking blocks."
+      }
+    ]
+  },
+  {
     "version": "1.0.17",
     "date": "2026-08-18T15:13:00Z",
     "summary": "Added Sentry crash reporting.",
