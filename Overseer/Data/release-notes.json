@@ -1,5 +1,16 @@
 [
   {
+    "version": "1.0.19",
+    "date": "2026-08-19T09:41:00Z",
+    "summary": "Fixed unnecessary error reporting for transient AI provider errors.",
+    "changes": [
+      {
+        "type": "fix",
+        "text": "Fixed unnecessary error reporting for transient AI provider errors and service overloads."
+      }
+    ]
+  },
+  {
     "version": "1.0.18",
     "date": "2026-08-19T08:31:47Z",
     "summary": "Fixed the copy to clipboard button to copy only the main response.",
