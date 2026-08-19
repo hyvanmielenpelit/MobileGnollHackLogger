@@ -42,9 +42,22 @@ Sentry logs in Overseer capture user-submitted chat prompts, error bodies, URLs,
 
 ---
 
-## Section 1: Retrieving Issue Data via Sentry MCP Server
+## Section 1: Architectural Principle — What Belongs in Sentry vs Application Handling
 
-### 1.1 Organization & Project Constants
+Overseer strictly separates **Application Error Handling** from **Sentry Crash Reporting**:
+
+1. **Application Error Handling**:
+   - Operational issues (e.g., AI provider 5xx outages, 429 rate limits, invalid user API keys, wrong model names, quota limits) are **handled normally in code** by `ChatService.cs` and controllers.
+   - The application retries transient network errors with exponential backoff and streams clear error events to the UI via SignalR.
+2. **Sentry Error Logging**:
+   - Sentry is reserved **exclusively for unexpected bugs, runtime crashes, and unhandled software defects** (e.g., `NullReferenceException`, unhandled database exceptions, controller crashes).
+   - Upstream AI provider outages and expected user misconfigurations are normal operational events and **must be dropped from Sentry**.
+
+---
+
+## Section 2: Retrieving Issue Data via Sentry MCP Server
+
+### 2.1 Organization & Project Constants
 Use these constants for all Sentry MCP tool calls for Overseer:
 
 ```csharp
@@ -53,7 +66,7 @@ regionUrl        = "https://de.sentry.io"
 projectSlugOrId  = "overseer"
 ```
 
-### 1.2 Issue Discovery
+### 2.2 Issue Discovery
 To list unresolved issues for Overseer:
 
 ```
@@ -68,7 +81,7 @@ search_issues(
 )
 ```
 
-### 1.3 Fetching Issue Details & Breadcrumbs
+### 2.3 Fetching Issue Details & Breadcrumbs
 For each issue, retrieve both the issue resource and breadcrumbs:
 
 1. **Issue Details (Stack trace, tags, error info):**
@@ -104,23 +117,22 @@ For each issue, retrieve both the issue resource and breadcrumbs:
 
 ---
 
-## Section 2: Overseer Architecture & Issue Triage Matrix
-
-Overseer consists of an ASP.NET Core 10 backend and an Angular 19 frontend with a secured Sentry Tunnel (`/api/sentry/log`).
+## Section 3: Overseer Architecture & Issue Triage Matrix
 
 ### Triage Decision Matrix
 
-| Category | Typical Signature | Root Cause / Handling | Action |
+| Category | Typical Signature | Normal App Handling | Sentry Outcome & Action |
 |---|---|---|---|
-| **Real Application Bug (Backend)** | `NullReferenceException`, `InvalidOperationException`, 500 error in controller/service | Unhandled edge case or logic bug in C# backend code | Create implementation plan with code fix and unit test |
-| **Real Application Bug (Frontend)** | `TypeError`, `ChunkLoadError`, Angular component rendering failure | UI/TypeScript bug in Angular client | Create implementation plan with TypeScript fix |
-| **Transient AI Provider Error** | 429 (Rate Limit), 502/503 (Overloaded/Service Unavailable), 504 (Gateway Timeout) | Upstream provider outage; already handled with retries in `ChatService.cs` | Should be filtered in `AuthSentryEventProcessor.cs` so it doesn't pollute Sentry |
-| **Expected User Misconfiguration** | Invalid user API key, model not found on custom key | User entered bad credentials; handled inline in UI | Should not reach Sentry; verify `ChatService` does not throw unhandled exception |
-| **Unauthenticated Bot / Probe** | 401/403 on protected endpoints, scanners hitting non-existent routes | External bot scan | Dropped automatically by `AuthSentryEventProcessor.cs` / Tunnel rate limiter |
+| **Real Application Bug (Backend)** | `NullReferenceException`, `InvalidOperationException`, unhandled 500 in controller/service | Global exception handler logs crash | **Logged to Sentry ✅** → Create implementation plan with code fix and unit test |
+| **Real Application Bug (Frontend)** | `TypeError`, `ChunkLoadError`, Angular component rendering crash | Angular global ErrorHandler captures error | **Logged to Sentry ✅** → Create implementation plan with TypeScript fix |
+| **Transient AI Provider Error** | `429`, `500`, `501`, `502`, `503`, `504`, `529`, or any 5xx targeting AI providers | `ChatService.cs` retries up to 6×; streams friendly `ChatEvent` to user | **Dropped from Sentry ❌** (Filtered by `AuthSentryEventProcessor`) |
+| **Expected User Misconfiguration** | `400` (bad params/model name), `401`/`403` (bad API key), `404` (model not found) | Handled inline by `ChatService.cs` / `SettingsController.cs`; returned to UI | **Not in Sentry ❌** (4xx ignored by Sentry; application handles gracefully) |
+| **Unauthenticated Bot / Probe** | `401`/`403` on protected endpoints, scanners hitting non-existent routes | Authentication middleware rejects request | **Dropped from Sentry ❌** (Filtered by `AuthSentryEventProcessor`) |
+| **Frontend HTTP Failure** | Any HTTP 4xx/5xx in Angular client | Client shows toast/banner | **Dropped from Sentry ❌** (Filtered by Angular `beforeSend` to prevent duplicate noise) |
 
 ---
 
-## Section 3: Diagnostic Step-by-Step Procedure
+## Section 4: Diagnostic Step-by-Step Procedure
 
 1. **Inspect Mechanism & Tags**:
    - Check if `mechanism` is `SentryHttpFailedRequestHandler`. This indicates an outgoing HTTP call failed. Check the URL and HTTP status code.
@@ -137,7 +149,7 @@ Overseer consists of an ASP.NET Core 10 backend and an Angular 19 frontend with 
 
 ---
 
-## Section 4: Implementing and Verifying the Fix for Sentry Issues
+## Section 5: Implementing and Verifying the Fix for Sentry Issues
 
 1. **Draft Implementation Plan**:
    - Write or update `implementation_plan.md` artifact.

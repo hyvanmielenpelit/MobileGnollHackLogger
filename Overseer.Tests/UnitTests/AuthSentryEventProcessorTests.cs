@@ -136,4 +136,70 @@ public class AuthSentryEventProcessorTests
 
         Assert.NotNull(result);
     }
+
+    [Fact]
+    public void Process_HttpFailedRequestHandler_AiProvider500_DropsEvent()
+    {
+        var httpContextAccessor = new HttpContextAccessor { HttpContext = CreateAuthenticatedContext() };
+        var processor = new AuthSentryEventProcessor(httpContextAccessor);
+        
+        var @event = new SentryEvent();
+        @event.Request = new SentryRequest
+        {
+            Url = "https://generativelanguage.googleapis.com/v1beta/models"
+        };
+        @event.SetTag("mechanism", "SentryHttpFailedRequestHandler");
+        @event.SetTag("response.status_code", "500");
+
+        var result = processor.Process(@event);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void Process_HttpFailedRequestHandler_AiProvider501_DropsEvent()
+    {
+        var httpContextAccessor = new HttpContextAccessor { HttpContext = CreateAuthenticatedContext() };
+        var processor = new AuthSentryEventProcessor(httpContextAccessor);
+        
+        var @event = new SentryEvent();
+        @event.Request = new SentryRequest
+        {
+            Url = "https://api.anthropic.com/v1/messages"
+        };
+        @event.SetTag("mechanism", "SentryHttpFailedRequestHandler");
+        @event.SetTag("response.status_code", "501");
+
+        var result = processor.Process(@event);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void Process_HttpRequestException_AiProvider500_DropsEvent()
+    {
+        var httpContextAccessor = new HttpContextAccessor { HttpContext = CreateAuthenticatedContext() };
+        var processor = new AuthSentryEventProcessor(httpContextAccessor);
+        
+        var ex = new HttpRequestException("Error calling https://api.openai.com/v1/responses: 500 Internal Server Error", null, HttpStatusCode.InternalServerError);
+        var @event = new SentryEvent(ex);
+
+        var result = processor.Process(@event);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void Process_HttpRequestException_NonAiProvider500_PreservesEvent()
+    {
+        var httpContextAccessor = new HttpContextAccessor { HttpContext = CreateAuthenticatedContext() };
+        var processor = new AuthSentryEventProcessor(httpContextAccessor);
+        
+        var ex = new HttpRequestException("Error calling internal service: 500 Internal Server Error", null, HttpStatusCode.InternalServerError);
+        var @event = new SentryEvent(ex);
+
+        var result = processor.Process(@event);
+
+        Assert.NotNull(result);
+    }
 }

@@ -1,51 +1,82 @@
 ---
 name: sentry_logging_architecture
-description: Documentation of the Sentry crash logging architecture for the Overseer project, including the tunnel endpoint, authentication filtering, and source map exclusion logic.
+description: Documentation of the Sentry crash logging architecture for the Overseer project, including the tunnel endpoint, authentication filtering, AI provider error suppression, and source map exclusion logic.
 ---
 
 # Sentry Logging Architecture for Overseer
 
 This document explains the architecture implemented for Sentry crash logging in the Overseer ASP.NET Core & Angular application.
 
-## 1. Zero DSN Exposure & Tunneling
+---
 
-The Sentry DSN is considered a highly sensitive secret in this project. Exposing it in the Angular frontend would allow unauthenticated actors to forge crash reports containing prompt-injection payloads, which could compromise the AI assistant that reads these logs via the Sentry MCP server.
+## 1. Core Architectural Principle: Application Handling vs Sentry Error Logging
 
-To mitigate this:
-- The Angular frontend initializes Sentry with a placeholder DSN and uses the `tunnel: '/api/sentry/log'` option.
-- **IMPORTANT:** Because Sentry uses native `fetch` instead of Angular's `HttpClient`, we provide a custom transport in `main.ts` using `Sentry.makeFetchTransport` that explicitly sets `credentials: 'include'`. Without this, the browser will not send the ASP.NET Core Identity authentication cookies to the tunnel.
-- The `SentryTunnelController` in the ASP.NET Core backend acts as a proxy, protected by `[Authorize]`.
-- The backend reads the envelope, finds the first `\n` byte to separate the header JSON from the binary payload, and uses `System.Text.Json.Nodes.JsonNode` to safely parse the header.
-- The backend **must rewrite both the `dsn` and `public_key` fields** in this header JSON to match the server's real DSN, re-serialize the header, and reconstruct the binary payload. If it forwards the original placeholder DSN, Sentry's ingest servers will reject the envelope with a `401 Unauthorized`.
-- The backend also sends the `X-Sentry-Auth` and `X-Forwarded-For` headers on the outgoing `HttpRequestMessage` to guarantee authentication. (Note: These must be set on the per-request `HttpRequestMessage`, NOT on `HttpClient.DefaultRequestHeaders`, as `IHttpClientFactory` reuses client instances and would cause header accumulation/concurrency bugs).
-- The Angular frontend dynamically imports its release `version` from `package.json` (which is kept in sync with `Overseer.csproj` via the MSBuild `SyncAngularVersion` target), ensuring Sentry release tags always match the build version without manual drift.
+A foundational principle of Overseer's logging architecture is the strict separation between **Application Error Handling** and **Sentry Crash Logging**:
 
-## 2. SSRF Prevention
+- **Application Error Handling**: When operational errors occur (e.g., transient network drops, AI provider overload, invalid user API keys, wrong model names, quota limits), the application **MUST handle them gracefully**:
+  - Retry transient HTTP errors using exponential backoff in `ChatService.cs`.
+  - Stream clear, structured user-facing messages to the frontend via SignalR (`ChatEvent { Type = "error", Data = "..." }`).
+  - Return clean HTTP `BadRequest` responses with descriptive messages in REST controllers (e.g. `SettingsController.cs`).
+  - Record usage and provider budget depletion in the database for administrative reporting.
+- **Sentry Crash Logging**: Sentry is reserved **exclusively for unexpected bugs, runtime crashes, and unhandled software defects** (such as `NullReferenceException`, unhandled database connection failures, logic bugs, or unhandled Angular frontend crashes).
+- **Suppression from Sentry**: Operational failures, upstream third-party AI provider outages (5xx/429), and user misconfigurations are **normal application events**, NOT application bugs. Therefore, they are **dropped and not sent to Sentry**.
 
-Because the Sentry envelope header specifies the `dsn` to which the envelope belongs, a blind proxy is vulnerable to Server-Side Request Forgery (SSRF) — an attacker could specify a malicious DSN pointing to an internal IP (e.g., `169.254.169.254`).
+---
 
-To prevent this, the `SentryTunnelController` ignores the host provided in the incoming envelope header. It extracts the real host and project ID exclusively from the securely stored server-side `SentryDSN`.
+## 2. Error Filtering & Suppression Matrix
 
-## 3. Error Filtering (Logging Decision Matrix)
+The table below outlines how various errors are handled in the application and why/how they are filtered from Sentry:
 
-We strictly filter out bot noise and expected application errors (like invalid user input or external API overloads).
+| Error Category | Specific Status / Exception | Handled in Application Logic | Sentry Outcome & Mechanism |
+|---|---|---|---|
+| **AI Provider Overload & Server Outages** | `429`, `500`, `501`, `502`, `503`, `504`, `529`, and all 5xx status codes targeting AI providers | `ChatService.cs` retries transient errors with exponential backoff (1s, 5s, 10s, 20s, 30s, 60s). If max retries are exceeded, streams a friendly `ChatEvent` error message to the client. | **Dropped (Filtered)**: `AuthSentryEventProcessor` intercepts Sentry synthetic HTTP events and `HttpRequestException`s matching `AiProviderHosts` and returns `null`. |
+| **Invalid User API Key** | `401 Unauthorized` (OpenAI, Anthropic), `400 Bad Request` / `403 Forbidden` (Google) | `ChatService.cs` yields a `ChatEvent` error; `SettingsController.cs` returns `BadRequest(new { message = ... })`. | **Not Logged**: Sentry `SentryHttpMessageHandler` only captures 5xx by default; no unhandled exception is thrown. |
+| **Non-existent / Invalid Model ID** | `404 Not Found` (OpenAI, Anthropic, Google), `400 Bad Request` | `ChatService.cs` streams the provider error body back to the user; `SettingsController.cs` returns `BadRequest`. | **Not Logged**: 4xx responses are ignored by Sentry HTTP handler; application handles inline without throwing. |
+| **Model Parameter Mismatch / Context Exceeded** | `400 Bad Request` | `ChatService.cs` streams the error body to the client UI. | **Not Logged**: 4xx ignored by Sentry; application handles gracefully. |
+| **Budget / Quota Exhaustion** | `402 Payment Required`, `429 insufficient_quota` | Recorded in database via `SystemAiConfigService.RecordErrorAsync`; informs user via SignalR. | **Not Logged**: Handled inline without throwing unhandled exceptions. |
+| **Missing API Key / Unsupported Provider** | Pre-flight validation | `ChatService.cs` pre-validates keys/providers before sending network requests; yields user-facing error. | **Not Logged**: Never executes network call; no exception thrown. |
+| **Unauthenticated Bot / Probe** | `401 Unauthorized`, `403 Forbidden` on web routes | ASP.NET Core Identity authentication middleware rejects request. | **Dropped (Filtered)**: `AuthSentryEventProcessor` drops any event where `httpContext.User.Identity.IsAuthenticated != true`. |
+| **Frontend HTTP Failure** | Any HTTP 4xx/5xx in Angular client | Angular components display toasts/banners to the user. | **Dropped (Filtered)**: Angular `beforeSend` hook drops client-side HTTP errors to prevent duplicate noise. |
+| **Unexpected App Bug / Crash** | `NullReferenceException`, unhandled 500 in controllers, unhandled Angular crash | Global exception handler / Angular error handler. | **Logged to Sentry ✅**: Full stack trace and breadcrumbs captured for developer triage. |
 
-| Scenario | Handled By | Outcome |
-|----------|------------|---------|
-| Unauthenticated user | `SentryTunnelController` & `AuthSentryEventProcessor` | Dropped (blocked) |
-| Frontend HTTP error (4xx/5xx) | Angular `beforeSend` hook | Dropped (prevents double-logging) |
-| Transient AI API error (429, 502, 503) | `AuthSentryEventProcessor` (backend) | Dropped (safety net) |
-| Invalid AI API key | `ChatService.cs` / `SettingsController.cs` | Dropped (handled inline as a user error, never throws) |
-| Valid, unexpected crash | Both | Logged ✅ |
+---
 
-> **Crucial Pattern:** Do not throw exceptions for expected user misconfigurations. E.g., `ChatService.ExecuteApiWithRetriesAsync` yields a `ChatEvent { Type = "error" }` instead of throwing. This prevents noise from reaching Sentry.
+## 3. Architecture of `AuthSentryEventProcessor`
 
-## 4. Source Maps & MSBuild Exclusion
+`AuthSentryEventProcessor` (`Overseer/Services/AuthSentryEventProcessor.cs`) is registered as an `ISentryEventProcessor` in ASP.NET Core DI:
 
-To ensure stack traces are readable, Angular generates source maps. However, `.map` files must not be exposed on the public web server or bloat the FTP payload.
+1. **Authentication Check**:
+   - If `HttpContext` exists and the user is not authenticated (`IsAuthenticated != true`), the event is immediately discarded to eliminate external scanner and bot noise.
+2. **AI Provider Host Registry**:
+   - Each supported provider class (`GoogleProvider`, `AnthropicProvider`, `OpenAiResponsesProvider`) declares a public static collection `ProviderHosts`.
+   - `AuthSentryEventProcessor` aggregates these into `AiProviderHosts`.
+3. **AI Upstream 5xx and 429 Filtering**:
+   - Synthetic HTTP events from Sentry's `SentryHttpFailedRequestHandler` and raw `HttpRequestException` instances targeting AI provider hosts are inspected.
+   - Any status code in the **500–599** range (including 500, 501, 502, 503, 504, 529) as well as **429** are dropped (`return null`).
+4. **Preservation of Internal Errors**:
+   - If an internal service (e.g. `GitHubApiService` or internal endpoints) fails with an HTTP 500/501 or throws an unexpected exception, `AuthSentryEventProcessor` preserves the event so developers are alerted in Sentry.
 
-- `angular.json` is configured with `sourceMap: { hidden: true }`.
-- `sentry-cli` is used to inject Debug IDs and upload the source maps after `npm run build`.
-- The `Overseer.csproj` uses MSBuild to physically exclude `.map` files from the publish output: `<DistFiles Include="wwwroot\**" Exclude="wwwroot\**\*.map" />`.
+---
 
-See `Overseer/SENTRY_SOURCEMAPS_GUIDE.md` for full CI/CD deployment instructions.
+## 4. Zero DSN Exposure & Secure Tunneling
+
+The Sentry DSN is considered a sensitive secret in Overseer to prevent unauthenticated actors from forging crash reports or staging Prompt Injection attacks against the AI triage assistant.
+
+1. **Frontend Configuration**:
+   - The Angular frontend initializes Sentry with a placeholder DSN and sets `tunnel: '/api/sentry/log'`.
+   - A custom transport using `Sentry.makeFetchTransport` sets `credentials: 'include'` so browser cookies accompany tunnel requests.
+2. **Backend Proxy (`SentryTunnelController`)**:
+   - Protected by `[Authorize]` and rate-limited (`TunnelRateLimit`).
+   - Safely parses the envelope header, rewrites the `dsn` and `public_key` to match server secrets, and forwards the payload to Sentry's ingest servers.
+   - Ignores any incoming host in the envelope to completely eliminate Server-Side Request Forgery (SSRF).
+
+---
+
+## 5. Source Maps & MSBuild Exclusion
+
+- `angular.json` sets `sourceMap: { hidden: true }`.
+- `sentry-cli` injects Debug IDs and uploads hidden source maps to Sentry during release workflows.
+- `Overseer.csproj` MSBuild target excludes `.map` files from public publication:
+  ```xml
+  <DistFiles Include="wwwroot\**" Exclude="wwwroot\**\*.map" />
+  ```
