@@ -912,3 +912,76 @@ input[type="number"] {
 .mb-4 {
   margin-bottom: 4px;
 }
+
+/* Global Markdown Formatting (AI Chat Replies & Docs) */
+.markdown-body {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: break-word;
+
+  p { margin-block: 5px 10px; white-space: pre-wrap; }
+  ul, ol { margin-block: 5px 10px; padding-inline-start: 20px; }
+  h1, h2, h3, h4, h5, h6 { margin-block: 10px 5px; color: var(--title-color); font-family: "Cinzel", serif; }
+
+  /* Block Code Container (Best Practice: Horizontal Scroll) */
+  pre {
+    background: rgba(0, 0, 0, 0.45);
+    border: 1px solid var(--border-glass);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-block: 10px 14px;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow-x: auto;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 0.88em;
+    line-height: 1.5;
+    white-space: pre;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-glass) rgba(0, 0, 0, 0.3);
+
+    code {
+      background: transparent;
+      padding: 0;
+      border: none;
+      color: inherit;
+      white-space: inherit;
+      font-size: inherit;
+      font-family: inherit;
+    }
+  }
+
+  /* Inline Code */
+  :not(pre) > code {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--primary-color);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 0.88em;
+    word-break: break-word;
+  }
+
+  /* Blockquotes */
+  blockquote {
+    margin: 10px 0;
+    padding: 5px 15px;
+    border-left: 3px solid var(--primary-color);
+    background: rgba(212, 160, 23, 0.05);
+    color: #ddd;
+  }
+
+  /* Tables */
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 10px 0;
+    overflow-x: auto;
+    display: block;
+    max-width: 100%;
+  }
+  th, td { border: 1px solid rgba(255, 255, 255, 0.15); padding: 6px 12px; text-align: left; }
+  th { background: rgba(212, 160, 23, 0.15); color: var(--title-color); font-family: "Cinzel", serif; }
+  tr:nth-child(even) { background: rgba(255, 255, 255, 0.03); }
+}
+

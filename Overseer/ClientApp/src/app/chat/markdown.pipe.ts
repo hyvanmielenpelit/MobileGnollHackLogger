@@ -47,6 +47,16 @@ export class MarkdownPipe implements PipeTransform {
         // Matches any non-whitespace (excluding markdown formatting characters *, _, `, opening brackets (, [, {, <, and uppercase letters A-Z), a punctuation mark (., !, ?), and a capital letter
         // This prevents splitting terms like "**.NET", "(.NET", or "ASP.NET" into "**.\n\nNET"
         parts[i] = parts[i].replace(/([^\s\*\_\`\(\[\{\<A-Z][\.\!\?])([A-Z])/g, '$1\n\n$2');
+
+        // Fix missing newlines before code blocks (e.g. LLM outputs "text.```c")
+        if (i + 1 < parts.length && parts[i].length > 0 && !parts[i].endsWith('\n') && parts[i + 1].startsWith('```')) {
+          parts[i] += '\n\n';
+        }
+
+        // Fix missing newlines after code blocks (e.g. LLM outputs "```Text")
+        if (i > 0 && parts[i].length > 0 && !parts[i].startsWith('\n') && parts[i - 1].startsWith('```')) {
+          parts[i] = '\n\n' + parts[i];
+        }
       }
     }
     
