@@ -15,6 +15,11 @@ namespace Overseer.Services.Providers;
 
 public class AnthropicProvider : IAiProvider
 {
+    public static readonly IReadOnlyList<string> ProviderHosts = new[]
+    {
+        "api.anthropic.com"
+    };
+
     private readonly IConfiguration _configuration;
 
     public AnthropicProvider(IConfiguration configuration)

@@ -16,6 +16,11 @@ namespace Overseer.Services.Providers;
 
 public class OpenAiResponsesProvider : IAiProvider
 {
+    public static readonly IReadOnlyList<string> ProviderHosts = new[]
+    {
+        "api.openai.com"
+    };
+
     public string ProviderName => "OpenAI";
 
     public void ConfigureRequest(HttpRequestMessage request, string apiKey)

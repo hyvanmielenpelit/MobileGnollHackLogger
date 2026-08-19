@@ -16,6 +16,11 @@ namespace Overseer.Services.Providers;
 
 public class GoogleProvider : IAiProvider
 {
+    public static readonly IReadOnlyList<string> ProviderHosts = new[]
+    {
+        "generativelanguage.googleapis.com"
+    };
+
     private readonly IConfiguration _configuration;
 
     public GoogleProvider(IConfiguration configuration)
