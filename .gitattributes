@@ -1,5 +1,131 @@
 # Auto detect text files and perform LF normalization
 * text=auto
 
+# .NET and C#
+*.cs text diff=csharp
+*.cshtml text
+*.razor text
+*.xaml text
+*.csproj text
+*.props text
+*.targets text
+*.config text
+*.pubxml text
+*.http text
+*.resx text
+
+# Solution and Visual Studio files
+*.sln text eol=crlf
+
+# Web and Client-side (Angular / Frontend)
+*.html text
 *.css text eol=crlf
 *.min.css text eol=crlf
+*.scss text
+*.sass text
+*.less text
+*.js text
+*.jsx text
+*.ts text
+*.tsx text
+*.mjs text
+*.cjs text
+*.mts text
+*.cts text
+*.json text
+*.jsonc text
+*.svg text
+*.webmanifest text
+
+# Source Maps: Treat as text for line endings, but disable diff generation for performance
+*.map text -diff
+
+# Native and C/C++
+*.c text
+*.cc text
+*.cpp text
+*.h text
+*.hh text
+*.vcxproj text
+*.def text
+*.in text
+
+# Documentation, Data, and Configuration
+*.md text
+*.markdown text
+*.txt text
+*.xml text
+*.yml text
+*.yaml text
+*.sql text
+*.editorconfig text
+*.gitattributes text
+*.gitignore text
+*.gitkeep text
+*.npmignore text
+*.eslintrc text
+*.babelrc text
+*.jshintrc text
+*.nycrc text
+*.sentryclirc text
+
+# Scripts
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.sh text eol=lf
+*.py text
+
+# Certificates and Keys
+*.pfx binary
+*.p12 binary
+*.cer binary
+*.crt binary
+*.key binary
+*.der binary
+
+# Images and Media
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.ico binary
+*.bmp binary
+*.tiff binary
+*.mp3 binary
+*.wav binary
+*.ogg binary
+*.mp4 binary
+
+# Fonts
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.eot binary
+
+# Documents
+*.pdf binary
+*.doc binary
+*.docx binary
+
+# Archives, Compressed Files, and WebAssembly
+*.zip binary
+*.tar.gz binary
+*.tgz binary
+*.gz binary
+*.br binary
+*.wasm binary
+
+# Binaries and Compiled Libraries
+*.dll binary
+*.exe binary
+*.pdb binary
+*.so binary
+*.dylib binary
+*.a binary
+*.node binary
+*.db binary
+*.sqlite binary
+*.bin binary
