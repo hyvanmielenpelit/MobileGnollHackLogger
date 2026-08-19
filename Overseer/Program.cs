@@ -73,7 +73,16 @@ builder.Services.AddHttpClient("GitHub", client =>
     client.BaseAddress = new Uri("https://api.github.com");
     client.DefaultRequestHeaders.Add("Accept", "application/vnd.github+json");
     client.DefaultRequestHeaders.Add("User-Agent", "GnollHack-Overseer");
+    client.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
+    client.Timeout = TimeSpan.FromSeconds(15);
 });
+// Obsolete: NetHackWiki is protected by Cloudflare WAF which blocks automated bot requests with HTTP 403 Forbidden.
+// builder.Services.AddHttpClient("NetHackWiki", client =>
+// {
+//     client.BaseAddress = new Uri("https://nethackwiki.com/");
+//     client.DefaultRequestHeaders.Add("User-Agent", "GnollHackOverseer/1.0 (https://gnollhack.com/)");
+//     client.Timeout = TimeSpan.FromSeconds(15);
+// });
 builder.Services.AddHttpClient("SentryTunnel", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(15);
@@ -105,7 +114,8 @@ builder.Services.AddSingleton<Overseer.Services.KnowledgeBaseService>();
 builder.Services.AddSingleton<Overseer.Services.Tools.ToolExecutor>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.KnowledgeBaseTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.WikiSearchTool>();
-builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.NetHackWikiSearchTool>();
+// Obsolete: NetHackWikiSearchTool is disabled due to Cloudflare WAF bot blocking on nethackwiki.com.
+// builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.NetHackWikiSearchTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.MonsterLookupTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.ItemLookupTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.GetFullMessageHistoryTool>();

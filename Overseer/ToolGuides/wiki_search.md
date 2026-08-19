@@ -1,4 +1,4 @@
-Search the GnollHack specific wiki for information. Use this before nethack_wiki_search.
+Search the GnollHack specific wiki for information.
 
 **PREFERRED TOOL** — Fast and cheap. Use this as your first tool for general game information,
 mechanics, class/race descriptions, and any well-documented feature. Only fall back to

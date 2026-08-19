@@ -48,7 +48,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     'get_panic_log': 'Reading panic log',
     'item_lookup': 'Searching Wiki for an item',
     'monster_lookup': 'Searching Wiki for a monster',
-    'nethack_wiki_search': 'Searching NetHack Wiki',
+    // 'nethack_wiki_search': 'Searching NetHack Wiki', // Obsolete
     'search_server_dumplogs': 'Searching server dumplogs',
     'source_code_search': 'Searching source code',
     'source_code_view': 'Viewing source code',
@@ -83,7 +83,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       if (name === 'monster_lookup' && args.name) return args.name;
       if (name === 'item_lookup' && args.name) return args.name;
       if (name === 'wiki_search' && args.query) return args.query;
-      if (name === 'nethack_wiki_search' && args.query) return args.query;
+      // if (name === 'nethack_wiki_search' && args.query) return args.query; // Obsolete
       if (name === 'get_knowledge_article') {
         if (args.topic_title) return args.topic_title;
         if (args.topic) return args.topic;

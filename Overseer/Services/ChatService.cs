@@ -716,9 +716,12 @@ public class ChatService
                     var swTool = System.Diagnostics.Stopwatch.StartNew();
                     var res = await _toolExecutor.ExecuteAsync(tName, tArgs, execContext, cancellationToken);
                     swTool.Stop();
-                    if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat] Tool '{tName}' completed in {swTool.ElapsedMilliseconds}ms. Success={res.Success}" };
 
-                    var resContent = res.Content ?? (res.Success ? "Success" : (res.ErrorMessage ?? "Unknown error"));
+                    var resContent = res.Success
+                        ? (!string.IsNullOrEmpty(res.Content) ? res.Content : "Success")
+                        : (!string.IsNullOrWhiteSpace(res.ErrorMessage) ? res.ErrorMessage : (!string.IsNullOrWhiteSpace(res.Content) ? res.Content : "Unknown error"));
+
+                    if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat] Tool '{tName}' completed in {swTool.ElapsedMilliseconds}ms. Success={res.Success}{(res.Success ? "" : $", Error: {resContent}")}" };
 
                     providerResults.Add(new ProviderToolResult
                     {

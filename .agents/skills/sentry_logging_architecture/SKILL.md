@@ -47,14 +47,15 @@ The table below outlines how various errors are handled in the application and w
 
 1. **Authentication Check**:
    - If `HttpContext` exists and the user is not authenticated (`IsAuthenticated != true`), the event is immediately discarded to eliminate external scanner and bot noise.
-2. **AI Provider Host Registry**:
+2. **External Service & Tool Host Registry**:
    - Each supported provider class (`GoogleProvider`, `AnthropicProvider`, `OpenAiResponsesProvider`) declares a public static collection `ProviderHosts`.
-   - `AuthSentryEventProcessor` aggregates these into `AiProviderHosts`.
-3. **AI Upstream 5xx and 429 Filtering**:
-   - Synthetic HTTP events from Sentry's `SentryHttpFailedRequestHandler` and raw `HttpRequestException` instances targeting AI provider hosts are inspected.
-   - Any status code in the **500–599** range (including 500, 501, 502, 503, 504, 529) as well as **429** are dropped (`return null`).
+   - External lookup tools (`ExternalToolHosts`) declare external hosts used by tools (`GitHubHosts` for `api.github.com` & `github.com`).
+   - `AuthSentryEventProcessor` aggregates these into `ExternalServiceHosts`.
+3. **External Upstream 5xx, 429, and Transient Network Filtering**:
+   - Synthetic HTTP events from Sentry's `SentryHttpFailedRequestHandler` and raw `HttpRequestException` instances targeting external service hosts are inspected.
+   - Any status code in the **500–599** range (including 500, 501, 502, 503, 504, 529), status code **429**, and network connection drop exceptions are dropped (`return null`).
 4. **Preservation of Internal Errors**:
-   - If an internal service (e.g. `GitHubApiService` or internal endpoints) fails with an HTTP 500/501 or throws an unexpected exception, `AuthSentryEventProcessor` preserves the event so developers are alerted in Sentry.
+   - If an internal endpoint or internal service fails with an unexpected exception or 500 error, `AuthSentryEventProcessor` preserves the event so developers are alerted in Sentry.
 
 ---
 

@@ -60,21 +60,79 @@ namespace Overseer.Services
                     rateLimitRemaining = string.Join(", ", remainingValues);
                 }
 
+                string resetInfo = "";
+                if (response.Headers.TryGetValues("X-RateLimit-Reset", out var resetValues))
+                {
+                    var resetStr = string.Join("", resetValues);
+                    if (long.TryParse(resetStr, out long resetEpoch))
+                    {
+                        var resetTime = DateTimeOffset.FromUnixTimeSeconds(resetEpoch);
+                        var remainingSpan = resetTime - DateTimeOffset.UtcNow;
+                        int minutes = Math.Max(0, (int)Math.Ceiling(remainingSpan.TotalMinutes));
+                        resetInfo = $" (resets in {minutes}m at {resetTime:HH:mm:ss} UTC)";
+                    }
+                }
+
+                int? retryAfterSeconds = null;
+                if (response.Headers.RetryAfter != null)
+                {
+                    if (response.Headers.RetryAfter.Delta.HasValue)
+                        retryAfterSeconds = (int)response.Headers.RetryAfter.Delta.Value.TotalSeconds;
+                    else if (response.Headers.RetryAfter.Date.HasValue)
+                        retryAfterSeconds = Math.Max(0, (int)(response.Headers.RetryAfter.Date.Value - DateTimeOffset.UtcNow).TotalSeconds);
+                }
+                else if (response.Headers.TryGetValues("Retry-After", out var retryValues) && int.TryParse(string.Join("", retryValues), out int parsedRetry))
+                {
+                    retryAfterSeconds = parsedRetry;
+                }
+
+                string rateLimitFooter = $"[GitHub API: {rateLimitRemaining} requests remaining{resetInfo}]";
+
                 if (!response.IsSuccessStatusCode)
                 {
-                    if (response.StatusCode == System.Net.HttpStatusCode.Forbidden && rateLimitRemaining == "0")
+                    int statusCode = (int)response.StatusCode;
+
+                    if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
                     {
-                        return $"Error: GitHub API rate limit exceeded. [GitHub API: 0 requests remaining this hour]";
+                        return $"Error: GitHub API authentication failed (401 Unauthorized). Please check your Personal Access Token in settings. {rateLimitFooter}";
+                    }
+                    if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+                    {
+                        if (rateLimitRemaining == "0")
+                        {
+                            return $"Error: GitHub API rate limit exceeded. {rateLimitFooter}";
+                        }
+                        if (retryAfterSeconds.HasValue)
+                        {
+                            return $"Error: GitHub API secondary rate limit reached. Please retry after {retryAfterSeconds.Value} seconds. {rateLimitFooter}";
+                        }
+                        return $"Error: GitHub API access forbidden (403 Forbidden). The repository may be private or token scopes may be insufficient. {rateLimitFooter}";
+                    }
+                    if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                    {
+                        if (retryAfterSeconds.HasValue)
+                        {
+                            return $"Error: GitHub API rate limit exceeded (429 Too Many Requests). Please retry after {retryAfterSeconds.Value} seconds. {rateLimitFooter}";
+                        }
+                        return $"Error: GitHub API rate limit exceeded (429 Too Many Requests). {rateLimitFooter}";
                     }
                     if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
                     {
-                        return $"Error: Repository or resource not found. [GitHub API: {rateLimitRemaining} requests remaining this hour]";
+                        return $"Error: GitHub repository or resource not found (404). {rateLimitFooter}";
                     }
-                    return $"Error: GitHub API returned {(int)response.StatusCode} {response.ReasonPhrase}. [GitHub API: {rateLimitRemaining} requests remaining this hour]";
+                    if (statusCode == 422)
+                    {
+                        return $"Error: GitHub API request was invalid or unprocessable (422). Check search syntax or parameters. {rateLimitFooter}";
+                    }
+                    if (statusCode >= 500 && statusCode <= 599)
+                    {
+                        return $"Error: GitHub API service is temporarily unavailable (HTTP {statusCode} {response.ReasonPhrase}). Please try again later.";
+                    }
+                    return $"Error: GitHub API returned {statusCode} {response.ReasonPhrase}. {rateLimitFooter}";
                 }
 
                 var content = await response.Content.ReadAsStringAsync(ct);
-                var formattedResult = $"{content}\n\n[GitHub API: {rateLimitRemaining} requests remaining this hour]";
+                var formattedResult = $"{content}\n\n{rateLimitFooter}";
 
                 var cacheOptions = new MemoryCacheEntryOptions()
                     .SetSlidingExpiration(TimeSpan.FromMinutes(5))
@@ -91,7 +149,7 @@ namespace Overseer.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error calling GitHub API at {Url}", url);
+                _logger.LogWarning(ex, "GitHub API call to {Url} failed with exception: {Message}", url, ex.Message);
                 return $"Error: An exception occurred while contacting the GitHub API ({ex.Message}).";
             }
         }
@@ -99,13 +157,12 @@ namespace Overseer.Services
         private string ExtractRateLimitInfo(string formattedResult)
         {
             // The rate limit info is already embedded at the bottom of formattedResult by FetchFromGitHubAsync.
-            // We just need to append it again if we process the JSON, or better yet, return the raw rate limit suffix.
             int index = formattedResult.LastIndexOf("\n\n[GitHub API:", StringComparison.Ordinal);
             if (index >= 0)
             {
                 return formattedResult.Substring(index).Trim();
             }
-            return "[GitHub API: Unknown requests remaining this hour]";
+            return "[GitHub API: Unknown requests remaining]";
         }
 
         private string StripRateLimitInfo(string formattedResult)

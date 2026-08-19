@@ -130,8 +130,8 @@ namespace Overseer.Services.Tools
                 }
             }
 
-            _logger.LogInformation("Tool Execution Audit - Session: {SessionId}, Tool: {ToolName}, Success: {Success}", 
-                context.SessionId, toolName, result.Success);
+            _logger.LogInformation("Tool Execution Audit - Session: {SessionId}, Tool: {ToolName}, Success: {Success}, Error: {Error}", 
+                context.SessionId, toolName, result.Success, result.ErrorMessage ?? "None");
 
             return result;
         }

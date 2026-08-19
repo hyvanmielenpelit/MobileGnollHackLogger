@@ -10,6 +10,7 @@ using Microsoft.Extensions.Configuration;
 
 namespace Overseer.Services.Tools
 {
+    [Obsolete("NetHackWikiSearchTool is disabled because nethackwiki.com is protected by Cloudflare WAF/Bot Management, which blocks automated backend HTTP requests with HTTP 403 Forbidden. Use local wiki tools (wiki_search, wiki_view), monster/item stats tools, or provider native web search instead.")]
     public class NetHackWikiSearchTool : IToolHandler
     {
         private readonly IHttpClientFactory _httpClientFactory;
@@ -90,11 +91,23 @@ namespace Overseer.Services.Tools
             try
             {
                 var client = _httpClientFactory.CreateClient("NetHackWiki");
-                client.DefaultRequestHeaders.Add("User-Agent", "GnollHackOverseer/1.0 (https://gnollhack.com/)");
 
                 var searchUrl = $"https://nethackwiki.com/api.php?action=query&list=search&srsearch={Uri.EscapeDataString(query)}&format=json";
                 var searchResponse = await client.GetAsync(searchUrl, cancellationToken);
-                searchResponse.EnsureSuccessStatusCode();
+
+                if (!searchResponse.IsSuccessStatusCode)
+                {
+                    int statusCode = (int)searchResponse.StatusCode;
+                    if (searchResponse.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                    {
+                        return new ToolResult { Success = false, ErrorMessage = "Error: NetHack Wiki rate limit exceeded (429). Please wait a moment before querying the wiki again." };
+                    }
+                    if (statusCode >= 500 && statusCode <= 599)
+                    {
+                        return new ToolResult { Success = false, ErrorMessage = $"Error: NetHack Wiki is temporarily unavailable (HTTP {statusCode} {searchResponse.ReasonPhrase}). Please try again later." };
+                    }
+                    return new ToolResult { Success = false, ErrorMessage = $"Error: NetHack Wiki returned HTTP {statusCode} {searchResponse.ReasonPhrase}." };
+                }
 
                 var searchJsonStr = await searchResponse.Content.ReadAsStringAsync(cancellationToken);
                 var searchJson = JsonDocument.Parse(searchJsonStr);
@@ -114,9 +127,22 @@ namespace Overseer.Services.Tools
                         
                         if (!string.IsNullOrEmpty(title))
                         {
-                            var parseUrl = $"https://nethackwiki.com/api.php?action=parse&page={Uri.EscapeDataString(title)}&prop=text&format=json";
+                            var parseUrl = $"https://nethackwiki.com/api.php?action=parse&page={Uri.EscapeDataString(title)}&prop=text&format=json&redirects=1";
                             var parseResponse = await client.GetAsync(parseUrl, cancellationToken);
-                            if (!parseResponse.IsSuccessStatusCode) continue;
+                            
+                            if (!parseResponse.IsSuccessStatusCode)
+                            {
+                                int parseStatusCode = (int)parseResponse.StatusCode;
+                                if (parseResponse.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                                {
+                                    return new ToolResult { Success = false, ErrorMessage = "Error: NetHack Wiki rate limit exceeded (429). Please wait a moment before querying the wiki again." };
+                                }
+                                if (parseStatusCode >= 500 && parseStatusCode <= 599)
+                                {
+                                    return new ToolResult { Success = false, ErrorMessage = $"Error: NetHack Wiki is temporarily unavailable (HTTP {parseStatusCode} {parseResponse.ReasonPhrase}). Please try again later." };
+                                }
+                                continue;
+                            }
                             
                             var parseJsonStr = await parseResponse.Content.ReadAsStringAsync(cancellationToken);
                             var parseJson = JsonDocument.Parse(parseJsonStr);
@@ -133,6 +159,11 @@ namespace Overseer.Services.Tools
                                 // Remove extra newlines and spaces
                                 text = Regex.Replace(text, @"\n{3,}", "\n\n");
                                 
+                                if (text.Length > 4000)
+                                {
+                                    text = text.Substring(0, 4000) + "\n... [Article truncated for length]";
+                                }
+
                                 resultSb.AppendLine($"### Article: {title}");
                                 resultSb.AppendLine(text);
                                 resultSb.AppendLine("--------------------------------------------------");
@@ -147,7 +178,7 @@ namespace Overseer.Services.Tools
                         
                         _cache.Set(cacheKey, resultContent, new MemoryCacheEntryOptions
                         {
-                            Size = resultContent.Length,
+                            Size = 1, // CRITICAL: SizeLimit is configured globally
                             AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(_cacheMinutes)
                         });
                         
@@ -157,9 +188,18 @@ namespace Overseer.Services.Tools
 
                 return new ToolResult { Success = true, Content = "No relevant information found on the NetHack wiki." };
             }
+            catch (OperationCanceledException)
+            {
+                return new ToolResult { Success = false, ErrorMessage = "Error: The NetHack wiki request timed out or was canceled." };
+            }
+            catch (HttpRequestException ex)
+            {
+                return new ToolResult { Success = false, ErrorMessage = $"Error: Could not connect to the NetHack wiki ({ex.GetType().Name}: {ex.Message})." };
+            }
             catch (Exception ex)
             {
-                return new ToolResult { Success = false, ErrorMessage = $"Failed to query NetHack wiki: {ex.Message}" };
+                var inner = ex.InnerException != null ? $" (Inner: {ex.InnerException.GetType().Name}: {ex.InnerException.Message})" : "";
+                return new ToolResult { Success = false, ErrorMessage = $"Error querying NetHack wiki: {ex.GetType().Name}: {ex.Message}{inner}" };
             }
         }
     }

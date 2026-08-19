@@ -202,4 +202,89 @@ public class AuthSentryEventProcessorTests
 
         Assert.NotNull(result);
     }
+
+    [Fact]
+    public void Process_HttpFailedRequestHandler_GitHub500_DropsEvent()
+    {
+        var httpContextAccessor = new HttpContextAccessor { HttpContext = CreateAuthenticatedContext() };
+        var processor = new AuthSentryEventProcessor(httpContextAccessor);
+        
+        var @event = new SentryEvent();
+        @event.Request = new SentryRequest
+        {
+            Url = "https://api.github.com/repos/hyvanmielenpelit/GnollHack/commits"
+        };
+        @event.SetTag("mechanism", "SentryHttpFailedRequestHandler");
+        @event.SetTag("response.status_code", "500");
+
+        var result = processor.Process(@event);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void Process_HttpFailedRequestHandler_GitHub503_DropsEvent()
+    {
+        var httpContextAccessor = new HttpContextAccessor { HttpContext = CreateAuthenticatedContext() };
+        var processor = new AuthSentryEventProcessor(httpContextAccessor);
+        
+        var @event = new SentryEvent();
+        @event.Request = new SentryRequest
+        {
+            Url = "https://api.github.com/search/issues?q=test"
+        };
+        @event.SetTag("mechanism", "SentryHttpFailedRequestHandler");
+        @event.SetTag("response.status_code", "503");
+
+        var result = processor.Process(@event);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void Process_HttpFailedRequestHandler_GitHub429_DropsEvent()
+    {
+        var httpContextAccessor = new HttpContextAccessor { HttpContext = CreateAuthenticatedContext() };
+        var processor = new AuthSentryEventProcessor(httpContextAccessor);
+        
+        var @event = new SentryEvent();
+        @event.Request = new SentryRequest
+        {
+            Url = "https://api.github.com/repos/dotnet/maui"
+        };
+        @event.SetTag("mechanism", "SentryHttpFailedRequestHandler");
+        @event.SetTag("response.status_code", "429");
+
+        var result = processor.Process(@event);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void Process_HttpRequestException_GitHub500_DropsEvent()
+    {
+        var httpContextAccessor = new HttpContextAccessor { HttpContext = CreateAuthenticatedContext() };
+        var processor = new AuthSentryEventProcessor(httpContextAccessor);
+        
+        var ex = new HttpRequestException("Error calling https://api.github.com/repos/dotnet/maui: 500 Internal Server Error", null, HttpStatusCode.InternalServerError);
+        var @event = new SentryEvent(ex);
+
+        var result = processor.Process(@event);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void Process_HttpRequestException_GitHubConnectionFailure_DropsEvent()
+    {
+        var httpContextAccessor = new HttpContextAccessor { HttpContext = CreateAuthenticatedContext() };
+        var processor = new AuthSentryEventProcessor(httpContextAccessor);
+        
+        var ex = new HttpRequestException("Connection failure connecting to https://api.github.com/repos/hyvanmielenpelit/GnollHack");
+        var @event = new SentryEvent(ex);
+
+        var result = processor.Process(@event);
+
+        Assert.Null(result);
+    }
 }
