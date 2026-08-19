@@ -1,5 +1,24 @@
 [
   {
+    "version": "1.0.20",
+    "date": "2026-08-19T17:08:00Z",
+    "summary": "Improved GitHub tool integration and error handling, and disabled the NetHackWiki search tool.",
+    "changes": [
+      {
+        "type": "improvement",
+        "text": "Improved GitHub tool integration with detailed rate limit status, reset countdowns, and clearer error messages."
+      },
+      {
+        "type": "improvement",
+        "text": "Disabled the NetHackWiki search tool due to external bot access restrictions."
+      },
+      {
+        "type": "fix",
+        "text": "Prevented transient external tool network and rate limit errors from generating false crash reports."
+      }
+    ]
+  },
+  {
     "version": "1.0.19",
     "date": "2026-08-19T09:41:00Z",
     "summary": "Fixed unnecessary error reporting for transient AI provider errors.",
