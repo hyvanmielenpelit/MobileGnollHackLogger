@@ -227,3 +227,30 @@ The `INTERRUPTIBLE_ANIMATIONS` set is a `static readonly` constant in `ChatCompo
 - If multiple state change requests arrive while a timer is already pending, only the `pendingAvatarState` value is updated — the timer is not rescheduled. This ensures the swap happens at the original loop boundary with the most up-to-date desired state.
 - The `done` event handler has its own special loop-boundary wait (`executeDone` callback) that defers the final transition to idle and the commit of the message to `this.messages` until the current animation loop finishes gracefully.
 
+## Chat Message Handling & Clipboard Specifications
+
+Refer to the dedicated [`overseer_chat_message_handling`](file:///c:/hmp/MobileGnollHackLogger/.agents/skills/overseer_chat_message_handling/SKILL.md) skill for the full specification. Key rules include:
+
+- **Thinking Blocks (`<div class="ai-thought">`)**: Thinking tokens and pre-tool reasoning are wrapped in `<div class="ai-thought">...</div>`.
+- **Clipboard Copying (`.copy-btn`)**: When copying messages to the clipboard, all `<div class="ai-thought">` blocks and enclosed reasoning content MUST be stripped using `ChatComponent.stripThoughts()`, regardless of user visibility settings. Code block formatting inside the response is preserved.
+- **Tool Result Copying (`.tool-copy-btn`)**: Individual tool call outputs are copied separately via their dedicated copy button, copying only `tc.result`.
+
+## Angular Unit Testing
+
+Always execute unit tests before completing frontend modifications in Overseer. Refer to [`testing_guidelines`](file:///c:/hmp/MobileGnollHackLogger/.agents/skills/testing_guidelines/SKILL.md) for full instructions.
+
+- **Run Single-Run Headless Suite**:
+  ```bash
+  npx ng test --no-watch --browsers=ChromeHeadless
+  ```
+- **Single Test File**:
+  ```bash
+  npx ng test --include="src/app/chat/chat.component.spec.ts" --no-watch --browsers=ChromeHeadless
+  ```
+- **Build Verification**:
+  ```bash
+  npm run build
+  ```
+
+
+

@@ -884,8 +884,18 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     }
   }
 
+  static stripThoughts(text: string | null | undefined): string {
+    if (!text) return '';
+    const stripped = text.replace(/<div\s+class=["']ai-thought["']>[\s\S]*?(?:<\/div>|$)/gi, '');
+    const parts = stripped.split(/(```[\s\S]*?```)/g);
+    for (let i = 0; i < parts.length; i += 2) {
+      parts[i] = parts[i].replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n');
+    }
+    return parts.join('').trim();
+  }
+
   updateHasRealContent() {
-    const stripped = this.streamingMessage.replace(/<div class="ai-thought">[\s\S]*?<\/div>/g, '').trim();
+    const stripped = ChatComponent.stripThoughts(this.streamingMessage);
     if (stripped.length > 0) {
       if (!this.hasRealContent && !this.realContentTimeout) {
         this.realContentTimeout = setTimeout(() => {
@@ -2045,7 +2055,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
   async copyToClipboard(text: string, index: number | null) {
     try {
-      await navigator.clipboard.writeText(text);
+      const cleanText = ChatComponent.stripThoughts(text);
+      await navigator.clipboard.writeText(cleanText);
       if (index !== null) {
         this.copiedMsgIndex = index;
         setTimeout(() => {

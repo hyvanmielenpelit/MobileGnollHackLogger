@@ -35,3 +35,41 @@ When testing ASP.NET Core controllers and endpoints:
 *   **Remove Hosted Services**: Remove background services like `SourceCodeService` that perform heavy local file I/O unless explicitly testing them.
 *   **Mock Authentication**: Swap the real cookie authentication with a `TestAuthHandler` that can automatically log in a user based on an HTTP header (e.g., `X-Test-User`).
 *   **Swap Database**: Replace the SQL Server DbContext with `UseInMemoryDatabase`.
+
+## 4. Angular Frontend Testing (Overseer ClientApp)
+
+When developing or modifying frontend code in `Overseer/ClientApp/`, unit tests must be executed to ensure client-side functionality and regression prevention.
+
+### When to Run Angular Tests
+- Whenever creating, modifying, or refactoring Angular components, services, pipes, or utility functions in `Overseer/ClientApp/`.
+- After writing new unit tests (`*.spec.ts`) or updating existing test suites.
+- As part of the verification step before completing any frontend task in the Overseer project.
+
+### How to Run Angular Tests
+
+Run commands from the `Overseer/ClientApp/` directory:
+
+*   **Run Entire Test Suite Once (Headless)**:
+    ```bash
+    npx ng test --no-watch --browsers=ChromeHeadless
+    ```
+    *(Alternatively: `npm test -- --no-watch --browsers=ChromeHeadless`)*
+
+*   **Run Specific Test File**:
+    ```bash
+    npx ng test --include="src/app/chat/chat.component.spec.ts" --no-watch --browsers=ChromeHeadless
+    ```
+
+*   **Production Build Type/Template Check**:
+    ```bash
+    npm run build
+    ```
+
+> [!WARNING]
+> **Single-Run Execution**: Always include `--no-watch --browsers=ChromeHeadless`. Omitting `--no-watch` leaves Karma in continuous watch mode, which will cause background task execution to hang indefinitely.
+
+### Angular Test Configuration Best Practices
+*   **Router Dependencies**: Standalone components using `RouterModule`, `<a routerLink>`, or `ActivatedRoute` must include `provideRouter([])` in `TestBed.configureTestingModule({ providers: [provideRouter([])] })`.
+*   **HTTP Dependencies**: Services or components utilizing `HttpClient` must include `provideHttpClient()` and `provideHttpClientTesting()` from `@angular/common/http/testing`.
+*   **Static and Pure Logic**: For static methods (like `ChatComponent.stripThoughts`) or pure helper functions, test them directly without `TestBed` boilerplate to keep tests fast and isolated.
+
