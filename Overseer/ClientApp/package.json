@@ -1,6 +1,6 @@
 {
   "name": "overseer",
-  "version": "1.0.19",
+  "version": "1.0.20",
   "scripts": {
     "ng": "ng",
     "start": "ng serve --port 44447",
@@ -26,7 +26,7 @@
     "interestfor": "^1.0.8",
     "katex": "^0.17.0",
     "marked": "^18.0.7",
-    "marked-katex-extension": "^5.1.10",
+    "marked-katex-extension": "5.1.10",
     "ng2-charts": "^10.0.0",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0",
