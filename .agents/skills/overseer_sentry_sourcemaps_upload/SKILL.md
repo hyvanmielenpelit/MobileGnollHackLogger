@@ -66,8 +66,9 @@ Execute the production build to generate minified bundles and hidden `.map` file
 - **Working Directory:** `Overseer/ClientApp`
 - **Command:**
   ```bash
-  npm run build -- --configuration production
+  npx ng build --configuration production
   ```
+  *(Alternatively: `npm run build -- --configuration=production`)*
 
 Verify that the build completes successfully (exit code 0) and that `.js` and `.map` files are generated in `Overseer/wwwroot`.
 

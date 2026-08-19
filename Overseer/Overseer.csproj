@@ -36,7 +36,7 @@
 
   <Target Name="PublishAngular" BeforeTargets="ComputeFilesToPublish">
     <Exec WorkingDirectory="ClientApp" Command="npm ci" />
-    <Exec WorkingDirectory="ClientApp" Command="npm run build -- --configuration production" />
+    <Exec WorkingDirectory="ClientApp" Command="npx ng build --configuration production" />
     <ItemGroup>
       <DistFiles Include="wwwroot\**" Exclude="wwwroot\**\*.map" />
       <ResolvedFileToPublish Include="@(DistFiles->'%(FullPath)')" Exclude="@(ResolvedFileToPublish)">

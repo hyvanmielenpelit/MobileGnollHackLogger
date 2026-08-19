@@ -78,7 +78,7 @@ Run the following commands from the `ClientApp` directory. This is typically don
 
 ```bash
 # 1. Build the Application (Generates hidden .map files in ../wwwroot)
-npm run build -- --configuration production
+npx ng build --configuration production
 
 # 2. Inject Debug IDs into the .js and .map files
 #    This adds a unique identifier that Sentry uses to match errors to source maps.
