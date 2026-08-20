@@ -92,9 +92,19 @@
 .copy-btn { inset-inline-end: 5px; }
 .report-btn { inset-inline-end: 40px; }
 .copy-btn:hover, .report-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
-.messages strong { color: var(--title-color); display: block; margin-block-end: 5px; font-family: "Cinzel", serif; }
-.message-header { display: flex; align-items: center; gap: 15px; margin-block-end: 10px; }
-.message-header strong { margin-block-end: 0 !important; }
+.message-header {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-block-end: 10px;
+
+  strong {
+    color: var(--title-color);
+    display: block;
+    margin-block-end: 0;
+    font-family: "Cinzel", serif;
+  }
+}
 
 .header-right-container {
   margin-inline-start: auto;

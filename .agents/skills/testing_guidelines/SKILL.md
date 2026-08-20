@@ -49,13 +49,13 @@ When developing or modifying frontend code in `Overseer/ClientApp/`, unit tests 
 
 Run commands from the `Overseer/ClientApp/` directory:
 
-*   **Run Entire Test Suite Once (Headless)**:
+*   **Run Entire Test Suite Once (Headless - Preferred)**:
     ```bash
-    npx ng test --no-watch --browsers=ChromeHeadless
+    npm run test:headless
     ```
-    *(Alternatively: `npm test -- --no-watch --browsers=ChromeHeadless`)*
+    *(Alternatively: `npx ng test --no-watch --browsers=ChromeHeadless` or `npm test -- --no-watch --browsers=ChromeHeadless`)*
 
-*   **Run Specific Test File**:
+*   **Run Specific Test File (Headless)**:
     ```bash
     npx ng test --include="src/app/chat/chat.component.spec.ts" --no-watch --browsers=ChromeHeadless
     ```
@@ -66,7 +66,9 @@ Run commands from the `Overseer/ClientApp/` directory:
     ```
 
 > [!WARNING]
-> **Single-Run Execution**: Always include `--no-watch --browsers=ChromeHeadless`. Omitting `--no-watch` leaves Karma in continuous watch mode, which will cause background task execution to hang indefinitely.
+> **Single-Run & Headless Execution Required**: Always run tests with `--no-watch --browsers=ChromeHeadless` (or `npm run test:headless`).
+> - **Headless Chrome**: Prevents disruptive browser GUI windows from opening on the user's desktop.
+> - **No Watch**: Omitting `--no-watch` leaves Karma in continuous watch mode, causing background task execution to hang indefinitely.
 
 ### Angular Test Configuration Best Practices
 *   **Router Dependencies**: Standalone components using `RouterModule`, `<a routerLink>`, or `ActivatedRoute` must include `provideRouter([])` in `TestBed.configureTestingModule({ providers: [provideRouter([])] })`.

@@ -242,11 +242,12 @@ Refer to the dedicated [`overseer_chat_message_handling`](file:///c:/hmp/MobileG
 
 Always execute unit tests before completing frontend modifications in Overseer. Refer to [`testing_guidelines`](file:///c:/hmp/MobileGnollHackLogger/.agents/skills/testing_guidelines/SKILL.md) for full instructions.
 
-- **Run Single-Run Headless Suite**:
+- **Run Single-Run Headless Suite (Preferred)**:
   ```bash
-  npx ng test --no-watch --browsers=ChromeHeadless
+  npm run test:headless
   ```
-- **Single Test File**:
+  *(Or: `npx ng test --no-watch --browsers=ChromeHeadless`)*
+- **Single Test File (Headless)**:
   ```bash
   npx ng test --include="src/app/chat/chat.component.spec.ts" --no-watch --browsers=ChromeHeadless
   ```

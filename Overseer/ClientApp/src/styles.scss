@@ -923,6 +923,27 @@ input[type="number"] {
   ul, ol { margin-block: 5px 10px; padding-inline-start: 20px; }
   h1, h2, h3, h4, h5, h6 { margin-block: 10px 5px; color: var(--title-color); font-family: "Cinzel", serif; }
 
+  strong, b {
+    font-weight: 700;
+    color: inherit;
+    display: inline;
+    font-family: inherit;
+  }
+
+  .katex, .katex-display {
+    white-space: normal;
+  }
+
+  .katex-display {
+    overflow-x: auto;
+    overflow-y: hidden;
+    max-width: 100%;
+    padding: 6px 0;
+    margin: 8px 0;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-glass) rgba(0, 0, 0, 0.3);
+  }
+
   /* Block Code Container (Best Practice: Horizontal Scroll) */
   pre {
     background: rgba(0, 0, 0, 0.45);
