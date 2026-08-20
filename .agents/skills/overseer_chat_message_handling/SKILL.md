@@ -108,7 +108,12 @@ async copyToClipboard(text: string, index: number | null) {
 When switching between chat sessions or loading a conversation in `ChatComponent`:
 
 1. **Mutual Exclusivity**: The loading conversation indicator (`isLoadingSession`) MUST NEVER be rendered or visible at the same time as any chat messages, tool calls, streaming messages, or handoff overlays.
-2. **Immediate Message Purge**: Previous conversation messages must be cleared (`this.messages = [];`) immediately when `loadSession(id)` begins.
-3. **Template Branching**: The template must enforce mutual exclusivity using `@if (isLoadingSession) { ... } @else { ... }` so that chat messages are only in the DOM when loading is complete.
-4. **Centering & Styling**: The loading indicator must use the semantic `.conversation-loader` class, vertically and horizontally centered in the conversation panel.
+2. **Never in the Middle of an Active Chat**: The conversation loading indicator and state MUST NEVER appear or trigger in the middle of an active chat or during generation/streaming. Messages must never disappear while chatting.
+3. **No Destructive Watchdogs**: In-flight generation/streaming must not be interrupted by aggressive timeout watchdogs that re-fetch or clear session state.
+4. **Non-Destructive Background Sync**: Any background state synchronization (e.g., upon SignalR reconnect) must be silent and in-place (`syncSessionSilently`), preserving existing `messages`, active streaming tokens, and scroll positions without setting `isLoadingSession = true` or displaying the loader.
+5. **Immediate Message Purge on Navigation**: Previous conversation messages must be cleared (`this.messages = [];`) only when genuinely navigating to a different session (`loadSession(id)` where `id !== currentSessionId`).
+6. **Template Branching**: The template must enforce mutual exclusivity using `@if (isLoadingSession) { ... } @else { ... }` so that chat messages are only in the DOM when loading is complete.
+7. **Centering & Styling**: The loading indicator must use the semantic `.conversation-loader` class, vertically and horizontally centered in the conversation panel.
+8. **Scroll to Bottom on Load**: When a session finishes loading from navigation, the conversation view must automatically position at the bottom of the chat, never stuck at scroll position 0 (top).
+
 

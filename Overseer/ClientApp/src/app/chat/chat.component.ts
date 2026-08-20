@@ -226,26 +226,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   isLoadingSession = false;
   private liveEventBuffer: any[] = [];
   private handoffTimeoutHandle: any = null;
-  private streamingWatchdogTimer: any = null;
-
-  private startStreamingWatchdog() {
-    this.clearStreamingWatchdog();
-    if (!this.isStreaming || !this.currentSessionId) return;
-
-    this.streamingWatchdogTimer = setTimeout(() => {
-      if (this.isStreaming && this.currentSessionId) {
-        this.debugService.log(`[Frontend] Streaming watchdog fired for session ${this.currentSessionId} (no events for 10s). Re-syncing session...`);
-        this.loadSession(this.currentSessionId);
-      }
-    }, 10000);
-  }
-
-  private clearStreamingWatchdog() {
-    if (this.streamingWatchdogTimer) {
-      clearTimeout(this.streamingWatchdogTimer);
-      this.streamingWatchdogTimer = null;
-    }
-  }
 
   maxAttachmentSize = 15728640; // default 15MB
   errorMessage = '';
@@ -621,7 +601,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.pendingRequests.clear();
     if (this.timeUpdateInterval) clearInterval(this.timeUpdateInterval);
     if (this.handoffTimeoutHandle) { clearTimeout(this.handoffTimeoutHandle); this.handoffTimeoutHandle = null; }
-    this.clearStreamingWatchdog();
 
     // Restore document overflow and clean up viewport listener
     document.documentElement.style.overflow = '';
@@ -998,12 +977,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       this.updateDesiredAvatarState();
     }
 
-    if (evt.type === 'done') {
-      this.clearStreamingWatchdog();
-    } else {
-      this.startStreamingWatchdog();
-    }
-
     if (evt.type === 'debug') {
       this.debugService.log(`[Backend] ${evt.data}`);
     } else if (evt.type === 'user_message_created') {
@@ -1283,7 +1256,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           this.timeToFirstTokenMs = null;
           this.showSpinner = false;
           this.currentStatusText = 'Generation complete.';
-          this.clearStreamingWatchdog();
           
           // Fallback for missing attachment IDs
           if (this.currentSessionId) {
@@ -1364,8 +1336,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           await this.hubConnection!.invoke("JoinSession", this.currentSessionId);
           this.debugService.log(`[Frontend] Re-joined session ${this.currentSessionId} after reconnect.`);
           if (this.isStreaming) {
-            this.debugService.log(`[Frontend] Reconnected while streaming session ${this.currentSessionId}. Re-syncing session...`);
-            this.loadSession(this.currentSessionId);
+            this.debugService.log(`[Frontend] Reconnected while streaming session ${this.currentSessionId}. Silently re-syncing session...`);
+            this.syncSessionSilently(this.currentSessionId);
           }
         } catch (err) {
           this.debugService.log(`[Frontend] Failed to re-join session ${this.currentSessionId} after reconnect: ${err}`);
@@ -1550,14 +1522,41 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.isLoadingSession = false;
     this.liveEventBuffer = [];
     if (this.handoffTimeoutHandle) { clearTimeout(this.handoffTimeoutHandle); this.handoffTimeoutHandle = null; }
-    this.clearStreamingWatchdog();
     this.resetAvatarState();
     this.loadDraft();
     this.applySavedModelPreference();
     this.focusPromptInput();
   }
 
+  private formatMessageToolCalls(messages: ChatMessage[]) {
+    messages.forEach(msg => {
+      if (msg.toolCalls) {
+        msg.toolCalls.forEach(tc => {
+          if (!tc.displayName && tc.name) {
+            tc.displayName = ChatComponent.TOOL_DISPLAY_NAMES[tc.name] || tc.name;
+          }
+          if (tc.argsText) {
+            const trimmed = tc.argsText.trim();
+            if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+              try {
+                const argsObj = JSON.parse(trimmed);
+                tc.argsText = this.buildToolArgsText(tc.name, argsObj);
+              } catch (e) {
+                // Ignore JSON parsing errors and leave argsText as is
+              }
+            }
+          }
+        });
+      }
+    });
+  }
+
   async loadSession(id: number) {
+    if (this.currentSessionId === id && this.messages.length > 0 && !this.isLoadingSession) {
+      this.debugService.log(`[Frontend] loadSession(${id}) skipped because session is already active.`);
+      return;
+    }
+
     this.sessionLoadSub?.unsubscribe();
 
     this.messages = [];
@@ -1632,26 +1631,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
         this.messages = s.messages || [];
         this.hasOngoingGeneration = s.hasOngoingGeneration === true;
-        this.messages.forEach(msg => {
-          if (msg.toolCalls) {
-            msg.toolCalls.forEach(tc => {
-              if (!tc.displayName && tc.name) {
-                tc.displayName = ChatComponent.TOOL_DISPLAY_NAMES[tc.name] || tc.name;
-              }
-              if (tc.argsText) {
-                const trimmed = tc.argsText.trim();
-                if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-                  try {
-                    const argsObj = JSON.parse(trimmed);
-                    tc.argsText = this.buildToolArgsText(tc.name, argsObj);
-                  } catch (e) {
-                    // Ignore JSON parsing errors and leave argsText as is
-                  }
-                }
-              }
-            });
-          }
-        });
+        this.formatMessageToolCalls(this.messages);
 
         // Debug: summarize loaded messages
         const asstMsgs = this.messages.filter(m => m.role === 'assistant');
@@ -1707,10 +1687,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         }
         this.liveEventBuffer = [];
 
-        if (this.isStreaming) {
-          this.startStreamingWatchdog();
-        }
-
         // Safety timeout: if the "Consulting" overlay is still showing after 60s with no events, dismiss it
         if (this.handoffTimeoutHandle) { clearTimeout(this.handoffTimeoutHandle); this.handoffTimeoutHandle = null; }
         if (this.isHandoffWaiting) {
@@ -1732,6 +1708,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.applySavedModelPreference();
         this.focusPromptInput();
         this.forceWebViewRepaint();
+        this.autoScrollEnabled = true;
+        setTimeout(() => this.scrollToBottomClamped(false), 0);
       },
       error: (err) => {
         const netDuration = performance.now() - tSession0;
@@ -1741,6 +1719,57 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         console.warn(`Failed to load session ${id}. Bouncing to new chat.`, err);
         this.navigateToNewSession();
         this.forceWebViewRepaint();
+      }
+    });
+  }
+
+  async syncSessionSilently(id: number) {
+    if (this.currentSessionId !== id) return;
+    this.debugService.log(`[Frontend] Silently syncing session ${id}...`);
+
+    this.chatService.getSession(id).subscribe({
+      next: (httpResponse) => {
+        const s = httpResponse.body;
+        if (!s || this.currentSessionId !== id) return;
+
+        if (s.isGnollHackSession) {
+          this.chatService.hasGreeted = true;
+        }
+
+        if (s.ongoingGeneration && s.ongoingGeneration.events) {
+          const missedEvents = s.ongoingGeneration.events.filter(
+            (e: any) => e.seqNo != null && e.seqNo > this.lastSeenSeqNo
+          );
+          this.debugService.log(`[Frontend] Silent sync found ${missedEvents.length} missed events.`);
+          for (const evt of missedEvents) {
+            this.processChatEvent(evt);
+          }
+        }
+
+        if (s.lastEventSeqNo != null && typeof s.lastEventSeqNo === 'number') {
+          this.lastSeenSeqNo = Math.max(this.lastSeenSeqNo, s.lastEventSeqNo);
+        }
+
+        if (!s.hasOngoingGeneration && this.isStreaming) {
+          this.debugService.log(`[Frontend] Silent sync detected generation finished/died.`);
+          const hasAssistantResponse = s.messages && s.messages.length > 0 && s.messages[s.messages.length - 1].role === 'assistant';
+
+          if (hasAssistantResponse) {
+            this.messages = s.messages || [];
+            this.formatMessageToolCalls(this.messages);
+            this.clearStreamingState();
+            this.resetAvatarState();
+            this.autoScrollEnabled = true;
+            this.cdr.detectChanges();
+            setTimeout(() => this.scrollToBottomClamped(false), 0);
+          } else {
+            this.processChatEvent({ type: 'error', data: 'Connection lost and generation failed on server.' });
+            this.processChatEvent({ type: 'done' });
+          }
+        }
+      },
+      error: (err) => {
+        this.debugService.log(`[Frontend] Silent sync failed: ${err.message || err}`);
       }
     });
   }
@@ -1922,7 +1951,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.currentInput = '';
     this.pendingAttachments = [];
     this.isStreaming = true;
-    this.startStreamingWatchdog();
     this.isThinkingActive = false;
     this.pendingChunkBuffer = '';
     if (this.pendingChunkTimeout) {

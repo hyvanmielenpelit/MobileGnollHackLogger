@@ -208,5 +208,133 @@ describe('ChatComponent session loading and exclusivity', () => {
     expect(messageBoxes.length).toBe(1);
     expect(messageBoxes[0].textContent).toContain('Visible message');
   });
+
+  it('should not set isLoadingSession to true or wipe existing messages during syncSessionSilently', async () => {
+    component.currentSessionId = 42;
+    component.isStreaming = true;
+    component.streamingMessage = 'Partial response...';
+    component.messages = [
+      { id: 1, role: 'user', content: 'User question', timestampUtc: '2026-08-20T20:00:00Z' }
+    ];
+    component.isLoadingSession = false;
+
+    const mockDetail: ChatSessionDetailResponse = {
+      id: 42,
+      title: 'Active Session',
+      messages: [
+        { id: 1, role: 'user', content: 'User question', timestampUtc: '2026-08-20T20:00:00Z' }
+      ],
+      hasOngoingGeneration: true,
+      ongoingGeneration: {
+        events: []
+      }
+    };
+    spyOn(chatService, 'getSession').and.returnValue(of(new HttpResponse({ body: mockDetail })));
+
+    await component.syncSessionSilently(42);
+
+    expect(component.isLoadingSession).toBeFalse();
+    expect(component.messages.length).toBe(1);
+    expect(component.isStreaming).toBeTrue();
+    expect(component.streamingMessage).toBe('Partial response...');
+  });
+
+  it('should replay missed events with seqNo > lastSeenSeqNo in syncSessionSilently', async () => {
+    component.currentSessionId = 42;
+    component.isStreaming = true;
+    component.lastSeenSeqNo = 2;
+    component.messages = [
+      { id: 1, role: 'user', content: 'User question', timestampUtc: '2026-08-20T20:00:00Z' }
+    ];
+
+    const processSpy = spyOn(component, 'processChatEvent').and.callThrough();
+
+    const mockDetail: ChatSessionDetailResponse = {
+      id: 42,
+      title: 'Active Session',
+      messages: [
+        { id: 1, role: 'user', content: 'User question', timestampUtc: '2026-08-20T20:00:00Z' }
+      ],
+      hasOngoingGeneration: true,
+      ongoingGeneration: {
+        events: [
+          { seqNo: 2, type: 'chunk', data: 'old ' },
+          { seqNo: 3, type: 'chunk', data: 'new ' },
+          { seqNo: 4, type: 'chunk', data: 'content' }
+        ]
+      }
+    };
+    spyOn(chatService, 'getSession').and.returnValue(of(new HttpResponse({ body: mockDetail })));
+
+    await component.syncSessionSilently(42);
+
+    expect(processSpy).toHaveBeenCalledTimes(2);
+    expect(component.lastSeenSeqNo).toBe(4);
+  });
+
+  it('should adopt messages and clear streaming when hasOngoingGeneration is false with assistant message', async () => {
+    component.currentSessionId = 42;
+    component.isStreaming = true;
+    component.streamingMessage = 'Incomplete';
+    component.messages = [
+      { id: 1, role: 'user', content: 'User question', timestampUtc: '2026-08-20T20:00:00Z' }
+    ];
+
+    const mockDetail: ChatSessionDetailResponse = {
+      id: 42,
+      title: 'Active Session',
+      messages: [
+        { id: 1, role: 'user', content: 'User question', timestampUtc: '2026-08-20T20:00:00Z' },
+        { id: 2, role: 'assistant', content: 'Complete server response', timestampUtc: '2026-08-20T20:00:05Z' }
+      ],
+      hasOngoingGeneration: false
+    };
+    spyOn(chatService, 'getSession').and.returnValue(of(new HttpResponse({ body: mockDetail })));
+
+    await component.syncSessionSilently(42);
+
+    expect(component.isStreaming).toBeFalse();
+    expect(component.messages.length).toBe(2);
+    expect(component.messages[1].content).toBe('Complete server response');
+  });
+
+  it('should no-op when loadSession is called on already active session with messages', async () => {
+    component.currentSessionId = 42;
+    component.isLoadingSession = false;
+    component.messages = [
+      { id: 1, role: 'user', content: 'Existing msg', timestampUtc: '2026-08-20T20:00:00Z' }
+    ];
+
+    const getSessionSpy = spyOn(chatService, 'getSession');
+
+    await component.loadSession(42);
+
+    expect(getSessionSpy).not.toHaveBeenCalled();
+    expect(component.messages.length).toBe(1);
+    expect(component.isLoadingSession).toBeFalse();
+  });
+
+  it('should trigger scrollToBottomClamped after session loads', async () => {
+    (component as any).hubStartPromise = null;
+    (component as any).hubConnection = null;
+
+    const scrollSpy = spyOn(component, 'scrollToBottomClamped');
+
+    const mockDetail: ChatSessionDetailResponse = {
+      id: 99,
+      title: 'Session 99',
+      messages: [
+        { id: 1, role: 'assistant', content: 'Hello', timestampUtc: '2026-08-20T20:00:00Z' }
+      ]
+    };
+    spyOn(chatService, 'getSession').and.returnValue(of(new HttpResponse({ body: mockDetail })));
+
+    await component.loadSession(99);
+
+    // Yield macro task for setTimeout
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(scrollSpy).toHaveBeenCalledWith(false);
+  });
 });
 

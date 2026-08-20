@@ -243,10 +243,13 @@ Refer to the dedicated [`overseer_chat_message_handling`](file:///c:/hmp/MobileG
 When switching between chat sessions or loading a conversation in `ChatComponent`, adhere strictly to these rules:
 
 1. **Mutual Exclusivity**: The "Loading conversation..." spinner and text (`isLoadingSession`) MUST NEVER be visible simultaneously with chat messages (`messages`), streaming bubbles, tool calls, handoff overlays (`isHandoffWaiting`), or settings warnings.
-2. **Never in the Middle of Conversation**: The conversation loading state is an exclusive full-panel state for the conversation view area. It must never appear at the top of or within an existing message list.
-3. **Immediate State Reset**: Upon initiating a session switch or load (`loadSession(id)`), the component must immediately purge previous session messages (`this.messages = [];`) and active streaming state (`this.clearStreamingState()`), and set `this.isLoadingSession = true;`.
-4. **Template Enforcement**: In `chat.component.html`, the message area must use structural conditional branches (`@if (isLoadingSession) { ... } @else { ... }`) to guarantee that message containers and loaders cannot coexist in the DOM.
-5. **Loader Styling**: The conversation loader must use a semantic SCSS class (`.conversation-loader`) centered within the `.messages` container, with no ad-hoc inline styles.
+2. **Never in the Middle of an Active Chat**: The conversation loading state (`isLoadingSession`) is an exclusive full-panel state used ONLY during explicit user navigation between distinct sessions or initial page load. It must NEVER be triggered in the middle of an active conversation, during AI generation/streaming, or while waiting for a response.
+3. **No Aggressive Watchdogs During Streaming**: Do NOT use aggressive client-side polling or timeout watchdogs during active streaming that call destructive session reloads (`loadSession()`). Complex AI reasoning, thinking tokens, and tool executions regularly exceed 10–30 seconds.
+4. **Non-Destructive Background Sync**: When reconnecting to SignalR or synchronizing session state in the background for the current chat session, always use silent in-place synchronization (`syncSessionSilently`). Never set `isLoadingSession = true`, never clear `messages`, never reset avatar state, and never display the loading spinner during background re-syncs.
+5. **Immediate State Reset on Navigation**: Only upon initiating a genuine session switch (`loadSession(id)` where `id !== currentSessionId`), the component purges previous session messages (`this.messages = [];`) and active streaming state (`this.clearStreamingState()`), and sets `this.isLoadingSession = true;`.
+6. **Template Enforcement**: In `chat.component.html`, the message area must use structural conditional branches (`@if (isLoadingSession) { ... } @else { ... }`) to guarantee that message containers and loaders cannot coexist in the DOM.
+7. **Loader Styling**: The conversation loader must use a semantic SCSS class (`.conversation-loader`) centered within the `.messages` container, with no ad-hoc inline styles.
+8. **Scroll Position on Load Completion**: When a session finishes loading, the chat view must automatically scroll to the bottom of the conversation (`scrollToBottomClamped(false)`), ensuring that the user is positioned at the newest messages and not stuck at scroll position 0 (top).
 
 ## Angular Unit Testing
 
