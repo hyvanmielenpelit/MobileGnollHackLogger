@@ -817,6 +817,13 @@ public class ChatService
                 }
 
                 await dbContext.SaveChangesAsync(CancellationToken.None);
+
+                var ongoingState = _ongoingChatManager.TryGet(currentSessionId);
+                if (ongoingState != null)
+                {
+                    ongoingState.SavedMessageId = asstMsg.Id;
+                }
+
                 if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat] Assistant message saved to DB (id={asstMsg.Id})" };
             }
         }

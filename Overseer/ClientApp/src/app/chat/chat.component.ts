@@ -226,6 +226,26 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   isLoadingSession = false;
   private liveEventBuffer: any[] = [];
   private handoffTimeoutHandle: any = null;
+  private streamingWatchdogTimer: any = null;
+
+  private startStreamingWatchdog() {
+    this.clearStreamingWatchdog();
+    if (!this.isStreaming || !this.currentSessionId) return;
+
+    this.streamingWatchdogTimer = setTimeout(() => {
+      if (this.isStreaming && this.currentSessionId) {
+        this.debugService.log(`[Frontend] Streaming watchdog fired for session ${this.currentSessionId} (no events for 10s). Re-syncing session...`);
+        this.loadSession(this.currentSessionId);
+      }
+    }, 10000);
+  }
+
+  private clearStreamingWatchdog() {
+    if (this.streamingWatchdogTimer) {
+      clearTimeout(this.streamingWatchdogTimer);
+      this.streamingWatchdogTimer = null;
+    }
+  }
 
   maxAttachmentSize = 15728640; // default 15MB
   errorMessage = '';
@@ -601,6 +621,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.pendingRequests.clear();
     if (this.timeUpdateInterval) clearInterval(this.timeUpdateInterval);
     if (this.handoffTimeoutHandle) { clearTimeout(this.handoffTimeoutHandle); this.handoffTimeoutHandle = null; }
+    this.clearStreamingWatchdog();
 
     // Restore document overflow and clean up viewport listener
     document.documentElement.style.overflow = '';
@@ -977,6 +998,12 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       this.updateDesiredAvatarState();
     }
 
+    if (evt.type === 'done') {
+      this.clearStreamingWatchdog();
+    } else {
+      this.startStreamingWatchdog();
+    }
+
     if (evt.type === 'debug') {
       this.debugService.log(`[Backend] ${evt.data}`);
     } else if (evt.type === 'user_message_created') {
@@ -1256,6 +1283,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           this.timeToFirstTokenMs = null;
           this.showSpinner = false;
           this.currentStatusText = 'Generation complete.';
+          this.clearStreamingWatchdog();
           
           // Fallback for missing attachment IDs
           if (this.currentSessionId) {
@@ -1335,6 +1363,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         try {
           await this.hubConnection!.invoke("JoinSession", this.currentSessionId);
           this.debugService.log(`[Frontend] Re-joined session ${this.currentSessionId} after reconnect.`);
+          if (this.isStreaming) {
+            this.debugService.log(`[Frontend] Reconnected while streaming session ${this.currentSessionId}. Re-syncing session...`);
+            this.loadSession(this.currentSessionId);
+          }
         } catch (err) {
           this.debugService.log(`[Frontend] Failed to re-join session ${this.currentSessionId} after reconnect: ${err}`);
           console.error('JoinSession after reconnect failed:', err);
@@ -1518,13 +1550,14 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.isLoadingSession = false;
     this.liveEventBuffer = [];
     if (this.handoffTimeoutHandle) { clearTimeout(this.handoffTimeoutHandle); this.handoffTimeoutHandle = null; }
+    this.clearStreamingWatchdog();
     this.resetAvatarState();
     this.loadDraft();
     this.applySavedModelPreference();
     this.focusPromptInput();
   }
 
-  loadSession(id: number) {
+  async loadSession(id: number) {
     this.sessionLoadSub?.unsubscribe();
 
     this.lastSeenSeqNo = -1;
@@ -1573,7 +1606,13 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.debugService.log(`[Frontend] loadSession(${id}): JoinSession SKIPPED — hub not connected`);
       }
     };
-    joinSessionAsync();
+
+    await Promise.race([
+      joinSessionAsync(),
+      new Promise(r => setTimeout(r, 1500))
+    ]);
+
+    if (this.currentSessionId !== id) return;
 
     const tSession0 = performance.now();
     this.perfLog('SessionDetail', `loadSession(${id}) HTTP request dispatched`);
@@ -1641,6 +1680,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           }
           this.debugService.log(`[Frontend] Replay complete. isStreaming=${this.isStreaming}, streamingMessage length=${this.streamingMessage.length}`);
         }
+
+        if (s.lastEventSeqNo != null && typeof s.lastEventSeqNo === 'number') {
+          this.lastSeenSeqNo = Math.max(this.lastSeenSeqNo, s.lastEventSeqNo);
+        }
         
         this.isLoadingSession = false;
         if (this.liveEventBuffer.length > 0) {
@@ -1661,6 +1704,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           this.debugService.log(`[Frontend] No buffered live events to flush. lastSeenSeqNo=${this.lastSeenSeqNo}`);
         }
         this.liveEventBuffer = [];
+
+        if (this.isStreaming) {
+          this.startStreamingWatchdog();
+        }
 
         // Safety timeout: if the "Consulting" overlay is still showing after 60s with no events, dismiss it
         if (this.handoffTimeoutHandle) { clearTimeout(this.handoffTimeoutHandle); this.handoffTimeoutHandle = null; }
@@ -1873,6 +1920,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.currentInput = '';
     this.pendingAttachments = [];
     this.isStreaming = true;
+    this.startStreamingWatchdog();
     this.isThinkingActive = false;
     this.pendingChunkBuffer = '';
     if (this.pendingChunkTimeout) {

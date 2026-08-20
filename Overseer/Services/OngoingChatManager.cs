@@ -7,6 +7,10 @@ public class OngoingGenerationState
     public ConcurrentQueue<ChatEvent> AccumulatedEvents { get; set; } = new();
     public CancellationTokenSource Cts { get; set; } = null!;
     public int EventSequence = 0;
+    public DateTime StartedAtUtc { get; set; } = DateTime.UtcNow;
+    public bool IsCompleted { get; set; } = false;
+    public DateTime? CompletedAtUtc { get; set; } = null;
+    public long? SavedMessageId { get; set; } = null;
 }
 
 public class OngoingChatManager
@@ -15,7 +19,23 @@ public class OngoingChatManager
 
     public bool TryStart(long sessionId, CancellationTokenSource cts, out OngoingGenerationState state)
     {
-        state = new OngoingGenerationState { Cts = cts };
+        // Lazy cleanup of stale completed entries (>30 seconds old)
+        var cutoff = DateTime.UtcNow.AddSeconds(-30);
+        foreach (var kvp in _active)
+        {
+            if (kvp.Value.IsCompleted && kvp.Value.CompletedAtUtc.HasValue && kvp.Value.CompletedAtUtc.Value < cutoff)
+            {
+                _active.TryRemove(kvp.Key, out _);
+            }
+        }
+
+        // If existing session is already completed, allow replacing it
+        if (_active.TryGetValue(sessionId, out var existing) && existing.IsCompleted)
+        {
+            _active.TryRemove(sessionId, out _);
+        }
+
+        state = new OngoingGenerationState { Cts = cts, StartedAtUtc = DateTime.UtcNow };
         return _active.TryAdd(sessionId, state);
     }
 
@@ -30,7 +50,11 @@ public class OngoingChatManager
 
     public void Complete(long sessionId)
     {
-        _active.TryRemove(sessionId, out _);
+        if (_active.TryGetValue(sessionId, out var state))
+        {
+            state.IsCompleted = true;
+            state.CompletedAtUtc = DateTime.UtcNow;
+        }
     }
 
     public void Fail(long sessionId, string error)

@@ -55,6 +55,7 @@ export interface ChatSessionDetailResponse {
   messages: ChatMessage[];
   hasOngoingGeneration?: boolean;
   ongoingGeneration?: { events: ChatStreamEvent[] };
+  lastEventSeqNo?: number;
 }
 
 @Injectable({

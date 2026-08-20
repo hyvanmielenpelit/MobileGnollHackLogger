@@ -256,6 +256,42 @@ public class ChatController : ControllerBase
         var ongoing = _ongoingChatManager.TryGet(id);
         bool showDebugLog = _configuration.ShouldShowDebugLog(User.Identity?.Name);
 
+        bool hasOngoing = ongoing != null;
+        object? ongoingData = null;
+        int? lastEventSeqNo = ongoing?.EventSequence;
+
+        if (ongoing != null)
+        {
+            if (ongoing.IsCompleted)
+            {
+                bool messageInDb = (ongoing.SavedMessageId.HasValue && messages.Any(m => m.Id == ongoing.SavedMessageId.Value))
+                    || messages.Any(m => m.Role == "assistant" && m.TimestampUtc >= ongoing.StartedAtUtc.AddSeconds(-2));
+
+                if (messageInDb)
+                {
+                    hasOngoing = false;
+                }
+                else
+                {
+                    ongoingData = new
+                    {
+                        events = ongoing.AccumulatedEvents
+                            .Where(e => showDebugLog || e.Type != "debug")
+                            .Select(e => new { type = e.Type, data = e.Data, seqNo = e.SeqNo }).ToList()
+                    };
+                }
+            }
+            else
+            {
+                ongoingData = new
+                {
+                    events = ongoing.AccumulatedEvents
+                        .Where(e => showDebugLog || e.Type != "debug")
+                        .Select(e => new { type = e.Type, data = e.Data, seqNo = e.SeqNo }).ToList()
+                };
+            }
+        }
+
         swTotal.Stop();
 
         Response.Headers.Append("Access-Control-Expose-Headers", "Server-Timing");
@@ -267,12 +303,9 @@ public class ChatController : ControllerBase
             session.Title,
             session.IsGnollHackSession,
             Messages = formattedMessages,
-            HasOngoingGeneration = ongoing != null,
-            OngoingGeneration = ongoing != null ? new {
-                events = ongoing.AccumulatedEvents
-                    .Where(e => showDebugLog || e.Type != "debug")
-                    .Select(e => new { type = e.Type, data = e.Data, seqNo = e.SeqNo }).ToList()
-            } : null
+            HasOngoingGeneration = hasOngoing,
+            OngoingGeneration = ongoingData,
+            LastEventSeqNo = lastEventSeqNo
         });
     }
 
