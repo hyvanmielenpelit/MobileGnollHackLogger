@@ -1,5 +1,32 @@
 [
   {
+    "version": "1.0.21",
+    "date": "2026-08-20T14:03:00Z",
+    "summary": "Added local NetHack Wiki search and view tools, improved background indexing and database performance, and fixed chat layout and scrolling issues.",
+    "changes": [
+      {
+        "type": "feature",
+        "text": "Added local NetHack Wiki search and view tools to query NetHack mechanics, items, monsters, and strategies offline."
+      },
+      {
+        "type": "improvement",
+        "text": "Optimized startup performance by running knowledge base, wiki, and source code indexing asynchronously in the background, and added database performance indexes for chat."
+      },
+      {
+        "type": "improvement",
+        "text": "Improved chat auto-scroll behavior to maintain steady and smooth positioning during streaming AI responses."
+      },
+      {
+        "type": "fix",
+        "text": "Fixed markdown code block rendering and horizontal overflow issues for long code snippets and formatted content."
+      },
+      {
+        "type": "fix",
+        "text": "Fixed tool call headers overflowing the chat message bubble when displaying long tool arguments."
+      }
+    ]
+  },
+  {
     "version": "1.0.20",
     "date": "2026-08-19T17:08:00Z",
     "summary": "Improved GitHub tool integration and error handling, and disabled the NetHackWiki search tool.",
