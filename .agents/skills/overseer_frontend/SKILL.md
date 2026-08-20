@@ -238,6 +238,16 @@ Refer to the dedicated [`overseer_chat_message_handling`](file:///c:/hmp/MobileG
 - **Clipboard Copying (`.copy-btn`)**: When copying messages to the clipboard, all `<div class="ai-thought">` blocks and enclosed reasoning content MUST be stripped using `ChatComponent.stripThoughts()`, regardless of user visibility settings. Code block formatting inside the response is preserved.
 - **Tool Result Copying (`.tool-copy-btn`)**: Individual tool call outputs are copied separately via their dedicated copy button, copying only `tc.result`.
 
+## Conversation Loading & Exclusivity Lifecycle
+
+When switching between chat sessions or loading a conversation in `ChatComponent`, adhere strictly to these rules:
+
+1. **Mutual Exclusivity**: The "Loading conversation..." spinner and text (`isLoadingSession`) MUST NEVER be visible simultaneously with chat messages (`messages`), streaming bubbles, tool calls, handoff overlays (`isHandoffWaiting`), or settings warnings.
+2. **Never in the Middle of Conversation**: The conversation loading state is an exclusive full-panel state for the conversation view area. It must never appear at the top of or within an existing message list.
+3. **Immediate State Reset**: Upon initiating a session switch or load (`loadSession(id)`), the component must immediately purge previous session messages (`this.messages = [];`) and active streaming state (`this.clearStreamingState()`), and set `this.isLoadingSession = true;`.
+4. **Template Enforcement**: In `chat.component.html`, the message area must use structural conditional branches (`@if (isLoadingSession) { ... } @else { ... }`) to guarantee that message containers and loaders cannot coexist in the DOM.
+5. **Loader Styling**: The conversation loader must use a semantic SCSS class (`.conversation-loader`) centered within the `.messages` container, with no ad-hoc inline styles.
+
 ## Angular Unit Testing
 
 Always execute unit tests before completing frontend modifications in Overseer. Refer to [`testing_guidelines`](file:///c:/hmp/MobileGnollHackLogger/.agents/skills/testing_guidelines/SKILL.md) for full instructions.

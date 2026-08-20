@@ -1560,6 +1560,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   async loadSession(id: number) {
     this.sessionLoadSub?.unsubscribe();
 
+    this.messages = [];
+    this.autoScrollEnabled = true;
     this.lastSeenSeqNo = -1;
     this.clearStreamingState();
     this.resetAvatarState();

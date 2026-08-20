@@ -100,3 +100,15 @@ async copyToClipboard(text: string, index: number | null) {
 
 ### Usage in Streaming Avatar State:
 `ChatComponent.updateHasRealContent()` uses `ChatComponent.stripThoughts(this.streamingMessage).length > 0` to accurately detect when non-thought response tokens have started arriving, preventing premature avatar transitions.
+
+---
+
+## 5. Conversation Loading & Exclusivity Specification
+
+When switching between chat sessions or loading a conversation in `ChatComponent`:
+
+1. **Mutual Exclusivity**: The loading conversation indicator (`isLoadingSession`) MUST NEVER be rendered or visible at the same time as any chat messages, tool calls, streaming messages, or handoff overlays.
+2. **Immediate Message Purge**: Previous conversation messages must be cleared (`this.messages = [];`) immediately when `loadSession(id)` begins.
+3. **Template Branching**: The template must enforce mutual exclusivity using `@if (isLoadingSession) { ... } @else { ... }` so that chat messages are only in the DOM when loading is complete.
+4. **Centering & Styling**: The loading indicator must use the semantic `.conversation-loader` class, vertically and horizontally centered in the conversation panel.
+

@@ -106,259 +106,260 @@
         }
       </div>
       <div class="messages" #messagesContainer (wheel)="onUserInteraction()" (touchstart)="onUserInteraction()" (scroll)="onScroll()" [class.hide-thoughts]="showThoughtsAndTools === 0 || showThoughtsAndTools === 1">
-        @if (messages.length === 0 && (!hasApiKey || !hasModel)) {
-          <div class="chat-alert-box gh-main-container">
-            <div class="alert-icon">⚠️</div>
-            <h3>Settings Missing</h3>
-            <p>Please configure your AI Provider settings to start chatting.</p>
-            <ul class="missing-settings-list">
-              @if (!hasApiKey) {
-                <li>API Key is not set.</li>
-              }
-              @if (!hasModel) {
-                <li>Model is not set.</li>
-              }
-            </ul>
-            <a [routerLink]="!hasApiKey ? '/api-keys' : '/models'" queryParamsHandling="preserve" class="btn-gh mt-10">
-              {{ !hasApiKey ? 'Go to API Keys' : 'Go to Models' }}
-            </a>
-          </div>
-        }
         @if (isLoadingSession) {
-          <div style="display: flex; justify-content: center; align-items: center; padding: 20px; color: var(--gh-text-secondary);">
+          <div class="conversation-loader">
             <div class="sidebar-spinner"></div>
-            <span style="margin-left: 10px;">Loading conversation...</span>
+            <span>Loading conversation...</span>
           </div>
-        }
-        @if (isHandoffWaiting && hasApiKey && hasModel) {
-          <div class="handoff-loading-box gh-main-container">
-            <div class="handoff-avatar-container">
-              <img src="/img/gnoll-overseer-avatar-256x256-static.webp" alt="Gnoll Overseer" class="overseer-avatar-large" width="128" height="128" />
+        } @else {
+          @if (messages.length === 0 && (!hasApiKey || !hasModel)) {
+            <div class="chat-alert-box gh-main-container">
+              <div class="alert-icon">⚠️</div>
+              <h3>Settings Missing</h3>
+              <p>Please configure your AI Provider settings to start chatting.</p>
+              <ul class="missing-settings-list">
+                @if (!hasApiKey) {
+                  <li>API Key is not set.</li>
+                }
+                @if (!hasModel) {
+                  <li>Model is not set.</li>
+                }
+              </ul>
+              <a [routerLink]="!hasApiKey ? '/api-keys' : '/models'" queryParamsHandling="preserve" class="btn-gh mt-10">
+                {{ !hasApiKey ? 'Go to API Keys' : 'Go to Models' }}
+              </a>
             </div>
-            <h3 class="handoff-loading-title">Consulting the Overseer...</h3>
-            <div class="handoff-spinner-container">
-              <div class="sidebar-spinner handoff-spinner"></div>
-            </div>
-          </div>
-        }
-        @for (msg of messages; track msg; let i = $index) {
-          <div class="message-box" [ngClass]="msg.role">
-            <div class="message-header">
-              @if (msg.role === 'assistant') {
-                @if (isLastAssistantMessage(i)) {
-                  <img [src]="streamingAvatarSrc" (load)="onAvatarLoaded()" class="overseer-avatar" alt="Overseer" width="64" height="64" decoding="sync" />
-                } @else {
-                  <img src="/img/gnoll-overseer-avatar-128x128-static.webp" class="overseer-avatar" alt="Overseer" width="64" height="64" decoding="sync" />
-                }
-              }
-              @if (msg.role === 'assistant') {
-                <strong>Overseer</strong>
-              }
-              @if (msg.role === 'user') {
-                <strong>You</strong>
-              }
-              @if (msg.timestampUtc) {
-                <span class="msg-time" [title]="msg.timestampUtc | date:'medium'">{{ msg.timestampUtc | relativeTime }}</span>
-              }
-              <div class="header-right-container">
-                @if (msg.role === 'assistant' && msg.modelDisplayName) {
-                  <div class="model-name-container">
-                    <span class="model-name-subtext">{{ msg.modelDisplayName }}</span>
-                    @if (msg.thinkingLevel) {
-                      <span class="msg-model-badge">{{ formatThinkingLevel(msg.thinkingLevel) }}</span>
-                    }
-                  </div>
-                }
-                @if (msg.role === 'assistant' && msg.timeToFirstTokenMs != null) {
-                  <div class="ttft-container" style="text-align: right; margin-top: 2px;">
-                    <span class="model-name-subtext">{{ formatTtft(msg.timeToFirstTokenMs) }}</span>
-                  </div>
-                }
+          }
+          @if (isHandoffWaiting && hasApiKey && hasModel) {
+            <div class="handoff-loading-box gh-main-container">
+              <div class="handoff-avatar-container">
+                <img src="/img/gnoll-overseer-avatar-256x256-static.webp" alt="Gnoll Overseer" class="overseer-avatar-large" width="128" height="128" />
+              </div>
+              <h3 class="handoff-loading-title">Consulting the Overseer...</h3>
+              <div class="handoff-spinner-container">
+                <div class="sidebar-spinner handoff-spinner"></div>
               </div>
             </div>
-            @if (msg.attachments && msg.attachments.length > 0) {
-              <div class="msg-attachments">
-                @for (att of msg.attachments; track att) {
-                  @if (att.id && isImage(att.fileName)) {
-                    <a class="msg-att-item" (click)="openImagePreview(att, $event)" href="javascript:void(0)" title="Preview {{ att.fileName }}">
-                      <div><span class="file-type-badge">{{ getFileExtension(att.fileName) }}</span><span class="file-name-text">{{ att.fileName }}</span></div>
-                    </a>
+          }
+          @for (msg of messages; track msg; let i = $index) {
+            <div class="message-box" [ngClass]="msg.role">
+              <div class="message-header">
+                @if (msg.role === 'assistant') {
+                  @if (isLastAssistantMessage(i)) {
+                    <img [src]="streamingAvatarSrc" (load)="onAvatarLoaded()" class="overseer-avatar" alt="Overseer" width="64" height="64" decoding="sync" />
+                  } @else {
+                    <img src="/img/gnoll-overseer-avatar-128x128-static.webp" class="overseer-avatar" alt="Overseer" width="64" height="64" decoding="sync" />
                   }
-                  @if (att.id && !isImage(att.fileName)) {
-                    <a class="msg-att-item" href="/api/chat/attachments/{{ att.id }}" [download]="att.fileName" rel="noopener" title="Download {{ att.fileName }}">
-                      <div><span class="file-type-badge">{{ getFileExtension(att.fileName) }}</span><span class="file-name-text">{{ att.fileName }}</span></div>
-                    </a>
-                  }
-                  @if (!att.id) {
-                    <div class="msg-att-item msg-att-pending" title="Uploading {{ att.fileName }}...">
-                      <div><span class="file-type-badge">{{ getFileExtension(att.fileName) }}</span><span class="file-name-text">{{ att.fileName }}</span></div>
+                }
+                @if (msg.role === 'assistant') {
+                  <strong>Overseer</strong>
+                }
+                @if (msg.role === 'user') {
+                  <strong>You</strong>
+                }
+                @if (msg.timestampUtc) {
+                  <span class="msg-time" [title]="msg.timestampUtc | date:'medium'">{{ msg.timestampUtc | relativeTime }}</span>
+                }
+                <div class="header-right-container">
+                  @if (msg.role === 'assistant' && msg.modelDisplayName) {
+                    <div class="model-name-container">
+                      <span class="model-name-subtext">{{ msg.modelDisplayName }}</span>
+                      @if (msg.thinkingLevel) {
+                        <span class="msg-model-badge">{{ formatThinkingLevel(msg.thinkingLevel) }}</span>
+                      }
                     </div>
                   }
-                }
-              </div>
-            }
-            @if (msg.toolCalls && msg.toolCalls.length > 0 && (showThoughtsAndTools === 1 || showThoughtsAndTools === 3)) {
-              <div class="tool-calls-container">
-                @for (tc of msg.toolCalls; track tc; let tIndex = $index) {
-                  <div class="tool-call" [ngClass]="tc.status">
-                    <div class="tool-call-header">
-                      <span class="tool-icon">🛠️</span>
-                      <span class="tool-name">{{ tc.displayName || tc.name }}</span>
-                      @if (tc.argsText) {
-                        <span class="tool-args"> ({{ tc.argsText }})</span>
-                      }
-                      @if (tc.status === 'running') {
-                        <span class="tool-status"><span class="gh-spinner-small"></span></span>
-                      }
-                      @if (tc.status === 'completed') {
-                        <span class="tool-status">✅</span>
-                      }
-                      @if (tc.status === 'error') {
-                        <span class="tool-status">❌</span>
-                      }
+                  @if (msg.role === 'assistant' && msg.timeToFirstTokenMs != null) {
+                    <div class="ttft-container" style="text-align: right; margin-top: 2px;">
+                      <span class="model-name-subtext">{{ formatTtft(msg.timeToFirstTokenMs) }}</span>
                     </div>
-                    @if (tc.status === 'completed') {
-                      <div class="tool-call-result">
-                        <details>
-                          <summary>
-                            <span>Result</span>
-                            <button class="tool-copy-btn" (click)="copyToolResult(tc.result, i + '-' + tIndex, $event)" title="Copy Result">
-                              @if (copiedToolCallId === (i + '-' + tIndex)) {
-                                <span>✅</span>
-                              }
-                              @if (copiedToolCallId !== (i + '-' + tIndex)) {
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                              }
-                            </button>
-                          </summary>
-                          <pre>{{ tc.result }}</pre>
-                        </details>
-                      </div>
-                    }
-                    @if (tc.status === 'error') {
-                      <div class="tool-call-result error">
-                        <details>
-                          <summary>Error</summary>
-                          <pre>{{ tc.error }}</pre>
-                        </details>
-                      </div>
-                    }
-                  </div>
-                }
-              </div>
-            }
-            <div [innerHTML]="msg.content | markdown" class="markdown-body"></div>
-            @if (msg.role === 'assistant' && msg.id) {
-              <button class="report-btn" (click)="requestReportMessage(msg.id, i)" title="Report message">
-                @if (reportSuccessIndex === i) {
-                  <span>✅</span>
-                }
-                @if (reportSuccessIndex !== i) {
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>
-                }
-              </button>
-            }
-            <button class="copy-btn" (click)="copyToClipboard(msg.content, i)" title="Copy">
-              @if (copiedMsgIndex === i) {
-                <span>✅</span>
-              }
-              @if (copiedMsgIndex !== i) {
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-              }
-            </button>
-          </div>
-        }
-        @if (isStreaming || streamingMessage) {
-          <div class="message-box assistant">
-            <div class="message-header">
-              <img [src]="streamingAvatarSrc" (load)="onAvatarLoaded()" class="overseer-avatar" alt="Overseer" width="64" height="64" decoding="sync" />
-              <strong>Overseer</strong>
-              <span class="msg-time">just now</span>
-              <div class="header-right-container">
-                @if (selectedModel?.displayName || selectedModel?.modelId || singleModelInfo?.modelId) {
-                  <div class="model-name-container">
-                    <span class="model-name-subtext">{{ selectedModel?.displayName || selectedModel?.modelId || singleModelInfo?.modelId }}</span>
-                    @if (selectedModel?.thinkingLevel || singleModelInfo?.thinkingLevel) {
-                      <span class="msg-model-badge">{{ formatThinkingLevel(selectedModel?.thinkingLevel || singleModelInfo?.thinkingLevel) }}</span>
-                    }
-                  </div>
-                }
-                <div class="ttft-container" style="text-align: right; margin-top: 2px;">
-                  @if (timeToFirstTokenMs === null) {
-                    <span class="model-name-subtext"><span class="gh-spinner-small" style="display:inline-block; width: 10px; height: 10px; border-width: 1.5px;"></span></span>
-                  }
-                  @if (timeToFirstTokenMs !== null) {
-                    <span class="model-name-subtext">{{ formatTtft(timeToFirstTokenMs) }}</span>
                   }
                 </div>
               </div>
-            </div>
-            @if (streamingToolCalls.length > 0 && (showThoughtsAndTools === 1 || showThoughtsAndTools === 3)) {
-              <div class="tool-calls-container">
-                @for (tc of streamingToolCalls; track tc; let tIndex = $index) {
-                  <div class="tool-call" [ngClass]="tc.status">
-                    <div class="tool-call-header">
-                      <span class="tool-icon">🛠️</span>
-                      <span class="tool-name">{{ tc.displayName || tc.name }}</span>
-                      @if (tc.argsText) {
-                        <span class="tool-args"> ({{ tc.argsText }})</span>
-                      }
-                      @if (tc.status === 'running') {
-                        <span class="tool-status"><span class="gh-spinner-small"></span></span>
-                      }
+              @if (msg.attachments && msg.attachments.length > 0) {
+                <div class="msg-attachments">
+                  @for (att of msg.attachments; track att) {
+                    @if (att.id && isImage(att.fileName)) {
+                      <a class="msg-att-item" (click)="openImagePreview(att, $event)" href="javascript:void(0)" title="Preview {{ att.fileName }}">
+                        <div><span class="file-type-badge">{{ getFileExtension(att.fileName) }}</span><span class="file-name-text">{{ att.fileName }}</span></div>
+                      </a>
+                    }
+                    @if (att.id && !isImage(att.fileName)) {
+                      <a class="msg-att-item" href="/api/chat/attachments/{{ att.id }}" [download]="att.fileName" rel="noopener" title="Download {{ att.fileName }}">
+                        <div><span class="file-type-badge">{{ getFileExtension(att.fileName) }}</span><span class="file-name-text">{{ att.fileName }}</span></div>
+                      </a>
+                    }
+                    @if (!att.id) {
+                      <div class="msg-att-item msg-att-pending" title="Uploading {{ att.fileName }}...">
+                        <div><span class="file-type-badge">{{ getFileExtension(att.fileName) }}</span><span class="file-name-text">{{ att.fileName }}</span></div>
+                      </div>
+                    }
+                  }
+                </div>
+              }
+              @if (msg.toolCalls && msg.toolCalls.length > 0 && (showThoughtsAndTools === 1 || showThoughtsAndTools === 3)) {
+                <div class="tool-calls-container">
+                  @for (tc of msg.toolCalls; track tc; let tIndex = $index) {
+                    <div class="tool-call" [ngClass]="tc.status">
+                      <div class="tool-call-header">
+                        <span class="tool-icon">🛠️</span>
+                        <span class="tool-name">{{ tc.displayName || tc.name }}</span>
+                        @if (tc.argsText) {
+                          <span class="tool-args"> ({{ tc.argsText }})</span>
+                        }
+                        @if (tc.status === 'running') {
+                          <span class="tool-status"><span class="gh-spinner-small"></span></span>
+                        }
+                        @if (tc.status === 'completed') {
+                          <span class="tool-status">✅</span>
+                        }
+                        @if (tc.status === 'error') {
+                          <span class="tool-status">❌</span>
+                        }
+                      </div>
                       @if (tc.status === 'completed') {
-                        <span class="tool-status">✅</span>
+                        <div class="tool-call-result">
+                          <details>
+                            <summary>
+                              <span>Result</span>
+                              <button class="tool-copy-btn" (click)="copyToolResult(tc.result, i + '-' + tIndex, $event)" title="Copy Result">
+                                @if (copiedToolCallId === (i + '-' + tIndex)) {
+                                  <span>✅</span>
+                                }
+                                @if (copiedToolCallId !== (i + '-' + tIndex)) {
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                                }
+                              </button>
+                            </summary>
+                            <pre>{{ tc.result }}</pre>
+                          </details>
+                        </div>
                       }
                       @if (tc.status === 'error') {
-                        <span class="tool-status">❌</span>
+                        <div class="tool-call-result error">
+                          <details>
+                            <summary>Error</summary>
+                            <pre>{{ tc.error }}</pre>
+                          </details>
+                        </div>
                       }
                     </div>
-                    @if (tc.status === 'completed') {
-                      <div class="tool-call-result">
-                        <details>
-                          <summary>
-                            <span>Result</span>
-                            <button class="tool-copy-btn" (click)="copyToolResult(tc.result, 'stream-' + tIndex, $event)" title="Copy Result">
-                              @if (copiedToolCallId === ('stream-' + tIndex)) {
-                                <span>✅</span>
-                              }
-                              @if (copiedToolCallId !== ('stream-' + tIndex)) {
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                              }
-                            </button>
-                          </summary>
-                          <pre>{{ tc.result }}</pre>
-                        </details>
-                      </div>
+                  }
+                </div>
+              }
+              <div [innerHTML]="msg.content | markdown" class="markdown-body"></div>
+              @if (msg.role === 'assistant' && msg.id) {
+                <button class="report-btn" (click)="requestReportMessage(msg.id, i)" title="Report message">
+                  @if (reportSuccessIndex === i) {
+                    <span>✅</span>
+                  }
+                  @if (reportSuccessIndex !== i) {
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>
+                  }
+                </button>
+              }
+              <button class="copy-btn" (click)="copyToClipboard(msg.content, i)" title="Copy">
+                @if (copiedMsgIndex === i) {
+                  <span>✅</span>
+                }
+                @if (copiedMsgIndex !== i) {
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                }
+              </button>
+            </div>
+          }
+          @if (isStreaming || streamingMessage) {
+            <div class="message-box assistant">
+              <div class="message-header">
+                <img [src]="streamingAvatarSrc" (load)="onAvatarLoaded()" class="overseer-avatar" alt="Overseer" width="64" height="64" decoding="sync" />
+                <strong>Overseer</strong>
+                <span class="msg-time">just now</span>
+                <div class="header-right-container">
+                  @if (selectedModel?.displayName || selectedModel?.modelId || singleModelInfo?.modelId) {
+                    <div class="model-name-container">
+                      <span class="model-name-subtext">{{ selectedModel?.displayName || selectedModel?.modelId || singleModelInfo?.modelId }}</span>
+                      @if (selectedModel?.thinkingLevel || singleModelInfo?.thinkingLevel) {
+                        <span class="msg-model-badge">{{ formatThinkingLevel(selectedModel?.thinkingLevel || singleModelInfo?.thinkingLevel) }}</span>
+                      }
+                    </div>
+                  }
+                  <div class="ttft-container" style="text-align: right; margin-top: 2px;">
+                    @if (timeToFirstTokenMs === null) {
+                      <span class="model-name-subtext"><span class="gh-spinner-small" style="display:inline-block; width: 10px; height: 10px; border-width: 1.5px;"></span></span>
                     }
-                    @if (tc.status === 'error') {
-                      <div class="tool-call-result error">
-                        <details>
-                          <summary>Error</summary>
-                          <pre>{{ tc.error }}</pre>
-                        </details>
-                      </div>
+                    @if (timeToFirstTokenMs !== null) {
+                      <span class="model-name-subtext">{{ formatTtft(timeToFirstTokenMs) }}</span>
                     }
                   </div>
+                </div>
+              </div>
+              @if (streamingToolCalls.length > 0 && (showThoughtsAndTools === 1 || showThoughtsAndTools === 3)) {
+                <div class="tool-calls-container">
+                  @for (tc of streamingToolCalls; track tc; let tIndex = $index) {
+                    <div class="tool-call" [ngClass]="tc.status">
+                      <div class="tool-call-header">
+                        <span class="tool-icon">🛠️</span>
+                        <span class="tool-name">{{ tc.displayName || tc.name }}</span>
+                        @if (tc.argsText) {
+                          <span class="tool-args"> ({{ tc.argsText }})</span>
+                        }
+                        @if (tc.status === 'running') {
+                          <span class="tool-status"><span class="gh-spinner-small"></span></span>
+                        }
+                        @if (tc.status === 'completed') {
+                          <span class="tool-status">✅</span>
+                        }
+                        @if (tc.status === 'error') {
+                          <span class="tool-status">❌</span>
+                        }
+                      </div>
+                      @if (tc.status === 'completed') {
+                        <div class="tool-call-result">
+                          <details>
+                            <summary>
+                              <span>Result</span>
+                              <button class="tool-copy-btn" (click)="copyToolResult(tc.result, 'stream-' + tIndex, $event)" title="Copy Result">
+                                @if (copiedToolCallId === ('stream-' + tIndex)) {
+                                  <span>✅</span>
+                                }
+                                @if (copiedToolCallId !== ('stream-' + tIndex)) {
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                                }
+                              </button>
+                            </summary>
+                            <pre>{{ tc.result }}</pre>
+                          </details>
+                        </div>
+                      }
+                      @if (tc.status === 'error') {
+                        <div class="tool-call-result error">
+                          <details>
+                            <summary>Error</summary>
+                            <pre>{{ tc.error }}</pre>
+                          </details>
+                        </div>
+                      }
+                    </div>
+                  }
+                </div>
+              }
+              @if (isStreaming && showThoughtsAndTools === 0 && !hasRealContent) {
+                <div class="thinking-placeholder">
+                  <span class="gh-spinner-small" style="display:inline-block; margin-inline-end: 8px;"></span>
+                  <em>{{ getMinimalStatusLabel() }}</em>
+                </div>
+              }
+              <div [innerHTML]="streamingMessage | markdown" class="markdown-body" [style.display]="(isStreaming && (showThoughtsAndTools === 0 || showThoughtsAndTools === 1) && !hasRealContent) ? 'none' : 'block'"></div>
+              <button class="copy-btn" (click)="copyToClipboard(streamingMessage, null)" title="Copy">
+                @if (copiedStreamMsg) {
+                  <span>✅</span>
                 }
-              </div>
-            }
-            @if (isStreaming && showThoughtsAndTools === 0 && !hasRealContent) {
-              <div class="thinking-placeholder">
-                <span class="gh-spinner-small" style="display:inline-block; margin-inline-end: 8px;"></span>
-                <em>{{ getMinimalStatusLabel() }}</em>
-              </div>
-            }
-            <div [innerHTML]="streamingMessage | markdown" class="markdown-body" [style.display]="(isStreaming && (showThoughtsAndTools === 0 || showThoughtsAndTools === 1) && !hasRealContent) ? 'none' : 'block'"></div>
-            <button class="copy-btn" (click)="copyToClipboard(streamingMessage, null)" title="Copy">
-              @if (copiedStreamMsg) {
-                <span>✅</span>
-              }
-              @if (!copiedStreamMsg) {
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-              }
-            </button>
-          </div>
+                @if (!copiedStreamMsg) {
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                }
+              </button>
+            </div>
+          }
         }
       </div>
       <div class="input-area-container">

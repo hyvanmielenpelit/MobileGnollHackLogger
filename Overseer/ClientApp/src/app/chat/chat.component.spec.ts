@@ -107,3 +107,106 @@ All done!`;
     expect(ChatComponent.stripThoughts(input)).toBe('Result text with CRLF.');
   });
 });
+
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { HttpResponse } from '@angular/common/http';
+import { of, Subject } from 'rxjs';
+import { ChatService, ChatSessionDetailResponse } from '../services/chat.service';
+
+describe('ChatComponent session loading and exclusivity', () => {
+  let component: ChatComponent;
+  let fixture: ComponentFixture<ChatComponent>;
+  let chatService: ChatService;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ChatComponent],
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting()
+      ]
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(ChatComponent);
+    component = fixture.componentInstance;
+    chatService = TestBed.inject(ChatService);
+  });
+
+  it('should immediately clear messages, enable autoScroll, and set isLoadingSession to true on loadSession', async () => {
+    // Populate with existing messages
+    component.messages = [
+      { id: 1, role: 'user', content: 'Previous user message', timestampUtc: '2026-08-20T20:00:00Z' },
+      { id: 2, role: 'assistant', content: 'Previous assistant message', timestampUtc: '2026-08-20T20:00:01Z' }
+    ];
+    component.autoScrollEnabled = false;
+    (component as any).hubStartPromise = null;
+    (component as any).hubConnection = null;
+
+    const sessionSubject = new Subject<HttpResponse<ChatSessionDetailResponse>>();
+    spyOn(chatService, 'getSession').and.returnValue(sessionSubject.asObservable());
+
+    const loadPromise = component.loadSession(42);
+
+    // Verify immediate state change BEFORE response arrives
+    expect(component.messages.length).toBe(0);
+    expect(component.autoScrollEnabled).toBeTrue();
+    expect(component.isLoadingSession).toBeTrue();
+
+    // Yield macro task to let joinSessionAsync resolve and chatService.getSession subscribe
+    await new Promise(r => setTimeout(r, 0));
+
+    // Now emit the loaded session
+    const mockDetail: ChatSessionDetailResponse = {
+      id: 42,
+      title: 'New Session',
+      messages: [
+        { id: 10, role: 'assistant', content: 'Hello in new session', timestampUtc: '2026-08-20T20:01:00Z' }
+      ]
+    };
+    sessionSubject.next(new HttpResponse<ChatSessionDetailResponse>({ body: mockDetail }));
+    sessionSubject.complete();
+
+    await loadPromise;
+
+    expect(component.isLoadingSession).toBeFalse();
+    expect(component.messages.length).toBe(1);
+    expect(component.messages[0].content).toBe('Hello in new session');
+  });
+
+  it('should render .conversation-loader and not render .message-box when isLoadingSession is true', () => {
+    component.isLoadingSession = true;
+    component.messages = [
+      { id: 1, role: 'user', content: 'Stale message', timestampUtc: '2026-08-20T20:00:00Z' }
+    ];
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const loader = compiled.querySelector('.conversation-loader');
+    const messageBoxes = compiled.querySelectorAll('.message-box');
+
+    expect(loader).toBeTruthy();
+    expect(loader?.textContent).toContain('Loading conversation...');
+    expect(messageBoxes.length).toBe(0);
+  });
+
+  it('should render .message-box and not render .conversation-loader when isLoadingSession is false', () => {
+    component.isLoadingSession = false;
+    component.messages = [
+      { id: 1, role: 'user', content: 'Visible message', timestampUtc: '2026-08-20T20:00:00Z' }
+    ];
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const loader = compiled.querySelector('.conversation-loader');
+    const messageBoxes = compiled.querySelectorAll('.message-box');
+
+    expect(loader).toBeFalsy();
+    expect(messageBoxes.length).toBe(1);
+    expect(messageBoxes[0].textContent).toContain('Visible message');
+  });
+});
+
