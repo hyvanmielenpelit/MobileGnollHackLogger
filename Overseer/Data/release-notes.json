@@ -1,7 +1,7 @@
 [
   {
     "version": "1.0.21",
-    "date": "2026-08-20T14:03:00Z",
+    "date": "2026-08-20T20:07:00Z",
     "summary": "Added local NetHack Wiki search and view tools, improved background indexing and database performance, and fixed chat layout and scrolling issues.",
     "changes": [
       {
@@ -23,6 +23,14 @@
       {
         "type": "fix",
         "text": "Fixed tool call headers overflowing the chat message bubble when displaying long tool arguments."
+      },
+      {
+        "type": "fix",
+        "text": "Fixed an issue with streaming not completing."
+      },
+      {
+        "type": "fix",
+        "text": "Fixed LaTeX formulas not rendering correctly."
       }
     ]
   },
