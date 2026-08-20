@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpResponse } from '@angular/common/http';
 import { Subject } from 'rxjs';
 
 export interface UserAiSettings {
@@ -70,6 +70,17 @@ export class SettingsService {
 
   getSettings() {
     return this.http.get<UserAiSettings>('/api/settings', {
+      headers: {
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    });
+  }
+
+  getSettingsResponse() {
+    return this.http.get<UserAiSettings>('/api/settings', {
+      observe: 'response',
       headers: {
         'Cache-Control': 'no-cache',
         'Pragma': 'no-cache',

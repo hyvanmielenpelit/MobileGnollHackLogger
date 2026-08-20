@@ -181,6 +181,16 @@ builder.Services.AddRateLimiter(options =>
 
 var app = builder.Build();
 
+app.Lifetime.ApplicationStarted.Register(() =>
+{
+    // Proactively initialize these singleton services in the background upon startup
+    // so their Lucene indexing completes before the first user request arrives.
+    _ = app.Services.GetService<WikiService>();
+    _ = app.Services.GetService<NetHackWikiService>();
+    _ = app.Services.GetService<KnowledgeBaseService>();
+    _ = app.Services.GetService<Overseer.Services.Tools.ToolRegistry>();
+});
+
 if (app.Environment.IsDevelopment())
     app.UseDeveloperExceptionPage();
 else

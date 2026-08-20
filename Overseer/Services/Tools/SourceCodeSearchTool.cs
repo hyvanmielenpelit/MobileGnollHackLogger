@@ -52,6 +52,11 @@ namespace Overseer.Services.Tools
 
         public Task<ToolResult> ExecuteAsync(JsonElement parameters, ToolExecutionContext context, CancellationToken cancellationToken)
         {
+            if (!_sourceCodeService.IsIndexingComplete)
+            {
+                return Task.FromResult(new ToolResult { Success = false, ErrorMessage = ToolGuardMessages.SourceCodeIndexingInProgress });
+            }
+
             string query = "";
             if (parameters.TryGetProperty("query", out var queryElem))
             {

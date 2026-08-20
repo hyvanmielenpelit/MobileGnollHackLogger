@@ -80,7 +80,7 @@ summary: ""Annotated source code for objects.c in NetHack 3.4.3.""
     }
 
     [Fact]
-    public void NetHackWikiService_IndexesAndRetrievesArticles()
+    public async Task NetHackWikiService_IndexesAndRetrievesArticles()
     {
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new[]
@@ -91,6 +91,7 @@ summary: ""Annotated source code for objects.c in NetHack 3.4.3.""
             .Build();
 
         using var service = new NetHackWikiService(config);
+        await service.InitializationTask;
 
         var article = service.GetArticle("Cockatrice");
         Assert.NotNull(article);
@@ -105,7 +106,7 @@ summary: ""Annotated source code for objects.c in NetHack 3.4.3.""
     }
 
     [Fact]
-    public void NetHackWikiService_NamespaceFilter_WorksCorrectly()
+    public async Task NetHackWikiService_NamespaceFilter_WorksCorrectly()
     {
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new[]
@@ -116,6 +117,7 @@ summary: ""Annotated source code for objects.c in NetHack 3.4.3.""
             .Build();
 
         using var service = new NetHackWikiService(config);
+        await service.InitializationTask;
 
         var sourceResults = service.GetRelevantContext("objects.c", "source", 5).ToList();
         Assert.Single(sourceResults);
@@ -137,6 +139,7 @@ summary: ""Annotated source code for objects.c in NetHack 3.4.3.""
             .Build();
 
         using var service = new NetHackWikiService(config);
+        await service.InitializationTask;
         var searchTool = new NetHackWikiSearchTool(service, config);
 
         var jsonParams = JsonDocument.Parse("{\"query\": \"cockatrice\"}").RootElement;
@@ -159,6 +162,7 @@ summary: ""Annotated source code for objects.c in NetHack 3.4.3.""
             .Build();
 
         using var service = new NetHackWikiService(config);
+        await service.InitializationTask;
         var searchTool = new NetHackWikiSearchTool(service, config);
 
         var jsonParams = JsonDocument.Parse("{\"query\": \"cockatrice\"}").RootElement;
@@ -181,6 +185,7 @@ summary: ""Annotated source code for objects.c in NetHack 3.4.3.""
             .Build();
 
         using var service = new NetHackWikiService(config);
+        await service.InitializationTask;
         var viewTool = new NetHackWikiViewTool(service);
 
         var jsonParams = JsonDocument.Parse("{\"article\": \"Elbereth\"}").RootElement;
@@ -192,7 +197,7 @@ summary: ""Annotated source code for objects.c in NetHack 3.4.3.""
     }
 
     [Fact]
-    public void NetHackWikiService_RealData_IndexesAndQueriesSuccessfully()
+    public async Task NetHackWikiService_RealData_IndexesAndQueriesSuccessfully()
     {
         if (!Directory.Exists(@"c:\hmp\nethackwiki")) return;
 
@@ -205,6 +210,7 @@ summary: ""Annotated source code for objects.c in NetHack 3.4.3.""
             .Build();
 
         using var service = new NetHackWikiService(config);
+        await service.InitializationTask;
 
         var cockatrice = service.GetArticle("Cockatrice");
         Assert.NotNull(cockatrice);
@@ -223,7 +229,7 @@ summary: ""Annotated source code for objects.c in NetHack 3.4.3.""
     }
 
     [Fact]
-    public void NetHackWikiService_UnconfiguredPath_DoesNotThrowAndReturnsGracefully()
+    public async Task NetHackWikiService_UnconfiguredPath_DoesNotThrowAndReturnsGracefully()
     {
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new[]
@@ -233,6 +239,7 @@ summary: ""Annotated source code for objects.c in NetHack 3.4.3.""
             .Build();
 
         using var service = new NetHackWikiService(config);
+        await service.InitializationTask;
 
         var article = service.GetArticle("Cockatrice");
         Assert.Null(article);
@@ -279,6 +286,105 @@ summary: ""Annotated source code for objects.c in NetHack 3.4.3.""
         var alerts = healthService.GetSystemAlerts().ToList();
 
         Assert.DoesNotContain(alerts, a => a.Id == "nethack-wiki-path-missing");
+    }
+
+    [Fact]
+    public async Task NetHackWikiSearchTool_WhenIndexingComplete_NotFoundQuery_ReturnsStandardNotFoundMessage()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new[]
+            {
+                new System.Collections.Generic.KeyValuePair<string, string?>("NetHackWikiPath", _tempDir),
+                new System.Collections.Generic.KeyValuePair<string, string?>("Tools:nethack_wiki_search:MaxResults", "5")
+            })
+            .Build();
+
+        using var service = new NetHackWikiService(config);
+        await service.InitializationTask; // Ensure indexing has finished
+
+        var searchTool = new NetHackWikiSearchTool(service, config);
+        var jsonParams = JsonDocument.Parse("{\"query\": \"nonexistent_term_12345\"}").RootElement;
+        var context = new ToolExecutionContext { SessionId = 1, SpoilerFreeMode = false };
+
+        var result = await searchTool.ExecuteAsync(jsonParams, context, CancellationToken.None);
+        Assert.True(result.Success);
+        Assert.Equal("No relevant information found in the NetHack wiki.", result.Content);
+    }
+
+    [Fact]
+    public async Task NetHackWikiViewTool_WhenIndexingComplete_NotFoundArticle_ReturnsStandardNotFoundMessage()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new[]
+            {
+                new System.Collections.Generic.KeyValuePair<string, string?>("NetHackWikiPath", _tempDir)
+            })
+            .Build();
+
+        using var service = new NetHackWikiService(config);
+        await service.InitializationTask; // Ensure indexing has finished
+
+        var viewTool = new NetHackWikiViewTool(service);
+        var jsonParams = JsonDocument.Parse("{\"article\": \"NonExistentArticleXYZ\"}").RootElement;
+        var context = new ToolExecutionContext { SessionId = 1, SpoilerFreeMode = false };
+
+        var result = await viewTool.ExecuteAsync(jsonParams, context, CancellationToken.None);
+        Assert.True(result.Success);
+        Assert.Equal("NetHack wiki article matching 'NonExistentArticleXYZ' not found.", result.Content);
+    }
+
+    [Fact]
+    public async Task NetHackWikiSearchTool_WhenIndexingInProgress_ReturnsDirectiveError()
+    {
+        if (!Directory.Exists(@"c:\hmp\nethackwiki")) return;
+
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new[]
+            {
+                new System.Collections.Generic.KeyValuePair<string, string?>("NetHackWikiPath", @"c:\hmp\nethackwiki")
+            })
+            .Build();
+
+        using var service = new NetHackWikiService(config);
+        // Do NOT await service.InitializationTask to test warm-up / in-progress state
+        if (!service.IsIndexingComplete)
+        {
+            var searchTool = new NetHackWikiSearchTool(service, config);
+            var jsonParams = JsonDocument.Parse("{\"query\": \"cockatrice\"}").RootElement;
+            var context = new ToolExecutionContext { SessionId = 1, SpoilerFreeMode = false };
+
+            var result = await searchTool.ExecuteAsync(jsonParams, context, CancellationToken.None);
+            Assert.False(result.Success);
+            Assert.Equal(ToolGuardMessages.NetHackWikiIndexingInProgress, result.ErrorMessage);
+            Assert.Contains("Do not retry", result.ErrorMessage);
+        }
+    }
+
+    [Fact]
+    public async Task NetHackWikiViewTool_WhenIndexingInProgress_ReturnsDirectiveError()
+    {
+        if (!Directory.Exists(@"c:\hmp\nethackwiki")) return;
+
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new[]
+            {
+                new System.Collections.Generic.KeyValuePair<string, string?>("NetHackWikiPath", @"c:\hmp\nethackwiki")
+            })
+            .Build();
+
+        using var service = new NetHackWikiService(config);
+        // Do NOT await service.InitializationTask to test warm-up / in-progress state
+        if (!service.IsIndexingComplete)
+        {
+            var viewTool = new NetHackWikiViewTool(service);
+            var jsonParams = JsonDocument.Parse("{\"article\": \"Cockatrice\"}").RootElement;
+            var context = new ToolExecutionContext { SessionId = 1, SpoilerFreeMode = false };
+
+            var result = await viewTool.ExecuteAsync(jsonParams, context, CancellationToken.None);
+            Assert.False(result.Success);
+            Assert.Equal(ToolGuardMessages.NetHackWikiIndexingInProgress, result.ErrorMessage);
+            Assert.Contains("Do not retry", result.ErrorMessage);
+        }
     }
 }
 

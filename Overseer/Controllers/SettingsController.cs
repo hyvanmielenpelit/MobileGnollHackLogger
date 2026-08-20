@@ -5,6 +5,9 @@ using Overseer.Extensions;
 using System.Security.Claims;
 using System.Text.Json;
 using System.Net.Http.Headers;
+using System.Diagnostics;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Overseer.Controllers;
 
@@ -34,20 +37,41 @@ public class SettingsController : ControllerBase
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     public async Task<IActionResult> GetSettings()
     {
+        var swTotal = Stopwatch.StartNew();
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (userId == null) return Unauthorized();
 
+        var swQuery = Stopwatch.StartNew();
         var settings = await _settingsService.GetSettingsAsync(userId);
+        swQuery.Stop();
+        var settingsMs = swQuery.ElapsedMilliseconds;
         
+        swQuery.Restart();
         var apiKeysStatus = await _settingsService.GetApiKeysStatusAsync(userId);
+        swQuery.Stop();
+        var apiKeysMs = swQuery.ElapsedMilliseconds;
+
+        swQuery.Restart();
         var userModels = await _settingsService.GetUserModelsAsync(userId);
+        swQuery.Stop();
+        var userModelsMs = swQuery.ElapsedMilliseconds;
+
+        swQuery.Restart();
         var systemConfigs = await _settingsService.GetResolvedSystemModelsAsync(userId);
+        swQuery.Stop();
+        var sysModelsMs = swQuery.ElapsedMilliseconds;
+
         bool hasSystemModel = systemConfigs.Any();
         
         bool hasApiKey = apiKeysStatus.Any(s => (bool)((dynamic)s).HasKey) || hasSystemModel;
         bool hasModel = userModels.Any() || hasSystemModel;
         
         bool showDebugLog = _configuration.ShouldShowDebugLog(User.Identity?.Name);
+
+        swTotal.Stop();
+
+        Response.Headers.Append("Access-Control-Expose-Headers", "Server-Timing");
+        Response.Headers.Append("Server-Timing", $"total;dur={swTotal.ElapsedMilliseconds}, settings;dur={settingsMs}, apikeys;dur={apiKeysMs}, usermodels;dur={userModelsMs}, sysmodels;dur={sysModelsMs}");
         
         return Ok(new
         {

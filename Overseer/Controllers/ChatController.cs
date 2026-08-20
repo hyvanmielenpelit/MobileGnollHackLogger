@@ -12,6 +12,9 @@ using GnollHackServer.Data;
 using Azure.Communication.Email;
 using System.Text;
 using Microsoft.AspNetCore.Identity;
+using System.Diagnostics;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Overseer.Controllers;
 
@@ -46,26 +49,38 @@ public class ChatController : ControllerBase
     [HttpGet("sessions")]
     public async Task<IActionResult> GetSessions([FromQuery] int skip = 0, [FromQuery] int? take = null)
     {
+        var swTotal = Stopwatch.StartNew();
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
         int pageSize = _configuration.GetValue<int>("ConversationListPageSize", 20);
         int effectiveTake = Math.Min(Math.Max(take ?? pageSize, pageSize), 500);
 
+        var swDb = Stopwatch.StartNew();
         var sessions = await _dbContext.ChatSession
             .Where(s => s.AspNetUserId == userId)
             .OrderByDescending(s => s.LastMessageUtc)
             .Skip(skip)
-            .Take(effectiveTake)
+            .Take(effectiveTake + 1)
             .Select(s => new { s.Id, s.Title, s.LastMessageUtc, s.IsGnollHackSession })
             .ToListAsync();
+        swDb.Stop();
 
-        var totalCount = await _dbContext.ChatSession.CountAsync(s => s.AspNetUserId == userId);
+        bool hasMore = sessions.Count > effectiveTake;
+        if (hasMore)
+        {
+            sessions.RemoveAt(sessions.Count - 1);
+        }
+
+        swTotal.Stop();
+
+        Response.Headers.Append("Access-Control-Expose-Headers", "Server-Timing");
+        Response.Headers.Append("Server-Timing", $"total;dur={swTotal.ElapsedMilliseconds}, db;dur={swDb.ElapsedMilliseconds}");
 
         return Ok(new
         {
             sessions = sessions,
-            hasMore = (skip + sessions.Count) < totalCount
+            hasMore = hasMore
         });
     }
 
@@ -100,19 +115,20 @@ public class ChatController : ControllerBase
     [HttpGet("sessions/{id}")]
     public async Task<IActionResult> GetSession(long id)
     {
+        var swTotal = Stopwatch.StartNew();
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+        var swDb = Stopwatch.StartNew();
         var session = await _dbContext.ChatSession
+            .AsNoTracking()
             .FirstOrDefaultAsync(s => s.Id == id && s.AspNetUserId == userId);
+        swDb.Stop();
+        var sessionMs = swDb.ElapsedMilliseconds;
 
         if (session == null) return NotFound();
-        
-        var userModels = await _dbContext.UserAiModels
-            .Where(um => um.AspNetUserId == userId)
-            .ToListAsync();
-            
-        var systemModels = await _settingsService.GetResolvedSystemModelsAsync(userId);
 
+        swDb.Restart();
         var messages = await _dbContext.ChatMessage
             .Where(m => m.ChatSessionId == id && m.Role != "system" && !m.IsHidden)
             .OrderBy(m => m.TimestampUtc)
@@ -123,32 +139,71 @@ public class ChatController : ControllerBase
                 m.TimestampUtc,
                 m.TimeToFirstTokenMs,
                 m.ProviderUsed,
-                m.ModelUsed,
-                Attachments = _dbContext.ChatMessageAttachment
-                    .Where(a => a.ChatMessageId == m.Id)
-                    .Select(a => new { a.Id, a.FileName, a.ContentType })
-                    .ToList(),
-                ToolCalls = _dbContext.ChatMessageToolCall
-                    .Where(tc => tc.ChatMessageId == m.Id)
-                    .OrderBy(tc => tc.SortOrder)
-                    .Select(tc => new {
-                        id = tc.ToolCallId,
-                        name = tc.Name,
-                        displayName = tc.DisplayName,
-                        argsText = tc.ArgsText,
-                        status = tc.Status,
-                        result = tc.Result,
-                        error = tc.Error
-                    })
-                    .ToList()
+                m.ModelUsed
             })
             .ToListAsync();
+        swDb.Stop();
+        var messagesMs = swDb.ElapsedMilliseconds;
 
+        var messageIds = messages.Select(m => m.Id).ToList();
+
+        swDb.Restart();
+        var attachments = messageIds.Count > 0
+            ? await _dbContext.ChatMessageAttachment
+                .Where(a => messageIds.Contains(a.ChatMessageId))
+                .Select(a => new { a.ChatMessageId, a.Id, a.FileName, a.ContentType })
+                .AsNoTracking()
+                .ToListAsync()
+            : [];
+        swDb.Stop();
+        var attachmentsMs = swDb.ElapsedMilliseconds;
+
+        swDb.Restart();
+        var toolCalls = messageIds.Count > 0
+            ? await _dbContext.ChatMessageToolCall
+                .Where(tc => messageIds.Contains(tc.ChatMessageId))
+                .OrderBy(tc => tc.SortOrder)
+                .Select(tc => new {
+                    tc.ChatMessageId,
+                    id = tc.ToolCallId,
+                    name = tc.Name,
+                    displayName = tc.DisplayName,
+                    argsText = tc.ArgsText,
+                    status = tc.Status,
+                    result = tc.Result,
+                    error = tc.Error
+                })
+                .AsNoTracking()
+                .ToListAsync()
+            : [];
+        swDb.Stop();
+        var toolCallsMs = swDb.ElapsedMilliseconds;
+
+        var attachmentsLookup = attachments.ToLookup(a => a.ChatMessageId);
+        var toolCallsLookup = toolCalls.ToLookup(tc => tc.ChatMessageId);
+
+        List<UserAiModel>? userModels = null;
+        List<(SystemAiApiConfiguration Config, int ResolvedRole)>? systemModels = null;
+
+        swDb.Restart();
+        if (messages.Any(m => m.Role == "assistant" && !string.IsNullOrEmpty(m.ModelUsed)))
+        {
+            userModels = await _dbContext.UserAiModels
+                .Where(um => um.AspNetUserId == userId)
+                .AsNoTracking()
+                .ToListAsync();
+                
+            systemModels = await _settingsService.GetResolvedSystemModelsAsync(userId);
+        }
+        swDb.Stop();
+        var modelsMs = swDb.ElapsedMilliseconds;
+
+        var swAsm = Stopwatch.StartNew();
         var formattedMessages = messages.Select(m => {
             string? modelDisplayName = null;
             string? thinkingLevel = null;
             if (m.Role == "assistant" && !string.IsNullOrEmpty(m.ModelUsed)) {
-                var um = userModels.FirstOrDefault(x => x.ModelId == m.ModelUsed);
+                var um = userModels?.FirstOrDefault(x => x.ModelId == m.ModelUsed);
                 if (um != null) {
                     if (!string.IsNullOrEmpty(um.DisplayName)) {
                         modelDisplayName = um.DisplayName;
@@ -156,7 +211,7 @@ public class ChatController : ControllerBase
                         modelDisplayName = m.ModelUsed;
                     }
                     thinkingLevel = um.ThinkingLevel;
-                } else {
+                } else if (systemModels != null) {
                     var sm = systemModels.FirstOrDefault(x => x.Config.ModelId == m.ModelUsed);
                     if (sm.Config != null) {
                         modelDisplayName = sm.Config.DisplayName ?? m.ModelUsed;
@@ -166,22 +221,46 @@ public class ChatController : ControllerBase
                     }
                 }
             }
+
+            var msgAttachments = attachmentsLookup[m.Id]
+                .Select(a => new { a.Id, a.FileName, a.ContentType })
+                .ToList();
+
+            var msgToolCalls = toolCallsLookup[m.Id]
+                .Select(tc => new {
+                    tc.id,
+                    tc.name,
+                    tc.displayName,
+                    tc.argsText,
+                    tc.status,
+                    tc.result,
+                    tc.error
+                })
+                .ToList();
+
             return new {
                 m.Id,
                 m.Role,
                 m.Content,
                 m.TimestampUtc,
                 m.TimeToFirstTokenMs,
-                m.Attachments,
-                m.ToolCalls,
+                Attachments = msgAttachments,
+                ToolCalls = msgToolCalls,
                 ModelDisplayName = modelDisplayName,
                 ThinkingLevel = thinkingLevel
             };
         }).ToList();
+        swAsm.Stop();
+        var assemblyMs = swAsm.ElapsedMilliseconds;
 
         var ongoing = _ongoingChatManager.TryGet(id);
         bool showDebugLog = _configuration.ShouldShowDebugLog(User.Identity?.Name);
-        
+
+        swTotal.Stop();
+
+        Response.Headers.Append("Access-Control-Expose-Headers", "Server-Timing");
+        Response.Headers.Append("Server-Timing", $"total;dur={swTotal.ElapsedMilliseconds}, session;dur={sessionMs}, msgs;dur={messagesMs}, attach;dur={attachmentsMs}, tools;dur={toolCallsMs}, models;dur={modelsMs}, asm;dur={assemblyMs}");
+
         return Ok(new
         {
             session.Id,

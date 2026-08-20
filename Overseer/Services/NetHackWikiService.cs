@@ -27,18 +27,20 @@ public class NetHackWikiService : IDisposable
     private DirectoryReader? _reader;
     private IndexSearcher? _searcher;
     private StandardAnalyzer? _analyzer;
-    private Timer? _reindexTimer;
 
+    public Task InitializationTask { get; private set; }
+    public bool IsIndexingComplete => InitializationTask?.IsCompleted ?? false;
+    
     public NetHackWikiService(IConfiguration configuration, ILogger<NetHackWikiService>? logger = null)
     {
         _logger = logger;
         _wikiPath = configuration["NetHackWikiPath"] ?? string.Empty;
         _maxFileSizeKB = int.TryParse(configuration["MaxNetHackWikiFileSizeKB"], out var maxFileSize) ? maxFileSize : 500;
 
-        IndexWikiFiles();
-        
-        // Re-index every 10 minutes
-        _reindexTimer = new Timer(_ => IndexWikiFiles(), null, TimeSpan.FromMinutes(10), TimeSpan.FromMinutes(10));
+        // NetHackWiki consists of thousands of static files that change very seldomly.
+        // To avoid heavy periodic disk I/O and Lucene re-indexing, indexing is performed ONLY at startup.
+        // If NetHackWiki files are updated on disk, the site must be restarted to re-read them.
+        InitializationTask = Task.Run(() => IndexWikiFiles());
     }
 
     private void IndexWikiFiles()
@@ -301,7 +303,5 @@ public class NetHackWikiService : IDisposable
     {
         _reader?.Dispose();
         _directory?.Dispose();
-        _reindexTimer?.Dispose();
-        _reindexTimer = null;
     }
 }

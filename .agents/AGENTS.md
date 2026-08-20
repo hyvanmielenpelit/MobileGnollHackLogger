@@ -52,6 +52,12 @@ When making changes to database models that require EF Core migrations, you MUST
 | Images | `MobileGnollHackLogger/wwwroot/img/` |
 | Program Entry & Startup | `MobileGnollHackLogger/Program.cs` |
 
+## NetHack Wiki Re-Indexing Policy
+
+- **Startup-Only Indexing**: `NetHackWikiService` only indexes files once during application startup and does NOT run periodic background re-indexing timers.
+- **Rationale**: NetHackWiki consists of thousands of static files (in `C:\hmp\nethackwiki`) that are updated very seldomly via manual file uploads. Running periodic scans on thousands of files introduces unnecessary CPU and disk I/O load.
+- **Restart Required**: If NetHackWiki markdown files are updated or uploaded, the Overseer site/service must be restarted for the new content to be indexed.
+
 ## Publishing
 
 - **Do NOT publish anything** (e.g., via `dotnet publish` or similar commands) unless explicitly requested by the user.

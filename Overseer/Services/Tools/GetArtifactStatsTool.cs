@@ -41,6 +41,11 @@ namespace Overseer.Services.Tools
 
         public Task<ToolResult> ExecuteAsync(JsonElement arguments, ToolExecutionContext context, System.Threading.CancellationToken cancellationToken)
         {
+            if (!_sourceCodeService.IsIndexingComplete)
+            {
+                return Task.FromResult(new ToolResult { Success = false, ErrorMessage = ToolGuardMessages.SourceCodeIndexingInProgress });
+            }
+
             string name = arguments.GetProperty("name").GetString() ?? string.Empty;
             
             var result = _sourceCodeService.GetArtifactStats(name);

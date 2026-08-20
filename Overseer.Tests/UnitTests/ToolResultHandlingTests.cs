@@ -79,5 +79,31 @@ public class ToolResultHandlingTests
         var extracted = ExtractResultContent(result);
         Assert.Equal("Unknown error", extracted);
     }
+
+    [Theory]
+    [InlineData(ToolGuardMessages.WikiIndexingInProgress)]
+    [InlineData(ToolGuardMessages.NetHackWikiIndexingInProgress)]
+    [InlineData(ToolGuardMessages.KnowledgeBaseIndexingInProgress)]
+    [InlineData(ToolGuardMessages.SourceCodeIndexingInProgress)]
+    public void ToolGuardMessages_AreDirectiveAndInstructive(string message)
+    {
+        Assert.False(string.IsNullOrWhiteSpace(message));
+        Assert.Contains("initialization in progress", message);
+        Assert.Contains("Do not retry this tool in this turn", message);
+        Assert.Contains("warming up", message);
+    }
+
+    [Fact]
+    public void ExtractResultContent_WhenUnindexedToolError_ExtractsDirectiveMessage()
+    {
+        var result = new ToolResult
+        {
+            Success = false,
+            ErrorMessage = ToolGuardMessages.WikiIndexingInProgress
+        };
+
+        var extracted = ExtractResultContent(result);
+        Assert.Equal(ToolGuardMessages.WikiIndexingInProgress, extracted);
+    }
 }
 

@@ -32,6 +32,15 @@ namespace Overseer.Services.Tools
 
         public Task<ToolResult> ExecuteAsync(JsonElement parameters, ToolExecutionContext context, CancellationToken cancellationToken)
         {
+            if (!_knowledgeBaseService.IsIndexingComplete)
+            {
+                return Task.FromResult(new ToolResult 
+                { 
+                    Success = false, 
+                    ErrorMessage = ToolGuardMessages.KnowledgeBaseIndexingInProgress 
+                });
+            }
+
             if (!parameters.TryGetProperty("topic", out var topicElement) || topicElement.ValueKind != JsonValueKind.String)
             {
                 return Task.FromResult(new ToolResult 

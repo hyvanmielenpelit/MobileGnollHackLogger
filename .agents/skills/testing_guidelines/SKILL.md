@@ -73,3 +73,13 @@ Run commands from the `Overseer/ClientApp/` directory:
 *   **HTTP Dependencies**: Services or components utilizing `HttpClient` must include `provideHttpClient()` and `provideHttpClientTesting()` from `@angular/common/http/testing`.
 *   **Static and Pure Logic**: For static methods (like `ChatComponent.stripThoughts`) or pure helper functions, test them directly without `TestBed` boilerplate to keep tests fast and isolated.
 
+## 5. Background Indexed Services Synchronization
+
+When testing services or tools that index files in the background (`WikiService`, `NetHackWikiService`, `KnowledgeBaseService`):
+
+*   **Asynchronous Initialization**: Tests must be `async Task` methods.
+*   **Await `InitializationTask`**: Always call `await service.InitializationTask;` before querying the service or executing tools to ensure background Lucene/file indexing has finished.
+*   **Testing Cold Guards**: To test that a tool returns `Success = false` with a directive error message (`ToolGuardMessages`), execute the tool immediately **without** awaiting `service.InitializationTask`.
+*   Refer to the `background_indexing_architecture` skill for full architectural details.
+
+

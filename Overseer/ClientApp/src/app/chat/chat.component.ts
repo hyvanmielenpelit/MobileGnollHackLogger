@@ -695,8 +695,33 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     }, 1000);
   }
 
+  perfLog(tag: string, message: string, startTime?: number) {
+    const now = performance.now();
+    const duration = startTime !== undefined ? ` (${(now - startTime).toFixed(1)}ms)` : '';
+    const logStr = `[Perf][${tag}] ${message}${duration}`;
+    this.debugService.log(logStr);
+  }
+
   loadSettings(isInit: boolean = false) {
-    this.settingsService.getSettings().subscribe(settings => {
+    const t0 = performance.now();
+    this.perfLog('Settings', `loadSettings started (isInit=${isInit})`);
+    if (isInit) {
+      this.loadSessions();
+    }
+
+    this.settingsService.getSettingsResponse().subscribe(httpResponse => {
+      const settingsDuration = performance.now() - t0;
+      const settings = httpResponse.body;
+      const serverTiming = httpResponse.headers.get('Server-Timing');
+      const timingLog = serverTiming ? ` | Server-Timing: ${serverTiming}` : '';
+      this.perfLog('Settings', `getSettings received in ${settingsDuration.toFixed(1)}ms${timingLog}`);
+      setTimeout(() => {
+        const entries = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
+        const settingsEntry = entries.filter(e => e.name.endsWith('/api/settings')).pop();
+        if (settingsEntry) {
+          this.perfLog('Settings', `ResourceTiming: startTime=${settingsEntry.startTime.toFixed(0)}, fetchStart=${settingsEntry.fetchStart.toFixed(0)}, requestStart=${settingsEntry.requestStart.toFixed(0)}, responseStart=${settingsEntry.responseStart.toFixed(0)}, responseEnd=${settingsEntry.responseEnd.toFixed(0)}, duration=${settingsEntry.duration.toFixed(0)}, stalled=${(settingsEntry.requestStart - settingsEntry.startTime).toFixed(0)}ms, ttfb=${(settingsEntry.responseStart - settingsEntry.requestStart).toFixed(0)}ms`);
+        }
+      }, 100);
       if (settings) {
         this.hasApiKey = settings.hasApiKey;
         this.hasModel = settings.hasModel ?? false;
@@ -711,25 +736,27 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.spoilerFreeMode = settings.spoilerFreeMode === true;
         this.debugService.log(`[Overseer] showThoughtsAndTools loaded: ${this.showThoughtsAndTools} (type: ${typeof this.showThoughtsAndTools})`);
 
+        const tModels0 = performance.now();
         this.settingsService.getUserModels().subscribe({ next: (models) => {
-        this.userModels = models.filter(m => !m.isSystem && (m.modelRole === undefined || (m.modelRole & 1) === 1));
-        this.systemModels = models.filter(m => m.isSystem && (m.modelRole === undefined || (m.modelRole & 1) === 1));
-        this.hasModel = this.userModels.length > 0 || this.systemModels.length > 0;
-        
-        if (this.hasModel) {
-          this.applySavedModelPreference();
-        } else {
-          this.singleModelInfo = null;
-          this.selectedUserModelId = null;
-        }
-      },  });
+          const modelsDuration = performance.now() - tModels0;
+          this.perfLog('Settings', `getUserModels received in ${modelsDuration.toFixed(1)}ms (${models.length} models)`);
+          this.userModels = models.filter(m => !m.isSystem && (m.modelRole === undefined || (m.modelRole & 1) === 1));
+          this.systemModels = models.filter(m => m.isSystem && (m.modelRole === undefined || (m.modelRole & 1) === 1));
+          this.hasModel = this.userModels.length > 0 || this.systemModels.length > 0;
+          
+          if (this.hasModel) {
+            this.applySavedModelPreference();
+          } else {
+            this.singleModelInfo = null;
+            this.selectedUserModelId = null;
+          }
+        },  });
       }
 
       if (isInit) {
-        // Load sessions and handle route AFTER settings are loaded to avoid
+        // Handle route AFTER settings are loaded to avoid
         // showThoughtsAndTools race condition (defaulting to 0 before settings arrive)
-        this.debugService.log(`[Overseer] Settings loaded, now loading sessions. showThoughtsAndTools=${this.showThoughtsAndTools}`);
-        this.loadSessions();
+        this.debugService.log(`[Overseer] Settings loaded, now subscribing to route. showThoughtsAndTools=${this.showThoughtsAndTools}`);
         this.route.queryParams.subscribe(params => {
           const idParam = params['sessionId'];
           if (idParam) {
@@ -758,7 +785,9 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   ngOnInit() {
-    this.preloadAvatarImages();
+    const tInit0 = performance.now();
+    this.perfLog('Init', 'ChatComponent ngOnInit starting');
+    setTimeout(() => this.preloadAvatarImages(), 2500);
     this.settingsService.showThoughtsAndToolsUpdated.subscribe(val => {
       this.showThoughtsAndTools = val;
     });
@@ -793,6 +822,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     }
     
     this.loadSettings(true);
+    this.perfLog('Init', 'ChatComponent ngOnInit initial dispatch finished', tInit0);
 
     const savedWidth = localStorage.getItem('overseer_sidebar_width');
     if (savedWidth) {
@@ -853,15 +883,22 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   private changelogBadgeResetHandler!: () => void;
 
   private checkChangelogAnimation() {
+    const t0 = performance.now();
     this.changelogService.getReleaseNotes().subscribe({
       next: (response) => {
+        const duration = performance.now() - t0;
+        this.perfLog('Changelog', `getReleaseNotes received in ${duration.toFixed(1)}ms (${response?.notes?.length ?? 0} notes)`);
         if (response.notes && response.notes.length > 0) {
           const latestVersion = response.notes[0].version;
           this.showChangelogAnimation = this.changelogService.hasNewMajorOrMinorVersion(latestVersion);
           this.cdr.detectChanges();
         }
       },
-      error: (err) => console.error('Failed to check release notes for animation', err)
+      error: (err) => {
+        const duration = performance.now() - t0;
+        this.perfLog('Changelog', `getReleaseNotes failed after ${duration.toFixed(1)}ms: ${err?.message ?? err}`);
+        console.error('Failed to check release notes for animation', err);
+      }
     });
   }
 
@@ -1226,7 +1263,9 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
             if (lastUserMsg && lastUserMsg.attachments && lastUserMsg.attachments.some(a => !a.id)) {
               console.log('[Frontend Debug] Fallback: Missing attachment IDs detected. Fetching session to patch...');
               this.debugService.log(`[Frontend] Fallback: Missing attachment IDs detected. Fetching session to patch...`);
-              this.chatService.getSession(this.currentSessionId).subscribe(s => {
+              this.chatService.getSession(this.currentSessionId).subscribe(res => {
+                const s = res.body;
+                if (!s) return;
                 const serverUserMsg = [...(s.messages || [])].reverse().find(m => m.role === 'user');
                 if (serverUserMsg && serverUserMsg.attachments) {
                   for (const serverAtt of serverUserMsg.attachments) {
@@ -1267,6 +1306,9 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   setupSignalR() {
+    this.perfLog('SignalR', 'SignalR connect started (/chathub)');
+    const tSignalR0 = performance.now();
+
     this.hubConnection = new signalR.HubConnectionBuilder()
       .withUrl('/chathub')
       .withAutomaticReconnect()
@@ -1306,10 +1348,16 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
     this.hubStartPromise = this.hubConnection.start();
     this.hubStartPromise.then(() => {
+      const connectDuration = performance.now() - tSignalR0;
+      this.perfLog('SignalR', `SignalR connected successfully in ${connectDuration.toFixed(1)}ms`);
       if (this.currentSessionId) {
         this.hubConnection?.invoke("JoinSession", this.currentSessionId).catch(console.error);
       }
-    }).catch(err => console.error('SignalR connection error: ', err));
+    }).catch(err => {
+      const connectDuration = performance.now() - tSignalR0;
+      this.perfLog('SignalR', `SignalR connection error after ${connectDuration.toFixed(1)}ms: ${err?.message ?? err}`);
+      console.error('SignalR connection error: ', err);
+    });
   }
 
   loadDraft() {
@@ -1327,31 +1375,80 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     localStorage.removeItem(key);
   }
   loadSessions(preserveLoaded: boolean = false) {
+    const t0 = performance.now();
     this.loadingSessions = true;
     const take = preserveLoaded && this.sessions.length > 0 ? this.sessions.length : undefined;
+    this.perfLog('Sessions', `loadSessions started (take=${take ?? 'default'}, preserveLoaded=${preserveLoaded})`);
     this.chatService.getSessions(0, take).subscribe({
-      next: (response) => {
-        this.sessions = response.sessions;
-        this.hasMoreSessions = response.hasMore;
+      next: (httpResponse) => {
+        const netDuration = performance.now() - t0;
+        const response = httpResponse.body;
+        const serverTiming = httpResponse.headers.get('Server-Timing');
+        const timingLog = serverTiming ? ` | Server-Timing: ${serverTiming}` : '';
+        
+        const tRender0 = performance.now();
+        this.sessions = response?.sessions || [];
+        this.hasMoreSessions = response?.hasMore || false;
         this.loadingSessions = false;
+        this.cdr.detectChanges();
+        const renderDuration = performance.now() - tRender0;
+
+        this.perfLog('Sessions', `loadSessions completed: ${this.sessions.length} sessions (hasMore=${this.hasMoreSessions}) in ${netDuration.toFixed(1)}ms (render: ${renderDuration.toFixed(1)}ms)${timingLog}`);
+        setTimeout(() => {
+          const entries = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
+          const sessionEntry = entries.filter(e => e.name.includes('/api/chat/sessions')).pop();
+          if (sessionEntry) {
+            this.perfLog('Sessions', `ResourceTiming: startTime=${sessionEntry.startTime.toFixed(0)}, fetchStart=${sessionEntry.fetchStart.toFixed(0)}, requestStart=${sessionEntry.requestStart.toFixed(0)}, responseStart=${sessionEntry.responseStart.toFixed(0)}, responseEnd=${sessionEntry.responseEnd.toFixed(0)}, duration=${sessionEntry.duration.toFixed(0)}, stalled=${(sessionEntry.requestStart - sessionEntry.startTime).toFixed(0)}ms, ttfb=${(sessionEntry.responseStart - sessionEntry.requestStart).toFixed(0)}ms`);
+          }
+        }, 100);
       },
       error: (err) => {
+        const netDuration = performance.now() - t0;
+        this.perfLog('Sessions', `loadSessions FAILED in ${netDuration.toFixed(1)}ms: ${err.message || err}`);
         console.error('Failed to load sessions', err);
         this.loadingSessions = false;
+        setTimeout(() => {
+          const entries = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
+          const sessionEntry = entries.filter(e => e.name.includes('/api/chat/sessions')).pop();
+          if (sessionEntry) {
+            this.perfLog('Sessions', `ResourceTiming (on error): startTime=${sessionEntry.startTime.toFixed(0)}, fetchStart=${sessionEntry.fetchStart.toFixed(0)}, requestStart=${sessionEntry.requestStart.toFixed(0)}, responseStart=${sessionEntry.responseStart.toFixed(0)}, duration=${sessionEntry.duration.toFixed(0)}, stalled=${(sessionEntry.requestStart - sessionEntry.startTime).toFixed(0)}ms, ttfb=${(sessionEntry.responseStart - sessionEntry.requestStart).toFixed(0)}ms`);
+          }
+        }, 100);
       }
     });
   }
 
   loadMoreSessions() {
     if (this.loadingMoreSessions || this.loadingSessions || !this.hasMoreSessions) return;
+    const t0 = performance.now();
     this.loadingMoreSessions = true;
-    this.chatService.getSessions(this.sessions.length).subscribe({
-      next: (response) => {
-        this.sessions = [...this.sessions, ...response.sessions];
-        this.hasMoreSessions = response.hasMore;
+    const skip = this.sessions.length;
+    this.perfLog('Sessions', `loadMoreSessions started (skip=${skip})`);
+    this.chatService.getSessions(skip).subscribe({
+      next: (httpResponse) => {
+        const netDuration = performance.now() - t0;
+        const response = httpResponse.body;
+        const serverTiming = httpResponse.headers.get('Server-Timing');
+        const timingLog = serverTiming ? ` | Server-Timing: ${serverTiming}` : '';
+        
+        const newSessions = response?.sessions || [];
+        this.sessions = [...this.sessions, ...newSessions];
+        this.hasMoreSessions = response?.hasMore || false;
         this.loadingMoreSessions = false;
+        this.cdr.detectChanges();
+
+        this.perfLog('Sessions', `loadMoreSessions completed: +${newSessions.length} sessions (total: ${this.sessions.length}, hasMore=${this.hasMoreSessions}) in ${netDuration.toFixed(1)}ms${timingLog}`);
+        setTimeout(() => {
+          const entries = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
+          const sessionEntry = entries.filter(e => e.name.includes('/api/chat/sessions')).pop();
+          if (sessionEntry) {
+            this.perfLog('Sessions', `ResourceTiming (loadMore): startTime=${sessionEntry.startTime.toFixed(0)}, fetchStart=${sessionEntry.fetchStart.toFixed(0)}, requestStart=${sessionEntry.requestStart.toFixed(0)}, responseStart=${sessionEntry.responseStart.toFixed(0)}, responseEnd=${sessionEntry.responseEnd.toFixed(0)}, duration=${sessionEntry.duration.toFixed(0)}, stalled=${(sessionEntry.requestStart - sessionEntry.startTime).toFixed(0)}ms, ttfb=${(sessionEntry.responseStart - sessionEntry.requestStart).toFixed(0)}ms`);
+          }
+        }, 100);
       },
       error: (err) => {
+        const netDuration = performance.now() - t0;
+        this.perfLog('Sessions', `loadMoreSessions FAILED in ${netDuration.toFixed(1)}ms: ${err.message || err}`);
         console.error('Failed to load more sessions', err);
         this.loadingMoreSessions = false;
       }
@@ -1427,7 +1524,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.focusPromptInput();
   }
 
-  async loadSession(id: number) {
+  loadSession(id: number) {
     this.sessionLoadSub?.unsubscribe();
 
     this.lastSeenSeqNo = -1;
@@ -1451,36 +1548,43 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       this.hasEnteredWorkingPhase = state.hasEnteredWorkingPhase;
     }
 
-    this.debugService.log(`[Frontend] loadSession(${id}): hub state BEFORE await = ${this.hubConnection?.state ?? 'null'}`);
+    const joinSessionAsync = async () => {
+      this.debugService.log(`[Frontend] loadSession(${id}): hub state BEFORE await = ${this.hubConnection?.state ?? 'null'}`);
 
-    if (this.hubStartPromise) {
-      try {
-        await this.hubStartPromise;
-      } catch {
-        // Connection failed — proceed without SignalR
+      if (this.hubStartPromise) {
+        try {
+          await this.hubStartPromise;
+        } catch {
+          // Connection failed — proceed without SignalR
+        }
       }
-    }
 
-    this.debugService.log(`[Frontend] loadSession(${id}): hub state AFTER await = ${this.hubConnection?.state ?? 'null'}`);
+      this.debugService.log(`[Frontend] loadSession(${id}): hub state AFTER await = ${this.hubConnection?.state ?? 'null'}`);
 
-    if (this.hubConnection?.state === signalR.HubConnectionState.Connected) {
-      try {
-        await this.hubConnection.invoke("JoinSession", id);
-        this.debugService.log(`[Frontend] loadSession(${id}): JoinSession succeeded`);
-      } catch (err) {
-        this.debugService.log(`[Frontend] loadSession(${id}): JoinSession FAILED: ${err}`);
-        console.error('JoinSession failed:', err);
+      if (this.currentSessionId === id && this.hubConnection?.state === signalR.HubConnectionState.Connected) {
+        try {
+          await this.hubConnection.invoke("JoinSession", id);
+          this.debugService.log(`[Frontend] loadSession(${id}): JoinSession succeeded`);
+        } catch (err) {
+          this.debugService.log(`[Frontend] loadSession(${id}): JoinSession FAILED: ${err}`);
+          console.error('JoinSession failed:', err);
+        }
+      } else if (this.currentSessionId === id) {
+        this.debugService.log(`[Frontend] loadSession(${id}): JoinSession SKIPPED — hub not connected`);
       }
-    } else {
-      this.debugService.log(`[Frontend] loadSession(${id}): JoinSession SKIPPED — hub not connected`);
-    }
+    };
+    joinSessionAsync();
 
-    if (this.currentSessionId !== id) {
-      return;
-    }
-
+    const tSession0 = performance.now();
+    this.perfLog('SessionDetail', `loadSession(${id}) HTTP request dispatched`);
     this.sessionLoadSub = this.chatService.getSession(id).subscribe({
-      next: (s) => {
+      next: (httpResponse) => {
+        const netDuration = performance.now() - tSession0;
+        const s = httpResponse.body;
+        const serverTiming = httpResponse.headers.get('Server-Timing');
+        const timingLog = serverTiming ? ` | Server-Timing: ${serverTiming}` : '';
+        if (!s) return;
+
         if (s.isGnollHackSession) {
           this.chatService.hasGreeted = true;
         }
@@ -1514,6 +1618,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         const msgsWithTools = asstMsgs.filter(m => m.toolCalls && m.toolCalls.length > 0);
         const totalTools = asstMsgs.reduce((sum, m) => sum + (m.toolCalls?.length || 0), 0);
         this.debugService.log(`[Frontend] Session ${id} loaded: ${this.messages.length} messages, ${asstMsgs.length} assistant, ${msgsWithThinking.length} with thinking text, ${msgsWithTools.length} with tool calls (${totalTools} total tools). showThoughtsAndTools=${this.showThoughtsAndTools}`);
+        this.perfLog('SessionDetail', `loadSession(${id}) received ${this.messages.length} msgs in ${netDuration.toFixed(1)}ms${timingLog}`);
         this.currentStatusText = '';
         this.isGeneratingTitle = false;
         this.titleStatusText = '';
@@ -1546,8 +1651,12 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           const maxSeq = seqNos.length > 0 ? Math.max(...seqNos) : 'none';
           this.debugService.log(`[Frontend] Flushing ${this.liveEventBuffer.length} buffered live events (seqNo range: ${minSeq}–${maxSeq}, lastSeenSeqNo=${this.lastSeenSeqNo}).`);
           for (const evt of this.liveEventBuffer) {
+            if (evt.seqNo !== undefined && evt.seqNo !== null && evt.seqNo <= this.lastSeenSeqNo) {
+              continue;
+            }
             this.processChatEvent(evt);
           }
+          this.liveEventBuffer = [];
         } else {
           this.debugService.log(`[Frontend] No buffered live events to flush. lastSeenSeqNo=${this.lastSeenSeqNo}`);
         }
@@ -1576,6 +1685,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.forceWebViewRepaint();
       },
       error: (err) => {
+        const netDuration = performance.now() - tSession0;
+        this.perfLog('SessionDetail', `loadSession(${id}) FAILED in ${netDuration.toFixed(1)}ms: ${err.message || err}`);
         this.isLoadingSession = false;
         this.liveEventBuffer = [];
         console.warn(`Failed to load session ${id}. Bouncing to new chat.`, err);

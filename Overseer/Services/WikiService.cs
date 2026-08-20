@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Lucene.Net.Analysis.Standard;
 using Lucene.Net.Documents;
 using Lucene.Net.Index;
@@ -11,6 +12,7 @@ using System.IO;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using System;
 using System.Text.RegularExpressions;
 
@@ -20,27 +22,54 @@ public class WikiService : IDisposable
 {
     private readonly string _wikiPath;
     private readonly int _maxFileSizeKB;
+    private readonly ILogger<WikiService>? _logger;
     private readonly object _swapLock = new();
     private RAMDirectory? _directory;
     private DirectoryReader? _reader;
     private IndexSearcher? _searcher;
     private StandardAnalyzer? _analyzer;
     private Timer? _reindexTimer;
+    private string? _lastGitSha;
 
-    public WikiService(IConfiguration configuration)
+    public Task InitializationTask { get; private set; }
+    public bool IsIndexingComplete => InitializationTask?.IsCompleted ?? false;
+    
+    public WikiService(IConfiguration configuration, ILogger<WikiService>? logger = null)
     {
+        _logger = logger;
         _wikiPath = configuration["WikiPath"] ?? "c:\\wiki";
         _maxFileSizeKB = int.TryParse(configuration["MaxWikiFileSizeKB"], out var maxFileSize) ? maxFileSize : 100;
 
-        IndexWikiFiles();
+        InitializationTask = Task.Run(() => IndexWikiFiles());
         
-        // Re-index every 10 minutes
-        _reindexTimer = new Timer(_ => IndexWikiFiles(), null, TimeSpan.FromMinutes(10), TimeSpan.FromMinutes(10));
+        // Check for Git repository updates every 10 minutes
+        _reindexTimer = new Timer(CheckForUpdates, null, TimeSpan.FromMinutes(10), TimeSpan.FromMinutes(10));
+    }
+
+    private void CheckForUpdates(object? state)
+    {
+        try
+        {
+            if (!System.IO.Directory.Exists(_wikiPath)) return;
+
+            string? currentSha = GitHelper.GetGitHeadSha(_wikiPath);
+            if (!string.IsNullOrEmpty(currentSha) && currentSha != _lastGitSha)
+            {
+                _logger?.LogInformation("Wiki repository update detected ({OldSha} -> {NewSha}). Re-indexing.", _lastGitSha, currentSha);
+                Task.Run(() => IndexWikiFiles());
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Error checking for Wiki repository updates.");
+        }
     }
 
     private void IndexWikiFiles()
     {
         if (!System.IO.Directory.Exists(_wikiPath)) return;
+
+        _lastGitSha = GitHelper.GetGitHeadSha(_wikiPath);
 
         var files = System.IO.Directory.GetFiles(_wikiPath, "*.*", SearchOption.AllDirectories)
             .Where(f => f.EndsWith(".md", StringComparison.OrdinalIgnoreCase)

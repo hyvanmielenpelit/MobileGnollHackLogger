@@ -32,6 +32,11 @@ namespace Overseer.Services.Tools
 
         public Task<ToolResult> ExecuteAsync(JsonElement parameters, ToolExecutionContext context, CancellationToken cancellationToken)
         {
+            if (!_wikiService.IsIndexingComplete)
+            {
+                return Task.FromResult(new ToolResult { Success = false, ErrorMessage = ToolGuardMessages.WikiIndexingInProgress });
+            }
+
             string name = "";
             if (parameters.TryGetProperty("name", out var queryElem))
             {

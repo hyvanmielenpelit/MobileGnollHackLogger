@@ -77,6 +77,18 @@ namespace MobileGnollHackLogger.Data
                 .HasForeignKey(l => l.DismissedByUserId)
                 .HasPrincipalKey(u => u.Id);
 
+            modelBuilder.Entity<ChatSession>()
+                .HasIndex(s => new { s.AspNetUserId, s.LastMessageUtc })
+                .IsDescending(false, true)
+                .IncludeProperties(s => new { s.Title, s.IsGnollHackSession });
+
+            modelBuilder.Entity<ChatMessage>()
+                .HasIndex(m => new { m.ChatSessionId, m.TimestampUtc })
+                .IncludeProperties(m => new { m.Role, m.IsHidden, m.ModelUsed, m.ProviderUsed, m.TimeToFirstTokenMs });
+
+            modelBuilder.Entity<ChatMessageToolCall>()
+                .HasIndex(tc => new { tc.ChatMessageId, tc.SortOrder });
+
             modelBuilder.Entity<Bones>()
                 .Property(b => b.Created)
                 .HasDefaultValueSql("getutcdate()");

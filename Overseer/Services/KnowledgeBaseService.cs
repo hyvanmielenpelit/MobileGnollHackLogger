@@ -24,14 +24,39 @@ public class KnowledgeBaseService : IDisposable
     private readonly ILogger<KnowledgeBaseService> _logger;
     private readonly IConfiguration _configuration;
     private Timer? _reloadTimer;
+    private string? _lastGitSha;
 
+    public Task InitializationTask { get; private set; }
+    public bool IsIndexingComplete => InitializationTask?.IsCompleted ?? false;
+    
     public KnowledgeBaseService(ILogger<KnowledgeBaseService> logger, IConfiguration configuration)
     {
         _logger = logger;
         _configuration = configuration;
-        LoadArticles();
+        InitializationTask = Task.Run(() => LoadArticles());
         
-        _reloadTimer = new Timer(_ => LoadArticles(), null, TimeSpan.FromMinutes(10), TimeSpan.FromMinutes(10));
+        // Check for Git repository updates every 10 minutes
+        _reloadTimer = new Timer(CheckForUpdates, null, TimeSpan.FromMinutes(10), TimeSpan.FromMinutes(10));
+    }
+
+    private void CheckForUpdates(object? state)
+    {
+        try
+        {
+            var kbPath = _configuration["KbPath"];
+            if (string.IsNullOrWhiteSpace(kbPath) || !Directory.Exists(kbPath)) return;
+
+            string? currentSha = GitHelper.GetGitHeadSha(kbPath);
+            if (!string.IsNullOrEmpty(currentSha) && currentSha != _lastGitSha)
+            {
+                _logger.LogInformation("Knowledge Base repository update detected ({OldSha} -> {NewSha}). Reloading.", _lastGitSha, currentSha);
+                Task.Run(() => LoadArticles());
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error checking for Knowledge Base repository updates.");
+        }
     }
 
     private void LoadArticles()
@@ -44,6 +69,8 @@ public class KnowledgeBaseService : IDisposable
                 _logger.LogWarning("KnowledgeBase directory not configured (KbPath is empty).");
                 return;
             }
+
+            _lastGitSha = GitHelper.GetGitHeadSha(kbPath);
 
             var contentPath = Path.Combine(kbPath, "Content");
             if (!Directory.Exists(contentPath))

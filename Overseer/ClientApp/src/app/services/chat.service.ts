@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpResponse } from '@angular/common/http';
 
 export interface ChatSession {
   id: number;
@@ -48,6 +48,15 @@ export interface ChatSessionsResponse {
   hasMore: boolean;
 }
 
+export interface ChatSessionDetailResponse {
+  id: number;
+  title: string;
+  isGnollHackSession?: boolean;
+  messages: ChatMessage[];
+  hasOngoingGeneration?: boolean;
+  ongoingGeneration?: { events: ChatStreamEvent[] };
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -62,6 +71,7 @@ export class ChatService {
       url += `&take=${take}`;
     }
     return this.http.get<ChatSessionsResponse>(url, {
+      observe: 'response',
       headers: {
         'Cache-Control': 'no-cache',
         'Pragma': 'no-cache',
@@ -71,7 +81,8 @@ export class ChatService {
   }
 
   getSession(id: number) {
-    return this.http.get<{ id: number, title: string, isGnollHackSession?: boolean, messages: ChatMessage[], hasOngoingGeneration?: boolean, ongoingGeneration?: { events: ChatStreamEvent[] } }>(`/api/chat/sessions/${id}`, {
+    return this.http.get<ChatSessionDetailResponse>(`/api/chat/sessions/${id}`, {
+      observe: 'response',
       headers: {
         'Cache-Control': 'no-cache',
         'Pragma': 'no-cache',

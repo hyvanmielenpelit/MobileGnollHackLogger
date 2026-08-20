@@ -50,6 +50,9 @@ namespace Overseer.Services
         };
         private Dictionary<string, DateTime> _lastMakedefsSourceTimestamps = new();
         private readonly int _maxFunctionBodyLines;
+        private volatile bool _isIndexingComplete = false;
+
+        public bool IsIndexingComplete => _isIndexingComplete;
         
         public SourceCodeService(IConfiguration configuration, ILogger<SourceCodeService> logger)
         {
@@ -70,6 +73,7 @@ namespace Overseer.Services
             LoadFlagDescriptions();
             RegenerateHeaders(force: true);
             IndexRepository();
+            _isIndexingComplete = true;
             
             // Check for changes every 10 minutes
             _reindexTimer = new Timer(CheckForUpdates, null, TimeSpan.FromMinutes(10), TimeSpan.FromMinutes(10));
@@ -119,22 +123,12 @@ namespace Overseer.Services
             {
                 if (!Directory.Exists(_sourceCodePath)) return;
                 
-                string gitHeadPath = Path.Combine(_sourceCodePath, ".git", "refs", "heads", "master");
-                if (!File.Exists(gitHeadPath))
+                string? currentSha = GitHelper.GetGitHeadSha(_sourceCodePath);
+                if (!string.IsNullOrEmpty(currentSha) && currentSha != _lastHeadSha)
                 {
-                    // Fallback to packed-refs or FETCH_HEAD if we can't find master ref easily
-                    gitHeadPath = Path.Combine(_sourceCodePath, ".git", "FETCH_HEAD");
-                }
-                
-                if (File.Exists(gitHeadPath))
-                {
-                    string currentSha = File.ReadAllText(gitHeadPath).Trim();
-                    if (!string.IsNullOrEmpty(currentSha) && currentSha != _lastHeadSha)
-                    {
-                        _logger.LogInformation("Repository update detected ({OldSha} -> {NewSha}). Re-indexing.", _lastHeadSha, currentSha);
-                        RegenerateHeaders();
-                        IndexRepository();
-                    }
+                    _logger.LogInformation("Repository update detected ({OldSha} -> {NewSha}). Re-indexing.", _lastHeadSha, currentSha);
+                    RegenerateHeaders();
+                    IndexRepository();
                 }
             }
             catch (Exception ex)
@@ -180,20 +174,12 @@ namespace Overseer.Services
                 string? allowedBranch = _configuration["MakedefsBranch"];
                 if (!string.IsNullOrEmpty(allowedBranch))
                 {
-                    // Read the current branch from .git/HEAD (e.g., "ref: refs/heads/master")
-                    string gitHeadFile = Path.Combine(_sourceCodePath, ".git", "HEAD");
-                    if (File.Exists(gitHeadFile))
+                    string currentBranch = GitHelper.GetCurrentBranch(_sourceCodePath);
+                    if (!string.Equals(currentBranch, allowedBranch, StringComparison.OrdinalIgnoreCase))
                     {
-                        string headContent = File.ReadAllText(gitHeadFile).Trim();
-                        string currentBranch = headContent.StartsWith("ref: refs/heads/")
-                            ? headContent.Substring("ref: refs/heads/".Length)
-                            : "";
-                        if (!string.Equals(currentBranch, allowedBranch, StringComparison.OrdinalIgnoreCase))
-                        {
-                            _logger.LogInformation("Skipping makedefs: current branch '{Current}' != allowed '{Allowed}'",
-                                currentBranch, allowedBranch);
-                            return;
-                        }
+                        _logger.LogInformation("Skipping makedefs: current branch '{Current}' != allowed '{Allowed}'",
+                            currentBranch, allowedBranch);
+                        return;
                     }
                 }
 
@@ -418,12 +404,7 @@ namespace Overseer.Services
                 }
                 
                 // Update SHA
-                string gitHeadPath = Path.Combine(_sourceCodePath, ".git", "refs", "heads", "master");
-                if (!File.Exists(gitHeadPath)) gitHeadPath = Path.Combine(_sourceCodePath, ".git", "FETCH_HEAD");
-                if (File.Exists(gitHeadPath))
-                {
-                    _lastHeadSha = File.ReadAllText(gitHeadPath).Trim();
-                }
+                _lastHeadSha = GitHelper.GetGitHeadSha(_sourceCodePath) ?? string.Empty;
 
                 // 2. Parse game data via GameDataParser
                 try
