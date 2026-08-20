@@ -88,6 +88,7 @@ builder.Services.AddHttpClient("SentryTunnel", client =>
     client.Timeout = TimeSpan.FromSeconds(15);
 });
 builder.Services.AddSingleton<WikiService>();
+builder.Services.AddSingleton<NetHackWikiService>();
 builder.Services.AddSingleton<SourceCodeService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<SourceCodeService>());
 
@@ -114,8 +115,8 @@ builder.Services.AddSingleton<Overseer.Services.KnowledgeBaseService>();
 builder.Services.AddSingleton<Overseer.Services.Tools.ToolExecutor>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.KnowledgeBaseTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.WikiSearchTool>();
-// Obsolete: NetHackWikiSearchTool is disabled due to Cloudflare WAF bot blocking on nethackwiki.com.
-// builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.NetHackWikiSearchTool>();
+builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.NetHackWikiSearchTool>();
+builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.NetHackWikiViewTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.MonsterLookupTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.ItemLookupTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.GetFullMessageHistoryTool>();

@@ -98,6 +98,9 @@ To find specific popups, look in the corresponding component's `.html` template:
   - `#reportConfirmDialog`: Report Confirm
   - `#logoutDialog`: Logout
 
+- **Admin Alerts Component (`admin-alerts.component.html`)**
+  - `#popoverContainer`: System alert popover banner displaying missing configuration warnings from `AdminAlertService` (`/api/admin/system-alerts`) to admin users.
+
 - **Models Component (`models.component.html`)**
   - `#modelPickerDialog`: Model Picker
   - `#editModelDialog`: Edit Model

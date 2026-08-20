@@ -25,7 +25,15 @@ public class ConfigHealthService
             });
         }
 
-        // Add future configuration checks here...
+        if (string.IsNullOrWhiteSpace(_configuration["NetHackWikiPath"]))
+        {
+            alerts.Add(new SystemAlert
+            {
+                Id = "nethack-wiki-path-missing",
+                Type = "warning",
+                Message = "NetHack Wiki path is not configured. Set NetHackWikiPath in configuration settings."
+            });
+        }
 
         return alerts;
     }
