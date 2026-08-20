@@ -767,15 +767,37 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
   border-radius: 6px;
   padding: 8px 12px;
   font-family: monospace;
+  overflow: hidden; /* Hard clip — prevents any child from pushing message-box wider */
 }
 .tool-call-header {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0; /* Allow flex children to shrink below intrinsic min-content */
 }
-.tool-icon { font-size: 14px; }
-.tool-name { font-weight: bold; color: var(--primary-color); }
-.tool-status { margin-inline-start: auto; display: flex; align-items: center; }
+.tool-icon {
+  font-size: 14px;
+  flex-shrink: 0; /* Keep icon fully visible */
+}
+.tool-name {
+  font-weight: bold;
+  color: var(--primary-color);
+  flex-shrink: 0; /* Keep name fully visible */
+}
+.tool-args {
+  color: #888;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0; /* Required for text-overflow to work inside a flex child */
+}
+.tool-status {
+  margin-inline-start: auto;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0; /* Keep status icon fully visible */
+}
 
 .tool-call-result {
   margin-block-start: 8px;
