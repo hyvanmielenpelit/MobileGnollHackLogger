@@ -111,6 +111,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   @ViewChild('renameInput') renameInput!: ElementRef<HTMLInputElement>;
   @ViewChild('logoutDialog') logoutDialog!: ElementRef<HTMLDialogElement>;
   autoScrollEnabled = true;
+  readonly STREAMING_SCROLL_OFFSET = 50;
 
   private hubConnection: signalR.HubConnection | null = null;
   private hubStartPromise: Promise<void> | null = null;
@@ -577,7 +578,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     
     let clampedScrollTop = targetScrollTop;
     if (streamingEl && this.isStreaming) {
-      clampedScrollTop = Math.min(targetScrollTop, Math.max(0, (streamingEl as HTMLElement).offsetTop - 20));
+      clampedScrollTop = Math.min(targetScrollTop, Math.max(0, (streamingEl as HTMLElement).offsetTop - this.STREAMING_SCROLL_OFFSET));
     }
     
     // Re-engage auto-scroll if user manually scrolls back to the target position
@@ -641,7 +642,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     
     let finalScrollTop = targetScrollTop;
     if (streamingEl && this.isStreaming) {
-      const maxScroll = Math.max(0, (streamingEl as HTMLElement).offsetTop - 20);
+      const maxScroll = Math.max(0, (streamingEl as HTMLElement).offsetTop - this.STREAMING_SCROLL_OFFSET);
       finalScrollTop = Math.min(targetScrollTop, maxScroll);
     }
     
