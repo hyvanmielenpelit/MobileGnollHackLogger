@@ -1,4 +1,4 @@
-﻿
+
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 18
 VisualStudioVersion = 18.8.12023.21
@@ -11,6 +11,21 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		.gitignore = .gitignore
 		LICENSE = LICENSE
 		README.md = README.md
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{E2A8F93A-5E7A-483A-BAA6-68A6B8B7A4C1}"
+	ProjectSection(SolutionItems) = preProject
+		docs\README.md = docs\README.md
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "overseer", "overseer", "{A1B2C3D4-E5F6-4A7B-8C9D-0E1F2A3B4C5D}"
+	ProjectSection(SolutionItems) = preProject
+		docs\overseer\adding-ai-models.md = docs\overseer\adding-ai-models.md
+		docs\overseer\ai-changelog.md = docs\overseer\ai-changelog.md
+		docs\overseer\changelog-guide.md = docs\overseer\changelog-guide.md
+		docs\overseer\commands.md = docs\overseer\commands.md
+		docs\overseer\release-checklist.md = docs\overseer\release-checklist.md
+		docs\overseer\sentry-sourcemaps.md = docs\overseer\sentry-sourcemaps.md
 	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GnollHackServer.Data", "GnollHackServer.Data\GnollHackServer.Data.csproj", "{E5A945EF-09A3-44F6-9720-771CAE3B6E70}"
@@ -80,6 +95,9 @@ Global
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{A1B2C3D4-E5F6-4A7B-8C9D-0E1F2A3B4C5D} = {E2A8F93A-5E7A-483A-BAA6-68A6B8B7A4C1}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {FB2A9960-560F-449F-983C-EE573D5134B3}
