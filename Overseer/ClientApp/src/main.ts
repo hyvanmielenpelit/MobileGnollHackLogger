@@ -19,6 +19,8 @@ Sentry.init({
   tunnel: '/api/sentry/log',
   transport: (options) => Sentry.makeFetchTransport(options, sentryFetchWithCredentials),
   release: packageJson.version, // Automatically matches package.json and MSBuild SyncAngularVersion
+  integrations: (integrations) => integrations.filter(i => i.name !== 'BrowserSession'),
+  sendClientReports: false,
   beforeSend(event: Sentry.ErrorEvent, hint: Sentry.EventHint) {
     const error = hint.originalException;
     // Drop ALL HttpErrorResponse instances:

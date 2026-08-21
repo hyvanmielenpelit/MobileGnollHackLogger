@@ -48,11 +48,18 @@ public class AuthController : ControllerBase
     }
 
     [HttpGet("me")]
-    [Authorize]
     public async Task<IActionResult> Me([FromServices] ApplicationDbContext dbContext, [FromServices] IConfiguration configuration)
     {
+        if (User.Identity?.IsAuthenticated != true)
+        {
+            return Ok(null);
+        }
+
         var user = await _userManager.GetUserAsync(User);
-        if (user == null) return Unauthorized();
+        if (user == null)
+        {
+            return Ok(null);
+        }
 
         bool hasApiKey = dbContext.UserAiApiKeys.Any(k => k.AspNetUserId == user.Id && !string.IsNullOrEmpty(k.EncryptedApiKey));
         bool isAdmin = configuration.IsAdmin(user.UserName);
