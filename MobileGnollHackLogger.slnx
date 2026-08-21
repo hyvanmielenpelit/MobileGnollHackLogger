@@ -1,0 +1,23 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path=".gitattributes" />
+    <File Path=".gitignore" />
+    <File Path="LICENSE" />
+    <File Path="README.md" />
+  </Folder>
+  <Folder Name="/docs/">
+    <File Path="docs/README.md" />
+  </Folder>
+  <Folder Name="/docs/overseer/">
+    <File Path="docs/overseer/adding-ai-models.md" />
+    <File Path="docs/overseer/ai-changelog.md" />
+    <File Path="docs/overseer/changelog-guide.md" />
+    <File Path="docs/overseer/commands.md" />
+    <File Path="docs/overseer/release-checklist.md" />
+    <File Path="docs/overseer/sentry-sourcemaps.md" />
+  </Folder>
+  <Project Path="GnollHackServer.Data/GnollHackServer.Data.csproj" />
+  <Project Path="MobileGnollHackLogger/MobileGnollHackLogger.csproj" />
+  <Project Path="Overseer/Overseer.csproj" />
+  <Project Path="Overseer.Tests/Overseer.Tests.csproj" />
+</Solution>
