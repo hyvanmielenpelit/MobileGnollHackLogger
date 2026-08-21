@@ -59,36 +59,21 @@ Read the target version number:
 
 ---
 
-## Step 3: Build Angular Production Application
+## Step 3: Verify Build Artifacts & Ensure Debug IDs Injected
 
-Execute the production build to generate minified bundles and hidden `.map` files in `Overseer/wwwroot`:
-
-- **Working Directory:** `Overseer/ClientApp`
-- **Command:**
-  ```bash
-  npx ng build --configuration production
-  ```
-  *(Alternatively: `npm run build -- --configuration=production`)*
-
-Verify that the build completes successfully (exit code 0) and that `.js` and `.map` files are generated in `Overseer/wwwroot`.
-
----
-
-## Step 4: Inject Debug IDs
-
-Inject unique Debug IDs into the generated `.js` and `.map` files in `wwwroot`. This ensures Sentry can reliably match stack traces to source maps regardless of file hashing:
-
-- **Working Directory:** `Overseer/ClientApp`
-- **Command:**
-  ```bash
-  npx sentry-cli sourcemaps inject ../wwwroot
-  ```
-
-Verify that `sentry-cli` reports debug IDs successfully injected.
+Check if `Overseer/wwwroot` contains production bundle files (`.js` and `.map`):
+- If `Overseer/wwwroot` already contains files (e.g., generated during `dotnet publish` or a previous production build), do **NOT** rebuild with `ng build` to avoid changing bundle hashes and invalidating published binaries.
+- Ensure Debug IDs are injected:
+  - **Working Directory:** `Overseer/ClientApp`
+  - **Command:**
+    ```bash
+    npx sentry-cli sourcemaps inject ../wwwroot
+    ```
+- *(If `Overseer/wwwroot` is empty or missing, run `npx ng build --configuration production` followed by `npx sentry-cli sourcemaps inject ../wwwroot`).*
 
 ---
 
-## Step 5: Upload Source Maps to Sentry
+## Step 4: Upload Source Maps to Sentry
 
 Upload the source maps and bundle assets from `wwwroot` to Sentry under the specified release version:
 
@@ -101,7 +86,7 @@ Upload the source maps and bundle assets from `wwwroot` to Sentry under the spec
 
 ---
 
-## Step 6: Verify & Report Results
+## Step 5: Verify & Report Results
 
 1. Check the output of `sentry-cli` for upload confirmation, including:
    - Organization and project name

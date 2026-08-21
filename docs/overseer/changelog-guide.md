@@ -1,6 +1,6 @@
 # Changelog Guide
 
-This document explains how to manually add or edit entries in `Data/release-notes.json`, the data file that powers the Overseer's in-app changelog.
+This document explains how to manually add or edit entries in `Overseer/Data/release-notes.json`, the data file that powers the Overseer's in-app changelog.
 
 ## File Location
 
@@ -123,7 +123,11 @@ The changelog link in the chat sidebar displays a yellow star animation when a n
 
 ## AI-Generated Changelogs
 
-For instructions on how to use a Local AI Agent to generate changelog entries automatically, please see the [AI Changelog Generation Guide](AI_CHANGELOG.md).
+For instructions on how to use a Local AI Agent to generate changelog entries automatically, please see the [AI Changelog Generation Guide](ai-changelog.md).
+
+## Release Workflow
+
+For the complete step-by-step release process, refer to the [Release Checklist](release-checklist.md).
 
 ## Configuration
 

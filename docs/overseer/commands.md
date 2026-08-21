@@ -13,6 +13,7 @@ This guide provides a comprehensive reference of all command-line operations use
 | **Run Backend Unit & Integration Tests** | `Overseer.Tests/` | `dotnet test --filter "Category!=UsesExternalApi"` |
 | **Build Frontend (Production)** | `Overseer/ClientApp/` | `npm run build` |
 | **Build Backend** | `Overseer/` | `dotnet build` |
+| **Release Application** | Root | *(See [release-checklist.md](release-checklist.md))* |
 
 ---
 
@@ -83,7 +84,7 @@ npx sentry-cli sourcemaps inject ../wwwroot
 # Upload sourcemaps to Sentry for a specific release version
 npx sentry-cli sourcemaps upload --release <version> ../wwwroot
 ```
-*(Refer to [SENTRY_SOURCEMAPS_GUIDE.md](file:///c:/hmp/MobileGnollHackLogger/Overseer/SENTRY_SOURCEMAPS_GUIDE.md) for full instructions).*
+*(Refer to [sentry-sourcemaps.md](sentry-sourcemaps.md) for full instructions).*
 
 ---
 

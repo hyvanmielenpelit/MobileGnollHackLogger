@@ -71,10 +71,25 @@ The automated test suite for the Overseer project, containing unit tests and int
 | **Email** | Azure Communication Services |
 | **Styling** | SCSS (compiled to CSS) with Bootstrap |
 
+## 📚 Documentation
+
+Comprehensive developer guides, command references, release checklists, and architectural documentation are centralized in the [`docs/`](docs/README.md) directory:
+
+- 📋 [**Overseer Release Checklist**](docs/overseer/release-checklist.md) — Step-by-step checklist with exact terminal commands for cutting an Overseer release.
+- ⚡ [**Overseer Commands Reference**](docs/overseer/commands.md) — Comprehensive reference of CLI commands for frontend, backend, test suites, and database migrations.
+- 📝 [**Changelog Guide**](docs/overseer/changelog-guide.md) & [**AI Changelog Generation**](docs/overseer/ai-changelog.md) — Schema and AI workflows for maintaining in-app release notes.
+- 🗺️ [**Sentry Source Maps Guide**](docs/overseer/sentry-sourcemaps.md) — Angular source map generation, Debug ID injection, and Sentry upload procedures.
+- 🤖 [**Adding AI Models**](docs/overseer/adding-ai-models.md) — Guide for adding new LLM models to Overseer catalogs.
+- 📖 [**Full Documentation Index**](docs/README.md) — Complete overview of all repository guides and resources.
+
 ## Repository Structure
 
 ```
 MobileGnollHackLogger/          # Solution root
+├── docs/                       # Central repository documentation
+│   ├── README.md               #   Master documentation index
+│   ├── overseer/               #   Overseer guides (commands, release, changelog, sentry)
+│   └── account/                #   GnollHack Account guides
 ├── MobileGnollHackLogger/      # GnollHack Account web app (Razor Pages)
 │   ├── Pages/                  #   Razor pages (Index, TopScores, RecentGames, Statistics, etc.)
 │   ├── Areas/                  #   ASP.NET Identity UI area

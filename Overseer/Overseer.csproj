@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -37,6 +37,7 @@
   <Target Name="PublishAngular" BeforeTargets="ComputeFilesToPublish">
     <Exec WorkingDirectory="ClientApp" Command="npm ci" />
     <Exec WorkingDirectory="ClientApp" Command="npx ng build --configuration production" />
+    <Exec WorkingDirectory="ClientApp" Command="npx sentry-cli sourcemaps inject ../wwwroot" IgnoreExitCode="true" />
     <ItemGroup>
       <DistFiles Include="wwwroot\**" Exclude="wwwroot\**\*.map" />
       <ResolvedFileToPublish Include="@(DistFiles->'%(FullPath)')" Exclude="@(ResolvedFileToPublish)">

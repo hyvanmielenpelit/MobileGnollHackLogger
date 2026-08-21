@@ -46,6 +46,8 @@ When making changes to database models that require EF Core migrations, you MUST
 
 | Area | Location |
 |------|----------|
+| Repository Documentation | `docs/` |
+| Overseer Developer Documentation | `docs/overseer/` |
 | Razor Pages | `MobileGnollHackLogger/Pages/` |
 | Stylesheets (SCSS) | `MobileGnollHackLogger/wwwroot/css/site2.scss` |
 | Generated Stylesheets (CSS) | `MobileGnollHackLogger/wwwroot/css/site2.css` & `site2.min.css` |

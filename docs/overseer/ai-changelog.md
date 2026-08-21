@@ -19,4 +19,7 @@ The agent utilizes the dedicated `overseer_changelog` AI skill to analyze local 
    - `git push`
    - `git push origin overseer/v1.0.3`
 
-*For detailed instructions on the JSON schema and rules, refer to [CHANGELOG_GUIDE.md](CHANGELOG_GUIDE.md).*
+## Related Guides
+
+- [changelog-guide.md](changelog-guide.md) — Detailed instructions on the JSON schema, change types, and manual editing rules.
+- [release-checklist.md](release-checklist.md) — Complete release workflow checklist.
