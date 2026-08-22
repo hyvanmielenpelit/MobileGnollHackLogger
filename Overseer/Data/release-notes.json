@@ -1,5 +1,28 @@
 [
   {
+    "version": "1.0.23",
+    "date": "2026-08-22T17:23:00Z",
+    "summary": "Added NetHack source code search and file inspection capabilities, improved client-side error handling for network disconnections, and fixed markdown table formatting issues.",
+    "changes": [
+      {
+        "type": "feature",
+        "text": "Added NetHack source code search, definition lookup, constant queries, and file viewing tools to inspect NetHack C code alongside GnollHack."
+      },
+      {
+        "type": "improvement",
+        "text": "Added clear NetHack repository labels to tool execution headers in the chat view when querying NetHack source code."
+      },
+      {
+        "type": "improvement",
+        "text": "Improved client-side network error handling across all views and prevented transient connection dropouts from generating false crash reports."
+      },
+      {
+        "type": "fix",
+        "text": "Fixed markdown table formatting breaking when table cells contain numeric colons or squished sentences."
+      }
+    ]
+  },
+  {
     "version": "1.0.22",
     "date": "2026-08-22T13:00:00Z",
     "summary": "Added chat session pinning, search, and Trash bin recovery, introduced automated database retention and storage maintenance, added total response duration to AI messages, and upgraded confirmation dialogs.",
