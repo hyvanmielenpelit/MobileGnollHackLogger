@@ -1,5 +1,44 @@
 [
   {
+    "version": "1.0.22",
+    "date": "2026-08-22T13:00:00Z",
+    "summary": "Added chat session pinning, search, and Trash bin recovery, introduced automated database retention and storage maintenance, added total response duration to AI messages, and upgraded confirmation dialogs.",
+    "changes": [
+      {
+        "type": "feature",
+        "text": "Added chat session pinning to keep important conversations anchored at the top of the sidebar."
+      },
+      {
+        "type": "feature",
+        "text": "Added search functionality to quickly find chat sessions in the sidebar and search through deleted sessions in the Trash modal."
+      },
+      {
+        "type": "feature",
+        "text": "Added a Trash bin for soft-deleted chat sessions with the ability to restore conversations or permanently empty trash."
+      },
+      {
+        "type": "feature",
+        "text": "Added an Admin database storage dashboard and automated background maintenance service for data retention, session purging, tool call pruning, and orphaned attachment cleanup."
+      },
+      {
+        "type": "feature",
+        "text": "Added total response duration timing to AI chat messages alongside Time to First Token (TTFT)."
+      },
+      {
+        "type": "improvement",
+        "text": "Replaced browser-native confirmation prompts with modern in-app modal dialogs across Settings, API Keys, and Admin views."
+      },
+      {
+        "type": "improvement",
+        "text": "Added progress modals and toast notification feedback for administrative operations and maintenance tasks."
+      },
+      {
+        "type": "fix",
+        "text": "Fixed unauthenticated requests returning 401 Unauthorized status codes when logged out."
+      }
+    ]
+  },
+  {
     "version": "1.0.21",
     "date": "2026-08-20T20:07:00Z",
     "summary": "Added local NetHack Wiki search and view tools, improved background indexing and database performance, and fixed chat layout and scrolling issues.",
