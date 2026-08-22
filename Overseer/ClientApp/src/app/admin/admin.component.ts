@@ -136,7 +136,10 @@ export class AdminComponent implements OnInit, OnDestroy {
   analyticsConfigName: string = '';
 
   // Generic Confirm State
+  confirmTitle?: string;
   confirmMessage: string = '';
+  confirmButtonText?: string;
+  confirmButtonClass?: string;
   confirmAction: (() => void) | null = null;
   editingConfig: Partial<SystemAiConfigDto> | null = null;
   isNewConfig = false;
@@ -326,14 +329,18 @@ export class AdminComponent implements OnInit, OnDestroy {
   }
 
   deleteGroup(group: GroupDto) {
-    this.confirmMessage = `Are you sure you want to delete group ${group.displayName}?`;
-    this.confirmAction = () => {
-      this.adminService.deleteGroup(group.id).subscribe(() => {
-        this.groups = this.groups.filter(g => g.id !== group.id);
-        this.loadUsers(); // Reload users to update their groups correctly
-      });
-    };
-    this.confirmDialog.nativeElement.showModal();
+    this.openConfirmationModal(
+      'Delete Group',
+      `Are you sure you want to delete group ${group.displayName}?`,
+      () => {
+        this.adminService.deleteGroup(group.id).subscribe(() => {
+          this.groups = this.groups.filter(g => g.id !== group.id);
+          this.loadUsers(); // Reload users to update their groups correctly
+        });
+      },
+      'Delete',
+      'btn-gh btn-gh-delete'
+    );
   }
 
   // --- Configs ---
@@ -397,13 +404,17 @@ export class AdminComponent implements OnInit, OnDestroy {
   }
 
   deleteConfig(config: SystemAiConfigDto) {
-    this.confirmMessage = `Are you sure you want to delete config ${config.displayName}?`;
-    this.confirmAction = () => {
-      this.adminService.deleteSystemConfig(config.id).subscribe(() => {
-        this.configs = this.configs.filter(c => c.id !== config.id);
-      });
-    };
-    this.confirmDialog.nativeElement.showModal();
+    this.openConfirmationModal(
+      'Delete Config',
+      `Are you sure you want to delete config ${config.displayName}?`,
+      () => {
+        this.adminService.deleteSystemConfig(config.id).subscribe(() => {
+          this.configs = this.configs.filter(c => c.id !== config.id);
+        });
+      },
+      'Delete',
+      'btn-gh btn-gh-delete'
+    );
   }
 
   selectedConfigForLimits: any = null;
@@ -481,29 +492,45 @@ export class AdminComponent implements OnInit, OnDestroy {
   }
 
   resetSingleCounter(counterName: string, backendCounterName: string) {
-    this.confirmMessage = `Are you sure you want to reset the counter?`;
-    this.confirmAction = () => {
-      let req;
-      if (this.limitContext === 'system') req = this.adminService.resetSystemConfig(this.limitEntityId, backendCounterName);
-      else if (this.limitContext === 'user') req = this.adminService.resetUserSystemConfig(this.limitEntityId, backendCounterName);
-      else req = this.adminService.resetGroupSystemConfig(this.limitEntityId, backendCounterName);
+    this.openConfirmationModal(
+      'Reset Counter',
+      `Are you sure you want to reset the counter?`,
+      () => {
+        let req;
+        if (this.limitContext === 'system') req = this.adminService.resetSystemConfig(this.limitEntityId, backendCounterName);
+        else if (this.limitContext === 'user') req = this.adminService.resetUserSystemConfig(this.limitEntityId, backendCounterName);
+        else req = this.adminService.resetGroupSystemConfig(this.limitEntityId, backendCounterName);
 
-      req.subscribe({
-        next: () => {
-          if (this.selectedConfigForLimits) {
-            this.selectedConfigForLimits[counterName] = 0;
-          }
-        },
-        error: (err) => console.error("Failed to reset counter", err)
-      });
-    };
-    this.confirmDialog.nativeElement.showModal();
+        req.subscribe({
+          next: () => {
+            if (this.selectedConfigForLimits) {
+              this.selectedConfigForLimits[counterName] = 0;
+            }
+          },
+          error: (err) => console.error("Failed to reset counter", err)
+        });
+      },
+      'Reset',
+      'btn-gh btn-gh-delete'
+    );
   }
 
   // --- Confirm Dialog ---
+  openConfirmationModal(title: string, message: string, action: () => void, btnText = 'Confirm', btnClass = 'btn-gh btn-gh-delete') {
+    this.confirmTitle = title;
+    this.confirmMessage = message;
+    this.confirmAction = action;
+    this.confirmButtonText = btnText;
+    this.confirmButtonClass = btnClass;
+    this.confirmDialog.nativeElement.showModal();
+  }
+
   closeConfirmDialog() {
     this.confirmDialog.nativeElement.close();
     this.confirmAction = null;
+    this.confirmTitle = undefined;
+    this.confirmButtonText = undefined;
+    this.confirmButtonClass = undefined;
   }
 
   executeConfirmAction() {
@@ -878,95 +905,121 @@ export class AdminComponent implements OnInit, OnDestroy {
   }
 
   runFullMaintenance() {
-    if (!this.maintenanceDryRun && !confirm('Are you sure you want to run the full maintenance pass? Expired soft-deleted chats and aged tool calls will be permanently modified.')) {
-      return;
-    }
-    this.maintenanceLoading = true;
-    this.dbActionMessage = null;
-    this.lastMaintenanceResult = null;
+    const execute = () => {
+      this.maintenanceLoading = true;
+      this.dbActionMessage = null;
+      this.lastMaintenanceResult = null;
 
-    this.adminService.runMaintenanceNow({
-      dryRun: this.maintenanceDryRun,
-      inactivityDays: this.inactivityDays,
-      toolCallPruneDays: this.toolCallPruneDays
-    }).subscribe({
-      next: (res) => {
-        this.maintenanceLoading = false;
-        this.lastMaintenanceResult = res;
-        this.dbActionMessage = res.isDryRun ? 'Dry run completed successfully.' : 'Full maintenance pass executed successfully.';
-        this.dbActionMessageType = 'success';
-        this.loadStorageMetrics();
-      },
-      error: (err) => {
-        this.maintenanceLoading = false;
-        this.dbActionMessage = 'Failed to execute maintenance pass: ' + (err.error?.message || err.message);
-        this.dbActionMessageType = 'error';
-      }
-    });
+      this.adminService.runMaintenanceNow({
+        dryRun: this.maintenanceDryRun,
+        inactivityDays: this.inactivityDays,
+        toolCallPruneDays: this.toolCallPruneDays
+      }).subscribe({
+        next: (res) => {
+          this.maintenanceLoading = false;
+          this.lastMaintenanceResult = res;
+          this.dbActionMessage = res.isDryRun ? 'Dry run completed successfully.' : 'Full maintenance pass executed successfully.';
+          this.dbActionMessageType = 'success';
+          this.loadStorageMetrics();
+        },
+        error: (err) => {
+          this.maintenanceLoading = false;
+          this.dbActionMessage = 'Failed to execute maintenance pass: ' + (err.error?.message || err.message);
+          this.dbActionMessageType = 'error';
+        }
+      });
+    };
+
+    if (!this.maintenanceDryRun) {
+      this.openConfirmationModal(
+        'Run Scheduled Maintenance Pass',
+        'Are you sure you want to run the full maintenance pass? Expired soft-deleted chats and aged tool calls will be permanently modified.',
+        execute,
+        'Execute Maintenance',
+        'btn-gh btn-primary'
+      );
+    } else {
+      execute();
+    }
   }
 
   purgeAllTrash() {
-    if (!confirm('Are you sure you want to immediately delete ALL soft-deleted sessions across all users? This cannot be undone.')) {
-      return;
-    }
-    this.maintenanceLoading = true;
-    this.dbActionMessage = null;
-    this.adminService.purgeTrashNow({ dryRun: false }).subscribe({
-      next: (res) => {
-        this.maintenanceLoading = false;
-        this.lastMaintenanceResult = res;
-        this.dbActionMessage = `Purged ${res.purgedSessionCount} sessions and ${res.deletedDiskFolderCount} disk folders.`;
-        this.dbActionMessageType = 'success';
-        this.loadStorageMetrics();
+    this.openConfirmationModal(
+      'Purge All Trash Now',
+      'Are you sure you want to immediately delete ALL soft-deleted sessions across all users? This action cannot be undone.',
+      () => {
+        this.maintenanceLoading = true;
+        this.dbActionMessage = null;
+        this.adminService.purgeTrashNow({ dryRun: false }).subscribe({
+          next: (res) => {
+            this.maintenanceLoading = false;
+            this.lastMaintenanceResult = res;
+            this.dbActionMessage = `Purged ${res.purgedSessionCount} sessions and ${res.deletedDiskFolderCount} disk folders.`;
+            this.dbActionMessageType = 'success';
+            this.loadStorageMetrics();
+          },
+          error: (err) => {
+            this.maintenanceLoading = false;
+            this.dbActionMessage = 'Failed to purge trash: ' + (err.error?.message || err.message);
+            this.dbActionMessageType = 'error';
+          }
+        });
       },
-      error: (err) => {
-        this.maintenanceLoading = false;
-        this.dbActionMessage = 'Failed to purge trash: ' + (err.error?.message || err.message);
-        this.dbActionMessageType = 'error';
-      }
-    });
+      'Purge All Trash',
+      'btn-gh btn-gh-delete'
+    );
   }
 
   purgeInactiveNow() {
-    if (!confirm(`Are you sure you want to soft-delete inactive sessions older than ${this.inactivityDays} days?`)) {
-      return;
-    }
-    this.maintenanceLoading = true;
-    this.dbActionMessage = null;
-    this.adminService.purgeInactive({ inactivityDays: this.inactivityDays, dryRun: false }).subscribe({
-      next: (res) => {
-        this.maintenanceLoading = false;
-        this.dbActionMessage = res.message;
-        this.dbActionMessageType = 'success';
-        this.loadStorageMetrics();
+    this.openConfirmationModal(
+      'Purge Inactive Sessions',
+      `Are you sure you want to soft-delete inactive sessions older than ${this.inactivityDays} days?`,
+      () => {
+        this.maintenanceLoading = true;
+        this.dbActionMessage = null;
+        this.adminService.purgeInactive({ inactivityDays: this.inactivityDays, dryRun: false }).subscribe({
+          next: (res) => {
+            this.maintenanceLoading = false;
+            this.dbActionMessage = res.message;
+            this.dbActionMessageType = 'success';
+            this.loadStorageMetrics();
+          },
+          error: (err) => {
+            this.maintenanceLoading = false;
+            this.dbActionMessage = 'Failed to purge inactive sessions: ' + (err.error?.message || err.message);
+            this.dbActionMessageType = 'error';
+          }
+        });
       },
-      error: (err) => {
-        this.maintenanceLoading = false;
-        this.dbActionMessage = 'Failed to purge inactive sessions: ' + (err.error?.message || err.message);
-        this.dbActionMessageType = 'error';
-      }
-    });
+      'Soft-Delete Inactive',
+      'btn-gh btn-secondary'
+    );
   }
 
   pruneToolResultsNow() {
-    if (!confirm(`Are you sure you want to prune tool call result payloads older than ${this.toolCallPruneDays} days? Message transcripts will be preserved.`)) {
-      return;
-    }
-    this.maintenanceLoading = true;
-    this.dbActionMessage = null;
-    this.adminService.pruneToolResults({ toolCallPruneDays: this.toolCallPruneDays, dryRun: false }).subscribe({
-      next: (res) => {
-        this.maintenanceLoading = false;
-        this.dbActionMessage = res.message;
-        this.dbActionMessageType = 'success';
-        this.loadStorageMetrics();
+    this.openConfirmationModal(
+      'Prune Aged Tool Results',
+      `Are you sure you want to prune tool call result payloads older than ${this.toolCallPruneDays} days? Message transcripts will be preserved.`,
+      () => {
+        this.maintenanceLoading = true;
+        this.dbActionMessage = null;
+        this.adminService.pruneToolResults({ toolCallPruneDays: this.toolCallPruneDays, dryRun: false }).subscribe({
+          next: (res) => {
+            this.maintenanceLoading = false;
+            this.dbActionMessage = res.message;
+            this.dbActionMessageType = 'success';
+            this.loadStorageMetrics();
+          },
+          error: (err) => {
+            this.maintenanceLoading = false;
+            this.dbActionMessage = 'Failed to prune tool results: ' + (err.error?.message || err.message);
+            this.dbActionMessageType = 'error';
+          }
+        });
       },
-      error: (err) => {
-        this.maintenanceLoading = false;
-        this.dbActionMessage = 'Failed to prune tool results: ' + (err.error?.message || err.message);
-        this.dbActionMessageType = 'error';
-      }
-    });
+      'Prune Tool Payloads',
+      'btn-gh btn-secondary'
+    );
   }
 
   sweepOrphanFoldersNow() {

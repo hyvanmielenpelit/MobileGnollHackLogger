@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, inject, ChangeDetectionStrategy, ViewChild, ElementRef } from '@angular/core';
 
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
@@ -13,6 +13,7 @@ import { SettingsService, ApiKeyStatus } from '../services/settings.service';
 })
 export class ApiKeysComponent implements OnInit {
   settingsService = inject(SettingsService);
+  @ViewChild('deleteConfirmDialog') deleteConfirmDialog?: ElementRef<HTMLDialogElement>;
 
   providers = ['Anthropic', 'Google', 'OpenAI'];
   keyStatuses: Record<string, boolean> = {};
@@ -20,6 +21,7 @@ export class ApiKeysComponent implements OnInit {
   
   loading = false;
   savingProvider = '';
+  deletingProvider: string | null = null;
   
   ngOnInit() {
     this.loadStatuses();
@@ -54,16 +56,27 @@ export class ApiKeysComponent implements OnInit {
     });
   }
 
-  deleteKey(provider: string) {
-    if (confirm(`Are you sure you want to delete your saved API key for ${provider}?`)) {
-      this.savingProvider = provider;
-      this.settingsService.deleteApiKeyForProvider(provider).subscribe({
-        next: () => {
-          this.keyStatuses[provider] = false;
-          this.savingProvider = '';
-        },
-        error: () => this.savingProvider = ''
-      });
-    }
+  requestDeleteKey(provider: string) {
+    this.deletingProvider = provider;
+    this.deleteConfirmDialog?.nativeElement.showModal();
+  }
+
+  closeDeleteConfirmDialog() {
+    this.deleteConfirmDialog?.nativeElement.close();
+    this.deletingProvider = null;
+  }
+
+  confirmDeleteKey() {
+    if (!this.deletingProvider) return;
+    const provider = this.deletingProvider;
+    this.closeDeleteConfirmDialog();
+    this.savingProvider = provider;
+    this.settingsService.deleteApiKeyForProvider(provider).subscribe({
+      next: () => {
+        this.keyStatuses[provider] = false;
+        this.savingProvider = '';
+      },
+      error: () => this.savingProvider = ''
+    });
   }
 }

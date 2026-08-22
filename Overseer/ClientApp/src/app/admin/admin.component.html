@@ -592,16 +592,14 @@
   }
 </dialog>
 
-<dialog #confirmDialog class="gh-dialog">
-  <div class="dialog-content flex-col">
-    <h3>Confirm Action</h3>
-    <div class="mt-20">
-      {{ confirmMessage }}
-    </div>
-    <div class="dialog-actions mt-auto pt-20">
-      <button class="btn-gh btn-gh-cancel" (click)="closeConfirmDialog()">Cancel</button>
-      <button class="btn-gh btn-gh-delete" (click)="executeConfirmAction()">Confirm</button>
-    </div>
+<dialog #confirmDialog class="gh-dialog" (cancel)="closeConfirmDialog()">
+  <h3>{{ confirmTitle || 'Confirm Action' }}</h3>
+  <div class="mt-20">
+    {{ confirmMessage }}
+  </div>
+  <div class="dialog-actions">
+    <button class="btn-gh btn-gh-cancel" (click)="closeConfirmDialog()">Cancel</button>
+    <button [class]="confirmButtonClass || 'btn-gh btn-gh-delete'" (click)="executeConfirmAction()">{{ confirmButtonText || 'Confirm' }}</button>
   </div>
 </dialog>
 

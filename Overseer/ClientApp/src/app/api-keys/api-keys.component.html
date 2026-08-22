@@ -33,7 +33,7 @@
             @if (keyStatuses[provider]) {
               <div class="api-key-grid">
                 <p class="key-info-text">You have a saved API key for this provider.</p>
-                <button class="btn-gh btn-gh-delete btn-action" (click)="deleteKey(provider)" [disabled]="savingProvider === provider">
+                <button class="btn-gh btn-gh-delete btn-action" (click)="requestDeleteKey(provider)" [disabled]="savingProvider === provider">
                   @if (savingProvider === provider) {
                     <span class="sidebar-spinner small-spinner"></span>
                   }
@@ -56,7 +56,7 @@
           </div>
           <!-- API Key Info Dialog -->
           <dialog #apiKeyInfoDialog class="gh-dialog">
-            <h3 class="modal-title">How to get an API Key</h3>
+            <h3>How to get an API Key</h3>
             @if (provider === 'OpenAI') {
               <div>
                 <p>To use OpenAI models, you need an API key from your OpenAI account.</p>
@@ -90,7 +90,7 @@
                 </ol>
               </div>
             }
-            <form method="dialog" class="modal-actions mt-20">
+            <form method="dialog" class="dialog-actions">
               <button class="btn-gh">Close</button>
             </form>
           </dialog>
@@ -99,4 +99,14 @@
     </div>
   }
   </div>
+
+  <!-- Delete API Key Confirmation Dialog -->
+  <dialog #deleteConfirmDialog class="gh-dialog" (cancel)="closeDeleteConfirmDialog()">
+    <h3>Delete API Key</h3>
+    <p>Are you sure you want to delete your saved API key for {{ deletingProvider }}?</p>
+    <div class="dialog-actions">
+      <button class="btn-gh btn-gh-cancel" (click)="closeDeleteConfirmDialog()">Cancel</button>
+      <button class="btn-gh btn-gh-delete" (click)="confirmDeleteKey()">Delete Key</button>
+    </div>
+  </dialog>
 </div>
