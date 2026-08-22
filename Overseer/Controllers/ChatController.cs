@@ -59,8 +59,12 @@ public class ChatController : ControllerBase
         int pageSize = _configuration.GetValue<int>("ConversationListPageSize", 20);
         int effectiveTake = Math.Min(Math.Max(take ?? pageSize, pageSize), 500);
 
+        await _chatRetentionService.EnforceUserSessionQuotaAsync(userId);
+
         var swDb = Stopwatch.StartNew();
         int totalActive = await _dbContext.ChatSession.CountAsync(s => s.AspNetUserId == userId && !s.IsDeleted);
+        int pinnedCount = await _dbContext.ChatSession.CountAsync(s => s.AspNetUserId == userId && !s.IsDeleted && s.IsPinned);
+        int unpinnedActive = Math.Max(0, totalActive - pinnedCount);
         var sessions = await _dbContext.ChatSession
             .Where(s => s.AspNetUserId == userId && !s.IsDeleted)
             .OrderByDescending(s => s.IsPinned)
@@ -87,6 +91,8 @@ public class ChatController : ControllerBase
             sessions = sessions,
             hasMore = hasMore,
             activeCount = totalActive,
+            pinnedCount = pinnedCount,
+            totalCount = totalActive,
             maxQuota = _configuration.GetValue<int>("ChatRetentionSettings:MaxActiveSessionsPerUser", 50),
             maxPinned = _configuration.GetValue<int>("ChatRetentionSettings:MaxPinnedSessionsPerUser", 5)
         });
@@ -470,8 +476,6 @@ public class ChatController : ControllerBase
         }
         else
         {
-            await _chatRetentionService.EnforceUserSessionQuotaAsync(userId);
-
             var session = new ChatSession
             {
                 AspNetUserId = userId,
@@ -482,6 +486,8 @@ public class ChatController : ControllerBase
             _dbContext.ChatSession.Add(session);
             await _dbContext.SaveChangesAsync();
             sessionId = session.Id;
+
+            await _chatRetentionService.EnforceUserSessionQuotaAsync(userId);
         }
 
         var settings = await _dbContext.UserAiSettings.FindAsync(userId);

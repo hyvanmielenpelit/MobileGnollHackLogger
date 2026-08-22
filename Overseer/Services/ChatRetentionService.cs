@@ -31,16 +31,19 @@ public class ChatRetentionService
         if (string.IsNullOrEmpty(userId) || _settings.MaxActiveSessionsPerUser <= 0)
             return 0;
 
-        var activeUnpinned = await _dbContext.ChatSession
-            .Where(s => s.AspNetUserId == userId && !s.IsDeleted && !s.IsPinned)
-            .OrderBy(s => s.LastMessageUtc)
-            .ToListAsync(cancellationToken);
+        int totalActiveCount = await _dbContext.ChatSession
+            .CountAsync(s => s.AspNetUserId == userId && !s.IsDeleted, cancellationToken);
 
-        int excess = activeUnpinned.Count - _settings.MaxActiveSessionsPerUser;
+        int excess = totalActiveCount - _settings.MaxActiveSessionsPerUser;
         if (excess <= 0)
             return 0;
 
-        var toSoftDelete = activeUnpinned.Take(excess).ToList();
+        var toSoftDelete = await _dbContext.ChatSession
+            .Where(s => s.AspNetUserId == userId && !s.IsDeleted && !s.IsPinned)
+            .OrderBy(s => s.LastMessageUtc)
+            .Take(excess)
+            .ToListAsync(cancellationToken);
+
         var now = DateTime.UtcNow;
         foreach (var s in toSoftDelete)
         {
@@ -80,20 +83,34 @@ public class ChatRetentionService
 
         if (!string.IsNullOrEmpty(userId))
         {
-            // Check quota: if user already has MaxActiveSessionsPerUser, soft-delete oldest unpinned
-            var activeCount = await _dbContext.ChatSession
-                .CountAsync(s => s.AspNetUserId == userId && !s.IsDeleted && !s.IsPinned, cancellationToken);
-            if (activeCount >= _settings.MaxActiveSessionsPerUser)
+            if (session.IsPinned)
             {
-                var oldest = await _dbContext.ChatSession
-                    .Where(s => s.AspNetUserId == userId && !s.IsDeleted && !s.IsPinned)
-                    .OrderBy(s => s.LastMessageUtc)
-                    .FirstOrDefaultAsync(cancellationToken);
-                if (oldest != null)
+                var pinnedCount = await _dbContext.ChatSession
+                    .CountAsync(s => s.AspNetUserId == userId && !s.IsDeleted && s.IsPinned, cancellationToken);
+                if (pinnedCount >= _settings.MaxPinnedSessionsPerUser)
                 {
-                    oldest.IsDeleted = true;
-                    oldest.DeletedUtc = DateTime.UtcNow;
-                    oldest.DeletionReason = "Quota";
+                    // Pinned quota is full: restore as unpinned
+                    session.IsPinned = false;
+                }
+            }
+
+            var totalActiveCount = await _dbContext.ChatSession
+                .CountAsync(s => s.AspNetUserId == userId && !s.IsDeleted, cancellationToken);
+            int excess = totalActiveCount + 1 - _settings.MaxActiveSessionsPerUser;
+            if (excess > 0)
+            {
+                var oldestToSoftDelete = await _dbContext.ChatSession
+                    .Where(s => s.AspNetUserId == userId && !s.IsDeleted && !s.IsPinned && s.Id != sessionId)
+                    .OrderBy(s => s.LastMessageUtc)
+                    .Take(excess)
+                    .ToListAsync(cancellationToken);
+
+                var now = DateTime.UtcNow;
+                foreach (var old in oldestToSoftDelete)
+                {
+                    old.IsDeleted = true;
+                    old.DeletedUtc = now;
+                    old.DeletionReason = "Quota";
                 }
             }
         }
@@ -121,7 +138,7 @@ public class ChatRetentionService
                 .CountAsync(s => s.AspNetUserId == userId && s.IsPinned && !s.IsDeleted, cancellationToken);
             if (pinnedCount >= _settings.MaxPinnedSessionsPerUser)
             {
-                throw new InvalidOperationException($"You can pin a maximum of {_settings.MaxPinnedSessionsPerUser} sessions.");
+                throw new InvalidOperationException($"You can pin a maximum of {_settings.MaxPinnedSessionsPerUser} sessions. Please unpin an existing session to pin a new one.");
             }
             session.IsPinned = true;
         }

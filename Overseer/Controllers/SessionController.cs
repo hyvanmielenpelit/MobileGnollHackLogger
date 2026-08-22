@@ -57,8 +57,6 @@ public class SessionController : ControllerBase
             return Unauthorized();
         }
 
-        await _chatRetentionService.EnforceUserSessionQuotaAsync(user.Id);
-
         var session = new ChatSession
         {
             AspNetUserId = user.Id,
@@ -70,6 +68,8 @@ public class SessionController : ControllerBase
         };
         _dbContext.ChatSession.Add(session);
         await _dbContext.SaveChangesAsync();
+
+        await _chatRetentionService.EnforceUserSessionQuotaAsync(user.Id);
 
         if (!string.IsNullOrWhiteSpace(request.SnapshotHtml))
         {

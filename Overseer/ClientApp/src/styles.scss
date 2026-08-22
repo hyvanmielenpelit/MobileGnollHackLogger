@@ -241,8 +241,11 @@ a:hover {
 }
 
 .toast-error {
-  inset: 20px 20px auto auto;
+  inset: 24px auto auto 50%;
+  transform: translateX(-50%) translateY(-20px);
   margin: 0;
+  width: max-content;
+  max-width: calc(100vw - 32px);
   background: rgba(220, 53, 69, 0.95);
   border: 1px solid var(--color-error);
   border-radius: 8px;
@@ -251,24 +254,17 @@ a:hover {
   box-shadow: 0 4px 12px rgba(0,0,0,0.5);
   transition: display 0.3s allow-discrete, opacity 0.3s, transform 0.3s;
   opacity: 0;
-  transform: translateY(-20px);
   z-index: 9999;
-}
-
-@media (max-width: 600px) {
-  .toast-error {
-    max-width: calc(100vw - 40px);
-  }
 }
 
 .toast-error:is(:popover-open, .\:popover-open) {
   opacity: 1;
-  transform: translateY(0);
+  transform: translateX(-50%) translateY(0);
 }
 @starting-style {
   .toast-error:is(:popover-open, .\:popover-open) {
     opacity: 0;
-    transform: translateY(-20px);
+    transform: translateX(-50%) translateY(-20px);
   }
 }
 .toast-content { display: flex; align-items: flex-start; gap: 12px; }

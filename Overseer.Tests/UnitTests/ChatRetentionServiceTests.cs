@@ -85,11 +85,11 @@ public class ChatRetentionServiceTests
     {
         var ct = TestContext.Current.CancellationToken;
         using var db = CreateInMemoryDbContext();
-        var config = CreateTestConfiguration();
+        var config = CreateTestConfiguration(); // MaxActiveSessionsPerUser = 3
         var service = new ChatRetentionService(db, config, NullLogger<ChatRetentionService>.Instance);
         var userId = "user1";
 
-        // Create 4 sessions, oldest is pinned
+        // Create 5 sessions, oldest is pinned
         db.ChatSession.Add(new ChatSession { Id = 1, AspNetUserId = userId, Title = "Pinned Old Chat", LastMessageUtc = DateTime.UtcNow.AddDays(-20), IsPinned = true });
         db.ChatSession.Add(new ChatSession { Id = 2, AspNetUserId = userId, Title = "Unpinned 1", LastMessageUtc = DateTime.UtcNow.AddDays(-10), IsPinned = false });
         db.ChatSession.Add(new ChatSession { Id = 3, AspNetUserId = userId, Title = "Unpinned 2", LastMessageUtc = DateTime.UtcNow.AddDays(-5), IsPinned = false });
@@ -97,18 +97,25 @@ public class ChatRetentionServiceTests
         db.ChatSession.Add(new ChatSession { Id = 5, AspNetUserId = userId, Title = "Unpinned 4", LastMessageUtc = DateTime.UtcNow, IsPinned = false });
         await db.SaveChangesAsync(ct);
 
-        // 4 unpinned sessions (quota is 3), oldest unpinned is Chat 2
+        // 5 total active sessions (quota is 3) -> 2 oldest unpinned (Chat 2 and Chat 3) are soft-deleted
         int softDeleted = await service.EnforceUserSessionQuotaAsync(userId, ct);
 
-        Assert.Equal(1, softDeleted);
+        Assert.Equal(2, softDeleted);
 
         var pinned = await db.ChatSession.FindAsync(new object[] { (long)1 }, ct);
         Assert.NotNull(pinned);
         Assert.False(pinned.IsDeleted, "Pinned session must NOT be soft-deleted by quota enforcement.");
 
-        var deleted = await db.ChatSession.FindAsync(new object[] { (long)2 }, ct);
-        Assert.NotNull(deleted);
-        Assert.True(deleted.IsDeleted);
+        var deleted1 = await db.ChatSession.FindAsync(new object[] { (long)2 }, ct);
+        Assert.NotNull(deleted1);
+        Assert.True(deleted1.IsDeleted);
+
+        var deleted2 = await db.ChatSession.FindAsync(new object[] { (long)3 }, ct);
+        Assert.NotNull(deleted2);
+        Assert.True(deleted2.IsDeleted);
+
+        var totalActive = await db.ChatSession.CountAsync(s => s.AspNetUserId == userId && !s.IsDeleted, ct);
+        Assert.Equal(3, totalActive);
     }
 
     [Fact]
@@ -168,5 +175,83 @@ public class ChatRetentionServiceTests
         Assert.False(session.IsDeleted);
         Assert.Null(session.DeletedUtc);
         Assert.Null(session.DeletionReason);
+    }
+
+    [Fact]
+    public async Task EnforceUserSessionQuota_ReturnsZero_WhenWithinQuota()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var db = CreateInMemoryDbContext();
+        var config = CreateTestConfiguration(); // MaxActiveSessionsPerUser = 3
+        var service = new ChatRetentionService(db, config, NullLogger<ChatRetentionService>.Instance);
+        var userId = "user1";
+
+        db.ChatSession.Add(new ChatSession { Id = 1, AspNetUserId = userId, Title = "Chat 1", IsDeleted = false });
+        db.ChatSession.Add(new ChatSession { Id = 2, AspNetUserId = userId, Title = "Chat 2", IsDeleted = false });
+        await db.SaveChangesAsync(ct);
+
+        int softDeleted = await service.EnforceUserSessionQuotaAsync(userId, ct);
+        Assert.Equal(0, softDeleted);
+    }
+
+    [Fact]
+    public async Task RestoreSession_WhenAtQuota_SoftDeletesOldestUnpinned()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var db = CreateInMemoryDbContext();
+        var config = CreateTestConfiguration(); // MaxActiveSessionsPerUser = 3
+        var service = new ChatRetentionService(db, config, NullLogger<ChatRetentionService>.Instance);
+        var userId = "user1";
+
+        // 3 active unpinned sessions (at quota limit of 3)
+        db.ChatSession.Add(new ChatSession { Id = 1, AspNetUserId = userId, Title = "Oldest Active", LastMessageUtc = DateTime.UtcNow.AddDays(-10), IsDeleted = false });
+        db.ChatSession.Add(new ChatSession { Id = 2, AspNetUserId = userId, Title = "Active 2", LastMessageUtc = DateTime.UtcNow.AddDays(-5), IsDeleted = false });
+        db.ChatSession.Add(new ChatSession { Id = 3, AspNetUserId = userId, Title = "Active 3", LastMessageUtc = DateTime.UtcNow, IsDeleted = false });
+        // 1 soft-deleted session in trash
+        db.ChatSession.Add(new ChatSession { Id = 4, AspNetUserId = userId, Title = "Trash Chat", LastMessageUtc = DateTime.UtcNow.AddDays(-2), IsDeleted = true });
+        await db.SaveChangesAsync(ct);
+
+        // Restoring Chat 4 should bring active count from 3 -> 3 by soft-deleting Chat 1 (oldest active)
+        var restored = await service.RestoreSessionAsync(4, userId, ct);
+        Assert.True(restored);
+
+        var chat4 = await db.ChatSession.FindAsync(new object[] { (long)4 }, ct);
+        Assert.NotNull(chat4);
+        Assert.False(chat4.IsDeleted);
+
+        var chat1 = await db.ChatSession.FindAsync(new object[] { (long)1 }, ct);
+        Assert.NotNull(chat1);
+        Assert.True(chat1.IsDeleted);
+        Assert.Equal("Quota", chat1.DeletionReason);
+
+        var activeCount = await db.ChatSession.CountAsync(s => s.AspNetUserId == userId && !s.IsDeleted, ct);
+        Assert.Equal(3, activeCount);
+    }
+
+    [Fact]
+    public async Task TogglePinSession_WhenUnpinned_DoesNotModifyActiveQuota()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var db = CreateInMemoryDbContext();
+        var config = CreateTestConfiguration(); // MaxActiveSessionsPerUser = 3, MaxPinned = 2
+        var service = new ChatRetentionService(db, config, NullLogger<ChatRetentionService>.Instance);
+        var userId = "user1";
+
+        // 2 unpinned + 1 pinned (total 3 active, at limit 3)
+        db.ChatSession.Add(new ChatSession { Id = 1, AspNetUserId = userId, Title = "Unpinned 1", LastMessageUtc = DateTime.UtcNow.AddDays(-10), IsPinned = false, IsDeleted = false });
+        db.ChatSession.Add(new ChatSession { Id = 2, AspNetUserId = userId, Title = "Unpinned 2", LastMessageUtc = DateTime.UtcNow.AddDays(-5), IsPinned = false, IsDeleted = false });
+        db.ChatSession.Add(new ChatSession { Id = 3, AspNetUserId = userId, Title = "Pinned Chat", LastMessageUtc = DateTime.UtcNow.AddDays(-1), IsPinned = true, IsDeleted = false });
+        await db.SaveChangesAsync(ct);
+
+        // Unpinning Chat 3 makes it unpinned. Total active count remains 3 and zero chats are deleted.
+        var isPinned = await service.TogglePinSessionAsync(3, userId, ct);
+        Assert.False(isPinned);
+
+        var chat1 = await db.ChatSession.FindAsync(new object[] { (long)1 }, ct);
+        Assert.NotNull(chat1);
+        Assert.False(chat1.IsDeleted);
+
+        var activeCount = await db.ChatSession.CountAsync(s => s.AspNetUserId == userId && !s.IsDeleted, ct);
+        Assert.Equal(3, activeCount);
     }
 }

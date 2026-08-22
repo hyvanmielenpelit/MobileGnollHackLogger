@@ -116,6 +116,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   readonly STREAMING_SCROLL_OFFSET = 50;
 
   activeSessionCount?: number;
+  pinnedSessionCount = 0;
   maxSessionQuota = 50;
   maxPinnedQuota = 5;
   trashCount = 0;
@@ -236,7 +237,9 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   private handoffTimeoutHandle: any = null;
 
   maxAttachmentSize = 15728640; // default 15MB
+  errorTitle = 'Error';
   errorMessage = '';
+  isPinnedQuotaAlerting = false;
   hasApiKey = true;
   hasModel = true;
   isTitleGenerationInProgress = false;
@@ -1415,7 +1418,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         const tRender0 = performance.now();
         this.sessions = response?.sessions || [];
         this.hasMoreSessions = response?.hasMore || false;
-        this.activeSessionCount = response?.activeCount ?? this.sessions.length;
+        this.activeSessionCount = response?.totalCount ?? response?.activeCount ?? this.sessions.length;
+        this.pinnedSessionCount = response?.pinnedCount ?? this.sessions.filter(s => s.isPinned).length;
         this.maxSessionQuota = response?.maxQuota || 50;
         this.maxPinnedQuota = response?.maxPinned || 5;
         this.loadingSessions = false;
@@ -1834,6 +1838,15 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     });
   }
 
+  triggerPinnedQuotaAlert() {
+    this.isPinnedQuotaAlerting = true;
+    this.cdr.detectChanges();
+    setTimeout(() => {
+      this.isPinnedQuotaAlerting = false;
+      this.cdr.detectChanges();
+    }, 500);
+  }
+
   togglePinSession(id: number, event: Event) {
     event.stopPropagation();
     this.chatService.togglePinSession(id).subscribe({
@@ -1841,6 +1854,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         const session = this.sessions.find(s => s.id === id);
         if (session) {
           session.isPinned = res.isPinned;
+          if (res.isPinned) {
+            this.pinnedSessionCount++;
+          } else {
+            this.pinnedSessionCount = Math.max(0, this.pinnedSessionCount - 1);
+          }
           this.sessions.sort((a, b) => {
             if (!!a.isPinned !== !!b.isPinned) return a.isPinned ? -1 : 1;
             return new Date(b.lastMessageUtc).getTime() - new Date(a.lastMessageUtc).getTime();
@@ -1850,9 +1868,9 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       },
       error: (err) => {
         console.error('Failed to toggle pin', err);
-        if (err.error?.message) {
-          this.showErrorToast(err.error.message);
-        }
+        const msg = err.error?.message || 'You can pin a maximum of 5 sessions. Please unpin an existing session to pin a new one.';
+        this.triggerPinnedQuotaAlert();
+        this.showErrorToast(msg, 'Pin Limit Reached');
       }
     });
   }
@@ -2216,7 +2234,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       
       if (file.size > this.maxAttachmentSize) {
         const sizeMb = (this.maxAttachmentSize / 1024 / 1024).toFixed(1);
-        this.showErrorToast(`The file "${file.name}" exceeds the maximum allowed size of ${sizeMb} MB.`);
+        this.showErrorToast(`The file "${file.name}" exceeds the maximum allowed size of ${sizeMb} MB.`, 'File Too Large');
         continue;
       }
       
@@ -2238,7 +2256,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.pendingAttachments.splice(index, 1);
   }
 
-  showErrorToast(msg: string) {
+  showErrorToast(msg: string, title: string = 'Error') {
+    this.errorTitle = title;
     this.errorMessage = msg;
     this.cdr.detectChanges();
     const toast = this.errorToast?.nativeElement as any;

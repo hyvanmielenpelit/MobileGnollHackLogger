@@ -63,6 +63,8 @@ export interface ChatSessionsResponse {
   sessions: ChatSession[];
   hasMore: boolean;
   activeCount?: number;
+  pinnedCount?: number;
+  totalCount?: number;
   maxQuota?: number;
   maxPinned?: number;
 }

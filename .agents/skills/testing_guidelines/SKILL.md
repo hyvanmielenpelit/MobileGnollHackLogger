@@ -13,6 +13,12 @@ Tests that call external APIs (like OpenAI, Anthropic, or Google) consume quota 
 
 *   **Ask for Permission**: You MUST ALWAYS ask the user for explicit permission before running any test that hits an external AI API.
 *   **Trait Tagging**: Every test method or class that connects to an external API must be decorated with `[Trait("Category", "UsesExternalApi")]`.
+*   **Default CLI Test Command**: When running test commands in verification plans or automated testing routines, always append `--filter "Category!=UsesExternalApi"` to prevent unintended API calls and quota consumption:
+    ```bash
+    dotnet test MobileGnollHackLogger.slnx --filter "Category!=UsesExternalApi"
+    # or for specific project:
+    dotnet test Overseer.Tests --filter "Category!=UsesExternalApi"
+    ```
 *   **CLI Instructions in Code**: The test file must contain a human-readable header comment instructing developers and agents on how to skip these tests during normal execution.
     ```csharp
     // To run tests while SKIPPING this file (to save AI API quota), use:
@@ -20,7 +26,7 @@ Tests that call external APIs (like OpenAI, Anthropic, or Google) consume quota 
     ```
 
 > [!NOTE]
-> **Solution File Format**: The repository uses the modern Visual Studio solution format **`MobileGnollHackLogger.slnx`** (not `.sln`). Use `dotnet build MobileGnollHackLogger.slnx` or `dotnet test MobileGnollHackLogger.slnx` when building or testing the entire solution from the CLI.
+> **Solution File Format**: The repository uses the modern Visual Studio solution format **`MobileGnollHackLogger.slnx`** (not `.sln`). Use `dotnet build MobileGnollHackLogger.slnx` or `dotnet test MobileGnollHackLogger.slnx --filter "Category!=UsesExternalApi"` when building or testing the entire solution from the CLI.
 
 ## 2. Graceful Error Handling (429 & 503)
 
