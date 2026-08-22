@@ -513,6 +513,64 @@ describe('ChatComponent session loading and exclusivity', () => {
       });
     });
   });
+
+  describe('ChatComponent.getToolDisplayName', () => {
+    it('should return symmetrical GnollHack display names for source code tools by default', () => {
+      expect(ChatComponent.getToolDisplayName('list_indexed_files')).toBe('Listing GnollHack source files');
+      expect(ChatComponent.getToolDisplayName('source_code_search')).toBe('Searching GnollHack source code');
+      expect(ChatComponent.getToolDisplayName('source_code_view')).toBe('Viewing GnollHack source code');
+      expect(ChatComponent.getToolDisplayName('get_constants')).toBe('Searching GnollHack constants');
+      expect(ChatComponent.getToolDisplayName('search_definitions')).toBe('Searching GnollHack definitions');
+      expect(ChatComponent.getToolDisplayName('get_function_definition')).toBe('Reading GnollHack function definition');
+    });
+
+    it('should return symmetrical NetHack display names when repository is nethack (object or string)', () => {
+      expect(ChatComponent.getToolDisplayName('list_indexed_files', { repository: 'nethack' })).toBe('Listing NetHack source files');
+      expect(ChatComponent.getToolDisplayName('source_code_search', { repository: 'nethack', query: 'teleport' })).toBe('Searching NetHack source code');
+      expect(ChatComponent.getToolDisplayName('source_code_view', { repository: 'NetHack' })).toBe('Viewing NetHack source code');
+      expect(ChatComponent.getToolDisplayName('get_constants', 'nethack')).toBe('Searching NetHack constants');
+      expect(ChatComponent.getToolDisplayName('search_definitions', { repository: 'NETHACK' })).toBe('Searching NetHack definitions');
+      expect(ChatComponent.getToolDisplayName('get_function_definition', { repository: 'nethack' })).toBe('Reading NetHack function definition');
+    });
+
+    it('should return correct display names for dedicated single-repository wiki tools', () => {
+      expect(ChatComponent.getToolDisplayName('wiki_search')).toBe('Searching GnollHack Wiki');
+      expect(ChatComponent.getToolDisplayName('wiki_view')).toBe('Viewing GnollHack Wiki article');
+      expect(ChatComponent.getToolDisplayName('nethack_wiki_search')).toBe('Searching NetHack Wiki');
+      expect(ChatComponent.getToolDisplayName('nethack_wiki_view')).toBe('Viewing NetHack Wiki article');
+    });
+
+    it('should return correct display names for knowledge base, stats, and client tools', () => {
+      expect(ChatComponent.getToolDisplayName('get_knowledge_article')).toBe('Searching knowledge base');
+      expect(ChatComponent.getToolDisplayName('get_item_stats')).toBe('Reading item stats');
+      expect(ChatComponent.getToolDisplayName('get_monster_stats')).toBe('Reading monster stats');
+      expect(ChatComponent.getToolDisplayName('get_artifact_stats')).toBe('Reading artifact stats');
+      expect(ChatComponent.getToolDisplayName('get_app_log')).toBe('Reading application log');
+      expect(ChatComponent.getToolDisplayName('get_full_message_history')).toBe('Reading message history');
+    });
+
+    it('should fallback to tool name for unknown tools', () => {
+      expect(ChatComponent.getToolDisplayName('custom_unknown_tool')).toBe('custom_unknown_tool');
+    });
+
+    it('should format minimal status label with natural tool names when streaming', () => {
+      component.streamingToolCalls = [{
+        id: '1',
+        name: 'list_indexed_files',
+        displayName: ChatComponent.getToolDisplayName('list_indexed_files', { repository: 'nethack' }),
+        status: 'running'
+      }];
+      expect(component.getMinimalStatusLabel()).toBe('Listing NetHack source files...');
+
+      component.streamingToolCalls = [{
+        id: '2',
+        name: 'source_code_search',
+        displayName: ChatComponent.getToolDisplayName('source_code_search'),
+        status: 'running'
+      }];
+      expect(component.getMinimalStatusLabel()).toBe('Searching GnollHack source code...');
+    });
+  });
 });
 
 

@@ -52,21 +52,41 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     'nethack_wiki_search': 'Searching NetHack Wiki',
     'nethack_wiki_view': 'Viewing NetHack Wiki article',
     'search_server_dumplogs': 'Searching server dumplogs',
-    'source_code_search': 'Searching source code',
-    'source_code_view': 'Viewing source code',
+    'source_code_search': 'Searching GnollHack source code',
+    'source_code_view': 'Viewing GnollHack source code',
     'wiki_search': 'Searching GnollHack Wiki',
-    'list_indexed_files': 'Listing source files',
-    'get_constants': 'Searching constants',
+    'list_indexed_files': 'Listing GnollHack source files',
+    'get_constants': 'Searching GnollHack constants',
     'get_knowledge_article': 'Searching knowledge base',
-    'wiki_view': 'Viewing Wiki page',
-    'search_definitions': 'Searching definitions',
-    'get_function_definition': 'Reading function definition',
+    'wiki_view': 'Viewing GnollHack Wiki article',
+    'search_definitions': 'Searching GnollHack definitions',
+    'get_function_definition': 'Reading GnollHack function definition',
     'get_item_stats': 'Reading item stats',
     'get_monster_stats': 'Reading monster stats',
     'get_artifact_stats': 'Reading artifact stats',
     'get_github_repo_info': 'Retrieving GitHub repository information',
     'search_github': 'Searching GitHub'
   };
+
+  private static readonly NETHACK_TOOL_DISPLAY_NAMES: Record<string, string> = {
+    'list_indexed_files': 'Listing NetHack source files',
+    'source_code_search': 'Searching NetHack source code',
+    'source_code_view': 'Viewing NetHack source code',
+    'get_constants': 'Searching NetHack constants',
+    'search_definitions': 'Searching NetHack definitions',
+    'get_function_definition': 'Reading NetHack function definition'
+  };
+
+  public static getToolDisplayName(name: string, argsOrRepo?: any): string {
+    const isNetHack = typeof argsOrRepo === 'string'
+      ? argsOrRepo.toLowerCase() === 'nethack'
+      : (typeof argsOrRepo?.repository === 'string' && argsOrRepo.repository.toLowerCase() === 'nethack');
+
+    if (isNetHack && ChatComponent.NETHACK_TOOL_DISPLAY_NAMES[name]) {
+      return ChatComponent.NETHACK_TOOL_DISPLAY_NAMES[name];
+    }
+    return ChatComponent.TOOL_DISPLAY_NAMES[name] || name;
+  }
 
   private buildToolArgsText(name: string, args: any): string {
     if (!args) return '';
@@ -88,6 +108,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       if (name === 'monster_lookup' && args.name) return args.name;
       if (name === 'item_lookup' && args.name) return args.name;
       if (name === 'wiki_search' && args.query) return args.query;
+      if (name === 'wiki_view' && args.article) return args.article;
       if (name === 'nethack_wiki_search' && args.query) return args.query;
       if (name === 'nethack_wiki_view' && args.article) return args.article;
       if (name === 'get_knowledge_article') {
@@ -95,7 +116,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         if (args.topic) return args.topic;
       }
       
-      const firstKey = Object.keys(args)[0];
+      const firstKey = Object.keys(args).find(k => k !== 'repository');
       if (firstKey) return String(args[firstKey]);
     } catch (e) {}
     return '';
@@ -1215,10 +1236,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.debugService.log(`[Frontend] tool_start: ${toolInfo.name}, streamingMessage.length after=${this.streamingMessage.length}`);
 
         const args = JSON.parse(toolInfo.arguments || '{}');
-        let displayName = ChatComponent.TOOL_DISPLAY_NAMES[toolInfo.name] || toolInfo.name;
-        if (args?.repository === 'nethack') {
-          displayName += ' (NetHack)';
-        }
+        const displayName = ChatComponent.getToolDisplayName(toolInfo.name, args);
         const argsText = this.buildToolArgsText(toolInfo.name, args);
         
         this.streamingToolCalls.push({ 
@@ -1660,26 +1678,20 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     messages.forEach(msg => {
       if (msg.toolCalls) {
         msg.toolCalls.forEach(tc => {
-          let isNetHackRepo = false;
+          let argsObj: any = null;
           if (tc.argsText) {
             const trimmed = tc.argsText.trim();
             if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
               try {
-                const argsObj = JSON.parse(trimmed);
-                if (argsObj?.repository === 'nethack') {
-                  isNetHackRepo = true;
-                }
+                argsObj = JSON.parse(trimmed);
                 tc.argsText = this.buildToolArgsText(tc.name, argsObj);
               } catch (e) {
                 // Ignore JSON parsing errors and leave argsText as is
               }
             }
           }
-          if (!tc.displayName && tc.name) {
-            tc.displayName = ChatComponent.TOOL_DISPLAY_NAMES[tc.name] || tc.name;
-          }
-          if (isNetHackRepo && tc.displayName && !tc.displayName.endsWith('(NetHack)')) {
-            tc.displayName += ' (NetHack)';
+          if (tc.name) {
+            tc.displayName = ChatComponent.getToolDisplayName(tc.name, argsObj);
           }
         });
       }
