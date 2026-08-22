@@ -1,7 +1,7 @@
 import { Component, OnInit, OnDestroy, inject, ChangeDetectorRef, ViewChild, ElementRef, HostListener, NgZone, AfterViewInit, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ChatService, ChatSession, TrashSession, ChatMessage, ChatMessageToolCall } from '../services/chat.service';
+import { ChatService, ChatSession, ChatMessage, ChatMessageToolCall } from '../services/chat.service';
 import { AuthService } from '../services/auth.service';
 import { DebugService } from '../services/debug.service';
 import { Router, ActivatedRoute, RouterModule, NavigationEnd } from '@angular/router';
@@ -10,6 +10,7 @@ import { RelativeTimePipe } from './relative-time.pipe';
 import { SettingsService } from '../services/settings.service';
 import { ChangelogService } from '../services/changelog.service';
 import { AdminAlertsComponent } from './admin-alerts.component';
+import { TrashModalComponent } from './trash-modal/trash-modal.component';
 import * as signalR from '@microsoft/signalr';
 import { firstValueFrom, filter, Subscription } from 'rxjs';
 export interface ToolClientRequest {
@@ -29,7 +30,7 @@ export interface ToolResponse {
 
 @Component({
     selector: 'app-chat',
-    imports: [CommonModule, FormsModule, RouterModule, MarkdownPipe, RelativeTimePipe, AdminAlertsComponent],
+    imports: [CommonModule, FormsModule, RouterModule, MarkdownPipe, RelativeTimePipe, AdminAlertsComponent, TrashModalComponent],
     styleUrl: './chat.component.scss',
     changeDetection: ChangeDetectionStrategy.Eager,
     templateUrl: './chat.component.html'
@@ -110,18 +111,14 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   @ViewChild('promptInput') promptInput!: ElementRef<HTMLTextAreaElement>;
   @ViewChild('renameInput') renameInput!: ElementRef<HTMLInputElement>;
   @ViewChild('logoutDialog') logoutDialog!: ElementRef<HTMLDialogElement>;
-  @ViewChild('trashDialog') trashDialog!: ElementRef<HTMLDialogElement>;
-  @ViewChild('permanentDeleteConfirmDialog') permanentDeleteConfirmDialog!: ElementRef<HTMLDialogElement>;
-  @ViewChild('emptyTrashConfirmDialog') emptyTrashConfirmDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('trashModal') trashModal!: TrashModalComponent;
   autoScrollEnabled = true;
   readonly STREAMING_SCROLL_OFFSET = 50;
 
   activeSessionCount?: number;
   maxSessionQuota = 50;
   maxPinnedQuota = 5;
-  trashSessions: TrashSession[] = [];
-  loadingTrash = false;
-  trashSessionToDeletePermanently: number | null = null;
+  trashCount = 0;
 
   private hubConnection: signalR.HubConnection | null = null;
   private hubStartPromise: Promise<void> | null = null;
@@ -1422,7 +1419,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.maxSessionQuota = response?.maxQuota || 50;
         this.maxPinnedQuota = response?.maxPinned || 5;
         this.loadingSessions = false;
-        this.loadTrashSessions();
+        this.trashModal?.loadTrash();
         this.cdr.detectChanges();
         const renderDuration = performance.now() - tRender0;
 
@@ -1861,94 +1858,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   openTrashDialog() {
-    this.loadTrashSessions();
-    if (this.trashDialog) {
-      this.trashDialog.nativeElement.showModal();
-    }
-  }
-
-  closeTrashDialog() {
-    if (this.trashDialog) {
-      this.trashDialog.nativeElement.close();
-    }
-  }
-
-  loadTrashSessions() {
-    this.loadingTrash = true;
-    this.chatService.getTrashSessions().subscribe({
-      next: (data) => {
-        this.trashSessions = data || [];
-        this.loadingTrash = false;
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        console.error('Failed to load trash sessions', err);
-        this.loadingTrash = false;
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  restoreTrashSession(id: number) {
-    this.chatService.restoreSession(id).subscribe({
-      next: () => {
-        this.trashSessions = this.trashSessions.filter(s => s.id !== id);
-        this.loadSessions(true);
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        console.error('Failed to restore session', err);
-        if (err.error?.message) {
-          this.showErrorToast(err.error.message);
-        }
-      }
-    });
-  }
-
-  requestPermanentDelete(id: number) {
-    this.trashSessionToDeletePermanently = id;
-    if (this.permanentDeleteConfirmDialog) {
-      this.permanentDeleteConfirmDialog.nativeElement.showModal();
-    }
-  }
-
-  confirmPermanentDelete() {
-    if (this.trashSessionToDeletePermanently === null) return;
-    const id = this.trashSessionToDeletePermanently;
-    this.chatService.permanentDeleteSession(id).subscribe({
-      next: () => {
-        this.trashSessions = this.trashSessions.filter(s => s.id !== id);
-        this.trashSessionToDeletePermanently = null;
-        if (this.permanentDeleteConfirmDialog) {
-          this.permanentDeleteConfirmDialog.nativeElement.close();
-        }
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        console.error('Failed to permanently delete session', err);
-      }
-    });
-  }
-
-  requestEmptyTrash() {
-    if (this.emptyTrashConfirmDialog) {
-      this.emptyTrashConfirmDialog.nativeElement.showModal();
-    }
-  }
-
-  confirmEmptyTrash() {
-    this.chatService.emptyTrash().subscribe({
-      next: () => {
-        this.trashSessions = [];
-        if (this.emptyTrashConfirmDialog) {
-          this.emptyTrashConfirmDialog.nativeElement.close();
-        }
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        console.error('Failed to empty trash', err);
-      }
-    });
+    this.trashModal?.open();
   }
 
   requestReportMessage(messageId: number, index: number) {

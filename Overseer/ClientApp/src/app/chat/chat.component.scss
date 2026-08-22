@@ -24,21 +24,136 @@
 }
 .sidebar h3 { margin-block-start: 0; color: var(--title-color); border-block-end: 1px solid var(--border-glass); padding-block-end: 10px; text-align: center; }
 .sidebar ul { list-style: none; padding: 0; flex-grow: 1; overflow-y: auto; }
-.sidebar li { padding: 10px; cursor: pointer; border-block-end: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center; color: #ccc; transition: background 0.2s; }
-.sidebar li:hover { background: rgba(255,255,255,0.05); }
-.sidebar li.active { background: rgba(212, 160, 23, 0.15); color: var(--title-color); border-inline-start: 3px solid var(--primary-color); }
-.sidebar li.is-pinned { background: rgba(212, 175, 55, 0.08); border-inline-start: 3px solid #d4af37; }
-.sidebar li.is-pinned.active { background: rgba(212, 160, 23, 0.25); border-inline-start: 3px solid #ffd700; }
-.session-info { flex-grow: 1; overflow: hidden; display: flex; flex-direction: column; justify-content: center; margin-inline-end: 10px; }
-.session-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14px; font-weight: bold; display: flex; align-items: center; gap: 5px; }
-.pin-badge { font-size: 12px; flex-shrink: 0; }
-.session-time { font-size: 11px; color: #888; margin-block-start: 4px; }
-.session-item-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
-.session-action-btn { background: transparent; color: #888; border: none; cursor: pointer; padding: 4px 6px; border-radius: 4px; font-size: 14px; transition: all 0.2s; line-height: 1; }
-.session-action-btn:hover { color: #fff; background: rgba(255,255,255,0.1); }
-.session-pin-btn.pinned { color: #d4af37; }
-.sidebar li button.session-delete-btn { background: transparent; color: #888; border: none; cursor: pointer; font-weight: bold; padding: 5px; flex-shrink: 0; min-width: 24px; min-height: 24px; border-radius: 4px; }
-.sidebar li button.session-delete-btn:hover { color: #ff4d4f; background: rgba(255, 77, 79, 0.15); }
+.sidebar li {
+  padding: 10px;
+  cursor: pointer;
+  border-block-end: 1px solid rgba(255, 255, 255, 0.1);
+  border-inline-start: 3px solid transparent;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #ccc;
+  transition: background 0.2s, border-color 0.2s;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  &.active {
+    background: rgba(212, 160, 23, 0.15);
+    color: var(--title-color);
+    border-inline-start: 3px solid var(--primary-color);
+  }
+}
+
+.session-info {
+  flex-grow: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  margin-inline-end: 8px;
+  min-width: 0;
+}
+
+.session-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.session-time {
+  font-size: 11px;
+  color: #888;
+  margin-block-start: 4px;
+}
+
+.session-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  transition: opacity 0.2s ease;
+
+  @media (hover: hover) and (pointer: fine) {
+    opacity: 0;
+
+    .sidebar li:hover & {
+      opacity: 1;
+    }
+
+    // Pinned chat: Container stays visible so the gold pin icon serves as the persistent pinned indicator
+    .sidebar li.is-pinned & {
+      opacity: 1;
+
+      // On pinned chats, keep the delete button hidden until the row is specifically hovered
+      .session-delete-btn {
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s ease;
+      }
+    }
+
+    .sidebar li.is-pinned:hover & .session-delete-btn {
+      opacity: 1;
+      pointer-events: auto;
+    }
+  }
+
+  @media (hover: none) or (pointer: coarse) {
+    opacity: 0.85;
+  }
+}
+
+.session-action-btn {
+  background: transparent;
+  color: #888;
+  border: none;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  min-width: 24px;
+  min-height: 24px;
+
+  &:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  &.session-pin-btn.pinned {
+    color: #d4af37;
+  }
+}
+
+.sidebar li button.session-delete-btn {
+  background: transparent;
+  color: #888;
+  border: none;
+  cursor: pointer;
+  font-weight: bold;
+  padding: 4px 6px;
+  flex-shrink: 0;
+  min-width: 24px;
+  min-height: 24px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+  transition: all 0.2s;
+
+  &:hover {
+    color: #ff4d4f;
+    background: rgba(255, 77, 79, 0.15);
+  }
+}
 .btn-new-chat { width: 100%; margin-block-end: 15px; }
 .sessions-loader { padding: 30px 10px; color: #aaa; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 0.9em; gap: 15px; }
 .sidebar-spinner { width: 36px; height: 36px; border: 4px solid rgba(212, 175, 55, 0.2); border-block-start-color: var(--primary-color); border-radius: 50%; animation: spin 1s linear infinite; }
@@ -68,110 +183,6 @@
     background: rgba(255,255,255,0.1);
     color: #fff;
   }
-}
-
-/* Trash Dialog Styles */
-.trash-dialog {
-  max-width: 600px;
-  width: 90vw;
-}
-
-.trash-dialog-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px solid var(--border-glass, rgba(255,255,255,0.15));
-  padding-bottom: 10px;
-  margin-bottom: 15px;
-
-  h3 {
-    margin: 0;
-    color: var(--title-color, #d4af37);
-  }
-}
-
-.dialog-close-x {
-  background: transparent;
-  border: none;
-  color: #aaa;
-  font-size: 1.5em;
-  cursor: pointer;
-  padding: 0 5px;
-  line-height: 1;
-
-  &:hover { color: #fff; }
-}
-
-.trash-list-actions {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid rgba(255,255,255,0.08);
-}
-
-.trash-items-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  max-height: 400px;
-  overflow-y: auto;
-}
-
-.trash-item {
-  padding: 10px 12px;
-  background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 6px;
-  margin-bottom: 8px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-}
-
-.trash-item-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.trash-item-title {
-  font-weight: 600;
-  font-size: 0.95em;
-  color: #eee;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.trash-item-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.8em;
-  margin-top: 4px;
-}
-
-.badge-expiry {
-  background: rgba(255, 193, 7, 0.15);
-  color: #ffc107;
-  border: 1px solid rgba(255, 193, 7, 0.3);
-  padding: 1px 6px;
-  border-radius: 4px;
-}
-
-.badge-reason {
-  background: rgba(255, 255, 255, 0.08);
-  color: #aaa;
-  padding: 1px 6px;
-  border-radius: 4px;
-}
-
-.trash-item-actions {
-  display: flex;
-  gap: 6px;
-  flex-shrink: 0;
 }
 
 /* Load More Pagination */
