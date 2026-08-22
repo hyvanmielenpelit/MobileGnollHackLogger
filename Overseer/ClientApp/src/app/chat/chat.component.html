@@ -15,7 +15,7 @@
         <input
           type="search"
           class="sidebar-search-input"
-          placeholder="Search chats & messages..."
+          placeholder="Search chats..."
           [value]="sessionSearchQuery"
           (input)="onSessionSearchInput($event)"
           (keydown.escape)="clearSessionSearch()"
@@ -47,6 +47,7 @@
               }
             </div>
             <div class="session-item-actions" (click)="$event.stopPropagation()">
+              <button class="session-delete-btn" (click)="requestDeleteSession(s.id, $event)" title="Move to Trash" aria-label="Move to Trash">✕</button>
               <button class="session-action-btn session-pin-btn" [class.pinned]="s.isPinned" (click)="togglePinSession(s.id, $event)" [title]="s.isPinned ? 'Unpin Chat' : ((pinnedSessionCount || 0) >= (maxPinnedQuota || 5) ? 'Pin limit reached (max ' + (maxPinnedQuota || 5) + ') - unpin another chat first' : 'Pin Chat')" [attr.aria-label]="s.isPinned ? 'Unpin Chat' : ((pinnedSessionCount || 0) >= (maxPinnedQuota || 5) ? 'Pin limit reached (max ' + (maxPinnedQuota || 5) + ') - unpin another chat first' : 'Pin Chat')">
                 <svg *ngIf="s.isPinned" class="svg-pin" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                   <path d="M16 12V4H17V2H7V4H8V12L6 14V16H11V22H13V16H18V14L16 12Z"/>
@@ -55,7 +56,6 @@
                   <path d="M16 12V4H17V2H7V4H8V12L6 14V16H11V22H13V16H18V14L16 12Z"/>
                 </svg>
               </button>
-              <button class="session-delete-btn" (click)="requestDeleteSession(s.id, $event)" title="Move to Trash" aria-label="Move to Trash">✕</button>
             </div>
           </li>
         }

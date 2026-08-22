@@ -23,8 +23,9 @@
   background: var(--primary-color);
 }
 .sidebar h3 { margin-block-start: 0; color: var(--title-color); border-block-end: 1px solid var(--border-glass); padding-block-end: 10px; text-align: center; }
-.sidebar ul { list-style: none; padding: 0; flex-grow: 1; overflow-y: auto; }
+.sidebar ul { list-style: none; margin: 0; padding: 0; flex-grow: 1; overflow-y: auto; }
 .sidebar li {
+  position: relative;
   padding: 10px;
   cursor: pointer;
   border-block-end: 1px solid rgba(255, 255, 255, 0.1);
@@ -47,13 +48,31 @@
 }
 
 .session-info {
+  width: 100%;
   flex-grow: 1;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  margin-inline-end: 8px;
   min-width: 0;
+  -webkit-mask-image: none;
+  mask-image: none;
+
+  .sidebar li:hover &,
+  .sidebar li:has(:focus-visible) & {
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 72px), transparent calc(100% - 52px));
+    mask-image: linear-gradient(to right, black calc(100% - 72px), transparent calc(100% - 52px));
+  }
+
+  .sidebar li.is-pinned:not(:hover):not(:has(:focus-visible)) & {
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 44px), transparent calc(100% - 20px));
+    mask-image: linear-gradient(to right, black calc(100% - 44px), transparent calc(100% - 20px));
+  }
+
+  @media (hover: none) or (pointer: coarse) {
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 72px), transparent calc(100% - 52px));
+    mask-image: linear-gradient(to right, black calc(100% - 72px), transparent calc(100% - 52px));
+  }
 }
 
 .session-title {
@@ -71,34 +90,41 @@
 }
 
 .session-item-actions {
+  position: absolute;
+  inset-inline-end: 6px;
+  inset-block: 0;
   display: flex;
   align-items: center;
   gap: 4px;
-  flex-shrink: 0;
+  z-index: 2;
   transition: opacity 0.2s ease;
 
   @media (hover: hover) and (pointer: fine) {
     opacity: 0;
+    pointer-events: none;
 
-    .sidebar li:hover & {
+    .sidebar li:hover &,
+    .sidebar li:has(:focus-visible) & {
       opacity: 1;
+      pointer-events: auto;
     }
 
-    // Pinned chat: Container stays visible so the gold pin icon serves as the persistent pinned indicator
+    // Pinned chat: Container stays visible with pin button only when unhovered
     .sidebar li.is-pinned & {
       opacity: 1;
+      pointer-events: auto;
 
-      // On pinned chats, keep the delete button hidden until the row is specifically hovered
       .session-delete-btn {
-        opacity: 0;
-        pointer-events: none;
-        transition: opacity 0.2s ease;
+        display: none;
       }
     }
 
-    .sidebar li.is-pinned:hover & .session-delete-btn {
-      opacity: 1;
-      pointer-events: auto;
+    // Pinned chat: Hovering or keyboard-focusing restores the delete button
+    .sidebar li.is-pinned:hover &,
+    .sidebar li.is-pinned:has(:focus-visible) & {
+      .session-delete-btn {
+        display: flex;
+      }
     }
   }
 
@@ -124,6 +150,11 @@
   &:hover {
     color: #fff;
     background: rgba(255, 255, 255, 0.1);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 1px;
   }
 
   &.session-pin-btn.pinned {
@@ -152,6 +183,11 @@
   &:hover {
     color: #ff4d4f;
     background: rgba(255, 77, 79, 0.15);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 1px;
   }
 }
 .btn-new-chat { width: 100%; margin-block-end: 12px; }

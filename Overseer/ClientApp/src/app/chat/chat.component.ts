@@ -1873,6 +1873,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
   togglePinSession(id: number, event: Event) {
     event.stopPropagation();
+    (event.currentTarget as HTMLElement)?.blur();
     this.chatService.togglePinSession(id).subscribe({
       next: (res) => {
         const session = this.sessions.find(s => s.id === id);
