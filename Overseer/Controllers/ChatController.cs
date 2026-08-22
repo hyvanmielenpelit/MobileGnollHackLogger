@@ -50,7 +50,7 @@ public class ChatController : ControllerBase
     }
 
     [HttpGet("sessions")]
-    public async Task<IActionResult> GetSessions([FromQuery] int skip = 0, [FromQuery] int? take = null)
+    public async Task<IActionResult> GetSessions([FromQuery] int skip = 0, [FromQuery] int? take = null, [FromQuery] string? search = null)
     {
         var swTotal = Stopwatch.StartNew();
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -65,8 +65,20 @@ public class ChatController : ControllerBase
         int totalActive = await _dbContext.ChatSession.CountAsync(s => s.AspNetUserId == userId && !s.IsDeleted);
         int pinnedCount = await _dbContext.ChatSession.CountAsync(s => s.AspNetUserId == userId && !s.IsDeleted && s.IsPinned);
         int unpinnedActive = Math.Max(0, totalActive - pinnedCount);
-        var sessions = await _dbContext.ChatSession
-            .Where(s => s.AspNetUserId == userId && !s.IsDeleted)
+
+        var query = _dbContext.ChatSession
+            .Where(s => s.AspNetUserId == userId && !s.IsDeleted);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            string term = search.Trim();
+            query = query.Where(s =>
+                (s.Title != null && EF.Functions.Like(s.Title, $"%{term}%")) ||
+                _dbContext.ChatMessage.Any(m => m.ChatSessionId == s.Id && !m.IsHidden && m.Role != "system" && m.Content != null && EF.Functions.Like(m.Content, $"%{term}%"))
+            );
+        }
+
+        var sessions = await query
             .OrderByDescending(s => s.IsPinned)
             .ThenByDescending(s => s.LastMessageUtc)
             .Skip(skip)
@@ -356,13 +368,24 @@ public class ChatController : ControllerBase
     }
 
     [HttpGet("sessions/trash")]
-    public async Task<IActionResult> GetTrashSessions()
+    public async Task<IActionResult> GetTrashSessions([FromQuery] string? search = null)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
-        var sessions = await _dbContext.ChatSession
-            .Where(s => s.AspNetUserId == userId && s.IsDeleted)
+        var query = _dbContext.ChatSession
+            .Where(s => s.AspNetUserId == userId && s.IsDeleted);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            string term = search.Trim();
+            query = query.Where(s =>
+                (s.Title != null && EF.Functions.Like(s.Title, $"%{term}%")) ||
+                _dbContext.ChatMessage.Any(m => m.ChatSessionId == s.Id && !m.IsHidden && m.Role != "system" && m.Content != null && EF.Functions.Like(m.Content, $"%{term}%"))
+            );
+        }
+
+        var sessions = await query
             .OrderByDescending(s => s.DeletedUtc)
             .Select(s => new TrashSessionDto
             {
@@ -388,9 +411,16 @@ public class ChatController : ControllerBase
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
-        var success = await _chatRetentionService.RestoreSessionAsync(id, userId);
-        if (!success) return NotFound();
-        return Ok();
+        try
+        {
+            var success = await _chatRetentionService.RestoreSessionAsync(id, userId);
+            if (!success) return NotFound();
+            return Ok();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     [HttpDelete("sessions/{id}/permanent")]

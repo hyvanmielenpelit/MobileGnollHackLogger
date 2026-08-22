@@ -1,6 +1,7 @@
-import { Component, ElementRef, EventEmitter, OnInit, Output, ViewChild, inject } from '@angular/core';
+import { Component, ElementRef, EventEmitter, Input, OnDestroy, OnInit, Output, ViewChild, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ChatService, TrashSession } from '../../services/chat.service';
+import { Subject, Subscription, debounceTime, distinctUntilChanged } from 'rxjs';
 
 @Component({
   selector: 'app-trash-modal',
@@ -9,23 +10,45 @@ import { ChatService, TrashSession } from '../../services/chat.service';
   templateUrl: './trash-modal.component.html',
   styleUrls: ['./trash-modal.component.scss']
 })
-export class TrashModalComponent implements OnInit {
+export class TrashModalComponent implements OnInit, OnDestroy {
   private chatService = inject(ChatService);
 
   @ViewChild('trashDialog') trashDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('permanentDeleteConfirmDialog') permanentDeleteConfirmDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('emptyTrashConfirmDialog') emptyTrashConfirmDialog!: ElementRef<HTMLDialogElement>;
 
+  @Input() activeSessionCount: number = 0;
+  @Input() maxQuota: number = 50;
+
   @Output() sessionRestored = new EventEmitter<number>();
   @Output() trashEmptied = new EventEmitter<void>();
   @Output() trashCountChange = new EventEmitter<number>();
+  @Output() restoreError = new EventEmitter<string>();
 
   trashSessions: TrashSession[] = [];
   loadingTrash = false;
   trashSessionToDeletePermanently: number | null = null;
 
+  trashSearchQuery = '';
+  private trashSearchSubject = new Subject<string>();
+  private trashSearchSub: Subscription | null = null;
+
+  get isAtMaxQuota(): boolean {
+    return this.activeSessionCount >= this.maxQuota;
+  }
+
   ngOnInit() {
+    this.trashSearchSub = this.trashSearchSubject.pipe(
+      debounceTime(300),
+      distinctUntilChanged()
+    ).subscribe(() => {
+      this.loadTrash();
+    });
     this.loadTrash();
+  }
+
+  ngOnDestroy() {
+    this.trashSearchSub?.unsubscribe();
   }
 
   open() {
@@ -37,13 +60,27 @@ export class TrashModalComponent implements OnInit {
     this.trashDialog?.nativeElement?.close();
   }
 
+  onTrashSearchInput(e: Event) {
+    const value = (e.target as HTMLInputElement).value;
+    this.trashSearchQuery = value;
+    this.trashSearchSubject.next(value);
+  }
+
+  clearTrashSearch() {
+    if (!this.trashSearchQuery) return;
+    this.trashSearchQuery = '';
+    this.trashSearchSubject.next('');
+  }
+
   loadTrash() {
     this.loadingTrash = true;
-    this.chatService.getTrashSessions().subscribe({
+    this.chatService.getTrashSessions(this.trashSearchQuery).subscribe({
       next: (sessions) => {
         this.trashSessions = sessions || [];
         this.loadingTrash = false;
-        this.trashCountChange.emit(this.trashSessions.length);
+        if (!this.trashSearchQuery) {
+          this.trashCountChange.emit(this.trashSessions.length);
+        }
       },
       error: () => {
         this.loadingTrash = false;
@@ -52,11 +89,16 @@ export class TrashModalComponent implements OnInit {
   }
 
   restoreTrashSession(id: number) {
+    if (this.isAtMaxQuota) return;
     this.chatService.restoreSession(id).subscribe({
       next: () => {
         this.trashSessions = this.trashSessions.filter(s => s.id !== id);
         this.trashCountChange.emit(this.trashSessions.length);
         this.sessionRestored.emit(id);
+      },
+      error: (err) => {
+        const msg = err.error?.message || 'Cannot restore chat because active chat quota is full.';
+        this.restoreError.emit(msg);
       }
     });
   }

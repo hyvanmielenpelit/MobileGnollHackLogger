@@ -87,10 +87,13 @@ export class ChatService {
   
   public hasGreeted: boolean = false;
 
-  getSessions(skip: number = 0, take?: number) {
+  getSessions(skip: number = 0, take?: number, search?: string) {
     let url = `/api/chat/sessions?skip=${skip}`;
     if (take) {
       url += `&take=${take}`;
+    }
+    if (search && search.trim()) {
+      url += `&search=${encodeURIComponent(search.trim())}`;
     }
     return this.http.get<ChatSessionsResponse>(url, {
       observe: 'response',
@@ -121,8 +124,12 @@ export class ChatService {
     return this.http.put<{isPinned: boolean}>(`/api/chat/sessions/${id}/pin`, {});
   }
 
-  getTrashSessions() {
-    return this.http.get<TrashSession[]>('/api/chat/sessions/trash');
+  getTrashSessions(search?: string) {
+    let url = '/api/chat/sessions/trash';
+    if (search && search.trim()) {
+      url += `?search=${encodeURIComponent(search.trim())}`;
+    }
+    return this.http.get<TrashSession[]>(url);
   }
 
   restoreSession(id: number) {

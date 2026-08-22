@@ -12,7 +12,7 @@ import { ChangelogService } from '../services/changelog.service';
 import { AdminAlertsComponent } from './admin-alerts.component';
 import { TrashModalComponent } from './trash-modal/trash-modal.component';
 import * as signalR from '@microsoft/signalr';
-import { firstValueFrom, filter, Subscription } from 'rxjs';
+import { firstValueFrom, filter, Subscription, Subject, debounceTime, distinctUntilChanged } from 'rxjs';
 export interface ToolClientRequest {
     type: string;
     requestId: string;
@@ -120,6 +120,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   maxSessionQuota = 50;
   maxPinnedQuota = 5;
   trashCount = 0;
+
+  sessionSearchQuery = '';
+  private sessionSearchSubject = new Subject<string>();
+  private sessionSearchSub: Subscription | null = null;
 
   private hubConnection: signalR.HubConnection | null = null;
   private hubStartPromise: Promise<void> | null = null;
@@ -610,6 +614,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     (window as any).__gnollhackReceiveFiles = undefined;
     this.pendingRequests.forEach(timer => clearTimeout(timer));
     this.pendingRequests.clear();
+    this.sessionSearchSub?.unsubscribe();
     if (this.timeUpdateInterval) clearInterval(this.timeUpdateInterval);
     if (this.handoffTimeoutHandle) { clearTimeout(this.handoffTimeoutHandle); this.handoffTimeoutHandle = null; }
 
@@ -801,6 +806,13 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     setTimeout(() => this.preloadAvatarImages(), 2500);
     this.settingsService.showThoughtsAndToolsUpdated.subscribe(val => {
       this.showThoughtsAndTools = val;
+    });
+
+    this.sessionSearchSub = this.sessionSearchSubject.pipe(
+      debounceTime(300),
+      distinctUntilChanged()
+    ).subscribe(() => {
+      this.loadSessions(false);
     });
 
     let previousUrl = '';
@@ -1403,12 +1415,24 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     const key = this.currentSessionId ? `chat_draft_${this.currentSessionId}` : 'chat_draft_new';
     localStorage.removeItem(key);
   }
+  onSessionSearchInput(e: Event) {
+    const value = (e.target as HTMLInputElement).value;
+    this.sessionSearchQuery = value;
+    this.sessionSearchSubject.next(value);
+  }
+
+  clearSessionSearch() {
+    if (!this.sessionSearchQuery) return;
+    this.sessionSearchQuery = '';
+    this.sessionSearchSubject.next('');
+  }
+
   loadSessions(preserveLoaded: boolean = false) {
     const t0 = performance.now();
     this.loadingSessions = true;
     const take = preserveLoaded && this.sessions.length > 0 ? this.sessions.length : undefined;
-    this.perfLog('Sessions', `loadSessions started (take=${take ?? 'default'}, preserveLoaded=${preserveLoaded})`);
-    this.chatService.getSessions(0, take).subscribe({
+    this.perfLog('Sessions', `loadSessions started (take=${take ?? 'default'}, preserveLoaded=${preserveLoaded}, search=${this.sessionSearchQuery})`);
+    this.chatService.getSessions(0, take, this.sessionSearchQuery).subscribe({
       next: (httpResponse) => {
         const netDuration = performance.now() - t0;
         const response = httpResponse.body;
@@ -1457,8 +1481,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     const t0 = performance.now();
     this.loadingMoreSessions = true;
     const skip = this.sessions.length;
-    this.perfLog('Sessions', `loadMoreSessions started (skip=${skip})`);
-    this.chatService.getSessions(skip).subscribe({
+    this.perfLog('Sessions', `loadMoreSessions started (skip=${skip}, search=${this.sessionSearchQuery})`);
+    this.chatService.getSessions(skip, undefined, this.sessionSearchQuery).subscribe({
       next: (httpResponse) => {
         const netDuration = performance.now() - t0;
         const response = httpResponse.body;

@@ -195,7 +195,7 @@ public class ChatRetentionServiceTests
     }
 
     [Fact]
-    public async Task RestoreSession_WhenAtQuota_SoftDeletesOldestUnpinned()
+    public async Task RestoreSession_WhenAtQuota_ThrowsInvalidOperationException()
     {
         var ct = TestContext.Current.CancellationToken;
         using var db = CreateInMemoryDbContext();
@@ -211,18 +211,19 @@ public class ChatRetentionServiceTests
         db.ChatSession.Add(new ChatSession { Id = 4, AspNetUserId = userId, Title = "Trash Chat", LastMessageUtc = DateTime.UtcNow.AddDays(-2), IsDeleted = true });
         await db.SaveChangesAsync(ct);
 
-        // Restoring Chat 4 should bring active count from 3 -> 3 by soft-deleting Chat 1 (oldest active)
-        var restored = await service.RestoreSessionAsync(4, userId, ct);
-        Assert.True(restored);
+        // Restoring Chat 4 when already at max active quota (3) should throw InvalidOperationException
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.RestoreSessionAsync(4, userId, ct));
+        Assert.Contains("active chat quota", ex.Message, StringComparison.OrdinalIgnoreCase);
 
+        // Chat 4 should still be soft-deleted
         var chat4 = await db.ChatSession.FindAsync(new object[] { (long)4 }, ct);
         Assert.NotNull(chat4);
-        Assert.False(chat4.IsDeleted);
+        Assert.True(chat4.IsDeleted);
 
+        // Chat 1 should still be active (not auto-deleted)
         var chat1 = await db.ChatSession.FindAsync(new object[] { (long)1 }, ct);
         Assert.NotNull(chat1);
-        Assert.True(chat1.IsDeleted);
-        Assert.Equal("Quota", chat1.DeletionReason);
+        Assert.False(chat1.IsDeleted);
 
         var activeCount = await db.ChatSession.CountAsync(s => s.AspNetUserId == userId && !s.IsDeleted, ct);
         Assert.Equal(3, activeCount);

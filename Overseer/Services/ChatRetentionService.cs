@@ -96,22 +96,9 @@ public class ChatRetentionService
 
             var totalActiveCount = await _dbContext.ChatSession
                 .CountAsync(s => s.AspNetUserId == userId && !s.IsDeleted, cancellationToken);
-            int excess = totalActiveCount + 1 - _settings.MaxActiveSessionsPerUser;
-            if (excess > 0)
+            if (totalActiveCount >= _settings.MaxActiveSessionsPerUser)
             {
-                var oldestToSoftDelete = await _dbContext.ChatSession
-                    .Where(s => s.AspNetUserId == userId && !s.IsDeleted && !s.IsPinned && s.Id != sessionId)
-                    .OrderBy(s => s.LastMessageUtc)
-                    .Take(excess)
-                    .ToListAsync(cancellationToken);
-
-                var now = DateTime.UtcNow;
-                foreach (var old in oldestToSoftDelete)
-                {
-                    old.IsDeleted = true;
-                    old.DeletedUtc = now;
-                    old.DeletionReason = "Quota";
-                }
+                throw new InvalidOperationException($"Cannot restore chat: active chat quota ({_settings.MaxActiveSessionsPerUser}) reached. Please delete or permanently remove an active chat first.");
             }
         }
 

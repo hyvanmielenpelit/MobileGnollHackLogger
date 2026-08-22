@@ -7,6 +7,23 @@
       </button>
       <h3 class="sidebar-title">Conversations</h3>
       <button class="btn-gh btn-new-chat" (click)="navigateToNewSession()">New Chat</button>
+      <div class="sidebar-search-container">
+        <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input
+          type="search"
+          class="sidebar-search-input"
+          placeholder="Search chats & messages..."
+          [value]="sessionSearchQuery"
+          (input)="onSessionSearchInput($event)"
+          (keydown.escape)="clearSessionSearch()"
+          aria-label="Search chats and messages"
+          autocomplete="off"
+          spellcheck="false" />
+        <button *ngIf="sessionSearchQuery" class="search-clear-btn" (click)="clearSessionSearch()" title="Clear search" aria-label="Clear search">✕</button>
+      </div>
       <ul>
         @if (loadingSessions) {
           <li class="sessions-loader">
@@ -16,7 +33,7 @@
         }
         @if (!loadingSessions && sessions.length === 0) {
           <li class="empty-sessions-msg">
-            No conversations yet.
+            {{ sessionSearchQuery ? 'No conversations matching "' + sessionSearchQuery + '".' : 'No conversations yet.' }}
           </li>
         }
         @for (s of sessions; track s.id) {
@@ -664,7 +681,14 @@
   </div>
 </dialog>
 
-<app-trash-modal #trashModal (sessionRestored)="loadSessions(true)" (trashEmptied)="loadSessions(true)" (trashCountChange)="trashCount = $event"></app-trash-modal>
+<app-trash-modal #trashModal
+  [activeSessionCount]="activeSessionCount || 0"
+  [maxQuota]="maxSessionQuota || 50"
+  (sessionRestored)="loadSessions(true)"
+  (trashEmptied)="loadSessions(true)"
+  (trashCountChange)="trashCount = $event"
+  (restoreError)="showErrorToast($event, 'Cannot Restore Chat')">
+</app-trash-modal>
 
 <!-- Hidden container to keep avatar bitmaps decoded in memory -->
 <div aria-hidden="true" style="position: absolute; width: 0; height: 0; overflow: hidden; pointer-events: none;">
