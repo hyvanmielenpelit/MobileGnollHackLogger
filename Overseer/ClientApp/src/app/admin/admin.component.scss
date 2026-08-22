@@ -1046,3 +1046,46 @@
   }
 }
 
+/* --- Maintenance Loading Dialog --- */
+.loading-dialog {
+  text-align: center;
+  max-width: 440px;
+
+  .loading-dialog-body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    padding: 10px 0 10px 0;
+  }
+
+  .loading-dialog-spinner {
+    width: 42px;
+    height: 42px;
+    border: 3px solid rgba(255, 255, 255, 0.1);
+    border-top-color: var(--primary-color, #e0ba6d);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    box-shadow: 0 0 15px rgba(224, 186, 109, 0.2);
+  }
+
+  h3 {
+    margin: 0;
+    font-size: 1.2rem;
+    color: var(--title-color, #e0ba6d);
+  }
+
+  .loading-dialog-msg {
+    margin: 0;
+    font-size: 0.9rem;
+    color: #ccc;
+    line-height: 1.4;
+  }
+
+  .dialog-actions {
+    justify-content: center;
+    margin-top: 10px;
+    padding-top: 15px;
+  }
+}
+

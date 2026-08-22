@@ -383,9 +383,6 @@
                       </label>
                     </div>
                     <button class="btn-gh btn-primary action-btn-large" (click)="runFullMaintenance()" [disabled]="maintenanceLoading">
-                      @if (maintenanceLoading) {
-                        <span class="gh-spinner-small"></span>
-                      }
                       Execute Maintenance Pass
                     </button>
                   </div>
@@ -618,6 +615,17 @@
   <div class="dialog-actions">
     <button class="btn-gh btn-gh-cancel" (click)="closeConfirmDialog()">Cancel</button>
     <button [class]="confirmButtonClass || 'btn-gh btn-gh-delete'" (click)="executeConfirmAction()">{{ confirmButtonText || 'Confirm' }}</button>
+  </div>
+</dialog>
+
+<dialog #maintenanceLoadingDialog class="gh-dialog loading-dialog" (cancel)="closeLoadingModal()" role="dialog" aria-modal="true" aria-labelledby="maintenanceLoadingTitle" aria-describedby="maintenanceLoadingMsg">
+  <div class="loading-dialog-body">
+    <div class="loading-dialog-spinner" aria-hidden="true"></div>
+    <h3 id="maintenanceLoadingTitle">{{ maintenanceLoadingTitle || 'Executing Operation' }}</h3>
+    <p id="maintenanceLoadingMsg" class="loading-dialog-msg" aria-live="polite">{{ maintenanceLoadingMessage || 'Please wait while the server processes your request...' }}</p>
+  </div>
+  <div class="dialog-actions">
+    <button type="button" class="btn-gh btn-gh-cancel" (click)="closeLoadingModal()">Dismiss</button>
   </div>
 </dialog>
 

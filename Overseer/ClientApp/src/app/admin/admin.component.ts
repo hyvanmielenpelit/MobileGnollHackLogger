@@ -131,8 +131,13 @@ export class AdminComponent implements OnInit, OnDestroy {
   
   @ViewChild('analyticsDialog') analyticsDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('adminToast') adminToast?: ElementRef<HTMLElement>;
+  @ViewChild('maintenanceLoadingDialog') maintenanceLoadingDialog!: ElementRef<HTMLDialogElement>;
   analyticsConfigId: number = 0;
   analyticsConfigName: string = '';
+
+  // Maintenance Loading Modal State
+  maintenanceLoadingTitle = 'Executing Operation';
+  maintenanceLoadingMessage = 'Please wait while the server processes your request...';
 
   // Generic Confirm State
   confirmTitle?: string;
@@ -568,6 +573,25 @@ export class AdminComponent implements OnInit, OnDestroy {
     this.closeConfirmDialog();
   }
 
+  // --- Maintenance Loading Modal ---
+  openLoadingModal(title: string, message: string) {
+    this.maintenanceLoadingTitle = title;
+    this.maintenanceLoadingMessage = message;
+    if (this.maintenanceLoadingDialog?.nativeElement && !this.maintenanceLoadingDialog.nativeElement.open) {
+      try {
+        this.maintenanceLoadingDialog.nativeElement.showModal();
+      } catch {}
+    }
+  }
+
+  closeLoadingModal() {
+    if (this.maintenanceLoadingDialog?.nativeElement?.open) {
+      try {
+        this.maintenanceLoadingDialog.nativeElement.close();
+      } catch {}
+    }
+  }
+
   // --- Config Assignments ---
   
   openManageUserConfigs(user: UserDto) {
@@ -942,6 +966,12 @@ export class AdminComponent implements OnInit, OnDestroy {
     const execute = () => {
       this.maintenanceLoading = true;
       this.lastMaintenanceResult = null;
+      this.openLoadingModal(
+        this.maintenanceDryRun ? 'Previewing Maintenance Pass' : 'Executing Maintenance Pass',
+        this.maintenanceDryRun
+          ? 'Computing dry-run maintenance metrics...'
+          : 'Running full maintenance pass (purging expired trash, inactive sessions, and aged tool results)...'
+      );
 
       this.adminService.runMaintenanceNow({
         dryRun: this.maintenanceDryRun,
@@ -949,6 +979,7 @@ export class AdminComponent implements OnInit, OnDestroy {
         toolCallPruneDays: this.toolCallPruneDays
       }).subscribe({
         next: (res) => {
+          this.closeLoadingModal();
           this.maintenanceLoading = false;
           this.lastMaintenanceResult = res;
           const mb = (res.reclaimedDiskBytes / 1024 / 1024).toFixed(2);
@@ -963,6 +994,7 @@ export class AdminComponent implements OnInit, OnDestroy {
           this.loadStorageMetrics();
         },
         error: (err) => {
+          this.closeLoadingModal();
           this.maintenanceLoading = false;
           this.showAdminToast(
             'Failed to execute maintenance pass: ' + (err.error?.message || err.message),
@@ -992,8 +1024,13 @@ export class AdminComponent implements OnInit, OnDestroy {
       'Are you sure you want to immediately delete ALL soft-deleted sessions across all users? This action cannot be undone.',
       () => {
         this.maintenanceLoading = true;
+        this.openLoadingModal(
+          'Purging All Trash',
+          'Permanently deleting all soft-deleted sessions and associated disk folders across all users...'
+        );
         this.adminService.purgeTrashNow({ dryRun: false }).subscribe({
           next: (res) => {
+            this.closeLoadingModal();
             this.maintenanceLoading = false;
             this.lastMaintenanceResult = res;
             const mb = (res.reclaimedDiskBytes / 1024 / 1024).toFixed(2);
@@ -1005,6 +1042,7 @@ export class AdminComponent implements OnInit, OnDestroy {
             this.loadStorageMetrics();
           },
           error: (err) => {
+            this.closeLoadingModal();
             this.maintenanceLoading = false;
             this.showAdminToast(
               'Failed to purge trash: ' + (err.error?.message || err.message),
@@ -1025,13 +1063,19 @@ export class AdminComponent implements OnInit, OnDestroy {
       `Are you sure you want to soft-delete inactive sessions older than ${this.inactivityDays} days?`,
       () => {
         this.maintenanceLoading = true;
+        this.openLoadingModal(
+          'Purging Inactive Sessions',
+          `Soft-deleting inactive sessions older than ${this.inactivityDays} days...`
+        );
         this.adminService.purgeInactive({ inactivityDays: this.inactivityDays, dryRun: false }).subscribe({
           next: (res) => {
+            this.closeLoadingModal();
             this.maintenanceLoading = false;
             this.showAdminToast(res.message, 'success', 'Inactive Sessions Purged');
             this.loadStorageMetrics();
           },
           error: (err) => {
+            this.closeLoadingModal();
             this.maintenanceLoading = false;
             this.showAdminToast(
               'Failed to purge inactive sessions: ' + (err.error?.message || err.message),
@@ -1052,13 +1096,19 @@ export class AdminComponent implements OnInit, OnDestroy {
       `Are you sure you want to prune tool call result payloads older than ${this.toolCallPruneDays} days? Message transcripts will be preserved.`,
       () => {
         this.maintenanceLoading = true;
+        this.openLoadingModal(
+          'Pruning Tool Call Results',
+          `Truncating tool result payloads older than ${this.toolCallPruneDays} days...`
+        );
         this.adminService.pruneToolResults({ toolCallPruneDays: this.toolCallPruneDays, dryRun: false }).subscribe({
           next: (res) => {
+            this.closeLoadingModal();
             this.maintenanceLoading = false;
             this.showAdminToast(res.message, 'success', 'Tool Results Pruned');
             this.loadStorageMetrics();
           },
           error: (err) => {
+            this.closeLoadingModal();
             this.maintenanceLoading = false;
             this.showAdminToast(
               'Failed to prune tool results: ' + (err.error?.message || err.message),
@@ -1075,13 +1125,19 @@ export class AdminComponent implements OnInit, OnDestroy {
 
   sweepOrphanFoldersNow() {
     this.maintenanceLoading = true;
+    this.openLoadingModal(
+      'Sweeping Orphan Folders',
+      'Scanning and removing unreferenced disk folders...'
+    );
     this.adminService.sweepOrphans({ dryRun: false }).subscribe({
       next: (res) => {
+        this.closeLoadingModal();
         this.maintenanceLoading = false;
         this.showAdminToast(res.message, 'success', 'Orphan Folders Swept');
         this.loadStorageMetrics();
       },
       error: (err) => {
+        this.closeLoadingModal();
         this.maintenanceLoading = false;
         this.showAdminToast(
           'Failed to sweep orphan folders: ' + (err.error?.message || err.message),
@@ -1094,8 +1150,13 @@ export class AdminComponent implements OnInit, OnDestroy {
 
   sendDiagnosticEmail() {
     this.maintenanceLoading = true;
+    this.openLoadingModal(
+      'Sending Diagnostic Report',
+      'Generating storage metrics and dispatching diagnostic email...'
+    );
     this.adminService.sendReportEmail().subscribe({
       next: (res) => {
+        this.closeLoadingModal();
         this.maintenanceLoading = false;
         this.showAdminToast(
           res.message,
@@ -1104,6 +1165,7 @@ export class AdminComponent implements OnInit, OnDestroy {
         );
       },
       error: (err) => {
+        this.closeLoadingModal();
         this.maintenanceLoading = false;
         this.showAdminToast(
           'Failed to send report email: ' + (err.error?.message || err.message),
