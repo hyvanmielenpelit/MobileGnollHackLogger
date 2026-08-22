@@ -30,8 +30,6 @@ export class AdminComponent implements OnInit, OnDestroy {
   inactivityDays = 90;
   toolCallPruneDays = 30;
   lastMaintenanceResult: MaintenanceResult | null = null;
-  dbActionMessage: string | null = null;
-  dbActionMessageType: 'success' | 'error' = 'success';
 
   users: UserDto[] = [];
   groups: GroupDto[] = [];
@@ -132,6 +130,7 @@ export class AdminComponent implements OnInit, OnDestroy {
   @ViewChild('editConfigOverrideDialog') editConfigOverrideDialog!: ElementRef<HTMLDialogElement>;
   
   @ViewChild('analyticsDialog') analyticsDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('adminToast') adminToast?: ElementRef<HTMLElement>;
   analyticsConfigId: number = 0;
   analyticsConfigName: string = '';
 
@@ -187,40 +186,69 @@ export class AdminComponent implements OnInit, OnDestroy {
 
     this.loadData();
   }
-  devToastMessage = '';
-  private toastTimeout: any;
+  adminToastMessage = '';
+  adminToastTitle = '';
+  adminToastType: 'success' | 'error' | 'info' = 'success';
+  private adminToastTimeout: any;
 
-  showDevToast(message: string) {
-    this.devToastMessage = message;
-    const toast = document.getElementById('dev-toast');
-    if (toast && 'showPopover' in toast) {
-      (toast as any).showPopover();
-      
-      if (this.toastTimeout) {
-        clearTimeout(this.toastTimeout);
+  showAdminToast(message: string, type: 'success' | 'error' | 'info' = 'success', title?: string, durationMs = 5000) {
+    this.adminToastMessage = message;
+    this.adminToastType = type;
+    this.adminToastTitle = title || (type === 'success' ? 'Success' : type === 'error' ? 'Error' : 'Notification');
+
+    const toast = this.adminToast?.nativeElement as any || document.getElementById('adminToast');
+    if (toast && ('showPopover' in toast || 'show' in toast)) {
+      try {
+        if (!toast.matches(':popover-open')) {
+          toast.showPopover();
+        }
+      } catch {
+        try { toast.showPopover(); } catch {}
       }
-      
-      this.toastTimeout = setTimeout(() => {
-        (toast as any).hidePopover();
-      }, 3000);
+
+      if (this.adminToastTimeout) {
+        clearTimeout(this.adminToastTimeout);
+      }
+
+      this.adminToastTimeout = setTimeout(() => {
+        this.hideAdminToast();
+      }, durationMs);
     }
   }
+
+  hideAdminToast() {
+    if (this.adminToastTimeout) {
+      clearTimeout(this.adminToastTimeout);
+      this.adminToastTimeout = null;
+    }
+    const toast = this.adminToast?.nativeElement as any || document.getElementById('adminToast');
+    if (toast && 'hidePopover' in toast) {
+      try {
+        if (toast.matches(':popover-open')) {
+          toast.hidePopover();
+        }
+      } catch {
+        try { toast.hidePopover(); } catch {}
+      }
+    }
+  }
+
   testChangelogAnimation() {
     localStorage.setItem('overseer_last_seen_changelog', '0.0.0');
     window.dispatchEvent(new Event('changelog_badge_reset'));
-    this.showDevToast('Update badge reset successfully!');
+    this.showAdminToast('Update badge reset successfully!', 'success', 'Badge Reset');
   }
 
   triggerFrontendSentryError() {
-    this.showDevToast('Triggering frontend exception...');
+    this.showAdminToast('Triggering frontend exception...', 'info', 'Sentry Test');
     throw new Error('Sentry Frontend Crash Test triggered by Admin');
   }
 
   triggerBackendSentryError() {
-    this.showDevToast('Sending backend crash request...');
+    this.showAdminToast('Sending backend crash request...', 'info', 'Sentry Test');
     this.adminService.triggerBackendSentryError().subscribe({
-      next: () => this.showDevToast('Backend crash request completed unexpectedly successfully.'),
-      error: (err) => this.showDevToast('Backend crash request completed (check Sentry!)')
+      next: () => this.showAdminToast('Backend crash request completed unexpectedly successfully.', 'success', 'Sentry Test'),
+      error: () => this.showAdminToast('Backend crash request completed (check Sentry!)', 'info', 'Sentry Test')
     });
   }
 
@@ -890,16 +918,22 @@ export class AdminComponent implements OnInit, OnDestroy {
     }
   }
 
-  loadStorageMetrics() {
+  loadStorageMetrics(showFeedback = false) {
     this.storageLoading = true;
     this.adminService.getStorageMetrics().subscribe({
       next: (data) => {
         this.storageMetrics = data;
         this.storageLoading = false;
+        if (showFeedback) {
+          this.showAdminToast('Database storage metrics refreshed.', 'info', 'Metrics Refreshed');
+        }
       },
       error: (err) => {
         console.error('Failed to load storage metrics', err);
         this.storageLoading = false;
+        if (showFeedback) {
+          this.showAdminToast('Failed to load storage metrics: ' + (err.error?.message || err.message), 'error', 'Error');
+        }
       }
     });
   }
@@ -907,7 +941,6 @@ export class AdminComponent implements OnInit, OnDestroy {
   runFullMaintenance() {
     const execute = () => {
       this.maintenanceLoading = true;
-      this.dbActionMessage = null;
       this.lastMaintenanceResult = null;
 
       this.adminService.runMaintenanceNow({
@@ -918,14 +951,24 @@ export class AdminComponent implements OnInit, OnDestroy {
         next: (res) => {
           this.maintenanceLoading = false;
           this.lastMaintenanceResult = res;
-          this.dbActionMessage = res.isDryRun ? 'Dry run completed successfully.' : 'Full maintenance pass executed successfully.';
-          this.dbActionMessageType = 'success';
+          const mb = (res.reclaimedDiskBytes / 1024 / 1024).toFixed(2);
+          const detail = res.isDryRun
+            ? `Dry run identified ${res.softDeletedCount} inactive sessions, ${res.prunedToolResultCount} tool payloads.`
+            : `Purged ${res.purgedSessionCount} sessions and ${res.deletedDiskFolderCount} disk folders (${mb} MB reclaimed in ${res.elapsedMilliseconds}ms).`;
+          this.showAdminToast(
+            detail,
+            'success',
+            res.isDryRun ? 'Dry Run Completed' : 'Full Maintenance Completed'
+          );
           this.loadStorageMetrics();
         },
         error: (err) => {
           this.maintenanceLoading = false;
-          this.dbActionMessage = 'Failed to execute maintenance pass: ' + (err.error?.message || err.message);
-          this.dbActionMessageType = 'error';
+          this.showAdminToast(
+            'Failed to execute maintenance pass: ' + (err.error?.message || err.message),
+            'error',
+            'Maintenance Error'
+          );
         }
       });
     };
@@ -949,19 +992,25 @@ export class AdminComponent implements OnInit, OnDestroy {
       'Are you sure you want to immediately delete ALL soft-deleted sessions across all users? This action cannot be undone.',
       () => {
         this.maintenanceLoading = true;
-        this.dbActionMessage = null;
         this.adminService.purgeTrashNow({ dryRun: false }).subscribe({
           next: (res) => {
             this.maintenanceLoading = false;
             this.lastMaintenanceResult = res;
-            this.dbActionMessage = `Purged ${res.purgedSessionCount} sessions and ${res.deletedDiskFolderCount} disk folders.`;
-            this.dbActionMessageType = 'success';
+            const mb = (res.reclaimedDiskBytes / 1024 / 1024).toFixed(2);
+            this.showAdminToast(
+              `Purged ${res.purgedSessionCount} sessions and ${res.deletedDiskFolderCount} disk folders (${mb} MB reclaimed).`,
+              'success',
+              'Trash Purged'
+            );
             this.loadStorageMetrics();
           },
           error: (err) => {
             this.maintenanceLoading = false;
-            this.dbActionMessage = 'Failed to purge trash: ' + (err.error?.message || err.message);
-            this.dbActionMessageType = 'error';
+            this.showAdminToast(
+              'Failed to purge trash: ' + (err.error?.message || err.message),
+              'error',
+              'Purge Error'
+            );
           }
         });
       },
@@ -976,18 +1025,19 @@ export class AdminComponent implements OnInit, OnDestroy {
       `Are you sure you want to soft-delete inactive sessions older than ${this.inactivityDays} days?`,
       () => {
         this.maintenanceLoading = true;
-        this.dbActionMessage = null;
         this.adminService.purgeInactive({ inactivityDays: this.inactivityDays, dryRun: false }).subscribe({
           next: (res) => {
             this.maintenanceLoading = false;
-            this.dbActionMessage = res.message;
-            this.dbActionMessageType = 'success';
+            this.showAdminToast(res.message, 'success', 'Inactive Sessions Purged');
             this.loadStorageMetrics();
           },
           error: (err) => {
             this.maintenanceLoading = false;
-            this.dbActionMessage = 'Failed to purge inactive sessions: ' + (err.error?.message || err.message);
-            this.dbActionMessageType = 'error';
+            this.showAdminToast(
+              'Failed to purge inactive sessions: ' + (err.error?.message || err.message),
+              'error',
+              'Purge Error'
+            );
           }
         });
       },
@@ -1002,18 +1052,19 @@ export class AdminComponent implements OnInit, OnDestroy {
       `Are you sure you want to prune tool call result payloads older than ${this.toolCallPruneDays} days? Message transcripts will be preserved.`,
       () => {
         this.maintenanceLoading = true;
-        this.dbActionMessage = null;
         this.adminService.pruneToolResults({ toolCallPruneDays: this.toolCallPruneDays, dryRun: false }).subscribe({
           next: (res) => {
             this.maintenanceLoading = false;
-            this.dbActionMessage = res.message;
-            this.dbActionMessageType = 'success';
+            this.showAdminToast(res.message, 'success', 'Tool Results Pruned');
             this.loadStorageMetrics();
           },
           error: (err) => {
             this.maintenanceLoading = false;
-            this.dbActionMessage = 'Failed to prune tool results: ' + (err.error?.message || err.message);
-            this.dbActionMessageType = 'error';
+            this.showAdminToast(
+              'Failed to prune tool results: ' + (err.error?.message || err.message),
+              'error',
+              'Pruning Error'
+            );
           }
         });
       },
@@ -1024,35 +1075,41 @@ export class AdminComponent implements OnInit, OnDestroy {
 
   sweepOrphanFoldersNow() {
     this.maintenanceLoading = true;
-    this.dbActionMessage = null;
     this.adminService.sweepOrphans({ dryRun: false }).subscribe({
       next: (res) => {
         this.maintenanceLoading = false;
-        this.dbActionMessage = res.message;
-        this.dbActionMessageType = 'success';
+        this.showAdminToast(res.message, 'success', 'Orphan Folders Swept');
         this.loadStorageMetrics();
       },
       error: (err) => {
         this.maintenanceLoading = false;
-        this.dbActionMessage = 'Failed to sweep orphan folders: ' + (err.error?.message || err.message);
-        this.dbActionMessageType = 'error';
+        this.showAdminToast(
+          'Failed to sweep orphan folders: ' + (err.error?.message || err.message),
+          'error',
+          'Sweep Error'
+        );
       }
     });
   }
 
   sendDiagnosticEmail() {
     this.maintenanceLoading = true;
-    this.dbActionMessage = null;
     this.adminService.sendReportEmail().subscribe({
       next: (res) => {
         this.maintenanceLoading = false;
-        this.dbActionMessage = res.message;
-        this.dbActionMessageType = res.success ? 'success' : 'error';
+        this.showAdminToast(
+          res.message,
+          res.success ? 'success' : 'error',
+          res.success ? 'Diagnostic Report Sent' : 'Failed to Send Report'
+        );
       },
       error: (err) => {
         this.maintenanceLoading = false;
-        this.dbActionMessage = 'Failed to send report email: ' + (err.error?.message || err.message);
-        this.dbActionMessageType = 'error';
+        this.showAdminToast(
+          'Failed to send report email: ' + (err.error?.message || err.message),
+          'error',
+          'Email Error'
+        );
       }
     });
   }

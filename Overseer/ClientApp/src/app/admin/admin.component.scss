@@ -527,49 +527,222 @@
     
     .search-controls {
       width: 100%;
-      max-width: 100%;
+      padding: 0.25rem;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+
+      button.page-btn {
+        background: transparent;
+        border: none;
+        color: #a0a0a0;
+        border-radius: 4px;
+        min-width: 32px;
+        height: 32px;
+        padding: 0;
+        font-size: 14px;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.2s ease;
+
+        &:hover:not(:disabled) {
+          background: rgba(255, 255, 255, 0.1);
+          color: #ffffff;
+        }
+
+        &:disabled {
+          opacity: 0.3;
+          cursor: not-allowed;
+        }
+
+        &.active {
+          background: rgba(224, 186, 109, 0.85); /* gold */
+          color: #121212; /* dark text for max contrast */
+          font-weight: bold;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        svg {
+          width: 16px;
+          height: 16px;
+        }
+      }
+
+      .page-ellipsis {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 32px;
+        height: 32px;
+        color: #a0a0a0;
+        user-select: none;
+        font-weight: bold;
+        font-size: 14px;
+      }
+    }
+  }
+
+  .search-controls {
+    flex-shrink: 1;
+    min-width: 150px;
+    max-width: 250px;
+    
+    input {
+      width: 100%;
     }
   }
 }
 
-/* Toast Popover styling based on modern web guidance */
-.toast[popover] {
-  position: fixed;
-  top: 1.5rem;
-  right: 1.5rem;
-  margin: 0;
-  padding: 0.75rem 1.25rem;
-  border: 1px solid var(--color-success, #28a745);
-  border-radius: 8px;
-  background: rgba(40, 167, 69, 0.15);
-  backdrop-filter: blur(10px);
-  color: #fff;
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  z-index: 1000;
+.table-loading {
+  opacity: 0.5;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.dialog-stretch {
+  max-height: 90dvh;
+
+  &[open] {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .dialog-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    padding: 20px 20px 0 20px;
+  }
+
+  .scrollable-content {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+    padding-bottom: 20px;
+    padding-right: 10px;
+  }
   
-  /* Smooth entry/exit using @starting-style */
-  transition: opacity 0.25s ease, transform 0.25s ease, display 0.25s allow-discrete;
-  opacity: 0;
-  transform: translateY(-10px);
-}
-
-.toast[popover]:popover-open {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-@starting-style {
-  .toast[popover]:popover-open {
-    opacity: 0;
-    transform: translateY(-10px);
+  .dialog-actions {
+    padding-bottom: 20px;
+    margin-top: 0;
   }
 }
 
-.toast .icon {
-  color: var(--color-success, #28a745);
+/* Admin Toast Popover styling based on modern web guidance */
+.admin-toast {
+  box-sizing: border-box;
+  position: fixed;
+  inset: 24px 24px auto auto;
+  margin: 0;
+  padding: 14px 18px;
+  border-radius: 8px;
+  color: #fff;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
+  z-index: 9999;
+  max-width: min(500px, calc(100vw - 32px));
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  overflow: visible;
+
+  /* Smooth entry/exit using @starting-style and discrete display transitions */
+  transition: opacity 0.3s ease, transform 0.3s ease, display 0.3s ease allow-discrete, overlay 0.3s ease allow-discrete;
+  opacity: 0;
+  transform: translateY(-15px);
+
+  &:is(:popover-open, .\:popover-open) {
+    opacity: 1;
+    transform: translateY(0);
+
+    @starting-style {
+      opacity: 0;
+      transform: translateY(-15px);
+    }
+  }
+
+  &.admin-toast-success {
+    background: rgba(20, 35, 20, 0.95);
+    border: 1px solid var(--color-success, #28a745);
+    .toast-icon {
+      color: var(--color-success, #28a745);
+    }
+  }
+
+  &.admin-toast-error {
+    background: rgba(40, 20, 20, 0.95);
+    border: 1px solid var(--color-error, #dc3545);
+    .toast-icon {
+      color: var(--color-error, #dc3545);
+    }
+  }
+
+  &.admin-toast-info {
+    background: rgba(25, 25, 35, 0.95);
+    border: 1px solid var(--primary-color, #e0ba6d);
+    .toast-icon {
+      color: var(--primary-color, #e0ba6d);
+    }
+  }
+
+  .toast-content {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .toast-icon {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 2px;
+  }
+
+  .toast-body {
+    flex-grow: 1;
+    min-width: 0;
+
+    strong {
+      display: block;
+      margin-bottom: 2px;
+      font-family: "Cinzel", serif;
+      font-size: 0.95rem;
+      color: var(--title-color, #e0ba6d);
+    }
+
+    .toast-msg {
+      margin: 0;
+      font-size: 0.875rem;
+      line-height: 1.4;
+      color: #e0e0e0;
+      word-break: break-word;
+    }
+  }
+
+  .toast-close {
+    background: transparent;
+    border: none;
+    color: #ccc;
+    font-size: 1.25rem;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+    margin-top: -2px;
+    margin-right: -6px;
+    transition: color 0.2s;
+
+    &:hover {
+      color: #fff;
+    }
+  }
+
+  @media (max-width: 600px) {
+    inset: 16px 16px auto 16px;
+    max-width: calc(100vw - 32px);
+    width: calc(100vw - 32px);
+  }
 }
 
 .permissions-fieldset {
@@ -595,24 +768,6 @@
   padding: 0 10px;
   text-transform: uppercase;
   letter-spacing: 1px;
-}
-
-#dev-toast {
-  /* Setup modern transition per modern-web-guidance */
-  transition: transform 0.3s ease-out, opacity 0.3s ease-out, display 0.3s ease-out allow-discrete, overlay 0.3s ease-out allow-discrete;
-  opacity: 0;
-  transform: translateY(20px);
-  
-  &:popover-open,
-  &.\:popover-open {
-    opacity: 1;
-    transform: translateY(0);
-    
-    @starting-style {
-      opacity: 0;
-      transform: translateY(20px);
-    }
-  }
 }
 
 .devtools-button-group {

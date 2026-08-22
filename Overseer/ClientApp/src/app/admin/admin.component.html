@@ -261,19 +261,13 @@
           <div>
             <div class="tab-header-row">
               <h3 class="m-0">Database Storage & Maintenance</h3>
-              <button class="btn-gh btn-secondary" (click)="loadStorageMetrics()" [disabled]="storageLoading">
+              <button class="btn-gh btn-secondary" (click)="loadStorageMetrics(true)" [disabled]="storageLoading">
                 @if (storageLoading) {
                   <span class="gh-spinner-small"></span>
                 }
                 Refresh Metrics
               </button>
             </div>
-
-            @if (dbActionMessage) {
-              <div class="alert mt-15" [ngClass]="dbActionMessageType === 'success' ? 'alert-success' : 'alert-danger'">
-                {{ dbActionMessage }}
-              </div>
-            }
 
             @if (storageLoading && !storageMetrics) {
               <div class="loading-state mt-20">
@@ -515,15 +509,39 @@
   </div>
 </div>
 
-<div id="dev-toast" popover="manual" role="status" class="toast toast-success d-flex align-items-center" style="gap: 10px; justify-content: space-between;">
-  <div class="d-flex align-items-center" style="gap: 8px;">
-    <svg class="icon" aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-      <polyline points="22 4 12 14.01 9 11.01"></polyline>
-    </svg>
-    <span>{{ devToastMessage }}</span>
+<!-- ADMIN TOAST NOTIFICATION -->
+<div #adminToast id="adminToast" popover="manual" [attr.role]="adminToastType === 'error' ? 'alert' : 'status'" [attr.aria-live]="adminToastType === 'error' ? 'assertive' : 'polite'" class="admin-toast" [ngClass]="'admin-toast-' + adminToastType">
+  <div class="toast-content">
+    <span class="toast-icon">
+      @if (adminToastType === 'success') {
+        <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+          <polyline points="22 4 12 14.01 9 11.01"></polyline>
+        </svg>
+      }
+      @if (adminToastType === 'error') {
+        <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="15" y1="9" x2="9" y2="15"></line>
+          <line x1="9" y1="9" x2="15" y2="15"></line>
+        </svg>
+      }
+      @if (adminToastType === 'info') {
+        <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="16" x2="12" y2="12"></line>
+          <line x1="12" y1="8" x2="12.01" y2="8"></line>
+        </svg>
+      }
+    </span>
+    <div class="toast-body">
+      @if (adminToastTitle) {
+        <strong>{{ adminToastTitle }}</strong>
+      }
+      <p class="toast-msg">{{ adminToastMessage }}</p>
+    </div>
+    <button class="toast-close" (click)="hideAdminToast()" aria-label="Close notification">&times;</button>
   </div>
-  <button popovertarget="dev-toast" popovertargetaction="hide" class="close-btn" style="background: transparent; border: none; color: inherit; cursor: pointer; font-size: 1.2rem; line-height: 1; padding: 0 5px;" aria-label="Close">&times;</button>
 </div>
 
 <!-- DIALOGS -->
