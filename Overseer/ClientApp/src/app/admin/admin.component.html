@@ -409,31 +409,27 @@
                     <div class="granular-card">
                       <h5>Purge Inactive Sessions</h5>
                       <p class="text-muted">Soft-deletes active, unpinned sessions with no activity past the threshold.</p>
-                      <div class="d-flex align-items-center gap-10 mt-10">
-                        <select class="gh-input" [(ngModel)]="inactivityDays" style="max-width: 140px;">
-                          <option [value]="90">Older than 90d</option>
-                          <option [value]="60">Older than 60d</option>
-                          <option [value]="30">Older than 30d</option>
-                        </select>
-                        <button class="btn-gh btn-secondary" (click)="purgeInactiveNow()" [disabled]="maintenanceLoading">
-                          Soft-Delete Inactive
-                        </button>
-                      </div>
+                      <select class="gh-input mt-10" [(ngModel)]="inactivityDays" style="max-width: 160px; width: 100%;">
+                        <option [value]="90">Older than 90d</option>
+                        <option [value]="60">Older than 60d</option>
+                        <option [value]="30">Older than 30d</option>
+                      </select>
+                      <button class="btn-gh btn-secondary mt-10" (click)="purgeInactiveNow()" [disabled]="maintenanceLoading">
+                        Soft-Delete Inactive
+                      </button>
                     </div>
 
                     <div class="granular-card">
                       <h5>Prune Aged Tool Results</h5>
                       <p class="text-muted">Truncates raw tool call JSON payloads without deleting user message transcripts.</p>
-                      <div class="d-flex align-items-center gap-10 mt-10">
-                        <select class="gh-input" [(ngModel)]="toolCallPruneDays" style="max-width: 140px;">
-                          <option [value]="30">Older than 30d</option>
-                          <option [value]="60">Older than 60d</option>
-                          <option [value]="90">Older than 90d</option>
-                        </select>
-                        <button class="btn-gh btn-secondary" (click)="pruneToolResultsNow()" [disabled]="maintenanceLoading">
-                          Prune Tool Payloads
-                        </button>
-                      </div>
+                      <select class="gh-input mt-10" [(ngModel)]="toolCallPruneDays" style="max-width: 160px; width: 100%;">
+                        <option [value]="30">Older than 30d</option>
+                        <option [value]="60">Older than 60d</option>
+                        <option [value]="90">Older than 90d</option>
+                      </select>
+                      <button class="btn-gh btn-secondary mt-10" (click)="pruneToolResultsNow()" [disabled]="maintenanceLoading">
+                        Prune Tool Payloads
+                      </button>
                     </div>
 
                     <div class="granular-card">
