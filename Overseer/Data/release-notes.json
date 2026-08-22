@@ -1,7 +1,7 @@
 [
   {
     "version": "1.0.23",
-    "date": "2026-08-22T17:23:00Z",
+    "date": "2026-08-22T18:06:00Z",
     "summary": "Added NetHack source code search and file inspection capabilities, improved client-side error handling for network disconnections, and fixed markdown table formatting issues.",
     "changes": [
       {
@@ -17,8 +17,16 @@
         "text": "Improved client-side network error handling across all views and prevented transient connection dropouts from generating false crash reports."
       },
       {
+        "type": "improvement",
+        "text": "Added a reasoning mode badge to the Overseer's chat messages."
+      },
+      {
         "type": "fix",
         "text": "Fixed markdown table formatting breaking when table cells contain numeric colons or squished sentences."
+      },
+      {
+        "type": "fix",
+        "text": "Added model display names used in chat to the database."
       }
     ]
   },

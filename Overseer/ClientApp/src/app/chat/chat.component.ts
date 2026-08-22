@@ -255,7 +255,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
   userModels: import('../services/settings.service').UserAiModel[] = [];
   systemModels: import('../services/settings.service').UserAiModel[] = [];
-  selectedUserModelId: number | null = null;
+  selectedModelKey: string | null = null;
   isModelDropdownOpen = false;
   singleModelInfo: any = null;
   
@@ -445,8 +445,17 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   get selectedModel() {
-    return this.userModels.find(m => m.id === this.selectedUserModelId) || 
-           this.systemModels.find(m => m.id === this.selectedUserModelId);
+    if (!this.selectedModelKey) return undefined;
+    if (this.selectedModelKey.startsWith('s_')) {
+      const sId = Number(this.selectedModelKey.substring(2));
+      return this.systemModels.find(m => m.id === sId);
+    } else if (this.selectedModelKey.startsWith('u_')) {
+      const uId = Number(this.selectedModelKey.substring(2));
+      return this.userModels.find(m => m.id === uId);
+    }
+    const id = Number(this.selectedModelKey);
+    return this.userModels.find(m => m.id === id) || 
+           this.systemModels.find(m => m.id === id);
   }
 
   toggleModelDropdown(event: Event) {
@@ -496,39 +505,60 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.renameError = null;
   }
 
-  selectModel(modelId: number | undefined) {
-    if (modelId !== undefined) {
-      this.selectedUserModelId = modelId;
-      localStorage.setItem('overseer_chat_model_global', modelId.toString());
+  selectModel(model: import('../services/settings.service').UserAiModel | undefined) {
+    if (model && model.id !== undefined) {
+      const key = (model.isSystem ? 's_' : 'u_') + model.id;
+      this.selectedModelKey = key;
+      localStorage.setItem('overseer_chat_model_global', key);
       if (this.currentSessionId !== null) {
-        localStorage.setItem(`overseer_chat_model_session_${this.currentSessionId}`, modelId.toString());
+        localStorage.setItem(`overseer_chat_model_session_${this.currentSessionId}`, key);
       }
     }
     this.isModelDropdownOpen = false;
   }
 
+  private findModelByKey(key: string | null): import('../services/settings.service').UserAiModel | undefined {
+    if (!key) return undefined;
+    if (key.startsWith('s_')) {
+      const sId = Number(key.substring(2));
+      return this.systemModels.find(m => m.id === sId);
+    }
+    if (key.startsWith('u_')) {
+      const uId = Number(key.substring(2));
+      return this.userModels.find(m => m.id === uId);
+    }
+    const id = Number(key);
+    if (!isNaN(id)) {
+      return this.userModels.find(m => m.id === id) || this.systemModels.find(m => m.id === id);
+    }
+    return undefined;
+  }
+
   applySavedModelPreference() {
     if (this.userModels.length === 0 && this.systemModels.length === 0) return;
 
-    let targetId: number | null = null;
+    let targetKey: string | null = null;
 
     if (this.currentSessionId !== null) {
       const sessionPref = localStorage.getItem(`overseer_chat_model_session_${this.currentSessionId}`);
-      if (sessionPref) targetId = Number(sessionPref);
+      if (sessionPref) targetKey = sessionPref;
     }
 
-    if (!targetId || (!this.userModels.find(m => m.id === targetId) && !this.systemModels.find(m => m.id === targetId))) {
+    if (!targetKey || !this.findModelByKey(targetKey)) {
       const globalPref = localStorage.getItem('overseer_chat_model_global');
-      if (globalPref) targetId = Number(globalPref);
+      if (globalPref) targetKey = globalPref;
     }
 
-    if (targetId && (this.userModels.find(m => m.id === targetId) || this.systemModels.find(m => m.id === targetId))) {
-      this.selectedUserModelId = targetId;
+    const matchedModel = this.findModelByKey(targetKey);
+    if (matchedModel && matchedModel.id !== undefined) {
+      this.selectedModelKey = (matchedModel.isSystem ? 's_' : 'u_') + matchedModel.id;
     } else {
-      if (this.userModels.length > 0) {
-        this.selectedUserModelId = this.userModels[0].id ?? null;
-      } else if (this.systemModels.length > 0) {
-        this.selectedUserModelId = this.systemModels[0].id ?? null;
+      if (this.userModels.length > 0 && this.userModels[0].id !== undefined) {
+        this.selectedModelKey = 'u_' + this.userModels[0].id;
+      } else if (this.systemModels.length > 0 && this.systemModels[0].id !== undefined) {
+        this.selectedModelKey = 's_' + this.systemModels[0].id;
+      } else {
+        this.selectedModelKey = null;
       }
     }
   }
@@ -769,7 +799,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
                 this.applySavedModelPreference();
               } else {
                 this.singleModelInfo = null;
-                this.selectedUserModelId = null;
+                this.selectedModelKey = null;
               }
             },
             error: (err) => {

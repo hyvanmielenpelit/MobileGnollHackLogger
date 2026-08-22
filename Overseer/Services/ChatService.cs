@@ -133,6 +133,7 @@ public class ChatService
         string? apiKey = null;
         string? provider = null;
         string? model = null;
+        string? modelDisplayName = null;
         string? thinkingLevel = null;
         string? reasoningMode = null;
         string? reasoningSummary = null;
@@ -193,6 +194,7 @@ public class ChatService
 
                 provider = config.Provider;
                 model = config.ModelId;
+                modelDisplayName = !string.IsNullOrEmpty(config.DisplayName) ? config.DisplayName : config.ModelId;
                 thinkingLevel = config.ThinkingLevel;
                 reasoningMode = config.ReasoningMode;
                 reasoningSummary = config.ReasoningSummary;
@@ -211,6 +213,7 @@ public class ChatService
                 {
                     provider = userModel.Provider;
                     model = userModel.ModelId;
+                    modelDisplayName = !string.IsNullOrEmpty(userModel.DisplayName) ? userModel.DisplayName : userModel.ModelId;
                     thinkingLevel = userModel.ThinkingLevel;
                     reasoningMode = userModel.ReasoningMode;
                     reasoningSummary = userModel.ReasoningSummary;
@@ -225,6 +228,7 @@ public class ChatService
                 {
                     provider = defaultModel.Provider;
                     model = defaultModel.ModelId;
+                    modelDisplayName = !string.IsNullOrEmpty(defaultModel.DisplayName) ? defaultModel.DisplayName : defaultModel.ModelId;
                     thinkingLevel = defaultModel.ThinkingLevel;
                     reasoningMode = defaultModel.ReasoningMode;
                     reasoningSummary = defaultModel.ReasoningSummary;
@@ -241,6 +245,7 @@ public class ChatService
                         var config = firstSys.Config;
                         provider = config.Provider;
                         model = config.ModelId;
+                        modelDisplayName = !string.IsNullOrEmpty(config.DisplayName) ? config.DisplayName : config.ModelId;
                         thinkingLevel = config.ThinkingLevel;
                         reasoningMode = config.ReasoningMode;
                         reasoningSummary = config.ReasoningSummary;
@@ -559,7 +564,7 @@ public class ChatService
             if (_showDebugLog) yield return new ChatEvent 
             { 
                 Type = "debug", 
-                Data = $"[Model Configuration]\nProvider: {provider}\nModel: {model}\nThinking Level: {(string.IsNullOrEmpty(thinkingLevel) ? "None" : thinkingLevel)}\nMax Input Tokens (Limit): {effectiveInputLimit}\nMax Output Tokens: {(maxOutputTokens.HasValue ? maxOutputTokens.Value.ToString() : "Default")}\nEstimated Request Input Tokens: ~{totalTokens}" 
+                Data = $"[Model Configuration]\nProvider: {provider}\nModel: {model}\nDisplay Name: {(string.IsNullOrEmpty(modelDisplayName) ? "None" : modelDisplayName)}\nThinking Level: {(string.IsNullOrEmpty(thinkingLevel) ? "None" : thinkingLevel)}\nMax Input Tokens (Limit): {effectiveInputLimit}\nMax Output Tokens: {(maxOutputTokens.HasValue ? maxOutputTokens.Value.ToString() : "Default")}\nEstimated Request Input Tokens: ~{totalTokens}" 
             };
         }
 
@@ -812,6 +817,8 @@ public class ChatService
                     ProviderUsed = provider,
                     ModelUsed = model,
                     ThinkingLevelUsed = thinkingLevel,
+                    ReasoningModeUsed = reasoningMode,
+                    ModelDisplayNameUsed = modelDisplayName,
                     ToolCalls = streamToolCalls,
                     TimeToFirstTokenMs = timeToFirstTokenMs,
                     TotalDurationMs = totalDurationMs

@@ -166,7 +166,10 @@ public class ChatController : ControllerBase
                 m.TimeToFirstTokenMs,
                 m.TotalDurationMs,
                 m.ProviderUsed,
-                m.ModelUsed
+                m.ModelUsed,
+                m.ModelDisplayNameUsed,
+                m.ThinkingLevelUsed,
+                m.ReasoningModeUsed
             })
             .ToListAsync();
         swDb.Stop();
@@ -227,27 +230,33 @@ public class ChatController : ControllerBase
 
         var swAsm = Stopwatch.StartNew();
         var formattedMessages = messages.Select(m => {
-            string? modelDisplayName = null;
-            string? thinkingLevel = null;
-            string? reasoningMode = null;
+            string? modelDisplayName = m.ModelDisplayNameUsed;
+            string? thinkingLevel = m.ThinkingLevelUsed;
+            string? reasoningMode = m.ReasoningModeUsed;
             if (m.Role == "assistant" && !string.IsNullOrEmpty(m.ModelUsed)) {
-                var um = userModels?.FirstOrDefault(x => x.ModelId == m.ModelUsed);
-                if (um != null) {
-                    if (!string.IsNullOrEmpty(um.DisplayName)) {
-                        modelDisplayName = um.DisplayName;
-                    } else {
-                        modelDisplayName = m.ModelUsed;
-                    }
-                    thinkingLevel = um.ThinkingLevel;
-                    reasoningMode = um.ReasoningMode;
-                } else if (systemModels != null) {
-                    var sm = systemModels.FirstOrDefault(x => x.Config.ModelId == m.ModelUsed);
-                    if (sm.Config != null) {
-                        modelDisplayName = sm.Config.DisplayName ?? m.ModelUsed;
-                        thinkingLevel = sm.Config.ThinkingLevel;
-                        reasoningMode = sm.Config.ReasoningMode;
-                    } else {
-                        modelDisplayName = m.ModelUsed;
+                if (string.IsNullOrEmpty(modelDisplayName) || string.IsNullOrEmpty(thinkingLevel) || string.IsNullOrEmpty(reasoningMode)) {
+                    var um = userModels?.FirstOrDefault(x => x.ModelId == m.ModelUsed);
+                    if (um != null) {
+                        if (string.IsNullOrEmpty(modelDisplayName)) {
+                            if (!string.IsNullOrEmpty(um.DisplayName)) {
+                                modelDisplayName = um.DisplayName;
+                            } else {
+                                modelDisplayName = m.ModelUsed;
+                            }
+                        }
+                        thinkingLevel ??= um.ThinkingLevel;
+                        reasoningMode ??= um.ReasoningMode;
+                    } else if (systemModels != null) {
+                        var sm = systemModels.FirstOrDefault(x => x.Config.ModelId == m.ModelUsed);
+                        if (sm.Config != null) {
+                            if (string.IsNullOrEmpty(modelDisplayName)) {
+                                modelDisplayName = sm.Config.DisplayName ?? m.ModelUsed;
+                            }
+                            thinkingLevel ??= sm.Config.ThinkingLevel;
+                            reasoningMode ??= sm.Config.ReasoningMode;
+                        } else if (string.IsNullOrEmpty(modelDisplayName)) {
+                            modelDisplayName = m.ModelUsed;
+                        }
                     }
                 }
             }
@@ -607,7 +616,16 @@ public class ChatController : ControllerBase
         {
             string roleName = m.Role != null && m.Role.Equals("assistant", StringComparison.OrdinalIgnoreCase) ? "OVERSEER" : (m.Role?.ToUpper() ?? "");
             string hiddenText = m.IsHidden ? " (HIDDEN)" : "";
-            mdBuilder.AppendLine($"### {roleName}{hiddenText} ({m.TimestampUtc:yyyy-MM-dd HH:mm:ss} UTC)");
+            string modelDetails = "";
+            if (!string.IsNullOrEmpty(m.ModelUsed))
+            {
+                var extra = new List<string>();
+                if (!string.IsNullOrEmpty(m.ModelDisplayNameUsed)) extra.Add($"display: {m.ModelDisplayNameUsed}");
+                if (!string.IsNullOrEmpty(m.ThinkingLevelUsed)) extra.Add($"thinking: {m.ThinkingLevelUsed}");
+                if (!string.IsNullOrEmpty(m.ReasoningModeUsed)) extra.Add($"reasoning: {m.ReasoningModeUsed}");
+                modelDetails = $" [{m.ModelUsed}" + (extra.Count > 0 ? $" ({string.Join(", ", extra)})" : "") + "]";
+            }
+            mdBuilder.AppendLine($"### {roleName}{hiddenText}{modelDetails} ({m.TimestampUtc:yyyy-MM-dd HH:mm:ss} UTC)");
             mdBuilder.AppendLine(m.Content);
             mdBuilder.AppendLine();
             mdBuilder.AppendLine("---");
@@ -651,6 +669,13 @@ public class ChatController : ControllerBase
 
                 <h2>Debug Data</h2>
                 <p><strong>Role:</strong> {message.Role}</p>
+                <p><strong>Provider:</strong> {message.ProviderUsed ?? "N/A"}</p>
+                <p><strong>Model:</strong> {message.ModelUsed ?? "N/A"}</p>
+                <p><strong>Model Display Name:</strong> {message.ModelDisplayNameUsed ?? "N/A"}</p>
+                <p><strong>Thinking Level:</strong> {message.ThinkingLevelUsed ?? "N/A"}</p>
+                <p><strong>Reasoning Mode:</strong> {message.ReasoningModeUsed ?? "N/A"}</p>
+                <p><strong>Time to First Token (ms):</strong> {message.TimeToFirstTokenMs?.ToString() ?? "N/A"}</p>
+                <p><strong>Total Duration (ms):</strong> {message.TotalDurationMs?.ToString() ?? "N/A"}</p>
             </body>
             </html>
         ";

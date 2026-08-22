@@ -338,6 +338,9 @@
                       @if (selectedModel?.thinkingLevel || singleModelInfo?.thinkingLevel) {
                         <span class="msg-model-badge">{{ formatThinkingLevel(selectedModel?.thinkingLevel || singleModelInfo?.thinkingLevel) }}</span>
                       }
+                      @if (showReasoningBadge(selectedModel?.reasoningMode || singleModelInfo?.reasoningMode)) {
+                        <span class="msg-model-badge">{{ selectedModel?.reasoningMode || singleModelInfo?.reasoningMode }}</span>
+                      }
                     </div>
                   }
                   <div class="ttft-container" style="text-align: right; margin-top: 2px;">
@@ -489,7 +492,7 @@
                         <div class="model-group-title" style="padding: 4px 10px; font-size: 0.8em; color: var(--gh-gold); background-color: var(--gh-panel-bg); text-transform: uppercase;">Your Models</div>
                       }
                       @for (model of userModels; track model) {
-                        <div class="model-option" (click)="selectModel(model.id)" [class.selected]="model.id === selectedUserModelId">
+                        <div class="model-option" (click)="selectModel(model)" [class.selected]="selectedModelKey === ('u_' + model.id)">
                           <span class="model-name">{{ model.displayName || model.modelId }}</span>
                           @if (model.thinkingLevel) {
                             <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
@@ -504,7 +507,7 @@
                         <div class="model-group-title" style="padding: 4px 10px; font-size: 0.8em; color: var(--gh-gold); background-color: var(--gh-panel-bg); text-transform: uppercase;">System Models</div>
                       }
                       @for (model of systemModels; track model) {
-                        <div class="model-option" (click)="selectModel(model.id)" [class.selected]="model.id === selectedUserModelId">
+                        <div class="model-option" (click)="selectModel(model)" [class.selected]="selectedModelKey === ('s_' + model.id)">
                           <span class="model-name">{{ model.displayName || model.modelId }}</span>
                           @if (model.thinkingLevel) {
                             <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>

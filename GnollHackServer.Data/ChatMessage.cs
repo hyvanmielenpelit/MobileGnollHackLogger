@@ -30,6 +30,12 @@ public class ChatMessage
     [MaxLength(32)]
     public string? ThinkingLevelUsed { get; set; }
 
+    [MaxLength(32)]
+    public string? ReasoningModeUsed { get; set; }
+
+    [MaxLength(256)]
+    public string? ModelDisplayNameUsed { get; set; }
+
     public ICollection<ChatMessageToolCall> ToolCalls { get; set; } = new List<ChatMessageToolCall>();
 
     public int? TimeToFirstTokenMs { get; set; }
