@@ -107,7 +107,7 @@ MobileGnollHackLogger/          # Solution root
 │   └── Data/                   #   Static data files (flag descriptions, etc.)
 ├── GnollHackServer.Data/       # Shared data access library
 ├── Overseer.Tests/             # Test project
-├── MobileGnollHackLogger.sln   # Visual Studio solution file
+├── MobileGnollHackLogger.slnx  # Visual Studio solution file
 └── LICENSE                     # MIT License
 ```
 

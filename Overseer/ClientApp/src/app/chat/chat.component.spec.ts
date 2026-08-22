@@ -336,5 +336,58 @@ describe('ChatComponent session loading and exclusivity', () => {
 
     expect(scrollSpy).toHaveBeenCalledWith(false);
   });
+
+  describe('formatDuration and timing metrics', () => {
+    it('should format single TTFT values correctly', () => {
+      expect(component.formatTtft(null)).toBe('');
+      expect(component.formatTtft(undefined)).toBe('');
+      expect(component.formatTtft(500)).toBe('0.5s');
+      expect(component.formatTtft(9120)).toBe('9s');
+      expect(component.formatTtft(30450)).toBe('30s');
+    });
+
+    it('should format TTFT and Total Duration pairs correctly with an arrow', () => {
+      expect(component.formatDuration(null, null)).toBe('');
+      expect(component.formatDuration(undefined, undefined)).toBe('');
+      expect(component.formatDuration(9120, null)).toBe('9s');
+      expect(component.formatDuration(null, 30450)).toBe('30s');
+      expect(component.formatDuration(9120, 30450)).toBe('9s→30s');
+      expect(component.formatDuration(500, 1200)).toBe('0.5s→1s');
+    });
+
+    it('should update totalDurationMs when duration event is received', () => {
+      expect(component.totalDurationMs).toBeNull();
+
+      component.processChatEvent({ type: 'ttft', data: '9120' });
+      expect(component.timeToFirstTokenMs).toBe(9120);
+      expect(component.totalDurationMs).toBeNull();
+
+      component.processChatEvent({ type: 'duration', data: '30450' });
+      expect(component.totalDurationMs).toBe(30450);
+    });
+
+    it('should attach totalDurationMs to assistant message on done event and reset timing state', () => {
+      jasmine.clock().install();
+      try {
+        component.isStreaming = true;
+        component.streamingMessage = 'Hello from Overseer';
+        component.timeToFirstTokenMs = 9120;
+        component.totalDurationMs = 30450;
+
+        component.processChatEvent({ type: 'done', data: '' });
+
+        jasmine.clock().tick(2000);
+
+        expect(component.messages.length).toBe(1);
+        expect(component.messages[0].timeToFirstTokenMs).toBe(9120);
+        expect(component.messages[0].totalDurationMs).toBe(30450);
+        expect(component.timeToFirstTokenMs).toBeNull();
+        expect(component.totalDurationMs).toBeNull();
+      } finally {
+        jasmine.clock().uninstall();
+      }
+    });
+  });
 });
+
 

@@ -84,7 +84,7 @@ namespace MobileGnollHackLogger.Data
 
             modelBuilder.Entity<ChatMessage>()
                 .HasIndex(m => new { m.ChatSessionId, m.TimestampUtc })
-                .IncludeProperties(m => new { m.Role, m.IsHidden, m.ModelUsed, m.ProviderUsed, m.TimeToFirstTokenMs });
+                .IncludeProperties(m => new { m.Role, m.IsHidden, m.ModelUsed, m.ProviderUsed, m.TimeToFirstTokenMs, m.TotalDurationMs });
 
             modelBuilder.Entity<ChatMessageToolCall>()
                 .HasIndex(tc => new { tc.ChatMessageId, tc.SortOrder });

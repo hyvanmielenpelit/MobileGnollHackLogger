@@ -16,8 +16,11 @@ Tests that call external APIs (like OpenAI, Anthropic, or Google) consume quota 
 *   **CLI Instructions in Code**: The test file must contain a human-readable header comment instructing developers and agents on how to skip these tests during normal execution.
     ```csharp
     // To run tests while SKIPPING this file (to save AI API quota), use:
-    // dotnet test --filter "Category!=UsesExternalApi"
+    // dotnet test MobileGnollHackLogger.slnx --filter "Category!=UsesExternalApi"
     ```
+
+> [!NOTE]
+> **Solution File Format**: The repository uses the modern Visual Studio solution format **`MobileGnollHackLogger.slnx`** (not `.sln`). Use `dotnet build MobileGnollHackLogger.slnx` or `dotnet test MobileGnollHackLogger.slnx` when building or testing the entire solution from the CLI.
 
 ## 2. Graceful Error Handling (429 & 503)
 

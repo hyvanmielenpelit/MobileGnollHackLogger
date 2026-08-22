@@ -33,4 +33,6 @@ public class ChatMessage
     public ICollection<ChatMessageToolCall> ToolCalls { get; set; } = new List<ChatMessageToolCall>();
 
     public int? TimeToFirstTokenMs { get; set; }
+
+    public int? TotalDurationMs { get; set; }
 }

@@ -16,6 +16,7 @@
 
 # Solution and Visual Studio files
 *.sln text eol=crlf
+*.slnx text eol=crlf
 
 # Web and Client-side (Angular / Frontend)
 *.html text

@@ -218,6 +218,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   streamingToolCalls: ChatMessageToolCall[] = [];
   pendingAttachments: { file: File | null, base64: string, name: string, type: string }[] = [];
   timeToFirstTokenMs: number | null = null;
+  totalDurationMs: number | null = null;
   
   isGeneratingTitle = false;
   titleStatusText = '';
@@ -1048,6 +1049,9 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     } else if (evt.type === 'ttft') {
       this.timeToFirstTokenMs = parseInt(evt.data, 10);
       this.cdr.detectChanges();
+    } else if (evt.type === 'duration') {
+      this.totalDurationMs = parseInt(evt.data, 10);
+      this.cdr.detectChanges();
     } else if (evt.type === 'chunk') {
       this.debugService.log(`[Frontend] chunk received: seqNo=${evt.seqNo} "${evt.data}" streamingMessage.length=${this.streamingMessage.length}`);
       if (this.isThinkingActive) {
@@ -1246,7 +1250,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
             toolCalls: [...this.streamingToolCalls], 
             modelDisplayName: this.selectedModel?.displayName || this.selectedModel?.modelId || this.singleModelInfo?.modelId,
             thinkingLevel: this.selectedModel?.thinkingLevel || this.singleModelInfo?.thinkingLevel,
-            timeToFirstTokenMs: this.timeToFirstTokenMs ?? undefined
+            timeToFirstTokenMs: this.timeToFirstTokenMs ?? undefined,
+            totalDurationMs: this.totalDurationMs ?? undefined
           });
           
           this.isStreaming = false;
@@ -1254,6 +1259,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           this.streamingMessage = '';
           this.streamingToolCalls = [];
           this.timeToFirstTokenMs = null;
+          this.totalDurationMs = null;
           this.showSpinner = false;
           this.currentStatusText = 'Generation complete.';
           
@@ -1295,6 +1301,15 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     if (ms == null) return '';
     const seconds = ms / 1000;
     return seconds < 1 ? seconds.toFixed(1) + 's' : Math.round(seconds) + 's';
+  }
+
+  formatDuration(ttftMs: number | null | undefined, totalMs: number | null | undefined): string {
+    const ttftStr = this.formatTtft(ttftMs);
+    const totalStr = this.formatTtft(totalMs);
+    if (ttftStr && totalStr) {
+      return `${ttftStr}→${totalStr}`;
+    }
+    return ttftStr || totalStr || '';
   }
 
   getMinimalStatusLabel(): string {
@@ -1518,6 +1533,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.isThinkingActive = false;
     this.titleStatusText = '';
     this.timeToFirstTokenMs = null;
+    this.totalDurationMs = null;
     this.hasOngoingGeneration = false;
     this.isLoadingSession = false;
     this.liveEventBuffer = [];
@@ -1965,6 +1981,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.hasRealContent = false;
     this.streamingToolCalls = [];
     this.timeToFirstTokenMs = null;
+    this.totalDurationMs = null;
     this.lastSeenSeqNo = -1; // [NEW] Reset sequence tracker for new generation
 
     this.focusPromptInput();

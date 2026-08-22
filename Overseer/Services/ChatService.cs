@@ -785,6 +785,15 @@ public class ChatService
             fullResponse = sb.ToString();
         }
 
+        int? totalDurationMs = apiCallStartTime.HasValue 
+            ? (int)System.Diagnostics.Stopwatch.GetElapsedTime(apiCallStartTime.Value).TotalMilliseconds 
+            : null;
+
+        if (totalDurationMs.HasValue)
+        {
+            yield return new ChatEvent { Type = "duration", Data = totalDurationMs.Value.ToString() };
+        }
+
         using (var scope = _scopeFactory.CreateScope())
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -804,7 +813,8 @@ public class ChatService
                     ModelUsed = model,
                     ThinkingLevelUsed = thinkingLevel,
                     ToolCalls = streamToolCalls,
-                    TimeToFirstTokenMs = timeToFirstTokenMs
+                    TimeToFirstTokenMs = timeToFirstTokenMs,
+                    TotalDurationMs = totalDurationMs
                 };
                 dbContext.ChatMessage.Add(asstMsg);
                 session.LastMessageUtc = DateTime.UtcNow;

@@ -36,10 +36,11 @@ export interface ChatMessage {
   modelDisplayName?: string;
   thinkingLevel?: string;
   timeToFirstTokenMs?: number;
+  totalDurationMs?: number;
 }
 
 export interface ChatStreamEvent {
-  type: 'chunk' | 'status' | 'debug' | 'error' | 'sessionId' | 'tool_start' | 'tool_result' | 'tool_error' | 'title_update' | 'thinking_chunk' | 'ttft' | 'final';
+  type: 'chunk' | 'status' | 'debug' | 'error' | 'sessionId' | 'tool_start' | 'tool_result' | 'tool_error' | 'title_update' | 'thinking_chunk' | 'ttft' | 'duration' | 'final';
   data: string;
   seqNo?: number;
 }

@@ -169,9 +169,9 @@
                       }
                     </div>
                   }
-                  @if (msg.role === 'assistant' && msg.timeToFirstTokenMs != null) {
+                  @if (msg.role === 'assistant' && (msg.timeToFirstTokenMs != null || msg.totalDurationMs != null)) {
                     <div class="ttft-container" style="text-align: right; margin-top: 2px;">
-                      <span class="model-name-subtext">{{ formatTtft(msg.timeToFirstTokenMs) }}</span>
+                      <span class="model-name-subtext">{{ formatDuration(msg.timeToFirstTokenMs, msg.totalDurationMs) }}</span>
                     </div>
                   }
                 </div>
@@ -287,8 +287,11 @@
                     @if (timeToFirstTokenMs === null) {
                       <span class="model-name-subtext"><span class="gh-spinner-small" style="display:inline-block; width: 10px; height: 10px; border-width: 1.5px;"></span></span>
                     }
-                    @if (timeToFirstTokenMs !== null) {
-                      <span class="model-name-subtext">{{ formatTtft(timeToFirstTokenMs) }}</span>
+                    @if (timeToFirstTokenMs !== null && totalDurationMs === null) {
+                      <span class="model-name-subtext">{{ formatTtft(timeToFirstTokenMs) }}→<span class="gh-spinner-small" style="display:inline-block; width: 10px; height: 10px; border-width: 1.5px; margin-left: 2px;"></span></span>
+                    }
+                    @if (timeToFirstTokenMs !== null && totalDurationMs !== null) {
+                      <span class="model-name-subtext">{{ formatDuration(timeToFirstTokenMs, totalDurationMs) }}</span>
                     }
                   </div>
                 </div>

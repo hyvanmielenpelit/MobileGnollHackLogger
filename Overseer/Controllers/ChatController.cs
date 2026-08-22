@@ -138,6 +138,7 @@ public class ChatController : ControllerBase
                 m.Content, 
                 m.TimestampUtc,
                 m.TimeToFirstTokenMs,
+                m.TotalDurationMs,
                 m.ProviderUsed,
                 m.ModelUsed
             })
@@ -244,6 +245,7 @@ public class ChatController : ControllerBase
                 m.Content,
                 m.TimestampUtc,
                 m.TimeToFirstTokenMs,
+                m.TotalDurationMs,
                 Attachments = msgAttachments,
                 ToolCalls = msgToolCalls,
                 ModelDisplayName = modelDisplayName,
