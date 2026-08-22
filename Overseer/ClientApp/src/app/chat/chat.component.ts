@@ -9,6 +9,7 @@ import { MarkdownPipe } from './markdown.pipe';
 import { RelativeTimePipe } from './relative-time.pipe';
 import { SettingsService } from '../services/settings.service';
 import { ChangelogService } from '../services/changelog.service';
+import { ClientBridgeService } from '../services/client-bridge.service';
 import { AdminAlertsComponent } from './admin-alerts.component';
 import { TrashModalComponent } from './trash-modal/trash-modal.component';
 import * as signalR from '@microsoft/signalr';
@@ -168,6 +169,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   router = inject(Router);
   route = inject(ActivatedRoute);
   cdr = inject(ChangeDetectorRef);
+  clientBridge = inject(ClientBridgeService);
   
   readonly CLIENT_TOOL_TIMEOUT_MS = 14000;
   pendingRequests = new Map<string, ReturnType<typeof setTimeout>>();
@@ -1630,6 +1632,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   newSession() {
     this.sessionLoadSub?.unsubscribe();
     this.currentSessionId = null;
+    this.clientBridge.notifySessionChanged(null);
     this.lastSeenSeqNo = -1;
     this.messages = [];
     this.clearStreamingState();
@@ -1719,6 +1722,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     }
     
     this.currentSessionId = id;
+    this.clientBridge.notifySessionChanged(id);
     this.isLoadingSession = true;
     this.liveEventBuffer = [];
 
@@ -2223,6 +2227,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       
       if (this.currentSessionId !== newSessionId) {
         this.currentSessionId = newSessionId;
+        this.clientBridge.notifySessionChanged(newSessionId);
         
         if (this.hubConnection?.state === signalR.HubConnectionState.Connected) {
           this.hubConnection.invoke("JoinSession", this.currentSessionId).catch(console.error);
@@ -2297,7 +2302,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     /* On iOS inside GnollHack, bypass the built-in WKWebView file picker
      * (which shows "Take Photo" and crashes without NSCameraUsageDescription)
      * and use the native bridge to present our own picker instead. */
-    if (this.getClientBridge() === 'ios') {
+    if (this.clientBridge.getPlatform() === 'ios') {
         /* Pass the + button's bounding rect so MAUI can anchor the
          * iOS popover arrow to the correct position.
          * getBoundingClientRect() returns CSS pixels relative to the
@@ -2308,8 +2313,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
             const r = btn.getBoundingClientRect();
             sourceRect = { x: r.left, y: r.top, width: r.width, height: r.height };
         }
-        (window as any).webkit.messageHandlers.gnollhackBridge.postMessage(
-            JSON.stringify({ type: 'pick_files', sourceRect }));
+        this.clientBridge.postMessage({ type: 'pick_files', sourceRect });
         return;
     }
     const el = document.getElementById('fileInput') as HTMLInputElement;
@@ -2551,39 +2555,14 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     }
   }
 
-  getClientBridge(): 'webview2' | 'android' | 'ios' | null {
-    if ((window as any).chrome?.webview) {
-        return 'webview2';
-    }
-    if ((window as any).GnollHackBridge?.onWebMessage) {
-        return 'android';
-    }
-    if ((window as any).webkit?.messageHandlers?.gnollhackBridge) {
-        return 'ios';
-    }
-    return null;
-  }
-
   forwardToolRequest(request: ToolClientRequest): void {
-    const bridge = this.getClientBridge();
-
-    if (!bridge) {
+    if (!this.clientBridge.isEmbedded()) {
         console.error('No client bridge available');
         this.sendToolResult(request.requestId, false, null, 'Client bridge not available');
         return;
     }
 
-    switch (bridge) {
-        case 'webview2':
-            (window as any).chrome.webview.postMessage(request);
-            break;
-        case 'android':
-            (window as any).GnollHackBridge.onWebMessage(JSON.stringify(request));
-            break;
-        case 'ios':
-            (window as any).webkit.messageHandlers.gnollhackBridge.postMessage(JSON.stringify(request));
-            break;
-    }
+    this.clientBridge.postMessage(request);
 
     const timer = setTimeout(() => {
         this.pendingRequests.delete(request.requestId);

@@ -1,6 +1,7 @@
-import { Component, OnInit, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, ChangeDetectionStrategy, inject } from '@angular/core';
 import { DebugService, DebugLogEntry } from '../services/debug.service';
 import { CommonModule, Location } from '@angular/common';
+import { ClientBridgeService } from '../services/client-bridge.service';
 
 @Component({
     selector: 'app-debug-log',
@@ -18,11 +19,13 @@ export class DebugLogComponent implements OnInit {
   isInWebView: boolean = false;
   canShare: boolean = false;
 
+  private clientBridge = inject(ClientBridgeService);
+
   constructor(private debugService: DebugService, private location: Location) {}
 
   ngOnInit(): void {
     this.logs = this.debugService.getLogs();
-    this.isInWebView = this.getClientBridge() !== null;
+    this.isInWebView = this.clientBridge.isEmbedded();
     
     if (this.isInWebView) {
       this.canShare = true;
@@ -34,13 +37,6 @@ export class DebugLogComponent implements OnInit {
         this.canShare = false;
       }
     }
-  }
-
-  private getClientBridge(): 'webview2' | 'android' | 'ios' | null {
-    if ((window as any).chrome?.webview) return 'webview2';
-    if ((window as any).GnollHackBridge?.onWebMessage) return 'android';
-    if ((window as any).webkit?.messageHandlers?.gnollhackBridge) return 'ios';
-    return null;
   }
 
   goBack(): void {
@@ -74,21 +70,10 @@ export class DebugLogComponent implements OnInit {
   shareLogs(): void {
     const content = this.getLogText();
     const filename = 'overseer-debug-log.txt';
-    const bridge = this.getClientBridge();
 
-    if (bridge) {
+    if (this.clientBridge.isEmbedded()) {
       const request = { type: 'share_text_file', filename, content };
-      switch (bridge) {
-        case 'webview2':
-          (window as any).chrome.webview.postMessage(request);
-          break;
-        case 'android':
-          (window as any).GnollHackBridge.onWebMessage(JSON.stringify(request));
-          break;
-        case 'ios':
-          (window as any).webkit.messageHandlers.gnollhackBridge.postMessage(JSON.stringify(request));
-          break;
-      }
+      this.clientBridge.postMessage(request);
       this.isShared = true;
       setTimeout(() => this.isShared = false, 2000);
     } else {

@@ -117,6 +117,7 @@ import { of, Subject, throwError } from 'rxjs';
 import { ChatService, ChatSessionDetailResponse } from '../services/chat.service';
 import { SettingsService, UserAiSettings, UserAiModel } from '../services/settings.service';
 import { AuthService } from '../services/auth.service';
+import { ClientBridgeService } from '../services/client-bridge.service';
 
 describe('ChatComponent session loading and exclusivity', () => {
   let component: ChatComponent;
@@ -569,6 +570,71 @@ describe('ChatComponent session loading and exclusivity', () => {
         status: 'running'
       }];
       expect(component.getMinimalStatusLabel()).toBe('Searching GnollHack source code...');
+    });
+  });
+
+  describe('native bridge integration', () => {
+    it('should notify ClientBridgeService on loadSession', async () => {
+      const bridge = TestBed.inject(ClientBridgeService);
+      const sessionSpy = spyOn(bridge, 'notifySessionChanged');
+
+      const mockDetail: ChatSessionDetailResponse = {
+        id: 77,
+        title: 'Session 77',
+        messages: []
+      };
+      spyOn(chatService, 'getSession').and.returnValue(of(new HttpResponse({ body: mockDetail })));
+
+      (component as any).hubStartPromise = null;
+      (component as any).hubConnection = null;
+
+      await component.loadSession(77);
+
+      expect(sessionSpy).toHaveBeenCalledWith(77);
+    });
+
+    it('should notify ClientBridgeService on newSession', () => {
+      const bridge = TestBed.inject(ClientBridgeService);
+      const sessionSpy = spyOn(bridge, 'notifySessionChanged');
+
+      component.newSession();
+
+      expect(sessionSpy).toHaveBeenCalledWith(null);
+    });
+
+    it('should forward tool request via ClientBridgeService when embedded', () => {
+      const bridge = TestBed.inject(ClientBridgeService);
+      spyOn(bridge, 'isEmbedded').and.returnValue(true);
+      const postSpy = spyOn(bridge, 'postMessage');
+
+      const request = {
+        type: 'client_tool_call',
+        requestId: 'req-1',
+        toolName: 'get_app_log',
+        parameters: {}
+      };
+
+      component.forwardToolRequest(request);
+
+      expect(postSpy).toHaveBeenCalledWith(request);
+      expect(component.pendingRequests.has('req-1')).toBeTrue();
+    });
+
+    it('should fail tool request immediately when not embedded', () => {
+      const bridge = TestBed.inject(ClientBridgeService);
+      spyOn(bridge, 'isEmbedded').and.returnValue(false);
+      const sendResultSpy = spyOn(component, 'sendToolResult');
+
+      const request = {
+        type: 'client_tool_call',
+        requestId: 'req-2',
+        toolName: 'get_app_log',
+        parameters: {}
+      };
+
+      component.forwardToolRequest(request);
+
+      expect(sendResultSpy).toHaveBeenCalledWith('req-2', false, null, 'Client bridge not available');
     });
   });
 });

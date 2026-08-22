@@ -1,6 +1,7 @@
 import { Component, OnInit, inject, ChangeDetectionStrategy } from '@angular/core';
 import { RouterModule, Router, NavigationEnd, NavigationCancel, NavigationError } from '@angular/router';
 import { filter, take } from 'rxjs';
+import { ClientBridgeService } from './services/client-bridge.service';
 
 @Component({
     selector: 'app-root',
@@ -12,6 +13,7 @@ import { filter, take } from 'rxjs';
 export class AppComponent implements OnInit {
   title = 'ClientApp';
   private router = inject(Router);
+  private clientBridge = inject(ClientBridgeService);
 
   ngOnInit() {
     this.router.events.pipe(
@@ -22,6 +24,15 @@ export class AppComponent implements OnInit {
       if (loader) {
         loader.style.display = 'none';
         loader.remove(); // Remove it completely from the DOM
+      }
+    });
+
+    this.router.events.pipe(
+      filter((event): event is NavigationEnd => event instanceof NavigationEnd)
+    ).subscribe((event: NavigationEnd) => {
+      if (this.clientBridge.isEmbedded()) {
+        const path = event.urlAfterRedirects;
+        this.clientBridge.notifyUrlChanged(path);
       }
     });
   }
