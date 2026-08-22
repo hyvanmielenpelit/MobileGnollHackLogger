@@ -926,6 +926,69 @@ public class AdminController : ControllerBase
         return Ok(configHealthService.GetSystemAlerts());
     }
 
+    // --- Database Storage & Maintenance ---
+
+    [HttpGet("storage-metrics")]
+    public async Task<IActionResult> GetStorageMetrics([FromServices] DatabaseStorageMetricsService metricsService)
+    {
+        var metrics = await metricsService.GetStorageMetricsAsync();
+        return Ok(metrics);
+    }
+
+    [HttpPost("maintenance/run-now")]
+    public async Task<IActionResult> RunMaintenanceNow([FromBody] MaintenanceRequestDto? request, [FromServices] ChatRetentionService retentionService)
+    {
+        var result = await retentionService.RunFullMaintenanceAsync(request);
+        return Ok(result);
+    }
+
+    [HttpPost("maintenance/purge-trash-now")]
+    public async Task<IActionResult> PurgeTrashNow([FromBody] MaintenanceRequestDto? request, [FromServices] ChatRetentionService retentionService)
+    {
+        var isDryRun = request?.DryRun ?? false;
+        var trashIds = await _dbContext.ChatSession
+            .Where(s => s.IsDeleted)
+            .Select(s => s.Id)
+            .ToListAsync();
+
+        var result = await retentionService.PermanentlyPurgeSessionsAsync(trashIds, isDryRun);
+        return Ok(result);
+    }
+
+    [HttpPost("maintenance/purge-inactive")]
+    public async Task<IActionResult> PurgeInactive([FromBody] MaintenanceRequestDto? request, [FromServices] ChatRetentionService retentionService)
+    {
+        var isDryRun = request?.DryRun ?? false;
+        var days = request?.InactivityDays ?? 90;
+        var count = await retentionService.SoftDeleteInactiveSessionsAsync(days, isDryRun);
+        return Ok(new { success = true, isDryRun, softDeletedCount = count, message = $"Soft-deleted {count} inactive sessions older than {days} days." });
+    }
+
+    [HttpPost("maintenance/prune-tool-results")]
+    public async Task<IActionResult> PruneToolResults([FromBody] MaintenanceRequestDto? request, [FromServices] ChatRetentionService retentionService)
+    {
+        var isDryRun = request?.DryRun ?? false;
+        var days = request?.ToolCallPruneDays ?? 30;
+        var count = await retentionService.PruneAgedToolCallResultsAsync(days, isDryRun);
+        return Ok(new { success = true, isDryRun, prunedCount = count, message = $"Pruned {count} tool call results older than {days} days." });
+    }
+
+    [HttpPost("maintenance/sweep-orphans")]
+    public async Task<IActionResult> SweepOrphanedFolders([FromBody] MaintenanceRequestDto? request, [FromServices] ChatRetentionService retentionService)
+    {
+        var isDryRun = request?.DryRun ?? false;
+        var count = await retentionService.SweepOrphanedDiskDirectoriesAsync(isDryRun);
+        return Ok(new { success = true, isDryRun, sweptCount = count, message = $"Swept {count} orphaned disk folders." });
+    }
+
+    [HttpPost("maintenance/send-report-email")]
+    public async Task<IActionResult> SendReportEmail([FromServices] DatabaseStorageMetricsService metricsService)
+    {
+        var metrics = await metricsService.GetStorageMetricsAsync();
+        var sent = await metricsService.SendStorageWarningReportEmailAsync(metrics, metrics.StatusLevel == "Normal" ? "Informational" : metrics.StatusLevel);
+        return Ok(new { success = sent, message = sent ? "Storage report email sent successfully." : "Failed to send email. Check EmailSender configuration." });
+    }
+
     [HttpPost("test-sentry")]
     public IActionResult TestSentryError()
     {

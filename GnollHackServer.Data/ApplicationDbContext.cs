@@ -78,9 +78,12 @@ namespace MobileGnollHackLogger.Data
                 .HasPrincipalKey(u => u.Id);
 
             modelBuilder.Entity<ChatSession>()
-                .HasIndex(s => new { s.AspNetUserId, s.LastMessageUtc })
-                .IsDescending(false, true)
-                .IncludeProperties(s => new { s.Title, s.IsGnollHackSession });
+                .HasIndex(s => new { s.AspNetUserId, s.IsDeleted, s.LastMessageUtc })
+                .IsDescending(false, false, true)
+                .IncludeProperties(s => new { s.Title, s.IsGnollHackSession, s.IsPinned });
+
+            modelBuilder.Entity<ChatSession>()
+                .HasIndex(s => new { s.IsDeleted, s.DeletedUtc });
 
             modelBuilder.Entity<ChatMessage>()
                 .HasIndex(m => new { m.ChatSessionId, m.TimestampUtc })

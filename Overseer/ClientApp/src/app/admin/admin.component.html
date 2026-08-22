@@ -7,10 +7,11 @@
   <div class="settings-body">
     <div class="admin-tabs">
       <div class="indicator-left"></div>
-      <button class="admin-tab" [class.admin-tab-active]="activeTab === 'users'" (click)="activeTab = 'users'">Users</button>
-      <button class="admin-tab" [class.admin-tab-active]="activeTab === 'groups'" (click)="activeTab = 'groups'">Groups</button>
-      <button class="admin-tab" [class.admin-tab-active]="activeTab === 'configs'" (click)="activeTab = 'configs'">System Configs</button>
-      <button class="admin-tab" [class.admin-tab-active]="activeTab === 'devtools'" (click)="activeTab = 'devtools'">Developer Tools</button>
+      <button class="admin-tab" [class.admin-tab-active]="activeTab === 'users'" (click)="selectTab('users')">Users</button>
+      <button class="admin-tab" [class.admin-tab-active]="activeTab === 'groups'" (click)="selectTab('groups')">Groups</button>
+      <button class="admin-tab" [class.admin-tab-active]="activeTab === 'configs'" (click)="selectTab('configs')">System Configs</button>
+      <button class="admin-tab" [class.admin-tab-active]="activeTab === 'database'" (click)="selectTab('database')">Database</button>
+      <button class="admin-tab" [class.admin-tab-active]="activeTab === 'devtools'" (click)="selectTab('devtools')">Developer Tools</button>
       <div class="indicator-right"></div>
     </div>
 
@@ -252,6 +253,227 @@
                   </div>
                 }
               </div>
+            }
+          </div>
+        }
+        <!-- DATABASE STORAGE & MAINTENANCE TAB -->
+        @if (activeTab === 'database') {
+          <div>
+            <div class="tab-header-row">
+              <h3 class="m-0">Database Storage & Maintenance</h3>
+              <button class="btn-gh btn-secondary" (click)="loadStorageMetrics()" [disabled]="storageLoading">
+                @if (storageLoading) {
+                  <span class="gh-spinner-small"></span>
+                }
+                Refresh Metrics
+              </button>
+            </div>
+
+            @if (dbActionMessage) {
+              <div class="alert mt-15" [ngClass]="dbActionMessageType === 'success' ? 'alert-success' : 'alert-danger'">
+                {{ dbActionMessage }}
+              </div>
+            }
+
+            @if (storageLoading && !storageMetrics) {
+              <div class="loading-state mt-20">
+                <span class="gh-spinner-small"></span> Loading storage metrics...
+              </div>
+            }
+
+            @if (storageMetrics) {
+              <!-- Capacity Progress Meter Card -->
+              <div class="storage-card mt-20">
+                <div class="storage-card-header">
+                  <div class="storage-title">
+                    <span class="status-dot" [ngClass]="'status-' + storageMetrics.statusLevel.toLowerCase()"></span>
+                    <strong>SQL Server 2022 Express Capacity (10 GB Limit)</strong>
+                  </div>
+                  <div class="storage-badge" [ngClass]="'badge-' + storageMetrics.statusLevel.toLowerCase()">
+                    {{ storageMetrics.usedPercentage }}% Allocated
+                  </div>
+                </div>
+
+                <div class="storage-progress-container mt-15">
+                  <div class="storage-progress-bar" 
+                       [style.width.%]="storageMetrics.usedPercentage" 
+                       [ngClass]="'bar-' + storageMetrics.statusLevel.toLowerCase()">
+                  </div>
+                </div>
+
+                <div class="storage-stats-grid mt-15">
+                  <div class="stat-box">
+                    <span class="stat-label">Allocated Data (.mdf)</span>
+                    <span class="stat-value">{{ storageMetrics.allocatedDataSizeMb | number:'1.1-1' }} MB <span class="stat-sub">({{ (storageMetrics.allocatedDataSizeMb / 1024) | number:'1.2-2' }} GB)</span></span>
+                  </div>
+                  <div class="stat-box stat-box-highlight">
+                    <span class="stat-label">Free Headroom (< 10 GB)</span>
+                    <span class="stat-value text-success">{{ storageMetrics.freeSpaceWithin10GbMb | number:'1.1-1' }} MB <span class="stat-sub">({{ (storageMetrics.freeSpaceWithin10GbMb / 1024) | number:'1.2-2' }} GB)</span></span>
+                  </div>
+                  <div class="stat-box">
+                    <span class="stat-label">Used Pages</span>
+                    <span class="stat-value">{{ storageMetrics.usedDataSizeMb | number:'1.1-1' }} MB</span>
+                  </div>
+                  <div class="stat-box">
+                    <span class="stat-label">Disk Attachments</span>
+                    <span class="stat-value">{{ storageMetrics.diskAttachmentsSizeMb | number:'1.1-1' }} MB <span class="stat-sub">({{ storageMetrics.diskAttachmentsFileCount }} files)</span></span>
+                  </div>
+                </div>
+
+                @if (storageMetrics.lastMaintenanceRunUtc) {
+                  <div class="text-muted mt-10" style="font-size: 0.85em;">
+                    Last maintenance run: {{ storageMetrics.lastMaintenanceRunUtc | date:'yyyy-MM-dd HH:mm:ss' }} UTC
+                  </div>
+                }
+              </div>
+
+              <!-- Retention Stats Grid -->
+              <div class="retention-grid mt-20">
+                <div class="stat-card">
+                  <div class="stat-num">{{ storageMetrics.activeSessionCount }}</div>
+                  <div class="stat-desc">Active Chat Sessions</div>
+                </div>
+                <div class="stat-card stat-card-warning">
+                  <div class="stat-num">{{ storageMetrics.softDeletedSessionCount }}</div>
+                  <div class="stat-desc">Sessions in Trash <span *ngIf="storageMetrics.estimatedReclaimableMb > 0">(~{{ storageMetrics.estimatedReclaimableMb }} MB)</span></div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-num">{{ storageMetrics.inactiveSessionCount }}</div>
+                  <div class="stat-desc">Inactive Sessions (> 90d)</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-num">{{ storageMetrics.pinnedSessionCount }}</div>
+                  <div class="stat-desc">Pinned Sessions (Protected)</div>
+                </div>
+              </div>
+
+              <!-- Table Allocations Breakdown -->
+              <fieldset class="permissions-fieldset mt-20">
+                <legend>Top Database Table Storage</legend>
+                <div class="table-responsive mt-10">
+                  <table class="admin-table modern-table">
+                    <thead>
+                      <tr>
+                        <th>Table Name</th>
+                        <th style="text-align: right;">Row Count</th>
+                        <th style="text-align: right;">Total Size (MB)</th>
+                        <th style="text-align: right;">Used Data (MB)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (t of storageMetrics.tableMetrics; track t.tableName) {
+                        <tr>
+                          <td><strong>{{ t.tableName }}</strong></td>
+                          <td style="text-align: right;">{{ t.rowCount | number:'1.0-0' }}</td>
+                          <td style="text-align: right;">{{ t.totalSpaceMb | number:'1.1-2' }} MB</td>
+                          <td style="text-align: right;" class="text-muted">{{ t.usedSpaceMb | number:'1.1-2' }} MB</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              </fieldset>
+
+              <!-- Database Management & Maintenance Actions -->
+              <fieldset class="permissions-fieldset mt-20">
+                <legend>Database Maintenance Tasks</legend>
+                <div class="maintenance-actions-panel mt-10">
+                  <!-- Full Maintenance Card -->
+                  <div class="maintenance-action-card">
+                    <div class="action-info">
+                      <h4>Run Scheduled Maintenance Pass</h4>
+                      <p class="text-muted">Performs the full nightly maintenance pipeline: soft-deletes inactive sessions (>{{ inactivityDays }}d), permanently purges expired trash (>30d) and deletes disk folders, prunes aged tool call results (>{{ toolCallPruneDays }}d), and sweeps orphaned disk files.</p>
+                      <label class="dry-run-label">
+                        <input type="checkbox" [(ngModel)]="maintenanceDryRun">
+                        <span><strong>Dry Run (Preview Only)</strong> — compute and log what would be deleted without modifying data</span>
+                      </label>
+                    </div>
+                    <button class="btn-gh btn-primary action-btn-large" (click)="runFullMaintenance()" [disabled]="maintenanceLoading">
+                      @if (maintenanceLoading) {
+                        <span class="gh-spinner-small"></span>
+                      }
+                      Execute Maintenance Pass
+                    </button>
+                  </div>
+
+                  <!-- Granular Maintenance Actions -->
+                  <div class="granular-actions-grid mt-20">
+                    <div class="granular-card">
+                      <h5>Empty All Trash Now</h5>
+                      <p class="text-muted">Bypasses the 30-day grace period and immediately purges all soft-deleted sessions and their disk attachments across all users.</p>
+                      <button class="btn-gh btn-danger mt-10" (click)="purgeAllTrash()" [disabled]="maintenanceLoading || storageMetrics.softDeletedSessionCount === 0">
+                        Purge All Trash Now
+                      </button>
+                    </div>
+
+                    <div class="granular-card">
+                      <h5>Purge Inactive Sessions</h5>
+                      <p class="text-muted">Soft-deletes active, unpinned sessions with no activity past the threshold.</p>
+                      <div class="d-flex align-items-center gap-10 mt-10">
+                        <select class="gh-input" [(ngModel)]="inactivityDays" style="max-width: 140px;">
+                          <option [value]="90">Older than 90d</option>
+                          <option [value]="60">Older than 60d</option>
+                          <option [value]="30">Older than 30d</option>
+                        </select>
+                        <button class="btn-gh btn-secondary" (click)="purgeInactiveNow()" [disabled]="maintenanceLoading">
+                          Soft-Delete Inactive
+                        </button>
+                      </div>
+                    </div>
+
+                    <div class="granular-card">
+                      <h5>Prune Aged Tool Results</h5>
+                      <p class="text-muted">Truncates raw tool call JSON payloads without deleting user message transcripts.</p>
+                      <div class="d-flex align-items-center gap-10 mt-10">
+                        <select class="gh-input" [(ngModel)]="toolCallPruneDays" style="max-width: 140px;">
+                          <option [value]="30">Older than 30d</option>
+                          <option [value]="60">Older than 60d</option>
+                          <option [value]="90">Older than 90d</option>
+                        </select>
+                        <button class="btn-gh btn-secondary" (click)="pruneToolResultsNow()" [disabled]="maintenanceLoading">
+                          Prune Tool Payloads
+                        </button>
+                      </div>
+                    </div>
+
+                    <div class="granular-card">
+                      <h5>Sweep Orphaned Disk Folders</h5>
+                      <p class="text-muted">Scans <code>ConversationsDataLocation</code> for disk folders whose session ID no longer exists in the database.</p>
+                      <button class="btn-gh btn-secondary mt-10" (click)="sweepOrphanFoldersNow()" [disabled]="maintenanceLoading">
+                        Sweep Orphan Folders
+                      </button>
+                    </div>
+
+                    <div class="granular-card">
+                      <h5>Send Diagnostic Report Email</h5>
+                      <p class="text-muted">Dispatches an on-demand HTML database storage summary to the configured report email address.</p>
+                      <button class="btn-gh btn-secondary mt-10" (click)="sendDiagnosticEmail()" [disabled]="maintenanceLoading">
+                        Send Report Email
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </fieldset>
+
+              <!-- Last Maintenance Result Console -->
+              @if (lastMaintenanceResult) {
+                <fieldset class="permissions-fieldset mt-20">
+                  <legend>Maintenance Execution Results {{ lastMaintenanceResult.isDryRun ? '(Dry Run)' : '' }}</legend>
+                  <div class="result-console mt-10">
+                    <div class="result-summary mb-10">
+                      <strong>Status:</strong> {{ lastMaintenanceResult.success ? 'Success' : 'Failed' }} &bull;
+                      <strong>Elapsed:</strong> {{ lastMaintenanceResult.elapsedMilliseconds }} ms &bull;
+                      <strong>Sessions Purged:</strong> {{ lastMaintenanceResult.purgedSessionCount }} &bull;
+                      <strong>Disk Folders Removed:</strong> {{ lastMaintenanceResult.deletedDiskFolderCount }}
+                    </div>
+                    <ul class="result-logs">
+                      @for (log of lastMaintenanceResult.logs; track log) {
+                        <li>{{ log }}</li>
+                      }
+                    </ul>
+                  </div>
+                </fieldset>
+              }
             }
           </div>
         }

@@ -21,4 +21,13 @@ public class ChatSession
     public string? ClientSettings { get; set; }
     
     public bool IsGnollHackSession { get; set; }
+
+    public bool IsDeleted { get; set; } = false;
+
+    public DateTime? DeletedUtc { get; set; }
+
+    public bool IsPinned { get; set; } = false;
+
+    [MaxLength(32)]
+    public string? DeletionReason { get; set; }
 }

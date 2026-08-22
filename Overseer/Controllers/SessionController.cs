@@ -17,8 +17,9 @@ public class SessionController : ControllerBase
     private readonly IConfiguration _configuration;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly OngoingChatManager _ongoingChatManager;
+    private readonly ChatRetentionService _chatRetentionService;
 
-    public SessionController(SignInManager<ApplicationUser> signInManager, ApplicationDbContext dbContext, IMemoryCache cache, IConfiguration configuration, IServiceScopeFactory scopeFactory, OngoingChatManager ongoingChatManager)
+    public SessionController(SignInManager<ApplicationUser> signInManager, ApplicationDbContext dbContext, IMemoryCache cache, IConfiguration configuration, IServiceScopeFactory scopeFactory, OngoingChatManager ongoingChatManager, ChatRetentionService chatRetentionService)
     {
         _signInManager = signInManager;
         _dbContext = dbContext;
@@ -26,6 +27,7 @@ public class SessionController : ControllerBase
         _configuration = configuration;
         _scopeFactory = scopeFactory;
         _ongoingChatManager = ongoingChatManager;
+        _chatRetentionService = chatRetentionService;
     }
 
     [HttpPost("create")]
@@ -54,6 +56,8 @@ public class SessionController : ControllerBase
         {
             return Unauthorized();
         }
+
+        await _chatRetentionService.EnforceUserSessionQuotaAsync(user.Id);
 
         var session = new ChatSession
         {

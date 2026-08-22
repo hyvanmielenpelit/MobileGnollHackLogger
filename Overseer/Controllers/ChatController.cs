@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
 using Overseer.Services;
+using Overseer.Models;
 using Overseer.Extensions;
 using System.Security.Claims;
 using Microsoft.Extensions.Configuration;
@@ -32,8 +33,9 @@ public class ChatController : ControllerBase
     private readonly OngoingChatManager _ongoingChatManager;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly SettingsService _settingsService;
+    private readonly ChatRetentionService _chatRetentionService;
 
-    public ChatController(ApplicationDbContext dbContext, ChatService chatService, IConfiguration configuration, IMemoryCache memoryCache, EmailSender emailSender, UserManager<ApplicationUser> userManager, OngoingChatManager ongoingChatManager, IServiceScopeFactory scopeFactory, SettingsService settingsService)
+    public ChatController(ApplicationDbContext dbContext, ChatService chatService, IConfiguration configuration, IMemoryCache memoryCache, EmailSender emailSender, UserManager<ApplicationUser> userManager, OngoingChatManager ongoingChatManager, IServiceScopeFactory scopeFactory, SettingsService settingsService, ChatRetentionService chatRetentionService)
     {
         _dbContext = dbContext;
         _chatService = chatService;
@@ -44,6 +46,7 @@ public class ChatController : ControllerBase
         _ongoingChatManager = ongoingChatManager;
         _scopeFactory = scopeFactory;
         _settingsService = settingsService;
+        _chatRetentionService = chatRetentionService;
     }
 
     [HttpGet("sessions")]
@@ -57,12 +60,14 @@ public class ChatController : ControllerBase
         int effectiveTake = Math.Min(Math.Max(take ?? pageSize, pageSize), 500);
 
         var swDb = Stopwatch.StartNew();
+        int totalActive = await _dbContext.ChatSession.CountAsync(s => s.AspNetUserId == userId && !s.IsDeleted);
         var sessions = await _dbContext.ChatSession
-            .Where(s => s.AspNetUserId == userId)
-            .OrderByDescending(s => s.LastMessageUtc)
+            .Where(s => s.AspNetUserId == userId && !s.IsDeleted)
+            .OrderByDescending(s => s.IsPinned)
+            .ThenByDescending(s => s.LastMessageUtc)
             .Skip(skip)
             .Take(effectiveTake + 1)
-            .Select(s => new { s.Id, s.Title, s.LastMessageUtc, s.IsGnollHackSession })
+            .Select(s => new { s.Id, s.Title, s.LastMessageUtc, s.IsGnollHackSession, s.IsPinned })
             .ToListAsync();
         swDb.Stop();
 
@@ -80,7 +85,10 @@ public class ChatController : ControllerBase
         return Ok(new
         {
             sessions = sessions,
-            hasMore = hasMore
+            hasMore = hasMore,
+            activeCount = totalActive,
+            maxQuota = _configuration.GetValue<int>("ChatRetentionSettings:MaxActiveSessionsPerUser", 50),
+            maxPinned = _configuration.GetValue<int>("ChatRetentionSettings:MaxPinnedSessionsPerUser", 5)
         });
     }
 
@@ -316,35 +324,99 @@ public class ChatController : ControllerBase
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
-        var session = await _dbContext.ChatSession.FirstOrDefaultAsync(s => s.Id == id && s.AspNetUserId == userId);
         
-        if (session == null) return NotFound();
-
-        var baseDir = _configuration["ConversationsDataLocation"];
-        if (!string.IsNullOrEmpty(baseDir))
-        {
-            var attachmentPaths = await _dbContext.ChatMessageAttachment
-                .Where(a => a.ChatMessage != null && a.ChatMessage.ChatSessionId == id)
-                .Select(a => a.RelativePath)
-                .ToListAsync();
-
-            foreach (var path in attachmentPaths)
-            {
-                if (!string.IsNullOrEmpty(path))
-                {
-                    var filePath = Path.Combine(baseDir, path);
-                    if (System.IO.File.Exists(filePath))
-                    {
-                        System.IO.File.Delete(filePath);
-                    }
-                }
-            }
-        }
-
-        _dbContext.ChatSession.Remove(session);
-        await _dbContext.SaveChangesAsync();
+        var success = await _chatRetentionService.SoftDeleteSessionAsync(id, userId, "User");
+        if (!success) return NotFound();
 
         return Ok();
+    }
+
+    [HttpPut("sessions/{id}/pin")]
+    public async Task<IActionResult> TogglePin(long id)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+        try
+        {
+            var isPinned = await _chatRetentionService.TogglePinSessionAsync(id, userId);
+            if (isPinned == null) return NotFound();
+            return Ok(new { isPinned = isPinned.Value });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpGet("sessions/trash")]
+    public async Task<IActionResult> GetTrashSessions()
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+        var sessions = await _dbContext.ChatSession
+            .Where(s => s.AspNetUserId == userId && s.IsDeleted)
+            .OrderByDescending(s => s.DeletedUtc)
+            .Select(s => new TrashSessionDto
+            {
+                Id = s.Id,
+                Title = s.Title,
+                CreatedUtc = s.CreatedUtc,
+                LastMessageUtc = s.LastMessageUtc,
+                DeletedUtc = s.DeletedUtc,
+                DeletionReason = s.DeletionReason,
+                IsPinned = s.IsPinned,
+                IsGnollHackSession = s.IsGnollHackSession,
+                DaysRemaining = Math.Max(0, 30 - (int)EF.Functions.DateDiffDay(s.DeletedUtc ?? DateTime.UtcNow, DateTime.UtcNow)),
+                MessageCount = _dbContext.ChatMessage.Count(m => m.ChatSessionId == s.Id && m.Role != "system" && !m.IsHidden)
+            })
+            .ToListAsync();
+
+        return Ok(sessions);
+    }
+
+    [HttpPost("sessions/{id}/restore")]
+    public async Task<IActionResult> RestoreSession(long id)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+        var success = await _chatRetentionService.RestoreSessionAsync(id, userId);
+        if (!success) return NotFound();
+        return Ok();
+    }
+
+    [HttpDelete("sessions/{id}/permanent")]
+    public async Task<IActionResult> PermanentDeleteSession(long id)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+        var session = await _dbContext.ChatSession.FirstOrDefaultAsync(s => s.Id == id && s.AspNetUserId == userId);
+        if (session == null) return NotFound();
+
+        await _chatRetentionService.PermanentlyPurgeSessionsAsync(new List<long> { id });
+        return Ok();
+    }
+
+    [HttpPost("sessions/trash/empty")]
+    public async Task<IActionResult> EmptyTrash()
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+        var trashIds = await _dbContext.ChatSession
+            .Where(s => s.AspNetUserId == userId && s.IsDeleted)
+            .Select(s => s.Id)
+            .ToListAsync();
+
+        if (trashIds.Count > 0)
+        {
+            await _chatRetentionService.PermanentlyPurgeSessionsAsync(trashIds);
+        }
+
+        return Ok(new { count = trashIds.Count });
     }
 
     [HttpGet("attachments/{id}")]
@@ -398,6 +470,8 @@ public class ChatController : ControllerBase
         }
         else
         {
+            await _chatRetentionService.EnforceUserSessionQuotaAsync(userId);
+
             var session = new ChatSession
             {
                 AspNetUserId = userId,

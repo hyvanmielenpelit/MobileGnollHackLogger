@@ -2,7 +2,7 @@ import { Component, OnInit, OnDestroy, inject, ViewChild, ElementRef, ChangeDete
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
-import { AdminService, UserDto, GroupDto, SystemAiConfigDto, UserSystemAiConfigDto, GroupSystemAiConfigDto } from '../services/admin.service';
+import { AdminService, UserDto, GroupDto, SystemAiConfigDto, UserSystemAiConfigDto, GroupSystemAiConfigDto, DatabaseStorageMetrics, MaintenanceResult } from '../services/admin.service';
 import { AiModelFormComponent, AiModelFormResult } from '../shared/ai-model-form/ai-model-form.component';
 import { ConfigAnalyticsComponent } from './config-analytics/config-analytics.component';
 import { Subject, Subscription } from 'rxjs';
@@ -18,9 +18,20 @@ import { debounceTime } from 'rxjs/operators';
 export class AdminComponent implements OnInit, OnDestroy {
   private adminService = inject(AdminService);
   
-  activeTab: 'users' | 'groups' | 'configs' | 'devtools' = 'users';
+  activeTab: 'users' | 'groups' | 'configs' | 'database' | 'devtools' = 'users';
   loading = false;
   usersLoading = false;
+
+  // Database Tab state
+  storageMetrics: DatabaseStorageMetrics | null = null;
+  storageLoading = false;
+  maintenanceLoading = false;
+  maintenanceDryRun = false;
+  inactivityDays = 90;
+  toolCallPruneDays = 30;
+  lastMaintenanceResult: MaintenanceResult | null = null;
+  dbActionMessage: string | null = null;
+  dbActionMessageType: 'success' | 'error' = 'success';
 
   users: UserDto[] = [];
   groups: GroupDto[] = [];
@@ -839,6 +850,156 @@ export class AdminComponent implements OnInit, OnDestroy {
       error: (err) => {
         console.error("Failed to save config order", err);
         this.savingConfig = false;
+      }
+    });
+  }
+
+  // --- Database Storage & Maintenance Tab ---
+
+  selectTab(tab: 'users' | 'groups' | 'configs' | 'database' | 'devtools') {
+    this.activeTab = tab;
+    if (tab === 'database') {
+      this.loadStorageMetrics();
+    }
+  }
+
+  loadStorageMetrics() {
+    this.storageLoading = true;
+    this.adminService.getStorageMetrics().subscribe({
+      next: (data) => {
+        this.storageMetrics = data;
+        this.storageLoading = false;
+      },
+      error: (err) => {
+        console.error('Failed to load storage metrics', err);
+        this.storageLoading = false;
+      }
+    });
+  }
+
+  runFullMaintenance() {
+    if (!this.maintenanceDryRun && !confirm('Are you sure you want to run the full maintenance pass? Expired soft-deleted chats and aged tool calls will be permanently modified.')) {
+      return;
+    }
+    this.maintenanceLoading = true;
+    this.dbActionMessage = null;
+    this.lastMaintenanceResult = null;
+
+    this.adminService.runMaintenanceNow({
+      dryRun: this.maintenanceDryRun,
+      inactivityDays: this.inactivityDays,
+      toolCallPruneDays: this.toolCallPruneDays
+    }).subscribe({
+      next: (res) => {
+        this.maintenanceLoading = false;
+        this.lastMaintenanceResult = res;
+        this.dbActionMessage = res.isDryRun ? 'Dry run completed successfully.' : 'Full maintenance pass executed successfully.';
+        this.dbActionMessageType = 'success';
+        this.loadStorageMetrics();
+      },
+      error: (err) => {
+        this.maintenanceLoading = false;
+        this.dbActionMessage = 'Failed to execute maintenance pass: ' + (err.error?.message || err.message);
+        this.dbActionMessageType = 'error';
+      }
+    });
+  }
+
+  purgeAllTrash() {
+    if (!confirm('Are you sure you want to immediately delete ALL soft-deleted sessions across all users? This cannot be undone.')) {
+      return;
+    }
+    this.maintenanceLoading = true;
+    this.dbActionMessage = null;
+    this.adminService.purgeTrashNow({ dryRun: false }).subscribe({
+      next: (res) => {
+        this.maintenanceLoading = false;
+        this.lastMaintenanceResult = res;
+        this.dbActionMessage = `Purged ${res.purgedSessionCount} sessions and ${res.deletedDiskFolderCount} disk folders.`;
+        this.dbActionMessageType = 'success';
+        this.loadStorageMetrics();
+      },
+      error: (err) => {
+        this.maintenanceLoading = false;
+        this.dbActionMessage = 'Failed to purge trash: ' + (err.error?.message || err.message);
+        this.dbActionMessageType = 'error';
+      }
+    });
+  }
+
+  purgeInactiveNow() {
+    if (!confirm(`Are you sure you want to soft-delete inactive sessions older than ${this.inactivityDays} days?`)) {
+      return;
+    }
+    this.maintenanceLoading = true;
+    this.dbActionMessage = null;
+    this.adminService.purgeInactive({ inactivityDays: this.inactivityDays, dryRun: false }).subscribe({
+      next: (res) => {
+        this.maintenanceLoading = false;
+        this.dbActionMessage = res.message;
+        this.dbActionMessageType = 'success';
+        this.loadStorageMetrics();
+      },
+      error: (err) => {
+        this.maintenanceLoading = false;
+        this.dbActionMessage = 'Failed to purge inactive sessions: ' + (err.error?.message || err.message);
+        this.dbActionMessageType = 'error';
+      }
+    });
+  }
+
+  pruneToolResultsNow() {
+    if (!confirm(`Are you sure you want to prune tool call result payloads older than ${this.toolCallPruneDays} days? Message transcripts will be preserved.`)) {
+      return;
+    }
+    this.maintenanceLoading = true;
+    this.dbActionMessage = null;
+    this.adminService.pruneToolResults({ toolCallPruneDays: this.toolCallPruneDays, dryRun: false }).subscribe({
+      next: (res) => {
+        this.maintenanceLoading = false;
+        this.dbActionMessage = res.message;
+        this.dbActionMessageType = 'success';
+        this.loadStorageMetrics();
+      },
+      error: (err) => {
+        this.maintenanceLoading = false;
+        this.dbActionMessage = 'Failed to prune tool results: ' + (err.error?.message || err.message);
+        this.dbActionMessageType = 'error';
+      }
+    });
+  }
+
+  sweepOrphanFoldersNow() {
+    this.maintenanceLoading = true;
+    this.dbActionMessage = null;
+    this.adminService.sweepOrphans({ dryRun: false }).subscribe({
+      next: (res) => {
+        this.maintenanceLoading = false;
+        this.dbActionMessage = res.message;
+        this.dbActionMessageType = 'success';
+        this.loadStorageMetrics();
+      },
+      error: (err) => {
+        this.maintenanceLoading = false;
+        this.dbActionMessage = 'Failed to sweep orphan folders: ' + (err.error?.message || err.message);
+        this.dbActionMessageType = 'error';
+      }
+    });
+  }
+
+  sendDiagnosticEmail() {
+    this.maintenanceLoading = true;
+    this.dbActionMessage = null;
+    this.adminService.sendReportEmail().subscribe({
+      next: (res) => {
+        this.maintenanceLoading = false;
+        this.dbActionMessage = res.message;
+        this.dbActionMessageType = res.success ? 'success' : 'error';
+      },
+      error: (err) => {
+        this.maintenanceLoading = false;
+        this.dbActionMessage = 'Failed to send report email: ' + (err.error?.message || err.message);
+        this.dbActionMessageType = 'error';
       }
     });
   }

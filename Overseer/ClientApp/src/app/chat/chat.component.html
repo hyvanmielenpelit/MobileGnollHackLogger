@@ -19,15 +19,25 @@
             No conversations yet.
           </li>
         }
-        @for (s of sessions; track s) {
-          <li [class.active]="s.id === currentSessionId" (click)="navigateToSession(s.id)">
+        @for (s of sessions; track s.id) {
+          <li [class.active]="s.id === currentSessionId" [class.is-pinned]="s.isPinned" (click)="navigateToSession(s.id)">
             <div class="session-info">
-              <div class="session-title" title="{{ s.title }}">{{ s.title }}</div>
+              <div class="session-title" title="{{ s.title }}">
+                @if (s.isPinned) {
+                  <span class="pin-badge" title="Pinned Conversation">📌</span>
+                }
+                {{ s.title }}
+              </div>
               @if (s.lastMessageUtc) {
                 <div class="session-time" [title]="s.lastMessageUtc | date:'medium'">{{ s.lastMessageUtc | relativeTime }}</div>
               }
             </div>
-            <button class="session-delete-btn" (click)="requestDeleteSession(s.id, $event)" title="Delete Session">X</button>
+            <div class="session-item-actions" (click)="$event.stopPropagation()">
+              <button class="session-action-btn session-pin-btn" [class.pinned]="s.isPinned" (click)="togglePinSession(s.id, $event)" [title]="s.isPinned ? 'Unpin Chat' : 'Pin Chat'">
+                {{ s.isPinned ? '★' : '☆' }}
+              </button>
+              <button class="session-delete-btn" (click)="requestDeleteSession(s.id, $event)" title="Move to Trash">✕</button>
+            </div>
           </li>
         }
         <!-- Load More link -->
@@ -44,6 +54,14 @@
           </li>
         }
       </ul>
+      <div class="sidebar-quota-bar" *ngIf="activeSessionCount !== undefined">
+        <div class="quota-count">
+          <span>Active: {{ activeSessionCount }} / {{ maxSessionQuota }}</span>
+        </div>
+        <button class="sidebar-trash-btn" (click)="openTrashDialog()" title="Open Trash">
+          🗑️ Trash ({{ trashSessions.length }})
+        </button>
+      </div>
       <div class="bottom-links">
         <a routerLink="/settings" queryParamsHandling="preserve">
           Settings
@@ -624,6 +642,80 @@
   <div class="dialog-actions">
     <button class="btn-gh btn-gh-cancel" (click)="closeLogoutConfirm()">Cancel</button>
     <button class="btn-gh btn-gh-delete" (click)="executeLogout()">Log Out</button>
+  </div>
+</dialog>
+
+<dialog #trashDialog class="gh-dialog dialog-wide trash-dialog">
+  <div class="trash-dialog-header">
+    <h3>🗑️ Trash (Soft-Deleted Chats)</h3>
+    <button class="dialog-close-x" (click)="closeTrashDialog()">×</button>
+  </div>
+  <p class="text-muted" style="font-size: 0.9em; margin-bottom: 15px;">
+    Chats in Trash are kept for <strong>30 days</strong> before permanent deletion. You can restore them anytime or permanently delete them now.
+  </p>
+
+  @if (loadingTrash) {
+    <div class="loading-state">
+      <span class="gh-spinner-small"></span> Loading trash...
+    </div>
+  }
+
+  @if (!loadingTrash && trashSessions.length === 0) {
+    <div class="empty-trash-message">
+      <p>Trash is empty.</p>
+    </div>
+  }
+
+  @if (!loadingTrash && trashSessions.length > 0) {
+    <div class="trash-list-container">
+      <div class="trash-list-actions">
+        <span class="text-muted">{{ trashSessions.length }} item{{ trashSessions.length === 1 ? '' : 's' }} in Trash</span>
+        <button class="btn-gh btn-gh-delete btn-gh-small" (click)="requestEmptyTrash()">Empty Trash</button>
+      </div>
+
+      <ul class="trash-items-list">
+        @for (item of trashSessions; track item.id) {
+          <li class="trash-item">
+            <div class="trash-item-info">
+              <div class="trash-item-title">{{ item.title }}</div>
+              <div class="trash-item-meta">
+                <span class="badge-expiry">{{ item.daysRemaining }} day{{ item.daysRemaining === 1 ? '' : 's' }} left</span>
+                @if (item.deletionReason) {
+                  <span class="badge-reason">Reason: {{ item.deletionReason }}</span>
+                }
+                <span class="text-muted">{{ item.messageCount }} messages</span>
+              </div>
+            </div>
+            <div class="trash-item-actions">
+              <button class="btn-gh btn-gh-small" (click)="restoreTrashSession(item.id)">Restore</button>
+              <button class="btn-gh btn-gh-delete btn-gh-small" (click)="requestPermanentDelete(item.id)">Delete Forever</button>
+            </div>
+          </li>
+        }
+      </ul>
+    </div>
+  }
+
+  <div class="dialog-actions mt-15">
+    <button class="btn-gh btn-gh-cancel" (click)="closeTrashDialog()">Close</button>
+  </div>
+</dialog>
+
+<dialog #permanentDeleteConfirmDialog class="gh-dialog" closedby="any">
+  <h3>Permanent Deletion</h3>
+  <p>Are you sure you want to permanently delete this chat and all attached files? This action cannot be undone.</p>
+  <div class="dialog-actions">
+    <button class="btn-gh btn-gh-cancel" (click)="permanentDeleteConfirmDialog.close()">Cancel</button>
+    <button class="btn-gh btn-gh-delete" (click)="confirmPermanentDelete()">Delete Forever</button>
+  </div>
+</dialog>
+
+<dialog #emptyTrashConfirmDialog class="gh-dialog" closedby="any">
+  <h3>Empty Trash</h3>
+  <p>Are you sure you want to permanently delete all chats and attachments in Trash? This action cannot be undone.</p>
+  <div class="dialog-actions">
+    <button class="btn-gh btn-gh-cancel" (click)="emptyTrashConfirmDialog.close()">Cancel</button>
+    <button class="btn-gh btn-gh-delete" (click)="confirmEmptyTrash()">Empty All Trash</button>
   </div>
 </dialog>
 

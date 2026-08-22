@@ -142,6 +142,54 @@ export interface AnalyticsResponse {
   totalCount: number;
 }
 
+export interface TableStorageMetric {
+  tableName: string;
+  rowCount: number;
+  totalSpaceMb: number;
+  usedSpaceMb: number;
+}
+
+export interface DatabaseStorageMetrics {
+  allocatedDataSizeMb: number;
+  usedDataSizeMb: number;
+  freeSpaceWithin10GbMb: number;
+  maxLimitMb: number;
+  usedPercentage: number;
+  tableMetrics: TableStorageMetric[];
+  activeSessionCount: number;
+  softDeletedSessionCount: number;
+  inactiveSessionCount: number;
+  pinnedSessionCount: number;
+  diskAttachmentsSizeBytes: number;
+  diskAttachmentsSizeMb: number;
+  diskAttachmentsFolderCount: number;
+  diskAttachmentsFileCount: number;
+  estimatedReclaimableMb: number;
+  lastMaintenanceRunUtc?: string;
+  statusLevel: 'Normal' | 'Warning' | 'Critical';
+}
+
+export interface MaintenanceRequest {
+  dryRun?: boolean;
+  inactivityDays?: number;
+  toolCallPruneDays?: number;
+}
+
+export interface MaintenanceResult {
+  success: boolean;
+  isDryRun: boolean;
+  softDeletedCount: number;
+  purgedSessionCount: number;
+  purgedMessageCount: number;
+  purgedToolCallCount: number;
+  prunedToolResultCount: number;
+  deletedDiskFolderCount: number;
+  deletedDiskFileCount: number;
+  reclaimedDiskBytes: number;
+  elapsedMilliseconds: number;
+  logs: string[];
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -275,5 +323,34 @@ export class AdminService {
 
   triggerBackendSentryError(): Observable<any> {
     return this.http.post('/api/admin/test-sentry', {});
+  }
+
+  // Database Storage & Maintenance
+  getStorageMetrics(): Observable<DatabaseStorageMetrics> {
+    return this.http.get<DatabaseStorageMetrics>('/api/admin/storage-metrics');
+  }
+
+  runMaintenanceNow(request?: MaintenanceRequest): Observable<MaintenanceResult> {
+    return this.http.post<MaintenanceResult>('/api/admin/maintenance/run-now', request || {});
+  }
+
+  purgeTrashNow(request?: MaintenanceRequest): Observable<MaintenanceResult> {
+    return this.http.post<MaintenanceResult>('/api/admin/maintenance/purge-trash-now', request || {});
+  }
+
+  purgeInactive(request?: MaintenanceRequest): Observable<{ success: boolean; isDryRun: boolean; softDeletedCount: number; message: string }> {
+    return this.http.post<{ success: boolean; isDryRun: boolean; softDeletedCount: number; message: string }>('/api/admin/maintenance/purge-inactive', request || {});
+  }
+
+  pruneToolResults(request?: MaintenanceRequest): Observable<{ success: boolean; isDryRun: boolean; prunedCount: number; message: string }> {
+    return this.http.post<{ success: boolean; isDryRun: boolean; prunedCount: number; message: string }>('/api/admin/maintenance/prune-tool-results', request || {});
+  }
+
+  sweepOrphans(request?: MaintenanceRequest): Observable<{ success: boolean; isDryRun: boolean; sweptCount: number; message: string }> {
+    return this.http.post<{ success: boolean; isDryRun: boolean; sweptCount: number; message: string }>('/api/admin/maintenance/sweep-orphans', request || {});
+  }
+
+  sendReportEmail(): Observable<{ success: boolean; message: string }> {
+    return this.http.post<{ success: boolean; message: string }>('/api/admin/maintenance/send-report-email', {});
   }
 }

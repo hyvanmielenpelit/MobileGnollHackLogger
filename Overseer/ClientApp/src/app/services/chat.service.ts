@@ -6,6 +6,20 @@ export interface ChatSession {
   title: string;
   lastMessageUtc: string;
   isGnollHackSession?: boolean;
+  isPinned?: boolean;
+}
+
+export interface TrashSession {
+  id: number;
+  title: string;
+  createdUtc: string;
+  lastMessageUtc: string;
+  deletedUtc: string;
+  deletionReason?: string;
+  daysRemaining: number;
+  isPinned: boolean;
+  isGnollHackSession?: boolean;
+  messageCount: number;
 }
 
 export interface ChatMessageAttachment {
@@ -44,9 +58,13 @@ export interface ChatStreamEvent {
   data: string;
   seqNo?: number;
 }
+
 export interface ChatSessionsResponse {
   sessions: ChatSession[];
   hasMore: boolean;
+  activeCount?: number;
+  maxQuota?: number;
+  maxPinned?: number;
 }
 
 export interface ChatSessionDetailResponse {
@@ -95,6 +113,26 @@ export class ChatService {
 
   deleteSession(id: number) {
     return this.http.delete(`/api/chat/sessions/${id}`);
+  }
+
+  togglePinSession(id: number) {
+    return this.http.put<{isPinned: boolean}>(`/api/chat/sessions/${id}/pin`, {});
+  }
+
+  getTrashSessions() {
+    return this.http.get<TrashSession[]>('/api/chat/sessions/trash');
+  }
+
+  restoreSession(id: number) {
+    return this.http.post(`/api/chat/sessions/${id}/restore`, {});
+  }
+
+  permanentDeleteSession(id: number) {
+    return this.http.delete(`/api/chat/sessions/${id}/permanent`);
+  }
+
+  emptyTrash() {
+    return this.http.post<{count: number}>('/api/chat/sessions/trash/empty', {});
   }
 
   reportMessage(messageId: number) {
