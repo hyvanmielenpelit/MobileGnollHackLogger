@@ -108,7 +108,8 @@ export class ModelsComponent implements OnInit {
             } else {
               this.titleModelSelection = null;
             }
-          }
+          },
+          error: () => {}
         });
         this.saving = false;
         this.deleteModelConfirmDialog.nativeElement.close();

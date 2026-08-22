@@ -725,77 +725,108 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       this.loadSessions();
     }
 
-    this.settingsService.getSettingsResponse().subscribe(httpResponse => {
-      const settingsDuration = performance.now() - t0;
-      const settings = httpResponse.body;
-      const serverTiming = httpResponse.headers.get('Server-Timing');
-      const timingLog = serverTiming ? ` | Server-Timing: ${serverTiming}` : '';
-      this.perfLog('Settings', `getSettings received in ${settingsDuration.toFixed(1)}ms${timingLog}`);
-      setTimeout(() => {
-        const entries = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
-        const settingsEntry = entries.filter(e => e.name.endsWith('/api/settings')).pop();
-        if (settingsEntry) {
-          this.perfLog('Settings', `ResourceTiming: startTime=${settingsEntry.startTime.toFixed(0)}, fetchStart=${settingsEntry.fetchStart.toFixed(0)}, requestStart=${settingsEntry.requestStart.toFixed(0)}, responseStart=${settingsEntry.responseStart.toFixed(0)}, responseEnd=${settingsEntry.responseEnd.toFixed(0)}, duration=${settingsEntry.duration.toFixed(0)}, stalled=${(settingsEntry.requestStart - settingsEntry.startTime).toFixed(0)}ms, ttfb=${(settingsEntry.responseStart - settingsEntry.requestStart).toFixed(0)}ms`);
-        }
-      }, 100);
-      if (settings) {
-        this.hasApiKey = settings.hasApiKey;
-        this.hasModel = settings.hasModel ?? false;
-        if (settings.maxAttachmentSize) {
-          this.maxAttachmentSize = settings.maxAttachmentSize;
-        }
-        this.showDebugLog = settings.showDebugLog ?? false;
-        localStorage.setItem('showDebugLog', this.showDebugLog.toString());
-        this.debugService.setEnabled(this.showDebugLog);
-        
-        this.showThoughtsAndTools = Number(settings.showThoughtsAndTools ?? 0);
-        this.spoilerFreeMode = settings.spoilerFreeMode === true;
-        this.debugService.log(`[Overseer] showThoughtsAndTools loaded: ${this.showThoughtsAndTools} (type: ${typeof this.showThoughtsAndTools})`);
-
-        const tModels0 = performance.now();
-        this.settingsService.getUserModels().subscribe({ next: (models) => {
-          const modelsDuration = performance.now() - tModels0;
-          this.perfLog('Settings', `getUserModels received in ${modelsDuration.toFixed(1)}ms (${models.length} models)`);
-          this.userModels = models.filter(m => !m.isSystem && (m.modelRole === undefined || (m.modelRole & 1) === 1));
-          this.systemModels = models.filter(m => m.isSystem && (m.modelRole === undefined || (m.modelRole & 1) === 1));
-          this.hasModel = this.userModels.length > 0 || this.systemModels.length > 0;
+    this.settingsService.getSettingsResponse().subscribe({
+      next: (httpResponse) => {
+        const settingsDuration = performance.now() - t0;
+        const settings = httpResponse.body;
+        const serverTiming = httpResponse.headers.get('Server-Timing');
+        const timingLog = serverTiming ? ` | Server-Timing: ${serverTiming}` : '';
+        this.perfLog('Settings', `getSettings received in ${settingsDuration.toFixed(1)}ms${timingLog}`);
+        setTimeout(() => {
+          const entries = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
+          const settingsEntry = entries.filter(e => e.name.endsWith('/api/settings')).pop();
+          if (settingsEntry) {
+            this.perfLog('Settings', `ResourceTiming: startTime=${settingsEntry.startTime.toFixed(0)}, fetchStart=${settingsEntry.fetchStart.toFixed(0)}, requestStart=${settingsEntry.requestStart.toFixed(0)}, responseStart=${settingsEntry.responseStart.toFixed(0)}, responseEnd=${settingsEntry.responseEnd.toFixed(0)}, duration=${settingsEntry.duration.toFixed(0)}, stalled=${(settingsEntry.requestStart - settingsEntry.startTime).toFixed(0)}ms, ttfb=${(settingsEntry.responseStart - settingsEntry.requestStart).toFixed(0)}ms`);
+          }
+        }, 100);
+        if (settings) {
+          this.hasApiKey = settings.hasApiKey;
+          this.hasModel = settings.hasModel ?? false;
+          if (settings.maxAttachmentSize) {
+            this.maxAttachmentSize = settings.maxAttachmentSize;
+          }
+          this.showDebugLog = settings.showDebugLog ?? false;
+          localStorage.setItem('showDebugLog', this.showDebugLog.toString());
+          this.debugService.setEnabled(this.showDebugLog);
           
-          if (this.hasModel) {
-            this.applySavedModelPreference();
-          } else {
-            this.singleModelInfo = null;
-            this.selectedUserModelId = null;
-          }
-        },  });
-      }
+          this.showThoughtsAndTools = Number(settings.showThoughtsAndTools ?? 0);
+          this.spoilerFreeMode = settings.spoilerFreeMode === true;
+          this.debugService.log(`[Overseer] showThoughtsAndTools loaded: ${this.showThoughtsAndTools} (type: ${typeof this.showThoughtsAndTools})`);
 
-      if (isInit) {
-        // Handle route AFTER settings are loaded to avoid
-        // showThoughtsAndTools race condition (defaulting to 0 before settings arrive)
-        this.debugService.log(`[Overseer] Settings loaded, now subscribing to route. showThoughtsAndTools=${this.showThoughtsAndTools}`);
-        this.route.queryParams.subscribe(params => {
-          const idParam = params['sessionId'];
-          if (idParam) {
-            const id = Number(idParam);
-            if (isNaN(id)) {
-              this.navigateToNewSession();
-            } else if (this.currentSessionId !== id) {
-              if (this.isStreaming) {
-                this.debugService.log(`[Frontend] Navigating away from session ${this.currentSessionId} while streaming. Generation continues in background.`);
+          const tModels0 = performance.now();
+          this.settingsService.getUserModels().subscribe({
+            next: (models) => {
+              const modelsDuration = performance.now() - tModels0;
+              this.perfLog('Settings', `getUserModels received in ${modelsDuration.toFixed(1)}ms (${models.length} models)`);
+              this.userModels = models.filter(m => !m.isSystem && (m.modelRole === undefined || (m.modelRole & 1) === 1));
+              this.systemModels = models.filter(m => m.isSystem && (m.modelRole === undefined || (m.modelRole & 1) === 1));
+              this.hasModel = this.userModels.length > 0 || this.systemModels.length > 0;
+              
+              if (this.hasModel) {
+                this.applySavedModelPreference();
+              } else {
+                this.singleModelInfo = null;
+                this.selectedUserModelId = null;
               }
-              this.loadSession(id);
+            },
+            error: (err) => {
+              const modelsDuration = performance.now() - tModels0;
+              this.perfLog('Settings', `getUserModels FAILED in ${modelsDuration.toFixed(1)}ms: ${err.message || err}`);
             }
-          } else {
-            if (this.currentSessionId !== null || this.messages.length > 0) {
-              if (this.isStreaming) {
-                this.debugService.log('[Frontend] Navigating to new session, clearing local streaming state. Generation continues in background.');
+          });
+        }
+
+        if (isInit) {
+          // Handle route AFTER settings are loaded to avoid
+          // showThoughtsAndTools race condition (defaulting to 0 before settings arrive)
+          this.debugService.log(`[Overseer] Settings loaded, now subscribing to route. showThoughtsAndTools=${this.showThoughtsAndTools}`);
+          this.route.queryParams.subscribe(params => {
+            const idParam = params['sessionId'];
+            if (idParam) {
+              const id = Number(idParam);
+              if (isNaN(id)) {
+                this.navigateToNewSession();
+              } else if (this.currentSessionId !== id) {
+                if (this.isStreaming) {
+                  this.debugService.log(`[Frontend] Navigating away from session ${this.currentSessionId} while streaming. Generation continues in background.`);
+                }
+                this.loadSession(id);
               }
-              this.newSession();
             } else {
-              this.loadDraft();
+              if (this.currentSessionId !== null || this.messages.length > 0) {
+                if (this.isStreaming) {
+                  this.debugService.log('[Frontend] Navigating to new session, clearing local streaming state. Generation continues in background.');
+                }
+                this.newSession();
+              } else {
+                this.loadDraft();
+              }
             }
-          }
-        });
+          });
+        }
+      },
+      error: (err) => {
+        const settingsDuration = performance.now() - t0;
+        this.perfLog('Settings', `getSettings FAILED in ${settingsDuration.toFixed(1)}ms: ${err.message || err}`);
+        if (isInit) {
+          this.route.queryParams.subscribe(params => {
+            const idParam = params['sessionId'];
+            if (idParam) {
+              const id = Number(idParam);
+              if (isNaN(id)) {
+                this.navigateToNewSession();
+              } else if (this.currentSessionId !== id) {
+                this.loadSession(id);
+              }
+            } else {
+              if (this.currentSessionId !== null || this.messages.length > 0) {
+                this.newSession();
+              } else {
+                this.loadDraft();
+              }
+            }
+          });
+        }
       }
     });
   }
@@ -1291,19 +1322,24 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
             if (lastUserMsg && lastUserMsg.attachments && lastUserMsg.attachments.some(a => !a.id)) {
               console.log('[Frontend Debug] Fallback: Missing attachment IDs detected. Fetching session to patch...');
               this.debugService.log(`[Frontend] Fallback: Missing attachment IDs detected. Fetching session to patch...`);
-              this.chatService.getSession(this.currentSessionId).subscribe(res => {
-                const s = res.body;
-                if (!s) return;
-                const serverUserMsg = [...(s.messages || [])].reverse().find(m => m.role === 'user');
-                if (serverUserMsg && serverUserMsg.attachments) {
-                  for (const serverAtt of serverUserMsg.attachments) {
-                    const localAtt = lastUserMsg.attachments!.find(a => a.fileName === serverAtt.fileName && !a.id);
-                    if (localAtt) {
-                      localAtt.id = serverAtt.id;
-                      console.log(`[Frontend Debug] Fallback patched attachment: ${serverAtt.fileName} (id: ${serverAtt.id})`);
+              this.chatService.getSession(this.currentSessionId).subscribe({
+                next: (res) => {
+                  const s = res.body;
+                  if (!s) return;
+                  const serverUserMsg = [...(s.messages || [])].reverse().find(m => m.role === 'user');
+                  if (serverUserMsg && serverUserMsg.attachments) {
+                    for (const serverAtt of serverUserMsg.attachments) {
+                      const localAtt = lastUserMsg.attachments!.find(a => a.fileName === serverAtt.fileName && !a.id);
+                      if (localAtt) {
+                        localAtt.id = serverAtt.id;
+                        console.log(`[Frontend Debug] Fallback patched attachment: ${serverAtt.fileName} (id: ${serverAtt.id})`);
+                      }
                     }
+                    this.cdr.detectChanges();
                   }
-                  this.cdr.detectChanges();
+                },
+                error: (err) => {
+                  this.debugService.log(`[Frontend] Fallback getSession failed: ${err.message || err}`);
                 }
               });
             }
@@ -1852,13 +1888,21 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     if (this.sessionToDelete === null) return;
     const id = this.sessionToDelete;
     
-    this.chatService.deleteSession(id).subscribe(() => {
-      if (this.currentSessionId === id) this.navigateToNewSession();
-      this.loadSessions(true);
-      if (this.deleteConfirmDialog) {
-        this.deleteConfirmDialog.nativeElement.close();
+    this.chatService.deleteSession(id).subscribe({
+      next: () => {
+        if (this.currentSessionId === id) this.navigateToNewSession();
+        this.loadSessions(true);
+        if (this.deleteConfirmDialog) {
+          this.deleteConfirmDialog.nativeElement.close();
+        }
+        this.sessionToDelete = null;
+      },
+      error: () => {
+        if (this.deleteConfirmDialog) {
+          this.deleteConfirmDialog.nativeElement.close();
+        }
+        this.sessionToDelete = null;
       }
-      this.sessionToDelete = null;
     });
   }
 
@@ -2187,7 +2231,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
   executeLogout() {
     this.closeLogoutConfirm();
-    this.authService.logout().subscribe(() => this.router.navigate(['/login']));
+    this.authService.logout().subscribe({
+      next: () => this.router.navigate(['/login']),
+      error: () => this.router.navigate(['/login'])
+    });
   }
 
   triggerFileInput() {

@@ -161,58 +161,68 @@ export class SettingsComponent implements OnInit, OnDestroy {
       error: () => {}
     });
 
-    this.settingsService.getSettings().subscribe(s => {
-      if (s) {
-        if (s.spoilerFreeMode !== undefined) {
-          this.spoilerFreeMode = s.spoilerFreeMode;
-          this.initSpoilerFreeMode = s.spoilerFreeMode;
+    this.settingsService.getSettings().subscribe({
+      next: (s) => {
+        if (s) {
+          if (s.spoilerFreeMode !== undefined) {
+            this.spoilerFreeMode = s.spoilerFreeMode;
+            this.initSpoilerFreeMode = s.spoilerFreeMode;
+          }
+          if (s.showSourceCodeReferences !== undefined) {
+            this.showSourceCodeReferences = s.showSourceCodeReferences;
+            this.initShowSourceCodeReferences = s.showSourceCodeReferences;
+          }
+          if (s.enableWebSearch !== undefined) {
+            this.enableWebSearch = s.enableWebSearch;
+            this.initEnableWebSearch = s.enableWebSearch;
+          }
+          if (s.enableToolUse !== undefined) {
+            this.enableToolUse = s.enableToolUse;
+            this.initEnableToolUse = s.enableToolUse;
+          }
+          if (s.enableClientTools !== undefined) {
+            this.enableClientTools = s.enableClientTools;
+            this.initEnableClientTools = s.enableClientTools;
+          }
+          if (s.enableGameActions !== undefined) {
+            this.enableGameActions = s.enableGameActions;
+            this.initEnableGameActions = s.enableGameActions;
+          }
+          if (s.showThoughtsAndTools !== undefined) {
+            this.showThoughtsAndTools = Number(s.showThoughtsAndTools ?? 0);
+            this.initShowThoughtsAndTools = this.showThoughtsAndTools;
+          }
+          if (s.maxResultLength !== undefined) {
+            this.maxResultLength = s.maxResultLength;
+            this.initMaxResultLength = s.maxResultLength;
+          }
+          if (s.maxCallsPerSession !== undefined) {
+            this.maxCallsPerSession = s.maxCallsPerSession;
+            this.initMaxCallsPerSession = s.maxCallsPerSession;
+          }
+          if (s.maxToolIterations !== undefined) {
+            this.maxToolIterations = s.maxToolIterations;
+            this.initMaxToolIterations = s.maxToolIterations;
+          }
+          if (s.requestTimeout !== undefined) {
+            this.requestTimeout = s.requestTimeout;
+            this.initRequestTimeout = s.requestTimeout;
+          }
+          if (s.performanceLimits) {
+            this.performanceLimits = s.performanceLimits;
+          }
+          this.initializeSelects();
         }
-        if (s.showSourceCodeReferences !== undefined) {
-          this.showSourceCodeReferences = s.showSourceCodeReferences;
-          this.initShowSourceCodeReferences = s.showSourceCodeReferences;
-        }
-        if (s.enableWebSearch !== undefined) {
-          this.enableWebSearch = s.enableWebSearch;
-          this.initEnableWebSearch = s.enableWebSearch;
-        }
-        if (s.enableToolUse !== undefined) {
-          this.enableToolUse = s.enableToolUse;
-          this.initEnableToolUse = s.enableToolUse;
-        }
-        if (s.enableClientTools !== undefined) {
-          this.enableClientTools = s.enableClientTools;
-          this.initEnableClientTools = s.enableClientTools;
-        }
-        if (s.enableGameActions !== undefined) {
-          this.enableGameActions = s.enableGameActions;
-          this.initEnableGameActions = s.enableGameActions;
-        }
-        if (s.showThoughtsAndTools !== undefined) {
-          this.showThoughtsAndTools = s.showThoughtsAndTools;
-          this.initShowThoughtsAndTools = s.showThoughtsAndTools;
-        }
-        if (s.maxResultLength !== undefined) {
-          this.maxResultLength = s.maxResultLength ?? null;
-          this.initMaxResultLength = this.maxResultLength;
-        }
-        if (s.maxCallsPerSession !== undefined) {
-          this.maxCallsPerSession = s.maxCallsPerSession ?? null;
-          this.initMaxCallsPerSession = this.maxCallsPerSession;
-        }
-        if (s.maxToolIterations !== undefined) {
-          this.maxToolIterations = s.maxToolIterations ?? null;
-          this.initMaxToolIterations = this.maxToolIterations;
-        }
-        if (s.requestTimeout !== undefined) {
-          this.requestTimeout = s.requestTimeout ?? null;
-          this.initRequestTimeout = this.requestTimeout;
-        }
-        if (s.performanceLimits) {
-          this.performanceLimits = s.performanceLimits;
-        }
-        this.initializeSelects();
-      }
+      },
+      error: () => {}
     });
+  }
+
+  // Closes the open popover for an explicitly specified HTMLElement
+  closePopover(popoverElement: HTMLElement | null) {
+    if (popoverElement && typeof popoverElement.hidePopover === 'function') {
+      popoverElement.hidePopover();
+    }
   }
 
   initializeSelects() {
@@ -265,33 +275,38 @@ export class SettingsComponent implements OnInit, OnDestroy {
   saveSettings() {
     this.loading = true;
     this.saved = false;
-    this.settingsService.saveSettings(this.spoilerFreeMode, this.enableWebSearch, this.enableToolUse, this.enableClientTools, this.enableGameActions, this.showSourceCodeReferences, this.maxResultLength, this.maxCallsPerSession, this.maxToolIterations, Number(this.showThoughtsAndTools), this.requestTimeout).subscribe(() => {
-      this.loading = false;
-      this.settingsService.showThoughtsAndToolsUpdated.next(Number(this.showThoughtsAndTools));
-      
-      const toast = this.successToast?.nativeElement as any;
-      if (toast && ("popover" in HTMLElement.prototype || toast.classList.contains('\:popover-open') || 'showPopover' in toast)) {
-        toast.showPopover();
-        setTimeout(() => {
-          try { toast.hidePopover(); } catch(e) {}
-        }, 3000);
-      } else {
-        this.saved = true;
-        setTimeout(() => this.saved = false, 3000);
-      }
+    this.settingsService.saveSettings(this.spoilerFreeMode, this.enableWebSearch, this.enableToolUse, this.enableClientTools, this.enableGameActions, this.showSourceCodeReferences, this.maxResultLength, this.maxCallsPerSession, this.maxToolIterations, Number(this.showThoughtsAndTools), this.requestTimeout).subscribe({
+      next: () => {
+        this.loading = false;
+        this.settingsService.showThoughtsAndToolsUpdated.next(Number(this.showThoughtsAndTools));
+        
+        const toast = this.successToast?.nativeElement as any;
+        if (toast && ("popover" in HTMLElement.prototype || toast.classList.contains('\:popover-open') || 'showPopover' in toast)) {
+          toast.showPopover();
+          setTimeout(() => {
+            try { toast.hidePopover(); } catch(e) {}
+          }, 3000);
+        } else {
+          this.saved = true;
+          setTimeout(() => this.saved = false, 3000);
+        }
 
-      this.initSpoilerFreeMode = this.spoilerFreeMode;
-      this.initShowSourceCodeReferences = this.showSourceCodeReferences;
-      this.initEnableWebSearch = this.enableWebSearch;
-      this.initEnableToolUse = this.enableToolUse;
-      this.initEnableClientTools = this.enableClientTools;
-      this.initEnableGameActions = this.enableGameActions;
-      this.initShowThoughtsAndTools = this.showThoughtsAndTools;
-      this.initMaxResultLength = this.maxResultLength;
-      this.initMaxCallsPerSession = this.maxCallsPerSession;
-      this.initMaxToolIterations = this.maxToolIterations;
-      this.initRequestTimeout = this.requestTimeout;
-    }, err => {});
+        this.initSpoilerFreeMode = this.spoilerFreeMode;
+        this.initShowSourceCodeReferences = this.showSourceCodeReferences;
+        this.initEnableWebSearch = this.enableWebSearch;
+        this.initEnableToolUse = this.enableToolUse;
+        this.initEnableClientTools = this.enableClientTools;
+        this.initEnableGameActions = this.enableGameActions;
+        this.initShowThoughtsAndTools = this.showThoughtsAndTools;
+        this.initMaxResultLength = this.maxResultLength;
+        this.initMaxCallsPerSession = this.maxCallsPerSession;
+        this.initMaxToolIterations = this.maxToolIterations;
+        this.initRequestTimeout = this.requestTimeout;
+      },
+      error: () => {
+        this.loading = false;
+      }
+    });
   }
 
   checkChangelogBadge() {

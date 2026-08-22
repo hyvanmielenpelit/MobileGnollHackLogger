@@ -3,8 +3,8 @@ import { appConfig } from './app/app.config';
 import { AppComponent } from './app/app.component';
 
 import * as Sentry from '@sentry/angular';
-import { HttpErrorResponse } from '@angular/common/http';
 import packageJson from '../package.json';
+import { sentryBeforeSend } from './app/utils/sentry-filter.util';
 
 if (!("popover" in HTMLElement.prototype)) {
   import("@oddbird/popover-polyfill");
@@ -21,16 +21,7 @@ Sentry.init({
   release: packageJson.version, // Automatically matches package.json and MSBuild SyncAngularVersion
   integrations: (integrations) => integrations.filter(i => i.name !== 'BrowserSession'),
   sendClientReports: false,
-  beforeSend(event: Sentry.ErrorEvent, hint: Sentry.EventHint) {
-    const error = hint.originalException;
-    // Drop ALL HttpErrorResponse instances:
-    // - 5xx: Already captured on the backend (prevents double-logging)
-    // - 4xx: User input validation or handled auth flows (not our bug)
-    if (error instanceof HttpErrorResponse) {
-      return null;
-    }
-    return event;
-  }
+  beforeSend: sentryBeforeSend
 });
 
 bootstrapApplication(AppComponent, appConfig)

@@ -128,7 +128,7 @@ For each issue, retrieve both the issue resource and breadcrumbs:
 | **Transient AI Provider Error** | `429`, `500`, `501`, `502`, `503`, `504`, `529`, or any 5xx targeting AI providers | `ChatService.cs` retries up to 6×; streams friendly `ChatEvent` to user | **Dropped from Sentry ❌** (Filtered by `AuthSentryEventProcessor`) |
 | **Expected User Misconfiguration** | `400` (bad params/model name), `401`/`403` (bad API key), `404` (model not found) | Handled inline by `ChatService.cs` / `SettingsController.cs`; returned to UI | **Not in Sentry ❌** (4xx ignored by Sentry; application handles gracefully) |
 | **Unauthenticated Bot / Probe** | `401`/`403` on protected endpoints, scanners hitting non-existent routes | Authentication middleware rejects request | **Dropped from Sentry ❌** (Filtered by `AuthSentryEventProcessor`) |
-| **Frontend HTTP Failure** | Any HTTP 4xx/5xx in Angular client | Client shows toast/banner | **Dropped from Sentry ❌** (Filtered by Angular `beforeSend` to prevent duplicate noise) |
+| **Frontend HTTP Failure & Network Drops** | `HttpErrorResponse` (4xx/5xx), `TypeError: Failed to fetch`, `DOMException: AbortError`, `NetworkError` | Client shows toast/banner; RxJS subscriptions provide `error:` callbacks | **Dropped from Sentry ❌** (Filtered by Angular `beforeSend` in `main.ts`). *Note: If seen in Sentry, identify the missing RxJS `.subscribe({ error: ... })` callback or unhandled fetch promise.* |
 
 ---
 
@@ -136,6 +136,7 @@ For each issue, retrieve both the issue resource and breadcrumbs:
 
 1. **Inspect Mechanism & Tags**:
    - Check if `mechanism` is `SentryHttpFailedRequestHandler`. This indicates an outgoing HTTP call failed. Check the URL and HTTP status code.
+   - Check if the error is `TypeError: Failed to fetch`, `AbortError`, or `HttpErrorResponse`. These are client-side network disconnects or HTTP responses that bypassed local handling (often due to a missing RxJS `error:` callback in a component).
    - Check `handled` flag (handled vs unhandled).
    - Check `release` tag (compare against latest version in `Overseer.csproj`).
 

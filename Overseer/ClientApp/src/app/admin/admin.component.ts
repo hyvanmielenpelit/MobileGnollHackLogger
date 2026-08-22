@@ -274,25 +274,45 @@ export class AdminComponent implements OnInit, OnDestroy {
 
   loadUsers() {
     this.usersLoading = true;
-    this.adminService.getUsers(this.page, this.pageSize, this.usernameFilter, this.sortColumn, this.sortOrder).subscribe(res => {
-      this.users = res.rows;
-      this.totalCount = res.totalCount;
-      this.usersLoading = false;
+    this.adminService.getUsers(this.page, this.pageSize, this.usernameFilter, this.sortColumn, this.sortOrder).subscribe({
+      next: (res) => {
+        this.users = res.rows;
+        this.totalCount = res.totalCount;
+        this.usersLoading = false;
+      },
+      error: () => {
+        this.usersLoading = false;
+      }
     });
   }
 
   loadData() {
     this.loading = true;
-    this.adminService.getUsers(this.page, this.pageSize, this.usernameFilter, this.sortColumn, this.sortOrder).subscribe(res => {
-      this.users = res.rows;
-      this.totalCount = res.totalCount;
-      this.adminService.getGroups().subscribe(g => {
-        this.groups = g;
-        this.adminService.getSystemConfigs().subscribe(c => {
-          this.configs = c;
-          this.loading = false;
+    this.adminService.getUsers(this.page, this.pageSize, this.usernameFilter, this.sortColumn, this.sortOrder).subscribe({
+      next: (res) => {
+        this.users = res.rows;
+        this.totalCount = res.totalCount;
+        this.adminService.getGroups().subscribe({
+          next: (g) => {
+            this.groups = g;
+            this.adminService.getSystemConfigs().subscribe({
+              next: (c) => {
+                this.configs = c;
+                this.loading = false;
+              },
+              error: () => {
+                this.loading = false;
+              }
+            });
+          },
+          error: () => {
+            this.loading = false;
+          }
         });
-      });
+      },
+      error: () => {
+        this.loading = false;
+      }
     });
   }
 
@@ -314,13 +334,23 @@ export class AdminComponent implements OnInit, OnDestroy {
   toggleUserGroup(user: UserDto, group: GroupDto, event: any) {
     const checked = event.target.checked;
     if (checked) {
-      this.adminService.addUserToGroup(user.id, group.id).subscribe(() => {
-        if (!user.groups) user.groups = [];
-        user.groups.push(group);
+      this.adminService.addUserToGroup(user.id, group.id).subscribe({
+        next: () => {
+          if (!user.groups) user.groups = [];
+          user.groups.push(group);
+        },
+        error: () => {
+          event.target.checked = false; // revert on error
+        }
       });
     } else {
-      this.adminService.removeUserFromGroup(user.id, group.id).subscribe(() => {
-        user.groups = user.groups.filter(g => g.id !== group.id);
+      this.adminService.removeUserFromGroup(user.id, group.id).subscribe({
+        next: () => {
+          user.groups = user.groups.filter(g => g.id !== group.id);
+        },
+        error: () => {
+          event.target.checked = true; // revert on error
+        }
       });
     }
   }
@@ -366,9 +396,12 @@ export class AdminComponent implements OnInit, OnDestroy {
       'Delete Group',
       `Are you sure you want to delete group ${group.displayName}?`,
       () => {
-        this.adminService.deleteGroup(group.id).subscribe(() => {
-          this.groups = this.groups.filter(g => g.id !== group.id);
-          this.loadUsers(); // Reload users to update their groups correctly
+        this.adminService.deleteGroup(group.id).subscribe({
+          next: () => {
+            this.groups = this.groups.filter(g => g.id !== group.id);
+            this.loadUsers(); // Reload users to update their groups correctly
+          },
+          error: () => {}
         });
       },
       'Delete',
@@ -441,8 +474,11 @@ export class AdminComponent implements OnInit, OnDestroy {
       'Delete Config',
       `Are you sure you want to delete config ${config.displayName}?`,
       () => {
-        this.adminService.deleteSystemConfig(config.id).subscribe(() => {
-          this.configs = this.configs.filter(c => c.id !== config.id);
+        this.adminService.deleteSystemConfig(config.id).subscribe({
+          next: () => {
+            this.configs = this.configs.filter(c => c.id !== config.id);
+          },
+          error: () => {}
         });
       },
       'Delete',
@@ -596,9 +632,12 @@ export class AdminComponent implements OnInit, OnDestroy {
   
   openManageUserConfigs(user: UserDto) {
     this.selectedUserForConfigs = user;
-    this.adminService.getUserSystemConfigs(user.id).subscribe(assignments => {
-      this.userConfigAssignments = assignments;
-      this.manageUserConfigsDialog.nativeElement.showModal();
+    this.adminService.getUserSystemConfigs(user.id).subscribe({
+      next: (assignments) => {
+        this.userConfigAssignments = assignments;
+        this.manageUserConfigsDialog.nativeElement.showModal();
+      },
+      error: () => {}
     });
   }
 
@@ -678,9 +717,12 @@ export class AdminComponent implements OnInit, OnDestroy {
 
   openManageGroupConfigs(group: GroupDto) {
     this.selectedGroupForConfigs = group;
-    this.adminService.getGroupSystemConfigs(group.id).subscribe(assignments => {
-      this.groupConfigAssignments = assignments;
-      this.manageGroupConfigsDialog.nativeElement.showModal();
+    this.adminService.getGroupSystemConfigs(group.id).subscribe({
+      next: (assignments) => {
+        this.groupConfigAssignments = assignments;
+        this.manageGroupConfigsDialog.nativeElement.showModal();
+      },
+      error: () => {}
     });
   }
 
@@ -823,20 +865,30 @@ export class AdminComponent implements OnInit, OnDestroy {
     };
 
     if (this.overrideContext === 'user') {
-      this.adminService.updateUserSystemConfig(this.editingOverride.id, payload).subscribe(() => {
-        const idx = this.userConfigAssignments.findIndex(a => a.id === this.editingOverride.id);
-        if (idx !== -1) {
-          this.userConfigAssignments[idx] = { ...this.editingOverride, ...payload };
+      this.adminService.updateUserSystemConfig(this.editingOverride.id, payload).subscribe({
+        next: () => {
+          const idx = this.userConfigAssignments.findIndex(a => a.id === this.editingOverride.id);
+          if (idx !== -1) {
+            this.userConfigAssignments[idx] = { ...this.editingOverride, ...payload };
+          }
+          this.closeEditOverride();
+        },
+        error: () => {
+          this.closeEditOverride();
         }
-        this.closeEditOverride();
       });
     } else {
-      this.adminService.updateGroupSystemConfig(this.editingOverride.id, payload).subscribe(() => {
-        const idx = this.groupConfigAssignments.findIndex(a => a.id === this.editingOverride.id);
-        if (idx !== -1) {
-          this.groupConfigAssignments[idx] = { ...this.editingOverride, ...payload };
+      this.adminService.updateGroupSystemConfig(this.editingOverride.id, payload).subscribe({
+        next: () => {
+          const idx = this.groupConfigAssignments.findIndex(a => a.id === this.editingOverride.id);
+          if (idx !== -1) {
+            this.groupConfigAssignments[idx] = { ...this.editingOverride, ...payload };
+          }
+          this.closeEditOverride();
+        },
+        error: () => {
+          this.closeEditOverride();
         }
-        this.closeEditOverride();
       });
     }
   }

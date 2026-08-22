@@ -36,12 +36,32 @@ The table below outlines how various errors are handled in the application and w
 | **Budget / Quota Exhaustion** | `402 Payment Required`, `429 insufficient_quota` | Recorded in database via `SystemAiConfigService.RecordErrorAsync`; informs user via SignalR. | **Not Logged**: Handled inline without throwing unhandled exceptions. |
 | **Missing API Key / Unsupported Provider** | Pre-flight validation | `ChatService.cs` pre-validates keys/providers before sending network requests; yields user-facing error. | **Not Logged**: Never executes network call; no exception thrown. |
 | **Unauthenticated Bot / Probe** | `401 Unauthorized`, `403 Forbidden` on web routes | ASP.NET Core Identity authentication middleware rejects request. | **Dropped (Filtered)**: `AuthSentryEventProcessor` drops any event where `httpContext.User.Identity.IsAuthenticated != true`. |
-| **Frontend HTTP Failure** | Any HTTP 4xx/5xx in Angular client | Angular components display toasts/banners to the user. | **Dropped (Filtered)**: Angular `beforeSend` hook drops client-side HTTP errors to prevent duplicate noise. |
+| **Frontend HTTP Failure & Network Drops** | Any HTTP 4xx/5xx in Angular client, `TypeError: Failed to fetch`, `AbortError`, `NetworkError` | Angular components display toasts/banners to the user; provide `error:` callbacks on RxJS subscriptions. | **Dropped (Filtered)**: Angular `beforeSend` hook in `main.ts` recursively unwraps Zone.js/RxJS errors and drops all `HttpErrorResponse` and browser-native fetch dropouts to prevent duplicate noise and spurious reports from device sleep/roaming. |
 | **Unexpected App Bug / Crash** | `NullReferenceException`, unhandled 500 in controllers, unhandled Angular crash | Global exception handler / Angular error handler. | **Logged to Sentry ✅**: Full stack trace and breadcrumbs captured for developer triage. |
 
 ---
 
-## 3. Architecture of `AuthSentryEventProcessor`
+## 3. Frontend Error Handling & Sentry Filtering Architecture
+
+### 3.1 Sentry `beforeSend` Network Error Filter (`main.ts`)
+When using `@angular/common/http` with `withFetch()`, transient connection drops (e.g. mobile device sleep, network switching) throw native browser errors (`TypeError: Failed to fetch`, WebKit `TypeError: Load failed`, `DOMException: AbortError`). In Angular, Zone.js and RxJS may wrap these errors inside `rejection`, `ngOriginalError`, or `error` properties.
+
+To ensure transient client disconnects never create spurious issues in Sentry:
+1. **`isHttpOrNetworkError(err)` Helper**:
+   - Inspects direct and nested `HttpErrorResponse` instances (`instanceof HttpErrorResponse` and `err?.name === 'HttpErrorResponse'`).
+   - Checks error messages against known native fetch error signatures (`failed to fetch`, `networkerror`, `load failed`, `fetch failed`, `aborterror`, `timeout`).
+   - Recursively unwraps Zone.js / Angular wrapper properties (`err.rejection`, `err.ngOriginalError`, `err.originalError`, `err.error`).
+2. **`event.exception.values` Inspection**:
+   - Inspects normalized exception values in Sentry's `event` payload as a fallback in case raw exception references were lost during transmission.
+
+### 3.2 RxJS Subscription Error Handling Requirement
+In Angular/RxJS, any observable subscription (`observable.subscribe(...)`) that does not provide an `error:` callback will cause unhandled errors to bubble straight to Angular's global `ErrorHandler` (`Sentry.createErrorHandler()`).
+- **Rule**: All HTTP observable subscriptions in components MUST supply an `error:` callback (e.g. `.subscribe({ next: (res) => { ... }, error: (err) => { ... } })`).
+- If an error is non-fatal or handled elsewhere, an explicit empty error callback `error: () => {}` or debug log callback `error: (err) => this.debugService.log(...)` must be provided.
+
+---
+
+## 4. Architecture of `AuthSentryEventProcessor`
 
 `AuthSentryEventProcessor` (`Overseer/Services/AuthSentryEventProcessor.cs`) is registered as an `ISentryEventProcessor` in ASP.NET Core DI:
 
@@ -59,7 +79,7 @@ The table below outlines how various errors are handled in the application and w
 
 ---
 
-## 4. Zero DSN Exposure & Secure Tunneling
+## 5. Zero DSN Exposure & Secure Tunneling
 
 The Sentry DSN is considered a sensitive secret in Overseer to prevent unauthenticated actors from forging crash reports or staging Prompt Injection attacks against the AI triage assistant.
 
@@ -73,7 +93,7 @@ The Sentry DSN is considered a sensitive secret in Overseer to prevent unauthent
 
 ---
 
-## 5. Source Maps & MSBuild Exclusion
+## 6. Source Maps & MSBuild Exclusion
 
 - `angular.json` sets `sourceMap: { hidden: true }`.
 - `sentry-cli` injects Debug IDs and uploads hidden source maps to Sentry during release workflows.

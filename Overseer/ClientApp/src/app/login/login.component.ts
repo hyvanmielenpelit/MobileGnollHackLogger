@@ -35,7 +35,9 @@ export class LoginComponent implements OnInit, OnDestroy {
     });
 
     // Call checkAuth to refresh the CSRF token (useful if we just logged out, so the token resets to anonymous)
-    this.authService.checkAuth().subscribe();
+    this.authService.checkAuth().subscribe({
+      error: () => {}
+    });
 
     const syncAria = (el: any) => {
       if (el && el.setAttribute && el.matches) {

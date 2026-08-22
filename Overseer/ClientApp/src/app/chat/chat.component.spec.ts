@@ -109,12 +109,14 @@ All done!`;
 });
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { HttpResponse } from '@angular/common/http';
-import { of, Subject } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { ChatService, ChatSessionDetailResponse } from '../services/chat.service';
+import { SettingsService, UserAiSettings, UserAiModel } from '../services/settings.service';
+import { AuthService } from '../services/auth.service';
 
 describe('ChatComponent session loading and exclusivity', () => {
   let component: ChatComponent;
@@ -386,6 +388,119 @@ describe('ChatComponent session loading and exclusivity', () => {
       } finally {
         jasmine.clock().uninstall();
       }
+    });
+  });
+
+  describe('ChatComponent network error resilience vs normal handling', () => {
+    let settingsService: SettingsService;
+    let authService: AuthService;
+    let router: Router;
+
+    beforeEach(() => {
+      settingsService = TestBed.inject(SettingsService);
+      authService = TestBed.inject(AuthService);
+      router = TestBed.inject(Router);
+    });
+
+    describe('loadSettings', () => {
+      it('should populate settings and models when API calls succeed normally', () => {
+        const mockSettings: UserAiSettings = {
+          hasApiKey: true,
+          hasModel: true,
+          spoilerFreeMode: false,
+          showThoughtsAndTools: 1,
+          maxAttachmentSize: 10485760
+        };
+        const mockModels: UserAiModel[] = [
+          { id: 1, provider: 'google', modelId: 'gemini-3.7-flash', displayName: 'Gemini 3.7 Flash', isSystem: false, modelRole: 1 }
+        ];
+
+        spyOn(settingsService, 'getSettingsResponse').and.returnValue(of(new HttpResponse({ body: mockSettings })));
+        spyOn(settingsService, 'getUserModels').and.returnValue(of(mockModels));
+
+        component.loadSettings(false);
+
+        expect(component.hasApiKey).toBeTrue();
+        expect(component.hasModel).toBeTrue();
+        expect(component.showThoughtsAndTools).toBe(1);
+        expect(component.userModels.length).toBe(1);
+        expect(component.userModels[0].displayName).toBe('Gemini 3.7 Flash');
+      });
+
+      it('should handle TypeError: Failed to fetch on getSettingsResponse without unhandled error', () => {
+        spyOn(settingsService, 'getSettingsResponse').and.returnValue(
+          throwError(() => new TypeError('Failed to fetch'))
+        );
+
+        expect(() => {
+          component.loadSettings(true);
+        }).not.toThrow();
+      });
+
+      it('should handle inner getUserModels failure gracefully when getSettings succeeds', () => {
+        const mockSettings: UserAiSettings = {
+          hasApiKey: true,
+          hasModel: false,
+          spoilerFreeMode: false
+        };
+        spyOn(settingsService, 'getSettingsResponse').and.returnValue(of(new HttpResponse({ body: mockSettings })));
+        spyOn(settingsService, 'getUserModels').and.returnValue(
+          throwError(() => new TypeError('Failed to fetch'))
+        );
+
+        expect(() => {
+          component.loadSettings(false);
+        }).not.toThrow();
+        expect(component.hasApiKey).toBeTrue();
+      });
+    });
+
+    describe('confirmDelete', () => {
+      it('should delete session and clear sessionToDelete on normal success', () => {
+        component.sessionToDelete = 123;
+        spyOn(chatService, 'deleteSession').and.returnValue(of({} as any));
+        spyOn(component, 'loadSessions');
+
+        component.confirmDelete();
+
+        expect(chatService.deleteSession).toHaveBeenCalledWith(123);
+        expect(component.sessionToDelete).toBeNull();
+      });
+
+      it('should catch TypeError: Failed to fetch on deleteSession and clean up dialog state', () => {
+        component.sessionToDelete = 123;
+        spyOn(chatService, 'deleteSession').and.returnValue(
+          throwError(() => new TypeError('Failed to fetch'))
+        );
+
+        expect(() => {
+          component.confirmDelete();
+        }).not.toThrow();
+        expect(component.sessionToDelete).toBeNull();
+      });
+    });
+
+    describe('executeLogout', () => {
+      it('should navigate to /login when logout succeeds normally', () => {
+        spyOn(authService, 'logout').and.returnValue(of({}));
+        const navigateSpy = spyOn(router, 'navigate');
+
+        component.executeLogout();
+
+        expect(navigateSpy).toHaveBeenCalledWith(['/login']);
+      });
+
+      it('should navigate to /login even when logout throws TypeError: Failed to fetch', () => {
+        spyOn(authService, 'logout').and.returnValue(
+          throwError(() => new TypeError('Failed to fetch'))
+        );
+        const navigateSpy = spyOn(router, 'navigate');
+
+        expect(() => {
+          component.executeLogout();
+        }).not.toThrow();
+        expect(navigateSpy).toHaveBeenCalledWith(['/login']);
+      });
     });
   });
 });
