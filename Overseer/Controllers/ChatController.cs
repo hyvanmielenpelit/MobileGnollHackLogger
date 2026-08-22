@@ -229,6 +229,7 @@ public class ChatController : ControllerBase
         var formattedMessages = messages.Select(m => {
             string? modelDisplayName = null;
             string? thinkingLevel = null;
+            string? reasoningMode = null;
             if (m.Role == "assistant" && !string.IsNullOrEmpty(m.ModelUsed)) {
                 var um = userModels?.FirstOrDefault(x => x.ModelId == m.ModelUsed);
                 if (um != null) {
@@ -238,11 +239,13 @@ public class ChatController : ControllerBase
                         modelDisplayName = m.ModelUsed;
                     }
                     thinkingLevel = um.ThinkingLevel;
+                    reasoningMode = um.ReasoningMode;
                 } else if (systemModels != null) {
                     var sm = systemModels.FirstOrDefault(x => x.Config.ModelId == m.ModelUsed);
                     if (sm.Config != null) {
                         modelDisplayName = sm.Config.DisplayName ?? m.ModelUsed;
                         thinkingLevel = sm.Config.ThinkingLevel;
+                        reasoningMode = sm.Config.ReasoningMode;
                     } else {
                         modelDisplayName = m.ModelUsed;
                     }
@@ -275,7 +278,8 @@ public class ChatController : ControllerBase
                 Attachments = msgAttachments,
                 ToolCalls = msgToolCalls,
                 ModelDisplayName = modelDisplayName,
-                ThinkingLevel = thinkingLevel
+                ThinkingLevel = thinkingLevel,
+                ReasoningMode = reasoningMode
             };
         }).ToList();
         swAsm.Stop();

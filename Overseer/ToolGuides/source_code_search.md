@@ -4,7 +4,8 @@ Before using this tool, check whether wiki_search, monster_lookup, or item_looku
 answer the question. Only use this tool when you need exact formulas, undocumented mechanics,
 or code-level details that lighter tools cannot provide.
 
-Search the GnollHack C source code for functions, macros, constants, or game mechanic implementations.
+Search the GnollHack or NetHack C source code for functions, macros, constants, or game mechanic implementations.
+Use the `repository` parameter to select the codebase (default: gnollhack).
 Use this tool to verify undocumented game mechanics, check exact formulas or probabilities,
 investigate potential bugs, or find how specific features are implemented in the codebase.
 
@@ -13,9 +14,11 @@ The codebase is organized as:
 - include/*.h — Header files (data structures, macros, constants, monster/object definitions)
 - dat/*.des — Level description files (special level layouts)
 - dat/*.txt — Text databases (quest dialogues, rumors, encyclopedia entries)
-- win/win32/xpl/ — .NET MAUI frontend (C#/XAML) — only available in Debug Mode
+- win/win32/xpl/ — .NET MAUI frontend (C#/XAML) — GnollHack only, Debug Mode only
 
 Key files for common mechanic lookups:
+- In GnollHack: monster definitions are in src/monst.c and object definitions are in src/objects.c.
+- In NetHack 5.0: monster definitions are in include/monsters.h and object definitions are in include/objects.h (src/monst.c and src/objects.c are stubs).
 - src/potion.c, src/read.c, src/zap.c — Item usage (potions, scrolls, wands)
 - src/uhitm.c, src/mhitu.c, src/mhitm.c — Combat (player-vs-monster, monster-vs-player, monster-vs-monster)
 - src/mon.c, src/mondata.c, src/makemon.c — Monster behavior, data, creation
@@ -30,8 +33,8 @@ Key files for common mechanic lookups:
 - include/monst.h, include/obj.h — Core data structures
 - include/mondata.h — Monster property macros (resistances, flags)
 - include/youprop.h — Player property macros
-- src/objects.c — Object definitions (all items with stats)
-- src/monst.c — Monster definitions (all monsters with stats)
+- src/objects.c — Object definitions (all items with stats; GnollHack)
+- src/monst.c — Monster definitions (all monsters with stats; GnollHack)
 
 Search tips:
 - Search for function names (e.g., "potionhit", "hitmu", "rn2")
@@ -46,6 +49,7 @@ Search tips:
 - `is_regex` (boolean, optional): If true, the query is treated as a regular expression. This is extremely useful for pattern matching, e.g., finding all random number calls like `rn[12]\(\d+\)`.
 - `filenames_only` (boolean, optional): If true, the tool will only return file paths and match counts, without any code snippets. This is very useful for getting a broad overview of where a term is used across the codebase without exceeding output limits.
 - `context_lines` (integer, optional): The number of context lines to include before and after each match. Defaults to 5. Max is 25. Increase this if you need to see surrounding logic or function signatures.
+- `repository` (string, optional): Which codebase to search: 'gnollhack' (default) or 'nethack'. Use 'nethack' when investigating NetHack-specific mechanics or comparing with GnollHack.
 
 ## Search Strategy
 1. **Discover**: Start by using the `list_indexed_files` tool to get a sense of the repository structure or find specific files.

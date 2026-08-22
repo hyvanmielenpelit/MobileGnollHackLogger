@@ -9,33 +9,54 @@ namespace Overseer.Services.Tools
     public class GetConstantsTool : IToolHandler
     {
         private readonly SourceCodeService _sourceCodeService;
+        private readonly NetHackSourceCodeService _netHackService;
 
         public string ToolName => "get_constants";
-        public string Description { get; set; } = "Look up #define constants and enum values from the GnollHack source code.";
+        public string Description { get; set; } = "Look up #define constants and enum values from the GnollHack or NetHack source code.";
         public ToolExecutionLocation ExecutionLocation => ToolExecutionLocation.Server;
         public ToolCategory Category => ToolCategory.InformationRetrieval;
 
         public JsonElement ParameterSchema { get; }
 
-        public GetConstantsTool(SourceCodeService sourceCodeService)
+        public GetConstantsTool(SourceCodeService sourceCodeService, NetHackSourceCodeService netHackService)
         {
             _sourceCodeService = sourceCodeService;
+            _netHackService = netHackService;
             ParameterSchema = JsonDocument.Parse(@"
             {
                 ""type"": ""object"",
                 ""properties"": {
                     ""name"": { ""type"": ""string"", ""description"": ""Constant name or wildcard pattern (e.g., 'PM_GNOLL', 'AD_*', 'WAN_*')"" },
-                    ""prefix_filter"": { ""type"": ""string"", ""description"": ""Optional. Filter by prefix (e.g., 'PM_', 'AD_', 'WAN_', 'ART_')"" }
+                    ""prefix_filter"": { ""type"": ""string"", ""description"": ""Optional. Filter by prefix (e.g., 'PM_', 'AD_', 'WAN_', 'ART_')"" },
+                    ""repository"": {
+                        ""type"": ""string"",
+                        ""description"": ""Which codebase to search: 'gnollhack' (default) or 'nethack'"",
+                        ""enum"": [""gnollhack"", ""nethack""]
+                    }
                 },
                 ""required"": [""name""]
             }").RootElement;
         }
 
+        private SourceCodeService ResolveService(JsonElement parameters, out string guardMessage)
+        {
+            if (parameters.TryGetProperty("repository", out var repo) &&
+                repo.GetString()?.Equals("nethack", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                guardMessage = ToolGuardMessages.NetHackSourceCodeIndexingInProgress;
+                return _netHackService;
+            }
+
+            guardMessage = ToolGuardMessages.SourceCodeIndexingInProgress;
+            return _sourceCodeService;
+        }
+
         public Task<ToolResult> ExecuteAsync(JsonElement parameters, ToolExecutionContext context, CancellationToken cancellationToken)
         {
-            if (!_sourceCodeService.IsIndexingComplete)
+            var service = ResolveService(parameters, out var guardMessage);
+            if (!service.IsIndexingComplete)
             {
-                return Task.FromResult(new ToolResult { Success = false, ErrorMessage = ToolGuardMessages.SourceCodeIndexingInProgress });
+                return Task.FromResult(new ToolResult { Success = false, ErrorMessage = guardMessage });
             }
 
             string namePattern = "";
@@ -55,7 +76,7 @@ namespace Overseer.Services.Tools
                 return Task.FromResult(new ToolResult { Success = false, ErrorMessage = "Missing name or prefix_filter parameter" });
             }
 
-            var constants = _sourceCodeService.GetConstants(namePattern, prefixFilter).ToList();
+            var constants = service.GetConstants(namePattern, prefixFilter).ToList();
             
             if (!constants.Any())
             {

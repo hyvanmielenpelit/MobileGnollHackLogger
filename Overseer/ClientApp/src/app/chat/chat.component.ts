@@ -79,9 +79,12 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         if (args.file && args.start_line) return `${args.file}:L${args.start_line}`;
         if (args.file) return args.file;
       }
-      if (name === 'list_indexed_files' && args.path_filter) {
-        return args.path_filter;
+      if (name === 'list_indexed_files') {
+        return args.path_filter || '';
       }
+      if (name === 'get_constants' && args.name) return args.name;
+      if (name === 'search_definitions' && args.symbol) return args.symbol;
+      if (name === 'get_function_definition' && args.name) return args.name;
       if (name === 'monster_lookup' && args.name) return args.name;
       if (name === 'item_lookup' && args.name) return args.name;
       if (name === 'wiki_search' && args.query) return args.query;
@@ -1182,7 +1185,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.debugService.log(`[Frontend] tool_start: ${toolInfo.name}, streamingMessage.length after=${this.streamingMessage.length}`);
 
         const args = JSON.parse(toolInfo.arguments || '{}');
-        const displayName = ChatComponent.TOOL_DISPLAY_NAMES[toolInfo.name] || toolInfo.name;
+        let displayName = ChatComponent.TOOL_DISPLAY_NAMES[toolInfo.name] || toolInfo.name;
+        if (args?.repository === 'nethack') {
+          displayName += ' (NetHack)';
+        }
         const argsText = this.buildToolArgsText(toolInfo.name, args);
         
         this.streamingToolCalls.push({ 
@@ -1303,6 +1309,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
             toolCalls: [...this.streamingToolCalls], 
             modelDisplayName: this.selectedModel?.displayName || this.selectedModel?.modelId || this.singleModelInfo?.modelId,
             thinkingLevel: this.selectedModel?.thinkingLevel || this.singleModelInfo?.thinkingLevel,
+            reasoningMode: this.selectedModel?.reasoningMode || this.singleModelInfo?.reasoningMode,
             timeToFirstTokenMs: this.timeToFirstTokenMs ?? undefined,
             totalDurationMs: this.totalDurationMs ?? undefined
           });
@@ -1623,19 +1630,26 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     messages.forEach(msg => {
       if (msg.toolCalls) {
         msg.toolCalls.forEach(tc => {
-          if (!tc.displayName && tc.name) {
-            tc.displayName = ChatComponent.TOOL_DISPLAY_NAMES[tc.name] || tc.name;
-          }
+          let isNetHackRepo = false;
           if (tc.argsText) {
             const trimmed = tc.argsText.trim();
             if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
               try {
                 const argsObj = JSON.parse(trimmed);
+                if (argsObj?.repository === 'nethack') {
+                  isNetHackRepo = true;
+                }
                 tc.argsText = this.buildToolArgsText(tc.name, argsObj);
               } catch (e) {
                 // Ignore JSON parsing errors and leave argsText as is
               }
             }
+          }
+          if (!tc.displayName && tc.name) {
+            tc.displayName = ChatComponent.TOOL_DISPLAY_NAMES[tc.name] || tc.name;
+          }
+          if (isNetHackRepo && tc.displayName && !tc.displayName.endsWith('(NetHack)')) {
+            tc.displayName += ' (NetHack)';
           }
         });
       }

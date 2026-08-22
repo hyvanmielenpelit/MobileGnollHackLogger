@@ -13,5 +13,8 @@ namespace Overseer.Services.Tools
 
         public const string SourceCodeIndexingInProgress =
             "Source Code service initialization in progress: The C source code repository is currently being indexed in the background and is not yet available for queries. Do not retry this tool in this turn. Please inform the user that source code data is warming up, or answer using your general knowledge without this tool.";
+
+        public const string NetHackSourceCodeIndexingInProgress =
+            "NetHack Source Code service initialization in progress: The NetHack source code repository is currently being indexed in the background and is not yet available for queries. Do not retry this tool in this turn. Please inform the user that NetHack source code data is warming up, or answer using your general knowledge without this tool.";
     }
 }

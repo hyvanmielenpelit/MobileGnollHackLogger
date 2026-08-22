@@ -8,17 +8,19 @@ namespace Overseer.Services.Tools
     public class SearchDefinitionsTool : IToolHandler
     {
         private readonly SourceCodeService _sourceCodeService;
+        private readonly NetHackSourceCodeService _netHackService;
 
         public string ToolName => "search_definitions";
-        public string Description { get; set; } = "Find the definition of a specific C symbol (function, struct, macro, enum, typedef) in the GnollHack C core.";
+        public string Description { get; set; } = "Find the definition of a specific C symbol (function, struct, macro, enum, typedef) in the GnollHack or NetHack C core.";
         public ToolExecutionLocation ExecutionLocation => ToolExecutionLocation.Server;
         public ToolCategory Category => ToolCategory.InformationRetrieval;
 
         public JsonElement ParameterSchema { get; }
 
-        public SearchDefinitionsTool(SourceCodeService sourceCodeService)
+        public SearchDefinitionsTool(SourceCodeService sourceCodeService, NetHackSourceCodeService netHackService)
         {
             _sourceCodeService = sourceCodeService;
+            _netHackService = netHackService;
             ParameterSchema = JsonDocument.Parse(@"
             {
                 ""type"": ""object"",
@@ -28,17 +30,36 @@ namespace Overseer.Services.Tools
                         ""type"": ""string"", 
                         ""enum"": [""function"", ""struct"", ""macro"", ""enum"", ""type"", ""any""],
                         ""description"": ""The kind of symbol you are looking for (default 'any')"" 
+                    },
+                    ""repository"": {
+                        ""type"": ""string"",
+                        ""description"": ""Which codebase to search: 'gnollhack' (default) or 'nethack'"",
+                        ""enum"": [""gnollhack"", ""nethack""]
                     }
                 },
                 ""required"": [""symbol""]
             }").RootElement;
         }
 
+        private SourceCodeService ResolveService(JsonElement parameters, out string guardMessage)
+        {
+            if (parameters.TryGetProperty("repository", out var repo) &&
+                repo.GetString()?.Equals("nethack", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                guardMessage = ToolGuardMessages.NetHackSourceCodeIndexingInProgress;
+                return _netHackService;
+            }
+
+            guardMessage = ToolGuardMessages.SourceCodeIndexingInProgress;
+            return _sourceCodeService;
+        }
+
         public Task<ToolResult> ExecuteAsync(JsonElement parameters, ToolExecutionContext context, CancellationToken cancellationToken)
         {
-            if (!_sourceCodeService.IsIndexingComplete)
+            var service = ResolveService(parameters, out var guardMessage);
+            if (!service.IsIndexingComplete)
             {
-                return Task.FromResult(new ToolResult { Success = false, ErrorMessage = ToolGuardMessages.SourceCodeIndexingInProgress });
+                return Task.FromResult(new ToolResult { Success = false, ErrorMessage = guardMessage });
             }
 
             string symbol = "";
@@ -58,7 +79,7 @@ namespace Overseer.Services.Tools
                 kind = kindElem.GetString() ?? "any";
             }
 
-            string result = _sourceCodeService.FindDefinition(symbol, kind);
+            string result = service.FindDefinition(symbol, kind);
 
             return Task.FromResult(new ToolResult { Success = true, Content = result });
         }

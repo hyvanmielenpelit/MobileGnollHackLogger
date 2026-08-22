@@ -221,6 +221,9 @@
                       @if (msg.thinkingLevel) {
                         <span class="msg-model-badge">{{ formatThinkingLevel(msg.thinkingLevel) }}</span>
                       }
+                      @if (showReasoningBadge(msg.reasoningMode)) {
+                        <span class="msg-model-badge">{{ msg.reasoningMode }}</span>
+                      }
                     </div>
                   }
                   @if (msg.role === 'assistant' && (msg.timeToFirstTokenMs != null || msg.totalDurationMs != null)) {

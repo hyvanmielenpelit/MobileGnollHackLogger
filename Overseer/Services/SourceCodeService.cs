@@ -15,8 +15,9 @@ namespace Overseer.Services
 {
     public class SourceCodeService : IHostedService, IDisposable
     {
-        private readonly ILogger<SourceCodeService> _logger;
-        private readonly string _sourceCodePath;
+        protected readonly ILogger _logger;
+        protected readonly string _sourceCodePath;
+        public string SourceCodePath => _sourceCodePath;
         private readonly int _maxFileSizeKB;
         private Timer? _reindexTimer;
         
@@ -53,12 +54,19 @@ namespace Overseer.Services
         private volatile bool _isIndexingComplete = false;
 
         public bool IsIndexingComplete => _isIndexingComplete;
+
+        protected virtual string[] TargetDirectories => new[] { "src", "include", "dat", @"win\win32\xpl" };
         
         public SourceCodeService(IConfiguration configuration, ILogger<SourceCodeService> logger)
+            : this(configuration, (ILogger)logger, "SourceCodePath")
+        {
+        }
+
+        protected SourceCodeService(IConfiguration configuration, ILogger logger, string configPathKey)
         {
             _configuration = configuration;
             _logger = logger;
-            _sourceCodePath = configuration["SourceCodePath"] ?? @"c:\gnollhack-repository";
+            _sourceCodePath = configuration[configPathKey] ?? string.Empty;
             
             if (!int.TryParse(configuration["MaxSourceFileSizeKB"], out _maxFileSizeKB))
             {
@@ -81,7 +89,7 @@ namespace Overseer.Services
             return Task.CompletedTask;
         }
 
-        private void LoadFlagDescriptions()
+        protected virtual void LoadFlagDescriptions()
         {
             try
             {
@@ -121,7 +129,7 @@ namespace Overseer.Services
         {
             try
             {
-                if (!Directory.Exists(_sourceCodePath)) return;
+                if (string.IsNullOrWhiteSpace(_sourceCodePath) || !Directory.Exists(_sourceCodePath)) return;
                 
                 string? currentSha = GitHelper.GetGitHeadSha(_sourceCodePath);
                 if (!string.IsNullOrEmpty(currentSha) && currentSha != _lastHeadSha)
@@ -141,7 +149,7 @@ namespace Overseer.Services
         /// Regenerate onames.h, pm.h, animoff.h, animtotals.h by building and running makedefs.
         /// Only runs when the source files compiled into makedefs have changed (or on startup when force=true).
         /// </summary>
-        private void RegenerateHeaders(bool force = false)
+        protected virtual void RegenerateHeaders(bool force = false)
         {
             try
             {
@@ -300,7 +308,7 @@ namespace Overseer.Services
 
         private void IndexRepository()
         {
-            if (!Directory.Exists(_sourceCodePath))
+            if (string.IsNullOrWhiteSpace(_sourceCodePath) || !Directory.Exists(_sourceCodePath))
             {
                 _logger.LogWarning("Source code repository not found at {Path}", _sourceCodePath);
                 return;
@@ -311,7 +319,7 @@ namespace Overseer.Services
                 var newDocuments = new ConcurrentDictionary<string, SourceDocument>(StringComparer.OrdinalIgnoreCase);
                 var newConstants = new ConcurrentDictionary<string, ConstantInfo>(StringComparer.OrdinalIgnoreCase);
                 
-                var targetDirs = new[] { "src", "include", "dat", @"win\win32\xpl" };
+                var targetDirs = TargetDirectories;
                 
                 foreach (var dir in targetDirs)
                 {
@@ -377,7 +385,7 @@ namespace Overseer.Services
                                 {
                                     var matches = Regex.Matches(line, @"([A-Za-z0-9_]+)\s*(?:=\s*([^,}]+))?\s*(?:,|})");
                                     foreach (Match m in matches)
-                                    {
+                                     {
                                         string name = m.Groups[1].Value;
                                         if (name == "enum") continue;
                                         string val = m.Groups[2].Success ? m.Groups[2].Value.Trim() : "";
@@ -407,31 +415,36 @@ namespace Overseer.Services
                 _lastHeadSha = GitHelper.GetGitHeadSha(_sourceCodePath) ?? string.Empty;
 
                 // 2. Parse game data via GameDataParser
-                try
-                {
-                    var permonstDoc = _documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("include\\permonst.h", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("include/permonst.h", StringComparison.OrdinalIgnoreCase));
-                    var objclassDoc = _documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("include\\objclass.h", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("include/objclass.h", StringComparison.OrdinalIgnoreCase));
-                    if (permonstDoc != null && objclassDoc != null)
-                    {
-                        _dataParser.ParseStructs(permonstDoc.ContentLines, objclassDoc.ContentLines);
-                    }
-                    var monstDoc = _documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("src\\monst.c", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("src/monst.c", StringComparison.OrdinalIgnoreCase));
-                    var objectsDoc = _documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("src\\objects.c", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("src/objects.c", StringComparison.OrdinalIgnoreCase));
-                    if (monstDoc != null) _dataParser.ParseMacros(monstDoc.ContentLines);
-                    if (objectsDoc != null) _dataParser.ParseMacros(objectsDoc.ContentLines);
-                    
-                    _logger.LogInformation("Parsed game data macros and structs.");
-                }
-                catch (Exception pex)
-                {
-                    _logger.LogError(pex, "Error parsing game data macros and structs.");
-                }
+                ParseGameData();
                 
                 _logger.LogInformation("Indexed {Count} source files.", _documents.Count);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error indexing source repository.");
+            }
+        }
+
+        protected virtual void ParseGameData()
+        {
+            try
+            {
+                var permonstDoc = _documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("include\\permonst.h", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("include/permonst.h", StringComparison.OrdinalIgnoreCase));
+                var objclassDoc = _documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("include\\objclass.h", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("include/objclass.h", StringComparison.OrdinalIgnoreCase));
+                if (permonstDoc != null && objclassDoc != null)
+                {
+                    _dataParser.ParseStructs(permonstDoc.ContentLines, objclassDoc.ContentLines);
+                }
+                var monstDoc = _documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("src\\monst.c", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("src/monst.c", StringComparison.OrdinalIgnoreCase));
+                var objectsDoc = _documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("src\\objects.c", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("src/objects.c", StringComparison.OrdinalIgnoreCase));
+                if (monstDoc != null) _dataParser.ParseMacros(monstDoc.ContentLines);
+                if (objectsDoc != null) _dataParser.ParseMacros(objectsDoc.ContentLines);
+                
+                _logger.LogInformation("Parsed game data macros and structs.");
+            }
+            catch (Exception pex)
+            {
+                _logger.LogError(pex, "Error parsing game data macros and structs.");
             }
         }
 

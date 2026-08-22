@@ -10,20 +10,22 @@ namespace Overseer.Services.Tools
     public class SourceCodeSearchTool : IToolHandler
     {
         private readonly SourceCodeService _sourceCodeService;
+        private readonly NetHackSourceCodeService _netHackService;
         private readonly int _maxResultLength;
         private readonly int _defaultMaxResults;
         private readonly int _defaultContextLines;
 
         public string ToolName => "source_code_search";
-        public string Description { get; set; } = "Search the GnollHack C source code for functions, macros, constants, or game mechanic implementations.";
+        public string Description { get; set; } = "Search the GnollHack or NetHack C source code for functions, macros, constants, or game mechanic implementations.";
         public ToolExecutionLocation ExecutionLocation => ToolExecutionLocation.Server;
         public ToolCategory Category => ToolCategory.InformationRetrieval;
 
         public JsonElement ParameterSchema { get; }
 
-        public SourceCodeSearchTool(SourceCodeService sourceCodeService, IConfiguration configuration)
+        public SourceCodeSearchTool(SourceCodeService sourceCodeService, NetHackSourceCodeService netHackService, IConfiguration configuration)
         {
             _sourceCodeService = sourceCodeService;
+            _netHackService = netHackService;
             
             if (!int.TryParse(configuration["MaxSourceResultLength"], out _maxResultLength))
             {
@@ -44,17 +46,36 @@ namespace Overseer.Services.Tools
                     ""whole_word"": { ""type"": ""boolean"", ""description"": ""Optional. If true and is_regex is false, search for whole words only"" },
                     ""case_sensitive"": { ""type"": ""boolean"", ""description"": ""Optional. If true, perform a case-sensitive search"" },
                     ""filenames_only"": { ""type"": ""boolean"", ""description"": ""Optional. If true, return only file paths and match counts without code snippets"" },
-                    ""context_lines"": { ""type"": ""integer"", ""description"": ""Optional. Number of context lines around each match (default 5, max 25)"" }
+                    ""context_lines"": { ""type"": ""integer"", ""description"": ""Optional. Number of context lines around each match (default 5, max 25)"" },
+                    ""repository"": {
+                        ""type"": ""string"",
+                        ""description"": ""Which codebase to search: 'gnollhack' (default) or 'nethack'"",
+                        ""enum"": [""gnollhack"", ""nethack""]
+                    }
                 },
                 ""required"": [""query""]
             }").RootElement;
         }
 
+        private SourceCodeService ResolveService(JsonElement parameters, out string guardMessage)
+        {
+            if (parameters.TryGetProperty("repository", out var repo) &&
+                repo.GetString()?.Equals("nethack", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                guardMessage = ToolGuardMessages.NetHackSourceCodeIndexingInProgress;
+                return _netHackService;
+            }
+
+            guardMessage = ToolGuardMessages.SourceCodeIndexingInProgress;
+            return _sourceCodeService;
+        }
+
         public Task<ToolResult> ExecuteAsync(JsonElement parameters, ToolExecutionContext context, CancellationToken cancellationToken)
         {
-            if (!_sourceCodeService.IsIndexingComplete)
+            var service = ResolveService(parameters, out var guardMessage);
+            if (!service.IsIndexingComplete)
             {
-                return Task.FromResult(new ToolResult { Success = false, ErrorMessage = ToolGuardMessages.SourceCodeIndexingInProgress });
+                return Task.FromResult(new ToolResult { Success = false, ErrorMessage = guardMessage });
             }
 
             string query = "";
@@ -116,15 +137,15 @@ namespace Overseer.Services.Tools
                 isRegex = true;
             }
 
-            bool includeNetCode = context.OverseerMode == 2;
+            bool includeNetCode = context.OverseerMode == 2 && !(service is NetHackSourceCodeService);
 
-            var content = _sourceCodeService.SearchFiles(query, fileFilter, maxResults, includeNetCode, _maxResultLength, isRegex, filenamesOnly, contextLines, caseSensitive);
+            var content = service.SearchFiles(query, fileFilter, maxResults, includeNetCode, _maxResultLength, isRegex, filenamesOnly, contextLines, caseSensitive);
 
             if (string.IsNullOrWhiteSpace(content))
             {
                 if (caseSensitive)
                 {
-                    content = _sourceCodeService.SearchFiles(query, fileFilter, maxResults, includeNetCode, _maxResultLength, isRegex, filenamesOnly, contextLines, false);
+                    content = service.SearchFiles(query, fileFilter, maxResults, includeNetCode, _maxResultLength, isRegex, filenamesOnly, contextLines, false);
                     if (!string.IsNullOrWhiteSpace(content))
                     {
                         content = $"[Note: No exact case match found. Falling back to case-insensitive search.]\n\n" + content;
@@ -133,7 +154,7 @@ namespace Overseer.Services.Tools
                 
                 if (string.IsNullOrWhiteSpace(content) && isRegex)
                 {
-                    content = _sourceCodeService.SearchFiles(query, fileFilter, maxResults, includeNetCode, _maxResultLength, false, filenamesOnly, contextLines, false);
+                    content = service.SearchFiles(query, fileFilter, maxResults, includeNetCode, _maxResultLength, false, filenamesOnly, contextLines, false);
                     if (!string.IsNullOrWhiteSpace(content))
                     {
                         content = $"[Note: Regex search failed. Falling back to literal text search.]\n\n" + content;

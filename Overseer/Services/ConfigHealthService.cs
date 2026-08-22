@@ -48,6 +48,16 @@ public class ConfigHealthService
             });
         }
 
+        if (string.IsNullOrWhiteSpace(_configuration["NetHackSourceCodePath"]))
+        {
+            alerts.Add(new SystemAlert
+            {
+                Id = "nethack-source-code-path-missing",
+                Type = "warning",
+                Message = "NetHack source code path is not configured. Set NetHackSourceCodePath in configuration settings."
+            });
+        }
+
         // Database Storage Health Alert
         if (_scopeFactory != null)
         {

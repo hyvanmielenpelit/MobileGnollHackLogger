@@ -162,32 +162,51 @@ export class MarkdownPipe implements PipeTransform {
     for (let i = 0; i < parts.length; i++) {
       // Even indices are normal text, odd indices are protected code blocks/math
       if (i % 2 === 0) {
-        // Fix missing newlines before headings (e.g. LLM outputs "TEXT#### HEADING")
-        // Only apply if the # is preceded by a non-newline character and followed by a space
-        parts[i] = parts[i].replace(/([^\n])(#{1,6}\s+)/g, (match, p1, p2, offset, str) => {
-          if (p2.trim() === '#') {
-            // Prevent replacing C#, F# by checking if it's a standalone letter before #
-            if (/[a-zA-Z]/.test(p1)) {
-              const prevChar = offset > 0 ? str[offset - 1] : ' ';
-              if (!/[a-zA-Z]/.test(prevChar)) {
-                return match;
+        const lines = parts[i].split('\n');
+
+        for (let j = 0; j < lines.length; j++) {
+          let line = lines[j];
+
+          if (line.includes('|')) {
+            // Table row or line with pipe. Do NOT inject double newlines (\n\n) as that terminates table parsing.
+            // Fix squished sentences using a space instead of double newlines
+            line = line.replace(/([^\s\*\_\`\(\[\{\<A-Z][\.\!\?])([A-Z])/g, '$1 $2');
+          } else {
+            // Normal non-table line
+
+            // Fix missing newlines before headings (e.g. LLM outputs "TEXT#### HEADING")
+            // Only apply if the # is preceded by a non-newline character and followed by a space
+            line = line.replace(/([^\n])(#{1,6}\s+)/g, (match, p1, p2, offset, str) => {
+              if (p2.trim() === '#') {
+                // Prevent replacing C#, F# by checking if it's a standalone letter before #
+                if (/[a-zA-Z]/.test(p1)) {
+                  const prevChar = offset > 0 ? str[offset - 1] : ' ';
+                  if (!/[a-zA-Z]/.test(prevChar)) {
+                    return match;
+                  }
+                }
+                // Prevent replacing " # " (e.g., "Issue # 1")
+                if (p1 === ' ') {
+                  return match;
+                }
               }
-            }
-            // Prevent replacing " # " (e.g., "Issue # 1")
-            if (p1 === ' ') {
-              return match;
-            }
+              return `${p1}\n\n${p2}`;
+            });
+
+            // Fix missing newlines before lists following a colon (e.g. "text):1. Item")
+            // Requires list numbers 1+ followed by text content (not values like "0. ")
+            line = line.replace(/([a-zA-Z0-9\)]):\s*([1-9]\d*\.\s+[A-Za-z\*\`\_])/g, '$1:\n\n$2');
+
+            // Fix squished sentences (e.g., LLM outputs "word.Next word" without a space)
+            // Matches any non-whitespace (excluding markdown formatting characters *, _, `, opening brackets (, [, {, <, and uppercase letters A-Z), a punctuation mark (., !, ?), and a capital letter
+            // This prevents splitting terms like "**.NET", "(.NET", or "ASP.NET" into "**.\n\nNET"
+            line = line.replace(/([^\s\*\_\`\(\[\{\<A-Z][\.\!\?])([A-Z])/g, '$1\n\n$2');
           }
-          return `${p1}\n\n${p2}`;
-        });
-        
-        // Fix missing newlines before lists following a colon (e.g. "text):1. Item")
-        parts[i] = parts[i].replace(/([a-zA-Z0-9\)]):\s*(\d+\.\s+)/g, '$1:\n\n$2');
-        
-        // Fix squished sentences (e.g., LLM outputs "word.Next word" without a space)
-        // Matches any non-whitespace (excluding markdown formatting characters *, _, `, opening brackets (, [, {, <, and uppercase letters A-Z), a punctuation mark (., !, ?), and a capital letter
-        // This prevents splitting terms like "**.NET", "(.NET", or "ASP.NET" into "**.\n\nNET"
-        parts[i] = parts[i].replace(/([^\s\*\_\`\(\[\{\<A-Z][\.\!\?])([A-Z])/g, '$1\n\n$2');
+
+          lines[j] = line;
+        }
+
+        parts[i] = lines.join('\n');
 
         // Fix missing newlines before code blocks and display math blocks (e.g. LLM outputs "text.\\[")
         if (i + 1 < parts.length && parts[i].length > 0) {

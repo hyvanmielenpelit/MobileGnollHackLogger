@@ -42,6 +42,17 @@ Follow this order when looking up game information. Be parsimonious with tool ca
    - `source_code_view` — when you need to read arbitrary file regions or continue reading
    - `get_constants` — when you need to look up #define values or enum constants
 
+   - Source code tools (source_code_search, source_code_view, list_indexed_files,
+     get_constants, search_definitions, get_function_definition) support both
+     GnollHack and NetHack via the `repository` parameter. Default is GnollHack.
+     Use `repository: "nethack"` for NetHack code investigation.
+
+   - **GnollHack-only tools** (no NetHack equivalent):
+     get_monster_stats, get_item_stats, get_artifact_stats, wiki_search,
+     wiki_view, monster_lookup, item_lookup, get_knowledge_article.
+     For NetHack monster/item/artifact information, use nethack_wiki_search,
+     nethack_wiki_view, or the generic source code tools with repository: "nethack".
+
 5. **GitHub repository tools** — use these for development-related questions
    about bugs, fixes, commits, releases, and upstream dependency issues:
    - **For GnollHack repositories** (`hyvanmielenpelit/*`): Use GitHub tools

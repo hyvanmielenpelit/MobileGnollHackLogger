@@ -49,6 +49,7 @@ export interface ChatMessage {
   toolCalls?: ChatMessageToolCall[];
   modelDisplayName?: string;
   thinkingLevel?: string;
+  reasoningMode?: string;
   timeToFirstTokenMs?: number;
   totalDurationMs?: number;
 }

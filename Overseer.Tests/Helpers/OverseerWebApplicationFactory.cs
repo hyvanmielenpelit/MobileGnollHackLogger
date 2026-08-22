@@ -40,10 +40,8 @@ namespace Overseer.Tests.Helpers
                     .Options;
                 services.AddSingleton(options);
 
-                // 2. Remove SourceCodeService (Hosted Service) to avoid hitting file system
-                var hostedServiceDescriptor = services.SingleOrDefault(
-                    d => d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(SourceCodeService));
-                if (hostedServiceDescriptor != null) services.Remove(hostedServiceDescriptor);
+                // 2. Remove all hosted services to avoid hitting file system or database during tests
+                services.RemoveAll<IHostedService>();
 
                 // 3. Remove existing Authentication and replace with TestAuthHandler
                 services.AddAuthentication(options =>

@@ -85,6 +85,7 @@ public class ToolResultHandlingTests
     [InlineData(ToolGuardMessages.NetHackWikiIndexingInProgress)]
     [InlineData(ToolGuardMessages.KnowledgeBaseIndexingInProgress)]
     [InlineData(ToolGuardMessages.SourceCodeIndexingInProgress)]
+    [InlineData(ToolGuardMessages.NetHackSourceCodeIndexingInProgress)]
     public void ToolGuardMessages_AreDirectiveAndInstructive(string message)
     {
         Assert.False(string.IsNullOrWhiteSpace(message));

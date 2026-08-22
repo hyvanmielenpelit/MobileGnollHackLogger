@@ -91,6 +91,8 @@ builder.Services.AddSingleton<WikiService>();
 builder.Services.AddSingleton<NetHackWikiService>();
 builder.Services.AddSingleton<SourceCodeService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<SourceCodeService>());
+builder.Services.AddSingleton<NetHackSourceCodeService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<NetHackSourceCodeService>());
 
 
 builder.Services.AddSingleton<CryptoService>();
@@ -192,6 +194,8 @@ app.Lifetime.ApplicationStarted.Register(() =>
     _ = app.Services.GetService<NetHackWikiService>();
     _ = app.Services.GetService<KnowledgeBaseService>();
     _ = app.Services.GetService<Overseer.Services.Tools.ToolRegistry>();
+    _ = app.Services.GetService<SourceCodeService>();
+    _ = app.Services.GetService<NetHackSourceCodeService>();
 });
 
 if (app.Environment.IsDevelopment())

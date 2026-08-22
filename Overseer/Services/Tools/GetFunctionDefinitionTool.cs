@@ -6,10 +6,12 @@ namespace Overseer.Services.Tools
     public class GetFunctionDefinitionTool : IToolHandler
     {
         private readonly SourceCodeService _sourceCodeService;
+        private readonly NetHackSourceCodeService _netHackService;
 
-        public GetFunctionDefinitionTool(SourceCodeService sourceCodeService)
+        public GetFunctionDefinitionTool(SourceCodeService sourceCodeService, NetHackSourceCodeService netHackService)
         {
             _sourceCodeService = sourceCodeService;
+            _netHackService = netHackService;
         }
 
         public string ToolName => "get_function_definition";
@@ -35,6 +37,11 @@ namespace Overseer.Services.Tools
                 "start_line": { 
                     "type": "integer", 
                     "description": "Optional. Start from this line within the function body (for continuing after truncation)" 
+                },
+                "repository": {
+                    "type": "string",
+                    "description": "Which codebase to extract from: 'gnollhack' (default) or 'nethack'",
+                    "enum": ["gnollhack", "nethack"]
                 }
             },
             "required": ["name"]
@@ -43,11 +50,25 @@ namespace Overseer.Services.Tools
 
         public JsonElement ParameterSchema => _parameterSchema;
 
+        private SourceCodeService ResolveService(JsonElement parameters, out string guardMessage)
+        {
+            if (parameters.TryGetProperty("repository", out var repo) &&
+                repo.GetString()?.Equals("nethack", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                guardMessage = ToolGuardMessages.NetHackSourceCodeIndexingInProgress;
+                return _netHackService;
+            }
+
+            guardMessage = ToolGuardMessages.SourceCodeIndexingInProgress;
+            return _sourceCodeService;
+        }
+
         public Task<ToolResult> ExecuteAsync(JsonElement arguments, ToolExecutionContext context, System.Threading.CancellationToken cancellationToken)
         {
-            if (!_sourceCodeService.IsIndexingComplete)
+            var service = ResolveService(arguments, out var guardMessage);
+            if (!service.IsIndexingComplete)
             {
-                return Task.FromResult(new ToolResult { Success = false, ErrorMessage = ToolGuardMessages.SourceCodeIndexingInProgress });
+                return Task.FromResult(new ToolResult { Success = false, ErrorMessage = guardMessage });
             }
 
             string name = arguments.GetProperty("name").GetString() ?? string.Empty;
@@ -64,7 +85,7 @@ namespace Overseer.Services.Tools
                 startLine = startLineElement.GetInt32();
             }
 
-            var result = _sourceCodeService.GetFunctionBody(name, kind, startLine);
+            var result = service.GetFunctionBody(name, kind, startLine);
             return Task.FromResult(new ToolResult { Success = true, Content = result });
         }
     }

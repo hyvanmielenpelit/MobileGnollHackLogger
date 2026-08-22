@@ -178,5 +178,76 @@ End of matrix.`;
     expect(result).toContain('katex-display');
     expect(result).toContain('katex-html');
   });
+
+  it('should render markdown tables with numeric colons without breaking rows', () => {
+    const input = `GnollHack keeps NetHack’s core deity-prayer system.
+
+| Aspect | GnollHack | NetHack |
+|---|---|---|
+| **How to pray** | Use **Pray** (\`Alt+P\`). | Use the \`#pray\` extended command. |
+| **Initial timeout** | **Priests: 150 turns**; other roles: **300 turns**. | **300 turns** for everyone. |
+| **Timeout after praying** | Randomized from a base of **175 turns for priests** or **350 for other roles**. | Uses the classic randomized timeout. |
+| **Safety thresholds** | Major trouble: timeout ≤200; minor trouble: ≤100; no trouble: 0. | Essentially the same thresholds. |
+| **Feedback** | A blessed **holy symbol or prayerstone can shimmer** when prayer is safe. | You generally use **enlightenment** to check whether prayer is safe. |
+| **Altar effects** | Your altar can bless water, holy symbols, and prayerstones. | Your altar can bless water. |
+| **Troubles and favors** | Uses an expanded list of major/minor troubles. | Uses the traditional NetHack trouble and favor system. |
+
+The largest mechanical advantage is that priests can pray sooner.`;
+
+    const result = pipe.transform(input);
+    const container = document.createElement('div');
+    container.innerHTML = result as string;
+
+    const tables = container.querySelectorAll('table');
+    expect(tables.length).toBe(1);
+
+    const rows = container.querySelectorAll('table tr');
+    // 1 header row + 7 data rows = 8 rows
+    expect(rows.length).toBe(8);
+
+    // Verify row 4 (Safety thresholds) contains both cells intact
+    const row4Cells = rows[4].querySelectorAll('td');
+    expect(row4Cells.length).toBe(3);
+    expect(row4Cells[0].textContent).toContain('Safety thresholds');
+    expect(row4Cells[1].textContent).toContain('no trouble: 0.');
+    expect(row4Cells[2].textContent).toContain('Essentially the same thresholds.');
+
+    // Verify row 5 (Feedback) is inside the table
+    const row5Cells = rows[5].querySelectorAll('td');
+    expect(row5Cells.length).toBe(3);
+    expect(row5Cells[0].textContent).toContain('Feedback');
+  });
+
+  it('should format squished lists in non-table text while preserving tables', () => {
+    const nonTableInput = 'Here are the options:1. First item 2. Second item';
+    const nonTableResult = pipe.transform(nonTableInput) as string;
+    expect(nonTableResult).toContain('<ol>');
+    expect(nonTableResult).toContain('<li>First item');
+
+    const tableInput = `| Col 1 | Col 2 |
+|---|---|
+| Options: 1. Item | Plain value: 0. |`;
+    const tableResult = pipe.transform(tableInput) as string;
+    expect(tableResult).toContain('<table>');
+    expect(tableResult).toContain('<td>Options: 1. Item</td>');
+    expect(tableResult).toContain('<td>Plain value: 0.</td>');
+  });
+
+  it('should space squished sentences inside table cells without breaking the table', () => {
+    const input = `| Column 1 | Column 2 |
+|---|---|
+| First cell.Next sentence in same cell | Second cell |`;
+    const result = pipe.transform(input) as string;
+    const container = document.createElement('div');
+    container.innerHTML = result;
+
+    const tables = container.querySelectorAll('table');
+    expect(tables.length).toBe(1);
+
+    const cells = container.querySelectorAll('table td');
+    expect(cells.length).toBe(2);
+    expect(cells[0].textContent).toContain('First cell. Next sentence in same cell');
+  });
 });
+
 
