@@ -1,5 +1,32 @@
 [
   {
+    "version": "1.0.24",
+    "date": "2026-08-23T10:58:00Z",
+    "summary": "Added bulk actions to move active chats to Trash and unpin conversations, introduced chat management and Trash access in Settings, and improved authentication handoff and embedded app integration.",
+    "changes": [
+      {
+        "type": "feature",
+        "text": "Added bulk actions to move active chat conversations to Trash at once, with an option to include or protect pinned chats."
+      },
+      {
+        "type": "feature",
+        "text": "Added an action to unpin all pinned chat conversations simultaneously."
+      },
+      {
+        "type": "improvement",
+        "text": "Added chat management tools and Trash bin access directly to the Settings page."
+      },
+      {
+        "type": "improvement",
+        "text": "Replaced the plain redirect screen with a styled loading screen during authentication handoffs."
+      },
+      {
+        "type": "improvement",
+        "text": "Improved embedded application integration and navigation synchronization across mobile and desktop platforms."
+      }
+    ]
+  },
+  {
     "version": "1.0.23",
     "date": "2026-08-22T18:06:00Z",
     "summary": "Added NetHack source code search and file inspection capabilities, improved client-side error handling for network disconnections, and fixed markdown table formatting issues.",
