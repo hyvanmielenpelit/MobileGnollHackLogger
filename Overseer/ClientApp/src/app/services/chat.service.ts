@@ -141,6 +141,14 @@ export class ChatService {
     return this.http.delete(`/api/chat/sessions/${id}/permanent`);
   }
 
+  bulkDeleteSessions(includePinned: boolean = false) {
+    return this.http.post<{count: number}>('/api/chat/sessions/bulk-delete', { includePinned });
+  }
+
+  unpinAllSessions() {
+    return this.http.post<{count: number}>('/api/chat/sessions/unpin-all', {});
+  }
+
   emptyTrash() {
     return this.http.post<{count: number}>('/api/chat/sessions/trash/empty', {});
   }

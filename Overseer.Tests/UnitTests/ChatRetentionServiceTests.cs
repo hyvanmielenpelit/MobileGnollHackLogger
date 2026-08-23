@@ -255,4 +255,88 @@ public class ChatRetentionServiceTests
         var activeCount = await db.ChatSession.CountAsync(s => s.AspNetUserId == userId && !s.IsDeleted, ct);
         Assert.Equal(3, activeCount);
     }
+
+    [Fact]
+    public async Task BulkSoftDeleteSessions_ExcludesPinned_WhenIncludePinnedIsFalse()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var db = CreateInMemoryDbContext();
+        var config = CreateTestConfiguration();
+        var service = new ChatRetentionService(db, config, NullLogger<ChatRetentionService>.Instance);
+        var userId = "user1";
+
+        db.ChatSession.Add(new ChatSession { Id = 1, AspNetUserId = userId, Title = "Unpinned 1", IsPinned = false, IsDeleted = false });
+        db.ChatSession.Add(new ChatSession { Id = 2, AspNetUserId = userId, Title = "Unpinned 2", IsPinned = false, IsDeleted = false });
+        db.ChatSession.Add(new ChatSession { Id = 3, AspNetUserId = userId, Title = "Pinned 1", IsPinned = true, IsDeleted = false });
+        db.ChatSession.Add(new ChatSession { Id = 4, AspNetUserId = "otherUser", Title = "Other User Chat", IsPinned = false, IsDeleted = false });
+        await db.SaveChangesAsync(ct);
+
+        int count = await service.BulkSoftDeleteSessionsAsync(userId, includePinned: false, "User", ct);
+        Assert.Equal(2, count);
+
+        var unpinned1 = await db.ChatSession.FindAsync(new object[] { (long)1 }, ct);
+        var unpinned2 = await db.ChatSession.FindAsync(new object[] { (long)2 }, ct);
+        var pinned1 = await db.ChatSession.FindAsync(new object[] { (long)3 }, ct);
+        var other = await db.ChatSession.FindAsync(new object[] { (long)4 }, ct);
+
+        Assert.True(unpinned1!.IsDeleted);
+        Assert.Equal("User", unpinned1.DeletionReason);
+        Assert.NotNull(unpinned1.DeletedUtc);
+
+        Assert.True(unpinned2!.IsDeleted);
+        Assert.False(pinned1!.IsDeleted);
+        Assert.False(other!.IsDeleted);
+    }
+
+    [Fact]
+    public async Task BulkSoftDeleteSessions_IncludesPinned_WhenIncludePinnedIsTrue()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var db = CreateInMemoryDbContext();
+        var config = CreateTestConfiguration();
+        var service = new ChatRetentionService(db, config, NullLogger<ChatRetentionService>.Instance);
+        var userId = "user1";
+
+        db.ChatSession.Add(new ChatSession { Id = 1, AspNetUserId = userId, Title = "Unpinned 1", IsPinned = false, IsDeleted = false });
+        db.ChatSession.Add(new ChatSession { Id = 2, AspNetUserId = userId, Title = "Pinned 1", IsPinned = true, IsDeleted = false });
+        await db.SaveChangesAsync(ct);
+
+        int count = await service.BulkSoftDeleteSessionsAsync(userId, includePinned: true, "User", ct);
+        Assert.Equal(2, count);
+
+        var s1 = await db.ChatSession.FindAsync(new object[] { (long)1 }, ct);
+        var s2 = await db.ChatSession.FindAsync(new object[] { (long)2 }, ct);
+
+        Assert.True(s1!.IsDeleted);
+        Assert.True(s2!.IsDeleted);
+    }
+
+    [Fact]
+    public async Task UnpinAllSessions_ClearsPinnedFlagOnAllActiveSessions()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var db = CreateInMemoryDbContext();
+        var config = CreateTestConfiguration();
+        var service = new ChatRetentionService(db, config, NullLogger<ChatRetentionService>.Instance);
+        var userId = "user1";
+
+        db.ChatSession.Add(new ChatSession { Id = 1, AspNetUserId = userId, Title = "Pinned 1", IsPinned = true, IsDeleted = false });
+        db.ChatSession.Add(new ChatSession { Id = 2, AspNetUserId = userId, Title = "Pinned 2", IsPinned = true, IsDeleted = false });
+        db.ChatSession.Add(new ChatSession { Id = 3, AspNetUserId = userId, Title = "Unpinned", IsPinned = false, IsDeleted = false });
+        db.ChatSession.Add(new ChatSession { Id = 4, AspNetUserId = "otherUser", Title = "Other Pinned", IsPinned = true, IsDeleted = false });
+        await db.SaveChangesAsync(ct);
+
+        int count = await service.UnpinAllSessionsAsync(userId, ct);
+        Assert.Equal(2, count);
+
+        var s1 = await db.ChatSession.FindAsync(new object[] { (long)1 }, ct);
+        var s2 = await db.ChatSession.FindAsync(new object[] { (long)2 }, ct);
+        var s3 = await db.ChatSession.FindAsync(new object[] { (long)3 }, ct);
+        var s4 = await db.ChatSession.FindAsync(new object[] { (long)4 }, ct);
+
+        Assert.False(s1!.IsPinned);
+        Assert.False(s2!.IsPinned);
+        Assert.False(s3!.IsPinned);
+        Assert.True(s4!.IsPinned);
+    }
 }

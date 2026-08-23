@@ -11,7 +11,7 @@ import { SettingsService } from '../services/settings.service';
 import { ChangelogService } from '../services/changelog.service';
 import { ClientBridgeService } from '../services/client-bridge.service';
 import { AdminAlertsComponent } from './admin-alerts.component';
-import { TrashModalComponent } from './trash-modal/trash-modal.component';
+import { TrashModalComponent } from '../shared/trash-modal/trash-modal.component';
 import * as signalR from '@microsoft/signalr';
 import { firstValueFrom, filter, Subscription, Subject, debounceTime, distinctUntilChanged } from 'rxjs';
 export interface ToolClientRequest {
@@ -130,6 +130,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   
   @ViewChild('messagesContainer') messagesContainer!: ElementRef;
   @ViewChild('deleteConfirmDialog') deleteConfirmDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('bulkDeleteConfirmDialog') bulkDeleteConfirmDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('unpinAllConfirmDialog') unpinAllConfirmDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('reportConfirmDialog') reportConfirmDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('imagePreviewDialog') imagePreviewDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('errorToast') errorToast!: ElementRef<HTMLElement>;
@@ -145,6 +147,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   maxSessionQuota = 50;
   maxPinnedQuota = 5;
   trashCount = 0;
+
+  includePinnedInBulkDelete = false;
+  isBulkDeleting = false;
+  isUnpinningAll = false;
 
   sessionSearchQuery = '';
   private sessionSearchSubject = new Subject<string>();
@@ -911,6 +917,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         if (previousUrl && !previousUrl.startsWith('/chat')) {
           this.debugService.log(`[Overseer] Re-entered chat window from ${previousUrl}. Refetching settings and models.`);
           this.loadSettings(false);
+          this.loadSessions(true);
           this.checkChangelogAnimation();
           
           // Re-join SignalR group in case connection was silently reset during navigation
@@ -2006,6 +2013,84 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
   openTrashDialog() {
     this.trashModal?.open();
+  }
+
+  get bulkDeleteTargetCount(): number {
+    const total = this.activeSessionCount ?? this.sessions.length;
+    if (this.includePinnedInBulkDelete) {
+      return total;
+    }
+    return Math.max(0, total - this.pinnedSessionCount);
+  }
+
+  openBulkDeleteDialog() {
+    this.includePinnedInBulkDelete = false;
+    this.isBulkDeleting = false;
+    if (this.bulkDeleteConfirmDialog) {
+      this.bulkDeleteConfirmDialog.nativeElement.showModal();
+    }
+  }
+
+  closeBulkDeleteDialog() {
+    if (this.bulkDeleteConfirmDialog) {
+      this.bulkDeleteConfirmDialog.nativeElement.close();
+    }
+    this.isBulkDeleting = false;
+  }
+
+  confirmBulkDelete() {
+    this.isBulkDeleting = true;
+    const includePinned = this.includePinnedInBulkDelete;
+    this.chatService.bulkDeleteSessions(includePinned).subscribe({
+      next: () => {
+        this.isBulkDeleting = false;
+        this.closeBulkDeleteDialog();
+
+        if (this.currentSessionId) {
+          const currentSession = this.sessions.find(s => s.id === this.currentSessionId);
+          if (currentSession && (!currentSession.isPinned || includePinned)) {
+            this.navigateToNewSession();
+          }
+        }
+        this.loadSessions(true);
+        this.trashModal?.loadTrash();
+      },
+      error: (err) => {
+        this.isBulkDeleting = false;
+        this.closeBulkDeleteDialog();
+        this.showErrorToast(err.error?.message || 'Failed to move chats to trash', 'Bulk Delete Failed');
+      }
+    });
+  }
+
+  openUnpinAllDialog() {
+    this.isUnpinningAll = false;
+    if (this.unpinAllConfirmDialog) {
+      this.unpinAllConfirmDialog.nativeElement.showModal();
+    }
+  }
+
+  closeUnpinAllDialog() {
+    if (this.unpinAllConfirmDialog) {
+      this.unpinAllConfirmDialog.nativeElement.close();
+    }
+    this.isUnpinningAll = false;
+  }
+
+  confirmUnpinAll() {
+    this.isUnpinningAll = true;
+    this.chatService.unpinAllSessions().subscribe({
+      next: () => {
+        this.isUnpinningAll = false;
+        this.closeUnpinAllDialog();
+        this.loadSessions(true);
+      },
+      error: (err) => {
+        this.isUnpinningAll = false;
+        this.closeUnpinAllDialog();
+        this.showErrorToast(err.error?.message || 'Failed to unpin all chats', 'Unpin Failed');
+      }
+    });
   }
 
   requestReportMessage(messageId: number, index: number) {

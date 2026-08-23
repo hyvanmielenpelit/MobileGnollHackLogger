@@ -47,6 +47,12 @@ When creating UI elements in the Overseer frontend, adhere to the following stan
 - **Use SVGs exclusively**: DO NOT use Unicode emojis (e.g., ✨, 🐛, 🚀) for UI elements or icons. They are notoriously difficult to align correctly, render inconsistently across operating systems, and look unprofessional.
 - Always use precise `<svg>` icons configured with `fill="currentColor"` so they seamlessly match the surrounding text color and align perfectly using Flexbox (`display: flex; align-items: center`).
 
+### Checkboxes
+- **Use the `.checkbox-label` Pattern**: Checkboxes should be wrapped inside a `<label class="checkbox-label">` element containing the `<input type="checkbox">` and the descriptive label text.
+- **Dimensions & Theme**: Checkbox inputs are sized at 20x20px with a 10px flex gap between the input and text, and styled with the golden theme accent color (`accent-color: var(--primary-color, #d4af37)`).
+- **Multi-Line Alignment (`.align-start`)**: When the checkbox copy spans multiple lines or contains descriptive subtext, add the `.align-start` class modifier to top-align the checkbox with the first line of text.
+- **Centralized Styling**: Checkbox styling is managed centrally in `src/styles.scss`. Do not duplicate checkbox CSS rules in component SCSS files.
+
 ## Project Structure and Navigation
 
 The Overseer project is an ASP.NET Core backend serving an Angular frontend.

@@ -308,6 +308,11 @@ a:hover {
 }
 
 /* Dialog Styles */
+dialog:not([open]),
+.gh-dialog:not([open]) {
+  display: none !important;
+}
+
 .gh-dialog {
   box-sizing: border-box;
   width: calc(100vw - 32px);
@@ -537,6 +542,7 @@ a:hover {
 .ms-10 { margin-inline-start: 10px; }
 .mt-auto { margin-top: auto; }
 .pt-20 { padding-top: 20px; }
+.text-muted { color: #aaa; }
 
 /* Small Spinner */
 .gh-spinner-small {
@@ -738,6 +744,30 @@ input[type="number"] {
   &:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+}
+
+/* Checkbox Labels */
+label.checkbox-label,
+.checkbox-label {
+  display: flex !important;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+  margin-bottom: 0;
+
+  input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    accent-color: var(--primary-color, #d4af37);
+    cursor: pointer;
+    margin: 0;
+  }
+
+  &.align-start {
+    align-items: flex-start;
   }
 }
 

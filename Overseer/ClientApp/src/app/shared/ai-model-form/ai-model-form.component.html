@@ -255,10 +255,10 @@
     <!-- Admin only fields: Status, Rate Limits -->
     @if (isAdmin) {
       <div class="checkbox-row" style="flex-direction: row; gap: 20px;">
-        <label class="gh-checkbox-label">
+        <label class="checkbox-label">
           <input type="checkbox" [(ngModel)]="isEnabled"> Enabled
         </label>
-        <label class="gh-checkbox-label">
+        <label class="checkbox-label">
           <input type="checkbox" [(ngModel)]="isSystemWide"> System Wide
         </label>
       </div>

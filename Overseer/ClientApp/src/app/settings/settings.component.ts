@@ -4,12 +4,14 @@ import { FormsModule } from '@angular/forms';
 import { SettingsService, UserAiSettings, ApiModelDto } from '../services/settings.service';
 import { SystemService } from '../services/system.service';
 import { ChangelogService } from '../services/changelog.service';
+import { ChatService } from '../services/chat.service';
 import { RouterModule } from '@angular/router';
 import { ChangelogComponent } from '../changelog/changelog.component';
+import { TrashModalComponent } from '../shared/trash-modal/trash-modal.component';
 
 @Component({
     selector: 'app-settings',
-    imports: [FormsModule, RouterModule, ChangelogComponent],
+    imports: [FormsModule, RouterModule, ChangelogComponent, TrashModalComponent],
     styleUrl: './settings.component.scss',
     changeDetection: ChangeDetectionStrategy.Eager,
     templateUrl: './settings.component.html'
@@ -18,6 +20,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
   settingsService = inject(SettingsService);
   systemService = inject(SystemService);
   changelogService = inject(ChangelogService);
+  chatService = inject(ChatService);
   cdr = inject(ChangeDetectorRef);
   
   appVersion = '';
@@ -25,6 +28,20 @@ export class SettingsComponent implements OnInit, OnDestroy {
   @ViewChild('successToast') successToast!: ElementRef<HTMLElement>;
   @ViewChild('confirmDialog') confirmDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('changelogDialog') changelogDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('settingsBulkDeleteDialog') settingsBulkDeleteDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('settingsUnpinAllDialog') settingsUnpinAllDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('settingsTrashModal') settingsTrashModal!: TrashModalComponent;
+
+  activeSessionCount: number = 0;
+  pinnedSessionCount: number = 0;
+  maxSessionQuota: number = 50;
+  maxPinnedQuota: number = 5;
+  trashCount: number = 0;
+
+  includePinnedInBulkDelete = false;
+  isBulkDeleting = false;
+  isUnpinningAll = false;
+  toastMessage = '';
 
   showChangelogBadge = false;
   private changelogBadgeResetHandler!: () => void;
@@ -161,6 +178,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
       error: () => {}
     });
 
+    this.loadChatMetrics();
+
     this.settingsService.getSettings().subscribe({
       next: (s) => {
         if (s) {
@@ -272,6 +291,43 @@ export class SettingsComponent implements OnInit, OnDestroy {
     }
   }
 
+  showToast(msg: string) {
+    this.toastMessage = msg;
+    this.cdr.detectChanges();
+    const toast = this.successToast?.nativeElement as any;
+    if (toast && ("popover" in HTMLElement.prototype || toast.classList.contains('\:popover-open') || 'showPopover' in toast)) {
+      try { toast.showPopover(); } catch(e) {}
+      setTimeout(() => {
+        try { toast.hidePopover(); } catch(e) {}
+      }, 3000);
+    } else {
+      this.saved = true;
+      setTimeout(() => this.saved = false, 3000);
+    }
+  }
+
+  loadChatMetrics() {
+    this.chatService.getSessions(0, 1).subscribe({
+      next: (res) => {
+        if (res.body) {
+          this.activeSessionCount = res.body.activeCount ?? 0;
+          this.pinnedSessionCount = res.body.pinnedCount ?? 0;
+          this.maxSessionQuota = res.body.maxQuota ?? 50;
+          this.maxPinnedQuota = res.body.maxPinned ?? 5;
+          this.cdr.detectChanges();
+        }
+      },
+      error: () => {}
+    });
+    this.chatService.getTrashSessions().subscribe({
+      next: (sessions) => {
+        this.trashCount = sessions?.length ?? 0;
+        this.cdr.detectChanges();
+      },
+      error: () => {}
+    });
+  }
+
   saveSettings() {
     this.loading = true;
     this.saved = false;
@@ -280,16 +336,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
         this.loading = false;
         this.settingsService.showThoughtsAndToolsUpdated.next(Number(this.showThoughtsAndTools));
         
-        const toast = this.successToast?.nativeElement as any;
-        if (toast && ("popover" in HTMLElement.prototype || toast.classList.contains('\:popover-open') || 'showPopover' in toast)) {
-          toast.showPopover();
-          setTimeout(() => {
-            try { toast.hidePopover(); } catch(e) {}
-          }, 3000);
-        } else {
-          this.saved = true;
-          setTimeout(() => this.saved = false, 3000);
-        }
+        this.showToast('Settings saved successfully!');
 
         this.initSpoilerFreeMode = this.spoilerFreeMode;
         this.initShowSourceCodeReferences = this.showSourceCodeReferences;
@@ -307,6 +354,85 @@ export class SettingsComponent implements OnInit, OnDestroy {
         this.loading = false;
       }
     });
+  }
+
+  get bulkDeleteTargetCount(): number {
+    if (this.includePinnedInBulkDelete) {
+      return this.activeSessionCount;
+    }
+    return Math.max(0, this.activeSessionCount - this.pinnedSessionCount);
+  }
+
+  openSettingsBulkDeleteDialog() {
+    this.includePinnedInBulkDelete = false;
+    this.isBulkDeleting = false;
+    this.settingsBulkDeleteDialog?.nativeElement?.showModal();
+  }
+
+  closeSettingsBulkDeleteDialog() {
+    this.settingsBulkDeleteDialog?.nativeElement?.close();
+    this.isBulkDeleting = false;
+  }
+
+  confirmSettingsBulkDelete() {
+    this.isBulkDeleting = true;
+    this.chatService.bulkDeleteSessions(this.includePinnedInBulkDelete).subscribe({
+      next: () => {
+        this.isBulkDeleting = false;
+        this.closeSettingsBulkDeleteDialog();
+        this.loadChatMetrics();
+        this.showToast('Active chats moved to trash successfully!');
+      },
+      error: () => {
+        this.isBulkDeleting = false;
+        this.closeSettingsBulkDeleteDialog();
+      }
+    });
+  }
+
+  openSettingsUnpinAllDialog() {
+    this.isUnpinningAll = false;
+    this.settingsUnpinAllDialog?.nativeElement?.showModal();
+  }
+
+  closeSettingsUnpinAllDialog() {
+    this.settingsUnpinAllDialog?.nativeElement?.close();
+    this.isUnpinningAll = false;
+  }
+
+  confirmSettingsUnpinAll() {
+    this.isUnpinningAll = true;
+    this.chatService.unpinAllSessions().subscribe({
+      next: () => {
+        this.isUnpinningAll = false;
+        this.closeSettingsUnpinAllDialog();
+        this.loadChatMetrics();
+        this.showToast('All chats unpinned successfully!');
+      },
+      error: () => {
+        this.isUnpinningAll = false;
+        this.closeSettingsUnpinAllDialog();
+      }
+    });
+  }
+
+  openSettingsTrashDialog() {
+    this.settingsTrashModal?.open();
+  }
+
+  onSettingsSessionRestored(sessionId: number) {
+    this.loadChatMetrics();
+    this.showToast('Chat restored successfully!');
+  }
+
+  onSettingsTrashEmptied() {
+    this.loadChatMetrics();
+    this.showToast('Trash emptied successfully!');
+  }
+
+  onSettingsTrashCountChange(count: number) {
+    this.trashCount = count;
+    this.cdr.detectChanges();
   }
 
   checkChangelogBadge() {

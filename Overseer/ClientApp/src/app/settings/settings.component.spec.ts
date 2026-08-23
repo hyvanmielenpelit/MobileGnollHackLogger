@@ -6,6 +6,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { of, throwError } from 'rxjs';
 import { SettingsComponent } from './settings.component';
 import { SettingsService, UserAiSettings } from '../services/settings.service';
+import { ChatService } from '../services/chat.service';
 
 describe('SettingsComponent', () => {
   let component: SettingsComponent;
@@ -113,6 +114,113 @@ describe('SettingsComponent', () => {
       component.saveSettings();
 
       expect(component.loading).toBeFalse();
+    });
+  });
+
+  describe('Chat Data Management', () => {
+    let chatService: any;
+
+    beforeEach(() => {
+      chatService = TestBed.inject(ChatService);
+      spyOn(settingsService, 'getSettings').and.returnValue(of({
+        hasApiKey: true
+      } as any));
+      fixture = TestBed.createComponent(SettingsComponent);
+      component = fixture.componentInstance;
+    });
+
+    it('should load chat metrics on loadChatMetrics', () => {
+      spyOn(chatService, 'getSessions').and.returnValue(of({
+        body: { activeCount: 45, pinnedCount: 3, maxQuota: 50, maxPinned: 5 }
+      } as any));
+      spyOn(chatService, 'getTrashSessions').and.returnValue(of([
+        { id: 1, title: 'Trash 1' },
+        { id: 2, title: 'Trash 2' }
+      ] as any));
+
+      component.loadChatMetrics();
+
+      expect(component.activeSessionCount).toBe(45);
+      expect(component.pinnedSessionCount).toBe(3);
+      expect(component.maxSessionQuota).toBe(50);
+      expect(component.maxPinnedQuota).toBe(5);
+      expect(component.trashCount).toBe(2);
+    });
+
+    it('should compute bulkDeleteTargetCount correctly', () => {
+      component.activeSessionCount = 45;
+      component.pinnedSessionCount = 5;
+      component.includePinnedInBulkDelete = false;
+
+      expect(component.bulkDeleteTargetCount).toBe(40);
+
+      component.includePinnedInBulkDelete = true;
+      expect(component.bulkDeleteTargetCount).toBe(45);
+    });
+
+    it('should bulk delete active chats and reload metrics', () => {
+      const closeSpy = jasmine.createSpy('close');
+      component.settingsBulkDeleteDialog = { nativeElement: { close: closeSpy } } as any;
+      spyOn(chatService, 'bulkDeleteSessions').and.returnValue(of({ count: 42 }));
+      const metricsSpy = spyOn(component, 'loadChatMetrics');
+      const toastSpy = spyOn(component, 'showToast');
+
+      component.includePinnedInBulkDelete = true;
+      component.confirmSettingsBulkDelete();
+
+      expect(chatService.bulkDeleteSessions).toHaveBeenCalledWith(true);
+      expect(closeSpy).toHaveBeenCalled();
+      expect(metricsSpy).toHaveBeenCalled();
+      expect(toastSpy).toHaveBeenCalledWith('Active chats moved to trash successfully!');
+    });
+
+    it('should unpin all chats and reload metrics', () => {
+      const closeSpy = jasmine.createSpy('close');
+      component.settingsUnpinAllDialog = { nativeElement: { close: closeSpy } } as any;
+      spyOn(chatService, 'unpinAllSessions').and.returnValue(of({ count: 3 }));
+      const metricsSpy = spyOn(component, 'loadChatMetrics');
+      const toastSpy = spyOn(component, 'showToast');
+
+      component.confirmSettingsUnpinAll();
+
+      expect(chatService.unpinAllSessions).toHaveBeenCalled();
+      expect(closeSpy).toHaveBeenCalled();
+      expect(metricsSpy).toHaveBeenCalled();
+      expect(toastSpy).toHaveBeenCalledWith('All chats unpinned successfully!');
+    });
+
+    it('should open trash modal on openSettingsTrashDialog', () => {
+      const openSpy = jasmine.createSpy('open');
+      component.settingsTrashModal = { open: openSpy } as any;
+
+      component.openSettingsTrashDialog();
+
+      expect(openSpy).toHaveBeenCalled();
+    });
+
+    it('should handle session restored from trash modal and reload metrics', () => {
+      const metricsSpy = spyOn(component, 'loadChatMetrics');
+      const toastSpy = spyOn(component, 'showToast');
+
+      component.onSettingsSessionRestored(123);
+
+      expect(metricsSpy).toHaveBeenCalled();
+      expect(toastSpy).toHaveBeenCalledWith('Chat restored successfully!');
+    });
+
+    it('should handle trash emptied from trash modal and reload metrics', () => {
+      const metricsSpy = spyOn(component, 'loadChatMetrics');
+      const toastSpy = spyOn(component, 'showToast');
+
+      component.onSettingsTrashEmptied();
+
+      expect(metricsSpy).toHaveBeenCalled();
+      expect(toastSpy).toHaveBeenCalledWith('Trash emptied successfully!');
+    });
+
+    it('should update trashCount on onSettingsTrashCountChange', () => {
+      component.onSettingsTrashCountChange(7);
+      expect(component.trashCount).toBe(7);
     });
   });
 });

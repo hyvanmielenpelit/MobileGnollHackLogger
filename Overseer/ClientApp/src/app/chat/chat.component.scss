@@ -284,11 +284,14 @@
   80% { transform: translateX(3px); }
 }
 
+.sidebar-quota-btn,
 .quota-pill {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
   font-size: 0.78rem;
+  font-family: inherit;
   color: #999;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -296,26 +299,63 @@
   padding: 2px 6px;
   white-space: nowrap;
   line-height: 1.2;
-  cursor: default;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  appearance: none;
 
   .svg-chat {
     width: 12px;
     height: 12px;
     flex-shrink: 0;
-    color: #999;
+    color: inherit;
   }
 
+  &:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.16);
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.4);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  }
+
+  &:active:not(:disabled) {
+    transform: scale(0.93);
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color, #d4af37);
+    outline-offset: 1px;
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  &.pinned-quota-btn,
   &.pinned-pill {
     color: #d4af37;
     background: rgba(212, 175, 55, 0.08);
     border-color: rgba(212, 175, 55, 0.25);
-    transition: background 0.2s, border-color 0.2s;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 
     .svg-pin {
       width: 12px;
       height: 12px;
       fill: currentColor;
       flex-shrink: 0;
+    }
+
+    &:hover:not(:disabled) {
+      background: rgba(212, 175, 55, 0.22);
+      color: #f5d77f;
+      border-color: rgba(212, 175, 55, 0.6);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+    }
+
+    &:active:not(:disabled) {
+      transform: scale(0.93);
+      background: rgba(212, 175, 55, 0.15);
     }
 
     &.quota-limit-alert {

@@ -637,6 +637,87 @@ describe('ChatComponent session loading and exclusivity', () => {
       expect(sendResultSpy).toHaveBeenCalledWith('req-2', false, null, 'Client bridge not available');
     });
   });
+
+  describe('bulk chat actions', () => {
+    it('should open and close bulk delete dialog', () => {
+      const showModalSpy = jasmine.createSpy('showModal');
+      const closeSpy = jasmine.createSpy('close');
+      component.bulkDeleteConfirmDialog = {
+        nativeElement: { showModal: showModalSpy, close: closeSpy }
+      } as any;
+
+      component.openBulkDeleteDialog();
+      expect(showModalSpy).toHaveBeenCalled();
+      expect(component.includePinnedInBulkDelete).toBeFalse();
+      expect(component.isBulkDeleting).toBeFalse();
+
+      component.closeBulkDeleteDialog();
+      expect(closeSpy).toHaveBeenCalled();
+      expect(component.isBulkDeleting).toBeFalse();
+    });
+
+    it('should compute bulkDeleteTargetCount based on includePinnedInBulkDelete', () => {
+      component.activeSessionCount = 50;
+      component.pinnedSessionCount = 5;
+      component.includePinnedInBulkDelete = false;
+
+      expect(component.bulkDeleteTargetCount).toBe(45);
+
+      component.includePinnedInBulkDelete = true;
+      expect(component.bulkDeleteTargetCount).toBe(50);
+    });
+
+    it('should call bulkDeleteSessions and reload on confirmBulkDelete', () => {
+      const closeSpy = jasmine.createSpy('close');
+      component.bulkDeleteConfirmDialog = {
+        nativeElement: { close: closeSpy }
+      } as any;
+
+      spyOn(chatService, 'bulkDeleteSessions').and.returnValue(of({ count: 5 }));
+      const loadSessionsSpy = spyOn(component, 'loadSessions');
+      component.includePinnedInBulkDelete = true;
+      component.currentSessionId = 10;
+      component.sessions = [{ id: 10, title: 'Chat 10', isPinned: true, lastMessageUtc: new Date().toISOString() }];
+      const navSpy = spyOn(component, 'navigateToNewSession');
+
+      component.confirmBulkDelete();
+
+      expect(chatService.bulkDeleteSessions).toHaveBeenCalledWith(true);
+      expect(closeSpy).toHaveBeenCalled();
+      expect(navSpy).toHaveBeenCalled();
+      expect(loadSessionsSpy).toHaveBeenCalledWith(true);
+    });
+
+    it('should open and close unpin all dialog', () => {
+      const showModalSpy = jasmine.createSpy('showModal');
+      const closeSpy = jasmine.createSpy('close');
+      component.unpinAllConfirmDialog = {
+        nativeElement: { showModal: showModalSpy, close: closeSpy }
+      } as any;
+
+      component.openUnpinAllDialog();
+      expect(showModalSpy).toHaveBeenCalled();
+
+      component.closeUnpinAllDialog();
+      expect(closeSpy).toHaveBeenCalled();
+    });
+
+    it('should call unpinAllSessions and reload on confirmUnpinAll', () => {
+      const closeSpy = jasmine.createSpy('close');
+      component.unpinAllConfirmDialog = {
+        nativeElement: { close: closeSpy }
+      } as any;
+
+      spyOn(chatService, 'unpinAllSessions').and.returnValue(of({ count: 3 }));
+      const loadSessionsSpy = spyOn(component, 'loadSessions');
+
+      component.confirmUnpinAll();
+
+      expect(chatService.unpinAllSessions).toHaveBeenCalled();
+      expect(closeSpy).toHaveBeenCalled();
+      expect(loadSessionsSpy).toHaveBeenCalledWith(true);
+    });
+  });
 });
 
 

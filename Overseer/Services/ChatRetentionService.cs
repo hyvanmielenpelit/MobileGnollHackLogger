@@ -138,6 +138,58 @@ public class ChatRetentionService
         return session.IsPinned;
     }
 
+    public async Task<int> BulkSoftDeleteSessionsAsync(string userId, bool includePinned, string reason = "User", CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(userId))
+            return 0;
+
+        var query = _dbContext.ChatSession
+            .Where(s => s.AspNetUserId == userId && !s.IsDeleted);
+
+        if (!includePinned)
+        {
+            query = query.Where(s => !s.IsPinned);
+        }
+
+        var sessions = await query.ToListAsync(cancellationToken);
+        if (sessions.Count == 0)
+            return 0;
+
+        var now = DateTime.UtcNow;
+        foreach (var s in sessions)
+        {
+            s.IsDeleted = true;
+            s.DeletedUtc = now;
+            s.DeletionReason = reason;
+        }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        _logger.LogInformation("Bulk soft-deleted {Count} sessions for user {UserId} (includePinned: {IncludePinned})", sessions.Count, userId, includePinned);
+        return sessions.Count;
+    }
+
+    public async Task<int> UnpinAllSessionsAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(userId))
+            return 0;
+
+        var sessions = await _dbContext.ChatSession
+            .Where(s => s.AspNetUserId == userId && !s.IsDeleted && s.IsPinned)
+            .ToListAsync(cancellationToken);
+
+        if (sessions.Count == 0)
+            return 0;
+
+        foreach (var s in sessions)
+        {
+            s.IsPinned = false;
+        }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        _logger.LogInformation("Unpinned {Count} sessions for user {UserId}", sessions.Count, userId);
+        return sessions.Count;
+    }
+
     public async Task<MaintenanceResultDto> PermanentlyPurgeSessionsAsync(List<long> sessionIds, bool isDryRun = false, CancellationToken cancellationToken = default)
     {
         var result = new MaintenanceResultDto { IsDryRun = isDryRun };

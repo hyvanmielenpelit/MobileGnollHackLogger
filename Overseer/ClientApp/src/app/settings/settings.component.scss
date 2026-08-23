@@ -13,7 +13,8 @@ h2 {
 }
 .form-content > div { margin-bottom: 15px; }
 .model-row { margin-bottom: 15px; }
-label { display: block; margin-bottom: 5px; font-weight: bold; }
+label:not(.checkbox-label) { display: block; margin-bottom: 5px; font-weight: bold; }
+.checkbox-label { font-weight: bold; }
 .success { color: var(--color-success); margin-inline-start: 10px; font-weight: bold; }
 
 .save-btn {
@@ -103,21 +104,6 @@ label { display: block; margin-bottom: 5px; font-weight: bold; }
   margin: 0;
 }
 
-.checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  cursor: pointer;
-
-  input[type="checkbox"] {
-    width: 20px;
-    height: 20px;
-    flex-shrink: 0;
-    accent-color: var(--primary-color, #d4af37);
-    cursor: pointer;
-  }
-}
-
 .tier-badge {
   display: inline-block;
   padding: 2px 8px;
@@ -154,10 +140,6 @@ label { display: block; margin-bottom: 5px; font-weight: bold; }
   color: #f87171;
   border-color: rgba(248, 113, 113, 0.4);
   background: rgba(248, 113, 113, 0.1);
-}
-
-.align-start {
-  align-items: flex-start;
 }
 
 .token-row {
@@ -449,4 +431,72 @@ label { display: block; margin-bottom: 5px; font-weight: bold; }
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.chat-metrics-bar {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  flex-wrap: wrap;
+}
+
+.chat-metric-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.95rem;
+
+  .metric-label {
+    color: #aaa;
+  }
+
+  .metric-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: bold;
+    font-size: 0.85rem;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #ddd;
+
+    &.pinned {
+      color: #d4af37;
+      background: rgba(212, 175, 55, 0.12);
+      border-color: rgba(212, 175, 55, 0.3);
+    }
+
+    &.trash {
+      color: #e57373;
+      background: rgba(229, 115, 115, 0.12);
+      border-color: rgba(229, 115, 115, 0.3);
+    }
+  }
+}
+
+.chat-management-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+
+  .btn-gh,
+  .btn-gh-delete {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 0.9rem;
+    padding: 8px 24px;
+    min-width: 230px;
+    height: 42px;
+    margin: 0;
+    white-space: nowrap;
+
+    svg {
+      width: 14px;
+      height: 14px;
+      flex-shrink: 0;
+    }
+  }
 }

@@ -380,6 +380,32 @@ public class ChatController : ControllerBase
         }
     }
 
+    public class BulkDeleteSessionsRequest
+    {
+        public bool IncludePinned { get; set; }
+    }
+
+    [HttpPost("sessions/bulk-delete")]
+    public async Task<IActionResult> BulkDeleteSessions([FromBody] BulkDeleteSessionsRequest? request)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+        bool includePinned = request?.IncludePinned ?? false;
+        int count = await _chatRetentionService.BulkSoftDeleteSessionsAsync(userId, includePinned, "User");
+        return Ok(new { count });
+    }
+
+    [HttpPost("sessions/unpin-all")]
+    public async Task<IActionResult> UnpinAllSessions()
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+        int count = await _chatRetentionService.UnpinAllSessionsAsync(userId);
+        return Ok(new { count });
+    }
+
     [HttpGet("sessions/trash")]
     public async Task<IActionResult> GetTrashSessions([FromQuery] string? search = null)
     {
