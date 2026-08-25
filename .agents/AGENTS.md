@@ -61,9 +61,13 @@ When making changes to database models that require EF Core migrations, you MUST
 - **Rationale**: NetHackWiki consists of thousands of static files (in `C:\hmp\nethackwiki`) that are updated very seldomly via manual file uploads. Running periodic scans on thousands of files introduces unnecessary CPU and disk I/O load.
 - **Restart Required**: If NetHackWiki markdown files are updated or uploaded, the Overseer site/service must be restarted for the new content to be indexed.
 
+## Environment & Shell Conventions
+
+- **Operating System:** Development and tool execution take place on Windows. For PowerShell commands, syntax rules, quoting, and file I/O best practices, follow the global `powershell-agent-guidelines` skill.
+
 ## Implementation Plans
 
-**Non-trivial tasks require a written implementation plan, approved by the user before any file is modified.** Read the `server_implementation_planning` skill (`.agents/skills/server_implementation_planning/SKILL.md`) for the full specification.
+**Non-trivial tasks require a written implementation plan, approved by the user before any file is modified.** Read the repository overlay skill `server_implementation_planning` (`.agents/skills/server_implementation_planning/SKILL.md`) for project-specific build boundaries, and the global `agent-implementation-planning` skill for the universal lifecycle.
 
 A plan is **required** when a task meets any of these:
 - It touches **more than one file**, or more than one project (`MobileGnollHackLogger`, `Overseer`, `GnollHackServer.Data`, `Overseer.Tests`)
@@ -84,4 +88,9 @@ A plan is **not** required for single-file fixes, typo and comment corrections, 
 ## Publishing
 
 - **Do NOT publish anything** (e.g., via `dotnet publish` or similar commands) unless explicitly requested by the user.
+
+## Shared Skills & Prerequisites Note
+
+- Global skills and baseline rules (`powershell-agent-guidelines`, `agent-implementation-planning`) are supplied by the `hyvanmielenpelit/SharedAgentSkills` repository and bootstrapped via its `setup.ps1` script.
+- On environments without `SharedAgentSkills` installed, repository rules and local overlay skills provide standalone fallback guidance.
 

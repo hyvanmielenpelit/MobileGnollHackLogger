@@ -8,43 +8,52 @@ thin adapter layer over it.
 
 - **Project rules**: `.agents/AGENTS.md`, imported at the top of this file. Edit the
   rules there, not here.
-- **Skills**: the full bodies live in `.agents/skills/<name>/SKILL.md`. Each one has a
+- **Skills**: the full bodies of project-specific skills live in `.agents/skills/<name>/SKILL.md`. Each one has a
   matching pointer stub in `.claude/skills/`, which exists purely so Claude Code
-  discovers and triggers them.
+  discovers and triggers them. Note: global skills (`powershell-agent-guidelines` and
+  `agent-implementation-planning`) are installed at the user level via `SharedAgentSkills`
+  and do not have in-repository bodies.
 - **Naming**: canonical folders use underscores (`scss_compilation`); the invocable skill
   name is the hyphenated form (`scss-compilation`), as the skill spec requires. Skill
   bodies cross-reference each other by the underscore folder name — that is correct and
   refers to the canonical file.
-- **`server-implementation-planning`**: the canonical workflow lives in
+- **`server-implementation-planning`**: the canonical project overlay lives in
   `.agents/skills/server_implementation_planning/SKILL.md`. Its adapter in
   `.claude/skills/server-implementation-planning/SKILL.md` references the canonical
-  skill while providing Claude Code-specific harness instructions (such as plan mode
-  mechanics, `ExitPlanMode`, and Claude model tier mappings). The name is deliberately
-  prefixed: skill names share one flat global namespace across projects, user-level
-  skills, and plugins, and a generic `implementation-planning` collides with the skill
-  of that name in the GnollHack repository — the loser of such a collision is silently
-  never loaded.
+  project overlay while the generic 5-phase lifecycle, Subagent Use rules, and Claude
+  Code plan-mode mechanics are provided by the global `agent-implementation-planning`
+  skill. The name is deliberately prefixed: skill names share one flat global namespace
+  across projects, user-level skills, and plugins, and a generic `implementation-planning`
+  collides with the skill of that name in the GnollHack repository — the loser of such a
+  collision is silently never loaded.
 - **Scratch files**: `.agents/AGENTS.md` names an Antigravity-specific scratch path
   (`<appDataDir>\brain\<conversation-id>\scratch\`). Claude Code has no such directory —
   use the session scratchpad directory Claude Code reports in its own environment
   instead. The binding part of that rule still holds: **never** write temporary files,
   scratch scripts, or guidance files anywhere inside the repository, including the
   repository root. The sole exception is `.plans/`, which is gitignored and is the
-  intended home for AI-produced documents.
+  intended home for AI-produced documents. (This rule also lives in the global
+  `powershell-agent-guidelines` skill).
+- **Prerequisites Note**: Global skills and shared rules are provided by
+  `hyvanmielenpelit/SharedAgentSkills` and require running `setup.ps1` once on the machine.
+  On machines without `SharedAgentSkills`, in-repository rules and pointer stubs provide
+  standalone guidance.
 
 <!-- Maintainer note: a stubbed skill's `description` is duplicated into its stub, because
      the description is what Claude Code indexes for triggering. If you change a
      description in .agents/skills/, mirror it into the matching .claude/skills/ stub or
      the skill will trigger on stale wording. Bodies and references are never duplicated.
-     Regenerate all stubs from the canonical files rather than editing them by hand.
-     For `server-implementation-planning`, the Claude-specific harness instructions
-     must be preserved when syncing descriptions from the canonical source. -->
+     Regenerate all in-repository stubs from the canonical files rather than editing them by hand.
+     (This rule does not apply to global user-level skills in SharedAgentSkills.) -->
 
 ## Shell and Commands (Windows)
 
 Development on this project happens on **Windows**. Claude Code's primary shell here is
 **PowerShell**; a Git Bash `Bash` tool may also be available. They are not
 interchangeable — each takes its own syntax. **Default to PowerShell.**
+For comprehensive PowerShell syntax, escaping, and I/O rules, follow the global
+`powershell-agent-guidelines` skill.
+
 
 - **Do not assume Unix utilities exist.** `od`, `xargs`, `wc`, `sed`, `awk`, `file`, and
   Bash process substitution (`diff <(...)`) are unavailable in PowerShell.
