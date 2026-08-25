@@ -403,3 +403,6 @@ Overseer/wwwroot/
 
 # Sentry
 .sentryclirc
+
+# AI Agent Plans
+.plans/
