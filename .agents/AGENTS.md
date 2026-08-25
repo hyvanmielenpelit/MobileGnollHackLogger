@@ -61,6 +61,27 @@ When making changes to database models that require EF Core migrations, you MUST
 - **Rationale**: NetHackWiki consists of thousands of static files (in `C:\hmp\nethackwiki`) that are updated very seldomly via manual file uploads. Running periodic scans on thousands of files introduces unnecessary CPU and disk I/O load.
 - **Restart Required**: If NetHackWiki markdown files are updated or uploaded, the Overseer site/service must be restarted for the new content to be indexed.
 
+## Implementation Plans
+
+**Non-trivial tasks require a written implementation plan, approved by the user before any file is modified.** Read the `server_implementation_planning` skill (`.agents/skills/server_implementation_planning/SKILL.md`) for the full specification.
+
+A plan is **required** when a task meets any of these:
+- It touches **more than one file**, or more than one project (`MobileGnollHackLogger`, `Overseer`, `GnollHackServer.Data`, `Overseer.Tests`)
+- It requires an **EF Core migration**
+- It requires **SCSS-to-CSS recompilation** or an **Angular client rebuild**
+- It is a refactor, a new feature, or anything the user describes as large or non-trivial
+
+A plan is **not** required for single-file fixes, typo and comment corrections, answering questions, or read-only investigation. When in doubt, write one — a rejected plan is cheap, a wrong cross-project change is not.
+
+### Plan and Document Delivery
+
+- Deliver plans, reviews, analyses, reports, and other structured documents as **Markdown files** saved under the repository's gitignored `.plans/` directory: `.plans/YYYY-MM-DD/task_name/<document_name>_v<N>.md` (where N=1 for the first version).
+- **Document versioning**: the first version always gets a `_v1` suffix. Never overwrite an existing version — to revise, create a new file with the next version number (`_v2`, `_v3`, etc.). `task.md` and `walkthrough.md` are singular (no version suffix). Follow-up rounds use lettered variants (`task_A.md`, `walkthrough_A.md`, etc.).
+- **Wait for explicit user approval before editing any file.** Do not begin implementation alongside the plan. Always print the plan's file path.
+- **Harness rules take precedence**: `.plans/` is the source of truth across all AI agents. If a harness keeps a private plan file or artifact, copy the finished plan to `.plans/` immediately before requesting user approval.
+- **`.plans/` Research Isolation**: Do NOT browse or read `.plans/` during Phase 1 (Research) to prevent stale or superseded designs from corrupting analysis.
+
 ## Publishing
 
 - **Do NOT publish anything** (e.g., via `dotnet publish` or similar commands) unless explicitly requested by the user.
+

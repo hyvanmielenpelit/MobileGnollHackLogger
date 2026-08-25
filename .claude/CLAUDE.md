@@ -15,15 +15,15 @@ thin adapter layer over it.
   name is the hyphenated form (`scss-compilation`), as the skill spec requires. Skill
   bodies cross-reference each other by the underscore folder name — that is correct and
   refers to the canonical file.
-- **One exception — `server-implementation-planning`**: this is a **native** Claude
-  Code skill whose full body lives in
-  `.claude/skills/server-implementation-planning/SKILL.md`. It is Claude-specific — it
-  describes this harness's plan mode and its `ExitPlanMode` approval mechanism — so it
-  has **no** counterpart in `.agents/skills/` and must not be converted into a pointer
-  stub. Edit it in place. The name is deliberately prefixed: skill names share one flat
-  global namespace across projects, user-level skills, and plugins, and a generic
-  `implementation-planning` collides with the skill of that name in the GnollHack
-  repository — the loser of such a collision is silently never loaded.
+- **`server-implementation-planning`**: the canonical workflow lives in
+  `.agents/skills/server_implementation_planning/SKILL.md`. Its adapter in
+  `.claude/skills/server-implementation-planning/SKILL.md` references the canonical
+  skill while providing Claude Code-specific harness instructions (such as plan mode
+  mechanics, `ExitPlanMode`, and Claude model tier mappings). The name is deliberately
+  prefixed: skill names share one flat global namespace across projects, user-level
+  skills, and plugins, and a generic `implementation-planning` collides with the skill
+  of that name in the GnollHack repository — the loser of such a collision is silently
+  never loaded.
 - **Scratch files**: `.agents/AGENTS.md` names an Antigravity-specific scratch path
   (`<appDataDir>\brain\<conversation-id>\scratch\`). Claude Code has no such directory —
   use the session scratchpad directory Claude Code reports in its own environment
@@ -37,8 +37,8 @@ thin adapter layer over it.
      description in .agents/skills/, mirror it into the matching .claude/skills/ stub or
      the skill will trigger on stale wording. Bodies and references are never duplicated.
      Regenerate all stubs from the canonical files rather than editing them by hand.
-     `server-implementation-planning` is exempt — it is a native skill with no
-     canonical source to drift from. -->
+     For `server-implementation-planning`, the Claude-specific harness instructions
+     must be preserved when syncing descriptions from the canonical source. -->
 
 ## Shell and Commands (Windows)
 
