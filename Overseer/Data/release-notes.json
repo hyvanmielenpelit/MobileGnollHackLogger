@@ -1,5 +1,40 @@
 [
   {
+    "version": "1.0.25",
+    "date": "2026-08-27T16:47:00Z",
+    "summary": "Added parallel tool execution support and user-configurable parallel tool limits, introduced AI service tier selection across models and chat, improved tool output sanitization and thought isolation, and fixed model configuration editing behaviors.",
+    "changes": [
+      {
+        "type": "feature",
+        "text": "Added parallel tool execution support, allowing multiple tools to run concurrently during a single conversation turn for faster responses."
+      },
+      {
+        "type": "feature",
+        "text": "Added service tier configuration support across AI providers, enabling selection of tiers like Auto, Default, Flex, Priority, and Fast in model settings and chat."
+      },
+      {
+        "type": "improvement",
+        "text": "Added a 'Max Parallel Tool Calls' option to Performance Settings to customize concurrent tool limits."
+      },
+      {
+        "type": "improvement",
+        "text": "Clarified item appearance tool guides and policies to prevent randomized item identity hallucinations from pre-shuffle descriptions."
+      },
+      {
+        "type": "fix",
+        "text": "Fixed raw tool call syntax and control tokens leaking into visible chat responses by improving reasoning text sanitization and thought tag isolation."
+      },
+      {
+        "type": "fix",
+        "text": "Fixed custom thinking levels, reasoning modes, and reasoning summaries resetting or falling back incorrectly when editing AI models."
+      },
+      {
+        "type": "fix",
+        "text": "Fixed display name auto-population and reset behavior when switching between catalog and custom models in AI system configurations."
+      }
+    ]
+  },
+  {
     "version": "1.0.24",
     "date": "2026-08-23T10:58:00Z",
     "summary": "Added bulk actions to move active chats to Trash and unpin conversations, introduced chat management and Trash access in Settings, and improved authentication handoff and embedded app integration.",
