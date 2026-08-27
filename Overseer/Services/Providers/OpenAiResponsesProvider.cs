@@ -109,6 +109,7 @@ public class OpenAiResponsesProvider : IAiProvider
         }
         if (reasoningObj.Count > 0)
         {
+            req["include"] = new[] { "reasoning.encrypted_content" };
             req["reasoning"] = reasoningObj;
         }
 
@@ -134,7 +135,12 @@ public class OpenAiResponsesProvider : IAiProvider
         using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var reader = new StreamReader(stream, Encoding.UTF8);
 
+        yield return new ChatEvent { Type = "provider_history_reset", Data = "" };
+
         var toolCallsInProgress = new Dictionary<string, (string name, StringBuilder args)>();
+        var reasoningSanitizer = new ReasoningTextSanitizer();
+        var visibleSanitizer = new ReasoningTextSanitizer();
+        bool replayUnavailable = false;
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -155,6 +161,7 @@ public class OpenAiResponsesProvider : IAiProvider
                     string? thinkingChunkStr = null;
                     ChatEvent? toolCallEvt = null;
                     ChatEvent? errorEvt = null;
+                    ChatEvent? providerItemEvt = null;
 
                     try
                     {
@@ -164,14 +171,24 @@ public class OpenAiResponsesProvider : IAiProvider
                         {
                             if (json.TryGetProperty("delta", out var delta) && delta.ValueKind == JsonValueKind.String)
                             {
-                                chunkStr = delta.GetString();
+                                var text = delta.GetString() ?? "";
+                                var sanitized = visibleSanitizer.Push(text);
+                                if (!string.IsNullOrEmpty(sanitized))
+                                {
+                                    chunkStr = sanitized;
+                                }
                             }
                         }
                         else if (eventType == "response.reasoning_summary_text.delta")
                         {
                             if (json.TryGetProperty("delta", out var delta) && delta.ValueKind == JsonValueKind.String)
                             {
-                                thinkingChunkStr = delta.GetString();
+                                var text = delta.GetString() ?? "";
+                                var sanitized = reasoningSanitizer.Push(text);
+                                if (!string.IsNullOrEmpty(sanitized))
+                                {
+                                    thinkingChunkStr = sanitized;
+                                }
                             }
                         }
                         else if (eventType == "response.output_item.added")
@@ -216,23 +233,50 @@ public class OpenAiResponsesProvider : IAiProvider
                         {
                             if (json.TryGetProperty("item", out var item))
                             {
-                                if (item.TryGetProperty("type", out var typeProp) && typeProp.GetString() == "function_call")
+                                if (item.TryGetProperty("type", out var typeProp))
                                 {
-                                    if (item.TryGetProperty("call_id", out var callIdProp))
+                                    var itemType = typeProp.GetString();
+                                    if (itemType == "function_call")
                                     {
-                                        var callId = callIdProp.GetString() ?? "";
-                                        if (toolCallsInProgress.ContainsKey(callId))
+                                        if (item.TryGetProperty("call_id", out var callIdProp))
                                         {
-                                            var callData = toolCallsInProgress[callId];
-                                            var argsStr = callData.args.ToString();
-                                            if (item.TryGetProperty("arguments", out var finalArgs) && finalArgs.ValueKind == JsonValueKind.String)
+                                            var callId = callIdProp.GetString() ?? "";
+                                            if (toolCallsInProgress.ContainsKey(callId))
                                             {
-                                                argsStr = finalArgs.GetString() ?? argsStr;
+                                                var callData = toolCallsInProgress[callId];
+                                                var argsStr = callData.args.ToString();
+                                                if (item.TryGetProperty("arguments", out var finalArgs) && finalArgs.ValueKind == JsonValueKind.String)
+                                                {
+                                                    argsStr = finalArgs.GetString() ?? argsStr;
+                                                }
+                                                
+                                                if (!replayUnavailable)
+                                                {
+                                                    providerItemEvt = new ChatEvent { Type = "provider_history_item", Data = item.GetRawText() };
+                                                }
+
+                                                var callObj = new { id = callId, name = callData.name, arguments = argsStr };
+                                                toolCallEvt = new ChatEvent { Type = "tool_call_complete", Data = JsonSerializer.Serialize(callObj) };
+                                                toolCallsInProgress.Remove(callId);
                                             }
-                                            
-                                            var callObj = new { id = callId, name = callData.name, arguments = argsStr };
-                                            toolCallEvt = new ChatEvent { Type = "tool_call_complete", Data = JsonSerializer.Serialize(callObj) };
-                                            toolCallsInProgress.Remove(callId);
+                                        }
+                                    }
+                                    else if (itemType == "reasoning")
+                                    {
+                                        if (!item.TryGetProperty("encrypted_content", out var ecProp) || ecProp.ValueKind != JsonValueKind.String || string.IsNullOrEmpty(ecProp.GetString()))
+                                        {
+                                            replayUnavailable = true;
+                                        }
+                                        else if (!replayUnavailable)
+                                        {
+                                            providerItemEvt = new ChatEvent { Type = "provider_history_item", Data = item.GetRawText() };
+                                        }
+                                    }
+                                    else if (itemType == "message")
+                                    {
+                                        if (!replayUnavailable)
+                                        {
+                                            providerItemEvt = new ChatEvent { Type = "provider_history_item", Data = item.GetRawText() };
                                         }
                                     }
                                 }
@@ -263,11 +307,23 @@ public class OpenAiResponsesProvider : IAiProvider
                     catch (JsonException) { }
 
                     if (errorEvt != null) yield return errorEvt;
+                    if (providerItemEvt != null) yield return providerItemEvt;
                     if (!string.IsNullOrEmpty(thinkingChunkStr)) yield return new ChatEvent { Type = "thinking_chunk", Data = thinkingChunkStr };
                     if (!string.IsNullOrEmpty(chunkStr)) yield return new ChatEvent { Type = "chunk", Data = chunkStr };
                     if (toolCallEvt != null) yield return toolCallEvt;
                 }
             }
+        }
+
+        var rTail = reasoningSanitizer.Flush();
+        if (!string.IsNullOrEmpty(rTail)) yield return new ChatEvent { Type = "thinking_chunk", Data = rTail };
+
+        var vTail = visibleSanitizer.Flush();
+        if (!string.IsNullOrEmpty(vTail)) yield return new ChatEvent { Type = "chunk", Data = vTail };
+
+        if (replayUnavailable)
+        {
+            yield return new ChatEvent { Type = "provider_history_discard", Data = "" };
         }
     }
 
@@ -309,8 +365,18 @@ public class OpenAiResponsesProvider : IAiProvider
     public void AppendAssistantToolCallsToHistory(
         List<object> messageHistory,
         string iterationText,
-        List<JsonElement> toolCalls)
+        List<JsonElement> toolCalls,
+        List<JsonElement>? providerHistoryItems = null)
     {
+        if (providerHistoryItems != null && providerHistoryItems.Count > 0)
+        {
+            foreach (var item in providerHistoryItems)
+            {
+                messageHistory.Add(item);
+            }
+            return;
+        }
+
         if (!string.IsNullOrEmpty(iterationText))
         {
             messageHistory.Add(new { role = "assistant", content = new[] { new { type = "output_text", text = iterationText } } });

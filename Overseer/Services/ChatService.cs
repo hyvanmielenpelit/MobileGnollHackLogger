@@ -580,8 +580,8 @@ public class ChatService
         
         int toolIterations = 0;
         bool hasToolsToRun = true;
-        var thinkingBoundaries = new List<(int start, int end)>();
-        int thinkingStartIndex = -1;
+        var thoughtWriter = new ThoughtMarkupWriter();
+        var sbFullResponse = new StringBuilder();
         var streamToolCalls = new List<ChatMessageToolCall>();
 
         
@@ -614,6 +614,8 @@ public class ChatService
             bool lastEventWasToolCall = false;
             var requestTools = _toolRegistry.BuildToolsForRequest(aiProvider, execContext, enableWebSearch, enableToolUse, enableClientTools, enableGameActions);
             var currentIterationToolCalls = new List<JsonElement>();
+            var currentIterationProviderItems = new List<JsonElement>();
+            thoughtWriter.ResetIteration();
 
             var requestBody = aiProvider.BuildChatRequestBody(model, messageHistory, maxOutputTokens, thinkingLevel, requestTools, reasoningMode, reasoningSummary, serviceTier);
             var jsonRequest = JsonSerializer.Serialize(requestBody);
@@ -634,74 +636,82 @@ public class ChatService
                 systemModelId,
                 cancellationToken))
             {
-                if (!timeToFirstTokenMs.HasValue && (evt.Type == "chunk" || evt.Type == "thinking_chunk" || evt.Type == "tool_call_complete" || evt.Type == "error"))
+                if (evt.Type == "provider_history_reset")
                 {
-                    timeToFirstTokenMs = (int)System.Diagnostics.Stopwatch.GetElapsedTime(apiCallStartTime!.Value).TotalMilliseconds;
-                    yield return new ChatEvent { Type = "ttft", Data = timeToFirstTokenMs.Value.ToString() };
+                    currentIterationProviderItems.Clear();
                 }
-
-                if (evt.Type == "thinking_chunk")
+                else if (evt.Type == "provider_history_discard")
                 {
-                    if (thinkingStartIndex == -1)
+                    currentIterationProviderItems.Clear();
+                    if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {aiProvider.ProviderName}] turn not replayable — using reconstruction" };
+                }
+                else if (evt.Type == "provider_history_item")
+                {
+                    try
                     {
-                        thinkingStartIndex = fullResponse.Length;
+                        currentIterationProviderItems.Add(JsonSerializer.Deserialize<JsonElement>(evt.Data));
                     }
-                    fullResponse += evt.Data;
-                    iterationText += evt.Data;
-                }
-                else if (evt.Type == "chunk")
-                {
-                    if (thinkingStartIndex != -1)
-                    {
-                        thinkingBoundaries.Add((thinkingStartIndex, fullResponse.Length));
-                        thinkingStartIndex = -1;
-                    }
-
-                    if (!string.IsNullOrEmpty(evt.Data))
-                    {
-                        if ((toolIterations > 0 && string.IsNullOrEmpty(iterationText)) || lastEventWasToolCall)
-                        {
-                            if (!string.IsNullOrWhiteSpace(fullResponse) && !fullResponse.EndsWith("\n") && !fullResponse.EndsWith(" "))
-                            {
-                                var spacer = "\n\n";
-                                fullResponse += spacer;
-                                yield return new ChatEvent { Type = "chunk", Data = spacer };
-                            }
-                            lastEventWasToolCall = false;
-                        }
-                    }
-
-                    fullResponse += evt.Data;
-                    iterationText += evt.Data;
-                }
-
-                if (evt.Type == "error")
-                {
-                    fullResponse += $"\n\n**Error:** {evt.Data}";
-                }
-
-                if (evt.Type == "tool_call_complete")
-                {
-                    hasToolsToRun = true;
-                    lastEventWasToolCall = true;
-                    currentIterationToolCalls.Add(JsonSerializer.Deserialize<JsonElement>(evt.Data));
-                    yield return new ChatEvent { Type = "tool_start", Data = EnrichToolStartData(evt.Data) };
+                    catch { }
                 }
                 else
                 {
-                    yield return evt;
+                    if (!timeToFirstTokenMs.HasValue && (evt.Type == "chunk" || evt.Type == "thinking_chunk" || evt.Type == "tool_call_complete" || evt.Type == "error"))
+                    {
+                        timeToFirstTokenMs = (int)System.Diagnostics.Stopwatch.GetElapsedTime(apiCallStartTime!.Value).TotalMilliseconds;
+                        yield return new ChatEvent { Type = "ttft", Data = timeToFirstTokenMs.Value.ToString() };
+                    }
+
+                    if (evt.Type == "thinking_chunk")
+                    {
+                        thoughtWriter.HandleThinkingChunk(sbFullResponse, evt.Data);
+                        iterationText += evt.Data;
+                    }
+                    else if (evt.Type == "chunk")
+                    {
+                        bool needsSpacer = false;
+                        if (!string.IsNullOrEmpty(evt.Data))
+                        {
+                            if ((toolIterations > 0 && string.IsNullOrEmpty(iterationText)) || lastEventWasToolCall)
+                            {
+                                string cur = sbFullResponse.ToString();
+                                if (!string.IsNullOrWhiteSpace(cur) && !cur.EndsWith("\n") && !cur.EndsWith(" "))
+                                {
+                                    needsSpacer = true;
+                                    yield return new ChatEvent { Type = "chunk", Data = "\n\n" };
+                                }
+                                lastEventWasToolCall = false;
+                            }
+                        }
+
+                        thoughtWriter.HandleChunk(sbFullResponse, evt.Data, needsSpacer);
+                        iterationText += evt.Data;
+                    }
+
+                    if (evt.Type == "error")
+                    {
+                        thoughtWriter.CloseOpenThoughtDiv(sbFullResponse);
+                        sbFullResponse.Append($"\n\n**Error:** {evt.Data}");
+                    }
+
+                    if (evt.Type == "tool_call_complete")
+                    {
+                        hasToolsToRun = true;
+                        lastEventWasToolCall = true;
+                        currentIterationToolCalls.Add(JsonSerializer.Deserialize<JsonElement>(evt.Data));
+                        yield return new ChatEvent { Type = "tool_start", Data = EnrichToolStartData(evt.Data) };
+                    }
+                    else
+                    {
+                        yield return evt;
+                    }
                 }
             }
 
             if (hasToolsToRun && currentIterationToolCalls.Count > 0)
             {
-                if (!string.IsNullOrWhiteSpace(iterationText) && fullResponse.EndsWith(iterationText))
-                {
-                    fullResponse = fullResponse.Substring(0, fullResponse.Length - iterationText.Length);
-                    fullResponse += $"<div class=\"ai-thought\">\n\n{iterationText}\n\n</div>\n\n";
-                }
+                thoughtWriter.WrapPreToolVisibleText(sbFullResponse);
 
-                aiProvider.AppendAssistantToolCallsToHistory(messageHistory, iterationText, currentIterationToolCalls);
+                aiProvider.AppendAssistantToolCallsToHistory(messageHistory, iterationText, currentIterationToolCalls, currentIterationProviderItems);
 
                 var providerResults = new List<ProviderToolResult>();
 
@@ -767,10 +777,7 @@ public class ChatService
             toolIterations++;
         }
 
-        if (thinkingStartIndex != -1)
-        {
-            thinkingBoundaries.Add((thinkingStartIndex, fullResponse.Length));
-        }
+        thoughtWriter.CloseOpenThoughtDiv(sbFullResponse);
 
         if (cancellationToken.IsCancellationRequested)
         {
@@ -778,22 +785,12 @@ public class ChatService
             if (!isUserCancel)
             {
                 string errMsg = "The request timed out. The AI provider may be overloaded. Please try again.";
-                fullResponse += $"\n\n**Error:** {errMsg}";
+                sbFullResponse.Append($"\n\n**Error:** {errMsg}");
                 yield return new ChatEvent { Type = "error", Data = errMsg };
             }
         }
         
-        if (thinkingBoundaries.Count > 0)
-        {
-            var sb = new StringBuilder(fullResponse);
-            for (int i = thinkingBoundaries.Count - 1; i >= 0; i--)
-            {
-                var boundary = thinkingBoundaries[i];
-                sb.Insert(boundary.end, "\n\n</div>\n\n");
-                sb.Insert(boundary.start, "<div class=\"ai-thought\">\n\n");
-            }
-            fullResponse = sb.ToString();
-        }
+        fullResponse = ReasoningTextSanitizer.SanitizeStateless(sbFullResponse.ToString());
 
         int? totalDurationMs = apiCallStartTime.HasValue 
             ? (int)System.Diagnostics.Stopwatch.GetElapsedTime(apiCallStartTime.Value).TotalMilliseconds 
@@ -811,7 +808,7 @@ public class ChatService
             if (session != null)
             {
                 bool hasThinkingDivs = fullResponse.Contains("ai-thought");
-                if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat] Saving assistant message: {fullResponse.Length} chars, hasThinkingDivs={hasThinkingDivs}, thinkingBoundaries={thinkingBoundaries.Count}, toolCalls={streamToolCalls.Count}" };
+                if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat] Saving assistant message: {fullResponse.Length} chars, hasThinkingDivs={hasThinkingDivs}, thinkingDivsCount={thoughtWriter.EmittedDivCount}, toolCalls={streamToolCalls.Count}" };
 
                 var asstMsg = new ChatMessage
                 {
@@ -1286,6 +1283,8 @@ public class ChatService
         sb.AppendLine("- If you are uncertain whether a NetHack mechanic applies to GnollHack, explicitly say so.");
         sb.AppendLine();
 
+        sb.Append(BuildRandomizedAppearancePolicy());
+
         // ──────────────────────────────────────────────
         // SECTION 9: Confidence & Uncertainty (NEW)
         // ──────────────────────────────────────────────
@@ -1759,5 +1758,22 @@ public class ChatService
         }
         catch { /* Ignore parsing errors */ }
         return eventData;
+    }
+
+    public static string BuildRandomizedAppearancePolicy()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("## Randomized Item Appearances & Anti-Hallucination Policy");
+        sb.AppendLine("- Appearances and descriptions of magical items are reshuffled at the start of every game by shuffle_all() in src/o_init.c.");
+        sb.AppendLine("- Whole classes reshuffled (appearance AND materials randomized): amulets, potions, scrolls, spellbooks, venoms.");
+        sb.AppendLine("- Type ranges reshuffled, appearance only (materials fixed): helmets, gloves, shirts, cloaks, boots, staves, bags, candles, lamps, whistles, flutes, horns, harps, drums, healing-salve jars.");
+        sb.AppendLine("- Type ranges reshuffled, materials also randomized: wands, rings, robes, bracers, brooches, nose rings, headbands, ioun stones, lenses, goggles, belts, crowns, cornuthaum-class hats, mushrooms.");
+        sb.AppendLine("- NOT reshuffled: magic swords and all other weapons except staves; the potion of water and every potion type after it in the enum; non-magic and unique amulets, scrolls and spellbooks; reagents.");
+        sb.AppendLine("- The appearance strings in src/objects.c (and any wiki appearance tables) are compile-time defaults before shuffling. They describe the pool of possible appearances, NEVER the mapping in the player's current game.");
+        sb.AppendLine("- HARD PROHIBITION: Never assert or deny an item's identity from a label, color, material, or description found in source code or on the wiki. Do not say \"the remove curse scroll is labelled PRATYAVAYAH\"; say \"one of the scroll labels corresponds to remove curse, but which label is randomized in each game\".");
+        sb.AppendLine("- The ONLY authoritative sources for the current game's item identities are the game state snapshot and the player's own in-game discoveries.");
+        sb.AppendLine("- When the player asks about an unidentified item, recommend in-game identification: reading a scroll of identify, shop price-bracket identification, BUC testing on an altar, engrave-testing wands, and observing effects on use.");
+        sb.AppendLine();
+        return sb.ToString();
     }
 }

@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace Overseer.Services.Providers;
 
 public static class ProviderHelper
@@ -5,7 +7,41 @@ public static class ProviderHelper
     public static object? GetProperty(object? obj, string propertyName)
     {
         if (obj == null) return null;
-        var prop = obj.GetType().GetProperty(propertyName);
-        return prop?.GetValue(obj);
+
+        if (obj is JsonElement je)
+        {
+            if (je.ValueKind == JsonValueKind.Object && je.TryGetProperty(propertyName, out var prop))
+            {
+                return UnwrapJsonElement(prop);
+            }
+            return null;
+        }
+
+        if (obj is JsonDocument doc)
+        {
+            var root = doc.RootElement;
+            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty(propertyName, out var prop))
+            {
+                return UnwrapJsonElement(prop);
+            }
+            return null;
+        }
+
+        var objProp = obj.GetType().GetProperty(propertyName);
+        return objProp?.GetValue(obj);
+    }
+
+    private static object? UnwrapJsonElement(JsonElement element)
+    {
+        return element.ValueKind switch
+        {
+            JsonValueKind.String => element.GetString(),
+            JsonValueKind.Number => element.TryGetInt64(out var l) ? (object)l : (element.TryGetDouble(out var d) ? (object)d : element.GetRawText()),
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Null or JsonValueKind.Undefined => null,
+            JsonValueKind.Object or JsonValueKind.Array => element,
+            _ => element
+        };
     }
 }

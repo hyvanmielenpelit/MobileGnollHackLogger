@@ -42,7 +42,8 @@ public interface IAiProvider
     void AppendAssistantToolCallsToHistory(
         List<object> messageHistory,
         string iterationText,
-        List<JsonElement> toolCalls);
+        List<JsonElement> toolCalls,
+        List<JsonElement>? providerHistoryItems = null);
 
     void AppendToolResultsToHistory(
         List<object> messageHistory,

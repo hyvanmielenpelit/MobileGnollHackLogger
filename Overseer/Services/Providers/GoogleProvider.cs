@@ -118,6 +118,12 @@ public class GoogleProvider : IAiProvider
         using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var reader = new StreamReader(stream, Encoding.UTF8);
 
+        yield return new ChatEvent { Type = "provider_history_reset", Data = "" };
+
+        var reasoningSanitizer = new ReasoningTextSanitizer();
+        var visibleSanitizer = new ReasoningTextSanitizer();
+        bool replayUnavailable = false;
+
         while (!cancellationToken.IsCancellationRequested)
         {
             var line = await reader.ReadLineAsync(cancellationToken);
@@ -129,6 +135,8 @@ public class GoogleProvider : IAiProvider
                 string? chunkStr = null;
                 string? thinkingChunkStr = null;
                 var toolCallEvts = new List<ChatEvent>();
+                var debugEvts = new List<ChatEvent>();
+                var providerItemEvts = new List<ChatEvent>();
                 ChatEvent? errorEvt = null;
 
                 try
@@ -143,19 +151,55 @@ public class GoogleProvider : IAiProvider
                             {
                                 if (part.TryGetProperty("thought", out var thoughtProp) && thoughtProp.GetBoolean() == true)
                                 {
+                                    if (!part.TryGetProperty("thoughtSignature", out var tsProp) || tsProp.ValueKind != JsonValueKind.String || string.IsNullOrEmpty(tsProp.GetString()))
+                                    {
+                                        replayUnavailable = true;
+                                        if (showDebugLog) debugEvts.Add(new ChatEvent { Type = "debug", Data = "[Main Chat - Google] history item: part=thought, thoughtSignature=absent" });
+                                    }
+                                    else
+                                    {
+                                        if (!replayUnavailable)
+                                        {
+                                            providerItemEvts.Add(new ChatEvent { Type = "provider_history_item", Data = part.GetRawText() });
+                                        }
+                                        if (showDebugLog) debugEvts.Add(new ChatEvent { Type = "debug", Data = "[Main Chat - Google] history item: part=thought, thoughtSignature=present" });
+                                    }
+
                                     if (part.TryGetProperty("text", out var tProp))
-                                        thinkingChunkStr = (thinkingChunkStr ?? "") + tProp.GetString();
+                                    {
+                                        var text = tProp.GetString() ?? "";
+                                        var sanitized = reasoningSanitizer.Push(text);
+                                        if (!string.IsNullOrEmpty(sanitized))
+                                        {
+                                            thinkingChunkStr = (thinkingChunkStr ?? "") + sanitized;
+                                        }
+                                    }
                                 }
                                 else if (part.TryGetProperty("text", out var textProp))
                                 {
-                                    chunkStr = (chunkStr ?? "") + textProp.GetString();
+                                    if (!replayUnavailable)
+                                    {
+                                        providerItemEvts.Add(new ChatEvent { Type = "provider_history_item", Data = part.GetRawText() });
+                                    }
+                                    var text = textProp.GetString() ?? "";
+                                    var sanitized = visibleSanitizer.Push(text);
+                                    if (!string.IsNullOrEmpty(sanitized))
+                                    {
+                                        chunkStr = (chunkStr ?? "") + sanitized;
+                                    }
+                                    if (showDebugLog) debugEvts.Add(new ChatEvent { Type = "debug", Data = $"[Main Chat - Google] history item: part=text ({text.Length} chars)" });
                                 }
                                 else if (part.TryGetProperty("functionCall", out var fcProp))
                                 {
+                                    if (!replayUnavailable)
+                                    {
+                                        providerItemEvts.Add(new ChatEvent { Type = "provider_history_item", Data = part.GetRawText() });
+                                    }
                                     var fname = fcProp.GetProperty("name").GetString();
                                     var fargs = fcProp.GetProperty("args").GetRawText();
                                     var callObj = new { id = Guid.NewGuid().ToString(), name = fname, arguments = fargs, raw_part = part };
                                     toolCallEvts.Add(new ChatEvent { Type = "tool_call_complete", Data = JsonSerializer.Serialize(callObj) });
+                                    if (showDebugLog) debugEvts.Add(new ChatEvent { Type = "debug", Data = $"[Main Chat - Google] history item: part=functionCall, name={fname}" });
                                 }
                             }
                         }
@@ -169,11 +213,25 @@ public class GoogleProvider : IAiProvider
                 }
                 catch (JsonException) { }
 
+                foreach (var dbg in debugEvts) yield return dbg;
                 if (errorEvt != null) yield return errorEvt;
+                foreach (var pEvt in providerItemEvts) yield return pEvt;
                 if (!string.IsNullOrEmpty(thinkingChunkStr)) yield return new ChatEvent { Type = "thinking_chunk", Data = thinkingChunkStr };
                 if (!string.IsNullOrEmpty(chunkStr)) yield return new ChatEvent { Type = "chunk", Data = chunkStr };
                 foreach (var evt in toolCallEvts) yield return evt;
             }
+        }
+
+        var rTail = reasoningSanitizer.Flush();
+        if (!string.IsNullOrEmpty(rTail)) yield return new ChatEvent { Type = "thinking_chunk", Data = rTail };
+
+        var vTail = visibleSanitizer.Flush();
+        if (!string.IsNullOrEmpty(vTail)) yield return new ChatEvent { Type = "chunk", Data = vTail };
+
+        if (replayUnavailable)
+        {
+            if (showDebugLog) yield return new ChatEvent { Type = "debug", Data = "[Main Chat - Google] turn not replayable (thought part without thoughtSignature) — using reconstruction" };
+            yield return new ChatEvent { Type = "provider_history_discard", Data = "" };
         }
     }
 
@@ -232,8 +290,15 @@ public class GoogleProvider : IAiProvider
     public void AppendAssistantToolCallsToHistory(
         List<object> messageHistory,
         string iterationText,
-        List<JsonElement> toolCalls)
+        List<JsonElement> toolCalls,
+        List<JsonElement>? providerHistoryItems = null)
     {
+        if (providerHistoryItems != null && providerHistoryItems.Count > 0)
+        {
+            messageHistory.Add(new { role = "model", parts = providerHistoryItems });
+            return;
+        }
+
         var modelParts = new List<object>();
         if (!string.IsNullOrEmpty(iterationText))
         {

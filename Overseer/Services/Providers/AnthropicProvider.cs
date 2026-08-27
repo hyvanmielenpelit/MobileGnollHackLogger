@@ -97,6 +97,17 @@ public class AnthropicProvider : IAiProvider
         return req;
     }
 
+    private class BlockInProgress
+    {
+        public string Type { get; set; } = "";
+        public StringBuilder Content { get; set; } = new();
+        public StringBuilder Signature { get; set; } = new();
+        public string? ToolId { get; set; }
+        public string? ToolName { get; set; }
+        public StringBuilder ToolArgs { get; set; } = new();
+        public JsonElement? RawBlock { get; set; }
+    }
+
     public async IAsyncEnumerable<ChatEvent> ParseStreamAsync(
         HttpResponseMessage response,
         bool showDebugLog,
@@ -105,9 +116,12 @@ public class AnthropicProvider : IAiProvider
         using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var reader = new StreamReader(stream, Encoding.UTF8);
 
-        string? currentToolId = null;
-        string? currentToolName = null;
-        var currentToolArgs = new StringBuilder();
+        yield return new ChatEvent { Type = "provider_history_reset", Data = "" };
+
+        var blocksInProgress = new Dictionary<int, BlockInProgress>();
+        var reasoningSanitizer = new ReasoningTextSanitizer();
+        var visibleSanitizer = new ReasoningTextSanitizer();
+        bool replayUnavailable = false;
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -122,6 +136,7 @@ public class AnthropicProvider : IAiProvider
                 ChatEvent? toolCallEvt = null;
                 ChatEvent? errorEvt = null;
                 ChatEvent? debugEvt = null;
+                var providerItemEvts = new List<ChatEvent>();
 
                 try
                 {
@@ -131,51 +146,150 @@ public class AnthropicProvider : IAiProvider
                         var t = type.GetString();
                         if (t == "content_block_start")
                         {
+                            int idx = json.TryGetProperty("index", out var idxProp) ? idxProp.GetInt32() : 0;
                             var cb = json.GetProperty("content_block");
+                            var block = new BlockInProgress();
+                            blocksInProgress[idx] = block;
+
                             if (cb.TryGetProperty("type", out var cbType))
                             {
-                                if (cbType.GetString() == "tool_use")
+                                var typeStr = cbType.GetString() ?? "";
+                                block.Type = typeStr;
+                                if (typeStr == "tool_use")
                                 {
-                                    currentToolId = cb.GetProperty("id").GetString();
-                                    currentToolName = cb.GetProperty("name").GetString();
-                                    currentToolArgs.Clear();
+                                    block.ToolId = cb.GetProperty("id").GetString();
+                                    block.ToolName = cb.GetProperty("name").GetString();
                                 }
-                                else if (cbType.GetString() == "thinking")
+                                else if (typeStr == "thinking")
                                 {
                                     if (cb.TryGetProperty("thinking", out var tProp))
                                     {
-                                        thinkingChunkStr = tProp.GetString() ?? "";
+                                        var text = tProp.GetString() ?? "";
+                                        block.Content.Append(text);
+                                        var sanitized = reasoningSanitizer.Push(text);
+                                        if (!string.IsNullOrEmpty(sanitized))
+                                        {
+                                            thinkingChunkStr = sanitized;
+                                        }
+                                    }
+                                    if (cb.TryGetProperty("signature", out var sProp))
+                                    {
+                                        block.Signature.Append(sProp.GetString() ?? "");
+                                    }
+                                }
+                                else if (typeStr == "redacted_thinking")
+                                {
+                                    block.RawBlock = cb.Clone();
+                                }
+                                else if (typeStr == "text")
+                                {
+                                    if (cb.TryGetProperty("text", out var txProp))
+                                    {
+                                        var text = txProp.GetString() ?? "";
+                                        block.Content.Append(text);
+                                        var sanitized = visibleSanitizer.Push(text);
+                                        if (!string.IsNullOrEmpty(sanitized))
+                                        {
+                                            chunkStr = sanitized;
+                                        }
                                     }
                                 }
                             }
                         }
                         else if (t == "content_block_delta")
                         {
-                            var delta = json.GetProperty("delta");
-                            if (delta.TryGetProperty("type", out var deltaType))
+                            int idx = json.TryGetProperty("index", out var idxProp) ? idxProp.GetInt32() : 0;
+                            if (blocksInProgress.TryGetValue(idx, out var block))
                             {
-                                if (deltaType.GetString() == "text_delta")
+                                var delta = json.GetProperty("delta");
+                                if (delta.TryGetProperty("type", out var deltaType))
                                 {
-                                    chunkStr = delta.GetProperty("text").GetString();
-                                }
-                                else if (deltaType.GetString() == "thinking_delta")
-                                {
-                                    thinkingChunkStr = delta.GetProperty("thinking").GetString() ?? "";
-                                }
-                                else if (deltaType.GetString() == "input_json_delta")
-                                {
-                                    currentToolArgs.Append(delta.GetProperty("partial_json").GetString());
+                                    var dt = deltaType.GetString();
+                                    if (dt == "text_delta")
+                                    {
+                                        var text = delta.GetProperty("text").GetString() ?? "";
+                                        block.Content.Append(text);
+                                        var sanitized = visibleSanitizer.Push(text);
+                                        if (!string.IsNullOrEmpty(sanitized))
+                                        {
+                                            chunkStr = sanitized;
+                                        }
+                                    }
+                                    else if (dt == "thinking_delta")
+                                    {
+                                        var text = delta.GetProperty("thinking").GetString() ?? "";
+                                        block.Content.Append(text);
+                                        var sanitized = reasoningSanitizer.Push(text);
+                                        if (!string.IsNullOrEmpty(sanitized))
+                                        {
+                                            thinkingChunkStr = sanitized;
+                                        }
+                                    }
+                                    else if (dt == "signature_delta")
+                                    {
+                                        var sig = delta.GetProperty("signature").GetString() ?? "";
+                                        block.Signature.Append(sig);
+                                    }
+                                    else if (dt == "input_json_delta")
+                                    {
+                                        block.ToolArgs.Append(delta.GetProperty("partial_json").GetString());
+                                    }
                                 }
                             }
                         }
                         else if (t == "content_block_stop")
                         {
-                            if (currentToolId != null && currentToolName != null)
+                            int idx = json.TryGetProperty("index", out var idxProp) ? idxProp.GetInt32() : 0;
+                            if (blocksInProgress.TryGetValue(idx, out var block))
                             {
-                                var callObj = new { id = currentToolId, name = currentToolName, arguments = currentToolArgs.ToString() };
-                                toolCallEvt = new ChatEvent { Type = "tool_call_complete", Data = JsonSerializer.Serialize(callObj) };
-                                currentToolId = null;
-                                currentToolName = null;
+                                blocksInProgress.Remove(idx);
+                                if (block.Type == "thinking")
+                                {
+                                    var sig = block.Signature.ToString();
+                                    if (string.IsNullOrEmpty(sig))
+                                    {
+                                        replayUnavailable = true;
+                                        if (showDebugLog) debugEvt = new ChatEvent { Type = "debug", Data = $"[Main Chat - Anthropic] history item: type=thinking, signature=absent" };
+                                    }
+                                    else
+                                    {
+                                        var thoughtObj = new { type = "thinking", thinking = block.Content.ToString(), signature = sig };
+                                        var rawJson = JsonSerializer.Serialize(thoughtObj);
+                                        if (!replayUnavailable) providerItemEvts.Add(new ChatEvent { Type = "provider_history_item", Data = rawJson });
+                                        if (showDebugLog) debugEvt = new ChatEvent { Type = "debug", Data = $"[Main Chat - Anthropic] history item: type=thinking, signature=present ({sig.Length} chars)" };
+                                    }
+                                }
+                                else if (block.Type == "redacted_thinking")
+                                {
+                                    var rawJson = block.RawBlock.HasValue ? block.RawBlock.Value.GetRawText() : JsonSerializer.Serialize(new { type = "redacted_thinking", data = "" });
+                                    if (!replayUnavailable) providerItemEvts.Add(new ChatEvent { Type = "provider_history_item", Data = rawJson });
+                                    if (showDebugLog) debugEvt = new ChatEvent { Type = "debug", Data = $"[Main Chat - Anthropic] history item: type=redacted_thinking" };
+                                }
+                                else if (block.Type == "text")
+                                {
+                                    var textObj = new { type = "text", text = block.Content.ToString() };
+                                    var rawJson = JsonSerializer.Serialize(textObj);
+                                    if (!replayUnavailable) providerItemEvts.Add(new ChatEvent { Type = "provider_history_item", Data = rawJson });
+                                    if (showDebugLog) debugEvt = new ChatEvent { Type = "debug", Data = $"[Main Chat - Anthropic] history item: type=text ({block.Content.Length} chars)" };
+                                }
+                                else if (block.Type == "tool_use")
+                                {
+                                    object argsObj = new { };
+                                    try
+                                    {
+                                        if (block.ToolArgs.Length > 0)
+                                            argsObj = JsonSerializer.Deserialize<object>(block.ToolArgs.ToString()) ?? new { };
+                                    }
+                                    catch { }
+
+                                    var toolObj = new { type = "tool_use", id = block.ToolId, name = block.ToolName, input = argsObj };
+                                    var rawJson = JsonSerializer.Serialize(toolObj);
+                                    if (!replayUnavailable) providerItemEvts.Add(new ChatEvent { Type = "provider_history_item", Data = rawJson });
+
+                                    var callObj = new { id = block.ToolId, name = block.ToolName, arguments = block.ToolArgs.ToString() };
+                                    toolCallEvt = new ChatEvent { Type = "tool_call_complete", Data = JsonSerializer.Serialize(callObj) };
+                                    if (showDebugLog) debugEvt = new ChatEvent { Type = "debug", Data = $"[Main Chat - Anthropic] history item: type=tool_use, id={block.ToolId}" };
+                                }
                             }
                         }
                         else if (t == "error")
@@ -223,10 +337,23 @@ public class AnthropicProvider : IAiProvider
 
                 if (debugEvt != null) yield return debugEvt;
                 if (errorEvt != null) yield return errorEvt;
+                foreach (var pEvt in providerItemEvts) yield return pEvt;
                 if (!string.IsNullOrEmpty(thinkingChunkStr)) yield return new ChatEvent { Type = "thinking_chunk", Data = thinkingChunkStr };
                 if (!string.IsNullOrEmpty(chunkStr)) yield return new ChatEvent { Type = "chunk", Data = chunkStr };
                 if (toolCallEvt != null) yield return toolCallEvt;
             }
+        }
+
+        var rTail = reasoningSanitizer.Flush();
+        if (!string.IsNullOrEmpty(rTail)) yield return new ChatEvent { Type = "thinking_chunk", Data = rTail };
+
+        var vTail = visibleSanitizer.Flush();
+        if (!string.IsNullOrEmpty(vTail)) yield return new ChatEvent { Type = "chunk", Data = vTail };
+
+        if (replayUnavailable)
+        {
+            if (showDebugLog) yield return new ChatEvent { Type = "debug", Data = "[Main Chat - Anthropic] turn not replayable (thinking block without signature) — using reconstruction" };
+            yield return new ChatEvent { Type = "provider_history_discard", Data = "" };
         }
     }
 
@@ -264,8 +391,18 @@ public class AnthropicProvider : IAiProvider
     public void AppendAssistantToolCallsToHistory(
         List<object> messageHistory,
         string iterationText,
-        List<JsonElement> toolCalls)
+        List<JsonElement> toolCalls,
+        List<JsonElement>? providerHistoryItems = null)
     {
+        if (providerHistoryItems != null && providerHistoryItems.Count > 0)
+        {
+            messageHistory.Add(new { role = "assistant", content = providerHistoryItems });
+            var updatedMsg = AlternateAnthropicMessages(messageHistory);
+            messageHistory.Clear();
+            messageHistory.AddRange(updatedMsg);
+            return;
+        }
+
         var contentBlocks = new List<object>();
         if (!string.IsNullOrEmpty(iterationText))
         {
