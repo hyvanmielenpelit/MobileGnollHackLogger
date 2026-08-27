@@ -26,6 +26,9 @@ public class SystemAiApiConfiguration : IRateLimitedEntity
     [MaxLength(32)]
     public string? ReasoningSummary { get; set; }
 
+    [MaxLength(64)]
+    public string? ServiceTier { get; set; }
+
     public int? MaxInputTokens { get; set; }
     public int? MaxOutputTokens { get; set; }
 

@@ -33,6 +33,9 @@ public class ChatMessage
     [MaxLength(32)]
     public string? ReasoningModeUsed { get; set; }
 
+    [MaxLength(64)]
+    public string? ServiceTierUsed { get; set; }
+
     [MaxLength(256)]
     public string? ModelDisplayNameUsed { get; set; }
 

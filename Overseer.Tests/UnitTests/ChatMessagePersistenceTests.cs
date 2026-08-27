@@ -40,6 +40,7 @@ public class ChatMessagePersistenceTests
             ModelDisplayNameUsed = "Gemini 2.5 Pro",
             ThinkingLevelUsed = "high",
             ReasoningModeUsed = "pro",
+            ServiceTierUsed = "priority",
             TimeToFirstTokenMs = 120,
             TotalDurationMs = 850
         };
@@ -53,7 +54,44 @@ public class ChatMessagePersistenceTests
         Assert.Equal("Gemini 2.5 Pro", savedMessage.ModelDisplayNameUsed);
         Assert.Equal("high", savedMessage.ThinkingLevelUsed);
         Assert.Equal("pro", savedMessage.ReasoningModeUsed);
+        Assert.Equal("priority", savedMessage.ServiceTierUsed);
         Assert.Equal(120, savedMessage.TimeToFirstTokenMs);
         Assert.Equal(850, savedMessage.TotalDurationMs);
+    }
+
+    [Fact]
+    public async Task UserAiModel_And_SystemAiApiConfiguration_Persist_ServiceTier()
+    {
+        using var db = CreateInMemoryDbContext();
+        var ct = TestContext.Current.CancellationToken;
+
+        var userModel = new UserAiModel
+        {
+            AspNetUserId = "user-123",
+            Provider = "OpenAI",
+            ModelId = "gpt-5",
+            DisplayName = "GPT-5",
+            ServiceTier = "priority"
+        };
+        db.UserAiModels.Add(userModel);
+
+        var sysConfig = new SystemAiApiConfiguration
+        {
+            DisplayName = "Claude 3.7",
+            Provider = "Anthropic",
+            ModelId = "claude-3-7-sonnet-20250219",
+            ServiceTier = "auto"
+        };
+        db.SystemAiApiConfigurations.Add(sysConfig);
+
+        await db.SaveChangesAsync(ct);
+
+        var savedUserModel = await db.UserAiModels.FirstOrDefaultAsync(m => m.Id == userModel.Id, ct);
+        Assert.NotNull(savedUserModel);
+        Assert.Equal("priority", savedUserModel.ServiceTier);
+
+        var savedSysConfig = await db.SystemAiApiConfigurations.FirstOrDefaultAsync(c => c.Id == sysConfig.Id, ct);
+        Assert.NotNull(savedSysConfig);
+        Assert.Equal("auto", savedSysConfig.ServiceTier);
     }
 }

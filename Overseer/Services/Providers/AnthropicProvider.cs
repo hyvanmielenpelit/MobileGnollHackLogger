@@ -29,6 +29,8 @@ public class AnthropicProvider : IAiProvider
 
     public string ProviderName => "Anthropic";
 
+    public IReadOnlyList<string> SupportedServiceTiers => new[] { "auto", "standard_only" };
+
     public void ConfigureRequest(HttpRequestMessage request, string apiKey)
     {
         request.Headers.TryAddWithoutValidation("x-api-key", apiKey);
@@ -47,7 +49,8 @@ public class AnthropicProvider : IAiProvider
         string? thinkingLevel,
         ToolsForRequest requestTools,
         string? reasoningMode = null,
-        string? reasoningSummary = null)
+        string? reasoningSummary = null,
+        string? serviceTier = null)
     {
         var (systemContent, nonSystemMessages) = ExtractSystemAndNonSystemMessages(messageHistory);
 
@@ -78,6 +81,11 @@ public class AnthropicProvider : IAiProvider
                 req["thinking"] = new { type = "adaptive" };
             }
             req["output_config"] = new { effort = thinkingLevel };
+        }
+
+        if (!string.IsNullOrEmpty(serviceTier) && !string.Equals(serviceTier, "none", StringComparison.OrdinalIgnoreCase))
+        {
+            req["service_tier"] = serviceTier;
         }
 
         var toolsPayload = BuildToolsPayload(requestTools.ProviderTools, requestTools.FunctionDeclarations);
@@ -308,9 +316,9 @@ public class AnthropicProvider : IAiProvider
     }
 
     public Dictionary<string, object> BuildTitleRequestBody(
-        string modelId, string systemPrompt, string userMessage, int maxTokens)
+        string modelId, string systemPrompt, string userMessage, int maxTokens, string? serviceTier = null)
     {
-        return new Dictionary<string, object>
+        var req = new Dictionary<string, object>
         {
             ["model"] = modelId,
             ["system"] = systemPrompt,
@@ -320,6 +328,13 @@ public class AnthropicProvider : IAiProvider
             },
             ["max_tokens"] = maxTokens
         };
+
+        if (!string.IsNullOrEmpty(serviceTier) && !string.Equals(serviceTier, "none", StringComparison.OrdinalIgnoreCase))
+        {
+            req["service_tier"] = serviceTier;
+        }
+
+        return req;
     }
 
     public string GetTitleUrl(string modelId, string apiKey)

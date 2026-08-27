@@ -27,6 +27,7 @@ export interface SystemAiConfigDto {
   thinkingLevel: string | null;
   reasoningMode: string | null;
   reasoningSummary: string | null;
+  serviceTier: string | null;
   maxInputTokens: number | null;
   maxOutputTokens: number | null;
   orderIndex: number;

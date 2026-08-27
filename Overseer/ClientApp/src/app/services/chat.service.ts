@@ -50,6 +50,7 @@ export interface ChatMessage {
   modelDisplayName?: string;
   thinkingLevel?: string;
   reasoningMode?: string;
+  serviceTier?: string;
   timeToFirstTokenMs?: number;
   totalDurationMs?: number;
 }

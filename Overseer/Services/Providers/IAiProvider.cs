@@ -11,6 +11,8 @@ public interface IAiProvider
 {
     string ProviderName { get; }
 
+    IReadOnlyList<string> SupportedServiceTiers { get; }
+
     Dictionary<string, object> BuildChatRequestBody(
         string modelId,
         List<object> messageHistory,
@@ -18,7 +20,8 @@ public interface IAiProvider
         string? thinkingLevel,
         ToolsForRequest requestTools,
         string? reasoningMode = null,
-        string? reasoningSummary = null);
+        string? reasoningSummary = null,
+        string? serviceTier = null);
 
     string GetChatStreamUrl(string modelId, string apiKey);
 
@@ -47,7 +50,7 @@ public interface IAiProvider
 
     // Title generation
     Dictionary<string, object> BuildTitleRequestBody(
-        string modelId, string systemPrompt, string userMessage, int maxTokens);
+        string modelId, string systemPrompt, string userMessage, int maxTokens, string? serviceTier = null);
 
     string GetTitleUrl(string modelId, string apiKey);
 

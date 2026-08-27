@@ -33,6 +33,7 @@ export interface ApiModelDto {
   supportedThinkingLevels: string[];
   supportedReasoningModes: string[];
   supportedReasoningSummaries: string[];
+  supportedServiceTiers?: string[];
   contextWindowSize: number;
   maxInputTokens: number;
   maxOutputTokens: number;
@@ -49,6 +50,7 @@ export interface UserAiModel {
   thinkingLevel?: string;
   reasoningMode?: string;
   reasoningSummary?: string;
+  serviceTier?: string;
   orderIndex?: number;
   maxInputTokens?: number | null;
   maxOutputTokens?: number | null;
@@ -137,12 +139,12 @@ export class SettingsService {
     });
   }
 
-  addUserModel(provider: string, modelId: string, displayName?: string, thinkingLevel?: string, reasoningMode?: string, reasoningSummary?: string, maxInputTokens?: number | null, maxOutputTokens?: number | null) {
-    return this.http.post<{ id: number }>('/api/settings/usermodels', { provider, modelId, displayName, thinkingLevel, reasoningMode, reasoningSummary, maxInputTokens, maxOutputTokens });
+  addUserModel(provider: string, modelId: string, displayName?: string, thinkingLevel?: string, reasoningMode?: string, reasoningSummary?: string, serviceTier?: string, maxInputTokens?: number | null, maxOutputTokens?: number | null) {
+    return this.http.post<{ id: number }>('/api/settings/usermodels', { provider, modelId, displayName, thinkingLevel, reasoningMode, reasoningSummary, serviceTier, maxInputTokens, maxOutputTokens });
   }
 
-  updateUserModel(id: number, displayName?: string, thinkingLevel?: string, reasoningMode?: string, reasoningSummary?: string, maxInputTokens?: number | null, maxOutputTokens?: number | null) {
-    return this.http.put(`/api/settings/usermodels/${id}`, { displayName, thinkingLevel, reasoningMode, reasoningSummary, maxInputTokens, maxOutputTokens });
+  updateUserModel(id: number, displayName?: string, thinkingLevel?: string, reasoningMode?: string, reasoningSummary?: string, serviceTier?: string, maxInputTokens?: number | null, maxOutputTokens?: number | null) {
+    return this.http.put(`/api/settings/usermodels/${id}`, { displayName, thinkingLevel, reasoningMode, reasoningSummary, serviceTier, maxInputTokens, maxOutputTokens });
   }
 
   deleteUserModel(id: number) {

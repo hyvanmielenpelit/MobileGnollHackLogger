@@ -224,6 +224,9 @@
                       @if (showReasoningBadge(msg.reasoningMode)) {
                         <span class="msg-model-badge">{{ msg.reasoningMode }}</span>
                       }
+                      @if (msg.serviceTier) {
+                        <span class="msg-model-badge">{{ formatServiceTier(msg.serviceTier) }}</span>
+                      }
                     </div>
                   }
                   @if (msg.role === 'assistant' && (msg.timeToFirstTokenMs != null || msg.totalDurationMs != null)) {
@@ -340,6 +343,9 @@
                       }
                       @if (showReasoningBadge(selectedModel?.reasoningMode || singleModelInfo?.reasoningMode)) {
                         <span class="msg-model-badge">{{ selectedModel?.reasoningMode || singleModelInfo?.reasoningMode }}</span>
+                      }
+                      @if (selectedModel?.serviceTier || singleModelInfo?.serviceTier) {
+                        <span class="msg-model-badge">{{ formatServiceTier(selectedModel?.serviceTier || singleModelInfo?.serviceTier) }}</span>
                       }
                     </div>
                   }

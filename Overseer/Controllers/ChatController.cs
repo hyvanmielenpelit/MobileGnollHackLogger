@@ -169,7 +169,8 @@ public class ChatController : ControllerBase
                 m.ModelUsed,
                 m.ModelDisplayNameUsed,
                 m.ThinkingLevelUsed,
-                m.ReasoningModeUsed
+                m.ReasoningModeUsed,
+                m.ServiceTierUsed
             })
             .ToListAsync();
         swDb.Stop();
@@ -233,8 +234,9 @@ public class ChatController : ControllerBase
             string? modelDisplayName = m.ModelDisplayNameUsed;
             string? thinkingLevel = m.ThinkingLevelUsed;
             string? reasoningMode = m.ReasoningModeUsed;
+            string? serviceTier = m.ServiceTierUsed;
             if (m.Role == "assistant" && !string.IsNullOrEmpty(m.ModelUsed)) {
-                if (string.IsNullOrEmpty(modelDisplayName) || string.IsNullOrEmpty(thinkingLevel) || string.IsNullOrEmpty(reasoningMode)) {
+                if (string.IsNullOrEmpty(modelDisplayName) || string.IsNullOrEmpty(thinkingLevel) || string.IsNullOrEmpty(reasoningMode) || string.IsNullOrEmpty(serviceTier)) {
                     var um = userModels?.FirstOrDefault(x => x.ModelId == m.ModelUsed);
                     if (um != null) {
                         if (string.IsNullOrEmpty(modelDisplayName)) {
@@ -246,6 +248,7 @@ public class ChatController : ControllerBase
                         }
                         thinkingLevel ??= um.ThinkingLevel;
                         reasoningMode ??= um.ReasoningMode;
+                        serviceTier ??= um.ServiceTier;
                     } else if (systemModels != null) {
                         var sm = systemModels.FirstOrDefault(x => x.Config.ModelId == m.ModelUsed);
                         if (sm.Config != null) {
@@ -254,6 +257,7 @@ public class ChatController : ControllerBase
                             }
                             thinkingLevel ??= sm.Config.ThinkingLevel;
                             reasoningMode ??= sm.Config.ReasoningMode;
+                            serviceTier ??= sm.Config.ServiceTier;
                         } else if (string.IsNullOrEmpty(modelDisplayName)) {
                             modelDisplayName = m.ModelUsed;
                         }
@@ -288,7 +292,8 @@ public class ChatController : ControllerBase
                 ToolCalls = msgToolCalls,
                 ModelDisplayName = modelDisplayName,
                 ThinkingLevel = thinkingLevel,
-                ReasoningMode = reasoningMode
+                ReasoningMode = reasoningMode,
+                ServiceTier = serviceTier
             };
         }).ToList();
         swAsm.Stop();
@@ -649,6 +654,7 @@ public class ChatController : ControllerBase
                 if (!string.IsNullOrEmpty(m.ModelDisplayNameUsed)) extra.Add($"display: {m.ModelDisplayNameUsed}");
                 if (!string.IsNullOrEmpty(m.ThinkingLevelUsed)) extra.Add($"thinking: {m.ThinkingLevelUsed}");
                 if (!string.IsNullOrEmpty(m.ReasoningModeUsed)) extra.Add($"reasoning: {m.ReasoningModeUsed}");
+                if (!string.IsNullOrEmpty(m.ServiceTierUsed)) extra.Add($"service tier: {m.ServiceTierUsed}");
                 modelDetails = $" [{m.ModelUsed}" + (extra.Count > 0 ? $" ({string.Join(", ", extra)})" : "") + "]";
             }
             mdBuilder.AppendLine($"### {roleName}{hiddenText}{modelDetails} ({m.TimestampUtc:yyyy-MM-dd HH:mm:ss} UTC)");
@@ -700,6 +706,7 @@ public class ChatController : ControllerBase
                 <p><strong>Model Display Name:</strong> {message.ModelDisplayNameUsed ?? "N/A"}</p>
                 <p><strong>Thinking Level:</strong> {message.ThinkingLevelUsed ?? "N/A"}</p>
                 <p><strong>Reasoning Mode:</strong> {message.ReasoningModeUsed ?? "N/A"}</p>
+                <p><strong>Service Tier:</strong> {message.ServiceTierUsed ?? "N/A"}</p>
                 <p><strong>Time to First Token (ms):</strong> {message.TimeToFirstTokenMs?.ToString() ?? "N/A"}</p>
                 <p><strong>Total Duration (ms):</strong> {message.TotalDurationMs?.ToString() ?? "N/A"}</p>
             </body>

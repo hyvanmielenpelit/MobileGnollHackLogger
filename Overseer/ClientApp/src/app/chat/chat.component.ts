@@ -603,6 +603,12 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     return lower !== 'default' && lower !== 'standard';
   }
 
+  formatServiceTier(tier: string | null | undefined): string {
+    if (!tier) return '';
+    if (tier.toLowerCase() === 'standard_only') return 'Standard Only';
+    return tier.charAt(0).toUpperCase() + tier.slice(1);
+  }
+
 
 
   @HostListener('document:click', ['$event'])
@@ -1367,6 +1373,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
             modelDisplayName: this.selectedModel?.displayName || this.selectedModel?.modelId || this.singleModelInfo?.modelId,
             thinkingLevel: this.selectedModel?.thinkingLevel || this.singleModelInfo?.thinkingLevel,
             reasoningMode: this.selectedModel?.reasoningMode || this.singleModelInfo?.reasoningMode,
+            serviceTier: this.selectedModel?.serviceTier || this.singleModelInfo?.serviceTier,
             timeToFirstTokenMs: this.timeToFirstTokenMs ?? undefined,
             totalDurationMs: this.totalDurationMs ?? undefined
           });

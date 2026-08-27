@@ -182,6 +182,7 @@ public class AdminController : ControllerBase
                 ThinkingLevel = c.ThinkingLevel,
                 ReasoningMode = c.ReasoningMode,
                 ReasoningSummary = c.ReasoningSummary,
+                ServiceTier = c.ServiceTier,
                 MaxInputTokens = c.MaxInputTokens,
                 MaxOutputTokens = c.MaxOutputTokens,
                 OrderIndex = c.OrderIndex,
@@ -235,6 +236,7 @@ public class AdminController : ControllerBase
             ThinkingLevel = request.ThinkingLevel,
             ReasoningMode = request.ReasoningMode,
             ReasoningSummary = request.ReasoningSummary,
+            ServiceTier = request.ServiceTier,
             MaxInputTokens = request.MaxInputTokens,
             MaxOutputTokens = request.MaxOutputTokens,
             IsEnabled = request.IsEnabled,
@@ -279,6 +281,7 @@ public class AdminController : ControllerBase
         config.ThinkingLevel = request.ThinkingLevel;
         config.ReasoningMode = request.ReasoningMode;
         config.ReasoningSummary = request.ReasoningSummary;
+        config.ServiceTier = request.ServiceTier;
         config.MaxInputTokens = request.MaxInputTokens;
         config.MaxOutputTokens = request.MaxOutputTokens;
         config.IsEnabled = request.IsEnabled;

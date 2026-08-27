@@ -10,6 +10,7 @@ export interface AiModelFormResult {
   thinkingLevel: string | null;
   reasoningMode: string | null;
   reasoningSummary: string | null;
+  serviceTier: string | null;
   maxInputTokens: number | null;
   maxOutputTokens: number | null;
   apiKey?: string;
@@ -50,6 +51,8 @@ export class AiModelFormComponent implements OnInit {
   customReasoningMode = '';
   reasoningSummary = '';
   customReasoningSummary = '';
+  serviceTier = '';
+  customServiceTier = '';
   maxInputTokens: number | null = null;
   maxOutputTokens: number | null = null;
 
@@ -72,6 +75,7 @@ export class AiModelFormComponent implements OnInit {
   pickerThinkingLevelSelect = '';
   pickerReasoningModeSelect = '';
   pickerReasoningSummarySelect = '';
+  pickerServiceTierSelect = '';
   sortMode: 'alphabetical_asc' | 'alphabetical_desc' | 'created_asc' | 'created_desc' = 'created_desc';
   lastAutoDisplayName = '';
   showApiKeyInfo = false;
@@ -120,6 +124,7 @@ export class AiModelFormComponent implements OnInit {
       this.thinkingLevel = this.initialData.thinkingLevel || '';
       this.reasoningMode = this.initialData.reasoningMode || '';
       this.reasoningSummary = this.initialData.reasoningSummary || '';
+      this.serviceTier = this.initialData.serviceTier || '';
       this.maxInputTokens = this.initialData.maxInputTokens || null;
       this.maxOutputTokens = this.initialData.maxOutputTokens || null;
       
@@ -137,6 +142,7 @@ export class AiModelFormComponent implements OnInit {
       this.pickerThinkingLevelSelect = this.thinkingLevel;
       this.pickerReasoningModeSelect = this.reasoningMode;
       this.pickerReasoningSummarySelect = this.reasoningSummary;
+      this.pickerServiceTierSelect = this.serviceTier;
       
       if (!this.isAdmin || this.hasApiKey) {
         this.fetchModels(true);
@@ -156,6 +162,10 @@ export class AiModelFormComponent implements OnInit {
         if (this.reasoningSummary) {
            this.pickerReasoningSummarySelect = 'custom';
            this.customReasoningSummary = this.reasoningSummary;
+        }
+        if (this.serviceTier) {
+           this.pickerServiceTierSelect = 'custom';
+           this.customServiceTier = this.serviceTier;
         }
       }
     } else {
@@ -232,6 +242,15 @@ export class AiModelFormComponent implements OnInit {
               this.pickerReasoningSummarySelect = 'custom';
               this.customReasoningSummary = this.reasoningSummary;
            }
+           if (this.serviceTier) {
+              const supported = (this.selectedModelObj?.supportedServiceTiers && this.selectedModelObj.supportedServiceTiers.length > 0)
+                ? this.selectedModelObj.supportedServiceTiers
+                : this.getProviderServiceTiers();
+              if (!supported.includes(this.serviceTier)) {
+                this.pickerServiceTierSelect = 'custom';
+                this.customServiceTier = this.serviceTier;
+              }
+           }
         } else {
            if (this.sortedModels.length > 0) {
              this.pickerModelSelect = this.sortedModels[0].id;
@@ -261,6 +280,10 @@ export class AiModelFormComponent implements OnInit {
             if (this.reasoningSummary) {
                 this.pickerReasoningSummarySelect = 'custom';
                 this.customReasoningSummary = this.reasoningSummary;
+            }
+            if (this.serviceTier) {
+                this.pickerServiceTierSelect = 'custom';
+                this.customServiceTier = this.serviceTier;
             }
         }
       }
@@ -310,6 +333,9 @@ export class AiModelFormComponent implements OnInit {
         this.pickerReasoningSummarySelect = '';
       }
       
+      this.serviceTier = '';
+      this.pickerServiceTierSelect = '';
+      
       this.maxInputTokens = this.selectedModelObj.maxInputTokens || null;
       this.maxOutputTokens = this.selectedModelObj.maxOutputTokens || null;
       
@@ -326,6 +352,8 @@ export class AiModelFormComponent implements OnInit {
       this.pickerReasoningModeSelect = '';
       this.reasoningSummary = '';
       this.pickerReasoningSummarySelect = '';
+      this.serviceTier = '';
+      this.pickerServiceTierSelect = '';
       if (this.isAdmin) {
         if (!this.displayName || this.displayName === this.lastAutoDisplayName) {
           this.displayName = '';
@@ -359,6 +387,25 @@ export class AiModelFormComponent implements OnInit {
     }
   }
 
+  onPickerServiceTierChange() {
+    if (this.pickerServiceTierSelect !== 'custom') {
+      this.serviceTier = this.pickerServiceTierSelect;
+    } else {
+      this.serviceTier = ''; 
+    }
+  }
+
+  getProviderServiceTiers(): string[] {
+    if (this.provider === 'OpenAI') {
+      return ['auto', 'default', 'flex', 'priority', 'fast'];
+    } else if (this.provider === 'Anthropic') {
+      return ['auto', 'standard_only'];
+    } else if (this.provider === 'Google') {
+      return ['priority', 'flex', 'standard', 'deferred'];
+    }
+    return [];
+  }
+
   onSortChange() {
     if (this.sortedModels.length > 0) {
       this.pickerModelSelect = this.sortedModels[0].id;
@@ -369,6 +416,12 @@ export class AiModelFormComponent implements OnInit {
   formatThinkingLevel(level: string): string {
     if (!level) return 'Default';
     return level.charAt(0).toUpperCase() + level.slice(1);
+  }
+
+  formatServiceTier(tier: string): string {
+    if (!tier) return 'None (Default)';
+    if (tier.toLowerCase() === 'standard_only') return 'Standard Only';
+    return tier.charAt(0).toUpperCase() + tier.slice(1);
   }
 
   toggleApiKeyInfo() {
@@ -385,6 +438,7 @@ export class AiModelFormComponent implements OnInit {
     const finalThinkingLevel = this.pickerThinkingLevelSelect === 'custom' ? this.customThinkingLevel : this.thinkingLevel;
     const finalReasoningMode = this.pickerReasoningModeSelect === 'custom' ? this.customReasoningMode : this.reasoningMode;
     const finalReasoningSummary = this.pickerReasoningSummarySelect === 'custom' ? this.customReasoningSummary : this.reasoningSummary;
+    const finalServiceTier = this.pickerServiceTierSelect === 'custom' ? this.customServiceTier : this.serviceTier;
     
     if (!finalModelId) {
         this.modelError = 'Model is required.';
@@ -410,6 +464,7 @@ export class AiModelFormComponent implements OnInit {
       thinkingLevel: finalThinkingLevel || null,
       reasoningMode: finalReasoningMode || null,
       reasoningSummary: finalReasoningSummary || null,
+      serviceTier: finalServiceTier || null,
       maxInputTokens: this.maxInputTokens,
       maxOutputTokens: this.maxOutputTokens
     };

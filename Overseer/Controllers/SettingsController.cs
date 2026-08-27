@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Overseer.Services;
+using Overseer.Services.Providers;
 using Overseer.Extensions;
 using System.Security.Claims;
 using System.Text.Json;
@@ -22,8 +23,9 @@ public class SettingsController : ControllerBase
     private readonly ModelMetadataService _modelMetadataService;
     private readonly RecommendedModelService _recommendedModelService;
     private readonly IAuthorizationService _authorizationService;
+    private readonly IEnumerable<IAiProvider> _aiProviders;
 
-    public SettingsController(SettingsService settingsService, IHttpClientFactory httpClientFactory, IConfiguration configuration, ModelMetadataService modelMetadataService, RecommendedModelService recommendedModelService, IAuthorizationService authorizationService)
+    public SettingsController(SettingsService settingsService, IHttpClientFactory httpClientFactory, IConfiguration configuration, ModelMetadataService modelMetadataService, RecommendedModelService recommendedModelService, IAuthorizationService authorizationService, IEnumerable<IAiProvider> aiProviders)
     {
         _settingsService = settingsService;
         _httpClientFactory = httpClientFactory;
@@ -31,6 +33,7 @@ public class SettingsController : ControllerBase
         _modelMetadataService = modelMetadataService;
         _recommendedModelService = recommendedModelService;
         _authorizationService = authorizationService;
+        _aiProviders = aiProviders;
     }
 
     [HttpGet]
@@ -238,6 +241,7 @@ public class SettingsController : ControllerBase
             MaxOutputTokens = (int?)m.MaxOutputTokens,
             ReasoningMode = m.ReasoningMode,
             ReasoningSummary = m.ReasoningSummary,
+            ServiceTier = m.ServiceTier,
             IsSystem = false,
             ModelRole = 3
         }).ToList();
@@ -254,6 +258,7 @@ public class SettingsController : ControllerBase
             MaxOutputTokens = (int?)x.Config.MaxOutputTokens,
             ReasoningMode = x.Config.ReasoningMode,
             ReasoningSummary = x.Config.ReasoningSummary,
+            ServiceTier = x.Config.ServiceTier,
             IsSystem = true,
             ModelRole = x.ResolvedRole
         });
@@ -278,6 +283,7 @@ public class SettingsController : ControllerBase
             ThinkingLevel = request.ThinkingLevel,
             ReasoningMode = request.ReasoningMode,
             ReasoningSummary = request.ReasoningSummary,
+            ServiceTier = request.ServiceTier,
             MaxInputTokens = request.MaxInputTokens,
             MaxOutputTokens = request.MaxOutputTokens
         };
@@ -298,6 +304,7 @@ public class SettingsController : ControllerBase
             request.ThinkingLevel,
             request.ReasoningMode,
             request.ReasoningSummary,
+            request.ServiceTier,
             request.MaxInputTokens,
             request.MaxOutputTokens
         );
@@ -496,7 +503,14 @@ public class SettingsController : ControllerBase
                 return BadRequest(new { message = $"Unsupported provider: {provider}" });
             }
 
-            // Apply recommendation flags
+            // Apply recommendation flags and supported service tiers
+            var aiProvider = _aiProviders.FirstOrDefault(p => p.ProviderName.Equals(provider, StringComparison.OrdinalIgnoreCase));
+            var supportedServiceTiers = aiProvider?.SupportedServiceTiers?.ToList() ?? new List<string>();
+            foreach (var m in models)
+            {
+                m.SupportedServiceTiers = supportedServiceTiers;
+            }
+
             var recommended = _recommendedModelService.GetRecommendedModels(provider);
             for (int i = 0; i < recommended.Count; i++)
             {
@@ -528,6 +542,7 @@ public class ApiModelDto
     public List<string> SupportedThinkingLevels { get; set; } = new();
     public List<string> SupportedReasoningModes { get; set; } = new();
     public List<string> SupportedReasoningSummaries { get; set; } = new();
+    public List<string> SupportedServiceTiers { get; set; } = new();
     
     public int ContextWindowSize { get; set; }
     public int MaxInputTokens { get; set; }
@@ -567,6 +582,7 @@ public class AddUserModelRequest
     public string? ThinkingLevel { get; set; }
     public string? ReasoningMode { get; set; }
     public string? ReasoningSummary { get; set; }
+    public string? ServiceTier { get; set; }
     public int? MaxInputTokens { get; set; }
     public int? MaxOutputTokens { get; set; }
 }
@@ -577,6 +593,7 @@ public class UpdateUserModelRequest
     public string? ThinkingLevel { get; set; }
     public string? ReasoningMode { get; set; }
     public string? ReasoningSummary { get; set; }
+    public string? ServiceTier { get; set; }
     public int? MaxInputTokens { get; set; }
     public int? MaxOutputTokens { get; set; }
 }

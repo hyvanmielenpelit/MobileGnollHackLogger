@@ -238,6 +238,25 @@
           }
         </div>
       </div>
+
+      <!-- Service Tier -->
+      <div class="form-group flex-col">
+        <label>Service Tier</label>
+        <div class="compound-input">
+          <select class="gh-input w-100" [(ngModel)]="pickerServiceTierSelect" (change)="onPickerServiceTierChange()">
+            <option value="">None (Default)</option>
+            @for (tier of (selectedModelObj?.supportedServiceTiers && selectedModelObj!.supportedServiceTiers.length > 0 ? selectedModelObj!.supportedServiceTiers : getProviderServiceTiers()); track tier) {
+              <option [value]="tier">
+                {{ formatServiceTier(tier) }}
+              </option>
+            }
+            <option value="custom">Custom...</option>
+          </select>
+          @if (pickerServiceTierSelect === 'custom') {
+            <input type="text" class="gh-input w-100" [(ngModel)]="customServiceTier" placeholder="E.g. priority">
+          }
+        </div>
+      </div>
     </div>
 
     <!-- Tokens -->

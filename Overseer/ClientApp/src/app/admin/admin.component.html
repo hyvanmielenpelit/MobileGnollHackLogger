@@ -221,6 +221,11 @@
                         <div>
                           <span class="detail-label thinking ml-0">Reasoning Summary:</span> {{ formatReasoningSummary(config.reasoningSummary, config.provider) }}
                         </div>
+                        @if (config.serviceTier) {
+                          <div>
+                            <span class="detail-label thinking ml-0">Service Tier:</span> {{ formatServiceTier(config.serviceTier) }}
+                          </div>
+                        }
                         @if (config.maxInputTokens || config.maxOutputTokens) {
                           <div style="font-size: 0.85em; margin-top: 4px; color: var(--gh-text-secondary);">
                             @if (config.maxInputTokens) {

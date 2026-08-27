@@ -56,6 +56,11 @@
               <div>
                 <span class="detail-label thinking ml-0">Reasoning Summary:</span> {{ formatReasoningSummary(model.reasoningSummary, model.provider) }}
               </div>
+              @if (model.serviceTier) {
+                <div>
+                  <span class="detail-label thinking ml-0">Service Tier:</span> {{ formatServiceTier(model.serviceTier) }}
+                </div>
+              }
             </div>
           </div>
           <div class="model-actions">
@@ -113,6 +118,11 @@
                 <div>
                   <span class="detail-label thinking ml-0">Reasoning Summary:</span> {{ formatReasoningSummary(model.reasoningSummary, model.provider) }}
                 </div>
+                @if (model.serviceTier) {
+                  <div>
+                    <span class="detail-label thinking ml-0">Service Tier:</span> {{ formatServiceTier(model.serviceTier) }}
+                  </div>
+                }
               </div>
             </div>
           </div>

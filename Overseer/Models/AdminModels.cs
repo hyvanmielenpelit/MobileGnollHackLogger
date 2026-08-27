@@ -38,6 +38,7 @@ public class SystemAiApiConfigurationDto
     public string? ThinkingLevel { get; set; }
     public string? ReasoningMode { get; set; }
     public string? ReasoningSummary { get; set; }
+    public string? ServiceTier { get; set; }
     public int? MaxInputTokens { get; set; }
     public int? MaxOutputTokens { get; set; }
     public int OrderIndex { get; set; }
@@ -80,6 +81,7 @@ public class CreateSystemAiApiConfigurationRequest
     public string? ThinkingLevel { get; set; }
     public string? ReasoningMode { get; set; }
     public string? ReasoningSummary { get; set; }
+    public string? ServiceTier { get; set; }
     public int? MaxInputTokens { get; set; }
     public int? MaxOutputTokens { get; set; }
     public bool IsEnabled { get; set; }

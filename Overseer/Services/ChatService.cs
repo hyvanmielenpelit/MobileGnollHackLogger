@@ -137,6 +137,7 @@ public class ChatService
         string? thinkingLevel = null;
         string? reasoningMode = null;
         string? reasoningSummary = null;
+        string? serviceTier = null;
         IAiProvider? aiProvider = null;
         List<object> messageHistory = new();
         bool spoilerFreeMode = false;
@@ -198,6 +199,7 @@ public class ChatService
                 thinkingLevel = config.ThinkingLevel;
                 reasoningMode = config.ReasoningMode;
                 reasoningSummary = config.ReasoningSummary;
+                serviceTier = config.ServiceTier;
                 if (config.MaxInputTokens.HasValue) maxInputTokens = config.MaxInputTokens.Value;
                 if (config.MaxOutputTokens.HasValue) maxOutputTokens = config.MaxOutputTokens.Value;
                 
@@ -217,6 +219,7 @@ public class ChatService
                     thinkingLevel = userModel.ThinkingLevel;
                     reasoningMode = userModel.ReasoningMode;
                     reasoningSummary = userModel.ReasoningSummary;
+                    serviceTier = userModel.ServiceTier;
                     if (userModel.MaxInputTokens.HasValue) maxInputTokens = userModel.MaxInputTokens.Value;
                     if (userModel.MaxOutputTokens.HasValue) maxOutputTokens = userModel.MaxOutputTokens.Value;
                 }
@@ -232,6 +235,7 @@ public class ChatService
                     thinkingLevel = defaultModel.ThinkingLevel;
                     reasoningMode = defaultModel.ReasoningMode;
                     reasoningSummary = defaultModel.ReasoningSummary;
+                    serviceTier = defaultModel.ServiceTier;
                     if (defaultModel.MaxInputTokens.HasValue) maxInputTokens = defaultModel.MaxInputTokens.Value;
                     if (defaultModel.MaxOutputTokens.HasValue) maxOutputTokens = defaultModel.MaxOutputTokens.Value;
                 }
@@ -249,6 +253,7 @@ public class ChatService
                         thinkingLevel = config.ThinkingLevel;
                         reasoningMode = config.ReasoningMode;
                         reasoningSummary = config.ReasoningSummary;
+                        serviceTier = config.ServiceTier;
                         if (config.MaxInputTokens.HasValue) maxInputTokens = config.MaxInputTokens.Value;
                         if (config.MaxOutputTokens.HasValue) maxOutputTokens = config.MaxOutputTokens.Value;
                         if (!string.IsNullOrEmpty(config.EncryptedApiKey) && !string.IsNullOrEmpty(config.ApiKeyNonce) && !string.IsNullOrEmpty(config.ApiKeyTag))
@@ -564,7 +569,7 @@ public class ChatService
             if (_showDebugLog) yield return new ChatEvent 
             { 
                 Type = "debug", 
-                Data = $"[Model Configuration]\nProvider: {provider}\nModel: {model}\nDisplay Name: {(string.IsNullOrEmpty(modelDisplayName) ? "None" : modelDisplayName)}\nThinking Level: {(string.IsNullOrEmpty(thinkingLevel) ? "None" : thinkingLevel)}\nMax Input Tokens (Limit): {effectiveInputLimit}\nMax Output Tokens: {(maxOutputTokens.HasValue ? maxOutputTokens.Value.ToString() : "Default")}\nEstimated Request Input Tokens: ~{totalTokens}" 
+                Data = $"[Model Configuration]\nProvider: {provider}\nModel: {model}\nDisplay Name: {(string.IsNullOrEmpty(modelDisplayName) ? "None" : modelDisplayName)}\nThinking Level: {(string.IsNullOrEmpty(thinkingLevel) ? "None" : thinkingLevel)}\nService Tier: {(string.IsNullOrEmpty(serviceTier) ? "None" : serviceTier)}\nMax Input Tokens (Limit): {effectiveInputLimit}\nMax Output Tokens: {(maxOutputTokens.HasValue ? maxOutputTokens.Value.ToString() : "Default")}\nEstimated Request Input Tokens: ~{totalTokens}" 
             };
         }
 
@@ -610,7 +615,7 @@ public class ChatService
             var requestTools = _toolRegistry.BuildToolsForRequest(aiProvider, execContext, enableWebSearch, enableToolUse, enableClientTools, enableGameActions);
             var currentIterationToolCalls = new List<JsonElement>();
 
-            var requestBody = aiProvider.BuildChatRequestBody(model, messageHistory, maxOutputTokens, thinkingLevel, requestTools, reasoningMode, reasoningSummary);
+            var requestBody = aiProvider.BuildChatRequestBody(model, messageHistory, maxOutputTokens, thinkingLevel, requestTools, reasoningMode, reasoningSummary, serviceTier);
             var jsonRequest = JsonSerializer.Serialize(requestBody);
             if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {aiProvider.ProviderName}] Request Body: {jsonRequest}" };
 
@@ -818,6 +823,7 @@ public class ChatService
                     ModelUsed = model,
                     ThinkingLevelUsed = thinkingLevel,
                     ReasoningModeUsed = reasoningMode,
+                    ServiceTierUsed = serviceTier,
                     ModelDisplayNameUsed = modelDisplayName,
                     ToolCalls = streamToolCalls,
                     TimeToFirstTokenMs = timeToFirstTokenMs,
@@ -1479,6 +1485,7 @@ public class ChatService
             string provider = "";
             string modelId = "";
             string apiKey = "";
+            string? serviceTier = null;
 
             long? usedSystemModelId = settings?.TitleGenerationSystemModelId;
 
@@ -1491,6 +1498,7 @@ public class ChatService
                 {
                     provider = config.Provider;
                     modelId = config.ModelId;
+                    serviceTier = config.ServiceTier;
                     apiKey = cryptoService.Decrypt(config.EncryptedApiKey, config.ApiKeyNonce, config.ApiKeyTag, "SYSTEM_API_KEY");
                 }
                 else if (config == null)
@@ -1518,6 +1526,7 @@ public class ChatService
                 {
                     provider = model.Provider;
                     modelId = model.ModelId;
+                    serviceTier = model.ServiceTier;
 
                     var apiKeyEntry = await dbContext.UserAiApiKeys.FirstOrDefaultAsync(k => k.AspNetUserId == userId && k.Provider == provider, cancellationToken);
                     if (apiKeyEntry != null && !string.IsNullOrEmpty(apiKeyEntry.EncryptedApiKey) && !string.IsNullOrEmpty(apiKeyEntry.ApiKeyNonce) && !string.IsNullOrEmpty(apiKeyEntry.ApiKeyTag))
@@ -1539,6 +1548,7 @@ public class ChatService
                     {
                         provider = firstSystemModel.Config.Provider;
                         modelId = firstSystemModel.Config.ModelId;
+                        serviceTier = firstSystemModel.Config.ServiceTier;
                         apiKey = cryptoService.Decrypt(firstSystemModel.Config.EncryptedApiKey, firstSystemModel.Config.ApiKeyNonce, firstSystemModel.Config.ApiKeyTag, "SYSTEM_API_KEY");
                         usedSystemModelId = firstSystemModel.Config.Id;
                     }
@@ -1563,7 +1573,7 @@ public class ChatService
             
             var client = _httpClientFactory.CreateClient();
             
-            var titleReqBody = aiProvider.BuildTitleRequestBody(modelId, prompt, userMessage, maxTokens);
+            var titleReqBody = aiProvider.BuildTitleRequestBody(modelId, prompt, userMessage, maxTokens, serviceTier);
             string reqBodyStr = System.Text.Json.JsonSerializer.Serialize(titleReqBody);
             string titleUrl = aiProvider.GetTitleUrl(modelId, apiKey);
 

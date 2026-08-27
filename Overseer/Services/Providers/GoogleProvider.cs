@@ -30,6 +30,8 @@ public class GoogleProvider : IAiProvider
 
     public string ProviderName => "Google";
 
+    public IReadOnlyList<string> SupportedServiceTiers => new[] { "priority", "flex", "standard" };
+
     public void ConfigureRequest(HttpRequestMessage request, string apiKey)
     {
         // Google uses API key in URL query parameter, no header configuration needed
@@ -47,7 +49,8 @@ public class GoogleProvider : IAiProvider
         string? thinkingLevel,
         ToolsForRequest requestTools,
         string? reasoningMode = null,
-        string? reasoningSummary = null)
+        string? reasoningSummary = null,
+        string? serviceTier = null)
     {
         var (systemParts, contents) = ExtractSystemAndContents(messageHistory);
 
@@ -75,6 +78,11 @@ public class GoogleProvider : IAiProvider
         if (genConfig.Count > 0)
         {
             req["generationConfig"] = genConfig;
+        }
+
+        if (!string.IsNullOrEmpty(serviceTier) && !string.Equals(serviceTier, "none", StringComparison.OrdinalIgnoreCase))
+        {
+            req["service_tier"] = serviceTier;
         }
 
         var geminiSafetySettings = _configuration.GetSection("SafetySettings:Gemini").GetChildren().Select(c => new
@@ -303,9 +311,9 @@ public class GoogleProvider : IAiProvider
     }
 
     public Dictionary<string, object> BuildTitleRequestBody(
-        string modelId, string systemPrompt, string userMessage, int maxTokens)
+        string modelId, string systemPrompt, string userMessage, int maxTokens, string? serviceTier = null)
     {
-        return new Dictionary<string, object>
+        var req = new Dictionary<string, object>
         {
             ["contents"] = new List<object>
             {
@@ -313,6 +321,13 @@ public class GoogleProvider : IAiProvider
             },
             ["generationConfig"] = new { maxOutputTokens = maxTokens }
         };
+
+        if (!string.IsNullOrEmpty(serviceTier) && !string.Equals(serviceTier, "none", StringComparison.OrdinalIgnoreCase))
+        {
+            req["service_tier"] = serviceTier;
+        }
+
+        return req;
     }
 
     public string GetTitleUrl(string modelId, string apiKey)

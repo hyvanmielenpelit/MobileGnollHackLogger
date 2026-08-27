@@ -375,6 +375,7 @@ export class ModelsComponent implements OnInit {
       formData.thinkingLevel || undefined,
       formData.reasoningMode || undefined,
       formData.reasoningSummary || undefined,
+      formData.serviceTier || undefined,
       formData.maxInputTokens, 
       formData.maxOutputTokens
     ).subscribe({
@@ -412,6 +413,7 @@ export class ModelsComponent implements OnInit {
         formData.thinkingLevel || undefined, 
         formData.reasoningMode || undefined,
         formData.reasoningSummary || undefined,
+        formData.serviceTier || undefined,
         formData.maxInputTokens, 
         formData.maxOutputTokens
       ).subscribe({
@@ -432,6 +434,12 @@ export class ModelsComponent implements OnInit {
   formatThinkingLevel(level: string | undefined): string {
     if (!level) return 'Default';
     return level.charAt(0).toUpperCase() + level.slice(1);
+  }
+
+  formatServiceTier(tier: string | null | undefined): string {
+    if (!tier) return 'None';
+    if (tier.toLowerCase() === 'standard_only') return 'Standard Only';
+    return tier.charAt(0).toUpperCase() + tier.slice(1);
   }
 
   formatReasoningSummary(level: string | null | undefined, provider?: string): string {
