@@ -167,4 +167,91 @@ describe('AiModelFormComponent', () => {
       expect(component.displayName).toBe('');
     });
   });
+
+  describe('Edit mode initialization and custom fallback', () => {
+    it('should fallback model and thinkingLevel/reasoningMode/reasoningSummary to custom when model is not in availableModels', () => {
+      component.isAdmin = true;
+      component.mode = 'edit';
+      component.initialData = {
+        id: 1,
+        provider: 'OpenAI',
+        modelId: 'deprecated-model-v1',
+        thinkingLevel: 'high',
+        reasoningMode: 'pro',
+        reasoningSummary: 'auto',
+        serviceTier: 'custom-tier',
+        hasApiKey: true
+      };
+
+      component.ngOnInit();
+
+      expect(component.pickerModelSelect).toBe('custom');
+      expect(component.customModelId).toBe('deprecated-model-v1');
+      expect(component.pickerThinkingLevelSelect).toBe('custom');
+      expect(component.customThinkingLevel).toBe('high');
+      expect(component.pickerReasoningModeSelect).toBe('custom');
+      expect(component.customReasoningMode).toBe('pro');
+      expect(component.pickerReasoningSummarySelect).toBe('custom');
+      expect(component.customReasoningSummary).toBe('auto');
+      expect(component.pickerServiceTierSelect).toBe('custom');
+      expect(component.customServiceTier).toBe('custom-tier');
+    });
+
+    it('should keep standard thinkingLevel selection when model is in availableModels and level is supported', () => {
+      component.isAdmin = true;
+      component.mode = 'edit';
+      component.initialData = {
+        id: 2,
+        provider: 'Anthropic',
+        modelId: 'claude-3-5-sonnet',
+        thinkingLevel: 'medium',
+        hasApiKey: true
+      };
+
+      component.ngOnInit();
+
+      expect(component.pickerModelSelect).toBe('claude-3-5-sonnet');
+      expect(component.pickerThinkingLevelSelect).toBe('medium');
+      expect(component.customThinkingLevel).toBe('');
+    });
+
+    it('should fallback thinkingLevel to custom when model is in availableModels but level is not supported', () => {
+      component.isAdmin = true;
+      component.mode = 'edit';
+      component.initialData = {
+        id: 3,
+        provider: 'OpenAI',
+        modelId: 'gpt-4o',
+        thinkingLevel: 'high',
+        hasApiKey: true
+      };
+
+      component.ngOnInit();
+
+      expect(component.pickerModelSelect).toBe('gpt-4o');
+      expect(component.pickerThinkingLevelSelect).toBe('custom');
+      expect(component.customThinkingLevel).toBe('high');
+    });
+
+    it('should fallback all configured parameters to custom when availableModels is empty', () => {
+      (settingsService.getAvailableModels as jasmine.Spy).and.returnValue(of([]));
+
+      component.isAdmin = true;
+      component.mode = 'edit';
+      component.initialData = {
+        id: 4,
+        provider: 'OpenAI',
+        modelId: 'gpt-4o',
+        thinkingLevel: 'low',
+        hasApiKey: true
+      };
+
+      component.ngOnInit();
+
+      expect(component.pickerModelSelect).toBe('custom');
+      expect(component.customModelId).toBe('gpt-4o');
+      expect(component.pickerThinkingLevelSelect).toBe('custom');
+      expect(component.customThinkingLevel).toBe('low');
+    });
+  });
 });

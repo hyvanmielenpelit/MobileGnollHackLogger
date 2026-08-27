@@ -79,6 +79,7 @@ describe('AdminComponent', () => {
         thinkingLevel: null,
         reasoningMode: null,
         reasoningSummary: null,
+        serviceTier: null,
         maxInputTokens: null,
         maxOutputTokens: null,
         orderIndex: 0,

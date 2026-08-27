@@ -109,6 +109,29 @@ export class AiModelFormComponent implements OnInit {
     });
   }
 
+  private setAllToCustom() {
+    if (this.modelId) {
+      this.pickerModelSelect = 'custom';
+      this.customModelId = this.modelId;
+    }
+    if (this.thinkingLevel) {
+      this.pickerThinkingLevelSelect = 'custom';
+      this.customThinkingLevel = this.thinkingLevel;
+    }
+    if (this.reasoningMode) {
+      this.pickerReasoningModeSelect = 'custom';
+      this.customReasoningMode = this.reasoningMode;
+    }
+    if (this.reasoningSummary) {
+      this.pickerReasoningSummarySelect = 'custom';
+      this.customReasoningSummary = this.reasoningSummary;
+    }
+    if (this.serviceTier) {
+      this.pickerServiceTierSelect = 'custom';
+      this.customServiceTier = this.serviceTier;
+    }
+  }
+
   ngOnInit() {
     if (this.initialProvider) {
       this.provider = this.initialProvider;
@@ -147,26 +170,7 @@ export class AiModelFormComponent implements OnInit {
       if (!this.isAdmin || this.hasApiKey) {
         this.fetchModels(true);
       } else {
-        if (this.modelId) {
-           this.pickerModelSelect = 'custom';
-           this.customModelId = this.modelId;
-        }
-        if (this.thinkingLevel) {
-           this.pickerThinkingLevelSelect = 'custom';
-           this.customThinkingLevel = this.thinkingLevel;
-        }
-        if (this.reasoningMode) {
-           this.pickerReasoningModeSelect = 'custom';
-           this.customReasoningMode = this.reasoningMode;
-        }
-        if (this.reasoningSummary) {
-           this.pickerReasoningSummarySelect = 'custom';
-           this.customReasoningSummary = this.reasoningSummary;
-        }
-        if (this.serviceTier) {
-           this.pickerServiceTierSelect = 'custom';
-           this.customServiceTier = this.serviceTier;
-        }
+        this.setAllToCustom();
       }
     } else {
       // Add mode
@@ -218,6 +222,9 @@ export class AiModelFormComponent implements OnInit {
         this.loadingModels = false;
         if (this.availableModels.length === 0) {
           this.modelError = 'No models available or API key not configured.';
+          if (isInitializingEdit) {
+            this.setAllToCustom();
+          }
           return;
         }
 
@@ -230,15 +237,15 @@ export class AiModelFormComponent implements OnInit {
               this.customModelId = this.modelId;
            }
            
-           if (this.thinkingLevel && this.selectedModelObj && !this.selectedModelObj.supportedThinkingLevels.includes(this.thinkingLevel)) {
+           if (this.thinkingLevel && (!this.selectedModelObj || !this.selectedModelObj.supportedThinkingLevels?.includes(this.thinkingLevel))) {
               this.pickerThinkingLevelSelect = 'custom';
               this.customThinkingLevel = this.thinkingLevel;
            }
-           if (this.reasoningMode && this.selectedModelObj && !this.selectedModelObj.supportedReasoningModes?.includes(this.reasoningMode)) {
+           if (this.reasoningMode && (!this.selectedModelObj || !this.selectedModelObj.supportedReasoningModes?.includes(this.reasoningMode))) {
               this.pickerReasoningModeSelect = 'custom';
               this.customReasoningMode = this.reasoningMode;
            }
-           if (this.reasoningSummary && this.selectedModelObj && !this.selectedModelObj.supportedReasoningSummaries?.includes(this.reasoningSummary)) {
+           if (this.reasoningSummary && (!this.selectedModelObj || !this.selectedModelObj.supportedReasoningSummaries?.includes(this.reasoningSummary))) {
               this.pickerReasoningSummarySelect = 'custom';
               this.customReasoningSummary = this.reasoningSummary;
            }
@@ -253,11 +260,11 @@ export class AiModelFormComponent implements OnInit {
            }
         } else {
            if (this.sortedModels.length > 0) {
-             this.pickerModelSelect = this.sortedModels[0].id;
-             this.onPickerModelSelect();
+              this.pickerModelSelect = this.sortedModels[0].id;
+              this.onPickerModelSelect();
            } else {
-             this.pickerModelSelect = 'custom';
-             this.onPickerModelSelect();
+              this.pickerModelSelect = 'custom';
+              this.onPickerModelSelect();
            }
         }
       },
@@ -265,26 +272,7 @@ export class AiModelFormComponent implements OnInit {
         this.loadingModels = false;
         this.modelError = err.error?.message || err.message || 'Error fetching models.';
         if (isInitializingEdit) {
-            if (this.modelId) {
-                this.pickerModelSelect = 'custom';
-                this.customModelId = this.modelId;
-            }
-            if (this.thinkingLevel) {
-                this.pickerThinkingLevelSelect = 'custom';
-                this.customThinkingLevel = this.thinkingLevel;
-            }
-            if (this.reasoningMode) {
-                this.pickerReasoningModeSelect = 'custom';
-                this.customReasoningMode = this.reasoningMode;
-            }
-            if (this.reasoningSummary) {
-                this.pickerReasoningSummarySelect = 'custom';
-                this.customReasoningSummary = this.reasoningSummary;
-            }
-            if (this.serviceTier) {
-                this.pickerServiceTierSelect = 'custom';
-                this.customServiceTier = this.serviceTier;
-            }
+          this.setAllToCustom();
         }
       }
     });
