@@ -326,6 +326,12 @@ export class AiModelFormComponent implements OnInit {
       this.pickerReasoningModeSelect = '';
       this.reasoningSummary = '';
       this.pickerReasoningSummarySelect = '';
+      if (this.isAdmin) {
+        if (!this.displayName || this.displayName === this.lastAutoDisplayName) {
+          this.displayName = '';
+          this.lastAutoDisplayName = '';
+        }
+      }
     }
   }
 
