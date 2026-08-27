@@ -441,7 +441,8 @@ public class AnthropicProvider : IAiProvider
             {
                 type = "tool_result",
                 tool_use_id = res.ToolCallId,
-                content = res.Content
+                content = res.Content,
+                is_error = !res.Success
             });
         }
 

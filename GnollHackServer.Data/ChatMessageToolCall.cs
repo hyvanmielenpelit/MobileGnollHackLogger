@@ -27,5 +27,9 @@ public class ChatMessageToolCall
     
     public string? Error { get; set; }
     
+    public int? QueueWaitMs { get; set; }
+    
+    public int? ExecutionMs { get; set; }
+    
     public int SortOrder { get; set; }
 }

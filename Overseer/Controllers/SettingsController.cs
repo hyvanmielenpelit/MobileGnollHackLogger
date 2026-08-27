@@ -87,6 +87,7 @@ public class SettingsController : ControllerBase
             maxResultLength = settings?.MaxResultLength,
             maxCallsPerSession = settings?.MaxCallsPerSession,
             maxToolIterations = settings?.MaxToolIterations,
+            maxParallelToolCalls = settings?.MaxParallelToolCalls,
             enableWebSearch = settings?.EnableWebSearch ?? true,
             enableToolUse = settings?.EnableToolUse ?? true,
             enableClientTools = settings?.EnableClientTools ?? true,
@@ -109,6 +110,11 @@ public class SettingsController : ControllerBase
                     min = _configuration.GetValue<int>("AiPerformanceSettings:MaxToolIterations:Min", 1),
                     max = _configuration.GetValue<int>("AiPerformanceSettings:MaxToolIterations:Max", 100),
                     defaultValue = _configuration.GetValue<int>("AiPerformanceSettings:MaxToolIterations:Default", 32)
+                },
+                maxParallelToolCalls = new {
+                    min = _configuration.GetValue<int>("AiPerformanceSettings:MaxParallelToolCalls:Min", 1),
+                    max = _configuration.GetValue<int>("AiPerformanceSettings:MaxParallelToolCalls:Max", 10),
+                    defaultValue = _configuration.GetValue<int>("AiPerformanceSettings:MaxParallelToolCalls:Default", 6)
                 },
                 requestTimeout = new {
                     min = _configuration.GetValue<int>("AiPerformanceSettings:ChatRequestTimeout:Min", 5),
@@ -159,6 +165,14 @@ public class SettingsController : ControllerBase
                 return BadRequest($"MaxToolIterations must be between {min} and {max}");
         }
 
+        if (request.MaxParallelToolCalls.HasValue)
+        {
+            int min = _configuration.GetValue<int>("AiPerformanceSettings:MaxParallelToolCalls:Min", 1);
+            int max = _configuration.GetValue<int>("AiPerformanceSettings:MaxParallelToolCalls:Max", 10);
+            if (request.MaxParallelToolCalls.Value < min || request.MaxParallelToolCalls.Value > max)
+                return BadRequest($"MaxParallelToolCalls must be between {min} and {max}");
+        }
+
         if (request.RequestTimeout.HasValue)
         {
             int min = _configuration.GetValue<int>("AiPerformanceSettings:ChatRequestTimeout:Min", 5);
@@ -167,7 +181,7 @@ public class SettingsController : ControllerBase
                 return BadRequest($"RequestTimeout must be between {min} and {max}");
         }
 
-        await _settingsService.SaveSettingsAsync(userId, request.SpoilerFreeMode, request.EnableWebSearch, request.EnableToolUse, request.EnableClientTools, request.EnableGameActions, request.ShowSourceCodeReferences, request.MaxResultLength, request.MaxCallsPerSession, request.MaxToolIterations, request.ShowThoughtsAndTools, request.RequestTimeout);
+        await _settingsService.SaveSettingsAsync(userId, request.SpoilerFreeMode, request.EnableWebSearch, request.EnableToolUse, request.EnableClientTools, request.EnableGameActions, request.ShowSourceCodeReferences, request.MaxResultLength, request.MaxCallsPerSession, request.MaxToolIterations, request.MaxParallelToolCalls, request.ShowThoughtsAndTools, request.RequestTimeout);
         
         return Ok();
     }
@@ -559,6 +573,7 @@ public class UpdateSettingsRequest
     public int? MaxResultLength { get; set; }
     public int? MaxCallsPerSession { get; set; }
     public int? MaxToolIterations { get; set; }
+    public int? MaxParallelToolCalls { get; set; }
     public bool? EnableWebSearch { get; set; }
     public bool? EnableToolUse { get; set; }
     public bool? EnableClientTools { get; set; }

@@ -76,6 +76,10 @@ export class SettingsComponent implements OnInit, OnDestroy {
   initMaxToolIterations: number | null = null;
   maxToolIterationsSelect: any = null;
 
+  maxParallelToolCalls: number | null = null;
+  initMaxParallelToolCalls: number | null = null;
+  maxParallelToolCallsSelect: any = null;
+
   requestTimeout: number | null = null;
   initRequestTimeout: number | null = null;
 
@@ -95,6 +99,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
            this.maxResultLength !== this.initMaxResultLength ||
            this.maxCallsPerSession !== this.initMaxCallsPerSession ||
            this.maxToolIterations !== this.initMaxToolIterations ||
+           this.maxParallelToolCalls !== this.initMaxParallelToolCalls ||
            this.requestTimeout !== this.initRequestTimeout;
   }
 
@@ -136,6 +141,20 @@ export class SettingsComponent implements OnInit, OnDestroy {
       { label: 'Medium', value: 10, text: `Medium \u2013 10` },
       { label: 'High', value: Math.min(l.max, 20), text: `High \u2013 ${Math.min(l.max, 20)}` },
       { label: 'Very High', value: Math.min(l.max, 30), text: `Very High \u2013 ${Math.min(l.max, 30)}` },
+      { label: 'Custom', value: 'custom', text: 'Custom' }
+    ];
+  }
+
+  get parallelOptions() {
+    if (!this.performanceLimits?.maxParallelToolCalls) return [];
+    const l = this.performanceLimits.maxParallelToolCalls;
+    return [
+      { label: 'Default', value: null, text: `Default \u2013 ${l.defaultValue}` },
+      { label: 'Serial', value: 1, text: `Serial \u2013 1` },
+      { label: 'Low', value: Math.min(l.max, Math.max(l.min, 2)), text: `Low \u2013 ${Math.min(l.max, Math.max(l.min, 2))}` },
+      { label: 'Medium', value: Math.min(l.max, Math.max(l.min, 4)), text: `Medium \u2013 ${Math.min(l.max, Math.max(l.min, 4))}` },
+      { label: 'High', value: Math.min(l.max, 6), text: `High \u2013 ${Math.min(l.max, 6)}` },
+      { label: 'Maximum', value: l.max, text: `Maximum \u2013 ${l.max}` },
       { label: 'Custom', value: 'custom', text: 'Custom' }
     ];
   }
@@ -223,6 +242,10 @@ export class SettingsComponent implements OnInit, OnDestroy {
             this.maxToolIterations = s.maxToolIterations;
             this.initMaxToolIterations = s.maxToolIterations;
           }
+          if (s.maxParallelToolCalls !== undefined) {
+            this.maxParallelToolCalls = s.maxParallelToolCalls;
+            this.initMaxParallelToolCalls = s.maxParallelToolCalls;
+          }
           if (s.requestTimeout !== undefined) {
             this.requestTimeout = s.requestTimeout;
             this.initRequestTimeout = s.requestTimeout;
@@ -252,6 +275,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
     this.maxResultLengthSelect = isStandardOption(this.maxResultLength, this.resultLengthOptions) ? this.maxResultLength : 'custom';
     this.maxCallsPerSessionSelect = isStandardOption(this.maxCallsPerSession, this.callsOptions) ? this.maxCallsPerSession : 'custom';
     this.maxToolIterationsSelect = isStandardOption(this.maxToolIterations, this.iterationsOptions) ? this.maxToolIterations : 'custom';
+    this.maxParallelToolCallsSelect = isStandardOption(this.maxParallelToolCalls, this.parallelOptions) ? this.maxParallelToolCalls : 'custom';
   }
 
   onSelectChange(field: string, value: any) {
@@ -260,14 +284,16 @@ export class SettingsComponent implements OnInit, OnDestroy {
       if (field === 'maxResultLength') this.maxResultLength = numVal;
       if (field === 'maxCallsPerSession') this.maxCallsPerSession = numVal;
       if (field === 'maxToolIterations') this.maxToolIterations = numVal;
+      if (field === 'maxParallelToolCalls') this.maxParallelToolCalls = numVal;
     }
   }
 
-  getSelectedOptionDisplay(field: 'maxResultLength' | 'maxCallsPerSession' | 'maxToolIterations'): { label: string, valueText: string } {
+  getSelectedOptionDisplay(field: 'maxResultLength' | 'maxCallsPerSession' | 'maxToolIterations' | 'maxParallelToolCalls'): { label: string, valueText: string } {
     let selectVal, options;
     if (field === 'maxResultLength') { selectVal = this.maxResultLengthSelect; options = this.resultLengthOptions; }
     else if (field === 'maxCallsPerSession') { selectVal = this.maxCallsPerSessionSelect; options = this.callsOptions; }
-    else { selectVal = this.maxToolIterationsSelect; options = this.iterationsOptions; }
+    else if (field === 'maxToolIterations') { selectVal = this.maxToolIterationsSelect; options = this.iterationsOptions; }
+    else { selectVal = this.maxParallelToolCallsSelect; options = this.parallelOptions; }
 
     const opt = options.find(o => o.value === selectVal);
     if (!opt) return { label: 'Select...', valueText: '' };
@@ -278,10 +304,11 @@ export class SettingsComponent implements OnInit, OnDestroy {
     return { label: opt.label, valueText: valStr.trim() };
   }
 
-  selectCustomOption(field: 'maxResultLength' | 'maxCallsPerSession' | 'maxToolIterations', value: any, popoverId: string) {
+  selectCustomOption(field: 'maxResultLength' | 'maxCallsPerSession' | 'maxToolIterations' | 'maxParallelToolCalls', value: any, popoverId: string) {
     if (field === 'maxResultLength') this.maxResultLengthSelect = value;
     else if (field === 'maxCallsPerSession') this.maxCallsPerSessionSelect = value;
     else if (field === 'maxToolIterations') this.maxToolIterationsSelect = value;
+    else if (field === 'maxParallelToolCalls') this.maxParallelToolCallsSelect = value;
     
     this.onSelectChange(field, value);
     
@@ -331,7 +358,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
   saveSettings() {
     this.loading = true;
     this.saved = false;
-    this.settingsService.saveSettings(this.spoilerFreeMode, this.enableWebSearch, this.enableToolUse, this.enableClientTools, this.enableGameActions, this.showSourceCodeReferences, this.maxResultLength, this.maxCallsPerSession, this.maxToolIterations, Number(this.showThoughtsAndTools), this.requestTimeout).subscribe({
+    this.settingsService.saveSettings(this.spoilerFreeMode, this.enableWebSearch, this.enableToolUse, this.enableClientTools, this.enableGameActions, this.showSourceCodeReferences, this.maxResultLength, this.maxCallsPerSession, this.maxToolIterations, this.maxParallelToolCalls, Number(this.showThoughtsAndTools), this.requestTimeout).subscribe({
       next: () => {
         this.loading = false;
         this.settingsService.showThoughtsAndToolsUpdated.next(Number(this.showThoughtsAndTools));
@@ -348,6 +375,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
         this.initMaxResultLength = this.maxResultLength;
         this.initMaxCallsPerSession = this.maxCallsPerSession;
         this.initMaxToolIterations = this.maxToolIterations;
+        this.initMaxParallelToolCalls = this.maxParallelToolCalls;
         this.initRequestTimeout = this.requestTimeout;
       },
       error: () => {

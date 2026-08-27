@@ -30,9 +30,6 @@
     <ProjectReference Include="..\GnollHackServer.Data\GnollHackServer.Data.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <InternalsVisibleTo Include="Overseer.Tests" />
-  </ItemGroup>
 
   <Target Name="SyncAngularVersion" BeforeTargets="Build" Condition="'$(Version)' != ''">
     <Exec WorkingDirectory="ClientApp" Command="npm version $(Version) --no-git-tag-version --allow-same-version" IgnoreExitCode="true" />

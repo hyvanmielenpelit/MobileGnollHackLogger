@@ -84,6 +84,8 @@ dotnet ef database update -p GnollHackServer.Data -s MobileGnollHackLogger
 
 A plan that changes a database model must list the generated migration files, name the migration under Build Impact, and sequence dependent code **after** the migration step.
 
+The AI agent can and should run both `dotnet ef migrations add` and `dotnet ef database update` directly during the execution phase once the plan is approved. No human assignment is needed for running database updates.
+
 ### Angular Client
 
 The `Overseer` SPA is built separately from the ASP.NET Core host. Changes to TypeScript, component templates, or component styles require a client rebuild before they are visible, and shipping a release build also involves uploading source maps to Sentry as its own step.

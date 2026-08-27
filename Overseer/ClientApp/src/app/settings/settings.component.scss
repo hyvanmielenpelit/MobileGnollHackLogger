@@ -297,6 +297,9 @@ label:not(.checkbox-label) { display: block; margin-bottom: 5px; font-weight: bo
 .popover-anchor-iters { anchor-name: --select-iters; }
 .popover-target-iters { position-anchor: --select-iters; }
 
+.popover-anchor-parallel { anchor-name: --select-parallel; }
+.popover-target-parallel { position-anchor: --select-parallel; }
+
 .color-inherit { color: inherit; }
 
 @media (max-width: 600px) {

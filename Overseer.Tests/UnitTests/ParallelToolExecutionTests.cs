@@ -27,27 +27,49 @@ public class ParallelToolExecutionTests
             new() { ToolCallId = "5", ToolName = "tool_5", Arguments = EmptyArgs, IsClientTool = false }
         };
 
+        int currentConcurrent = 0;
+        int maxObservedConcurrent = 0;
         var channel = Channel.CreateUnbounded<ToolBatchOutcome>();
-        var sw = Stopwatch.StartNew();
 
         var outcomes = await ToolBatchRunner.RunAsync(
             items,
-            async (name, args, ct) =>
+            async (item, ct) =>
             {
-                await Task.Delay(150, ct);
-                return new ToolResult { Success = true, Content = $"Result for {name}" };
+                int c = Interlocked.Increment(ref currentConcurrent);
+                lock (items)
+                {
+                    if (c > maxObservedConcurrent) maxObservedConcurrent = c;
+                }
+                await Task.Delay(100, ct);
+                Interlocked.Decrement(ref currentConcurrent);
+                return new ToolResult { Success = true, Content = $"Result for {item.ToolName}" };
             },
             maxParallelTools: 5,
             maxParallelClientTools: 1,
             channel.Writer,
             CancellationToken.None);
 
-        sw.Stop();
-
         Assert.Equal(5, outcomes.Count);
         Assert.All(outcomes, o => Assert.True(o.Success));
-        // Sequential would be 5 * 150ms = 750ms. Parallel with 5 slots should finish well under 650ms.
-        Assert.True(sw.ElapsedMilliseconds < 650, $"Elapsed time was {sw.ElapsedMilliseconds}ms, expected < 650ms");
+        Assert.True(maxObservedConcurrent > 1, $"Expected concurrent execution, but max concurrency was {maxObservedConcurrent}");
+    }
+
+    [Fact]
+    public async Task RunAsync_EmptyBatch_CompletesImmediatelyAndClosesChannel()
+    {
+        var items = new List<ToolBatchItem>();
+        var channel = Channel.CreateUnbounded<ToolBatchOutcome>();
+
+        var outcomes = await ToolBatchRunner.RunAsync(
+            items,
+            (item, ct) => Task.FromResult(new ToolResult { Success = true }),
+            maxParallelTools: 5,
+            maxParallelClientTools: 1,
+            channel.Writer,
+            CancellationToken.None);
+
+        Assert.Empty(outcomes);
+        Assert.True(channel.Reader.Completion.IsCompleted);
     }
 
     [Fact]
@@ -69,7 +91,7 @@ public class ParallelToolExecutionTests
 
         var outcomes = await ToolBatchRunner.RunAsync(
             items,
-            async (name, args, ct) =>
+            async (item, ct) =>
             {
                 int c = Interlocked.Increment(ref currentConcurrent);
                 lock (items)
@@ -108,10 +130,9 @@ public class ParallelToolExecutionTests
 
         var outcomes = await ToolBatchRunner.RunAsync(
             items,
-            async (name, args, ct) =>
+            async (item, ct) =>
             {
-                bool isClient = name.StartsWith("client");
-                if (isClient)
+                if (item.IsClientTool)
                 {
                     int c = Interlocked.Increment(ref currentClientConcurrent);
                     lock (items)
@@ -120,7 +141,7 @@ public class ParallelToolExecutionTests
                     }
                 }
                 await Task.Delay(60, ct);
-                if (isClient)
+                if (item.IsClientTool)
                 {
                     Interlocked.Decrement(ref currentClientConcurrent);
                 }
@@ -136,6 +157,82 @@ public class ParallelToolExecutionTests
     }
 
     [Fact]
+    public async Task RunAsync_ClientLimitHigherThanGlobalLimit_ClampedToGlobalLimit()
+    {
+        var items = Enumerable.Range(1, 6).Select(i => new ToolBatchItem
+        {
+            ToolCallId = i.ToString(),
+            ToolName = $"client_{i}",
+            Arguments = EmptyArgs,
+            IsClientTool = true
+        }).ToList();
+
+        int currentConcurrent = 0;
+        int maxObservedConcurrent = 0;
+        const int maxParallel = 2;
+
+        var channel = Channel.CreateUnbounded<ToolBatchOutcome>();
+
+        var outcomes = await ToolBatchRunner.RunAsync(
+            items,
+            async (item, ct) =>
+            {
+                int c = Interlocked.Increment(ref currentConcurrent);
+                lock (items)
+                {
+                    if (c > maxObservedConcurrent) maxObservedConcurrent = c;
+                }
+                await Task.Delay(50, ct);
+                Interlocked.Decrement(ref currentConcurrent);
+                return new ToolResult { Success = true, Content = "OK" };
+            },
+            maxParallelTools: maxParallel,
+            maxParallelClientTools: 10, // Higher than global
+            channel.Writer,
+            CancellationToken.None);
+
+        Assert.Equal(6, outcomes.Count);
+        Assert.True(maxObservedConcurrent <= maxParallel, $"Observed concurrency was {maxObservedConcurrent}, expected <= {maxParallel}");
+    }
+
+    [Fact]
+    public async Task RunAsync_ServerToolsNeverTakeClientSlot()
+    {
+        var items = new List<ToolBatchItem>
+        {
+            new() { ToolCallId = "s1", ToolName = "server_1", Arguments = EmptyArgs, IsClientTool = false },
+            new() { ToolCallId = "s2", ToolName = "server_2", Arguments = EmptyArgs, IsClientTool = false },
+            new() { ToolCallId = "s3", ToolName = "server_3", Arguments = EmptyArgs, IsClientTool = false }
+        };
+
+        int currentConcurrent = 0;
+        int maxObservedConcurrent = 0;
+
+        var channel = Channel.CreateUnbounded<ToolBatchOutcome>();
+
+        var outcomes = await ToolBatchRunner.RunAsync(
+            items,
+            async (item, ct) =>
+            {
+                int c = Interlocked.Increment(ref currentConcurrent);
+                lock (items)
+                {
+                    if (c > maxObservedConcurrent) maxObservedConcurrent = c;
+                }
+                await Task.Delay(50, ct);
+                Interlocked.Decrement(ref currentConcurrent);
+                return new ToolResult { Success = true, Content = "OK" };
+            },
+            maxParallelTools: 3,
+            maxParallelClientTools: 1, // Client limit is 1, but these are server tools
+            channel.Writer,
+            CancellationToken.None);
+
+        Assert.Equal(3, outcomes.Count);
+        Assert.True(maxObservedConcurrent > 1, $"Server tools should run up to global limit (3), observed {maxObservedConcurrent}");
+    }
+
+    [Fact]
     public async Task RunAsync_FaultTolerance_HandlesExceptionsGracefully()
     {
         var items = new List<ToolBatchItem>
@@ -148,10 +245,10 @@ public class ParallelToolExecutionTests
 
         var outcomes = await ToolBatchRunner.RunAsync(
             items,
-            async (name, args, ct) =>
+            async (item, ct) =>
             {
                 await Task.Yield();
-                if (name == "tool_throw")
+                if (item.ToolName == "tool_throw")
                 {
                     throw new InvalidOperationException("Simulated error in handler");
                 }
@@ -186,7 +283,7 @@ public class ParallelToolExecutionTests
 
         var outcomes = await ToolBatchRunner.RunAsync(
             items,
-            async (name, args, ct) =>
+            async (item, ct) =>
             {
                 await Task.Delay(1000, ct);
                 return new ToolResult { Success = true, Content = "OK" };
@@ -218,9 +315,9 @@ public class ParallelToolExecutionTests
 
         var outcomes = await ToolBatchRunner.RunAsync(
             items,
-            async (name, args, ct) =>
+            async (item, ct) =>
             {
-                int delay = name switch
+                int delay = item.ToolName switch
                 {
                     "slow_tool" => 150,
                     "medium_tool" => 80,
@@ -228,7 +325,7 @@ public class ParallelToolExecutionTests
                     _ => 10
                 };
                 await Task.Delay(delay, ct);
-                return new ToolResult { Success = true, Content = $"Result of {name}" };
+                return new ToolResult { Success = true, Content = $"Result of {item.ToolName}" };
             },
             maxParallelTools: 3,
             maxParallelClientTools: 1,
@@ -257,10 +354,10 @@ public class ParallelToolExecutionTests
 
         var runnerTask = ToolBatchRunner.RunAsync(
             items,
-            async (name, args, ct) =>
+            async (item, ct) =>
             {
                 await Task.Delay(20, ct);
-                return new ToolResult { Success = true, Content = $"Done {name}" };
+                return new ToolResult { Success = true, Content = $"Done {item.ToolName}" };
             },
             maxParallelTools: 2,
             maxParallelClientTools: 1,
@@ -279,3 +376,4 @@ public class ParallelToolExecutionTests
         Assert.Equal(2, outcomes.Count);
     }
 }
+

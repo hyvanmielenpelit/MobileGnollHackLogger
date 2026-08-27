@@ -41,6 +41,7 @@ describe('SettingsComponent', () => {
         maxResultLength: 5000,
         maxCallsPerSession: 10,
         maxToolIterations: 3,
+        maxParallelToolCalls: 4,
         requestTimeout: 60
       };
       spyOn(settingsService, 'getSettings').and.returnValue(of(mockSettings));
@@ -57,6 +58,7 @@ describe('SettingsComponent', () => {
       expect(component.maxResultLength).toBe(5000);
       expect(component.maxCallsPerSession).toBe(10);
       expect(component.maxToolIterations).toBe(3);
+      expect(component.maxParallelToolCalls).toBe(4);
       expect(component.requestTimeout).toBe(60);
     });
 

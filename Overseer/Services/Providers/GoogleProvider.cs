@@ -197,7 +197,8 @@ public class GoogleProvider : IAiProvider
                                     }
                                     var fname = fcProp.GetProperty("name").GetString();
                                     var fargs = fcProp.GetProperty("args").GetRawText();
-                                    var callObj = new { id = Guid.NewGuid().ToString(), name = fname, arguments = fargs, raw_part = part };
+                                    string? providerId = fcProp.TryGetProperty("id", out var fid) ? fid.GetString() : null;
+                                    var callObj = new { id = Guid.NewGuid().ToString(), name = fname, arguments = fargs, raw_part = part, provider_id = providerId };
                                     toolCallEvts.Add(new ChatEvent { Type = "tool_call_complete", Data = JsonSerializer.Serialize(callObj) });
                                     if (showDebugLog) debugEvts.Add(new ChatEvent { Type = "debug", Data = $"[Main Chat - Google] history item: part=functionCall, name={fname}" });
                                 }
@@ -358,18 +359,37 @@ public class GoogleProvider : IAiProvider
             }
             catch { }
 
-            userParts.Add(new
+            if (!string.IsNullOrEmpty(res.ProviderToolCallId))
             {
-                functionResponse = new
+                userParts.Add(new
                 {
-                    name = res.ToolName,
-                    response = new
+                    functionResponse = new
+                    {
+                        id = res.ProviderToolCallId,
+                        name = res.ToolName,
+                        response = new
+                        {
+                            name = res.ToolName,
+                            content = parsedResponse
+                        }
+                    }
+                });
+            }
+            else
+            {
+                userParts.Add(new
+                {
+                    functionResponse = new
                     {
                         name = res.ToolName,
-                        content = parsedResponse
+                        response = new
+                        {
+                            name = res.ToolName,
+                            content = parsedResponse
+                        }
                     }
-                }
-            });
+                });
+            }
         }
 
         messageHistory.Add(new { role = "user", parts = userParts });

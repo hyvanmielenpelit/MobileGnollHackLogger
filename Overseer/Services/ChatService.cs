@@ -154,6 +154,7 @@ public class ChatService
         int? userMaxResultLength = null;
         int? userMaxCallsPerSession = null;
         int? userMaxToolIterations = null;
+        int? userMaxParallelToolCalls = null;
 
         int estimatedInputTokens = 0;
 
@@ -174,6 +175,7 @@ public class ChatService
                 userMaxResultLength = settings.MaxResultLength;
                 userMaxCallsPerSession = settings.MaxCallsPerSession;
                 userMaxToolIterations = settings.MaxToolIterations;
+                userMaxParallelToolCalls = settings.MaxParallelToolCalls;
             }
 
             var tempSession = await dbContext.ChatSession.FindAsync(sessionId);
@@ -597,15 +599,19 @@ public class ChatService
         int maxToolIterations = userMaxToolIterations ?? _configuration.GetValue<int>("AiPerformanceSettings:MaxToolIterations:Default", 32);
 
         int cfgParallelMin = _configuration.GetValue<int>("AiPerformanceSettings:MaxParallelToolCalls:Min", 1);
-        int cfgParallelMax = _configuration.GetValue<int>("AiPerformanceSettings:MaxParallelToolCalls:Max", 20);
+        int cfgParallelMax = _configuration.GetValue<int>("AiPerformanceSettings:MaxParallelToolCalls:Max", 10);
         int cfgParallelDefault = _configuration.GetValue<int>("AiPerformanceSettings:MaxParallelToolCalls:Default", 6);
 
         int lowerParallel = Math.Max(1, cfgParallelMin);
         int upperParallel = Math.Max(lowerParallel, cfgParallelMax);
-        int maxParallelTools = Math.Clamp(cfgParallelDefault, lowerParallel, upperParallel);
+        int maxParallelTools = Math.Clamp(userMaxParallelToolCalls ?? cfgParallelDefault, lowerParallel, upperParallel);
 
+        int cfgClientMin = _configuration.GetValue<int>("AiPerformanceSettings:MaxParallelClientToolCalls:Min", 1);
+        int cfgClientMax = _configuration.GetValue<int>("AiPerformanceSettings:MaxParallelClientToolCalls:Max", 4);
         int cfgClientDefault = _configuration.GetValue<int>("AiPerformanceSettings:MaxParallelClientToolCalls:Default", 1);
-        int maxParallelClientTools = Math.Clamp(cfgClientDefault, 1, maxParallelTools);
+        int maxParallelClientTools = Math.Clamp(
+            Math.Clamp(cfgClientDefault, Math.Max(1, cfgClientMin), Math.Max(1, cfgClientMax)),
+            1, maxParallelTools);
         
         var httpClient = _httpClientFactory.CreateClient();
 
@@ -724,6 +730,7 @@ public class ChatService
 
                 aiProvider.AppendAssistantToolCallsToHistory(messageHistory, iterationText, currentIterationToolCalls, currentIterationProviderItems);
 
+                var streamBaseIndex = streamToolCalls.Count;
                 var batchItems = new List<ToolBatchItem>(currentIterationToolCalls.Count);
 
                 foreach (var tc in currentIterationToolCalls)
@@ -758,57 +765,69 @@ public class ChatService
 
                 var batchTask = ToolBatchRunner.RunAsync(
                     batchItems,
-                    (name, args, ct) => _toolExecutor.ExecuteAsync(name, args, execContext, ct),
+                    (item, ct) => _toolExecutor.ExecuteAsync(item.ToolName, item.Arguments, execContext, ct, item.ToolCallId),
                     maxParallelTools,
                     maxParallelClientTools,
                     outcomeChannel.Writer,
                     cancellationToken);
 
-                await foreach (var outcome in outcomeChannel.Reader.ReadAllAsync())
+                try
                 {
-                    if (_showDebugLog)
+                    await foreach (var outcome in outcomeChannel.Reader.ReadAllAsync())
                     {
-                        yield return new ChatEvent
+                        if (_showDebugLog)
                         {
-                            Type = "debug",
-                            Data = $"[Main Chat] Tool '{outcome.ToolName}' completed in {outcome.ExecutionMs}ms " +
-                                   $"(queued {outcome.QueueWaitMs}ms). Success={outcome.Success}" +
-                                   (outcome.Success ? "" : $", Error: {outcome.Content}")
-                        };
-                    }
+                            yield return new ChatEvent
+                            {
+                                Type = "debug",
+                                Data = $"[Main Chat] Tool '{outcome.ToolName}' completed in {outcome.ExecutionMs}ms " +
+                                       $"(queued {outcome.QueueWaitMs}ms). Success={outcome.Success}" +
+                                       (outcome.Success ? "" : $", Error: {outcome.Content}")
+                            };
+                        }
 
-                    if (outcome.Success)
-                    {
-                        var resObj = new { id = outcome.ToolCallId, name = outcome.ToolName, result = outcome.Content };
-                        yield return new ChatEvent { Type = "tool_result", Data = JsonSerializer.Serialize(resObj) };
+                        if (outcome.Success)
+                        {
+                            var resObj = new { id = outcome.ToolCallId, name = outcome.ToolName, result = outcome.Content };
+                            yield return new ChatEvent { Type = "tool_result", Data = JsonSerializer.Serialize(resObj) };
+                        }
+                        else
+                        {
+                            var errObj = new { id = outcome.ToolCallId, name = outcome.ToolName, error = outcome.Content };
+                            yield return new ChatEvent { Type = "tool_error", Data = JsonSerializer.Serialize(errObj) };
+                        }
                     }
-                    else
-                    {
-                        var errObj = new { id = outcome.ToolCallId, name = outcome.ToolName, error = outcome.Content };
-                        yield return new ChatEvent { Type = "tool_error", Data = JsonSerializer.Serialize(errObj) };
-                    }
+                }
+                finally
+                {
+                    await batchTask;
                 }
 
                 var outcomes = await batchTask;
 
+                int budgetChars = _configuration.GetValue<int>("ToolExecutionLimits:MaxBatchResultLength", 40000);
+                var budget = new ToolBatchResultBudget(Math.Max(budgetChars, execContext.MaxResultLength));
+
                 var providerResults = new List<ProviderToolResult>(outcomes.Count);
-                foreach (var outcome in outcomes)
+                for (int i = 0; i < outcomes.Count; i++)
                 {
+                    var outcome = outcomes[i];
+
                     providerResults.Add(new ProviderToolResult
                     {
                         ToolCallId = outcome.ToolCallId,
                         ToolName = outcome.ToolName,
-                        Content = outcome.Content,
-                        Success = outcome.Success
+                        Content = budget.Apply(outcome.Content),
+                        Success = outcome.Success,
+                        ProviderToolCallId = currentIterationToolCalls[i].TryGetProperty("provider_id", out var pid) ? pid.GetString() : null
                     });
 
-                    var streamTc = streamToolCalls.FirstOrDefault(t => t.ToolCallId == outcome.ToolCallId);
-                    if (streamTc != null)
-                    {
-                        streamTc.Result = outcome.Success ? outcome.Content : null;
-                        streamTc.Error = outcome.Success ? null : outcome.Content;
-                        streamTc.Status = outcome.Success ? "completed" : "error";
-                    }
+                    var streamTc = streamToolCalls[streamBaseIndex + i];
+                    streamTc.Result = outcome.Success ? outcome.Content : null;
+                    streamTc.Error = outcome.Success ? null : outcome.Content;
+                    streamTc.Status = outcome.Success ? "completed" : "error";
+                    streamTc.QueueWaitMs = (int)outcome.QueueWaitMs;
+                    streamTc.ExecutionMs = (int)outcome.ExecutionMs;
                 }
 
                 aiProvider.AppendToolResultsToHistory(messageHistory, providerResults);
@@ -1466,6 +1485,9 @@ public class ChatService
                 sb.AppendLine(policy);
                 sb.AppendLine();
             }
+            sb.AppendLine("### Tool Concurrency & Batching");
+            sb.AppendLine("When you need several independent lookups, request them in the same turn instead of one at a time — tool calls in a single turn are executed concurrently.");
+            sb.AppendLine();
         }
 
         return sb.ToString();

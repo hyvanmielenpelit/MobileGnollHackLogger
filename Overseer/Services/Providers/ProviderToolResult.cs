@@ -6,4 +6,5 @@ public class ProviderToolResult
     public string ToolName { get; set; } = "";
     public string Content { get; set; } = "";
     public bool Success { get; set; }
+    public string? ProviderToolCallId { get; set; }
 }

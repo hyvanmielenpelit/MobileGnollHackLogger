@@ -174,6 +174,35 @@
         </div>
 
         <div class="margin-y-20 mt-15 form-group-stacked">
+          <label class="block fw-bold">Max Parallel Tool Calls</label>
+          <span class="form-hint mt-5 d-block mb-10">Maximum number of tool calls executed concurrently in a single turn.</span>
+
+          <button type="button" class="form-input form-select popover-trigger-btn popover-anchor-parallel" popovertarget="maxParallelToolCallsPopover">
+            <span class="opt-label">{{ getSelectedOptionDisplay('maxParallelToolCalls').label }}</span>
+            @if (getSelectedOptionDisplay('maxParallelToolCalls').valueText) {
+              <span class="opt-val color-inherit">{{ getSelectedOptionDisplay('maxParallelToolCalls').valueText }}</span>
+            }
+          </button>
+          <div id="maxParallelToolCallsPopover" popover class="custom-select-popover popover-target-parallel">
+            @for (o of parallelOptions; track o) {
+              <div class="popover-option" (click)="selectCustomOption('maxParallelToolCalls', o.value, 'maxParallelToolCallsPopover')" [class.selected]="o.value === maxParallelToolCallsSelect">
+                <span class="opt-label">{{o.label}}</span>
+                @if (o.value !== 'custom') {
+                  <span class="opt-val">{{o.value ?? performanceLimits?.maxParallelToolCalls?.defaultValue}}</span>
+                }
+              </div>
+            }
+          </div>
+
+          @if (maxParallelToolCallsSelect === 'custom') {
+            <div class="mt-10 custom-input-wrapper">
+              <input type="number" [(ngModel)]="maxParallelToolCalls" name="maxParallelToolCalls" class="form-input w-100" [min]="$safeNavigationMigration(performanceLimits?.maxParallelToolCalls?.min)" [max]="$safeNavigationMigration(performanceLimits?.maxParallelToolCalls?.max)" placeholder="Custom value" />
+              <span class="form-hint mt-5 d-block">Allowed range: {{performanceLimits?.maxParallelToolCalls?.min}} - {{performanceLimits?.maxParallelToolCalls?.max}}</span>
+            </div>
+          }
+        </div>
+
+        <div class="margin-y-20 mt-15 form-group-stacked">
           <label for="requestTimeout" class="block fw-bold">API Request Timeout</label>
           <span class="form-hint mt-5 d-block mb-10">Maximum time to wait for a chat message response before aborting.</span>
 

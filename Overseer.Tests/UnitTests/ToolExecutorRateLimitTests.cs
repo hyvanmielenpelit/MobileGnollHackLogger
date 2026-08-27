@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Overseer.Services.Tools;
 using Xunit;
@@ -18,8 +20,9 @@ public class ToolExecutorRateLimitTests
         public string ToolName => "test_tool";
         public string Description { get; set; } = "Test server tool";
         public ToolExecutionLocation ExecutionLocation => ToolExecutionLocation.Server;
-        public ToolCategory Category => ToolCategory.InformationRetrieval;
+        public ToolCategory Category { get; set; } = ToolCategory.InformationRetrieval;
         public JsonElement ParameterSchema => JsonDocument.Parse("{}").RootElement;
+        public int TimeoutSeconds { get; set; } = 15;
 
         public async Task<ToolResult> ExecuteAsync(JsonElement parameters, ToolExecutionContext context, CancellationToken cancellationToken)
         {
@@ -37,6 +40,17 @@ public class ToolExecutorRateLimitTests
         }
     }
 
+    private static IConfiguration CreateConfiguration(int maxProcess = 30, int maxLookup = 3)
+    {
+        var dict = new Dictionary<string, string?>
+        {
+            ["ToolExecutionLimits:MaxProcessParallelToolCalls"] = maxProcess.ToString(),
+            ["ToolExecutionLimits:MaxProcessExternalLookupCalls"] = maxLookup.ToString(),
+            ["ToolExecutionLimits:MaxBatchResultLength"] = "40000"
+        };
+        return new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+    }
+
     [Fact]
     public async Task ExecuteAsync_RateLimit_AtomicAcrossConcurrentCalls()
     {
@@ -46,7 +60,8 @@ public class ToolExecutorRateLimitTests
             new[] { handler },
             new NullClientBridge(),
             NullLogger<ToolExecutor>.Instance,
-            cache);
+            cache,
+            CreateConfiguration());
 
         const int maxCalls = 10;
         var context = new ToolExecutionContext
@@ -65,9 +80,9 @@ public class ToolExecutorRateLimitTests
         int successes = results.Count(r => r.Success);
         int rateLimited = results.Count(r => !r.Success && r.ErrorMessage == "Maximum tool calls per session exceeded.");
 
-        // Count starts at 0. When count <= maxCalls (0 through 10 = 11 calls), call proceeds.
-        Assert.Equal(maxCalls + 1, successes);
-        Assert.Equal(30 - (maxCalls + 1), rateLimited);
+        // Count 0 to maxCalls - 1 = maxCalls succeed.
+        Assert.Equal(maxCalls, successes);
+        Assert.Equal(30 - maxCalls, rateLimited);
     }
 
     [Fact]
@@ -79,7 +94,8 @@ public class ToolExecutorRateLimitTests
             new[] { handler },
             new NullClientBridge(),
             NullLogger<ToolExecutor>.Instance,
-            cache);
+            cache,
+            CreateConfiguration());
 
         const int maxCalls = 5;
         var context1 = new ToolExecutionContext { SessionId = 101, MaxCallsPerSession = maxCalls };
@@ -96,7 +112,56 @@ public class ToolExecutorRateLimitTests
         var results1 = allResults.Take(15).ToList();
         var results2 = allResults.Skip(15).ToList();
 
-        Assert.Equal(maxCalls + 1, results1.Count(r => r.Success));
-        Assert.Equal(maxCalls + 1, results2.Count(r => r.Success));
+        Assert.Equal(maxCalls, results1.Count(r => r.Success));
+        Assert.Equal(maxCalls, results2.Count(r => r.Success));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ProcessWideThrottling_CapsConcurrencyAcrossAllSessions()
+    {
+        using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 10000 });
+        var handler = new TestServerToolHandler();
+        const int maxProcessLimit = 3;
+        var executor = new ToolExecutor(
+            new[] { handler },
+            new NullClientBridge(),
+            NullLogger<ToolExecutor>.Instance,
+            cache,
+            CreateConfiguration(maxProcess: maxProcessLimit));
+
+        var tasks = Enumerable.Range(1, 10).Select(i =>
+        {
+            var ctx = new ToolExecutionContext { SessionId = i, MaxCallsPerSession = 50 };
+            return executor.ExecuteAsync("test_tool", JsonDocument.Parse("{}").RootElement, ctx, CancellationToken.None);
+        }).ToList();
+
+        var results = await Task.WhenAll(tasks);
+        Assert.Equal(10, results.Length);
+        Assert.All(results, r => Assert.True(r.Success));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ExternalLookupCategoryThrottling_CapsLookupConcurrency()
+    {
+        using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 10000 });
+        var handler = new TestServerToolHandler { Category = ToolCategory.ExternalLookup };
+        const int maxLookupLimit = 2;
+        var executor = new ToolExecutor(
+            new[] { handler },
+            new NullClientBridge(),
+            NullLogger<ToolExecutor>.Instance,
+            cache,
+            CreateConfiguration(maxLookup: maxLookupLimit));
+
+        var tasks = Enumerable.Range(1, 6).Select(i =>
+        {
+            var ctx = new ToolExecutionContext { SessionId = i, MaxCallsPerSession = 50 };
+            return executor.ExecuteAsync("test_tool", JsonDocument.Parse("{}").RootElement, ctx, CancellationToken.None);
+        }).ToList();
+
+        var results = await Task.WhenAll(tasks);
+        Assert.Equal(6, results.Length);
+        Assert.All(results, r => Assert.True(r.Success));
     }
 }
+

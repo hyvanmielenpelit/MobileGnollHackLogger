@@ -25,6 +25,8 @@ namespace Overseer.Services.Tools
         public bool Success { get; set; }
         public string Content { get; set; } = string.Empty;
         public string? ErrorMessage { get; set; }
+        public long? QueueWaitMs { get; set; }
+        public long? ExecutionMs { get; set; }
     }
 
     public class ToolExecutionContext

@@ -11,6 +11,7 @@ export interface UserAiSettings {
   maxResultLength?: number | null;
   maxCallsPerSession?: number | null;
   maxToolIterations?: number | null;
+  maxParallelToolCalls?: number | null;
   showThoughtsAndTools?: number;
   enableWebSearch?: boolean;
   enableToolUse?: boolean;
@@ -91,7 +92,7 @@ export class SettingsService {
     });
   }
 
-  saveSettings(spoilerFreeMode: boolean, enableWebSearch: boolean, enableToolUse: boolean, enableClientTools: boolean, enableGameActions: boolean, showSourceCodeReferences: boolean, maxResultLength: number | null, maxCallsPerSession: number | null, maxToolIterations: number | null, showThoughtsAndTools: number, requestTimeout: number | null) {
+  saveSettings(spoilerFreeMode: boolean, enableWebSearch: boolean, enableToolUse: boolean, enableClientTools: boolean, enableGameActions: boolean, showSourceCodeReferences: boolean, maxResultLength: number | null, maxCallsPerSession: number | null, maxToolIterations: number | null, maxParallelToolCalls: number | null, showThoughtsAndTools: number, requestTimeout: number | null) {
     return this.http.put('/api/settings', {
       spoilerFreeMode,
       enableWebSearch,
@@ -102,6 +103,7 @@ export class SettingsService {
       maxResultLength,
       maxCallsPerSession,
       maxToolIterations,
+      maxParallelToolCalls,
       showThoughtsAndTools,
       requestTimeout
     });

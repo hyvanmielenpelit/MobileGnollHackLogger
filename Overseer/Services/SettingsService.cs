@@ -19,7 +19,7 @@ public class SettingsService
         return await _dbContext.UserAiSettings.FindAsync(userId);
     }
 
-    public async Task SaveSettingsAsync(string userId, bool? spoilerFreeMode = null, bool? enableWebSearch = null, bool? enableToolUse = null, bool? enableClientTools = null, bool? enableGameActions = null, bool? showSourceCodeReferences = null, int? maxResultLength = null, int? maxCallsPerSession = null, int? maxToolIterations = null, int? showThoughtsAndTools = null, int? requestTimeout = null)
+    public async Task SaveSettingsAsync(string userId, bool? spoilerFreeMode = null, bool? enableWebSearch = null, bool? enableToolUse = null, bool? enableClientTools = null, bool? enableGameActions = null, bool? showSourceCodeReferences = null, int? maxResultLength = null, int? maxCallsPerSession = null, int? maxToolIterations = null, int? maxParallelToolCalls = null, int? showThoughtsAndTools = null, int? requestTimeout = null)
     {
         var settings = await _dbContext.UserAiSettings.FindAsync(userId);
         if (settings == null)
@@ -33,6 +33,7 @@ public class SettingsService
         settings.MaxResultLength = maxResultLength;
         settings.MaxCallsPerSession = maxCallsPerSession;
         settings.MaxToolIterations = maxToolIterations;
+        settings.MaxParallelToolCalls = maxParallelToolCalls;
 
         if (enableWebSearch.HasValue) settings.EnableWebSearch = enableWebSearch.Value;
         if (enableToolUse.HasValue) settings.EnableToolUse = enableToolUse.Value;

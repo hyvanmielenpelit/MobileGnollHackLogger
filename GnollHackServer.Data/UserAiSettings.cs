@@ -17,6 +17,7 @@ public class UserAiSettings
     public int? MaxResultLength { get; set; }
     public int? MaxCallsPerSession { get; set; }
     public int? MaxToolIterations { get; set; }
+    public int? MaxParallelToolCalls { get; set; }
 
     public bool EnableWebSearch { get; set; } = true;
     public bool EnableToolUse { get; set; } = true;
