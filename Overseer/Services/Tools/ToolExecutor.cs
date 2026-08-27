@@ -19,6 +19,8 @@ namespace Overseer.Services.Tools
 
 
 
+        private static readonly object _rateLimitLock = new object();
+
         public ToolExecutor(IEnumerable<IToolHandler> handlers, IClientToolBridge clientBridge, ILogger<ToolExecutor> logger, Microsoft.Extensions.Caching.Memory.IMemoryCache cache)
         {
             _handlers = handlers;
@@ -31,26 +33,33 @@ namespace Overseer.Services.Tools
         {
             _logger.LogInformation("Executing tool {ToolName} for Session {SessionId}", toolName, context.SessionId);
 
-            // 1. Session Rate Limiting
+            // 1. Session Rate Limiting (atomic — tools may run concurrently)
             var rateLimitKey = $"tool_calls_session_{context.SessionId}";
-            var count = _cache.GetOrCreate(rateLimitKey, entry =>
+            int count;
+            lock (_rateLimitLock)
             {
-                entry.Size = 1;
-                entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(4);
-                return 0;
-            });
-            
+                count = _cache.GetOrCreate(rateLimitKey, entry =>
+                {
+                    entry.Size = 1;
+                    entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(4);
+                    return 0;
+                });
+
+                if (count <= context.MaxCallsPerSession)
+                {
+                    _cache.Set(rateLimitKey, count + 1, new Microsoft.Extensions.Caching.Memory.MemoryCacheEntryOptions
+                    {
+                        Size = 1,
+                        AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(4)
+                    });
+                }
+            }
+
             if (count > context.MaxCallsPerSession)
             {
                 _logger.LogWarning("Rate limit exceeded for Session {SessionId}", context.SessionId);
                 return new ToolResult { Success = false, ErrorMessage = "Maximum tool calls per session exceeded." };
             }
-            
-            _cache.Set(rateLimitKey, count + 1, new Microsoft.Extensions.Caching.Memory.MemoryCacheEntryOptions
-            {
-                Size = 1,
-                AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(4)
-            });
 
             // Enhanced Audit Logging
             _logger.LogInformation("Tool Execution Audit - Session: {SessionId}, Tool: {ToolName}, Parameters: {Parameters}", 

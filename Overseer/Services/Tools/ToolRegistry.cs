@@ -133,5 +133,12 @@ namespace Overseer.Services.Tools
             }
             return desc;
         }
+
+        public ToolExecutionLocation? GetExecutionLocation(string toolName)
+        {
+            var handler = _handlers.FirstOrDefault(h =>
+                string.Equals(h.ToolName, toolName, StringComparison.OrdinalIgnoreCase));
+            return handler?.ExecutionLocation;
+        }
     }
 }

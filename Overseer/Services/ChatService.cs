@@ -595,6 +595,17 @@ public class ChatService
             MaxCallsPerSession = userMaxCallsPerSession ?? _configuration.GetValue<int>("AiPerformanceSettings:MaxCallsPerSession:Default", 30)
         };
         int maxToolIterations = userMaxToolIterations ?? _configuration.GetValue<int>("AiPerformanceSettings:MaxToolIterations:Default", 32);
+
+        int cfgParallelMin = _configuration.GetValue<int>("AiPerformanceSettings:MaxParallelToolCalls:Min", 1);
+        int cfgParallelMax = _configuration.GetValue<int>("AiPerformanceSettings:MaxParallelToolCalls:Max", 20);
+        int cfgParallelDefault = _configuration.GetValue<int>("AiPerformanceSettings:MaxParallelToolCalls:Default", 6);
+
+        int lowerParallel = Math.Max(1, cfgParallelMin);
+        int upperParallel = Math.Max(lowerParallel, cfgParallelMax);
+        int maxParallelTools = Math.Clamp(cfgParallelDefault, lowerParallel, upperParallel);
+
+        int cfgClientDefault = _configuration.GetValue<int>("AiPerformanceSettings:MaxParallelClientToolCalls:Default", 1);
+        int maxParallelClientTools = Math.Clamp(cfgClientDefault, 1, maxParallelTools);
         
         var httpClient = _httpClientFactory.CreateClient();
 
@@ -713,7 +724,7 @@ public class ChatService
 
                 aiProvider.AppendAssistantToolCallsToHistory(messageHistory, iterationText, currentIterationToolCalls, currentIterationProviderItems);
 
-                var providerResults = new List<ProviderToolResult>();
+                var batchItems = new List<ToolBatchItem>(currentIterationToolCalls.Count);
 
                 foreach (var tc in currentIterationToolCalls)
                 {
@@ -733,41 +744,70 @@ public class ChatService
                     JsonElement tArgs = JsonDocument.Parse("{}").RootElement;
                     try { tArgs = JsonSerializer.Deserialize<JsonElement>(tArgsStr); } catch { }
 
-                    var swTool = System.Diagnostics.Stopwatch.StartNew();
-                    var res = await _toolExecutor.ExecuteAsync(tName, tArgs, execContext, cancellationToken);
-                    swTool.Stop();
-
-                    var resContent = res.Success
-                        ? (!string.IsNullOrEmpty(res.Content) ? res.Content : "Success")
-                        : (!string.IsNullOrWhiteSpace(res.ErrorMessage) ? res.ErrorMessage : (!string.IsNullOrWhiteSpace(res.Content) ? res.Content : "Unknown error"));
-
-                    if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat] Tool '{tName}' completed in {swTool.ElapsedMilliseconds}ms. Success={res.Success}{(res.Success ? "" : $", Error: {resContent}")}" };
-
-                    providerResults.Add(new ProviderToolResult
+                    batchItems.Add(new ToolBatchItem
                     {
                         ToolCallId = tId,
                         ToolName = tName,
-                        Content = resContent,
-                        Success = res.Success
+                        Arguments = tArgs,
+                        IsClientTool = _toolRegistry.GetExecutionLocation(tName) == ToolExecutionLocation.Client
                     });
+                }
 
-                    var streamTc = streamToolCalls.FirstOrDefault(t => t.ToolCallId == tId);
-                    if (streamTc != null)
+                var outcomeChannel = System.Threading.Channels.Channel.CreateUnbounded<ToolBatchOutcome>(
+                    new System.Threading.Channels.UnboundedChannelOptions { SingleReader = true });
+
+                var batchTask = ToolBatchRunner.RunAsync(
+                    batchItems,
+                    (name, args, ct) => _toolExecutor.ExecuteAsync(name, args, execContext, ct),
+                    maxParallelTools,
+                    maxParallelClientTools,
+                    outcomeChannel.Writer,
+                    cancellationToken);
+
+                await foreach (var outcome in outcomeChannel.Reader.ReadAllAsync())
+                {
+                    if (_showDebugLog)
                     {
-                        streamTc.Result = res.Success ? resContent : null;
-                        streamTc.Error = res.Success ? null : resContent;
-                        streamTc.Status = res.Success ? "completed" : "error";
+                        yield return new ChatEvent
+                        {
+                            Type = "debug",
+                            Data = $"[Main Chat] Tool '{outcome.ToolName}' completed in {outcome.ExecutionMs}ms " +
+                                   $"(queued {outcome.QueueWaitMs}ms). Success={outcome.Success}" +
+                                   (outcome.Success ? "" : $", Error: {outcome.Content}")
+                        };
                     }
 
-                    if (res.Success)
+                    if (outcome.Success)
                     {
-                        var resObj = new { id = tId, name = tName, result = resContent };
+                        var resObj = new { id = outcome.ToolCallId, name = outcome.ToolName, result = outcome.Content };
                         yield return new ChatEvent { Type = "tool_result", Data = JsonSerializer.Serialize(resObj) };
                     }
                     else
                     {
-                        var errObj = new { id = tId, name = tName, error = resContent };
+                        var errObj = new { id = outcome.ToolCallId, name = outcome.ToolName, error = outcome.Content };
                         yield return new ChatEvent { Type = "tool_error", Data = JsonSerializer.Serialize(errObj) };
+                    }
+                }
+
+                var outcomes = await batchTask;
+
+                var providerResults = new List<ProviderToolResult>(outcomes.Count);
+                foreach (var outcome in outcomes)
+                {
+                    providerResults.Add(new ProviderToolResult
+                    {
+                        ToolCallId = outcome.ToolCallId,
+                        ToolName = outcome.ToolName,
+                        Content = outcome.Content,
+                        Success = outcome.Success
+                    });
+
+                    var streamTc = streamToolCalls.FirstOrDefault(t => t.ToolCallId == outcome.ToolCallId);
+                    if (streamTc != null)
+                    {
+                        streamTc.Result = outcome.Success ? outcome.Content : null;
+                        streamTc.Error = outcome.Success ? null : outcome.Content;
+                        streamTc.Status = outcome.Success ? "completed" : "error";
                     }
                 }
 
