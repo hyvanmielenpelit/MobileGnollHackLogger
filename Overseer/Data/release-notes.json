@@ -1,7 +1,7 @@
 [
   {
     "version": "1.0.25",
-    "date": "2026-08-27T16:47:00Z",
+    "date": "2026-08-28T07:25:00Z",
     "summary": "Added parallel tool execution support and user-configurable parallel tool limits, introduced AI service tier selection across models and chat, improved tool output sanitization and thought isolation, and fixed model configuration editing behaviors.",
     "changes": [
       {

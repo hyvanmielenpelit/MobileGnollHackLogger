@@ -1485,9 +1485,6 @@ public class ChatService
                 sb.AppendLine(policy);
                 sb.AppendLine();
             }
-            sb.AppendLine("### Tool Concurrency & Batching");
-            sb.AppendLine("When you need several independent lookups, request them in the same turn instead of one at a time — tool calls in a single turn are executed concurrently.");
-            sb.AppendLine();
         }
 
         return sb.ToString();

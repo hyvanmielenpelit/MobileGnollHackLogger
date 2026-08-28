@@ -20,6 +20,7 @@ Documentation and developer references for the Gnoll Overseer AI assistant web a
 | [**Chat & Data Retention**](overseer/chat-data-retention.md) | Specification and architecture for user session quotas, soft-delete lifecycle, tool call payload pruning, disk attachment cleanup, and automated database maintenance. |
 | [**Sentry Logging Architecture**](overseer/sentry-logging-architecture.md) | Specification and architecture for Sentry crash logging, server event processing, proxy tunneling, and frontend network error suppression. |
 | [**Sentry Source Maps Guide**](overseer/sentry-sourcemaps.md) | Guide to generating, injecting Debug IDs, and uploading Angular source maps to Sentry while excluding them from public deployment. |
+| [**Tool Batching & Execution**](overseer/tool-batching-and-execution.md) | Specification and architecture for multi-turn tool execution, concurrency throttles, output budgets, and real-time streaming. |
 
 ---
 
@@ -36,6 +37,7 @@ Documentation and developer references for the Gnoll Overseer AI assistant web a
 
 This repository contains specialized AI skills located in [`.agents/skills/`](../.agents/skills/):
 
+- `tool_execution_architecture` — Multi-tiered tool batching, concurrency throttles, output budgets, and testing patterns.
 - `sentry_logging_architecture` — Architectural design and suppression rules for Sentry crash logging and proxy tunneling.
 - `overseer_sentry_issue_fixing` — Systematic diagnosis and fix planning for Sentry error reports.
 - `overseer_sentry_sourcemaps_upload` — Injects Debug IDs and uploads Angular sourcemaps to Sentry.
@@ -62,6 +64,7 @@ docs/
 │   ├── adding-ai-models.md        # Adding LLM models to catalog
 │   ├── chat-data-retention.md     # Chat & data retention architectural specification
 │   ├── sentry-logging-architecture.md # Sentry crash logging architecture & error filtering
-│   └── sentry-sourcemaps.md       # Sentry source map injection & upload guide
+│   ├── sentry-sourcemaps.md       # Sentry source map injection & upload guide
+│   └── tool-batching-and-execution.md # Tool batching, concurrency & output budgets
 └── account/                       # GnollHack Account documentation (reserved)
 ```

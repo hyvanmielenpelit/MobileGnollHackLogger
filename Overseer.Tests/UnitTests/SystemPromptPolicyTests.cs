@@ -23,33 +23,81 @@ public class SystemPromptPolicyTests
         Assert.Contains("src/objects.c", policy);
     }
 
-    [Fact]
-    public void ToolGuides_ContainRandomizedAppearanceWarnings()
+    private static string GetGuideDirectory()
     {
-        // Guide paths relative to test runtime or repo
         var guideDir = Path.Combine(AppContext.BaseDirectory, "ToolGuides");
         if (!Directory.Exists(guideDir))
         {
-            // Fallback for direct source inspection in tests
             guideDir = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "Overseer", "ToolGuides"));
         }
 
-        if (Directory.Exists(guideDir))
-        {
-            string policyText = File.ReadAllText(Path.Combine(guideDir, "_policy.md"));
-            Assert.Contains("shuffle_all", policyText);
+        Assert.True(Directory.Exists(guideDir), $"ToolGuides directory not found at {guideDir}");
+        return guideDir;
+    }
 
-            string getItemStatsText = File.ReadAllText(Path.Combine(guideDir, "get_item_stats.md"));
-            Assert.Contains("randomized per game", getItemStatsText);
+    [Fact]
+    public void ToolGuides_ContainRandomizedAppearanceWarnings()
+    {
+        var guideDir = GetGuideDirectory();
 
-            string itemLookupText = File.ReadAllText(Path.Combine(guideDir, "item_lookup.md"));
-            Assert.Contains("pre-shuffle", itemLookupText);
+        string policyText = File.ReadAllText(Path.Combine(guideDir, "_policy.md"));
+        Assert.Contains("shuffle_all", policyText);
 
-            string sourceViewText = File.ReadAllText(Path.Combine(guideDir, "source_code_view.md"));
-            Assert.Contains("shuffle_all", sourceViewText);
+        string getItemStatsText = File.ReadAllText(Path.Combine(guideDir, "get_item_stats.md"));
+        Assert.Contains("randomized per game", getItemStatsText);
 
-            string sourceSearchText = File.ReadAllText(Path.Combine(guideDir, "source_code_search.md"));
-            Assert.Contains("shuffle_all", sourceSearchText);
-        }
+        string itemLookupText = File.ReadAllText(Path.Combine(guideDir, "item_lookup.md"));
+        Assert.Contains("pre-shuffle", itemLookupText);
+
+        string sourceViewText = File.ReadAllText(Path.Combine(guideDir, "source_code_view.md"));
+        Assert.Contains("shuffle_all", sourceViewText);
+
+        string sourceSearchText = File.ReadAllText(Path.Combine(guideDir, "source_code_search.md"));
+        Assert.Contains("shuffle_all", sourceSearchText);
+    }
+
+    [Fact]
+    public void ToolGuides_ContainToolBatchingAndAccuracyPolicy()
+    {
+        var guideDir = GetGuideDirectory();
+        string policyText = File.ReadAllText(Path.Combine(guideDir, "_policy.md"));
+
+        // Section headings at ## level
+        Assert.Contains("## Tool Batching and Parallel Execution", policyText);
+        Assert.Contains("## Accuracy About Tool Use", policyText);
+
+        // Core rules
+        Assert.Contains("**Independent**", policyText);
+        Assert.Contains("**Dependent**", policyText);
+        Assert.Contains("Do not batch speculative calls", policyText);
+        Assert.Contains("Dependent lookups stay sequential", policyText);
+        Assert.Contains("Do calculations after the data arrives", policyText);
+        Assert.Contains("Web search is not part of a batch", policyText);
+
+        // Truncation markers
+        Assert.Contains("(truncated: batch output budget reached)", policyText);
+        Assert.Contains("(skipped: batch output budget reached)", policyText);
+        Assert.Contains("[Result truncated for length]", policyText);
+
+        // Example anchors
+        Assert.Contains("do_eat()", policyText);
+        Assert.Contains("three unrelated monsters", policyText);
+        Assert.Contains("two different knowledge base articles", policyText);
+        Assert.Contains("wiki_view", policyText);
+        Assert.Contains("get_function_definition", policyText);
+
+        // Accuracy & negative assertion against vendor-specific wrapper
+        Assert.Contains("accuracy, not verbosity", policyText);
+        Assert.DoesNotContain("multi_tool_use", policyText);
+    }
+
+    [Fact]
+    public void ChatService_DoesNotHardcodeToolConcurrencySection()
+    {
+        var chatServicePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "Overseer", "Services", "ChatService.cs"));
+        Assert.True(File.Exists(chatServicePath), $"ChatService.cs not found at {chatServicePath}");
+
+        string source = File.ReadAllText(chatServicePath);
+        Assert.DoesNotContain("Tool Concurrency & Batching", source);
     }
 }
