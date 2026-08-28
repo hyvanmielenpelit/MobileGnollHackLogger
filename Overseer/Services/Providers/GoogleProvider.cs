@@ -147,9 +147,17 @@ public class GoogleProvider : IAiProvider
                     if (json.TryGetProperty("candidates", out var candidates) && candidates.GetArrayLength() > 0)
                     {
                         var cand = candidates[0];
-                        if (cand.TryGetProperty("finishReason", out var frProp) && frProp.ValueKind == JsonValueKind.String && frProp.GetString() == "MAX_TOKENS")
+                        if (cand.TryGetProperty("finishReason", out var frProp) && frProp.ValueKind == JsonValueKind.String)
                         {
-                            debugEvts.Add(new ChatEvent { Type = "debug", Data = "[Google] Response incomplete: finishReason=MAX_TOKENS" });
+                            var finishReason = frProp.GetString() ?? "";
+                            if (finishReason == "MAX_TOKENS")
+                            {
+                                debugEvts.Add(new ChatEvent { Type = "debug", Data = "[Google] Response incomplete: finishReason=MAX_TOKENS" });
+                            }
+                            if (showDebugLog && !string.IsNullOrEmpty(finishReason))
+                            {
+                                debugEvts.Add(new ChatEvent { Type = "debug", Data = $"[Main Chat - Google] candidate finishReason={finishReason}" });
+                            }
                         }
 
                         if (cand.TryGetProperty("content", out var content) && content.TryGetProperty("parts", out var parts))
@@ -217,6 +225,16 @@ public class GoogleProvider : IAiProvider
                         var errMessage = errObj.TryGetProperty("message", out var em) ? em.GetString() : "Unknown error";
                         var errCode = errObj.TryGetProperty("code", out var ec) ? ec.GetInt32().ToString() : "unknown";
                         errorEvt = new ChatEvent { Type = "error", Data = $"Google stream error: [{errCode}] {errMessage}" };
+                    }
+
+                    if (showDebugLog && json.TryGetProperty("usageMetadata", out var usageProp))
+                    {
+                        var promptTokens = usageProp.TryGetProperty("promptTokenCount", out var pt) ? pt.ToString() : "?";
+                        var outputTokens = usageProp.TryGetProperty("candidatesTokenCount", out var ct) ? ct.ToString() : "?";
+                        var totalTokens = usageProp.TryGetProperty("totalTokenCount", out var tt) ? tt.ToString() : "?";
+                        string thoughtTokensStr = usageProp.TryGetProperty("thoughtsTokenCount", out var tht) ? $", thought_tokens={tht}" : "";
+                        string cachedTokensStr = usageProp.TryGetProperty("cachedContentTokenCount", out var cct) ? $", cached_tokens={cct}" : "";
+                        debugEvts.Add(new ChatEvent { Type = "debug", Data = $"[Main Chat - Google] usage: prompt_tokens={promptTokens}, output_tokens={outputTokens}, total_tokens={totalTokens}{thoughtTokensStr}{cachedTokensStr}" });
                     }
                 }
                 catch (JsonException) { }

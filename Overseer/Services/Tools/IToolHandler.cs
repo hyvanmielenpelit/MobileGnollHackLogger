@@ -59,6 +59,8 @@ namespace Overseer.Services.Tools
         public Func<ChatEvent, Task>? EventSink { get; set; }
         public Agents.AgentRunBudget? Budget { get; set; }
         public bool ShowDebugLog { get; set; }
+        public long? ActiveUserModelId { get; set; }
+        public long? ActiveSystemModelId { get; set; }
 
         public ToolExecutionContext CloneFor(string toolCallId)
         {
@@ -80,7 +82,9 @@ namespace Overseer.Services.Tools
                 MaxSubAgentResultLength = this.MaxSubAgentResultLength,
                 EventSink = this.EventSink,
                 Budget = this.Budget,
-                ShowDebugLog = this.ShowDebugLog
+                ShowDebugLog = this.ShowDebugLog,
+                ActiveUserModelId = this.ActiveUserModelId,
+                ActiveSystemModelId = this.ActiveSystemModelId
             };
         }
     }

@@ -229,6 +229,7 @@ public class ChatService
                     yield break;
                 }
 
+                userModelId = null;
                 provider = config.Provider;
                 model = config.ModelId;
                 modelDisplayName = !string.IsNullOrEmpty(config.DisplayName) ? config.DisplayName : config.ModelId;
@@ -259,12 +260,17 @@ public class ChatService
                     if (userModel.MaxInputTokens.HasValue) maxInputTokens = userModel.MaxInputTokens.Value;
                     if (userModel.MaxOutputTokens.HasValue) maxOutputTokens = userModel.MaxOutputTokens.Value;
                 }
+                else
+                {
+                    userModelId = null;
+                }
             }
             if (string.IsNullOrEmpty(provider) || string.IsNullOrEmpty(model))
             {
                 var defaultModel = await dbContext.UserAiModels.OrderBy(m => m.OrderIndex).FirstOrDefaultAsync(m => m.AspNetUserId == userId);
                 if (defaultModel != null)
                 {
+                    userModelId = defaultModel.Id;
                     provider = defaultModel.Provider;
                     model = defaultModel.ModelId;
                     modelDisplayName = !string.IsNullOrEmpty(defaultModel.DisplayName) ? defaultModel.DisplayName : defaultModel.ModelId;
@@ -636,6 +642,8 @@ public class ChatService
             MaxCallsPerSession = userMaxCallsPerSession ?? _configuration.GetValue<int>("AiPerformanceSettings:MaxCallsPerSession:Default", 30),
             ShowDebugLog = _showDebugLog,
             Budget = runBudget,
+            ActiveUserModelId = userModelId,
+            ActiveSystemModelId = systemModelId,
             EventSink = async (evt) => {
                 evt.SessionId = currentSessionId;
                 _ongoingChatManager.ProcessEvent(currentSessionId, evt);

@@ -14,18 +14,22 @@ Overseer supports a **coordinator-specialist multi-agent architecture**:
 
 ### 1. Catalog & Definition (`SubAgentCatalogService` & `SubAgentCatalog.json`)
 - Registered subagents are defined in `Overseer/Data/SubAgentCatalog.json`.
-- Each definition specifies `name`, `displayName`, `description`, `systemPrompt`, `allowedTools`, `maxIterations`, `modelOverride`, `providerOverride`, and reasoning defaults.
+- Each definition specifies `name`, `displayName`, `description`, `systemPrompt`, `allowedTools`, `maxIterations`, `modelPreference` (`provider` and `modelId`), and reasoning defaults.
 - Validated on application startup against the `ToolRegistry` and `ModelMetadataService`.
 
 ### 2. Delegation Tool (`DelegateToSubAgentTool`)
 - Implemented as an `IToolHandler` under `ToolCategory.SubAgent`.
 - Validates delegation depth (depth limit 1 prevents infinite recursion).
 - Registers the subagent execution with `OngoingChatManager` for individual cancellation.
-- Resolves subagent execution model and token limits following the resolution precedence:
-  1. Subagent definition override (`SubAgentDefinition.MaxOutputTokens` / `ThinkingLevel` / `ReasoningMode`).
-  2. Inherited user model configuration from `UserAiModels` or DB fallback.
-  3. Static catalog defaults via `ModelMetadataService` (e.g. 128k for `gpt-5.6-luna`, 65k for `gemini-2.5-pro`).
-- Clones and propagates `ToolExecutionContext` (`SessionId`, `UserId`, `SpoilerFreeMode`, `AgentDepth = parent + 1`, `Budget`) to maintain isolation and spoiler safety.
+- Resolves subagent execution model, credentials, and parameters following the precedence hierarchy:
+  1. **Subagent Definition Preference** (`modelPreference`): Authorized chat system model matching preference (`ModelRole` of 1 or 3) → `appsettings.json` provider key → user provider API key.
+  2. **Active System Model** (`ActiveSystemModelId`): If active in coordinator turn, inherits the authorized system model and credentials (resolved `ModelRole` of 1 (Chat) or 3 (Both); title-only models with `ModelRole = 2` are excluded).
+  3. **Active User Model** (`ActiveUserModelId`): If active in coordinator turn, inherits the selected user model and credentials.
+  4. **User Default Model**: The user's first configured model in `UserAiModels`.
+  5. **First Authorized System Model**: The first assigned system model available for chat (resolved `ModelRole` of 1 or 3).
+  6. **AppSettings Fallback**: Default model from `appsettings.json` (`AI:Provider`, `AI:Model`, `AI:APIKey`).
+- Output token limits resolve with precedence: Subagent definition override (`SubAgentDefinition.MaxOutputTokens`) → Inherited model row (`MaxOutputTokens`) → Static catalog defaults via `ModelMetadataService` (e.g. 128k for `gpt-5.6-luna`, 65k for `gemini-2.5-pro`).
+- Clones and propagates `ToolExecutionContext` (`SessionId`, `UserId`, `SpoilerFreeMode`, `AgentDepth = parent + 1`, `Budget`, `ActiveSystemModelId`, `ActiveUserModelId`) to maintain isolation and spoiler safety.
 - Emits filtered debug diagnostic logs (`evt.Type == "debug"`) to the parent event sink while isolating subagent text chunks and timing metrics from coordinator chat streams.
 - Executes the subagent loop via `AgentLoopRunner`.
 

@@ -332,6 +332,158 @@ public class DelegateToSubAgentToolTests
         Assert.Contains("not permitted to execute subagents", result.ErrorMessage);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_ActiveUserModelId_InheritsExactSelectedModel()
+    {
+        var (tool, db, provider, _) = CreateTestSetup();
+        var keyBytes = new byte[32];
+        keyBytes[0] = 42;
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { { "AesEncryptionKey", Convert.ToBase64String(keyBytes) } }).Build();
+        var crypto = new CryptoService(config);
+
+        var (encKey, nonce, tag) = crypto.Encrypt("custom-user-api-key", "user80");
+
+        db.UserAiModels.Add(new UserAiModel { Id = 101, AspNetUserId = "user80", Provider = "OpenAI", ModelId = "gpt-5.6-first", OrderIndex = 0 });
+        db.UserAiModels.Add(new UserAiModel { Id = 102, AspNetUserId = "user80", Provider = "OpenAI", ModelId = "gpt-5.6-second", OrderIndex = 1 });
+        db.UserAiApiKeys.Add(new UserAiApiKey { AspNetUserId = "user80", Provider = "OpenAI", EncryptedApiKey = encKey, ApiKeyNonce = nonce, ApiKeyTag = tag });
+
+        var session = new ChatSession { Id = 80, AspNetUserId = "user80", Title = "Test", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow };
+        db.ChatSession.Add(session);
+        await db.SaveChangesAsync();
+
+        var context = new ToolExecutionContext { SessionId = 80, ActiveUserModelId = 102, AgentDepth = 0, MaxAgentDepth = 1 };
+        var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
+
+        var result = await tool.ExecuteAsync(validParams, context, CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Equal("gpt-5.6-second", provider.LastModelId);
+        Assert.Equal("custom-user-api-key", provider.LastApiKey);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ActiveSystemModelId_InheritsExactSelectedSystemModel()
+    {
+        var (tool, db, provider, _) = CreateTestSetup();
+        var keyBytes = new byte[32];
+        keyBytes[0] = 42;
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { { "AesEncryptionKey", Convert.ToBase64String(keyBytes) } }).Build();
+        var crypto = new CryptoService(config);
+
+        var (sysKey, sysNonce, sysTag) = crypto.Encrypt("system-secret-key", "SYSTEM_API_KEY");
+        var (userKey, userNonce, userTag) = crypto.Encrypt("user-key-81", "user81");
+
+        db.SystemAiApiConfigurations.Add(new SystemAiApiConfiguration
+        {
+            Id = 201,
+            DisplayName = "System Model",
+            Provider = "OpenAI",
+            ModelId = "gpt-5.6-system-custom",
+            IsEnabled = true,
+            IsSystemWide = true,
+            ModelRole = 3,
+            EncryptedApiKey = sysKey,
+            ApiKeyNonce = sysNonce,
+            ApiKeyTag = sysTag
+        });
+
+        db.UserAiModels.Add(new UserAiModel { Id = 103, AspNetUserId = "user81", Provider = "OpenAI", ModelId = "gpt-5.6-user-model", OrderIndex = 0 });
+        db.UserAiApiKeys.Add(new UserAiApiKey { AspNetUserId = "user81", Provider = "OpenAI", EncryptedApiKey = userKey, ApiKeyNonce = userNonce, ApiKeyTag = userTag });
+
+        var session = new ChatSession { Id = 81, AspNetUserId = "user81", Title = "Test", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow };
+        db.ChatSession.Add(session);
+        await db.SaveChangesAsync();
+
+        var context = new ToolExecutionContext { SessionId = 81, ActiveSystemModelId = 201, AgentDepth = 0, MaxAgentDepth = 1 };
+        var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
+
+        var result = await tool.ExecuteAsync(validParams, context, CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Equal("gpt-5.6-system-custom", provider.LastModelId);
+        Assert.Equal("system-secret-key", provider.LastApiKey);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ExcludesTitleOnlySystemModels()
+    {
+        var (tool, db, provider, _) = CreateTestSetup();
+        var keyBytes = new byte[32];
+        keyBytes[0] = 42;
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { { "AesEncryptionKey", Convert.ToBase64String(keyBytes) } }).Build();
+        var crypto = new CryptoService(config);
+
+        var (titleKey, titleNonce, titleTag) = crypto.Encrypt("title-only-key", "SYSTEM_API_KEY");
+
+        db.SystemAiApiConfigurations.Add(new SystemAiApiConfiguration
+        {
+            Id = 202,
+            DisplayName = "Title Model",
+            Provider = "OpenAI",
+            ModelId = "gpt-5.6-title-only",
+            IsEnabled = true,
+            IsSystemWide = true,
+            ModelRole = 2, // Title Generation only
+            EncryptedApiKey = titleKey,
+            ApiKeyNonce = titleNonce,
+            ApiKeyTag = titleTag
+        });
+
+        var session = new ChatSession { Id = 82, AspNetUserId = "user82", Title = "Test", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow };
+        db.ChatSession.Add(session);
+        await db.SaveChangesAsync();
+
+        var context = new ToolExecutionContext { SessionId = 82, AgentDepth = 0, MaxAgentDepth = 1 };
+        var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
+
+        var result = await tool.ExecuteAsync(validParams, context, CancellationToken.None);
+
+        Assert.True(result.Success);
+        // Excludes title-only system model and falls through to AppSettings
+        Assert.Equal("gpt-5.6-luna", provider.LastModelId);
+        Assert.Equal("test-key", provider.LastApiKey);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ChecksUserAndGroupAssignments()
+    {
+        var (tool, db, provider, _) = CreateTestSetup();
+        var keyBytes = new byte[32];
+        keyBytes[0] = 42;
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { { "AesEncryptionKey", Convert.ToBase64String(keyBytes) } }).Build();
+        var crypto = new CryptoService(config);
+
+        var (privKey, privNonce, privTag) = crypto.Encrypt("private-key", "SYSTEM_API_KEY");
+
+        db.SystemAiApiConfigurations.Add(new SystemAiApiConfiguration
+        {
+            Id = 203,
+            DisplayName = "Private Model",
+            Provider = "OpenAI",
+            ModelId = "gpt-5.6-private-system",
+            IsEnabled = true,
+            IsSystemWide = false, // Not system-wide and not assigned to user83
+            ModelRole = 3,
+            EncryptedApiKey = privKey,
+            ApiKeyNonce = privNonce,
+            ApiKeyTag = privTag
+        });
+
+        var session = new ChatSession { Id = 83, AspNetUserId = "user83", Title = "Test", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow };
+        db.ChatSession.Add(session);
+        await db.SaveChangesAsync();
+
+        var context = new ToolExecutionContext { SessionId = 83, AgentDepth = 0, MaxAgentDepth = 1 };
+        var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
+
+        var result = await tool.ExecuteAsync(validParams, context, CancellationToken.None);
+
+        Assert.True(result.Success);
+        // Excludes unassigned private model and falls through to AppSettings
+        Assert.Equal("gpt-5.6-luna", provider.LastModelId);
+        Assert.Equal("test-key", provider.LastApiKey);
+    }
+
     private class DisallowedExecutionMetadataService : ModelMetadataService
     {
         public override ModelMetadata GetMetadata(string provider, string modelId)
@@ -410,6 +562,8 @@ public class DelegateToSubAgentToolTests
 
         services.AddSingleton(db);
         services.AddSingleton(crypto);
+        services.AddSingleton<SettingsService>();
+        services.AddSingleton<SystemAiConfigService>();
         services.AddSingleton<IAiProvider>(mockProvider);
         services.AddSingleton(metadata);
         services.AddSingleton(toolRegistry);
@@ -441,6 +595,7 @@ public class DelegateToSubAgentToolTests
         public string? LastReasoningMode { get; private set; }
         public string? LastServiceTier { get; private set; }
         public string? LastModelId { get; private set; }
+        public string? LastApiKey { get; private set; }
 
         public void AppendAssistantToolCallsToHistory(List<object> messageHistory, string iterationText, List<JsonElement> toolCalls, List<JsonElement>? providerHistoryItems = null)
         {
@@ -466,7 +621,10 @@ public class DelegateToSubAgentToolTests
         public object BuildFunctionDeclaration(string name, string description, object parameterSchema) => new { name, description, parameterSchema };
         public object? BuildToolsPayload(List<object> providerTools, List<object> functionDeclarations) => null;
         public object? BuildWebSearchTool() => null;
-        public void ConfigureRequest(HttpRequestMessage request, string apiKey) { }
+        public void ConfigureRequest(HttpRequestMessage request, string apiKey)
+        {
+            LastApiKey = apiKey;
+        }
         public object FormatMessage(string role, string text, List<SendMessageAttachment>? imageAttachments) => new { role, content = text };
         public string GetChatStreamUrl(string modelId, string apiKey) => "https://mock.stream.test";
         public async IAsyncEnumerable<ChatEvent> ParseStreamAsync(HttpResponseMessage response, bool showDebugLog, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)

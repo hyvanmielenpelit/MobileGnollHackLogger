@@ -143,11 +143,9 @@ public class DelegateToSubAgentTool : IToolHandler
         try
         {
             using var scope = _scopeFactory.CreateScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var cryptoService = scope.ServiceProvider.GetRequiredService<CryptoService>();
 
             // 1. Resolve Provider, Model, and API Key
-            var resolved = await ResolveModelAndCredentialsAsync(subAgentDef, dbContext, cryptoService, context.SessionId, cancellationToken);
+            var resolved = await ResolveModelAndCredentialsAsync(subAgentDef, scope.ServiceProvider, context, cancellationToken);
 
             var providers = scope.ServiceProvider.GetServices<IAiProvider>();
             var aiProvider = providers.FirstOrDefault(p => string.Equals(p.ProviderName, resolved.Provider, StringComparison.OrdinalIgnoreCase));
@@ -226,6 +224,8 @@ public class DelegateToSubAgentTool : IToolHandler
             subAgentExecContext.AgentName = subAgentDef.Name;
             subAgentExecContext.AgentDepth = context.AgentDepth + 1;
             subAgentExecContext.MaxAgentDepth = context.MaxAgentDepth;
+            subAgentExecContext.ActiveSystemModelId = resolved.SystemModelId;
+            subAgentExecContext.ActiveUserModelId = resolved.UserModelId;
 
             string maxOutputTokensSource = subAgentDef.MaxOutputTokens.HasValue ? "SubAgentCatalog"
                 : resolved.MaxOutputTokens.HasValue ? "InheritedModelRow"
@@ -349,19 +349,24 @@ public class DelegateToSubAgentTool : IToolHandler
         string? ReasoningMode,
         string? ReasoningSummary,
         string? ServiceTier,
-        long? SystemModelId);
+        long? SystemModelId,
+        long? UserModelId = null);
 
     private async Task<ResolvedSubAgentModel> ResolveModelAndCredentialsAsync(
         SubAgentDefinition definition,
-        ApplicationDbContext dbContext,
-        CryptoService cryptoService,
-        long sessionId,
+        IServiceProvider scopedServices,
+        ToolExecutionContext context,
         CancellationToken cancellationToken)
     {
-        var session = await dbContext.ChatSession.FirstOrDefaultAsync(s => s.Id == sessionId, cancellationToken);
+        var dbContext = scopedServices.GetRequiredService<ApplicationDbContext>();
+        var cryptoService = scopedServices.GetRequiredService<CryptoService>();
+        var settingsService = scopedServices.GetRequiredService<SettingsService>();
+        var systemAiConfigService = scopedServices.GetRequiredService<SystemAiConfigService>();
+
+        var session = await dbContext.ChatSession.FirstOrDefaultAsync(s => s.Id == context.SessionId, cancellationToken);
         string? userId = session?.AspNetUserId;
 
-        // Check if definition specifies a preferred model
+        // Step 1: Check if definition specifies a preferred model
         if (definition.ModelPreference != null &&
             !string.IsNullOrWhiteSpace(definition.ModelPreference.Provider) &&
             !string.IsNullOrWhiteSpace(definition.ModelPreference.ModelId))
@@ -369,35 +374,41 @@ public class DelegateToSubAgentTool : IToolHandler
             string prefProvider = definition.ModelPreference.Provider;
             string prefModelId = definition.ModelPreference.ModelId;
 
-            // 1. Try System Configuration in DB
-            var sysConfig = await dbContext.SystemAiApiConfigurations.FirstOrDefaultAsync(
-                c => c.Provider == prefProvider && c.ModelId == prefModelId && c.IsEnabled, cancellationToken);
-
-            if (sysConfig != null && !string.IsNullOrWhiteSpace(sysConfig.EncryptedApiKey) &&
-                !string.IsNullOrWhiteSpace(sysConfig.ApiKeyNonce) && !string.IsNullOrWhiteSpace(sysConfig.ApiKeyTag))
+            // 1.1 Try Authorized System Configuration in DB
+            if (!string.IsNullOrEmpty(userId))
             {
-                try
+                var sysModels = await settingsService.GetResolvedSystemModelsAsync(userId, roleFilter: 1);
+                var matchingSys = sysModels.FirstOrDefault(c =>
+                    string.Equals(c.Config.Provider, prefProvider, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(c.Config.ModelId, prefModelId, StringComparison.OrdinalIgnoreCase)).Config;
+
+                if (matchingSys != null && !string.IsNullOrWhiteSpace(matchingSys.EncryptedApiKey) &&
+                    !string.IsNullOrWhiteSpace(matchingSys.ApiKeyNonce) && !string.IsNullOrWhiteSpace(matchingSys.ApiKeyTag))
                 {
-                    var decryptedKey = cryptoService.Decrypt(sysConfig.EncryptedApiKey, sysConfig.ApiKeyNonce, sysConfig.ApiKeyTag, "SYSTEM_API_KEY");
-                    if (!string.IsNullOrWhiteSpace(decryptedKey))
+                    try
                     {
-                        return new ResolvedSubAgentModel(
-                            prefProvider,
-                            prefModelId,
-                            decryptedKey,
-                            "SystemConfig",
-                            sysConfig.MaxOutputTokens,
-                            sysConfig.ThinkingLevel,
-                            sysConfig.ReasoningMode,
-                            sysConfig.ReasoningSummary,
-                            sysConfig.ServiceTier,
-                            sysConfig.Id);
+                        var decryptedKey = cryptoService.Decrypt(matchingSys.EncryptedApiKey, matchingSys.ApiKeyNonce, matchingSys.ApiKeyTag, "SYSTEM_API_KEY");
+                        if (!string.IsNullOrWhiteSpace(decryptedKey))
+                        {
+                            return new ResolvedSubAgentModel(
+                                prefProvider,
+                                prefModelId,
+                                decryptedKey,
+                                "PreferredSystemModel",
+                                matchingSys.MaxOutputTokens,
+                                matchingSys.ThinkingLevel,
+                                matchingSys.ReasoningMode,
+                                matchingSys.ReasoningSummary,
+                                matchingSys.ServiceTier,
+                                matchingSys.Id,
+                                null);
+                        }
                     }
+                    catch { }
                 }
-                catch { }
             }
 
-            // 2. Try AppSettings System Config Key
+            // 1.2 Try AppSettings System Config Key
             string? appSettingKey = _configuration[$"AI:{prefProvider}:APIKey"] ??
                                    (string.Equals(_configuration["AI:Provider"], prefProvider, StringComparison.OrdinalIgnoreCase) ? _configuration["AI:APIKey"] : null);
 
@@ -407,7 +418,8 @@ public class DelegateToSubAgentTool : IToolHandler
                     prefProvider,
                     prefModelId,
                     appSettingKey,
-                    "SystemConfig",
+                    "PreferredAppSettingsKey",
+                    null,
                     null,
                     null,
                     null,
@@ -416,7 +428,7 @@ public class DelegateToSubAgentTool : IToolHandler
                     null);
             }
 
-            // 3. Try User Custom Key for this provider
+            // 1.3 Try User Custom Key for this provider
             if (!string.IsNullOrEmpty(userId))
             {
                 var userKey = await dbContext.UserAiApiKeys.FirstOrDefaultAsync(
@@ -434,7 +446,8 @@ public class DelegateToSubAgentTool : IToolHandler
                                 prefProvider,
                                 prefModelId,
                                 decryptedKey,
-                                "UserKey",
+                                "PreferredUserKey",
+                                null,
                                 null,
                                 null,
                                 null,
@@ -448,76 +461,177 @@ public class DelegateToSubAgentTool : IToolHandler
             }
         }
 
-        // 4. Fallback: Inherit coordinator model & credentials from user default or system config
-        string fallbackProvider = _configuration["AI:Provider"] ?? "OpenAI";
-        string fallbackModelId = _configuration["AI:Model"] ?? "gpt-5.4";
-        string fallbackApiKey = "";
-        int? fallbackMaxOutputTokens = null;
-        string? fallbackThinkingLevel = null;
-        string? fallbackReasoningMode = null;
-        string? fallbackReasoningSummary = null;
-        string? fallbackServiceTier = null;
-        long? fallbackSystemModelId = null;
-
-        if (!string.IsNullOrEmpty(userId))
+        // Step 2: Active Turn & Fallback Resolution
+        // Branch 2A (Active System Model)
+        if (context.ActiveSystemModelId.HasValue && !string.IsNullOrEmpty(userId))
         {
-            var userModel = await dbContext.UserAiModels.OrderBy(m => m.OrderIndex).FirstOrDefaultAsync(m => m.AspNetUserId == userId, cancellationToken);
-            if (userModel != null)
+            var (sysConfig, errorMessage) = await systemAiConfigService.GetAndCheckSystemConfigAsync(context.ActiveSystemModelId.Value, userId, requiredRoleFilter: 1);
+            if (sysConfig != null && !string.IsNullOrWhiteSpace(sysConfig.EncryptedApiKey) &&
+                !string.IsNullOrWhiteSpace(sysConfig.ApiKeyNonce) && !string.IsNullOrWhiteSpace(sysConfig.ApiKeyTag))
             {
-                fallbackProvider = userModel.Provider;
-                fallbackModelId = userModel.ModelId;
-                fallbackMaxOutputTokens = userModel.MaxOutputTokens;
-                fallbackThinkingLevel = userModel.ThinkingLevel;
-                fallbackReasoningMode = userModel.ReasoningMode;
-                fallbackReasoningSummary = userModel.ReasoningSummary;
-                fallbackServiceTier = userModel.ServiceTier;
+                try
+                {
+                    var decryptedKey = cryptoService.Decrypt(sysConfig.EncryptedApiKey, sysConfig.ApiKeyNonce, sysConfig.ApiKeyTag, "SYSTEM_API_KEY");
+                    if (!string.IsNullOrWhiteSpace(decryptedKey))
+                    {
+                        return new ResolvedSubAgentModel(
+                            sysConfig.Provider,
+                            sysConfig.ModelId,
+                            decryptedKey,
+                            "ActiveSystemModel",
+                            sysConfig.MaxOutputTokens,
+                            sysConfig.ThinkingLevel,
+                            sysConfig.ReasoningMode,
+                            sysConfig.ReasoningSummary,
+                            sysConfig.ServiceTier,
+                            sysConfig.Id,
+                            null);
+                    }
+                }
+                catch { }
+            }
+            else if (errorMessage != null)
+            {
+                _logger.LogDebug("Subagent could not use ActiveSystemModelId {ConfigId}: {ErrorMessage}", context.ActiveSystemModelId.Value, errorMessage);
+            }
+        }
 
-                var userKey = await dbContext.UserAiApiKeys.FirstOrDefaultAsync(k => k.AspNetUserId == userId && k.Provider == userModel.Provider, cancellationToken);
+        // Branch 2B (Active User Model)
+        if (context.ActiveUserModelId.HasValue && !string.IsNullOrEmpty(userId))
+        {
+            var activeUserModel = await dbContext.UserAiModels.FirstOrDefaultAsync(
+                m => m.Id == context.ActiveUserModelId.Value && m.AspNetUserId == userId, cancellationToken);
+            if (activeUserModel != null)
+            {
+                string? userApiKey = null;
+                var userKey = await dbContext.UserAiApiKeys.FirstOrDefaultAsync(
+                    k => k.AspNetUserId == userId && k.Provider == activeUserModel.Provider, cancellationToken);
                 if (userKey != null && !string.IsNullOrWhiteSpace(userKey.EncryptedApiKey) &&
                     !string.IsNullOrWhiteSpace(userKey.ApiKeyNonce) && !string.IsNullOrWhiteSpace(userKey.ApiKeyTag))
                 {
-                    try { fallbackApiKey = cryptoService.Decrypt(userKey.EncryptedApiKey, userKey.ApiKeyNonce, userKey.ApiKeyTag, userId); } catch { }
+                    try
+                    {
+                        userApiKey = cryptoService.Decrypt(userKey.EncryptedApiKey, userKey.ApiKeyNonce, userKey.ApiKeyTag, userId);
+                    }
+                    catch { }
+                }
+
+                if (string.IsNullOrWhiteSpace(userApiKey))
+                {
+                    userApiKey = _configuration[$"AI:{activeUserModel.Provider}:APIKey"] ??
+                                 (string.Equals(_configuration["AI:Provider"], activeUserModel.Provider, StringComparison.OrdinalIgnoreCase) ? _configuration["AI:APIKey"] : null);
+                }
+
+                if (!string.IsNullOrWhiteSpace(userApiKey))
+                {
+                    return new ResolvedSubAgentModel(
+                        activeUserModel.Provider,
+                        activeUserModel.ModelId,
+                        userApiKey,
+                        "ActiveUserModel",
+                        activeUserModel.MaxOutputTokens,
+                        activeUserModel.ThinkingLevel,
+                        activeUserModel.ReasoningMode,
+                        activeUserModel.ReasoningSummary,
+                        activeUserModel.ServiceTier,
+                        null,
+                        activeUserModel.Id);
                 }
             }
         }
 
-        if (string.IsNullOrWhiteSpace(fallbackApiKey))
+        // Branch 2C (User Default Model)
+        if (!string.IsNullOrEmpty(userId))
         {
-            var firstSys = await dbContext.SystemAiApiConfigurations.FirstOrDefaultAsync(c => c.IsEnabled, cancellationToken);
+            var defaultUserModel = await dbContext.UserAiModels
+                .OrderBy(m => m.OrderIndex)
+                .FirstOrDefaultAsync(m => m.AspNetUserId == userId, cancellationToken);
+            if (defaultUserModel != null)
+            {
+                string? userApiKey = null;
+                var userKey = await dbContext.UserAiApiKeys.FirstOrDefaultAsync(
+                    k => k.AspNetUserId == userId && k.Provider == defaultUserModel.Provider, cancellationToken);
+                if (userKey != null && !string.IsNullOrWhiteSpace(userKey.EncryptedApiKey) &&
+                    !string.IsNullOrWhiteSpace(userKey.ApiKeyNonce) && !string.IsNullOrWhiteSpace(userKey.ApiKeyTag))
+                {
+                    try
+                    {
+                        userApiKey = cryptoService.Decrypt(userKey.EncryptedApiKey, userKey.ApiKeyNonce, userKey.ApiKeyTag, userId);
+                    }
+                    catch { }
+                }
+
+                if (string.IsNullOrWhiteSpace(userApiKey))
+                {
+                    userApiKey = _configuration[$"AI:{defaultUserModel.Provider}:APIKey"] ??
+                                 (string.Equals(_configuration["AI:Provider"], defaultUserModel.Provider, StringComparison.OrdinalIgnoreCase) ? _configuration["AI:APIKey"] : null);
+                }
+
+                if (!string.IsNullOrWhiteSpace(userApiKey))
+                {
+                    return new ResolvedSubAgentModel(
+                        defaultUserModel.Provider,
+                        defaultUserModel.ModelId,
+                        userApiKey,
+                        "UserDefaultModel",
+                        defaultUserModel.MaxOutputTokens,
+                        defaultUserModel.ThinkingLevel,
+                        defaultUserModel.ReasoningMode,
+                        defaultUserModel.ReasoningSummary,
+                        defaultUserModel.ServiceTier,
+                        null,
+                        defaultUserModel.Id);
+                }
+            }
+        }
+
+        // Branch 2D (First Authorized System Model)
+        if (!string.IsNullOrEmpty(userId))
+        {
+            var sysModels = await settingsService.GetResolvedSystemModelsAsync(userId, roleFilter: 1);
+            var firstSys = sysModels.FirstOrDefault().Config;
             if (firstSys != null && !string.IsNullOrWhiteSpace(firstSys.EncryptedApiKey) &&
                 !string.IsNullOrWhiteSpace(firstSys.ApiKeyNonce) && !string.IsNullOrWhiteSpace(firstSys.ApiKeyTag))
             {
                 try
                 {
-                    fallbackApiKey = cryptoService.Decrypt(firstSys.EncryptedApiKey, firstSys.ApiKeyNonce, firstSys.ApiKeyTag, "SYSTEM_API_KEY");
-                    fallbackProvider = firstSys.Provider;
-                    fallbackModelId = firstSys.ModelId;
-                    fallbackMaxOutputTokens = firstSys.MaxOutputTokens;
-                    fallbackThinkingLevel = firstSys.ThinkingLevel;
-                    fallbackReasoningMode = firstSys.ReasoningMode;
-                    fallbackReasoningSummary = firstSys.ReasoningSummary;
-                    fallbackServiceTier = firstSys.ServiceTier;
-                    fallbackSystemModelId = firstSys.Id;
+                    var decryptedKey = cryptoService.Decrypt(firstSys.EncryptedApiKey, firstSys.ApiKeyNonce, firstSys.ApiKeyTag, "SYSTEM_API_KEY");
+                    if (!string.IsNullOrWhiteSpace(decryptedKey))
+                    {
+                        return new ResolvedSubAgentModel(
+                            firstSys.Provider,
+                            firstSys.ModelId,
+                            decryptedKey,
+                            "AssignedSystemModel",
+                            firstSys.MaxOutputTokens,
+                            firstSys.ThinkingLevel,
+                            firstSys.ReasoningMode,
+                            firstSys.ReasoningSummary,
+                            firstSys.ServiceTier,
+                            firstSys.Id,
+                            null);
+                    }
                 }
                 catch { }
             }
         }
 
-        if (string.IsNullOrWhiteSpace(fallbackApiKey))
-        {
-            fallbackApiKey = _configuration[$"AI:{fallbackProvider}:APIKey"] ?? _configuration["AI:APIKey"] ?? "";
-        }
+        // Branch 2E (AppSettings Fallback)
+        string fallbackProvider = _configuration["AI:Provider"] ?? "OpenAI";
+        string fallbackModelId = _configuration["AI:Model"] ?? "gpt-5.4";
+        string fallbackApiKey = _configuration[$"AI:{fallbackProvider}:APIKey"] ?? _configuration["AI:APIKey"] ?? "";
 
         return new ResolvedSubAgentModel(
             fallbackProvider,
             fallbackModelId,
             fallbackApiKey,
-            "Inherited",
-            fallbackMaxOutputTokens,
-            fallbackThinkingLevel,
-            fallbackReasoningMode,
-            fallbackReasoningSummary,
-            fallbackServiceTier,
-            fallbackSystemModelId);
+            "AppSettings",
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null);
     }
 }
