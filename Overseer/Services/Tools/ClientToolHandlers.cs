@@ -11,6 +11,8 @@ namespace Overseer.Services.Tools
         public virtual string Description { get; set; } = "Client tool";
         public ToolExecutionLocation ExecutionLocation => ToolExecutionLocation.Client;
         public virtual ToolCategory Category => ToolCategory.ClientActiveSessionQuery;
+        public virtual int TimeoutSeconds => 15;
+        public virtual int? MaxResultLengthOverride => null;
 
         public virtual JsonElement ParameterSchema { get; } = JsonDocument.Parse(@"{
             ""type"": ""object"",
@@ -47,7 +49,20 @@ namespace Overseer.Services.Tools
     public class RefreshSnapshotTool : ClientToolHandlerBase
     {
         public override string ToolName => "refresh_snapshot";
+
+        /* Overwritten at startup by ToolGuides/refresh_snapshot.md; this is the
+           fallback used only if the guide file is missing. */
         public override string Description { get; set; } = "Request the client to take and upload a fresh snapshot of the game state.";
+
+        /* Generating the snapshot on-device walks the whole game state and writes
+           an HTML file before the round trip; 15s is not enough on a slow phone. */
+        public override int TimeoutSeconds => 30;
+
+        /* A snapshot truncated at an arbitrary character loses its tail sections -
+           Discoveries and the dungeon overview - with no signal to the model that
+           anything is missing. Match the client's own 60000-char cap
+           (DefaultMaxSnapshotChars in OverseerPage.xaml.cs). */
+        public override int? MaxResultLengthOverride => 60000;
     }
 
     public class GetSaveInfoTool : ClientToolHandlerBase

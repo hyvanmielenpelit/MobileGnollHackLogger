@@ -33,7 +33,7 @@ Key files for common mechanic lookups:
 - include/monst.h, include/obj.h — Core data structures
 - include/mondata.h — Monster property macros (resistances, flags)
 - include/youprop.h — Player property macros
-- src/objects.c — Object definitions (all items with stats; GnollHack). WARNING: Appearance/description strings in src/objects.c are pre-shuffle templates; appearances are randomized each game by shuffle_all() in src/o_init.c.
+- src/objects.c — Object definitions (all items with stats; GnollHack). WARNING: Appearance/description strings in src/objects.c are pre-shuffle templates; appearances are randomized each game by shuffle_all() in src/o_init.c. The player's identified types for the current game are listed in the snapshot's `Discoveries` section.
 - src/monst.c — Monster definitions (all monsters with stats; GnollHack)
 
 Search tips:

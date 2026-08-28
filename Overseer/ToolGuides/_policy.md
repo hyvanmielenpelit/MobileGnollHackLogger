@@ -11,6 +11,11 @@
 - When citing source code, always mention the file name and approximate line number.
 - Use source_code_view to get more context when a source_code_search result is incomplete.
 - Appearance strings returned by any tool (or found in source code / wiki) are pre-shuffle defaults and must never be used to identify an item in the player's game. Magical item appearances are randomized each game by shuffle_all().
+- The **only** authoritative source for this game's item identities is the `Discoveries`
+  section of the game state snapshot, which lists the object types the player has
+  identified, formatted as `true name (appearance)`. A `*` marks a type known from the
+  start of the game, and `called X` is a nickname the player assigned. If an appearance
+  is not in that list, the item is unidentified — say so rather than guessing.
 
 ## Tool Preference Hierarchy
 Follow this order when looking up game information. Be parsimonious with tool calls — fewer, targeted calls provide a better experience for the player.

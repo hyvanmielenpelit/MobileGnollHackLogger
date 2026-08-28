@@ -21,6 +21,31 @@ public class SystemPromptPolicyTests
         Assert.Contains("NOT reshuffled: magic swords", policy);
         Assert.Contains("potion of water and every potion type after it", policy);
         Assert.Contains("src/objects.c", policy);
+        Assert.Contains("`Discoveries` section of the game state snapshot", policy);
+    }
+
+    [Fact]
+    public void ToolGuides_PointAtSnapshotDiscoveriesAsTheAuthority()
+    {
+        var guideDir = GetGuideDirectory();
+
+        string policyText = File.ReadAllText(Path.Combine(guideDir, "_policy.md"));
+        Assert.Contains("Discoveries", policyText);
+
+        string getItemStatsText = File.ReadAllText(Path.Combine(guideDir, "get_item_stats.md"));
+        Assert.Contains("Discoveries", getItemStatsText);
+
+        string itemLookupText = File.ReadAllText(Path.Combine(guideDir, "item_lookup.md"));
+        Assert.Contains("Discoveries", itemLookupText);
+
+        string sourceSearchText = File.ReadAllText(Path.Combine(guideDir, "source_code_search.md"));
+        Assert.Contains("Discoveries", sourceSearchText);
+
+        string sourceViewText = File.ReadAllText(Path.Combine(guideDir, "source_code_view.md"));
+        Assert.Contains("Discoveries", sourceViewText);
+
+        string refreshSnapshotText = File.ReadAllText(Path.Combine(guideDir, "refresh_snapshot.md"));
+        Assert.Contains("Discoveries", refreshSnapshotText);
     }
 
     private static string GetGuideDirectory()

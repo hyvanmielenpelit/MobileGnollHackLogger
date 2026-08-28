@@ -1,4 +1,10 @@
+using System.Collections.Generic;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
 using Overseer.Services.Tools;
 using Xunit;
 
@@ -105,6 +111,155 @@ public class ToolResultHandlingTests
 
         var extracted = ExtractResultContent(result);
         Assert.Equal(ToolGuardMessages.WikiIndexingInProgress, extracted);
+    }
+
+    private class TestOverrideToolHandler : IToolHandler
+    {
+        public string ToolName => "test_override_tool";
+        public string Description { get; set; } = "Test override tool";
+        public ToolExecutionLocation ExecutionLocation => ToolExecutionLocation.Server;
+        public ToolCategory Category { get; set; } = ToolCategory.InformationRetrieval;
+        public JsonElement ParameterSchema => JsonDocument.Parse("{}").RootElement;
+        public int TimeoutSeconds { get; set; } = 15;
+        public int? MaxResultLengthOverride { get; set; }
+        public string ResultToReturn { get; set; } = string.Empty;
+
+        public Task<ToolResult> ExecuteAsync(JsonElement parameters, ToolExecutionContext context, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new ToolResult { Success = true, Content = ResultToReturn });
+        }
+    }
+
+    private class NullClientBridge : IClientToolBridge
+    {
+        public bool IsClientConnected => true;
+        public Task<ToolResult> SendToolRequestAsync(long sessionId, string toolName, JsonElement parameters, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new ToolResult { Success = true, Content = "Client result" });
+        }
+    }
+
+    private static IConfiguration CreateConfiguration()
+    {
+        var dict = new Dictionary<string, string?>
+        {
+            ["ToolExecutionLimits:MaxProcessParallelToolCalls"] = "30",
+            ["ToolExecutionLimits:MaxProcessExternalLookupCalls"] = "3",
+            ["ToolExecutionLimits:MaxBatchResultLength"] = "40000"
+        };
+        return new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithMaxResultLengthOverride_ReturnsUntruncatedContentAboveContextMax()
+    {
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var handler = new TestOverrideToolHandler
+        {
+            MaxResultLengthOverride = 60000,
+            ResultToReturn = new string('A', 60000)
+        };
+        var executor = new ToolExecutor(
+            new[] { handler },
+            new NullClientBridge(),
+            NullLogger<ToolExecutor>.Instance,
+            cache,
+            CreateConfiguration());
+
+        var context = new ToolExecutionContext
+        {
+            SessionId = 1001,
+            MaxResultLength = 10000,
+            MaxCallsPerSession = 50
+        };
+
+        var result = await executor.ExecuteAsync("test_override_tool", JsonDocument.Parse("{}").RootElement, context, TestContext.Current.CancellationToken);
+
+        Assert.True(result.Success);
+        Assert.Equal(60000, result.Content.Length);
+        Assert.DoesNotContain("[Result truncated for length]", result.Content);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithContextMaxLargerThanOverride_HonorsContextMaxFloor()
+    {
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var handler = new TestOverrideToolHandler
+        {
+            MaxResultLengthOverride = 60000,
+            ResultToReturn = new string('B', 100000)
+        };
+        var executor = new ToolExecutor(
+            new[] { handler },
+            new NullClientBridge(),
+            NullLogger<ToolExecutor>.Instance,
+            cache,
+            CreateConfiguration());
+
+        var context = new ToolExecutionContext
+        {
+            SessionId = 1002,
+            MaxResultLength = 100000,
+            MaxCallsPerSession = 50
+        };
+
+        var result = await executor.ExecuteAsync("test_override_tool", JsonDocument.Parse("{}").RootElement, context, TestContext.Current.CancellationToken);
+
+        Assert.True(result.Success);
+        Assert.Equal(100000, result.Content.Length);
+        Assert.DoesNotContain("[Result truncated for length]", result.Content);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithoutOverride_TruncatesAtContextMax()
+    {
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var handler = new TestOverrideToolHandler
+        {
+            MaxResultLengthOverride = null,
+            ResultToReturn = new string('C', 20000)
+        };
+        var executor = new ToolExecutor(
+            new[] { handler },
+            new NullClientBridge(),
+            NullLogger<ToolExecutor>.Instance,
+            cache,
+            CreateConfiguration());
+
+        var context = new ToolExecutionContext
+        {
+            SessionId = 1003,
+            MaxResultLength = 10000,
+            MaxCallsPerSession = 50
+        };
+
+        var result = await executor.ExecuteAsync("test_override_tool", JsonDocument.Parse("{}").RootElement, context, TestContext.Current.CancellationToken);
+
+        Assert.True(result.Success);
+        Assert.StartsWith(new string('C', 10000), result.Content);
+        Assert.Contains("[Result truncated for length]", result.Content);
+    }
+
+    [Fact]
+    public void GetEffectiveMaxResultLength_CalculatesCorrectCap()
+    {
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var handler = new TestOverrideToolHandler
+        {
+            MaxResultLengthOverride = 60000
+        };
+        var executor = new ToolExecutor(
+            new[] { handler },
+            new NullClientBridge(),
+            NullLogger<ToolExecutor>.Instance,
+            cache,
+            CreateConfiguration());
+
+        int effectiveOverride = executor.GetEffectiveMaxResultLength("test_override_tool", 10000);
+        int effectiveUnknown = executor.GetEffectiveMaxResultLength("no_such_tool", 10000);
+
+        Assert.Equal(60000, effectiveOverride);
+        Assert.Equal(10000, effectiveUnknown);
     }
 }
 

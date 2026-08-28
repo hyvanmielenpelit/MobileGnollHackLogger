@@ -78,7 +78,7 @@ public class SessionController : ControllerBase
             {
                 ChatSessionId = session.Id,
                 Role = "system",
-                Content = "Game Context Snapshot:\n" + sanitized,
+                Content = Overseer.Services.ChatService.GameSnapshotPrefix + "\n" + sanitized,
                 TimestampUtc = DateTime.UtcNow
             };
             _dbContext.ChatMessage.Add(systemMsg);
@@ -109,7 +109,8 @@ public class SessionController : ControllerBase
                 {
                     ChatSessionId = session.Id,
                     Role = "system",
-                    Content = "Full Message History (last messages shown):\n" + preview,
+                    Content = Overseer.Services.ChatService.MessageHistoryPrefix
+                        + " (last messages shown):\n" + preview,
                     TimestampUtc = DateTime.UtcNow
                 };
                 _dbContext.ChatMessage.Add(msg);

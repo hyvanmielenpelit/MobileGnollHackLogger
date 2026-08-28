@@ -173,7 +173,11 @@ namespace Overseer.Services.Tools
                 // 4. Truncation
                 if (result.Success && !string.IsNullOrEmpty(result.Content))
                 {
-                    if (result.Content.Length > context.MaxResultLength)
+                    int maxLen = handler.MaxResultLengthOverride is int handlerMax
+                        ? Math.Max(context.MaxResultLength, handlerMax)
+                        : context.MaxResultLength;
+
+                    if (result.Content.Length > maxLen)
                     {
                         if (result.Content.TrimStart().StartsWith("{") || result.Content.TrimStart().StartsWith("["))
                         {
@@ -191,12 +195,12 @@ namespace Overseer.Services.Tools
                             }
                             catch
                             {
-                                result.Content = result.Content.Substring(0, context.MaxResultLength) + "... [Result truncated for length]";
+                                result.Content = result.Content.Substring(0, maxLen) + "... [Result truncated for length]";
                             }
                         }
                         else
                         {
-                            result.Content = result.Content.Substring(0, context.MaxResultLength) + "... [Result truncated for length]";
+                            result.Content = result.Content.Substring(0, maxLen) + "... [Result truncated for length]";
                         }
                     }
                 }
@@ -206,6 +210,20 @@ namespace Overseer.Services.Tools
 
                 return result;
             }
+        }
+
+        /// <summary>
+        /// The result-length cap that ExecuteAsync will apply to this tool, accounting
+        /// for any per-handler override. Returns <paramref name="contextMax"/> for
+        /// unknown tools.
+        /// </summary>
+        public int GetEffectiveMaxResultLength(string toolName, int contextMax)
+        {
+            var handler = _handlers.FirstOrDefault(
+                h => string.Equals(h.ToolName, toolName, StringComparison.OrdinalIgnoreCase));
+            return handler?.MaxResultLengthOverride is int handlerMax
+                ? Math.Max(contextMax, handlerMax)
+                : contextMax;
         }
     }
 }

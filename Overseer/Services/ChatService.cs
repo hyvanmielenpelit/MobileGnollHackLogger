@@ -60,20 +60,29 @@ public class ChatService
         _aiProviders = aiProviders.ToDictionary(p => p.ProviderName, p => p, StringComparer.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Canonical prefix of the system message that carries the uploaded game state snapshot.
+    /// Written by SessionController.CreateSession and matched by IsGameSnapshotMessage.
+    /// </summary>
+    public const string GameSnapshotPrefix = "Game Context Snapshot:";
+
+    /// <summary>
+    /// Canonical prefix of the system message that carries the in-game message history.
+    /// Written by SessionController.CreateSession and matched by IsMessageHistoryMessage.
+    /// </summary>
+    public const string MessageHistoryPrefix = "Full Message History";
+
     public static string SanitizeSnapshotForLlm(string html)
-    {
-        if (string.IsNullOrWhiteSpace(html)) return string.Empty;
-        var text = System.Text.RegularExpressions.Regex.Replace(html, "<[^>]*>", " ");
-        text = System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ");
-        text = System.Net.WebUtility.HtmlDecode(text);
-        return text.Trim();
-    }
+        => DumpHtmlSanitizer.Sanitize(html);
 
     public static bool IsGameSnapshotMessage(string? content)
     {
         if (string.IsNullOrEmpty(content))
             return false;
 
+        /* "Game Snapshot" is a legacy prefix from older clients and is kept.
+           "Game Context Snapshot" (no colon) subsumes GameSnapshotPrefix, so
+           testing the constant separately would be dead code. */
         return content.StartsWith("Game Snapshot", StringComparison.OrdinalIgnoreCase)
             || content.StartsWith("Game Context Snapshot", StringComparison.OrdinalIgnoreCase);
     }
@@ -83,7 +92,7 @@ public class ChatService
         if (string.IsNullOrEmpty(content))
             return false;
 
-        return content.StartsWith("Full Message History", StringComparison.OrdinalIgnoreCase);
+        return content.StartsWith(MessageHistoryPrefix, StringComparison.OrdinalIgnoreCase);
     }
 
     public async Task GenerateAndBroadcastMessageAsync(long sessionId, string message, List<SendMessageAttachment>? attachments, string userId, bool isHidden, CancellationToken cancellationToken, long? userModelId = null, long? systemModelId = null, bool hasGreeted = false)
@@ -830,11 +839,21 @@ public class ChatService
                 {
                     var outcome = outcomes[i];
 
+                    /* A tool with a raised per-result cap is exempt from the shared batch
+                       budget. ToolExecutor has already capped it individually; the override
+                       exists because a partial result (a snapshot missing its Discoveries
+                       and dungeon overview) is worse than useless. Only refresh_snapshot
+                       carries an override today, so the worst case is one batch of
+                       MaxBatchResultLength plus one 60000-char snapshot. */
+                    bool exemptFromBatchBudget =
+                        _toolExecutor.GetEffectiveMaxResultLength(outcome.ToolName, execContext.MaxResultLength)
+                            > execContext.MaxResultLength;
+
                     providerResults.Add(new ProviderToolResult
                     {
                         ToolCallId = outcome.ToolCallId,
                         ToolName = outcome.ToolName,
-                        Content = budget.Apply(outcome.Content),
+                        Content = exemptFromBatchBudget ? outcome.Content : budget.Apply(outcome.Content),
                         Success = outcome.Success,
                         ProviderToolCallId = currentIterationToolCalls[i].TryGetProperty("provider_id", out var pid) ? pid.GetString() : null
                     });
@@ -1303,7 +1322,7 @@ public class ChatService
         // SECTION 6: Available Context
         // ──────────────────────────────────────────────
         sb.AppendLine("## Available Context in This Session");
-        if (hasGameSnapshot) sb.AppendLine("- ✅ Game snapshot (current map, stats, inventory, recent messages, spells, skills, attributes)");
+        if (hasGameSnapshot) sb.AppendLine("- ✅ Game snapshot (current map, stats, inventory, recent messages, spells, skills, attributes, and the player's Discoveries list — which object types they have identified this game)");
         if (hasMessageHistory) sb.AppendLine("- ✅ Full message history (up to 16384 in-game messages) — reference when the player asks about earlier events");
         if (developerMode) sb.AppendLine("- ✅ Runtime debug data (memory usage, thread state, pending tasks, developer settings) via Client Environment Settings");
         if (!hasGameSnapshot && !hasMessageHistory && !developerMode)
@@ -1847,7 +1866,7 @@ public class ChatService
         sb.AppendLine("- NOT reshuffled: magic swords and all other weapons except staves; the potion of water and every potion type after it in the enum; non-magic and unique amulets, scrolls and spellbooks; reagents.");
         sb.AppendLine("- The appearance strings in src/objects.c (and any wiki appearance tables) are compile-time defaults before shuffling. They describe the pool of possible appearances, NEVER the mapping in the player's current game.");
         sb.AppendLine("- HARD PROHIBITION: Never assert or deny an item's identity from a label, color, material, or description found in source code or on the wiki. Do not say \"the remove curse scroll is labelled PRATYAVAYAH\"; say \"one of the scroll labels corresponds to remove curse, but which label is randomized in each game\".");
-        sb.AppendLine("- The ONLY authoritative sources for the current game's item identities are the game state snapshot and the player's own in-game discoveries.");
+        sb.AppendLine("- The ONLY authoritative source for the current game's item identities is the `Discoveries` section of the game state snapshot, which lists identified object types as `true name (appearance)`. A `*` marks a type known from the start of the game and `called X` is a nickname the player assigned. If an appearance is not listed there, the item is unidentified — say so rather than guessing.");
         sb.AppendLine("- When the player asks about an unidentified item, recommend in-game identification: reading a scroll of identify, shop price-bracket identification, BUC testing on an altar, engrave-testing wands, and observing effects on use.");
         sb.AppendLine();
         return sb.ToString();

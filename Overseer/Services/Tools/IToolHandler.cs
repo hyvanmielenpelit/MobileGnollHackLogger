@@ -15,6 +15,15 @@ namespace Overseer.Services.Tools
         bool RequiresConfirmation => false;
         int TimeoutSeconds => 15;
 
+        /// <summary>
+        /// Optional per-tool floor for the result length cap, in characters. When set,
+        /// the effective cap is max(user setting, this value). Use it only for tools
+        /// whose value collapses under truncation - a snapshot cut at an arbitrary
+        /// character loses its tail sections (Discoveries, dungeon overview) silently.
+        /// Null means the user's MaxResultLength setting governs alone.
+        /// </summary>
+        int? MaxResultLengthOverride => null;
+
         Task<ToolResult> ExecuteAsync(JsonElement parameters,
                                       ToolExecutionContext context,
                                       CancellationToken cancellationToken);

@@ -108,7 +108,15 @@ builder.Services.AddScoped<Overseer.Services.DatabaseStorageMetricsService>();
 builder.Services.AddHostedService<Overseer.Services.DatabaseMaintenanceBackgroundService>();
 builder.Services.AddSingleton<ModelMetadataService>();
 builder.Services.AddSingleton<RecommendedModelService>();
-builder.Services.AddSignalR();
+builder.Services.AddSignalR(options =>
+{
+    /* Client tool results arrive as ChatHub.SubmitToolResult invocations. The SignalR
+       default MaximumReceiveMessageSize is 32 KB, which silently aborts the connection
+       for a large refresh_snapshot payload (the client caps snapshots at 60,000 chars).
+       Allow that plus UTF-8 and JSON-escaping overhead. */
+    options.MaximumReceiveMessageSize = builder.Configuration.GetValue<long>(
+        "ToolExecutionLimits:MaxHubReceiveMessageBytes", 262144);
+});
 builder.Services.AddTransient<IEmailSender, EmailSender>();
 builder.Services.AddTransient<EmailSender>();
 
