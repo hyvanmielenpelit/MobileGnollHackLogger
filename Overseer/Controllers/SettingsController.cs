@@ -90,6 +90,7 @@ public class SettingsController : ControllerBase
             maxParallelToolCalls = settings?.MaxParallelToolCalls,
             enableWebSearch = settings?.EnableWebSearch ?? true,
             enableToolUse = settings?.EnableToolUse ?? true,
+            enableSubAgents = settings?.EnableSubAgents ?? false,
             enableClientTools = settings?.EnableClientTools ?? true,
             enableGameActions = settings?.EnableGameActions ?? false,
             showThoughtsAndTools = settings?.ShowThoughtsAndTools ?? 0,
@@ -181,7 +182,7 @@ public class SettingsController : ControllerBase
                 return BadRequest($"RequestTimeout must be between {min} and {max}");
         }
 
-        await _settingsService.SaveSettingsAsync(userId, request.SpoilerFreeMode, request.EnableWebSearch, request.EnableToolUse, request.EnableClientTools, request.EnableGameActions, request.ShowSourceCodeReferences, request.MaxResultLength, request.MaxCallsPerSession, request.MaxToolIterations, request.MaxParallelToolCalls, request.ShowThoughtsAndTools, request.RequestTimeout);
+        await _settingsService.SaveSettingsAsync(userId, request.SpoilerFreeMode, request.EnableWebSearch, request.EnableToolUse, request.EnableClientTools, request.EnableGameActions, request.ShowSourceCodeReferences, request.MaxResultLength, request.MaxCallsPerSession, request.MaxToolIterations, request.MaxParallelToolCalls, request.ShowThoughtsAndTools, request.RequestTimeout, request.EnableSubAgents);
         
         return Ok();
     }
@@ -576,6 +577,7 @@ public class UpdateSettingsRequest
     public int? MaxParallelToolCalls { get; set; }
     public bool? EnableWebSearch { get; set; }
     public bool? EnableToolUse { get; set; }
+    public bool? EnableSubAgents { get; set; }
     public bool? EnableClientTools { get; set; }
     public bool? EnableGameActions { get; set; }
     public bool? ShowSourceCodeReferences { get; set; }

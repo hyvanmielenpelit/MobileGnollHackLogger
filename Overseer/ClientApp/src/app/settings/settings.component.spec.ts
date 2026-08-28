@@ -36,6 +36,7 @@ describe('SettingsComponent', () => {
         showThoughtsAndTools: 1,
         enableWebSearch: true,
         enableToolUse: true,
+        enableSubAgents: false,
         enableClientTools: false,
         enableGameActions: true,
         maxResultLength: 5000,
@@ -53,6 +54,7 @@ describe('SettingsComponent', () => {
       expect(component.spoilerFreeMode).toBeFalse();
       expect(component.showSourceCodeReferences).toBeTrue();
       expect(component.showThoughtsAndTools).toBe(1);
+      expect(component.enableSubAgents).toBeFalse();
       expect(component.enableClientTools).toBeFalse();
       expect(component.enableGameActions).toBeTrue();
       expect(component.maxResultLength).toBe(5000);

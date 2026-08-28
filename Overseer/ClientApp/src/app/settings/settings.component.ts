@@ -59,6 +59,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
   initEnableWebSearch = true;
   enableToolUse = true;
   initEnableToolUse = true;
+  enableSubAgents = false;
+  initEnableSubAgents = false;
   enableClientTools = true;
   initEnableClientTools = true;
   enableGameActions = false;
@@ -93,6 +95,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
            this.showSourceCodeReferences !== this.initShowSourceCodeReferences ||
            this.enableWebSearch !== this.initEnableWebSearch ||
            this.enableToolUse !== this.initEnableToolUse ||
+           this.enableSubAgents !== this.initEnableSubAgents ||
            this.enableClientTools !== this.initEnableClientTools ||
            this.enableGameActions !== this.initEnableGameActions ||
            this.showThoughtsAndTools !== this.initShowThoughtsAndTools ||
@@ -217,6 +220,10 @@ export class SettingsComponent implements OnInit, OnDestroy {
           if (s.enableToolUse !== undefined) {
             this.enableToolUse = s.enableToolUse;
             this.initEnableToolUse = s.enableToolUse;
+          }
+          if (s.enableSubAgents !== undefined) {
+            this.enableSubAgents = s.enableSubAgents;
+            this.initEnableSubAgents = s.enableSubAgents;
           }
           if (s.enableClientTools !== undefined) {
             this.enableClientTools = s.enableClientTools;
@@ -358,7 +365,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
   saveSettings() {
     this.loading = true;
     this.saved = false;
-    this.settingsService.saveSettings(this.spoilerFreeMode, this.enableWebSearch, this.enableToolUse, this.enableClientTools, this.enableGameActions, this.showSourceCodeReferences, this.maxResultLength, this.maxCallsPerSession, this.maxToolIterations, this.maxParallelToolCalls, Number(this.showThoughtsAndTools), this.requestTimeout).subscribe({
+    this.settingsService.saveSettings(this.spoilerFreeMode, this.enableWebSearch, this.enableToolUse, this.enableSubAgents, this.enableClientTools, this.enableGameActions, this.showSourceCodeReferences, this.maxResultLength, this.maxCallsPerSession, this.maxToolIterations, this.maxParallelToolCalls, Number(this.showThoughtsAndTools), this.requestTimeout).subscribe({
       next: () => {
         this.loading = false;
         this.settingsService.showThoughtsAndToolsUpdated.next(Number(this.showThoughtsAndTools));
@@ -369,6 +376,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
         this.initShowSourceCodeReferences = this.showSourceCodeReferences;
         this.initEnableWebSearch = this.enableWebSearch;
         this.initEnableToolUse = this.enableToolUse;
+        this.initEnableSubAgents = this.enableSubAgents;
         this.initEnableClientTools = this.enableClientTools;
         this.initEnableGameActions = this.enableGameActions;
         this.initShowThoughtsAndTools = this.showThoughtsAndTools;

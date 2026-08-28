@@ -66,7 +66,7 @@ public class SubAgentCatalogTests
         var config = new ConfigurationBuilder().AddInMemoryCollection().Build();
         var catalogService = new SubAgentCatalogService(config, NullLogger<SubAgentCatalogService>.Instance);
         var metadataService = new ModelMetadataService();
-        var context = new ToolExecutionContext { AgentDepth = 0, MaxAgentDepth = 1 };
+        var context = new ToolExecutionContext { AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
 
         bool availableForNano = SubAgentAvailability.IsAvailableFor(
             metadataService, "OpenAI", "gpt-5.4-nano", catalogService, context, true, config);
@@ -81,9 +81,27 @@ public class SubAgentCatalogTests
         Assert.True(availableForPro);
 
         // At max depth, delegation is prohibited
-        var deepContext = new ToolExecutionContext { AgentDepth = 1, MaxAgentDepth = 1 };
+        var deepContext = new ToolExecutionContext { AgentDepth = 1, MaxAgentDepth = 1, EnableSubAgents = true };
         bool availableAtMaxDepth = SubAgentAvailability.IsAvailableFor(
             metadataService, "OpenAI", "gpt-5.4-pro", catalogService, deepContext, true, config);
         Assert.False(availableAtMaxDepth);
+    }
+
+    [Fact]
+    public void SubAgentAvailability_ReturnsFalse_WhenEnableSubAgentsIsFalse()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        var catalogService = new SubAgentCatalogService(config, NullLogger<SubAgentCatalogService>.Instance);
+        var metadataService = new ModelMetadataService();
+
+        var disabledContext = new ToolExecutionContext { AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = false };
+        bool availableDisabled = SubAgentAvailability.IsAvailableFor(
+            metadataService, "OpenAI", "gpt-5.4-pro", catalogService, disabledContext, true, config);
+        Assert.False(availableDisabled);
+
+        var enabledContext = new ToolExecutionContext { AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
+        bool availableEnabled = SubAgentAvailability.IsAvailableFor(
+            metadataService, "OpenAI", "gpt-5.4-pro", catalogService, enabledContext, true, config);
+        Assert.True(availableEnabled);
     }
 }

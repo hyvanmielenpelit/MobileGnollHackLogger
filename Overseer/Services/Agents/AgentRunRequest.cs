@@ -21,6 +21,7 @@ public class AgentRunRequest
     public int MaxParallelClientTools { get; set; } = 1;
     public bool EnableWebSearch { get; set; }
     public bool EnableToolUse { get; set; } = true;
+    public bool EnableSubAgents { get; set; } = false;
     public bool EnableClientTools { get; set; }
     public bool EnableGameActions { get; set; }
     public ToolExecutionContext ToolExecutionContext { get; set; } = new();

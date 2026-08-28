@@ -35,7 +35,7 @@ public class DelegateToSubAgentToolTests
             metadata,
             NullLogger<DelegateToSubAgentTool>.Instance);
 
-        var context = new ToolExecutionContext { SessionId = 1 };
+        var context = new ToolExecutionContext { SessionId = 1, EnableSubAgents = true };
         var emptyParams = JsonDocument.Parse("{}").RootElement;
 
         var result = await tool.ExecuteAsync(emptyParams, context, CancellationToken.None);
@@ -63,7 +63,7 @@ public class DelegateToSubAgentToolTests
             metadata,
             NullLogger<DelegateToSubAgentTool>.Instance);
 
-        var context = new ToolExecutionContext { SessionId = 1, AgentDepth = 1, MaxAgentDepth = 1 };
+        var context = new ToolExecutionContext { SessionId = 1, AgentDepth = 1, MaxAgentDepth = 1, EnableSubAgents = true };
         var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"look up AC\"}").RootElement;
 
         var result = await tool.ExecuteAsync(validParams, context, CancellationToken.None);
@@ -91,7 +91,7 @@ public class DelegateToSubAgentToolTests
             metadata,
             NullLogger<DelegateToSubAgentTool>.Instance);
 
-        var context = new ToolExecutionContext { SessionId = 1, AgentDepth = 0, MaxAgentDepth = 1 };
+        var context = new ToolExecutionContext { SessionId = 1, AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
         var unknownParams = JsonDocument.Parse("{\"agent_name\":\"nonexistent_agent\",\"task\":\"do work\"}").RootElement;
 
         var result = await tool.ExecuteAsync(unknownParams, context, CancellationToken.None);
@@ -131,6 +131,7 @@ public class DelegateToSubAgentToolTests
             SessionId = 1,
             AgentDepth = 0,
             MaxAgentDepth = 1,
+            EnableSubAgents = true,
             Budget = budget
         };
 
@@ -160,7 +161,7 @@ public class DelegateToSubAgentToolTests
         });
         await db.SaveChangesAsync();
 
-        var context = new ToolExecutionContext { SessionId = 10, AgentDepth = 0, MaxAgentDepth = 1 };
+        var context = new ToolExecutionContext { SessionId = 10, AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
         var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
 
         var result = await tool.ExecuteAsync(validParams, context, CancellationToken.None);
@@ -187,7 +188,7 @@ public class DelegateToSubAgentToolTests
         });
         await db.SaveChangesAsync();
 
-        var context = new ToolExecutionContext { SessionId = 20, AgentDepth = 0, MaxAgentDepth = 1 };
+        var context = new ToolExecutionContext { SessionId = 20, AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
         var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
 
         var result = await tool.ExecuteAsync(validParams, context, CancellationToken.None);
@@ -225,7 +226,7 @@ public class DelegateToSubAgentToolTests
         });
         await db.SaveChangesAsync();
 
-        var context = new ToolExecutionContext { SessionId = 30, AgentDepth = 0, MaxAgentDepth = 1 };
+        var context = new ToolExecutionContext { SessionId = 30, AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
         var validParams = JsonDocument.Parse("{\"agent_name\":\"custom_capped\",\"task\":\"do something\"}").RootElement;
 
         var result = await tool.ExecuteAsync(validParams, context, CancellationToken.None);
@@ -251,7 +252,7 @@ public class DelegateToSubAgentToolTests
         });
         await db.SaveChangesAsync();
 
-        var context = new ToolExecutionContext { SessionId = 40, AgentDepth = 0, MaxAgentDepth = 1 };
+        var context = new ToolExecutionContext { SessionId = 40, AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
         var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
 
         var result = await tool.ExecuteAsync(validParams, context, CancellationToken.None);
@@ -275,6 +276,7 @@ public class DelegateToSubAgentToolTests
             SpoilerFreeMode = true,
             AgentDepth = 0,
             MaxAgentDepth = 1,
+            EnableSubAgents = true,
             ShowDebugLog = true
         };
         var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
@@ -299,6 +301,7 @@ public class DelegateToSubAgentToolTests
             SessionId = 60,
             AgentDepth = 0,
             MaxAgentDepth = 1,
+            EnableSubAgents = true,
             ShowDebugLog = true,
             EventSink = evt =>
             {
@@ -339,6 +342,7 @@ public class DelegateToSubAgentToolTests
             SessionId = 61,
             AgentDepth = 0,
             MaxAgentDepth = 1,
+            EnableSubAgents = true,
             ToolCallId = expectedParentToolCallId,
             ShowDebugLog = true,
             EventSink = evt =>
@@ -372,7 +376,7 @@ public class DelegateToSubAgentToolTests
         db.ChatSession.Add(session);
         await db.SaveChangesAsync();
 
-        var context = new ToolExecutionContext { SessionId = 70, AgentDepth = 0, MaxAgentDepth = 1 };
+        var context = new ToolExecutionContext { SessionId = 70, AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
         var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
 
         var result = await tool.ExecuteAsync(validParams, context, CancellationToken.None);
@@ -400,7 +404,7 @@ public class DelegateToSubAgentToolTests
         db.ChatSession.Add(session);
         await db.SaveChangesAsync();
 
-        var context = new ToolExecutionContext { SessionId = 80, ActiveUserModelId = 102, AgentDepth = 0, MaxAgentDepth = 1 };
+        var context = new ToolExecutionContext { SessionId = 80, ActiveUserModelId = 102, AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
         var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
 
         var result = await tool.ExecuteAsync(validParams, context, CancellationToken.None);
@@ -443,7 +447,7 @@ public class DelegateToSubAgentToolTests
         db.ChatSession.Add(session);
         await db.SaveChangesAsync();
 
-        var context = new ToolExecutionContext { SessionId = 81, ActiveSystemModelId = 201, AgentDepth = 0, MaxAgentDepth = 1 };
+        var context = new ToolExecutionContext { SessionId = 81, ActiveSystemModelId = 201, AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
         var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
 
         var result = await tool.ExecuteAsync(validParams, context, CancellationToken.None);
@@ -482,7 +486,7 @@ public class DelegateToSubAgentToolTests
         db.ChatSession.Add(session);
         await db.SaveChangesAsync();
 
-        var context = new ToolExecutionContext { SessionId = 82, AgentDepth = 0, MaxAgentDepth = 1 };
+        var context = new ToolExecutionContext { SessionId = 82, AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
         var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
 
         var result = await tool.ExecuteAsync(validParams, context, CancellationToken.None);
@@ -522,7 +526,7 @@ public class DelegateToSubAgentToolTests
         db.ChatSession.Add(session);
         await db.SaveChangesAsync();
 
-        var context = new ToolExecutionContext { SessionId = 83, AgentDepth = 0, MaxAgentDepth = 1 };
+        var context = new ToolExecutionContext { SessionId = 83, AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
         var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
 
         var result = await tool.ExecuteAsync(validParams, context, CancellationToken.None);
@@ -531,6 +535,23 @@ public class DelegateToSubAgentToolTests
         // Excludes unassigned private model and falls through to AppSettings
         Assert.Equal("gpt-5.6-luna", provider.LastModelId);
         Assert.Equal("test-key", provider.LastApiKey);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Fails_WhenSubAgentsDisabledInContext()
+    {
+        var (tool, db, _, _) = CreateTestSetup();
+        var session = new ChatSession { Id = 90, AspNetUserId = "user90", Title = "Test", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow };
+        db.ChatSession.Add(session);
+        await db.SaveChangesAsync();
+
+        var context = new ToolExecutionContext { SessionId = 90, AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = false };
+        var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
+
+        var result = await tool.ExecuteAsync(validParams, context, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains("Subagent execution is disabled", result.ErrorMessage);
     }
 
     private class DisallowedExecutionMetadataService : ModelMetadataService

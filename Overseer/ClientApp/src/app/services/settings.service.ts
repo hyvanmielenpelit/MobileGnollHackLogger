@@ -15,6 +15,7 @@ export interface UserAiSettings {
   showThoughtsAndTools?: number;
   enableWebSearch?: boolean;
   enableToolUse?: boolean;
+  enableSubAgents?: boolean;
   enableClientTools?: boolean;
   enableGameActions?: boolean;
   showDebugLog?: boolean;
@@ -92,11 +93,12 @@ export class SettingsService {
     });
   }
 
-  saveSettings(spoilerFreeMode: boolean, enableWebSearch: boolean, enableToolUse: boolean, enableClientTools: boolean, enableGameActions: boolean, showSourceCodeReferences: boolean, maxResultLength: number | null, maxCallsPerSession: number | null, maxToolIterations: number | null, maxParallelToolCalls: number | null, showThoughtsAndTools: number, requestTimeout: number | null) {
+  saveSettings(spoilerFreeMode: boolean, enableWebSearch: boolean, enableToolUse: boolean, enableSubAgents: boolean, enableClientTools: boolean, enableGameActions: boolean, showSourceCodeReferences: boolean, maxResultLength: number | null, maxCallsPerSession: number | null, maxToolIterations: number | null, maxParallelToolCalls: number | null, showThoughtsAndTools: number, requestTimeout: number | null) {
     return this.http.put('/api/settings', {
       spoilerFreeMode,
       enableWebSearch,
       enableToolUse,
+      enableSubAgents,
       enableClientTools,
       enableGameActions,
       showSourceCodeReferences,

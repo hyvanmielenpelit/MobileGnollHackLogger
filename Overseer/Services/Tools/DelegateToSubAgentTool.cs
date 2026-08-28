@@ -82,6 +82,15 @@ public class DelegateToSubAgentTool : IToolHandler
         ToolExecutionContext context,
         CancellationToken cancellationToken)
     {
+        if (!context.EnableSubAgents)
+        {
+            return new ToolResult
+            {
+                Success = false,
+                ErrorMessage = "Subagent execution is disabled in user settings."
+            };
+        }
+
         string? agentName = null;
         string? taskText = null;
         string? contextText = null;

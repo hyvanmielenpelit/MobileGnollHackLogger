@@ -20,6 +20,11 @@ public static class SubAgentAvailability
             return false;
         }
 
+        if (!context.EnableSubAgents)
+        {
+            return false;
+        }
+
         if (!enableToolUse)
         {
             return false;

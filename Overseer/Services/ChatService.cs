@@ -177,6 +177,7 @@ public class ChatService
         bool isGameOn = false;
         bool enableWebSearch = true;
         bool enableToolUse = true;
+        bool enableSubAgents = false;
         bool enableClientTools = true;
         bool enableGameActions = false;
         int? maxInputTokens = null;
@@ -203,6 +204,7 @@ public class ChatService
                 spoilerFreeMode = settings.SpoilerFreeMode;
                 enableWebSearch = settings.EnableWebSearch;
                 enableToolUse = settings.EnableToolUse;
+                enableSubAgents = settings.EnableSubAgents;
                 enableClientTools = settings.EnableClientTools;
                 enableGameActions = settings.EnableGameActions;
                 showSourceCodeReferences = settings.ShowSourceCodeReferences;
@@ -441,6 +443,9 @@ public class ChatService
                             
                         if (boolData.TryGetProperty("enableGameActions", out var gameActionsVal))
                             enableGameActions = enableGameActions && gameActionsVal.GetBoolean();
+
+                        if (boolData.TryGetProperty("enableSubAgents", out var subAgentsVal))
+                            enableSubAgents = enableSubAgents && subAgentsVal.GetBoolean();
                     }
 
                     if (root.TryGetProperty("IntData", out var intData))
@@ -460,12 +465,12 @@ public class ChatService
             
             bool allowSourceCodeReferences = showSourceCodeReferences || developerMode;
 
-            bool enableSubAgents = SubAgentAvailability.IsAvailableFor(
+            enableSubAgents = enableSubAgents && SubAgentAvailability.IsAvailableFor(
                 _modelMetadataService,
                 provider ?? "",
                 model,
                 _subAgentCatalogService ?? new SubAgentCatalogService(_configuration, Microsoft.Extensions.Logging.Abstractions.NullLogger<SubAgentCatalogService>.Instance),
-                new ToolExecutionContext { AgentDepth = 0, MaxAgentDepth = 1 },
+                new ToolExecutionContext { AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = enableSubAgents },
                 enableToolUse,
                 _configuration);
 
@@ -641,6 +646,7 @@ public class ChatService
             MaxResultLength = userMaxResultLength ?? _configuration.GetValue<int>("AiPerformanceSettings:MaxResultLength:Default", 3000),
             MaxCallsPerSession = userMaxCallsPerSession ?? _configuration.GetValue<int>("AiPerformanceSettings:MaxCallsPerSession:Default", 30),
             ShowDebugLog = _showDebugLog,
+            EnableSubAgents = enableSubAgents,
             Budget = runBudget,
             ActiveUserModelId = userModelId,
             ActiveSystemModelId = systemModelId,
@@ -685,6 +691,7 @@ public class ChatService
             MaxParallelClientTools = maxParallelClientTools,
             EnableWebSearch = enableWebSearch,
             EnableToolUse = enableToolUse,
+            EnableSubAgents = enableSubAgents,
             EnableClientTools = enableClientTools,
             EnableGameActions = enableGameActions,
             ToolExecutionContext = execContext,

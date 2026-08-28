@@ -63,6 +63,16 @@
 
         <div class="margin-y-20">
           <label class="checkbox-label align-start">
+            <input type="checkbox" [(ngModel)]="enableSubAgents" name="enableSubAgents" class="w-auto m-0" aria-describedby="subAgentsHint" />
+            <span class="d-block">
+              <span>Enable Subagent Use <span class="tier-badge tier-2">Tier 2</span></span>
+              <span id="subAgentsHint" class="form-hint mt-5 d-block">Allow the AI coordinator to delegate complex research and analysis tasks to autonomous specialist subagents.</span>
+            </span>
+          </label>
+        </div>
+
+        <div class="margin-y-20">
+          <label class="checkbox-label align-start">
             <input type="checkbox" [(ngModel)]="enableClientTools" name="enableClientTools" class="w-auto m-0" aria-describedby="clientToolsHint" (change)="!enableClientTools ? enableGameActions = false : null" />
             <span class="d-block">
               <span>Enable Client Data Access <span class="tier-badge tier-3">Tier 3</span></span>

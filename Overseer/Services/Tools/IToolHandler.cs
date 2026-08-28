@@ -59,6 +59,7 @@ namespace Overseer.Services.Tools
         public Func<ChatEvent, Task>? EventSink { get; set; }
         public Agents.AgentRunBudget? Budget { get; set; }
         public bool ShowDebugLog { get; set; }
+        public bool EnableSubAgents { get; set; } = false;
         public long? ActiveUserModelId { get; set; }
         public long? ActiveSystemModelId { get; set; }
 
@@ -83,6 +84,7 @@ namespace Overseer.Services.Tools
                 EventSink = this.EventSink,
                 Budget = this.Budget,
                 ShowDebugLog = this.ShowDebugLog,
+                EnableSubAgents = this.EnableSubAgents,
                 ActiveUserModelId = this.ActiveUserModelId,
                 ActiveSystemModelId = this.ActiveSystemModelId
             };
