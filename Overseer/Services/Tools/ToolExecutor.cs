@@ -136,6 +136,10 @@ namespace Overseer.Services.Tools
                     else if (handler.ExecutionLocation == ToolExecutionLocation.Client)
                     {
                         result = await _clientBridge.SendToolRequestAsync(context.SessionId, toolName, parameters, linkedCts.Token);
+                        if (result.Success && !string.IsNullOrEmpty(result.Content) && result.Content.IndexOf('\u00A0') >= 0)
+                        {
+                            result.Content = result.Content.Replace('\u00A0', ' ');
+                        }
                     }
                     else
                     {

@@ -39,14 +39,14 @@ public static class DumpHtmlSanitizer
            engine already wrote after them. Without the trailing [ \t]*\r?\n? this
            doubles every line and blank-lines the whole map. */
     private static readonly Regex BlockCloseRegex = new(
-        @"(<br\s*/?>|</(p|div|section|li|tr|h[1-6]|ul|ol|table|tbody|theader|pre)\s*>)"
+        @"(<br\s*/?>|</(p|div|section|li|tr|h[1-6]|ul|ol|table|tbody|thead|theader|pre)\s*>)"
         + @"[ \t]*\r?\n?",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     /* 3b. Opening block tags contribute no break of their own and must take the
            engine's following newline with them. */
     private static readonly Regex BlockOpenRegex = new(
-        @"<(p|div|section|ul|ol|table|tbody|theader|pre|li|h[1-6])\b[^>]*>[ \t]*\r?\n?",
+        @"<(p|div|section|ul|ol|table|tbody|thead|theader|tr|pre|li|h[1-6])\b[^>]*>[ \t]*\r?\n?",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     /* 4. Anything left is an inline tag and may start mid-word, so it is removed

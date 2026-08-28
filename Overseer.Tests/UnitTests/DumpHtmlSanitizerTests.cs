@@ -126,4 +126,13 @@ public class DumpHtmlSanitizerTests
         string result = DumpHtmlSanitizer.Sanitize(input);
         Assert.Equal(string.Empty, result);
     }
+
+    [Fact]
+    public void TableHeaders_TheadAndTheader_AreSanitizedCleanly()
+    {
+        string html = "<table><thead><tr><th>Name</th><th>Value</th></tr></thead><tbody><tr><td>Item</td><td>10</td></tr></tbody></table>";
+        string result = DumpHtmlSanitizer.Sanitize(html);
+
+        Assert.Equal("Name Value\n\nItem 10", result);
+    }
 }
