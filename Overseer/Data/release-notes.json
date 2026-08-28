@@ -1,5 +1,32 @@
 [
   {
+    "version": "1.0.26",
+    "date": "2026-08-28T22:58:00Z",
+    "summary": "Introduced autonomous subagent delegation and execution tracking in chat, added game dump snapshot sanitization with readable ASCII dungeon maps, added the dynamic refresh_snapshot tool for live game updates, and added a subagent permission toggle in AI Settings.",
+    "changes": [
+      {
+        "type": "feature",
+        "text": "Added autonomous subagent delegation support, allowing the Overseer to delegate complex research and investigation tasks to specialized subagents."
+      },
+      {
+        "type": "feature",
+        "text": "Added real-time subagent task execution tracking in the chat interface, displaying delegated subagent progress, reasoning, and tool calls."
+      },
+      {
+        "type": "feature",
+        "text": "Added the refresh_snapshot tool, enabling the Overseer to request updated game state and inventory snapshots on demand."
+      },
+      {
+        "type": "improvement",
+        "text": "Improved game dump snapshot sanitization to make ASCII dungeon maps clean and readable to the Overseer while eliminating extraneous markup."
+      },
+      {
+        "type": "improvement",
+        "text": "Added a subagent permission toggle to AI Settings to control whether the Overseer may spawn subagents."
+      }
+    ]
+  },
+  {
     "version": "1.0.25",
     "date": "2026-08-28T08:04:00Z",
     "summary": "Added parallel tool execution support and user-configurable parallel tool limits, introduced AI service tier selection across models and chat, improved tool output sanitization and thought isolation, and fixed model configuration editing behaviors.",
