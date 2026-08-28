@@ -30,7 +30,7 @@ Overseer supports a **coordinator-specialist multi-agent architecture**:
   6. **AppSettings Fallback**: Default model from `appsettings.json` (`AI:Provider`, `AI:Model`, `AI:APIKey`).
 - Output token limits resolve with precedence: Subagent definition override (`SubAgentDefinition.MaxOutputTokens`) → Inherited model row (`MaxOutputTokens`) → Static catalog defaults via `ModelMetadataService` (e.g. 128k for `gpt-5.6-luna`, 65k for `gemini-2.5-pro`).
 - Clones and propagates `ToolExecutionContext` (`SessionId`, `UserId`, `SpoilerFreeMode`, `AgentDepth = parent + 1`, `Budget`, `ActiveSystemModelId`, `ActiveUserModelId`) to maintain isolation and spoiler safety.
-- Emits filtered debug diagnostic logs (`evt.Type == "debug"`) to the parent event sink while isolating subagent text chunks and timing metrics from coordinator chat streams.
+- Forwards an explicit allow-list of subagent events (`debug`, `tool_start`, `tool_result`, `tool_error`) to the parent event sink while isolating subagent prose and reasoning (`chunk`, `thinking_chunk`), status updates (`status`), timing metrics (`ttft`, `duration`), and top-level errors (`error`) from coordinator chat streams.
 - Executes the subagent loop via `AgentLoopRunner`.
 
 ### 3. Agent Loop Runner (`AgentLoopRunner`)
@@ -48,6 +48,7 @@ Overseer supports a **coordinator-specialist multi-agent architecture**:
 - Each running subagent is registered in `OngoingChatManager.ActiveSubAgents`.
 - The user can cancel a specific subagent via `POST /api/chat/sessions/{sessionId}/subagents/{toolCallId}/cancel`.
 - Streamed diagnostic events are tagged with `[SubAgent:{agentName}]` and displayed live in the frontend debug log.
+- Subagent tool lifecycle events stream live to the client with `agent_name`, `parent_tool_call_id`, and `depth`, rendering as nested tool blocks during active streaming. These events are also buffered into `OngoingChatManager.AccumulatedEvents` so a reconnecting client replays the nested streaming blocks.
 
 ### 6. Persistence & Retention
 - Subagent tool executions are persisted in `ChatMessageToolCall` rows with `AgentName`, `ParentToolCallId`, and `Depth`.

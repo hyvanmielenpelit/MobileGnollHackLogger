@@ -242,7 +242,7 @@ public class AgentLoopRunner
                         hasToolsToRun = true;
                         lastEventWasToolCall = true;
                         currentIterationToolCalls.Add(JsonSerializer.Deserialize<JsonElement>(evt.Data));
-                        yield return new ChatEvent { Type = "tool_start", Data = EnrichToolStartData(evt.Data) };
+                        yield return new ChatEvent { Type = "tool_start", Data = EnrichToolStartData(evt.Data, request) };
                     }
                     else
                     {
@@ -690,14 +690,22 @@ public class AgentLoopRunner
         }
     }
 
-    private string EnrichToolStartData(string eventData)
+    private string EnrichToolStartData(string eventData, AgentRunRequest request)
     {
         try
         {
             var node = System.Text.Json.Nodes.JsonNode.Parse(eventData);
-            if (node is System.Text.Json.Nodes.JsonObject rootObj &&
-                rootObj.TryGetPropertyValue("name", out var nameNode) &&
-                nameNode?.GetValue<string>() == "get_knowledge_article" &&
+            if (node is not System.Text.Json.Nodes.JsonObject rootObj)
+            {
+                return eventData;
+            }
+
+            string? toolName = rootObj.TryGetPropertyValue("name", out var nameNode)
+                ? nameNode?.GetValue<string>()
+                : null;
+
+            // Knowledge article title enrichment (pre-existing behavior, unchanged).
+            if (toolName == "get_knowledge_article" &&
                 rootObj.TryGetPropertyValue("arguments", out var argsNode))
             {
                 var argsStr = argsNode?.GetValue<string>();
@@ -713,11 +721,33 @@ public class AgentLoopRunner
                             var title = _knowledgeBaseService.GetArticleTitle(topic) ?? topic;
                             argsObj["topic_title"] = title;
                             rootObj["arguments"] = argsObj.ToJsonString();
-                            return rootObj.ToJsonString();
                         }
                     }
                 }
             }
+
+            // Delegation hierarchy metadata. Only present for subagent runs; for the
+            // coordinator AgentName is null, ParentToolCallId is null, and Depth is 0,
+            // so the payload is byte-identical to today's.
+            //
+            // agent_name is deliberately NOT stamped onto a nested delegate_to_subagent
+            // tool_start: request.AgentName there is the *delegating* agent, whereas the
+            // frontend's fallback (chat.component.ts:1276) correctly reads the *delegated-to*
+            // agent from the tool arguments. Stamping it would shadow the better value.
+            if (!string.IsNullOrEmpty(request.AgentName) && toolName != "delegate_to_subagent")
+            {
+                rootObj["agent_name"] = request.AgentName;
+            }
+            if (!string.IsNullOrEmpty(request.ParentToolCallId))
+            {
+                rootObj["parent_tool_call_id"] = request.ParentToolCallId;
+            }
+            if (request.Depth > 0)
+            {
+                rootObj["depth"] = request.Depth;
+            }
+
+            return rootObj.ToJsonString();
         }
         catch { }
         return eventData;

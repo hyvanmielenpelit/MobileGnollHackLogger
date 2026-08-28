@@ -285,9 +285,10 @@ public class DelegateToSubAgentToolTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_EventForwarding_FiltersNonDebugEvents()
+    public async Task ExecuteAsync_EventForwarding_ForwardsSubAgentToolEvents()
     {
-        var (tool, db, _, _) = CreateTestSetup();
+        var (tool, db, provider, _) = CreateTestSetup();
+        provider.EmitToolCallOnFirstIteration = true;
         var session = new ChatSession { Id = 60, AspNetUserId = "user60", Title = "Test", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow };
         db.ChatSession.Add(session);
         await db.SaveChangesAsync();
@@ -311,8 +312,56 @@ public class DelegateToSubAgentToolTests
 
         Assert.True(result.Success);
         Assert.NotEmpty(forwardedEvents);
-        Assert.All(forwardedEvents, evt => Assert.Equal("debug", evt.Type));
-        Assert.DoesNotContain(forwardedEvents, evt => evt.Type == "chunk");
+
+        // Subagent debug and tool lifecycle events MUST be forwarded
+        Assert.Contains(forwardedEvents, evt => evt.Type == "debug");
+        Assert.Contains(forwardedEvents, evt => evt.Type == "tool_start");
+        Assert.Contains(forwardedEvents, evt => evt.Type == "tool_error");
+
+        // Subagent prose, reasoning, status, timing, and errors MUST stay isolated
+        var deniedTypes = new[] { "chunk", "thinking_chunk", "status", "ttft", "duration", "error" };
+        Assert.DoesNotContain(forwardedEvents, evt => deniedTypes.Contains(evt.Type));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_SubAgentToolCalls_EnrichesToolStartWithHierarchy()
+    {
+        var (tool, db, provider, _) = CreateTestSetup();
+        provider.EmitToolCallOnFirstIteration = true;
+        var session = new ChatSession { Id = 61, AspNetUserId = "user61", Title = "Test", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow };
+        db.ChatSession.Add(session);
+        await db.SaveChangesAsync();
+
+        var forwardedEvents = new List<ChatEvent>();
+        string expectedParentToolCallId = "parent-delegate-call-123";
+        var context = new ToolExecutionContext
+        {
+            SessionId = 61,
+            AgentDepth = 0,
+            MaxAgentDepth = 1,
+            ToolCallId = expectedParentToolCallId,
+            ShowDebugLog = true,
+            EventSink = evt =>
+            {
+                forwardedEvents.Add(evt);
+                return Task.CompletedTask;
+            }
+        };
+        var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
+
+        var result = await tool.ExecuteAsync(validParams, context, CancellationToken.None);
+
+        Assert.True(result.Success);
+        var toolStartEvent = Assert.Single(forwardedEvents, evt => evt.Type == "tool_start");
+        Assert.NotNull(toolStartEvent.Data);
+
+        using var doc = JsonDocument.Parse(toolStartEvent.Data);
+        var root = doc.RootElement;
+
+        Assert.Equal("wiki_search", root.GetProperty("name").GetString());
+        Assert.Equal("wiki_researcher", root.GetProperty("agent_name").GetString());
+        Assert.Equal(expectedParentToolCallId, root.GetProperty("parent_tool_call_id").GetString());
+        Assert.Equal(1, root.GetProperty("depth").GetInt32());
     }
 
     [Fact]
@@ -557,7 +606,7 @@ public class DelegateToSubAgentToolTests
         var clientBridge = new NullClientBridge();
         var handlers = new List<IToolHandler>();
         var toolRegistry = new ToolRegistry(handlers, clientBridge, NullLogger<ToolRegistry>.Instance);
-        using var cache = new Microsoft.Extensions.Caching.Memory.MemoryCache(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions());
+        var cache = new Microsoft.Extensions.Caching.Memory.MemoryCache(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions());
         var toolExecutor = new ToolExecutor(handlers, clientBridge, NullLogger<ToolExecutor>.Instance, cache, config);
 
         services.AddSingleton(db);
@@ -596,6 +645,8 @@ public class DelegateToSubAgentToolTests
         public string? LastServiceTier { get; private set; }
         public string? LastModelId { get; private set; }
         public string? LastApiKey { get; private set; }
+        public bool EmitToolCallOnFirstIteration { get; set; } = false;
+        private int _streamCallCount = 0;
 
         public void AppendAssistantToolCallsToHistory(List<object> messageHistory, string iterationText, List<JsonElement> toolCalls, List<JsonElement>? providerHistoryItems = null)
         {
@@ -629,8 +680,23 @@ public class DelegateToSubAgentToolTests
         public string GetChatStreamUrl(string modelId, string apiKey) => "https://mock.stream.test";
         public async IAsyncEnumerable<ChatEvent> ParseStreamAsync(HttpResponseMessage response, bool showDebugLog, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
         {
+            int call = System.Threading.Interlocked.Increment(ref _streamCallCount);
             yield return new ChatEvent { Type = "debug", Data = "subagent-debug-line" };
             yield return new ChatEvent { Type = "chunk", Data = "subagent-chunk-prose" };
+
+            if (EmitToolCallOnFirstIteration && call == 1)
+            {
+                yield return new ChatEvent
+                {
+                    Type = "tool_call_complete",
+                    Data = JsonSerializer.Serialize(new
+                    {
+                        id = "subagent-tool-call-1",
+                        name = "wiki_search",
+                        arguments = "{\"query\":\"prayer timeout\"}"
+                    })
+                };
+            }
             await Task.CompletedTask;
         }
         public List<object> PrepareMessageHistory(List<object> messages) => messages;

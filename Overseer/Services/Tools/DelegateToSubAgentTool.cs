@@ -290,7 +290,16 @@ public class DelegateToSubAgentTool : IToolHandler
 
             await foreach (var evt in runner.RunAsync(subAgentRequest, context.Budget, subAgentResult, subAgentCts.Token))
             {
-                if (evt.Type == "debug" && context.EventSink != null)
+                if (context.EventSink == null)
+                {
+                    continue;
+                }
+
+                // Explicit allow-list. Everything else from the subagent stays isolated
+                if (evt.Type == "debug" ||
+                    evt.Type == "tool_start" ||
+                    evt.Type == "tool_result" ||
+                    evt.Type == "tool_error")
                 {
                     await context.EventSink.Invoke(evt);
                 }
