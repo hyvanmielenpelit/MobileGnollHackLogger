@@ -69,6 +69,23 @@ public class ChatService
         return text.Trim();
     }
 
+    public static bool IsGameSnapshotMessage(string? content)
+    {
+        if (string.IsNullOrEmpty(content))
+            return false;
+
+        return content.StartsWith("Game Snapshot", StringComparison.OrdinalIgnoreCase)
+            || content.StartsWith("Game Context Snapshot", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static bool IsMessageHistoryMessage(string? content)
+    {
+        if (string.IsNullOrEmpty(content))
+            return false;
+
+        return content.StartsWith("Full Message History", StringComparison.OrdinalIgnoreCase);
+    }
+
     public async Task GenerateAndBroadcastMessageAsync(long sessionId, string message, List<SendMessageAttachment>? attachments, string userId, bool isHidden, CancellationToken cancellationToken, long? userModelId = null, long? systemModelId = null, bool hasGreeted = false)
     {
         try
@@ -345,8 +362,8 @@ public class ChatService
             {
                 if (pm.Role == "system" && pm.Content != null)
                 {
-                    if (pm.Content.StartsWith("Game Snapshot:")) hasGameSnapshot = true;
-                    if (pm.Content.StartsWith("Full Message History")) hasMessageHistory = true;
+                    if (IsGameSnapshotMessage(pm.Content)) hasGameSnapshot = true;
+                    if (IsMessageHistoryMessage(pm.Content)) hasMessageHistory = true;
                 }
             }
 
@@ -1129,7 +1146,7 @@ public class ChatService
         }
     }
 
-    private string BuildSystemPrompt(
+    internal string BuildSystemPrompt(
         IEnumerable<string> wikiContext,
         bool spoilerFreeMode,
         bool verboseMode,

@@ -93,4 +93,18 @@ When testing services or tools that index files in the background (`WikiService`
 *   **Testing Cold Guards**: To test that a tool returns `Success = false` with a directive error message (`ToolGuardMessages`), execute the tool immediately **without** awaiting `service.InitializationTask`.
 *   Refer to the `background_indexing_architecture` skill for full architectural details.
 
+## 6. Accessing Internal Members in Unit Tests (`InternalsVisibleTo`)
+
+When unit testing internal components, helper methods, or prompt builders in the `Overseer` project (such as `ChatService.BuildSystemPrompt`):
+
+*   **Modern MSBuild Item Syntax**: Declare test assembly visibility directly in `Overseer.csproj` using `<InternalsVisibleTo>` inside an `<ItemGroup>`, rather than legacy `AssemblyInfo.cs` attributes:
+    ```xml
+    <ItemGroup>
+      <InternalsVisibleTo Include="Overseer.Tests" />
+    </ItemGroup>
+    ```
+*   **Encapsulation Principle**: Keep methods and helpers `internal` (rather than making them unnecessarily `public`) when they only need to be exposed to `Overseer.Tests` for unit testing while remaining hidden from external consumers.
+*   **Isolated Unit Testing**: Prefer marking core prompt formatting, sanitizers, or parser methods as `internal` or `public static` so they can be tested directly and deterministically in isolation without requiring full end-to-end HTTP, SignalR, or AI provider streams.
+
+
 
