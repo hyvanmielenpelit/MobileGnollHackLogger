@@ -100,6 +100,7 @@ builder.Services.AddScoped<Overseer.Services.Providers.IAiProvider, Overseer.Ser
 builder.Services.AddScoped<Overseer.Services.Providers.IAiProvider, Overseer.Services.Providers.AnthropicProvider>();
 builder.Services.AddScoped<Overseer.Services.Providers.IAiProvider, Overseer.Services.Providers.GoogleProvider>();
 builder.Services.AddScoped<ChatService>();
+builder.Services.AddScoped<Overseer.Services.Agents.AgentLoopRunner>();
 builder.Services.AddScoped<SystemAiConfigService>();
 builder.Services.AddSingleton<OngoingChatManager>();
 builder.Services.AddScoped<SettingsService>();
@@ -121,11 +122,13 @@ builder.Services.AddTransient<IEmailSender, EmailSender>();
 builder.Services.AddTransient<EmailSender>();
 
 // Tool Services
+builder.Services.AddSingleton<Overseer.Services.Agents.SubAgentCatalogService>();
 builder.Services.AddSingleton<Overseer.Services.Tools.SignalRClientToolBridge>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IClientToolBridge>(sp => sp.GetRequiredService<Overseer.Services.Tools.SignalRClientToolBridge>());
 builder.Services.AddSingleton<Overseer.Services.Tools.ToolRegistry>();
 builder.Services.AddSingleton<Overseer.Services.KnowledgeBaseService>();
 builder.Services.AddSingleton<Overseer.Services.Tools.ToolExecutor>();
+builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.DelegateToSubAgentTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.KnowledgeBaseTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.WikiSearchTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.NetHackWikiSearchTool>();
@@ -201,7 +204,6 @@ app.Lifetime.ApplicationStarted.Register(() =>
     _ = app.Services.GetService<WikiService>();
     _ = app.Services.GetService<NetHackWikiService>();
     _ = app.Services.GetService<KnowledgeBaseService>();
-    _ = app.Services.GetService<Overseer.Services.Tools.ToolRegistry>();
     _ = app.Services.GetService<SourceCodeService>();
     _ = app.Services.GetService<NetHackSourceCodeService>();
 });
@@ -236,6 +238,9 @@ app.MapHub<Overseer.Hubs.ChatHub>("/chathub");
 
 // SPA Fallback to Angular index.html
 app.MapFallbackToFile("index.html");
+
+// Synchronously resolve ToolRegistry to validate SubAgentCatalog and tool definitions on startup
+_ = app.Services.GetRequiredService<Overseer.Services.Tools.ToolRegistry>();
 
 app.Run();
 

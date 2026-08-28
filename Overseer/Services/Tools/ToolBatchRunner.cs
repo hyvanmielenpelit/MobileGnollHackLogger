@@ -25,6 +25,8 @@ public sealed class ToolBatchOutcome
     public required bool Success { get; init; }
     public long QueueWaitMs { get; init; }
     public long ExecutionMs { get; init; }
+    public List<MobileGnollHackLogger.Data.ChatMessageToolCall>? NestedToolCalls { get; init; }
+    public string? TerminationStatus { get; init; }
 }
 
 public static class ToolBatchRunner
@@ -93,7 +95,9 @@ public static class ToolBatchRunner
                             Content = content,
                             Success = res.Success,
                             QueueWaitMs = swQueue.ElapsedMilliseconds + (res.QueueWaitMs ?? 0),
-                            ExecutionMs = res.ExecutionMs ?? swTool.ElapsedMilliseconds
+                            ExecutionMs = res.ExecutionMs ?? swTool.ElapsedMilliseconds,
+                            NestedToolCalls = res.NestedToolCalls,
+                            TerminationStatus = res.TerminationStatus ?? (res.Success ? "completed" : "error")
                         };
                         events.TryWrite(outcome);
                         return outcome;
@@ -111,7 +115,8 @@ public static class ToolBatchRunner
                                 : $"Orchestrator error: {ex.Message}",
                             Success = false,
                             QueueWaitMs = swQueue.ElapsedMilliseconds,
-                            ExecutionMs = swTool?.ElapsedMilliseconds ?? 0
+                            ExecutionMs = swTool?.ElapsedMilliseconds ?? 0,
+                            TerminationStatus = ex is OperationCanceledException ? "canceled" : "error"
                         };
                         events.TryWrite(outcome);
                         return outcome;
@@ -146,7 +151,8 @@ public static class ToolBatchRunner
             Content = $"Orchestrator error: {ex?.Message ?? "Task failed"}",
             Success = false,
             QueueWaitMs = 0,
-            ExecutionMs = 0
+            ExecutionMs = 0,
+            TerminationStatus = "error"
         };
     }
 }

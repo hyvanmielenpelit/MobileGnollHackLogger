@@ -319,7 +319,7 @@ public class AnthropicProvider : IAiProvider
                         }
                         else if (t == "message_delta")
                         {
-                            if (showDebugLog && json.TryGetProperty("delta", out var delta2))
+                            if (json.TryGetProperty("delta", out var delta2))
                             {
                                 var stopReason = delta2.TryGetProperty("stop_reason", out var sr) ? sr.GetString() : "null";
                                 string usageInfo = "";
@@ -328,7 +328,15 @@ public class AnthropicProvider : IAiProvider
                                     var outputTokens = usage.TryGetProperty("output_tokens", out var ot) ? ot.GetInt32().ToString() : "?";
                                     usageInfo = $", output_tokens={outputTokens}";
                                 }
-                                debugEvt = new ChatEvent { Type = "debug", Data = $"[Main Chat - Anthropic] message_delta: stop_reason={stopReason}{usageInfo}" };
+
+                                if (stopReason == "max_tokens")
+                                {
+                                    debugEvt = new ChatEvent { Type = "debug", Data = $"[Anthropic] Response incomplete: stop_reason=max_tokens{usageInfo}" };
+                                }
+                                else if (showDebugLog)
+                                {
+                                    debugEvt = new ChatEvent { Type = "debug", Data = $"[Main Chat - Anthropic] message_delta: stop_reason={stopReason}{usageInfo}" };
+                                }
                             }
                         }
                     }

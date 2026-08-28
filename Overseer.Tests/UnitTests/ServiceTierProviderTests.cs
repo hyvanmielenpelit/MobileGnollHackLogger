@@ -23,7 +23,7 @@ public class ServiceTierProviderTests
     [Fact]
     public void OpenAiResponsesProvider_SupportedServiceTiers_And_RequestBody()
     {
-        var provider = new OpenAiResponsesProvider();
+        var provider = new OpenAiResponsesProvider(_configuration);
         Assert.Equal(new[] { "auto", "default", "flex", "priority", "fast" }, provider.SupportedServiceTiers);
 
         var requestTools = new ToolsForRequest();

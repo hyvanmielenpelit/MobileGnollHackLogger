@@ -69,6 +69,7 @@ namespace Overseer.Tests
             services.AddScoped<Overseer.Services.Providers.IAiProvider, Overseer.Services.Providers.OpenAiResponsesProvider>();
             services.AddScoped<Overseer.Services.Providers.IAiProvider, Overseer.Services.Providers.AnthropicProvider>();
             services.AddScoped<Overseer.Services.Providers.IAiProvider, Overseer.Services.Providers.GoogleProvider>();
+            services.AddScoped<Overseer.Services.Agents.AgentLoopRunner>();
             services.AddScoped<ChatService>();
 
             var serviceProvider = services.BuildServiceProvider();

@@ -36,6 +36,8 @@ namespace Overseer.Services.Tools
         public string? ErrorMessage { get; set; }
         public long? QueueWaitMs { get; set; }
         public long? ExecutionMs { get; set; }
+        public List<MobileGnollHackLogger.Data.ChatMessageToolCall>? NestedToolCalls { get; set; }
+        public string? TerminationStatus { get; set; }
     }
 
     public class ToolExecutionContext
@@ -49,5 +51,37 @@ namespace Overseer.Services.Tools
         public bool IsGnollHackSession { get; set; }
         public int MaxResultLength { get; set; } = 10000;
         public int MaxCallsPerSession { get; set; } = 50;
+        public string? ToolCallId { get; set; }
+        public string? AgentName { get; set; }
+        public int AgentDepth { get; set; } = 0;
+        public int MaxAgentDepth { get; set; } = 1;
+        public int MaxSubAgentResultLength { get; set; } = 30000;
+        public Func<ChatEvent, Task>? EventSink { get; set; }
+        public Agents.AgentRunBudget? Budget { get; set; }
+        public bool ShowDebugLog { get; set; }
+
+        public ToolExecutionContext CloneFor(string toolCallId)
+        {
+            return new ToolExecutionContext
+            {
+                SessionId = this.SessionId,
+                UserId = this.UserId,
+                SpoilerFreeMode = this.SpoilerFreeMode,
+                IsGameOn = this.IsGameOn,
+                OverseerMode = this.OverseerMode,
+                DataDirectory = this.DataDirectory,
+                IsGnollHackSession = this.IsGnollHackSession,
+                MaxResultLength = this.MaxResultLength,
+                MaxCallsPerSession = this.MaxCallsPerSession,
+                ToolCallId = toolCallId,
+                AgentName = this.AgentName,
+                AgentDepth = this.AgentDepth,
+                MaxAgentDepth = this.MaxAgentDepth,
+                MaxSubAgentResultLength = this.MaxSubAgentResultLength,
+                EventSink = this.EventSink,
+                Budget = this.Budget,
+                ShowDebugLog = this.ShowDebugLog
+            };
+        }
     }
 }

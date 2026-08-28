@@ -37,7 +37,8 @@
     "reasoningModes": [],
     "reasoningSummaries": ["auto", "concise", "detailed"],
     "contextWindowSize": 1050000,
-    "maxOutputTokens": 128000
+    "maxOutputTokens": 128000,
+    "supportsSubAgentCoordination": false
   },
   {
     "prefixes": ["gpt-5.5"],

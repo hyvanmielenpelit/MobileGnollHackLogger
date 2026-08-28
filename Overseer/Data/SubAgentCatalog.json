@@ -1,0 +1,52 @@
+[
+  {
+    "name": "wiki_researcher",
+    "displayName": "Wiki Researcher",
+    "description": "Searches and retrieves lore, gameplay mechanics, guides, and articles from the GnollHack and NetHack wikis.",
+    "instructions": "You are a specialist researcher focused on retrieving and analyzing information from the GnollHack and NetHack wikis. Perform searches and lookups using your allowed wiki tools to thoroughly answer the given task. Present a concise, clear, and well-structured report.",
+    "allowedTools": [
+      "get_knowledge_article",
+      "wiki_search",
+      "wiki_view",
+      "nethack_wiki_search",
+      "nethack_wiki_view"
+    ],
+    "enableWebSearch": false,
+    "maxIterations": 30,
+    "isEnabled": true
+  },
+  {
+    "name": "source_investigator",
+    "displayName": "Source Investigator",
+    "description": "Searches, navigates, and inspects C source code, headers, definitions, and constants in the GnollHack engine.",
+    "instructions": "You are a specialist source code investigator focused on inspecting the GnollHack C core and header files. Use your source code inspection tools to verify exact constants, functions, game formulas, and dungeon mechanics. Provide exact citations of filenames and lines in your final synthesis.",
+    "allowedTools": [
+      "source_code_search",
+      "source_code_view",
+      "search_definitions",
+      "get_constants",
+      "get_function_definition",
+      "list_indexed_files"
+    ],
+    "enableWebSearch": false,
+    "maxIterations": 30,
+    "isEnabled": true
+  },
+  {
+    "name": "game_data_analyst",
+    "displayName": "Game Data Analyst",
+    "description": "Analyzes monster attributes, item stats, artifact powers, and server dumplogs.",
+    "instructions": "You are a specialist data analyst for monster stats, item properties, artifact attributes, and dumplog metrics. Query stats and look up entries accurately to fulfill the task. Summarize data points clearly in your final report.",
+    "allowedTools": [
+      "get_monster_stats",
+      "get_item_stats",
+      "get_artifact_stats",
+      "search_server_dumplogs",
+      "monster_lookup",
+      "item_lookup"
+    ],
+    "enableWebSearch": false,
+    "maxIterations": 30,
+    "isEnabled": true
+  }
+]

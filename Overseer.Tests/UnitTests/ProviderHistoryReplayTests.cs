@@ -17,7 +17,7 @@ public class ProviderHistoryReplayTests
     [Fact]
     public void OpenAI_ReplayPath_AppendsItemsVerbatim()
     {
-        var provider = new OpenAiResponsesProvider();
+        var provider = new OpenAiResponsesProvider(CreateEmptyConfig());
         var history = new List<object>();
 
         var reasoningJson = "{\"type\":\"reasoning\",\"encrypted_content\":\"enc_123\"}";
@@ -46,7 +46,7 @@ public class ProviderHistoryReplayTests
     [Fact]
     public void OpenAI_FallbackPath_EmitsReconstruction()
     {
-        var provider = new OpenAiResponsesProvider();
+        var provider = new OpenAiResponsesProvider(CreateEmptyConfig());
         var history = new List<object>();
 
         var toolCalls = new List<JsonElement>

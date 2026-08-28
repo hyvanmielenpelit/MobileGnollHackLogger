@@ -43,6 +43,7 @@ public class GameSnapshotDetectionTests
         services.AddScoped<KnowledgeBaseService>();
         services.AddScoped<OngoingChatManager>();
         services.AddScoped<IAiProvider, OpenAiResponsesProvider>();
+        services.AddScoped<Overseer.Services.Agents.AgentLoopRunner>();
         services.AddScoped<ChatService>();
 
         var provider = services.BuildServiceProvider();

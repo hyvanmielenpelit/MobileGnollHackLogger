@@ -37,7 +37,19 @@ export interface ChatMessageToolCall {
   parameters?: string;
   result?: string;
   error?: string;
-  status: 'running' | 'completed' | 'error';
+  status: 'running' | 'completed' | 'error' | 'canceled';
+  agentName?: string;
+  parentToolCallId?: string;
+  depth?: number;
+}
+
+export interface SubAgentInfo {
+  name: string;
+  displayName: string;
+  description: string;
+  allowedTools: string[];
+  maxIterations: number;
+  isEnabled: boolean;
 }
 
 export interface ChatMessage {
@@ -171,6 +183,18 @@ export class ChatService {
       systemModelId,
       hasGreeted
     });
+  }
+
+  getSubAgents() {
+    return this.http.get<SubAgentInfo[]>('/api/chat/subagents');
+  }
+
+  cancelSubAgent(sessionId: number, toolCallId: string) {
+    return this.http.post<{success: boolean, message: string}>(`/api/chat/sessions/${sessionId}/subagents/${toolCallId}/cancel`, {});
+  }
+
+  cancelGeneration(sessionId: number) {
+    return this.http.post<{success: boolean}>(`/api/chat/sessions/${sessionId}/cancel`, {});
   }
   
   private getCookie(name: string): string | null {

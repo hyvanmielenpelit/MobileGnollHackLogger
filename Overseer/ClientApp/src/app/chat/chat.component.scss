@@ -1082,6 +1082,10 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
     width: 40px;
     height: 40px;
   }
+  .subagent-avatar-icon {
+    width: 32px;
+    height: 32px;
+  }
   
   .chat-header {
     padding: 10px;
@@ -1247,6 +1251,70 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
 .tool-call-result.error pre {
   color: #ff6b6b;
   border-left: 3px solid #ff6b6b;
+}
+
+.tool-call-result.canceled pre {
+  color: #e2e8f0;
+  border-left: 3px solid #a0aec0;
+}
+
+.tool-call.subagent-call {
+  background: rgba(20, 35, 55, 0.45);
+  border: 1px solid rgba(100, 180, 240, 0.3);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+
+  &.running {
+    border-color: rgba(212, 160, 23, 0.6);
+    background: rgba(45, 40, 20, 0.4);
+  }
+
+  &.completed {
+    border-color: rgba(72, 187, 120, 0.4);
+  }
+
+  &.canceled {
+    border-color: rgba(160, 174, 192, 0.35);
+    background: rgba(40, 44, 52, 0.3);
+  }
+
+  &.error {
+    border-color: rgba(229, 62, 62, 0.45);
+  }
+
+  .tool-name {
+    color: #63b3ed;
+  }
+
+  .tool-call-header {
+    gap: 12px;
+  }
+}
+
+.subagent-avatar-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 2px solid var(--primary-color);
+  box-shadow: 0 0 8px rgba(212, 175, 55, 0.3);
+  flex-shrink: 0;
+  object-fit: cover;
+  display: block;
+}
+
+.tool-call.tool-call-nested {
+  margin-inline-start: 20px;
+  border-inline-start: 3px solid rgba(100, 180, 240, 0.4);
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.subagent-stop-btn {
+  margin-inline-start: 8px;
+  flex-shrink: 0;
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 }
 
 .report-dialog {

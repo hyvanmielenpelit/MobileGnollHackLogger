@@ -66,7 +66,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     'get_monster_stats': 'Reading monster stats',
     'get_artifact_stats': 'Reading artifact stats',
     'get_github_repo_info': 'Retrieving GitHub repository information',
-    'search_github': 'Searching GitHub'
+    'search_github': 'Searching GitHub',
+    'delegate_to_subagent': 'Delegating to Subagent'
   };
 
   private static readonly NETHACK_TOOL_DISPLAY_NAMES: Record<string, string> = {
@@ -79,6 +80,13 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   };
 
   public static getToolDisplayName(name: string, argsOrRepo?: any): string {
+    if (name === 'delegate_to_subagent') {
+      if (argsOrRepo?.agent_name) {
+        return `Subagent: ${argsOrRepo.agent_name}`;
+      }
+      return 'Delegating to Subagent';
+    }
+
     const isNetHack = typeof argsOrRepo === 'string'
       ? argsOrRepo.toLowerCase() === 'nethack'
       : (typeof argsOrRepo?.repository === 'string' && argsOrRepo.repository.toLowerCase() === 'nethack');
@@ -92,6 +100,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   private buildToolArgsText(name: string, args: any): string {
     if (!args) return '';
     try {
+      if (name === 'delegate_to_subagent') {
+        if (args.agent_name && args.task) return `${args.agent_name}: "${args.task}"`;
+        if (args.task) return `"${args.task}"`;
+      }
       if (name === 'source_code_search') {
         if (args.query && args.file_filter) return `"${args.query}" in ${args.file_filter}`;
         if (args.query) return `"${args.query}"`;
@@ -146,6 +158,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   pinnedSessionCount = 0;
   maxSessionQuota = 50;
   maxPinnedQuota = 5;
+  cancelingSubAgentId: string | null = null;
   trashCount = 0;
 
   includePinnedInBulkDelete = false;
@@ -1259,7 +1272,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           name: toolInfo.name, 
           status: 'running',
           displayName,
-          argsText
+          argsText,
+          agentName: toolInfo.agent_name || (toolInfo.name === 'delegate_to_subagent' ? args?.agent_name : undefined),
+          parentToolCallId: toolInfo.parent_tool_call_id,
+          depth: toolInfo.depth || 0
         });
         this.updateDesiredAvatarState();
         this.cdr.detectChanges();
@@ -2578,6 +2594,28 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     } catch (err) {
       console.error('Failed to copy tool result: ', err);
     }
+  }
+
+  cancelSubAgent(toolCallId: string | undefined, event?: Event) {
+    if (event) event.stopPropagation();
+    if (!toolCallId || !this.currentSessionId) return;
+
+    this.cancelingSubAgentId = toolCallId;
+    this.chatService.cancelSubAgent(this.currentSessionId, toolCallId).subscribe({
+      next: (res) => {
+        this.cancelingSubAgentId = null;
+        this.debugService.log(`[Frontend] Cancelled subagent ${toolCallId}: ${res.message}`);
+        const tc = this.streamingToolCalls.find(t => t.id === toolCallId);
+        if (tc && tc.status === 'running') {
+          tc.status = 'canceled';
+        }
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.cancelingSubAgentId = null;
+        this.debugService.log(`[Frontend] Error cancelling subagent ${toolCallId}: ${err?.message || err}`);
+      }
+    });
   }
 
   startResize(event: MouseEvent | TouchEvent) {

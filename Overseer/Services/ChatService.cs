@@ -12,6 +12,7 @@ using Overseer.Hubs;
 using Overseer.Extensions;
 using Overseer.Services.Tools;
 using Overseer.Services.Providers;
+using Overseer.Services.Agents;
 
 namespace Overseer.Services;
 
@@ -29,7 +30,9 @@ public class ChatService
     private readonly ToolExecutor _toolExecutor;
     private readonly KnowledgeBaseService _knowledgeBaseService;
     private readonly OngoingChatManager _ongoingChatManager;
+    private readonly AgentLoopRunner _agentLoopRunner;
     private readonly Dictionary<string, IAiProvider> _aiProviders;
+    private readonly SubAgentCatalogService? _subAgentCatalogService;
     private bool _showDebugLog = false;
 
     public ChatService(
@@ -44,7 +47,9 @@ public class ChatService
         ToolExecutor toolExecutor,
         KnowledgeBaseService knowledgeBaseService,
         OngoingChatManager ongoingChatManager,
-        IEnumerable<IAiProvider> aiProviders)
+        AgentLoopRunner agentLoopRunner,
+        IEnumerable<IAiProvider> aiProviders,
+        SubAgentCatalogService? subAgentCatalogService = null)
     {
         _scopeFactory = scopeFactory;
         _wikiService = wikiService;
@@ -57,7 +62,9 @@ public class ChatService
         _toolExecutor = toolExecutor;
         _knowledgeBaseService = knowledgeBaseService;
         _ongoingChatManager = ongoingChatManager;
+        _agentLoopRunner = agentLoopRunner;
         _aiProviders = aiProviders.ToDictionary(p => p.ProviderName, p => p, StringComparer.OrdinalIgnoreCase);
+        _subAgentCatalogService = subAgentCatalogService;
     }
 
     /// <summary>
@@ -181,6 +188,7 @@ public class ChatService
         int? userMaxCallsPerSession = null;
         int? userMaxToolIterations = null;
         int? userMaxParallelToolCalls = null;
+        string systemPrompt = "";
 
         int estimatedInputTokens = 0;
 
@@ -446,8 +454,17 @@ public class ChatService
             
             bool allowSourceCodeReferences = showSourceCodeReferences || developerMode;
 
+            bool enableSubAgents = SubAgentAvailability.IsAvailableFor(
+                _modelMetadataService,
+                provider ?? "",
+                model,
+                _subAgentCatalogService ?? new SubAgentCatalogService(_configuration, Microsoft.Extensions.Logging.Abstractions.NullLogger<SubAgentCatalogService>.Instance),
+                new ToolExecutionContext { AgentDepth = 0, MaxAgentDepth = 1 },
+                enableToolUse,
+                _configuration);
+
             // enableToolUse handled above
-            string systemPrompt = BuildSystemPrompt(contextDocs, spoilerFreeMode, verboseMode, isGameOn, developerMode, overseerMode, hasGameSnapshot, hasMessageHistory, session?.ClientSettings, enableToolUse, enableWebSearch, allowSourceCodeReferences);
+            systemPrompt = BuildSystemPrompt(contextDocs, spoilerFreeMode, verboseMode, isGameOn, developerMode, overseerMode, hasGameSnapshot, hasMessageHistory, session?.ClientSettings, enableToolUse, enableWebSearch, allowSourceCodeReferences, enableSubAgents);
 
             var userMsg = new ChatMessage
             {
@@ -601,26 +618,29 @@ public class ChatService
             };
         }
 
-        string fullResponse = "";
-        
-        long? apiCallStartTime = null;
-        int? timeToFirstTokenMs = null;
-        
-        int toolIterations = 0;
-        bool hasToolsToRun = true;
-        var thoughtWriter = new ThoughtMarkupWriter();
-        var sbFullResponse = new StringBuilder();
-        var streamToolCalls = new List<ChatMessageToolCall>();
+        var runBudget = new AgentRunBudget
+        {
+            MaxTotalModelCalls = _configuration.GetValue<int>("SubAgentSettings:MaxTotalModelCalls", 48),
+            MaxSubAgentRuns = _configuration.GetValue<int>("SubAgentSettings:MaxSubAgentRuns", 6),
+            MaxParallelSubAgents = _configuration.GetValue<int>("SubAgentSettings:MaxParallelSubAgents", 3)
+        };
 
-        
         var execContext = new ToolExecutionContext { 
             SessionId = currentSessionId, 
+            UserId = userId,
             IsGameOn = isGameOn, 
             SpoilerFreeMode = spoilerFreeMode, 
             OverseerMode = overseerMode, 
             IsGnollHackSession = isGnollHackSession,
             MaxResultLength = userMaxResultLength ?? _configuration.GetValue<int>("AiPerformanceSettings:MaxResultLength:Default", 3000),
-            MaxCallsPerSession = userMaxCallsPerSession ?? _configuration.GetValue<int>("AiPerformanceSettings:MaxCallsPerSession:Default", 30)
+            MaxCallsPerSession = userMaxCallsPerSession ?? _configuration.GetValue<int>("AiPerformanceSettings:MaxCallsPerSession:Default", 30),
+            ShowDebugLog = _showDebugLog,
+            Budget = runBudget,
+            EventSink = async (evt) => {
+                evt.SessionId = currentSessionId;
+                _ongoingChatManager.ProcessEvent(currentSessionId, evt);
+                await _hubContext.Clients.Group(currentSessionId.ToString()).SendAsync("ReceiveChatEvent", evt, CancellationToken.None);
+            }
         };
         int maxToolIterations = userMaxToolIterations ?? _configuration.GetValue<int>("AiPerformanceSettings:MaxToolIterations:Default", 32);
 
@@ -638,241 +658,45 @@ public class ChatService
         int maxParallelClientTools = Math.Clamp(
             Math.Clamp(cfgClientDefault, Math.Max(1, cfgClientMin), Math.Max(1, cfgClientMax)),
             1, maxParallelTools);
-        
-        var httpClient = _httpClientFactory.CreateClient();
 
-        while (toolIterations <= maxToolIterations && hasToolsToRun && !cancellationToken.IsCancellationRequested)
+        var runRequest = new AgentRunRequest
         {
-            if (toolIterations == maxToolIterations && hasToolsToRun)
-            {
-                yield return new ChatEvent { Type = "tool_error", Data = "Tool call limit reached. Forcing final response." };
-                enableToolUse = false;
-                enableWebSearch = false;
-                enableClientTools = false;
-                enableGameActions = false;
-            }
-            
-            hasToolsToRun = false;
-            string iterationText = "";
-            bool lastEventWasToolCall = false;
-            var requestTools = _toolRegistry.BuildToolsForRequest(aiProvider, execContext, enableWebSearch, enableToolUse, enableClientTools, enableGameActions);
-            var currentIterationToolCalls = new List<JsonElement>();
-            var currentIterationProviderItems = new List<JsonElement>();
-            thoughtWriter.ResetIteration();
+            ProviderName = provider ?? "",
+            ModelId = model ?? "",
+            ApiKey = apiKey,
+            ModelDisplayName = modelDisplayName,
+            SystemPrompt = systemPrompt,
+            SeedHistory = messageHistory,
+            ThinkingLevel = thinkingLevel,
+            ReasoningMode = reasoningMode,
+            ReasoningSummary = reasoningSummary,
+            ServiceTier = serviceTier,
+            MaxOutputTokens = maxOutputTokens,
+            MaxToolIterations = maxToolIterations,
+            MaxParallelTools = maxParallelTools,
+            MaxParallelClientTools = maxParallelClientTools,
+            EnableWebSearch = enableWebSearch,
+            EnableToolUse = enableToolUse,
+            EnableClientTools = enableClientTools,
+            EnableGameActions = enableGameActions,
+            ToolExecutionContext = execContext,
+            SystemModelId = systemModelId,
+            ShowDebugLog = _showDebugLog,
+            AiProvider = aiProvider,
+            Budget = runBudget
+        };
 
-            var requestBody = aiProvider.BuildChatRequestBody(model, messageHistory, maxOutputTokens, thinkingLevel, requestTools, reasoningMode, reasoningSummary, serviceTier);
-            var jsonRequest = JsonSerializer.Serialize(requestBody);
-            if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {aiProvider.ProviderName}] Request Body: {jsonRequest}" };
+        var runResult = new AgentRunResult();
 
-            if (!apiCallStartTime.HasValue) apiCallStartTime = System.Diagnostics.Stopwatch.GetTimestamp();
-
-            await foreach (var evt in ExecuteApiWithRetriesAsync(
-                async ct =>
-                {
-                    var request = new HttpRequestMessage(HttpMethod.Post, aiProvider.GetChatStreamUrl(model, apiKey));
-                    aiProvider.ConfigureRequest(request, apiKey);
-                    request.Content = new StringContent(jsonRequest, Encoding.UTF8, "application/json");
-                    return await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
-                },
-                (response, ct) => aiProvider.ParseStreamAsync(response, _showDebugLog, ct),
-                aiProvider.ProviderName,
-                systemModelId,
-                cancellationToken))
-            {
-                if (evt.Type == "provider_history_reset")
-                {
-                    currentIterationProviderItems.Clear();
-                }
-                else if (evt.Type == "provider_history_discard")
-                {
-                    currentIterationProviderItems.Clear();
-                    if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {aiProvider.ProviderName}] turn not replayable — using reconstruction" };
-                }
-                else if (evt.Type == "provider_history_item")
-                {
-                    try
-                    {
-                        currentIterationProviderItems.Add(JsonSerializer.Deserialize<JsonElement>(evt.Data));
-                    }
-                    catch { }
-                }
-                else
-                {
-                    if (!timeToFirstTokenMs.HasValue && (evt.Type == "chunk" || evt.Type == "thinking_chunk" || evt.Type == "tool_call_complete" || evt.Type == "error"))
-                    {
-                        timeToFirstTokenMs = (int)System.Diagnostics.Stopwatch.GetElapsedTime(apiCallStartTime!.Value).TotalMilliseconds;
-                        yield return new ChatEvent { Type = "ttft", Data = timeToFirstTokenMs.Value.ToString() };
-                    }
-
-                    if (evt.Type == "thinking_chunk")
-                    {
-                        thoughtWriter.HandleThinkingChunk(sbFullResponse, evt.Data);
-                        iterationText += evt.Data;
-                    }
-                    else if (evt.Type == "chunk")
-                    {
-                        bool needsSpacer = false;
-                        if (!string.IsNullOrEmpty(evt.Data))
-                        {
-                            if ((toolIterations > 0 && string.IsNullOrEmpty(iterationText)) || lastEventWasToolCall)
-                            {
-                                string cur = sbFullResponse.ToString();
-                                if (!string.IsNullOrWhiteSpace(cur) && !cur.EndsWith("\n") && !cur.EndsWith(" "))
-                                {
-                                    needsSpacer = true;
-                                    yield return new ChatEvent { Type = "chunk", Data = "\n\n" };
-                                }
-                                lastEventWasToolCall = false;
-                            }
-                        }
-
-                        thoughtWriter.HandleChunk(sbFullResponse, evt.Data, needsSpacer);
-                        iterationText += evt.Data;
-                    }
-
-                    if (evt.Type == "error")
-                    {
-                        thoughtWriter.CloseOpenThoughtDiv(sbFullResponse);
-                        sbFullResponse.Append($"\n\n**Error:** {evt.Data}");
-                    }
-
-                    if (evt.Type == "tool_call_complete")
-                    {
-                        hasToolsToRun = true;
-                        lastEventWasToolCall = true;
-                        currentIterationToolCalls.Add(JsonSerializer.Deserialize<JsonElement>(evt.Data));
-                        yield return new ChatEvent { Type = "tool_start", Data = EnrichToolStartData(evt.Data) };
-                    }
-                    else
-                    {
-                        yield return evt;
-                    }
-                }
-            }
-
-            if (hasToolsToRun && currentIterationToolCalls.Count > 0)
-            {
-                thoughtWriter.WrapPreToolVisibleText(sbFullResponse);
-
-                aiProvider.AppendAssistantToolCallsToHistory(messageHistory, iterationText, currentIterationToolCalls, currentIterationProviderItems);
-
-                var streamBaseIndex = streamToolCalls.Count;
-                var batchItems = new List<ToolBatchItem>(currentIterationToolCalls.Count);
-
-                foreach (var tc in currentIterationToolCalls)
-                {
-                    var tId = tc.TryGetProperty("id", out var idProp) ? idProp.GetString() ?? Guid.NewGuid().ToString() : Guid.NewGuid().ToString();
-                    var tName = tc.TryGetProperty("name", out var nameProp) ? nameProp.GetString() ?? "" : "";
-                    var tArgsStr = tc.TryGetProperty("arguments", out var argsProp) ? argsProp.GetString() ?? "{}" : "{}";
-
-                    streamToolCalls.Add(new ChatMessageToolCall
-                    {
-                        ToolCallId = tId,
-                        Name = tName,
-                        ArgsText = tArgsStr,
-                        Status = "running",
-                        SortOrder = streamToolCalls.Count
-                    });
-
-                    JsonElement tArgs = JsonDocument.Parse("{}").RootElement;
-                    try { tArgs = JsonSerializer.Deserialize<JsonElement>(tArgsStr); } catch { }
-
-                    batchItems.Add(new ToolBatchItem
-                    {
-                        ToolCallId = tId,
-                        ToolName = tName,
-                        Arguments = tArgs,
-                        IsClientTool = _toolRegistry.GetExecutionLocation(tName) == ToolExecutionLocation.Client
-                    });
-                }
-
-                var outcomeChannel = System.Threading.Channels.Channel.CreateUnbounded<ToolBatchOutcome>(
-                    new System.Threading.Channels.UnboundedChannelOptions { SingleReader = true });
-
-                var batchTask = ToolBatchRunner.RunAsync(
-                    batchItems,
-                    (item, ct) => _toolExecutor.ExecuteAsync(item.ToolName, item.Arguments, execContext, ct, item.ToolCallId),
-                    maxParallelTools,
-                    maxParallelClientTools,
-                    outcomeChannel.Writer,
-                    cancellationToken);
-
-                try
-                {
-                    await foreach (var outcome in outcomeChannel.Reader.ReadAllAsync())
-                    {
-                        if (_showDebugLog)
-                        {
-                            yield return new ChatEvent
-                            {
-                                Type = "debug",
-                                Data = $"[Main Chat] Tool '{outcome.ToolName}' completed in {outcome.ExecutionMs}ms " +
-                                       $"(queued {outcome.QueueWaitMs}ms). Success={outcome.Success}" +
-                                       (outcome.Success ? "" : $", Error: {outcome.Content}")
-                            };
-                        }
-
-                        if (outcome.Success)
-                        {
-                            var resObj = new { id = outcome.ToolCallId, name = outcome.ToolName, result = outcome.Content };
-                            yield return new ChatEvent { Type = "tool_result", Data = JsonSerializer.Serialize(resObj) };
-                        }
-                        else
-                        {
-                            var errObj = new { id = outcome.ToolCallId, name = outcome.ToolName, error = outcome.Content };
-                            yield return new ChatEvent { Type = "tool_error", Data = JsonSerializer.Serialize(errObj) };
-                        }
-                    }
-                }
-                finally
-                {
-                    await batchTask;
-                }
-
-                var outcomes = await batchTask;
-
-                int budgetChars = _configuration.GetValue<int>("ToolExecutionLimits:MaxBatchResultLength", 40000);
-                var budget = new ToolBatchResultBudget(Math.Max(budgetChars, execContext.MaxResultLength));
-
-                var providerResults = new List<ProviderToolResult>(outcomes.Count);
-                for (int i = 0; i < outcomes.Count; i++)
-                {
-                    var outcome = outcomes[i];
-
-                    /* A tool with a raised per-result cap is exempt from the shared batch
-                       budget. ToolExecutor has already capped it individually; the override
-                       exists because a partial result (a snapshot missing its Discoveries
-                       and dungeon overview) is worse than useless. Only refresh_snapshot
-                       carries an override today, so the worst case is one batch of
-                       MaxBatchResultLength plus one 60000-char snapshot. */
-                    bool exemptFromBatchBudget =
-                        _toolExecutor.GetEffectiveMaxResultLength(outcome.ToolName, execContext.MaxResultLength)
-                            > execContext.MaxResultLength;
-
-                    providerResults.Add(new ProviderToolResult
-                    {
-                        ToolCallId = outcome.ToolCallId,
-                        ToolName = outcome.ToolName,
-                        Content = exemptFromBatchBudget ? outcome.Content : budget.Apply(outcome.Content),
-                        Success = outcome.Success,
-                        ProviderToolCallId = currentIterationToolCalls[i].TryGetProperty("provider_id", out var pid) ? pid.GetString() : null
-                    });
-
-                    var streamTc = streamToolCalls[streamBaseIndex + i];
-                    streamTc.Result = outcome.Success ? outcome.Content : null;
-                    streamTc.Error = outcome.Success ? null : outcome.Content;
-                    streamTc.Status = outcome.Success ? "completed" : "error";
-                    streamTc.QueueWaitMs = (int)outcome.QueueWaitMs;
-                    streamTc.ExecutionMs = (int)outcome.ExecutionMs;
-                }
-
-                aiProvider.AppendToolResultsToHistory(messageHistory, providerResults);
-            }
-
-            toolIterations++;
+        await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runBudget, runResult, cancellationToken))
+        {
+            yield return evt;
         }
 
-        thoughtWriter.CloseOpenThoughtDiv(sbFullResponse);
+        string fullResponse = runResult.FinalText ?? "";
+        int? timeToFirstTokenMs = runResult.TimeToFirstTokenMs;
+        int? totalDurationMs = runResult.TotalDurationMs;
+        var streamToolCalls = runResult.ToolCalls;
 
         if (cancellationToken.IsCancellationRequested)
         {
@@ -880,20 +704,9 @@ public class ChatService
             if (!isUserCancel)
             {
                 string errMsg = "The request timed out. The AI provider may be overloaded. Please try again.";
-                sbFullResponse.Append($"\n\n**Error:** {errMsg}");
+                fullResponse += $"\n\n**Error:** {errMsg}";
                 yield return new ChatEvent { Type = "error", Data = errMsg };
             }
-        }
-        
-        fullResponse = ReasoningTextSanitizer.SanitizeStateless(sbFullResponse.ToString());
-
-        int? totalDurationMs = apiCallStartTime.HasValue 
-            ? (int)System.Diagnostics.Stopwatch.GetElapsedTime(apiCallStartTime.Value).TotalMilliseconds 
-            : null;
-
-        if (totalDurationMs.HasValue)
-        {
-            yield return new ChatEvent { Type = "duration", Data = totalDurationMs.Value.ToString() };
         }
 
         using (var scope = _scopeFactory.CreateScope())
@@ -903,7 +716,7 @@ public class ChatService
             if (session != null)
             {
                 bool hasThinkingDivs = fullResponse.Contains("ai-thought");
-                if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat] Saving assistant message: {fullResponse.Length} chars, hasThinkingDivs={hasThinkingDivs}, thinkingDivsCount={thoughtWriter.EmittedDivCount}, toolCalls={streamToolCalls.Count}" };
+                if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat] Saving assistant message: {fullResponse.Length} chars, hasThinkingDivs={hasThinkingDivs}, thinkingDivsCount={runResult.EmittedDivCount}, toolCalls={streamToolCalls.Count}" };
 
                 var asstMsg = new ChatMessage
                 {
@@ -944,227 +757,6 @@ public class ChatService
         }
     }
 
-    private async IAsyncEnumerable<ChatEvent> ExecuteApiWithRetriesAsync(
-        Func<CancellationToken, Task<HttpResponseMessage>> requestFactory,
-        Func<HttpResponseMessage, CancellationToken, IAsyncEnumerable<ChatEvent>> streamParser,
-        string providerName,
-        long? systemModelId,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        int[] retryDelays = { 1, 5, 10, 20, 30, 60 };
-        int attempt = 0;
-        bool success = false;
-        
-        while (!success && !cancellationToken.IsCancellationRequested)
-        {
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-            if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] Starting POST request (Attempt {attempt + 1})..." };
-            yield return new ChatEvent { Type = "status", Data = $"Waiting for {providerName}..." };
-
-            HttpResponseMessage? response = null;
-            Exception? requestException = null;
-            try
-            {
-                response = await requestFactory(cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                requestException = ex;
-            }
-
-            if (requestException != null)
-            {
-                sw.Stop();
-                bool isHttpClientTimeout = requestException is TaskCanceledException tce
-                    && (tce.InnerException is TimeoutException || requestException.Message.Contains("HttpClient.Timeout"));
-
-                int elapsedSeconds = (int)(sw.ElapsedMilliseconds / 1000);
-                if (isHttpClientTimeout)
-                {
-                    if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] HTTP request timed out after {elapsedSeconds}s (HttpClient.Timeout). Exception: {requestException.Message}" };
-                    yield return new ChatEvent { Type = "error", Data = $"The request to {providerName} timed out after {elapsedSeconds} seconds. The AI provider may be overloaded or unresponsive. Please try again." };
-                }
-                else if (cancellationToken.IsCancellationRequested)
-                {
-                    if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] Request canceled in {elapsedSeconds}s" };
-                }
-                else
-                {
-                    if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] Request failed in {elapsedSeconds}s: {requestException.GetType().Name}: {requestException.Message}" };
-                    yield return new ChatEvent { Type = "error", Data = $"Request failed: {requestException.Message}" };
-                }
-                yield break;
-            }
-
-            sw.Stop();
-            
-            if (response!.IsSuccessStatusCode)
-            {
-                if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] HTTP {(int)response.StatusCode} Received ({sw.ElapsedMilliseconds}ms)" };
-                yield return new ChatEvent { Type = "status", Data = $"Streaming response..." };
-                
-                bool hasYieldedChunks = false;
-                bool firstChunkReceived = false;
-                bool retryTriggered = false;
-                IAsyncEnumerator<ChatEvent>? enumerator = null;
-                Exception? streamException = null;
-
-                try
-                {
-                    enumerator = streamParser(response, cancellationToken).GetAsyncEnumerator(cancellationToken);
-                    while (true)
-                    {
-                        bool hasNext = false;
-                        try
-                        {
-                            hasNext = await enumerator.MoveNextAsync();
-                        }
-                        catch (Exception ex) when (ex is OperationCanceledException || ex is System.IO.IOException)
-                        {
-                            streamException = ex;
-                            break;
-                        }
-
-                        if (!hasNext) break;
-                        var evt = enumerator.Current;
-
-                        if (!firstChunkReceived && (evt.Type == "chunk" || evt.Type == "thinking_chunk" || evt.Type == "tool_call_complete"))
-                        {
-                            firstChunkReceived = true;
-                            if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] First token received after {sw.ElapsedMilliseconds}ms" };
-                        }
-
-                        if (evt.Type == "chunk" || evt.Type == "thinking_chunk" || evt.Type == "tool_call_complete")
-                        {
-                            hasYieldedChunks = true;
-                        }
-
-                        if (evt.Type == "error" && !hasYieldedChunks)
-                        {
-                            bool isRetryable = evt.Data != null && (
-                                evt.Data.Contains("[overloaded_error]") || 
-                                evt.Data.Contains("[rate_limit_error]") || 
-                                evt.Data.Contains("[api_error]") ||
-                                evt.Data.Contains("529") || 
-                                evt.Data.Contains("503") || 
-                                evt.Data.Contains("502"));
-                                
-                            if (isRetryable && attempt < retryDelays.Length)
-                            {
-                                int delaySeconds = retryDelays[attempt];
-                                yield return new ChatEvent { Type = "status", Data = $"API Overloaded (attempt {attempt + 1}/{retryDelays.Length + 1}). Retrying in {delaySeconds}s..." };
-                                if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] Sleeping for {delaySeconds}s before retry due to stream error: {evt.Data}" };
-                                
-                                bool shouldBreak = false;
-                                try {
-                                    await Task.Delay(delaySeconds * 1000, cancellationToken);
-                                } catch(TaskCanceledException) { shouldBreak = true; }
-                                
-                                if (shouldBreak) break;
-                                
-                                attempt++;
-                                retryTriggered = true;
-                                break; // break out of while loop to restart request
-                            }
-                            else if (isRetryable)
-                            {
-                                if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] Max retries exhausted for stream error: {evt.Data}" };
-                                yield return new ChatEvent { Type = "error", Data = $"The {providerName} API is currently overloaded. Max retries ({retryDelays.Length + 1}) exceeded. Please try again later." };
-                                break;
-                            }
-                        }
-
-                        if (!retryTriggered)
-                        {
-                            yield return evt;
-                        }
-                    }
-                }
-                finally
-                {
-                    if (enumerator != null) await enumerator.DisposeAsync();
-                }
-
-                if (streamException != null)
-                {
-                    int elapsedSeconds = (int)(sw.ElapsedMilliseconds / 1000);
-                    if (cancellationToken.IsCancellationRequested)
-                    {
-                        if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] Stream interrupted after {elapsedSeconds}s — request timeout reached." };
-                        System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(streamException).Throw();
-                    }
-                    else
-                    {
-                        if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] Stream reading failed after {elapsedSeconds}s: {streamException.GetType().Name}: {streamException.Message}" };
-                        yield return new ChatEvent { Type = "error", Data = $"Stream interrupted: {streamException.Message}" };
-                        System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(streamException).Throw();
-                    }
-                }
-                
-                if (retryTriggered)
-                {
-                    continue; // Loop back to the start of the while (!success) loop
-                }
-                
-                if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] Stream completed." };
-                success = true;
-            }
-            else
-            {
-                var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
-                if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] HTTP {(int)response.StatusCode} Received ({sw.ElapsedMilliseconds}ms)\nBody: {errorBody}" };
-
-                if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests) // 429
-                {
-                    if (systemModelId.HasValue)
-                    {
-                        using var errScope = _scopeFactory.CreateScope();
-                        var errService = errScope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
-                        await errService.RecordErrorAsync(systemModelId.Value, "429 Too Many Requests");
-                    }
-                    yield return new ChatEvent { Type = "error", Data = "429 Rate Limited. Please try again later." };
-                    yield break;
-                }
-                else if (response.StatusCode == System.Net.HttpStatusCode.PaymentRequired || errorBody.Contains("402") || errorBody.Contains("insufficient_quota")) // 402 or string match
-                {
-                    if (systemModelId.HasValue)
-                    {
-                        using var errScope = _scopeFactory.CreateScope();
-                        var errService = errScope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
-                        await errService.RecordErrorAsync(systemModelId.Value, $"Budget Exhausted: {errorBody}");
-                    }
-                    yield return new ChatEvent { Type = "error", Data = "The system provider budget has been exhausted. Please contact the administrator." };
-                    yield break;
-                }
-                else if (response.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable || response.StatusCode == System.Net.HttpStatusCode.BadGateway || response.StatusCode == System.Net.HttpStatusCode.InternalServerError) // 503, 502, 500
-                {
-                    if (attempt < retryDelays.Length)
-                    {
-                        int delaySeconds = retryDelays[attempt];
-                        yield return new ChatEvent { Type = "status", Data = $"503 Unavailable. Retrying in {delaySeconds}s..." };
-                        if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat - {providerName}] Sleeping for {delaySeconds}s before retry..." };
-                        
-                        try {
-                            await Task.Delay(delaySeconds * 1000, cancellationToken);
-                        } catch(TaskCanceledException) { yield break; }
-                        
-                        attempt++;
-                    }
-                    else
-                    {
-                        yield return new ChatEvent { Type = "error", Data = "503 Unavailable. Max retries exceeded." };
-                        yield break;
-                    }
-                }
-                else
-                {
-                    yield return new ChatEvent { Type = "error", Data = $"API Error: {(int)response.StatusCode} - {errorBody}" };
-                    yield break;
-                }
-            }
-        }
-    }
-
     internal string BuildSystemPrompt(
         IEnumerable<string> wikiContext,
         bool spoilerFreeMode,
@@ -1177,7 +769,8 @@ public class ChatService
         string? clientSettings,
         bool enableToolUse,
         bool enableWebSearch,
-        bool allowSourceCodeReferences)
+        bool allowSourceCodeReferences,
+        bool enableSubAgents = false)
     {
         var sb = new StringBuilder();
 
@@ -1510,7 +1103,7 @@ public class ChatService
         }
         
         // ──────────────────────────────────────────────
-        // SECTION 15: Tool Use Policy
+        // SECTION 15: Tool Use Policy & Subagents
         // ──────────────────────────────────────────────
         if (enableToolUse || enableWebSearch)
         {
@@ -1519,6 +1112,25 @@ public class ChatService
             {
                 sb.AppendLine("## Tool Usage Policy");
                 sb.AppendLine(policy);
+                sb.AppendLine();
+            }
+        }
+
+        if (enableSubAgents)
+        {
+            var catalogService = _subAgentCatalogService ?? new SubAgentCatalogService(_configuration, Microsoft.Extensions.Logging.Abstractions.NullLogger<SubAgentCatalogService>.Instance);
+            var enabledAgents = catalogService.GetEnabledSubAgents();
+            if (enabledAgents.Count > 0)
+            {
+                sb.AppendLine("## Subagent Delegation (Multi-Agent Support)");
+                sb.AppendLine("You have access to specialized autonomous subagents via the `delegate_to_subagent` tool:");
+                foreach (var agent in enabledAgents)
+                {
+                    sb.AppendLine($"- **{agent.Name}** ({agent.DisplayName}): {agent.Description}");
+                }
+                sb.AppendLine();
+                sb.AppendLine("When a complex inquiry requires multi-turn investigation or specialized deep dive, delegate the sub-task to the appropriate subagent. Subagents execute autonomously and return synthesized findings.");
+                sb.AppendLine("Do NOT use delegation for trivial single-turn lookups.");
                 sb.AppendLine();
             }
         }
@@ -1819,40 +1431,6 @@ public class ChatService
             var errorStatus = new { sessionId = sessionId, status = "" };
             await _hubContext.Clients.User(userId).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "title_status", Data = System.Text.Json.JsonSerializer.Serialize(errorStatus) }, CancellationToken.None);
         }
-
-    }
-
-    private string EnrichToolStartData(string eventData)
-    {
-        try
-        {
-            var node = System.Text.Json.Nodes.JsonNode.Parse(eventData);
-            if (node is System.Text.Json.Nodes.JsonObject rootObj && 
-                rootObj.TryGetPropertyValue("name", out var nameNode) && 
-                nameNode?.GetValue<string>() == "get_knowledge_article" &&
-                rootObj.TryGetPropertyValue("arguments", out var argsNode))
-            {
-                var argsStr = argsNode?.GetValue<string>();
-                if (!string.IsNullOrEmpty(argsStr))
-                {
-                    var argsObjNode = System.Text.Json.Nodes.JsonNode.Parse(argsStr);
-                    if (argsObjNode is System.Text.Json.Nodes.JsonObject argsObj && 
-                        argsObj.TryGetPropertyValue("topic", out var topicNode))
-                    {
-                        var topic = topicNode?.GetValue<string>();
-                        if (topic != null)
-                        {
-                            var title = _knowledgeBaseService.GetArticleTitle(topic) ?? topic;
-                            argsObj["topic_title"] = title;
-                            rootObj["arguments"] = argsObj.ToJsonString();
-                            return rootObj.ToJsonString();
-                        }
-                    }
-                }
-            }
-        }
-        catch { /* Ignore parsing errors */ }
-        return eventData;
     }
 
     public static string BuildRandomizedAppearancePolicy()

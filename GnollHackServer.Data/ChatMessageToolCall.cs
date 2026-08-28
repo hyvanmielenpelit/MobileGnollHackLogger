@@ -32,4 +32,12 @@ public class ChatMessageToolCall
     public int? ExecutionMs { get; set; }
     
     public int SortOrder { get; set; }
+    
+    [MaxLength(128)]
+    public string? AgentName { get; set; }
+    
+    [MaxLength(128)]
+    public string? ParentToolCallId { get; set; }
+    
+    public int Depth { get; set; }
 }

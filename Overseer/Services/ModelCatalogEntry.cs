@@ -12,4 +12,6 @@ public class ModelCatalogEntry
     public List<string> ReasoningSummaries { get; set; } = new();
     public int ContextWindowSize { get; set; }
     public int MaxOutputTokens { get; set; }
+    public bool SupportsSubAgentCoordination { get; set; } = true;
+    public bool SupportsSubAgentExecution { get; set; } = true;
 }

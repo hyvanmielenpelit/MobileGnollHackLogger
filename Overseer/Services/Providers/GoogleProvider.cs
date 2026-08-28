@@ -65,9 +65,11 @@ public class GoogleProvider : IAiProvider
         }
 
         var genConfig = new Dictionary<string, object>();
-        if (maxOutputTokens.HasValue)
+        int? configuredDefault = _configuration?.GetValue<int?>("DefaultMaxOutputTokens:Google");
+        int? effectiveMaxTokens = maxOutputTokens ?? configuredDefault;
+        if (effectiveMaxTokens.HasValue)
         {
-            genConfig["maxOutputTokens"] = maxOutputTokens.Value;
+            genConfig["maxOutputTokens"] = effectiveMaxTokens.Value;
         }
 
         if (!string.IsNullOrEmpty(thinkingLevel))
@@ -145,6 +147,11 @@ public class GoogleProvider : IAiProvider
                     if (json.TryGetProperty("candidates", out var candidates) && candidates.GetArrayLength() > 0)
                     {
                         var cand = candidates[0];
+                        if (cand.TryGetProperty("finishReason", out var frProp) && frProp.ValueKind == JsonValueKind.String && frProp.GetString() == "MAX_TOKENS")
+                        {
+                            debugEvts.Add(new ChatEvent { Type = "debug", Data = "[Google] Response incomplete: finishReason=MAX_TOKENS" });
+                        }
+
                         if (cand.TryGetProperty("content", out var content) && content.TryGetProperty("parts", out var parts))
                         {
                             foreach (var part in parts.EnumerateArray())

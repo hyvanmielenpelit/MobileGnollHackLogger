@@ -260,18 +260,30 @@
               @if (msg.toolCalls && msg.toolCalls.length > 0 && (showThoughtsAndTools === 1 || showThoughtsAndTools === 3)) {
                 <div class="tool-calls-container">
                   @for (tc of msg.toolCalls; track tc; let tIndex = $index) {
-                    <div class="tool-call" [ngClass]="tc.status">
+                    <div class="tool-call" [ngClass]="[tc.status, tc.name === 'delegate_to_subagent' ? 'subagent-call' : '', (tc.depth || 0) > 0 ? 'tool-call-nested' : '']">
                       <div class="tool-call-header">
-                        <span class="tool-icon">🛠️</span>
+                        @if (tc.name === 'delegate_to_subagent') {
+                          <img src="/img/gnoll-overseer-avatar-96x96-static.webp" class="subagent-avatar-icon" width="48" height="48" alt="Subagent" />
+                        } @else {
+                          <span class="tool-icon">🛠️</span>
+                        }
                         <span class="tool-name">{{ tc.displayName || tc.name }}</span>
                         @if (tc.argsText) {
                           <span class="tool-args"> ({{ tc.argsText }})</span>
                         }
                         @if (tc.status === 'running') {
-                          <span class="tool-status"><span class="gh-spinner-small"></span></span>
+                          <span class="tool-status">
+                            <span class="gh-spinner-small"></span>
+                            @if (tc.name === 'delegate_to_subagent') {
+                              <button class="stop-btn subagent-stop-btn" (click)="cancelSubAgent(tc.id, $event)" [disabled]="cancelingSubAgentId === tc.id" title="Cancel Subagent Execution">■</button>
+                            }
+                          </span>
                         }
                         @if (tc.status === 'completed') {
                           <span class="tool-status">✅</span>
+                        }
+                        @if (tc.status === 'canceled') {
+                          <span class="tool-status" title="Canceled">⏹️ <small>Canceled</small></span>
                         }
                         @if (tc.status === 'error') {
                           <span class="tool-status">❌</span>
@@ -292,6 +304,14 @@
                               </button>
                             </summary>
                             <pre>{{ tc.result }}</pre>
+                          </details>
+                        </div>
+                      }
+                      @if (tc.status === 'canceled') {
+                        <div class="tool-call-result canceled">
+                          <details>
+                            <summary>Status: Canceled</summary>
+                            <pre>{{ tc.error || 'Subagent execution was canceled by the user.' }}</pre>
                           </details>
                         </div>
                       }
@@ -365,18 +385,30 @@
               @if (streamingToolCalls.length > 0 && (showThoughtsAndTools === 1 || showThoughtsAndTools === 3)) {
                 <div class="tool-calls-container">
                   @for (tc of streamingToolCalls; track tc; let tIndex = $index) {
-                    <div class="tool-call" [ngClass]="tc.status">
+                    <div class="tool-call" [ngClass]="[tc.status, tc.name === 'delegate_to_subagent' ? 'subagent-call' : '', (tc.depth || 0) > 0 ? 'tool-call-nested' : '']">
                       <div class="tool-call-header">
-                        <span class="tool-icon">🛠️</span>
+                        @if (tc.name === 'delegate_to_subagent') {
+                          <img src="/img/gnoll-overseer-avatar-96x96-static.webp" class="subagent-avatar-icon" width="48" height="48" alt="Subagent" />
+                        } @else {
+                          <span class="tool-icon">🛠️</span>
+                        }
                         <span class="tool-name">{{ tc.displayName || tc.name }}</span>
                         @if (tc.argsText) {
                           <span class="tool-args"> ({{ tc.argsText }})</span>
                         }
                         @if (tc.status === 'running') {
-                          <span class="tool-status"><span class="gh-spinner-small"></span></span>
+                          <span class="tool-status">
+                            <span class="gh-spinner-small"></span>
+                            @if (tc.name === 'delegate_to_subagent') {
+                              <button class="stop-btn subagent-stop-btn" (click)="cancelSubAgent(tc.id, $event)" [disabled]="cancelingSubAgentId === tc.id" title="Cancel Subagent Execution">■</button>
+                            }
+                          </span>
                         }
                         @if (tc.status === 'completed') {
                           <span class="tool-status">✅</span>
+                        }
+                        @if (tc.status === 'canceled') {
+                          <span class="tool-status" title="Canceled">⏹️ <small>Canceled</small></span>
                         }
                         @if (tc.status === 'error') {
                           <span class="tool-status">❌</span>
@@ -397,6 +429,14 @@
                               </button>
                             </summary>
                             <pre>{{ tc.result }}</pre>
+                          </details>
+                        </div>
+                      }
+                      @if (tc.status === 'canceled') {
+                        <div class="tool-call-result canceled">
+                          <details>
+                            <summary>Status: Canceled</summary>
+                            <pre>{{ tc.error || 'Subagent execution was canceled by the user.' }}</pre>
                           </details>
                         </div>
                       }

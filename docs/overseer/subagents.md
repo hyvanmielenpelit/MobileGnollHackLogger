@@ -1,0 +1,66 @@
+# Overseer Subagent (Multi-Agent) Architecture
+
+This document describes the design and implementation of autonomous subagents in the Overseer project.
+
+## Overview
+
+Overseer supports a **coordinator-specialist multi-agent architecture**:
+1. The **Main Coordinator Agent** interacts with the user, analyzes inquiries, and delegates scoped, multi-step sub-tasks to specialist subagents using the `delegate_to_subagent` tool.
+2. **Specialist Subagents** (e.g., `wiki_researcher`, `source_investigator`, `game_data_analyst`) run autonomously in their own loop with targeted system instructions, an allowed subset of tools, a dedicated execution budget, and tailored model/credential resolution.
+3. Subagents run concurrently under `ToolBatchRunner` when multiple delegation tool calls are issued in a single iteration.
+4. Users can inspect subagent actions in real time and individually terminate/cancel any running subagent without stopping the entire conversation.
+
+## Core Components
+
+### 1. Catalog & Definition (`SubAgentCatalogService` & `SubAgentCatalog.json`)
+- Registered subagents are defined in `Overseer/Data/SubAgentCatalog.json`.
+- Each definition specifies `name`, `displayName`, `description`, `systemPrompt`, `allowedTools`, `maxIterations`, `modelOverride`, `providerOverride`, and reasoning defaults.
+- Validated on application startup against the `ToolRegistry` and `ModelMetadataService`.
+
+### 2. Delegation Tool (`DelegateToSubAgentTool`)
+- Implemented as an `IToolHandler` under `ToolCategory.SubAgent`.
+- Validates delegation depth (depth limit 1 prevents infinite recursion).
+- Registers the subagent execution with `OngoingChatManager` for individual cancellation.
+- Resolves subagent execution model and token limits following the resolution precedence:
+  1. Subagent definition override (`SubAgentDefinition.MaxOutputTokens` / `ThinkingLevel` / `ReasoningMode`).
+  2. Inherited user model configuration from `UserAiModels` or DB fallback.
+  3. Static catalog defaults via `ModelMetadataService` (e.g. 128k for `gpt-5.6-luna`, 65k for `gemini-2.5-pro`).
+- Clones and propagates `ToolExecutionContext` (`SessionId`, `UserId`, `SpoilerFreeMode`, `AgentDepth = parent + 1`, `Budget`) to maintain isolation and spoiler safety.
+- Emits filtered debug diagnostic logs (`evt.Type == "debug"`) to the parent event sink while isolating subagent text chunks and timing metrics from coordinator chat streams.
+- Executes the subagent loop via `AgentLoopRunner`.
+
+### 3. Agent Loop Runner (`AgentLoopRunner`)
+- Core multi-turn agent loop driving LLM requests, parallel tool execution with `ToolBatchRunner`, thought markup generation, and error recovery.
+- Centralized clamping of `effectiveMaxOutputTokens` against `runMetadata.MaxOutputTokens` to prevent provider HTTP 400 errors.
+- Automatic detection of output truncation (`finishReason: MAX_TOKENS`, `stop_reason: max_tokens`, or `response.incomplete` status) with user-facing truncation notices (`_[Response truncated: output token limit reached.]_`).
+- Reusable across the main coordinator agent and specialist subagents.
+
+### 4. Capability Gating & Availability (`SubAgentAvailability`)
+- Weak models (e.g., nano or flash-lite models) that lack complex coordination capabilities have `"supportsSubAgentCoordination": false` in their catalogs.
+- Models not suited for specialist task execution have `"supportsSubAgentExecution": false`.
+- The `delegate_to_subagent` tool is automatically omitted from the available tool list when a non-coordinating model is active.
+
+### 5. Individual Cancellation & Observability
+- Each running subagent is registered in `OngoingChatManager.ActiveSubAgents`.
+- The user can cancel a specific subagent via `POST /api/chat/sessions/{sessionId}/subagents/{toolCallId}/cancel`.
+- Streamed diagnostic events are tagged with `[SubAgent:{agentName}]` and displayed live in the frontend debug log.
+
+### 6. Persistence & Retention
+- Subagent tool executions are persisted in `ChatMessageToolCall` rows with `AgentName`, `ParentToolCallId`, and `Depth`.
+- On session load, nested tool calls are reconstructed and displayed in a hierarchical view.
+
+## Configuration Reference (`SubAgentSettings`)
+
+The subagent runtime is configured under the `SubAgentSettings` section in `appsettings.json`:
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `Enabled` | `true` | Master switch enabling or disabling subagent delegation tool availability. |
+| `TimeoutSeconds` | `600` | Maximum execution time per subagent run (in seconds). Default is 10 minutes. |
+| `MaxParallelSubAgents` | `3` | Maximum number of subagents allowed to run concurrently in parallel tool batches. |
+| `MaxSubAgentRuns` | `6` | Maximum number of subagent invocations per coordinator user turn. |
+| `MaxTotalModelCalls` | `48` | Maximum combined LLM API iterations across coordinator and all subagents in a single turn. |
+| `MinCallsPerSessionWithSubAgents` | `200` | Minimum per-session tool execution limit floor when subagents are active. |
+| `MaxAccumulatedEvents` | `5000` | Maximum bounded event history buffer for SignalR reconnection replays. |
+
+

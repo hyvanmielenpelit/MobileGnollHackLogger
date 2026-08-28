@@ -20,7 +20,8 @@ namespace Overseer.Services.Tools
         SessionData,
         ClientActiveSessionQuery,
         ClientPersistentDataQuery,
-        GameAction
+        GameAction,
+        SubAgent
     }
 
     public enum ToolExecutionLocation

@@ -82,6 +82,12 @@ Follow this order when looking up game information. Be parsimonious with tool ca
    - Previous tool calls failed or returned insufficient results.
    - The question is about general knowledge, cross-game comparisons,
      or community content outside of official repositories.
+7. **Subagent Delegation** (`delegate_to_subagent`) — use for complex, multi-step tasks
+   requiring specialized autonomous investigation:
+   - `wiki_researcher`: Multi-query wiki exploration and cross-wiki comparisons.
+   - `source_investigator`: Deep C code tracing, struct analysis, and game formula extraction.
+   - `game_data_analyst`: Comparative data analysis across monsters, items, artifacts, or dumplogs.
+   - Do NOT delegate simple, single-lookup tasks that can be answered immediately with a direct tool call.
 
 **Do NOT** routinely use source_code_search to double-check wiki articles for well-documented topics — but do verify when you need exact formulas or stats that the wiki might not cover.
 

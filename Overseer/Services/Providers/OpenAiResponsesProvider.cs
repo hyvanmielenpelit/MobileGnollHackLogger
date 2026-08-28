@@ -21,6 +21,13 @@ public class OpenAiResponsesProvider : IAiProvider
         "api.openai.com"
     };
 
+    private readonly IConfiguration _configuration;
+
+    public OpenAiResponsesProvider(IConfiguration configuration)
+    {
+        _configuration = configuration;
+    }
+
     public string ProviderName => "OpenAI";
 
     public IReadOnlyList<string> SupportedServiceTiers => new[] { "auto", "default", "flex", "priority", "fast" };
@@ -89,9 +96,11 @@ public class OpenAiResponsesProvider : IAiProvider
             req["instructions"] = systemContent;
         }
 
-        if (maxOutputTokens.HasValue)
+        int? configuredDefault = _configuration?.GetValue<int?>("DefaultMaxOutputTokens:OpenAI");
+        int? effectiveMaxTokens = maxOutputTokens ?? configuredDefault;
+        if (effectiveMaxTokens.HasValue)
         {
-            req["max_output_tokens"] = maxOutputTokens.Value;
+            req["max_output_tokens"] = effectiveMaxTokens.Value;
         }
 
         var reasoningObj = new Dictionary<string, object>();
@@ -161,6 +170,7 @@ public class OpenAiResponsesProvider : IAiProvider
                     string? thinkingChunkStr = null;
                     ChatEvent? toolCallEvt = null;
                     ChatEvent? errorEvt = null;
+                    ChatEvent? debugEvt = null;
                     ChatEvent? providerItemEvt = null;
 
                     try
@@ -282,6 +292,32 @@ public class OpenAiResponsesProvider : IAiProvider
                                 }
                             }
                         }
+                        else if (eventType == "response.completed" || eventType == "response.done" || eventType == "response.incomplete")
+                        {
+                            var respObj = json.TryGetProperty("response", out var rProp) ? rProp : json;
+                            if (respObj.TryGetProperty("status", out var statusProp) && statusProp.GetString() == "incomplete")
+                            {
+                                string reason = "unknown";
+                                if (respObj.TryGetProperty("incomplete_details", out var incDetails) &&
+                                    incDetails.TryGetProperty("reason", out var reasonProp))
+                                {
+                                    reason = reasonProp.GetString() ?? "unknown";
+                                }
+                                string tokenUsage = "";
+                                if (respObj.TryGetProperty("usage", out var usageProp))
+                                {
+                                    if (usageProp.TryGetProperty("output_tokens", out var otProp))
+                                    {
+                                        tokenUsage = $", output_tokens={otProp.GetInt32()}";
+                                    }
+                                }
+                                debugEvt = new ChatEvent
+                                {
+                                    Type = "debug",
+                                    Data = $"[OpenAI] Response incomplete: reason={reason}{tokenUsage}"
+                                };
+                            }
+                        }
                         else if (eventType == "response.failed")
                         {
                             if (json.TryGetProperty("error", out var errorObj))
@@ -306,6 +342,7 @@ public class OpenAiResponsesProvider : IAiProvider
                     }
                     catch (JsonException) { }
 
+                    if (debugEvt != null) yield return debugEvt;
                     if (errorEvt != null) yield return errorEvt;
                     if (providerItemEvt != null) yield return providerItemEvt;
                     if (!string.IsNullOrEmpty(thinkingChunkStr)) yield return new ChatEvent { Type = "thinking_chunk", Data = thinkingChunkStr };

@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
+using Microsoft.Extensions.Configuration;
 using Overseer.Services;
 using Xunit;
 
@@ -190,6 +192,68 @@ namespace Overseer.Tests.UnitTests
             var retrieved = manager.TryGet(sessionId);
             Assert.NotNull(retrieved);
             Assert.Equal(4294967296L, retrieved.SavedMessageId);
+        }
+
+        [Fact]
+        public void SubAgent_Registration_And_Cancellation_WorksCorrectly()
+        {
+            var manager = new OngoingChatManager();
+            var cts = new CancellationTokenSource();
+            long sessionId = 1012;
+
+            manager.TryStart(sessionId, cts, out _);
+
+            var subCts1 = new CancellationTokenSource();
+            var subCts2 = new CancellationTokenSource();
+
+            Assert.True(manager.TryRegisterSubAgent(sessionId, "call_sub_1", subCts1));
+            Assert.True(manager.TryRegisterSubAgent(sessionId, "call_sub_2", subCts2));
+
+            // Cancel subagent 1 specifically
+            Assert.True(manager.TryCancelSubAgent(sessionId, "call_sub_1"));
+            Assert.True(subCts1.IsCancellationRequested);
+            Assert.False(subCts2.IsCancellationRequested);
+            Assert.False(cts.IsCancellationRequested);
+
+            // Cancel non-existent or already removed returns false
+            Assert.False(manager.TryCancelSubAgent(sessionId, "call_sub_1"));
+
+            // Unregister subagent 2
+            manager.UnregisterSubAgent(sessionId, "call_sub_2");
+            Assert.False(manager.TryCancelSubAgent(sessionId, "call_sub_2"));
+        }
+
+        [Fact]
+        public void ProcessEvent_ExcludesDebugEventsFromAccumulation_And_BoundsQueue()
+        {
+            var config = new Microsoft.Extensions.Configuration.ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["SubAgentSettings:MaxAccumulatedEvents"] = "5"
+                })
+                .Build();
+
+            var manager = new OngoingChatManager(config);
+            var cts = new CancellationTokenSource();
+            long sessionId = 1013;
+
+            manager.TryStart(sessionId, cts, out var state);
+
+            // Send debug event — should increment sequence but NOT accumulate
+            var debugEvt = new ChatEvent { Type = "debug", Data = "Some debug info" };
+            manager.ProcessEvent(sessionId, debugEvt);
+
+            Assert.Equal(1, state.EventSequence);
+            Assert.Empty(state.AccumulatedEvents);
+
+            // Send 10 chunk events — should bound at 5
+            for (int i = 0; i < 10; i++)
+            {
+                manager.ProcessEvent(sessionId, new ChatEvent { Type = "chunk", Data = $"Chunk {i}" });
+            }
+
+            Assert.Equal(11, state.EventSequence);
+            Assert.Equal(5, state.AccumulatedEvents.Count);
         }
     }
 }

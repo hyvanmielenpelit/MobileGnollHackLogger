@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Overseer.Services.Agents;
 using Overseer.Services.Providers;
 
 namespace Overseer.Services.Tools
@@ -23,20 +25,37 @@ namespace Overseer.Services.Tools
         private readonly IEnumerable<IToolHandler> _handlers;
         private readonly IClientToolBridge _clientBridge;
         private readonly ILogger<ToolRegistry> _logger;
+        private readonly SubAgentCatalogService? _catalogService;
+        private readonly ModelMetadataService? _modelMetadataService;
+        private readonly IConfiguration? _configuration;
         private readonly string _guidesPath;
         private string _policyText = string.Empty;
         private string _spoilerPolicyText = string.Empty;
 
-        public ToolRegistry(IEnumerable<IToolHandler> handlers, IClientToolBridge clientBridge, ILogger<ToolRegistry> logger)
+        public ToolRegistry(
+            IEnumerable<IToolHandler> handlers,
+            IClientToolBridge clientBridge,
+            ILogger<ToolRegistry> logger,
+            SubAgentCatalogService? catalogService = null,
+            ModelMetadataService? modelMetadataService = null,
+            IConfiguration? configuration = null)
         {
             _handlers = handlers;
             _clientBridge = clientBridge;
             _logger = logger;
+            _catalogService = catalogService;
+            _modelMetadataService = modelMetadataService;
+            _configuration = configuration;
             
             // Assume ToolGuides is at the root of the application
             _guidesPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ToolGuides");
             
             LoadGuides();
+
+            if (_catalogService != null && _modelMetadataService != null)
+            {
+                _catalogService.Validate(_handlers, _modelMetadataService);
+            }
         }
 
         private void LoadGuides()
@@ -82,7 +101,15 @@ namespace Overseer.Services.Tools
             return _spoilerPolicyText;
         }
 
-        public ToolsForRequest BuildToolsForRequest(IAiProvider provider, ToolExecutionContext context, bool enableWebSearch, bool enableToolUse, bool enableClientTools, bool enableGameActions)
+        public ToolsForRequest BuildToolsForRequest(
+            IAiProvider provider,
+            ToolExecutionContext context,
+            bool enableWebSearch,
+            bool enableToolUse,
+            bool enableClientTools,
+            bool enableGameActions,
+            string? modelId = null,
+            IEnumerable<string>? allowedToolNames = null)
         {
             var result = new ToolsForRequest();
 
@@ -100,8 +127,19 @@ namespace Overseer.Services.Tools
                 return result;
             }
 
+            HashSet<string>? allowedSet = null;
+            if (allowedToolNames != null)
+            {
+                allowedSet = new HashSet<string>(allowedToolNames, StringComparer.OrdinalIgnoreCase);
+            }
+
             foreach (var handler in _handlers)
             {
+                if (allowedSet != null && !allowedSet.Contains(handler.ToolName))
+                {
+                    continue;
+                }
+
                 // Filter by execution location and settings
                 if (handler.ExecutionLocation == ToolExecutionLocation.Server && !enableToolUse) continue;
                 
@@ -114,6 +152,19 @@ namespace Overseer.Services.Tools
                     if (handler.Category == ToolCategory.ClientActiveSessionQuery && !context.IsGameOn) continue;
                     
                     if (handler.Category == ToolCategory.ClientPersistentDataQuery && !context.IsGnollHackSession) continue;
+                }
+
+                if (handler.Category == ToolCategory.SubAgent)
+                {
+                    if (context.AgentDepth >= context.MaxAgentDepth) continue;
+
+                    if (_catalogService != null && _modelMetadataService != null && _configuration != null)
+                    {
+                        if (!SubAgentAvailability.IsAvailableFor(_modelMetadataService, provider.ProviderName, modelId, _catalogService, context, enableToolUse, _configuration))
+                        {
+                            continue;
+                        }
+                    }
                 }
 
                 // Append function declaration

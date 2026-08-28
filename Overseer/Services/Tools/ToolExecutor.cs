@@ -21,6 +21,8 @@ namespace Overseer.Services.Tools
         private readonly object _rateLimitLock = new object();
         private readonly SemaphoreSlim _processThrottler;
         private readonly SemaphoreSlim _externalLookupThrottler;
+        private readonly SemaphoreSlim _subAgentThrottler;
+        private readonly int _minCallsPerSessionWithSubAgents;
 
         public ToolExecutor(
             IEnumerable<IToolHandler> handlers,
@@ -36,8 +38,12 @@ namespace Overseer.Services.Tools
 
             int maxProcess = configuration.GetValue<int>("ToolExecutionLimits:MaxProcessParallelToolCalls", 30);
             int maxLookup = configuration.GetValue<int>("ToolExecutionLimits:MaxProcessExternalLookupCalls", 3);
+            int maxSubAgents = configuration.GetValue<int>("SubAgentSettings:MaxParallelSubAgents", 3);
+            _minCallsPerSessionWithSubAgents = configuration.GetValue<int>("SubAgentSettings:MinCallsPerSessionWithSubAgents", 60);
+
             _processThrottler = new SemaphoreSlim(Math.Max(1, maxProcess));
             _externalLookupThrottler = new SemaphoreSlim(Math.Max(1, maxLookup));
+            _subAgentThrottler = new SemaphoreSlim(Math.Max(1, maxSubAgents));
         }
 
         public async Task<ToolResult> ExecuteAsync(
@@ -47,17 +53,25 @@ namespace Overseer.Services.Tools
             CancellationToken cancellationToken = default,
             string? toolCallId = null)
         {
+            var callContext = context.CloneFor(toolCallId ?? Guid.NewGuid().ToString());
+
             using (_logger.BeginScope(new Dictionary<string, object>
             {
-                ["ToolCallId"] = toolCallId ?? "",
-                ["SessionId"] = context.SessionId,
-                ["ToolName"] = toolName
+                ["ToolCallId"] = callContext.ToolCallId ?? "",
+                ["SessionId"] = callContext.SessionId,
+                ["ToolName"] = toolName,
+                ["AgentName"] = callContext.AgentName ?? "Coordinator",
+                ["AgentDepth"] = callContext.AgentDepth
             }))
             {
-                _logger.LogInformation("Executing tool {ToolName} for Session {SessionId}", toolName, context.SessionId);
+                _logger.LogInformation("Executing tool {ToolName} for Session {SessionId} (Agent: {AgentName}, Depth: {Depth})", 
+                    toolName, callContext.SessionId, callContext.AgentName ?? "Coordinator", callContext.AgentDepth);
 
                 // 1. Session Rate Limiting (atomic — tools may run concurrently)
-                var rateLimitKey = $"tool_calls_session_{context.SessionId}";
+                var rateLimitKey = $"tool_calls_session_{callContext.SessionId}";
+                int sessionLimit = callContext.AgentDepth > 0
+                    ? Math.Max(callContext.MaxCallsPerSession, _minCallsPerSessionWithSubAgents)
+                    : callContext.MaxCallsPerSession;
                 bool allowed;
                 lock (_rateLimitLock)
                 {
@@ -68,7 +82,7 @@ namespace Overseer.Services.Tools
                         return 0;
                     });
 
-                    allowed = count < context.MaxCallsPerSession;
+                    allowed = count < sessionLimit;
                     if (allowed)
                     {
                         _cache.Set(rateLimitKey, count + 1, new MemoryCacheEntryOptions
@@ -81,13 +95,13 @@ namespace Overseer.Services.Tools
 
                 if (!allowed)
                 {
-                    _logger.LogWarning("Rate limit exceeded for Session {SessionId}", context.SessionId);
+                    _logger.LogWarning("Rate limit exceeded for Session {SessionId}", callContext.SessionId);
                     return new ToolResult { Success = false, ErrorMessage = "Maximum tool calls per session exceeded." };
                 }
 
                 // Enhanced Audit Logging
                 _logger.LogInformation("Tool Execution Audit - Session: {SessionId}, Tool: {ToolName}, Parameters: {Parameters}", 
-                    context.SessionId, toolName, parameters.GetRawText());
+                    callContext.SessionId, toolName, parameters.GetRawText());
 
                 // 2. Find Handler
                 var handler = _handlers.FirstOrDefault(h => string.Equals(h.ToolName, toolName, StringComparison.OrdinalIgnoreCase));
@@ -97,7 +111,19 @@ namespace Overseer.Services.Tools
                 }
 
                 // 3. Throttling and Execution
-                var categoryThrottler = handler.Category == ToolCategory.ExternalLookup ? _externalLookupThrottler : null;
+                SemaphoreSlim? categoryThrottler = null;
+                bool requiresProcessThrottler = true;
+
+                if (handler.Category == ToolCategory.ExternalLookup)
+                {
+                    categoryThrottler = _externalLookupThrottler;
+                }
+                else if (handler.Category == ToolCategory.SubAgent)
+                {
+                    categoryThrottler = _subAgentThrottler;
+                    requiresProcessThrottler = false; // Subagents do not consume normal process slots
+                }
+
                 bool categorySlot = false;
                 bool processSlot = false;
                 var swQueue = Stopwatch.StartNew();
@@ -108,8 +134,11 @@ namespace Overseer.Services.Tools
                         await categoryThrottler.WaitAsync(cancellationToken);
                         categorySlot = true;
                     }
-                    await _processThrottler.WaitAsync(cancellationToken);
-                    processSlot = true;
+                    if (requiresProcessThrottler)
+                    {
+                        await _processThrottler.WaitAsync(cancellationToken);
+                        processSlot = true;
+                    }
                 }
                 catch (OperationCanceledException)
                 {
@@ -131,11 +160,11 @@ namespace Overseer.Services.Tools
                 {
                     if (handler.ExecutionLocation == ToolExecutionLocation.Server)
                     {
-                        result = await handler.ExecuteAsync(parameters, context, linkedCts.Token);
+                        result = await handler.ExecuteAsync(parameters, callContext, linkedCts.Token);
                     }
                     else if (handler.ExecutionLocation == ToolExecutionLocation.Client)
                     {
-                        result = await _clientBridge.SendToolRequestAsync(context.SessionId, toolName, parameters, linkedCts.Token);
+                        result = await _clientBridge.SendToolRequestAsync(callContext.SessionId, toolName, parameters, linkedCts.Token);
                         if (result.Success && !string.IsNullOrEmpty(result.Content) && result.Content.IndexOf('\u00A0') >= 0)
                         {
                             result.Content = result.Content.Replace('\u00A0', ' ');
@@ -150,18 +179,18 @@ namespace Overseer.Services.Tools
                 {
                     if (cancellationToken.IsCancellationRequested)
                     {
-                        _logger.LogInformation("Tool {ToolName} canceled by outer request for Session {SessionId}", toolName, context.SessionId);
+                        _logger.LogInformation("Tool {ToolName} canceled by outer request for Session {SessionId}", toolName, callContext.SessionId);
                         result = new ToolResult { Success = false, ErrorMessage = "Tool execution was canceled (request stopped)." };
                     }
                     else
                     {
-                        _logger.LogWarning("Tool {ToolName} timed out after {Timeout}s for Session {SessionId}", toolName, handler.TimeoutSeconds, context.SessionId);
+                        _logger.LogWarning("Tool {ToolName} timed out after {Timeout}s for Session {SessionId}", toolName, handler.TimeoutSeconds, callContext.SessionId);
                         result = new ToolResult { Success = false, ErrorMessage = $"Tool execution timed out after {handler.TimeoutSeconds} seconds." };
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error executing tool {ToolName} for Session {SessionId}", toolName, context.SessionId);
+                    _logger.LogError(ex, "Error executing tool {ToolName} for Session {SessionId}", toolName, callContext.SessionId);
                     result = new ToolResult { Success = false, ErrorMessage = $"An error occurred during tool execution: {ex.Message}" };
                 }
                 finally
@@ -177,9 +206,13 @@ namespace Overseer.Services.Tools
                 // 4. Truncation
                 if (result.Success && !string.IsNullOrEmpty(result.Content))
                 {
+                    int baseMaxLen = handler.Category == ToolCategory.SubAgent
+                        ? callContext.MaxSubAgentResultLength
+                        : callContext.MaxResultLength;
+
                     int maxLen = handler.MaxResultLengthOverride is int handlerMax
-                        ? Math.Max(context.MaxResultLength, handlerMax)
-                        : context.MaxResultLength;
+                        ? Math.Max(baseMaxLen, handlerMax)
+                        : baseMaxLen;
 
                     if (result.Content.Length > maxLen)
                     {
@@ -194,7 +227,9 @@ namespace Overseer.Services.Tools
                                     Success = false,
                                     ErrorMessage = $"Result too large ({result.Content.Length} chars). Please use a narrower search query to get fewer results.",
                                     QueueWaitMs = result.QueueWaitMs,
-                                    ExecutionMs = result.ExecutionMs
+                                    ExecutionMs = result.ExecutionMs,
+                                    NestedToolCalls = result.NestedToolCalls,
+                                    TerminationStatus = result.TerminationStatus
                                 };
                             }
                             catch
@@ -210,7 +245,7 @@ namespace Overseer.Services.Tools
                 }
 
                 _logger.LogInformation("Tool Execution Audit - Session: {SessionId}, Tool: {ToolName}, Success: {Success}, Error: {Error}", 
-                    context.SessionId, toolName, result.Success, result.ErrorMessage ?? "None");
+                    callContext.SessionId, toolName, result.Success, result.ErrorMessage ?? "None");
 
                 return result;
             }

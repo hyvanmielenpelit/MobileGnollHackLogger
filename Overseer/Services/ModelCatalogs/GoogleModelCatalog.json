@@ -13,7 +13,8 @@
     "releaseDate": "2026-02-19",
     "thinkingLevels": ["minimal", "low", "medium", "high"],
     "contextWindowSize": 1048576,
-    "maxOutputTokens": 65536
+    "maxOutputTokens": 65536,
+    "supportsSubAgentCoordination": false
   },
   {
     "prefixes": ["gemini-3.5-flash-lite"],
@@ -21,7 +22,8 @@
     "releaseDate": "2026-07-21",
     "thinkingLevels": ["minimal", "low", "medium", "high"],
     "contextWindowSize": 1048576,
-    "maxOutputTokens": 65536
+    "maxOutputTokens": 65536,
+    "supportsSubAgentCoordination": false
   },
   {
     "prefixes": ["gemini-3.5-flash"],

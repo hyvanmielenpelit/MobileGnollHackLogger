@@ -34,8 +34,20 @@ public class ChatController : ControllerBase
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly SettingsService _settingsService;
     private readonly ChatRetentionService _chatRetentionService;
+    private readonly Overseer.Services.Agents.SubAgentCatalogService _subAgentCatalogService;
 
-    public ChatController(ApplicationDbContext dbContext, ChatService chatService, IConfiguration configuration, IMemoryCache memoryCache, EmailSender emailSender, UserManager<ApplicationUser> userManager, OngoingChatManager ongoingChatManager, IServiceScopeFactory scopeFactory, SettingsService settingsService, ChatRetentionService chatRetentionService)
+    public ChatController(
+        ApplicationDbContext dbContext,
+        ChatService chatService,
+        IConfiguration configuration,
+        IMemoryCache memoryCache,
+        EmailSender emailSender,
+        UserManager<ApplicationUser> userManager,
+        OngoingChatManager ongoingChatManager,
+        IServiceScopeFactory scopeFactory,
+        SettingsService settingsService,
+        ChatRetentionService chatRetentionService,
+        Overseer.Services.Agents.SubAgentCatalogService subAgentCatalogService)
     {
         _dbContext = dbContext;
         _chatService = chatService;
@@ -47,6 +59,7 @@ public class ChatController : ControllerBase
         _scopeFactory = scopeFactory;
         _settingsService = settingsService;
         _chatRetentionService = chatRetentionService;
+        _subAgentCatalogService = subAgentCatalogService;
     }
 
     [HttpGet("sessions")]
@@ -202,7 +215,10 @@ public class ChatController : ControllerBase
                     argsText = tc.ArgsText,
                     status = tc.Status,
                     result = tc.Result,
-                    error = tc.Error
+                    error = tc.Error,
+                    agentName = tc.AgentName,
+                    parentToolCallId = tc.ParentToolCallId,
+                    depth = tc.Depth
                 })
                 .AsNoTracking()
                 .ToListAsync()
@@ -277,7 +293,10 @@ public class ChatController : ControllerBase
                     tc.argsText,
                     tc.status,
                     tc.result,
-                    tc.error
+                    tc.error,
+                    tc.agentName,
+                    tc.parentToolCallId,
+                    tc.depth
                 })
                 .ToList();
 
@@ -741,6 +760,53 @@ public class ChatController : ControllerBase
             if (showDebugLog) return StatusCode(500, new { message = $"Failed to send report email: {ex.Message}", debugLogs });
             else return StatusCode(500, new { message = $"Failed to send report email: {ex.Message}" });
         }
+    }
+
+    [HttpGet("subagents")]
+    public IActionResult GetSubAgents()
+    {
+        var agents = _subAgentCatalogService.GetEnabledSubAgents()
+            .Select(a => new
+            {
+                name = a.Name,
+                displayName = a.DisplayName,
+                description = a.Description,
+                allowedTools = a.AllowedTools,
+                maxIterations = a.MaxIterations,
+                isEnabled = a.IsEnabled
+            });
+        return Ok(agents);
+    }
+
+    [HttpPost("sessions/{sessionId}/subagents/{toolCallId}/cancel")]
+    public async Task<IActionResult> CancelSubAgent(long sessionId, string toolCallId)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+        var session = await _dbContext.ChatSession.FirstOrDefaultAsync(s => s.Id == sessionId && s.AspNetUserId == userId);
+        if (session == null) return NotFound(new { error = "Session not found." });
+
+        bool canceled = _ongoingChatManager.TryCancelSubAgent(sessionId, toolCallId);
+        if (canceled)
+        {
+            return Ok(new { success = true, message = "Subagent canceled." });
+        }
+
+        return Ok(new { success = false, message = "Subagent not active or already finished." });
+    }
+
+    [HttpPost("sessions/{sessionId}/cancel")]
+    public async Task<IActionResult> CancelGeneration(long sessionId)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+        var session = await _dbContext.ChatSession.FirstOrDefaultAsync(s => s.Id == sessionId && s.AspNetUserId == userId);
+        if (session == null) return NotFound(new { error = "Session not found." });
+
+        bool canceled = _ongoingChatManager.TryCancelAndRemove(sessionId);
+        return Ok(new { success = canceled });
     }
 }
 

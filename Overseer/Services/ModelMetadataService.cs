@@ -90,7 +90,7 @@ public class ModelMetadataService
         return true;
     }
 
-    public ModelMetadata GetMetadata(string provider, string modelId)
+    public virtual ModelMetadata GetMetadata(string provider, string modelId)
     {
         var metadata = new ModelMetadata
         {
@@ -137,6 +137,8 @@ public class ModelMetadataService
             metadata.ContextWindowSize = bestEntry.ContextWindowSize;
             metadata.MaxOutputTokens = bestEntry.MaxOutputTokens;
             metadata.MaxInputTokens = metadata.ContextWindowSize - metadata.MaxOutputTokens;
+            metadata.SupportsSubAgentCoordination = bestEntry.SupportsSubAgentCoordination;
+            metadata.SupportsSubAgentExecution = bestEntry.SupportsSubAgentExecution;
             return metadata;
         }
 
@@ -157,4 +159,6 @@ public class ModelMetadata
     public int ContextWindowSize { get; set; }
     public int MaxInputTokens { get; set; }
     public int MaxOutputTokens { get; set; }
+    public bool SupportsSubAgentCoordination { get; set; } = true;
+    public bool SupportsSubAgentExecution { get; set; } = true;
 }
