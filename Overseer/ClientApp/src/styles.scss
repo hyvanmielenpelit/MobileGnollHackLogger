@@ -222,10 +222,11 @@ a:hover {
   transition: display 0.3s allow-discrete, opacity 0.3s, transform 0.3s;
   opacity: 0;
   transform: translateY(5px);
-  position-anchor: --save-btn;
-  left: calc(anchor(right) + 15px);
-  top: anchor(center);
-  translate: 0 -50%;
+  bottom: 30px;
+  right: 30px;
+  top: auto;
+  left: auto;
+  translate: 0 0;
 }
 .toast-success:is(:popover-open, .\:popover-open) {
   opacity: 1;
@@ -233,15 +234,6 @@ a:hover {
   @starting-style {
     opacity: 0;
     transform: translateY(5px);
-  }
-}
-@supports not (anchor-name: --save-btn) {
-  .toast-success {
-    bottom: 30px;
-    right: 30px;
-    top: auto;
-    left: auto;
-    translate: 0 0;
   }
 }
 

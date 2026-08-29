@@ -17,11 +17,53 @@ label:not(.checkbox-label) { display: block; margin-bottom: 5px; font-weight: bo
 .checkbox-label { font-weight: bold; }
 .success { color: var(--color-success); margin-inline-start: 10px; font-weight: bold; }
 
-.save-btn {
-  anchor-name: --save-btn;
+.header-title-area {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
 }
 
+.save-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85em;
+  color: var(--text-muted, #888);
+  transition: opacity 0.2s ease;
 
+  .icon-status {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+  }
+
+  .icon-success {
+    color: var(--color-success, #28a745);
+  }
+
+  .icon-error {
+    color: var(--color-error, #dc3545);
+  }
+
+  .btn-retry {
+    padding: 2px 8px;
+    font-size: 0.85em;
+    margin-left: 4px;
+    background: rgba(220, 53, 69, 0.2);
+    border-color: var(--color-error, #dc3545);
+    color: #fff;
+    cursor: pointer;
+
+    &:hover {
+      background: rgba(220, 53, 69, 0.4);
+    }
+  }
+}
+
+.form-error {
+  color: var(--color-error, #dc3545);
+}
 
 .settings-form {
   display: flex;
@@ -34,12 +76,6 @@ label:not(.checkbox-label) { display: block; margin-bottom: 5px; font-weight: bo
   flex: 1;
   overflow-y: auto;
   padding: 20px 30px;
-}
-
-.form-footer {
-  padding: 20px 30px;
-  border-top: 1px solid var(--border-glass);
-  background: rgba(17, 17, 17, 0.4);
 }
 
 .api-key-grid {
@@ -311,10 +347,6 @@ label:not(.checkbox-label) { display: block; margin-bottom: 5px; font-weight: bo
   }
 
   .form-content {
-    padding: 15px;
-  }
-
-  .form-footer {
     padding: 15px;
   }
   

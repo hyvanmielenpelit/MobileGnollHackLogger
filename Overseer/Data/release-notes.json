@@ -21,6 +21,10 @@
         "text": "Improved subagent execution resilience with dedicated session rate limits, queue capacity limits, and clear partial result reporting when subagents terminate early."
       },
       {
+        "type": "improvement",
+        "text": "The settings page now auto-saves when values are changed. Removed the Save button."
+      },
+      {
         "type": "fix",
         "text": "Fixed subagent model resolution fallback to ensure subagents only select eligible models with valid decrypted API keys."
       }

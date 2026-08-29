@@ -1,5 +1,4 @@
 import { Component, OnInit, OnDestroy, inject, ViewChild, ElementRef, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
-
 import { FormsModule } from '@angular/forms';
 import { SettingsService, UserAiSettings, ApiModelDto } from '../services/settings.service';
 import { SystemService } from '../services/system.service';
@@ -8,6 +7,8 @@ import { ChatService } from '../services/chat.service';
 import { RouterModule } from '@angular/router';
 import { ChangelogComponent } from '../changelog/changelog.component';
 import { TrashModalComponent } from '../shared/trash-modal/trash-modal.component';
+import { Subject, BehaviorSubject, Subscription, of, timer, firstValueFrom, EMPTY } from 'rxjs';
+import { debounce, tap, switchMap, catchError, filter, timeout } from 'rxjs/operators';
 
 @Component({
     selector: 'app-settings',
@@ -26,7 +27,6 @@ export class SettingsComponent implements OnInit, OnDestroy {
   appVersion = '';
   
   @ViewChild('successToast') successToast!: ElementRef<HTMLElement>;
-  @ViewChild('confirmDialog') confirmDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('changelogDialog') changelogDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('settingsBulkDeleteDialog') settingsBulkDeleteDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('settingsUnpinAllDialog') settingsUnpinAllDialog!: ElementRef<HTMLDialogElement>;
@@ -47,69 +47,49 @@ export class SettingsComponent implements OnInit, OnDestroy {
   private changelogBadgeResetHandler!: () => void;
 
   spoilerFreeMode = true;
-  initSpoilerFreeMode = true;
-  
   showSourceCodeReferences = false;
-  initShowSourceCodeReferences = false;
-
   showThoughtsAndTools = 0;
-  initShowThoughtsAndTools = 0;
-
   showParallelBadge = true;
-  initShowParallelBadge = true;
   parallelBadgeEnabled = true;
 
   enableWebSearch = true;
-  initEnableWebSearch = true;
   enableToolUse = true;
-  initEnableToolUse = true;
   enableSubAgents = false;
-  initEnableSubAgents = false;
   enableClientTools = true;
-  initEnableClientTools = true;
   enableGameActions = false;
-  initEnableGameActions = false;
 
   maxResultLength: number | null = null;
-  initMaxResultLength: number | null = null;
   maxResultLengthSelect: any = null;
 
   maxCallsPerSession: number | null = null;
-  initMaxCallsPerSession: number | null = null;
   maxCallsPerSessionSelect: any = null;
 
   maxToolIterations: number | null = null;
-  initMaxToolIterations: number | null = null;
   maxToolIterationsSelect: any = null;
 
   maxParallelToolCalls: number | null = null;
-  initMaxParallelToolCalls: number | null = null;
   maxParallelToolCallsSelect: any = null;
 
   requestTimeout: number | null = null;
-  initRequestTimeout: number | null = null;
 
   performanceLimits: any = null;
 
-  loading = false;
   saved = false;
 
-  get isDirty(): boolean {
-    return this.spoilerFreeMode !== this.initSpoilerFreeMode ||
-           this.showSourceCodeReferences !== this.initShowSourceCodeReferences ||
-           this.showParallelBadge !== this.initShowParallelBadge ||
-           this.enableWebSearch !== this.initEnableWebSearch ||
-           this.enableToolUse !== this.initEnableToolUse ||
-           this.enableSubAgents !== this.initEnableSubAgents ||
-           this.enableClientTools !== this.initEnableClientTools ||
-           this.enableGameActions !== this.initEnableGameActions ||
-           this.showThoughtsAndTools !== this.initShowThoughtsAndTools ||
-           this.maxResultLength !== this.initMaxResultLength ||
-           this.maxCallsPerSession !== this.initMaxCallsPerSession ||
-           this.maxToolIterations !== this.initMaxToolIterations ||
-           this.maxParallelToolCalls !== this.initMaxParallelToolCalls ||
-           this.requestTimeout !== this.initRequestTimeout;
-  }
+  saveState: 'idle' | 'saving' | 'saved' | 'error' = 'idle';
+  private saveStateSubject = new BehaviorSubject<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  private saveSubject = new Subject<{ immediate: boolean }>();
+  private saveSubscription!: Subscription;
+  private hasPendingChanges = false;
+  private isInitialized = false;
+
+  validationErrors: { [field: string]: string } = {};
+
+  lastSavedMaxResultLength: number | null = null;
+  lastSavedMaxCallsPerSession: number | null = null;
+  lastSavedMaxToolIterations: number | null = null;
+  lastSavedMaxParallelToolCalls: number | null = null;
+  lastSavedRequestTimeout: number | null = null;
 
   get resultLengthOptions() {
     if (!this.performanceLimits?.maxResultLength) return [];
@@ -167,19 +147,23 @@ export class SettingsComponent implements OnInit, OnDestroy {
     ];
   }
 
-  canDeactivate(): Promise<boolean> | boolean {
-    if (!this.isDirty) return true;
-    
-    const dialog = this.confirmDialog.nativeElement;
-    dialog.showModal();
-    
-    return new Promise<boolean>((resolve) => {
-      const onClose = () => {
-        dialog.removeEventListener('close', onClose);
-        resolve(dialog.returnValue === 'discard');
-      };
-      dialog.addEventListener('close', onClose);
-    });
+  async canDeactivate(): Promise<boolean> {
+    if (!this.hasPendingChanges) return true;
+    this.revertInvalidFieldsToLastSaved();
+    this.saveSubject.next({ immediate: true });
+    if (this.saveStateSubject.value === 'saving') {
+      try {
+        await firstValueFrom(
+          this.saveStateSubject.pipe(
+            filter(s => s !== 'saving'),
+            timeout({ each: 5000, with: () => of('error' as const) })
+          )
+        );
+      } catch {
+        // Safety timeout: never block navigation
+      }
+    }
+    return true;
   }
 
   ngOnInit() {
@@ -207,76 +191,204 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
     this.loadChatMetrics();
 
+    this.saveSubscription = this.saveSubject.pipe(
+      debounce(req => req.immediate ? of(null) : timer(500)),
+      tap(() => {
+        this.saveState = 'saving';
+        this.saveStateSubject.next('saving');
+        this.cdr.detectChanges();
+      }),
+      switchMap(() => {
+        return this.settingsService.saveSettings(
+          this.spoilerFreeMode,
+          this.enableWebSearch,
+          this.enableToolUse,
+          this.enableSubAgents,
+          this.enableClientTools,
+          this.enableGameActions,
+          this.showSourceCodeReferences,
+          this.maxResultLength,
+          this.maxCallsPerSession,
+          this.maxToolIterations,
+          this.maxParallelToolCalls,
+          Number(this.showThoughtsAndTools),
+          this.requestTimeout,
+          this.showParallelBadge
+        ).pipe(
+          tap(() => {
+            this.hasPendingChanges = false;
+            this.saveState = 'saved';
+            this.saveStateSubject.next('saved');
+            this.settingsService.showThoughtsAndToolsUpdated.next(Number(this.showThoughtsAndTools));
+            this.updateLastSavedFields();
+            this.cdr.detectChanges();
+          }),
+          catchError(() => {
+            this.saveState = 'error';
+            this.saveStateSubject.next('error');
+            this.cdr.detectChanges();
+            return EMPTY;
+          })
+        );
+      })
+    ).subscribe();
+
     this.settingsService.getSettings().subscribe({
       next: (s) => {
         if (s) {
           if (s.spoilerFreeMode !== undefined) {
             this.spoilerFreeMode = s.spoilerFreeMode;
-            this.initSpoilerFreeMode = s.spoilerFreeMode;
           }
           if (s.showSourceCodeReferences !== undefined) {
             this.showSourceCodeReferences = s.showSourceCodeReferences;
-            this.initShowSourceCodeReferences = s.showSourceCodeReferences;
           }
           if (s.showParallelBadge !== undefined) {
             this.showParallelBadge = s.showParallelBadge;
-            this.initShowParallelBadge = s.showParallelBadge;
           }
           if (s.parallelBadgeEnabled !== undefined) {
             this.parallelBadgeEnabled = s.parallelBadgeEnabled;
           }
           if (s.enableWebSearch !== undefined) {
             this.enableWebSearch = s.enableWebSearch;
-            this.initEnableWebSearch = s.enableWebSearch;
           }
           if (s.enableToolUse !== undefined) {
             this.enableToolUse = s.enableToolUse;
-            this.initEnableToolUse = s.enableToolUse;
           }
           if (s.enableSubAgents !== undefined) {
             this.enableSubAgents = s.enableSubAgents;
-            this.initEnableSubAgents = s.enableSubAgents;
           }
           if (s.enableClientTools !== undefined) {
             this.enableClientTools = s.enableClientTools;
-            this.initEnableClientTools = s.enableClientTools;
           }
           if (s.enableGameActions !== undefined) {
             this.enableGameActions = s.enableGameActions;
-            this.initEnableGameActions = s.enableGameActions;
           }
           if (s.showThoughtsAndTools !== undefined) {
             this.showThoughtsAndTools = Number(s.showThoughtsAndTools ?? 0);
-            this.initShowThoughtsAndTools = this.showThoughtsAndTools;
           }
           if (s.maxResultLength !== undefined) {
             this.maxResultLength = s.maxResultLength;
-            this.initMaxResultLength = s.maxResultLength;
           }
           if (s.maxCallsPerSession !== undefined) {
             this.maxCallsPerSession = s.maxCallsPerSession;
-            this.initMaxCallsPerSession = s.maxCallsPerSession;
           }
           if (s.maxToolIterations !== undefined) {
             this.maxToolIterations = s.maxToolIterations;
-            this.initMaxToolIterations = s.maxToolIterations;
           }
           if (s.maxParallelToolCalls !== undefined) {
             this.maxParallelToolCalls = s.maxParallelToolCalls;
-            this.initMaxParallelToolCalls = s.maxParallelToolCalls;
           }
           if (s.requestTimeout !== undefined) {
             this.requestTimeout = s.requestTimeout;
-            this.initRequestTimeout = s.requestTimeout;
           }
           if (s.performanceLimits) {
             this.performanceLimits = s.performanceLimits;
           }
+          this.updateLastSavedFields();
           this.initializeSelects();
+          this.isInitialized = true;
         }
       },
       error: () => {}
     });
+  }
+
+  updateLastSavedFields() {
+    this.lastSavedMaxResultLength = this.maxResultLength;
+    this.lastSavedMaxCallsPerSession = this.maxCallsPerSession;
+    this.lastSavedMaxToolIterations = this.maxToolIterations;
+    this.lastSavedMaxParallelToolCalls = this.maxParallelToolCalls;
+    this.lastSavedRequestTimeout = this.requestTimeout;
+  }
+
+  validateField(field: string, value: number | null): boolean {
+    if (value === null || value === undefined) {
+      delete this.validationErrors[field];
+      return true;
+    }
+    const limits = this.performanceLimits?.[field];
+    if (limits) {
+      if ((limits.min !== undefined && value < limits.min) || (limits.max !== undefined && value > limits.max)) {
+        this.validationErrors[field] = `Allowed range: ${limits.min} \u2013 ${limits.max}`;
+        return false;
+      }
+    }
+    delete this.validationErrors[field];
+    return true;
+  }
+
+  validateSettings(): boolean {
+    const v1 = this.validateField('maxResultLength', this.maxResultLength);
+    const v2 = this.validateField('maxCallsPerSession', this.maxCallsPerSession);
+    const v3 = this.validateField('maxToolIterations', this.maxToolIterations);
+    const v4 = this.validateField('maxParallelToolCalls', this.maxParallelToolCalls);
+    const v5 = this.validateField('requestTimeout', this.requestTimeout);
+    return v1 && v2 && v3 && v4 && v5;
+  }
+
+  revertInvalidFieldsToLastSaved() {
+    this.validateSettings();
+    if (this.validationErrors['maxResultLength']) {
+      this.maxResultLength = this.lastSavedMaxResultLength;
+      delete this.validationErrors['maxResultLength'];
+    }
+    if (this.validationErrors['maxCallsPerSession']) {
+      this.maxCallsPerSession = this.lastSavedMaxCallsPerSession;
+      delete this.validationErrors['maxCallsPerSession'];
+    }
+    if (this.validationErrors['maxToolIterations']) {
+      this.maxToolIterations = this.lastSavedMaxToolIterations;
+      delete this.validationErrors['maxToolIterations'];
+    }
+    if (this.validationErrors['maxParallelToolCalls']) {
+      this.maxParallelToolCalls = this.lastSavedMaxParallelToolCalls;
+      delete this.validationErrors['maxParallelToolCalls'];
+    }
+    if (this.validationErrors['requestTimeout']) {
+      this.requestTimeout = this.lastSavedRequestTimeout;
+      delete this.validationErrors['requestTimeout'];
+    }
+    this.initializeSelects();
+  }
+
+  onSettingChange() {
+    if (!this.isInitialized) return;
+    this.hasPendingChanges = true;
+    this.saveSubject.next({ immediate: true });
+  }
+
+  onClientToolsChange() {
+    if (!this.isInitialized) return;
+    if (!this.enableClientTools) {
+      this.enableGameActions = false;
+    }
+    this.onSettingChange();
+  }
+
+  onNumberInputChange() {
+    if (!this.isInitialized) return;
+    this.hasPendingChanges = true;
+    this.saveSubject.next({ immediate: false });
+  }
+
+  onNumberInputBlur(field?: string) {
+    if (!this.isInitialized) return;
+    if (field) {
+      const val = (this as any)[field];
+      this.validateField(field, val);
+    } else {
+      this.validateSettings();
+    }
+    if (this.validateSettings()) {
+      this.hasPendingChanges = true;
+      this.saveSubject.next({ immediate: true });
+    }
+    this.cdr.detectChanges();
+  }
+
+  retrySave() {
+    this.hasPendingChanges = true;
+    this.saveSubject.next({ immediate: true });
   }
 
   // Closes the open popover for an explicitly specified HTMLElement
@@ -335,6 +447,13 @@ export class SettingsComponent implements OnInit, OnDestroy {
     if (popoverElement && typeof popoverElement.hidePopover === 'function') {
       popoverElement.hidePopover();
     }
+
+    if (value !== 'custom') {
+      delete this.validationErrors[field];
+      this.onSettingChange();
+    } else {
+      delete this.validationErrors[field];
+    }
   }
 
   showToast(msg: string) {
@@ -371,37 +490,6 @@ export class SettingsComponent implements OnInit, OnDestroy {
         this.cdr.detectChanges();
       },
       error: () => {}
-    });
-  }
-
-  saveSettings() {
-    this.loading = true;
-    this.saved = false;
-    this.settingsService.saveSettings(this.spoilerFreeMode, this.enableWebSearch, this.enableToolUse, this.enableSubAgents, this.enableClientTools, this.enableGameActions, this.showSourceCodeReferences, this.maxResultLength, this.maxCallsPerSession, this.maxToolIterations, this.maxParallelToolCalls, Number(this.showThoughtsAndTools), this.requestTimeout, this.showParallelBadge).subscribe({
-      next: () => {
-        this.loading = false;
-        this.settingsService.showThoughtsAndToolsUpdated.next(Number(this.showThoughtsAndTools));
-        
-        this.showToast('Settings saved successfully!');
-
-        this.initSpoilerFreeMode = this.spoilerFreeMode;
-        this.initShowSourceCodeReferences = this.showSourceCodeReferences;
-        this.initShowParallelBadge = this.showParallelBadge;
-        this.initEnableWebSearch = this.enableWebSearch;
-        this.initEnableToolUse = this.enableToolUse;
-        this.initEnableSubAgents = this.enableSubAgents;
-        this.initEnableClientTools = this.enableClientTools;
-        this.initEnableGameActions = this.enableGameActions;
-        this.initShowThoughtsAndTools = this.showThoughtsAndTools;
-        this.initMaxResultLength = this.maxResultLength;
-        this.initMaxCallsPerSession = this.maxCallsPerSession;
-        this.initMaxToolIterations = this.maxToolIterations;
-        this.initMaxParallelToolCalls = this.maxParallelToolCalls;
-        this.initRequestTimeout = this.requestTimeout;
-      },
-      error: () => {
-        this.loading = false;
-      }
     });
   }
 
@@ -534,5 +622,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
   ngOnDestroy() {
     window.removeEventListener('changelog_badge_reset', this.changelogBadgeResetHandler);
+    if (this.saveSubscription) {
+      this.saveSubscription.unsubscribe();
+    }
   }
 }

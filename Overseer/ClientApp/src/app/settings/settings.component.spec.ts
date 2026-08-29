@@ -1,9 +1,9 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { HttpErrorResponse } from '@angular/common/http';
-import { of, throwError } from 'rxjs';
+import { of, throwError, Subject } from 'rxjs';
 import { SettingsComponent } from './settings.component';
 import { SettingsService, UserAiSettings } from '../services/settings.service';
 import { ChatService } from '../services/chat.service';
@@ -68,23 +68,6 @@ describe('SettingsComponent', () => {
       expect(component.requestTimeout).toBe(60);
     });
 
-    it('should mark isDirty when showParallelBadge is toggled', () => {
-      const mockSettings: UserAiSettings = {
-        hasApiKey: true,
-        spoilerFreeMode: true,
-        showParallelBadge: true
-      };
-      spyOn(settingsService, 'getSettings').and.returnValue(of(mockSettings));
-
-      fixture = TestBed.createComponent(SettingsComponent);
-      component = fixture.componentInstance;
-      fixture.detectChanges();
-
-      expect(component.isDirty).toBeFalse();
-      component.showParallelBadge = false;
-      expect(component.isDirty).toBeTrue();
-    });
-
     it('should catch TypeError: Failed to fetch on getSettings without unhandled error', () => {
       spyOn(settingsService, 'getSettings').and.returnValue(
         throwError(() => new TypeError('Failed to fetch'))
@@ -98,47 +81,153 @@ describe('SettingsComponent', () => {
     });
   });
 
-  describe('saveSettings', () => {
+  describe('auto-save', () => {
     beforeEach(() => {
       spyOn(settingsService, 'getSettings').and.returnValue(of({
         hasApiKey: true,
         spoilerFreeMode: true,
-        showThoughtsAndTools: 0
+        showThoughtsAndTools: 0,
+        performanceLimits: {
+          maxResultLength: { min: 1000, max: 50000, defaultValue: 8000 },
+          maxCallsPerSession: { min: 5, max: 250, defaultValue: 50 },
+          maxToolIterations: { min: 3, max: 30, defaultValue: 10 },
+          maxParallelToolCalls: { min: 1, max: 10, defaultValue: 4 },
+          requestTimeout: { min: 10, max: 3600, defaultValue: 60 }
+        }
       }));
       fixture = TestBed.createComponent(SettingsComponent);
       component = fixture.componentInstance;
       fixture.detectChanges();
     });
 
-    it('should reset loading to false and emit updated thoughts setting on normal success', () => {
-      spyOn(settingsService, 'saveSettings').and.returnValue(of({ message: 'Settings saved' }));
+    it('should not trigger save on initial data load', fakeAsync(() => {
+      const saveSpy = spyOn(settingsService, 'saveSettings').and.returnValue(of({ message: 'Saved' } as any));
+      tick(1000);
+      expect(saveSpy).not.toHaveBeenCalled();
+    }));
+
+    it('should trigger immediate save on boolean setting change', fakeAsync(() => {
+      const saveSpy = spyOn(settingsService, 'saveSettings').and.returnValue(of({ message: 'Saved' } as any));
       const thoughtsSpy = spyOn(settingsService.showThoughtsAndToolsUpdated, 'next');
 
-      component.showThoughtsAndTools = 2;
-      component.saveSettings();
+      component.spoilerFreeMode = false;
+      component.onSettingChange();
+      tick();
 
-      expect(component.loading).toBeFalse();
-      expect(thoughtsSpy).toHaveBeenCalledWith(2);
-    });
+      expect(saveSpy).toHaveBeenCalled();
+      expect(component.saveState).toBe('saved');
+      expect(thoughtsSpy).toHaveBeenCalledWith(0);
+    }));
 
-    it('should catch TypeError: Failed to fetch and reset loading to false', () => {
-      spyOn(settingsService, 'saveSettings').and.returnValue(
-        throwError(() => new TypeError('Failed to fetch'))
-      );
+    it('should debounce numeric input changes by 500ms', fakeAsync(() => {
+      const saveSpy = spyOn(settingsService, 'saveSettings').and.returnValue(of({ message: 'Saved' } as any));
 
-      component.saveSettings();
+      component.maxResultLength = 12000;
+      component.onNumberInputChange();
 
-      expect(component.loading).toBeFalse();
-    });
+      tick(300);
+      expect(saveSpy).not.toHaveBeenCalled();
 
-    it('should catch HttpErrorResponse 500 and reset loading to false', () => {
-      spyOn(settingsService, 'saveSettings').and.returnValue(
+      tick(200);
+      expect(saveSpy).toHaveBeenCalledTimes(1);
+      expect(component.saveState).toBe('saved');
+    }));
+
+    it('should batch rapid successive numeric changes into a single save', fakeAsync(() => {
+      const saveSpy = spyOn(settingsService, 'saveSettings').and.returnValue(of({ message: 'Saved' } as any));
+
+      component.maxResultLength = 10000;
+      component.onNumberInputChange();
+      tick(200);
+
+      component.maxResultLength = 15000;
+      component.onNumberInputChange();
+      tick(200);
+
+      component.maxResultLength = 20000;
+      component.onNumberInputChange();
+      tick(500);
+
+      expect(saveSpy).toHaveBeenCalledTimes(1);
+    }));
+
+    it('should set validationErrors and prevent save on blur with out-of-range value', fakeAsync(() => {
+      const saveSpy = spyOn(settingsService, 'saveSettings').and.returnValue(of({ message: 'Saved' } as any));
+
+      component.requestTimeout = 999999;
+      component.onNumberInputBlur('requestTimeout');
+      tick();
+
+      expect(component.validationErrors['requestTimeout']).toBeDefined();
+      expect(saveSpy).not.toHaveBeenCalled();
+    }));
+
+    it('should catch save error, set saveState to error, and keep pipeline alive for subsequent saves', fakeAsync(() => {
+      const saveSpy = spyOn(settingsService, 'saveSettings').and.returnValue(
         throwError(() => new HttpErrorResponse({ status: 500, statusText: 'Internal Server Error' }))
       );
 
-      component.saveSettings();
+      component.spoilerFreeMode = false;
+      component.onSettingChange();
+      tick();
 
-      expect(component.loading).toBeFalse();
+      expect(saveSpy).toHaveBeenCalledTimes(1);
+      expect(component.saveState).toBe('error');
+
+      // Subsequent valid save should work
+      saveSpy.and.returnValue(of({ message: 'Saved' } as any));
+      component.spoilerFreeMode = true;
+      component.onSettingChange();
+      tick();
+
+      expect(saveSpy).toHaveBeenCalledTimes(2);
+      expect(component.saveState).toBe('saved');
+    }));
+
+    it('canDeactivate should resolve immediately when no changes are pending', async () => {
+      const saveSpy = spyOn(settingsService, 'saveSettings').and.returnValue(of({ message: 'Saved' } as any));
+      const canLeave = await component.canDeactivate();
+
+      expect(canLeave).toBeTrue();
+      expect(saveSpy).not.toHaveBeenCalled();
+    });
+
+    it('canDeactivate should await in-flight save when changes are pending', async () => {
+      const saveSubject = new Subject<any>();
+      const saveSpy = spyOn(settingsService, 'saveSettings').and.returnValue(saveSubject.asObservable());
+
+      component.spoilerFreeMode = false;
+      component.onSettingChange();
+
+      let resolved = false;
+      const canDeactivatePromise = component.canDeactivate().then((res) => {
+        resolved = true;
+        return res;
+      });
+
+      expect(saveSpy).toHaveBeenCalled();
+      expect(resolved).toBeFalse();
+
+      saveSubject.next({ message: 'Saved' });
+      saveSubject.complete();
+
+      const result = await canDeactivatePromise;
+      expect(result).toBeTrue();
+      expect(resolved).toBeTrue();
+    });
+
+    it('canDeactivate should revert invalid fields to last saved before saving', async () => {
+      const saveSpy = spyOn(settingsService, 'saveSettings').and.returnValue(of({ message: 'Saved' } as any));
+
+      component.lastSavedRequestTimeout = 60;
+      component.requestTimeout = 999999;
+      component.onNumberInputChange();
+
+      const result = await component.canDeactivate();
+
+      expect(result).toBeTrue();
+      expect(component.requestTimeout).toBe(60);
+      expect(saveSpy).toHaveBeenCalled();
     });
   });
 

@@ -1,15 +1,40 @@
 <div class="settings-container gh-main-container">
   <div class="header-row">
-    <h2>Settings</h2>
+    <div class="header-title-area">
+      <h2>Settings</h2>
+      @if (saveState !== 'idle') {
+        <div class="save-status" role="status" aria-live="polite">
+          @if (saveState === 'saving') {
+            <span class="gh-spinner-small" aria-hidden="true"></span>
+            <span class="sr-only">Saving...</span>
+          }
+          @if (saveState === 'saved') {
+            <svg class="icon-status icon-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width: 16px; height: 16px;">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+            <span>Saved</span>
+          }
+          @if (saveState === 'error') {
+            <svg class="icon-status icon-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width: 16px; height: 16px;">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="8" x2="12" y2="12"></line>
+              <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+            <span>Save failed</span>
+            <button type="button" class="btn-gh btn-retry" (click)="retrySave()">Retry</button>
+          }
+        </div>
+      }
+    </div>
     <a routerLink="/chat" queryParamsHandling="preserve" class="nav-back-link">&larr; Back</a>
   </div>
-  <form (ngSubmit)="saveSettings()" class="settings-form">
+  <div class="settings-form">
     <div class="form-content">
 
 
       <div class="margin-y-20">
         <label class="checkbox-label align-start">
-          <input type="checkbox" [(ngModel)]="spoilerFreeMode" name="spoilerFreeMode" class="w-auto m-0" aria-describedby="spoilerFreeHint" />
+          <input type="checkbox" [(ngModel)]="spoilerFreeMode" (ngModelChange)="onSettingChange()" name="spoilerFreeMode" class="w-auto m-0" aria-describedby="spoilerFreeHint" />
           <span class="d-block">
             <span>Spoiler-Free Mode</span>
             <span id="spoilerFreeHint" class="form-hint mt-5 d-block">Limit hints to avoid spoiling secrets</span>
@@ -19,7 +44,7 @@
 
       <div class="margin-y-20">
         <label class="checkbox-label align-start">
-          <input type="checkbox" [(ngModel)]="showSourceCodeReferences" name="showSourceCodeReferences" class="w-auto m-0" aria-describedby="sourceCodeRefsHint" />
+          <input type="checkbox" [(ngModel)]="showSourceCodeReferences" (ngModelChange)="onSettingChange()" name="showSourceCodeReferences" class="w-auto m-0" aria-describedby="sourceCodeRefsHint" />
           <span class="d-block">
             <span>Show Source Code References</span>
             <span id="sourceCodeRefsHint" class="form-hint mt-5 d-block">Allow AI to cite source file names and line numbers in replies (overridden by Developer Mode)</span>
@@ -30,7 +55,7 @@
       @if (parallelBadgeEnabled) {
         <div class="margin-y-20">
           <label class="checkbox-label align-start">
-            <input type="checkbox" [(ngModel)]="showParallelBadge" name="showParallelBadge" class="w-auto m-0" aria-describedby="parallelBadgeHint" />
+            <input type="checkbox" [(ngModel)]="showParallelBadge" (ngModelChange)="onSettingChange()" name="showParallelBadge" class="w-auto m-0" aria-describedby="parallelBadgeHint" />
             <span class="d-block">
               <span>Show parallel-execution badge in the model selector</span>
               <span id="parallelBadgeHint" class="form-hint mt-5 d-block">Display 'Sequential' or 'On request' badges in model dropdowns when parallel execution is restricted for an API key.</span>
@@ -42,7 +67,7 @@
       <div class="margin-y-20 form-group-stacked">
         <label class="block fw-bold">Show Thinking and Tool Use</label>
         <span class="form-hint mt-5 d-block mb-10">Control what is shown while the AI is executing tools or thinking in the background.</span>
-        <select class="form-input form-select" [(ngModel)]="showThoughtsAndTools" name="showThoughtsAndTools">
+        <select class="form-input form-select" [(ngModel)]="showThoughtsAndTools" (ngModelChange)="onSettingChange()" name="showThoughtsAndTools">
           <option [ngValue]="0">Minimal</option>
           <option [ngValue]="1">Blocks</option>
           <option [ngValue]="2">Text</option>
@@ -55,7 +80,7 @@
 
         <div class="margin-y-20 mt-5">
           <label class="checkbox-label align-start">
-            <input type="checkbox" [(ngModel)]="enableWebSearch" name="enableWebSearch" class="w-auto m-0" aria-describedby="webSearchHint" />
+            <input type="checkbox" [(ngModel)]="enableWebSearch" (ngModelChange)="onSettingChange()" name="enableWebSearch" class="w-auto m-0" aria-describedby="webSearchHint" />
             <span class="d-block">
               <span>Enable Web Search <span class="tier-badge tier-1">Tier 1</span></span>
               <span id="webSearchHint" class="form-hint mt-5 d-block">Allow the AI to search the public internet for external information. Lowest risk.</span>
@@ -65,7 +90,7 @@
 
         <div class="margin-y-20">
           <label class="checkbox-label align-start">
-            <input type="checkbox" [(ngModel)]="enableToolUse" name="enableToolUse" class="w-auto m-0" aria-describedby="toolUseHint" />
+            <input type="checkbox" [(ngModel)]="enableToolUse" (ngModelChange)="onSettingChange()" name="enableToolUse" class="w-auto m-0" aria-describedby="toolUseHint" />
             <span class="d-block">
               <span>Enable Server Tools <span class="tier-badge tier-2">Tier 2</span></span>
               <span id="toolUseHint" class="form-hint mt-5 d-block">Allow the AI to use internal Overseer server tools (e.g., GnollHack Wiki search). No game client access.</span>
@@ -75,7 +100,7 @@
 
         <div class="margin-y-20">
           <label class="checkbox-label align-start">
-            <input type="checkbox" [(ngModel)]="enableSubAgents" name="enableSubAgents" class="w-auto m-0" aria-describedby="subAgentsHint" />
+            <input type="checkbox" [(ngModel)]="enableSubAgents" (ngModelChange)="onSettingChange()" name="enableSubAgents" class="w-auto m-0" aria-describedby="subAgentsHint" />
             <span class="d-block">
               <span>Enable Subagent Use <span class="tier-badge tier-2">Tier 2</span></span>
               <span id="subAgentsHint" class="form-hint mt-5 d-block">Allow the AI coordinator to delegate complex research and analysis tasks to autonomous specialist subagents.</span>
@@ -85,7 +110,7 @@
 
         <div class="margin-y-20">
           <label class="checkbox-label align-start">
-            <input type="checkbox" [(ngModel)]="enableClientTools" name="enableClientTools" class="w-auto m-0" aria-describedby="clientToolsHint" (change)="!enableClientTools ? enableGameActions = false : null" />
+            <input type="checkbox" [(ngModel)]="enableClientTools" (ngModelChange)="onClientToolsChange()" name="enableClientTools" class="w-auto m-0" aria-describedby="clientToolsHint" />
             <span class="d-block">
               <span>Enable Client Data Access <span class="tier-badge tier-3">Tier 3</span></span>
               <span id="clientToolsHint" class="form-hint mt-5 d-block">Allow the AI to read your live game state, inventory, and device logs.</span>
@@ -95,7 +120,7 @@
 
         <div class="margin-y-20 mb-5">
           <label class="checkbox-label align-start">
-            <input type="checkbox" [(ngModel)]="enableGameActions" name="enableGameActions" class="w-auto m-0" aria-describedby="gameActionsHint" [disabled]="!enableClientTools" />
+            <input type="checkbox" [(ngModel)]="enableGameActions" (ngModelChange)="onSettingChange()" name="enableGameActions" class="w-auto m-0" aria-describedby="gameActionsHint" [disabled]="!enableClientTools" />
             <span class="d-block">
               <span>Enable Game Actions <span class="tier-badge tier-4">Tier 4</span></span>
               <span id="gameActionsHint" class="form-hint mt-5 d-block">Allow the AI to execute commands in your game (e.g., movement, attacks). Requires Tier 3. Highest risk.</span>
@@ -119,7 +144,7 @@
             }
           </button>
           <div id="maxResultLengthPopover" popover class="custom-select-popover popover-target-len">
-            @for (o of resultLengthOptions; track o) {
+            @for (o of resultLengthOptions; track o.value) {
               <div class="popover-option" (click)="selectCustomOption('maxResultLength', o.value, 'maxResultLengthPopover')" [class.selected]="o.value === maxResultLengthSelect">
                 <span class="opt-label">{{o.label}}</span>
                 @if (o.value !== 'custom') {
@@ -131,8 +156,11 @@
 
           @if (maxResultLengthSelect === 'custom') {
             <div class="mt-10 custom-input-wrapper">
-              <input type="number" [(ngModel)]="maxResultLength" name="maxResultLength" class="form-input w-100" [min]="$safeNavigationMigration(performanceLimits?.maxResultLength?.min)" [max]="$safeNavigationMigration(performanceLimits?.maxResultLength?.max)" placeholder="Custom value" />
+              <input type="number" [(ngModel)]="maxResultLength" (ngModelChange)="onNumberInputChange()" (blur)="onNumberInputBlur('maxResultLength')" name="maxResultLength" class="form-input w-100" [min]="$safeNavigationMigration(performanceLimits?.maxResultLength?.min)" [max]="$safeNavigationMigration(performanceLimits?.maxResultLength?.max)" placeholder="Custom value" />
               <span class="form-hint mt-5 d-block">Allowed range: {{performanceLimits?.maxResultLength?.min}}–{{performanceLimits?.maxResultLength?.max}}</span>
+              @if (validationErrors['maxResultLength']) {
+                <span class="form-hint form-error d-block mt-5">{{ validationErrors['maxResultLength'] }}</span>
+              }
             </div>
           }
         </div>
@@ -148,7 +176,7 @@
             }
           </button>
           <div id="maxCallsPerSessionPopover" popover class="custom-select-popover popover-target-calls">
-            @for (o of callsOptions; track o) {
+            @for (o of callsOptions; track o.value) {
               <div class="popover-option" (click)="selectCustomOption('maxCallsPerSession', o.value, 'maxCallsPerSessionPopover')" [class.selected]="o.value === maxCallsPerSessionSelect">
                 <span class="opt-label">{{o.label}}</span>
                 @if (o.value !== 'custom') {
@@ -160,8 +188,11 @@
 
           @if (maxCallsPerSessionSelect === 'custom') {
             <div class="mt-10 custom-input-wrapper">
-              <input type="number" [(ngModel)]="maxCallsPerSession" name="maxCallsPerSession" class="form-input w-100" [min]="$safeNavigationMigration(performanceLimits?.maxCallsPerSession?.min)" [max]="$safeNavigationMigration(performanceLimits?.maxCallsPerSession?.max)" placeholder="Custom value" />
+              <input type="number" [(ngModel)]="maxCallsPerSession" (ngModelChange)="onNumberInputChange()" (blur)="onNumberInputBlur('maxCallsPerSession')" name="maxCallsPerSession" class="form-input w-100" [min]="$safeNavigationMigration(performanceLimits?.maxCallsPerSession?.min)" [max]="$safeNavigationMigration(performanceLimits?.maxCallsPerSession?.max)" placeholder="Custom value" />
               <span class="form-hint mt-5 d-block">Allowed range: {{performanceLimits?.maxCallsPerSession?.min}} - {{performanceLimits?.maxCallsPerSession?.max}}</span>
+              @if (validationErrors['maxCallsPerSession']) {
+                <span class="form-hint form-error d-block mt-5">{{ validationErrors['maxCallsPerSession'] }}</span>
+              }
             </div>
           }
         </div>
@@ -177,7 +208,7 @@
             }
           </button>
           <div id="maxToolIterationsPopover" popover class="custom-select-popover popover-target-iters">
-            @for (o of iterationsOptions; track o) {
+            @for (o of iterationsOptions; track o.value) {
               <div class="popover-option" (click)="selectCustomOption('maxToolIterations', o.value, 'maxToolIterationsPopover')" [class.selected]="o.value === maxToolIterationsSelect">
                 <span class="opt-label">{{o.label}}</span>
                 @if (o.value !== 'custom') {
@@ -189,8 +220,11 @@
 
           @if (maxToolIterationsSelect === 'custom') {
             <div class="mt-10 custom-input-wrapper">
-              <input type="number" [(ngModel)]="maxToolIterations" name="maxToolIterations" class="form-input w-100" [min]="$safeNavigationMigration(performanceLimits?.maxToolIterations?.min)" [max]="$safeNavigationMigration(performanceLimits?.maxToolIterations?.max)" placeholder="Custom value" />
+              <input type="number" [(ngModel)]="maxToolIterations" (ngModelChange)="onNumberInputChange()" (blur)="onNumberInputBlur('maxToolIterations')" name="maxToolIterations" class="form-input w-100" [min]="$safeNavigationMigration(performanceLimits?.maxToolIterations?.min)" [max]="$safeNavigationMigration(performanceLimits?.maxToolIterations?.max)" placeholder="Custom value" />
               <span class="form-hint mt-5 d-block">Allowed range: {{performanceLimits?.maxToolIterations?.min}} - {{performanceLimits?.maxToolIterations?.max}}</span>
+              @if (validationErrors['maxToolIterations']) {
+                <span class="form-hint form-error d-block mt-5">{{ validationErrors['maxToolIterations'] }}</span>
+              }
             </div>
           }
         </div>
@@ -206,7 +240,7 @@
             }
           </button>
           <div id="maxParallelToolCallsPopover" popover class="custom-select-popover popover-target-parallel">
-            @for (o of parallelOptions; track o) {
+            @for (o of parallelOptions; track o.value) {
               <div class="popover-option" (click)="selectCustomOption('maxParallelToolCalls', o.value, 'maxParallelToolCallsPopover')" [class.selected]="o.value === maxParallelToolCallsSelect">
                 <span class="opt-label">{{o.label}}</span>
                 @if (o.value !== 'custom') {
@@ -218,8 +252,11 @@
 
           @if (maxParallelToolCallsSelect === 'custom') {
             <div class="mt-10 custom-input-wrapper">
-              <input type="number" [(ngModel)]="maxParallelToolCalls" name="maxParallelToolCalls" class="form-input w-100" [min]="$safeNavigationMigration(performanceLimits?.maxParallelToolCalls?.min)" [max]="$safeNavigationMigration(performanceLimits?.maxParallelToolCalls?.max)" placeholder="Custom value" />
+              <input type="number" [(ngModel)]="maxParallelToolCalls" (ngModelChange)="onNumberInputChange()" (blur)="onNumberInputBlur('maxParallelToolCalls')" name="maxParallelToolCalls" class="form-input w-100" [min]="$safeNavigationMigration(performanceLimits?.maxParallelToolCalls?.min)" [max]="$safeNavigationMigration(performanceLimits?.maxParallelToolCalls?.max)" placeholder="Custom value" />
               <span class="form-hint mt-5 d-block">Allowed range: {{performanceLimits?.maxParallelToolCalls?.min}} - {{performanceLimits?.maxParallelToolCalls?.max}}</span>
+              @if (validationErrors['maxParallelToolCalls']) {
+                <span class="form-hint form-error d-block mt-5">{{ validationErrors['maxParallelToolCalls'] }}</span>
+              }
             </div>
           }
         </div>
@@ -229,8 +266,11 @@
           <span class="form-hint mt-5 d-block mb-10">Maximum time to wait for a chat message response before aborting.</span>
 
           <div class="custom-input-wrapper" style="animation: none;">
-            <input type="number" id="requestTimeout" [(ngModel)]="requestTimeout" name="requestTimeout" class="form-input w-100" [min]="$safeNavigationMigration(performanceLimits?.requestTimeout?.min)" [max]="$safeNavigationMigration(performanceLimits?.requestTimeout?.max)" [placeholder]="'Default (' + $safeNavigationMigration(performanceLimits?.requestTimeout?.defaultValue) + 's)'" />
+            <input type="number" id="requestTimeout" [(ngModel)]="requestTimeout" (ngModelChange)="onNumberInputChange()" (blur)="onNumberInputBlur('requestTimeout')" name="requestTimeout" class="form-input w-100" [min]="$safeNavigationMigration(performanceLimits?.requestTimeout?.min)" [max]="$safeNavigationMigration(performanceLimits?.requestTimeout?.max)" [placeholder]="'Default (' + $safeNavigationMigration(performanceLimits?.requestTimeout?.defaultValue) + 's)'" />
             <span class="form-hint mt-5 d-block" style="margin-left: 0;">Allowed range: {{performanceLimits?.requestTimeout?.min}} - {{performanceLimits?.requestTimeout?.max}} seconds</span>
+            @if (validationErrors['requestTimeout']) {
+              <span class="form-hint form-error d-block mt-5">{{ validationErrors['requestTimeout'] }}</span>
+            }
           </div>
         </div>
       </fieldset>
@@ -307,31 +347,16 @@
       </fieldset>
 
     </div>
-    <div class="form-footer">
-      <button type="submit" class="btn-gh save-btn" [disabled]="loading">Save</button>
-      <div #successToast popover="manual" class="toast-success">
-        &#10004; {{ toastMessage || 'Settings saved successfully!' }}
-      </div>
-      <!-- Fallback if polyfill completely fails -->
-      @if (saved) {
-        <span class="success">{{ toastMessage || 'Settings saved successfully!' }}</span>
-      }
-    </div>
-  </form>
+  </div>
 
+  <div #successToast popover="manual" class="toast-success">
+    &#10004; {{ toastMessage || 'Settings saved successfully!' }}
+  </div>
+  <!-- Fallback if polyfill completely fails -->
+  @if (saved) {
+    <span class="success">{{ toastMessage || 'Settings saved successfully!' }}</span>
+  }
 </div>
-
-<!-- Unsaved Changes Dialog -->
-<dialog #confirmDialog class="gh-dialog">
-  <form method="dialog">
-    <h3>Unsaved Changes</h3>
-    <p>You have unsaved changes. Are you sure you want to discard them and leave?</p>
-    <div class="dialog-actions">
-      <button value="cancel" class="btn-gh btn-gh-cancel">Cancel</button>
-      <button value="discard" class="btn-gh">Discard</button>
-    </div>
-  </form>
-</dialog>
 
 <!-- Changelog Dialog -->
 <dialog #changelogDialog class="gh-dialog changelog-dialog" closedby="any" (click)="onChangelogDialogClick($event)" (close)="onChangelogDialogClose()">
