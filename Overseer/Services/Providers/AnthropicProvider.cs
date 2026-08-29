@@ -50,7 +50,8 @@ public class AnthropicProvider : IAiProvider
         ToolsForRequest requestTools,
         string? reasoningMode = null,
         string? reasoningSummary = null,
-        string? serviceTier = null)
+        string? serviceTier = null,
+        bool? parallelToolCalls = null)
     {
         var (systemContent, nonSystemMessages) = ExtractSystemAndNonSystemMessages(messageHistory);
 

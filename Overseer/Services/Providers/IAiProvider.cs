@@ -21,7 +21,8 @@ public interface IAiProvider
         ToolsForRequest requestTools,
         string? reasoningMode = null,
         string? reasoningSummary = null,
-        string? serviceTier = null);
+        string? serviceTier = null,
+        bool? parallelToolCalls = null);
 
     string GetChatStreamUrl(string modelId, string apiKey);
 

@@ -364,8 +364,43 @@ public class ChatService
             var pastAttachments = dbContext.ChatMessageAttachment.Where(a => pastMessages.Select(m => m.Id).Contains(a.ChatMessageId)).ToList();
             var baseDir = _configuration["ConversationsDataLocation"];
             
+            var pastMessageIds = pastMessages.Select(m => m.Id).ToList();
+            var pastToolCalls = pastMessageIds.Count > 0
+                ? dbContext.ChatMessageToolCall
+                    .AsNoTracking()
+                    .Where(tc => pastMessageIds.Contains(tc.ChatMessageId))
+                    .Select(tc => new ChatMessageToolCall
+                    {
+                        ChatMessageId = tc.ChatMessageId,
+                        ToolCallId = tc.ToolCallId,
+                        Name = tc.Name,
+                        DisplayName = tc.DisplayName,
+                        ArgsText = tc.ArgsText,
+                        Status = tc.Status,
+                        SortOrder = tc.SortOrder,
+                        AgentName = tc.AgentName,
+                        ParentToolCallId = tc.ParentToolCallId,
+                        Depth = tc.Depth,
+                        BatchIndex = tc.BatchIndex
+                    })
+                    .ToList()
+                : new List<ChatMessageToolCall>();
+
+            var toolCallsLookup = pastToolCalls.ToLookup(tc => tc.ChatMessageId);
+            bool includeToolDigest = _configuration.GetValue<bool>("AiPerformanceSettings:IncludeToolCallHistoryDigest", true);
+            
             foreach (var pm in pastMessages)
             {
+                var content = pm.Content ?? "";
+                if (includeToolDigest && pm.Role == "assistant")
+                {
+                    var digest = ToolCallHistoryDigest.Build(toolCallsLookup[pm.Id]);
+                    if (!string.IsNullOrEmpty(digest))
+                    {
+                        content += "\n\n" + digest;
+                    }
+                }
+
                 var msgAtts = pastAttachments.Where(a => a.ChatMessageId == pm.Id && a.ContentType != null && a.ContentType.StartsWith("image/")).ToList();
                 if (msgAtts.Count > 0 && recentMessageIds.Contains(pm.Id) && !string.IsNullOrEmpty(baseDir))
                 {
@@ -382,12 +417,12 @@ public class ChatService
                     
                     if (msgImageAttachments.Count > 0)
                     {
-                        messageHistory.Add(aiProvider.FormatMessage(pm.Role ?? "", pm.Content ?? "", msgImageAttachments));
+                        messageHistory.Add(aiProvider.FormatMessage(pm.Role ?? "", content, msgImageAttachments));
                         continue;
                     }
                 }
                 
-                messageHistory.Add(new { role = pm.Role, content = pm.Content });
+                messageHistory.Add(new { role = pm.Role, content });
             }
 
             // Detect context types from system messages

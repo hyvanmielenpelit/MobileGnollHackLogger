@@ -50,7 +50,8 @@ public class OpenAiResponsesProvider : IAiProvider
         ToolsForRequest requestTools,
         string? reasoningMode = null,
         string? reasoningSummary = null,
-        string? serviceTier = null)
+        string? serviceTier = null,
+        bool? parallelToolCalls = null)
     {
         // Extract system message
         string systemContent = "";
@@ -131,6 +132,10 @@ public class OpenAiResponsesProvider : IAiProvider
         if (toolsPayload != null)
         {
             req["tools"] = toolsPayload;
+            if (parallelToolCalls.HasValue)
+            {
+                req["parallel_tool_calls"] = parallelToolCalls.Value;
+            }
         }
 
         return req;

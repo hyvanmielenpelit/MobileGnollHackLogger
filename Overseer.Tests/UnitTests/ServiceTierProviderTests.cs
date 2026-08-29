@@ -102,4 +102,44 @@ public class ServiceTierProviderTests
         Assert.True(titleBody.ContainsKey("service_tier"));
         Assert.Equal("standard", titleBody["service_tier"]);
     }
+
+    [Fact]
+    public void OpenAiResponsesProvider_ParallelToolCalls_EmittedOnlyWhenToolsPresent()
+    {
+        var provider = new OpenAiResponsesProvider(_configuration);
+        var history = new List<object> { new { role = "user", content = "hello" } };
+
+        // 1. With tools present
+        var toolsWithFunctions = new ToolsForRequest
+        {
+            FunctionDeclarations = new List<object>
+            {
+                provider.BuildFunctionDeclaration("test_tool", "description", new { type = "object" })
+            }
+        };
+
+        // parallelToolCalls = true
+        var bodyTrue = provider.BuildChatRequestBody(
+            "gpt-5", history, 1000, "high", toolsWithFunctions, null, null, null, parallelToolCalls: true);
+        Assert.True(bodyTrue.ContainsKey("parallel_tool_calls"));
+        Assert.Equal(true, bodyTrue["parallel_tool_calls"]);
+
+        // parallelToolCalls = false
+        var bodyFalse = provider.BuildChatRequestBody(
+            "gpt-5", history, 1000, "high", toolsWithFunctions, null, null, null, parallelToolCalls: false);
+        Assert.True(bodyFalse.ContainsKey("parallel_tool_calls"));
+        Assert.Equal(false, bodyFalse["parallel_tool_calls"]);
+
+        // parallelToolCalls = null
+        var bodyNull = provider.BuildChatRequestBody(
+            "gpt-5", history, 1000, "high", toolsWithFunctions, null, null, null, parallelToolCalls: null);
+        Assert.False(bodyNull.ContainsKey("parallel_tool_calls"));
+
+        // 2. Without tools (no function declarations or provider tools)
+        var emptyTools = new ToolsForRequest();
+        var bodyNoTools = provider.BuildChatRequestBody(
+            "gpt-5", history, 1000, "high", emptyTools, null, null, null, parallelToolCalls: true);
+        Assert.False(bodyNoTools.ContainsKey("parallel_tool_calls"));
+        Assert.False(bodyNoTools.ContainsKey("tools"));
+    }
 }

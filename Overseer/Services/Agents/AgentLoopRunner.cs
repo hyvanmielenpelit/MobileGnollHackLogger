@@ -147,7 +147,8 @@ public class AgentLoopRunner
                 requestTools,
                 request.ReasoningMode,
                 request.ReasoningSummary,
-                request.ServiceTier);
+                request.ServiceTier,
+                parallelToolCalls: execContext.ParallelExecutionMode != ParallelExecutionMode.Disabled);
 
             var jsonRequest = JsonSerializer.Serialize(requestBody);
             if (request.ShowDebugLog)
@@ -283,7 +284,8 @@ public class AgentLoopRunner
                         SortOrder = streamToolCalls.Count,
                         AgentName = request.AgentName,
                         ParentToolCallId = request.ParentToolCallId,
-                        Depth = request.Depth
+                        Depth = request.Depth,
+                        BatchIndex = toolIterations
                     });
 
                     JsonElement tArgs = JsonDocument.Parse("{}").RootElement;

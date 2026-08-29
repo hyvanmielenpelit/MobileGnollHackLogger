@@ -50,12 +50,22 @@ public class SystemPromptPolicyTests
 
     private static string GetGuideDirectory()
     {
-        var guideDir = Path.Combine(AppContext.BaseDirectory, "ToolGuides");
-        if (!Directory.Exists(guideDir))
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "MobileGnollHackLogger.slnx")))
         {
-            guideDir = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "Overseer", "ToolGuides"));
+            dir = dir.Parent;
         }
 
+        if (dir != null)
+        {
+            var candidate = Path.Combine(dir.FullName, "Overseer", "ToolGuides");
+            if (Directory.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        var guideDir = Path.Combine(AppContext.BaseDirectory, "ToolGuides");
         Assert.True(Directory.Exists(guideDir), $"ToolGuides directory not found at {guideDir}");
         return guideDir;
     }
@@ -114,6 +124,16 @@ public class SystemPromptPolicyTests
         // Accuracy & negative assertion against vendor-specific wrapper
         Assert.Contains("accuracy, not verbosity", policyText);
         Assert.DoesNotContain("multi_tool_use", policyText);
+
+        // Tool-call record directives
+        Assert.Contains("tool-call record - ...", policyText);
+        Assert.Contains("does **not** contain", policyText);
+        Assert.Contains("grouping not recorded", policyText);
+        Assert.Contains("authoritative record of what was actually run", policyText);
+
+        // Cross-game comparisons policy & regression guard
+        Assert.Contains("Cross-game (GnollHack vs NetHack) comparisons are an exception", policyText);
+        Assert.DoesNotContain("cross-game comparisons,", policyText);
     }
 
     [Fact]

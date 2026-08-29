@@ -40,4 +40,6 @@ public class ChatMessageToolCall
     public string? ParentToolCallId { get; set; }
     
     public int Depth { get; set; }
+    
+    public int? BatchIndex { get; set; }
 }
