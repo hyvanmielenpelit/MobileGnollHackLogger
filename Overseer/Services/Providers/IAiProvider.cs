@@ -22,7 +22,9 @@ public interface IAiProvider
         string? reasoningMode = null,
         string? reasoningSummary = null,
         string? serviceTier = null,
-        bool? parallelToolCalls = null);
+        bool? parallelToolCalls = null,
+        SegmentedPrompt? segmentedPrompt = null,
+        string? promptCacheKey = null);
 
     string GetChatStreamUrl(string modelId, string apiKey);
 
@@ -50,6 +52,11 @@ public interface IAiProvider
         List<object> messageHistory,
         List<ProviderToolResult> results);
 
+    bool TryRewriteToolResult(
+        List<object> messageHistory,
+        string toolCallId,
+        string replacementText);
+
     // Title generation
     Dictionary<string, object> BuildTitleRequestBody(
         string modelId, string systemPrompt, string userMessage, int maxTokens, string? serviceTier = null);
@@ -65,3 +72,4 @@ public interface IAiProvider
 
     object? BuildToolsPayload(List<object> providerTools, List<object> functionDeclarations);
 }
+

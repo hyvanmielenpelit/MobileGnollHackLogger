@@ -51,12 +51,15 @@ public class AnthropicProvider : IAiProvider
         string? reasoningMode = null,
         string? reasoningSummary = null,
         string? serviceTier = null,
-        bool? parallelToolCalls = null)
+        bool? parallelToolCalls = null,
+        SegmentedPrompt? segmentedPrompt = null,
+        string? promptCacheKey = null)
     {
-        var (systemContent, nonSystemMessages) = ExtractSystemAndNonSystemMessages(messageHistory);
+        var (systemContent, extraSystemContent, nonSystemMessages) = ExtractSystemAndNonSystemMessages(messageHistory);
 
         int defaultAnthropicTokens = _configuration.GetValue<int?>("DefaultMaxOutputTokens:Anthropic") ?? 8192;
         int effectiveMaxTokens = maxOutputTokens.HasValue ? maxOutputTokens.Value : defaultAnthropicTokens;
+        bool enableCacheControl = _configuration.GetValue<bool>("PromptCacheSettings:EnableAnthropicCacheControl", true);
 
         var req = new Dictionary<string, object>
         {
@@ -66,7 +69,54 @@ public class AnthropicProvider : IAiProvider
             ["max_tokens"] = effectiveMaxTokens
         };
 
-        if (!string.IsNullOrEmpty(systemContent))
+        if (enableCacheControl && segmentedPrompt != null)
+        {
+            var systemBlocks = new List<object>();
+
+            // Breakpoint 2: End of frozen system block (Segment A)
+            if (!string.IsNullOrEmpty(segmentedPrompt.FrozenPrefix))
+            {
+                systemBlocks.Add(new
+                {
+                    type = "text",
+                    text = segmentedPrompt.FrozenPrefix,
+                    cache_control = new { type = "ephemeral" }
+                });
+            }
+
+            // Breakpoint 3: End of session-stable system block (Segment B + hoisted snapshot/extra system messages)
+            string sessionText = segmentedPrompt.SessionPrefix ?? "";
+            if (!string.IsNullOrEmpty(extraSystemContent))
+            {
+                sessionText = string.IsNullOrEmpty(sessionText) ? extraSystemContent : $"{sessionText}\n\n{extraSystemContent}";
+            }
+
+            if (!string.IsNullOrEmpty(sessionText))
+            {
+                systemBlocks.Add(new
+                {
+                    type = "text",
+                    text = sessionText,
+                    cache_control = new { type = "ephemeral" }
+                });
+            }
+
+            // Volatile suffix (no cache_control)
+            if (!string.IsNullOrEmpty(segmentedPrompt.VolatileSuffix))
+            {
+                systemBlocks.Add(new
+                {
+                    type = "text",
+                    text = segmentedPrompt.VolatileSuffix
+                });
+            }
+
+            if (systemBlocks.Count > 0)
+            {
+                req["system"] = systemBlocks;
+            }
+        }
+        else if (!string.IsNullOrEmpty(systemContent))
         {
             req["system"] = systemContent;
         }
@@ -92,7 +142,78 @@ public class AnthropicProvider : IAiProvider
         var toolsPayload = BuildToolsPayload(requestTools.ProviderTools, requestTools.FunctionDeclarations);
         if (toolsPayload != null)
         {
+            // Breakpoint 1: Last tool definition in req["tools"]
+            if (enableCacheControl && toolsPayload is List<object> toolsList && toolsList.Count > 0)
+            {
+                var lastTool = toolsList[^1];
+                var name = ProviderHelper.GetProperty(lastTool, "name")?.ToString();
+                var desc = ProviderHelper.GetProperty(lastTool, "description")?.ToString();
+                var schema = ProviderHelper.GetProperty(lastTool, "input_schema");
+                var type = ProviderHelper.GetProperty(lastTool, "type")?.ToString();
+                if (type != null && schema == null)
+                {
+                    toolsList[^1] = new { type, name, cache_control = new { type = "ephemeral" } };
+                }
+                else
+                {
+                    toolsList[^1] = new { name, description = desc, input_schema = schema, cache_control = new { type = "ephemeral" } };
+                }
+            }
             req["tools"] = toolsPayload;
+        }
+
+        // Breakpoint 4: Conversation tail in messages
+        if (enableCacheControl && nonSystemMessages.Count > 0)
+        {
+            var lastIdx = nonSystemMessages.Count - 1;
+            var lastMsg = nonSystemMessages[lastIdx];
+            var role = ProviderHelper.GetProperty(lastMsg, "role")?.ToString() ?? "user";
+            var contentObj = ProviderHelper.GetProperty(lastMsg, "content");
+            if (contentObj is string textStr)
+            {
+                nonSystemMessages[lastIdx] = new
+                {
+                    role,
+                    content = new List<object>
+                    {
+                        new { type = "text", text = textStr, cache_control = new { type = "ephemeral" } }
+                    }
+                };
+            }
+            else if (contentObj is IEnumerable<object> blocks)
+            {
+                var blockList = blocks.ToList();
+                if (blockList.Count > 0)
+                {
+                    var lastBlock = blockList[^1];
+                    var bType = ProviderHelper.GetProperty(lastBlock, "type")?.ToString();
+                    if (bType == "tool_result")
+                    {
+                        var toolUseId = ProviderHelper.GetProperty(lastBlock, "tool_use_id")?.ToString();
+                        var content = ProviderHelper.GetProperty(lastBlock, "content");
+                        var isErr = ProviderHelper.GetProperty(lastBlock, "is_error") as bool? ?? false;
+                        blockList[^1] = new
+                        {
+                            type = "tool_result",
+                            tool_use_id = toolUseId,
+                            content,
+                            is_error = isErr,
+                            cache_control = new { type = "ephemeral" }
+                        };
+                    }
+                    else if (bType == "text")
+                    {
+                        var text = ProviderHelper.GetProperty(lastBlock, "text")?.ToString() ?? "";
+                        blockList[^1] = new
+                        {
+                            type = "text",
+                            text,
+                            cache_control = new { type = "ephemeral" }
+                        };
+                    }
+                    nonSystemMessages[lastIdx] = new { role, content = blockList };
+                }
+            }
         }
 
         return req;
@@ -123,6 +244,9 @@ public class AnthropicProvider : IAiProvider
         var reasoningSanitizer = new ReasoningTextSanitizer();
         var visibleSanitizer = new ReasoningTextSanitizer();
         bool replayUnavailable = false;
+        int anthropicInputTokens = 0;
+        int anthropicCacheCreationTokens = 0;
+        int anthropicCacheReadTokens = 0;
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -137,6 +261,7 @@ public class AnthropicProvider : IAiProvider
                 ChatEvent? toolCallEvt = null;
                 ChatEvent? errorEvt = null;
                 ChatEvent? debugEvt = null;
+                ChatEvent? usageEvt = null;
                 var providerItemEvts = new List<ChatEvent>();
 
                 try
@@ -275,15 +400,7 @@ public class AnthropicProvider : IAiProvider
                                 }
                                 else if (block.Type == "tool_use")
                                 {
-                                    object argsObj = new { };
-                                    try
-                                    {
-                                        if (block.ToolArgs.Length > 0)
-                                            argsObj = JsonSerializer.Deserialize<object>(block.ToolArgs.ToString()) ?? new { };
-                                    }
-                                    catch { }
-
-                                    var toolObj = new { type = "tool_use", id = block.ToolId, name = block.ToolName, input = argsObj };
+                                    var toolObj = new { type = "tool_use", id = block.ToolId, name = block.ToolName, input = JsonSerializer.Deserialize<JsonElement>(block.ToolArgs.Length == 0 ? "{}" : block.ToolArgs.ToString()) };
                                     var rawJson = JsonSerializer.Serialize(toolObj);
                                     if (!replayUnavailable) providerItemEvts.Add(new ChatEvent { Type = "provider_history_item", Data = rawJson });
 
@@ -306,16 +423,23 @@ public class AnthropicProvider : IAiProvider
                         }
                         else if (t == "message_start")
                         {
-                            if (showDebugLog && json.TryGetProperty("message", out var msg))
+                            if (json.TryGetProperty("message", out var msg))
                             {
                                 var resolvedModel = msg.TryGetProperty("model", out var mp) ? mp.GetString() : "unknown";
                                 string usageInfo = "";
                                 if (msg.TryGetProperty("usage", out var usage))
                                 {
-                                    var inputTokens = usage.TryGetProperty("input_tokens", out var it) ? it.GetInt32().ToString() : "?";
-                                    usageInfo = $", input_tokens={inputTokens}";
+                                    anthropicInputTokens = usage.TryGetProperty("input_tokens", out var it) ? it.GetInt32() : 0;
+                                    anthropicCacheCreationTokens = usage.TryGetProperty("cache_creation_input_tokens", out var cct) ? cct.GetInt32() : 0;
+                                    anthropicCacheReadTokens = usage.TryGetProperty("cache_read_input_tokens", out var crt) ? crt.GetInt32() : 0;
+                                    usageInfo = $", input_tokens={anthropicInputTokens}";
+                                    if (anthropicCacheReadTokens > 0) usageInfo += $", cache_read={anthropicCacheReadTokens}";
+                                    if (anthropicCacheCreationTokens > 0) usageInfo += $", cache_creation={anthropicCacheCreationTokens}";
                                 }
-                                debugEvt = new ChatEvent { Type = "debug", Data = $"[Main Chat - Anthropic] message_start: model={resolvedModel}{usageInfo}" };
+                                if (showDebugLog)
+                                {
+                                    debugEvt = new ChatEvent { Type = "debug", Data = $"[Main Chat - Anthropic] message_start: model={resolvedModel}{usageInfo}" };
+                                }
                             }
                         }
                         else if (t == "message_delta")
@@ -326,8 +450,27 @@ public class AnthropicProvider : IAiProvider
                                 string usageInfo = "";
                                 if (json.TryGetProperty("usage", out var usage))
                                 {
-                                    var outputTokens = usage.TryGetProperty("output_tokens", out var ot) ? ot.GetInt32().ToString() : "?";
+                                    int outputTokens = usage.TryGetProperty("output_tokens", out var ot) ? ot.GetInt32() : 0;
                                     usageInfo = $", output_tokens={outputTokens}";
+
+                                    int totalPrompt = anthropicInputTokens + anthropicCacheCreationTokens + anthropicCacheReadTokens;
+                                    int uncached = anthropicInputTokens + anthropicCacheCreationTokens;
+
+                                    var report = new TokenUsageReport
+                                    {
+                                        TotalPromptTokens = totalPrompt,
+                                        CacheReadTokens = anthropicCacheReadTokens,
+                                        CacheCreationTokens = anthropicCacheCreationTokens,
+                                        UncachedInputTokens = uncached,
+                                        OutputTokens = outputTokens,
+                                        ReasoningTokens = 0
+                                    };
+                                    usageEvt = new ChatEvent
+                                    {
+                                        Type = "usage",
+                                        Data = JsonSerializer.Serialize(report),
+                                        UsageReport = report
+                                    };
                                 }
 
                                 if (stopReason == "max_tokens")
@@ -346,7 +489,11 @@ public class AnthropicProvider : IAiProvider
 
                 if (debugEvt != null) yield return debugEvt;
                 if (errorEvt != null) yield return errorEvt;
-                foreach (var pEvt in providerItemEvts) yield return pEvt;
+                if (providerItemEvts != null)
+                {
+                    foreach (var pEvt in providerItemEvts) yield return pEvt;
+                }
+                if (usageEvt != null) yield return usageEvt;
                 if (!string.IsNullOrEmpty(thinkingChunkStr)) yield return new ChatEvent { Type = "thinking_chunk", Data = thinkingChunkStr };
                 if (!string.IsNullOrEmpty(chunkStr)) yield return new ChatEvent { Type = "chunk", Data = chunkStr };
                 if (toolCallEvt != null) yield return toolCallEvt;
@@ -526,10 +673,53 @@ public class AnthropicProvider : IAiProvider
         return combined.Count > 0 ? combined : null;
     }
 
-    private (string systemContent, List<object> nonSystemMessages) ExtractSystemAndNonSystemMessages(List<object> messages)
+    public bool TryRewriteToolResult(List<object> messageHistory, string toolCallId, string replacementText)
+    {
+        for (int i = 0; i < messageHistory.Count; i++)
+        {
+            var msgObj = messageHistory[i];
+            var role = ProviderHelper.GetProperty(msgObj, "role")?.ToString();
+            if (role != "user") continue;
+
+            var content = ProviderHelper.GetProperty(msgObj, "content");
+            if (content is IEnumerable<object> blocks)
+            {
+                var blockList = blocks.ToList();
+                bool rewritten = false;
+                for (int b = 0; b < blockList.Count; b++)
+                {
+                    var block = blockList[b];
+                    var type = ProviderHelper.GetProperty(block, "type")?.ToString();
+                    var toolUseId = ProviderHelper.GetProperty(block, "tool_use_id")?.ToString();
+                    if (type == "tool_result" && toolUseId == toolCallId)
+                    {
+                        var isErr = ProviderHelper.GetProperty(block, "is_error") as bool? ?? false;
+                        blockList[b] = new
+                        {
+                            type = "tool_result",
+                            tool_use_id = toolCallId,
+                            content = replacementText,
+                            is_error = isErr
+                        };
+                        rewritten = true;
+                    }
+                }
+                if (rewritten)
+                {
+                    messageHistory[i] = new { role = "user", content = blockList };
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private (string systemContent, string? extraSystemContent, List<object> nonSystemMessages) ExtractSystemAndNonSystemMessages(List<object> messages)
     {
         var systemSb = new StringBuilder();
+        var extraSystemSb = new StringBuilder();
         var nonSystem = new List<object>();
+        bool isFirstSystem = true;
 
         foreach (var msg in messages)
         {
@@ -539,8 +729,18 @@ public class AnthropicProvider : IAiProvider
                 var content = ProviderHelper.GetProperty(msg, "content")?.ToString();
                 if (!string.IsNullOrEmpty(content))
                 {
-                    if (systemSb.Length > 0) systemSb.AppendLine();
-                    systemSb.Append(content);
+                    if (isFirstSystem)
+                    {
+                        systemSb.Append(content);
+                        isFirstSystem = false;
+                    }
+                    else
+                    {
+                        if (extraSystemSb.Length > 0) extraSystemSb.AppendLine();
+                        extraSystemSb.Append(content);
+                        if (systemSb.Length > 0) systemSb.AppendLine();
+                        systemSb.Append(content);
+                    }
                 }
             }
             else
@@ -549,7 +749,8 @@ public class AnthropicProvider : IAiProvider
             }
         }
 
-        return (systemSb.ToString(), nonSystem);
+        string? extra = extraSystemSb.Length > 0 ? extraSystemSb.ToString() : null;
+        return (systemSb.ToString(), extra, nonSystem);
     }
 
     private List<object> AlternateAnthropicMessages(List<object> messages)

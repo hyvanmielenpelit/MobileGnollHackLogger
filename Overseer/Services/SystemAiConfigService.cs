@@ -129,7 +129,15 @@ public class SystemAiConfigService
         }
     }
 
-    public async Task RecordUsageAsync(long configId, string userId, int inputTokens, int outputTokens, int roleContext = 1)
+    public async Task RecordUsageAsync(
+        long configId,
+        string userId,
+        int inputTokens,
+        int outputTokens,
+        int roleContext = 1,
+        int? cacheReadTokens = null,
+        int? cacheCreationTokens = null,
+        int? totalDurationMs = null)
     {
         var config = await _dbContext.SystemAiApiConfigurations.FindAsync(configId);
         if (config == null) return;
@@ -171,6 +179,9 @@ public class SystemAiConfigService
             TimestampUtc = now,
             InputTokens = inputTokens,
             OutputTokens = outputTokens,
+            CacheReadInputTokens = cacheReadTokens,
+            CacheCreationInputTokens = cacheCreationTokens,
+            TotalDurationMs = totalDurationMs,
             ModelId = config.ModelId,
             Provider = config.Provider,
             RoleContext = roleContext

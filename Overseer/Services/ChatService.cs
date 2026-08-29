@@ -35,6 +35,8 @@ public class ChatService
     private readonly ParallelExecutionResolver _parallelExecutionResolver;
     private readonly Dictionary<string, IAiProvider> _aiProviders;
     private readonly SubAgentCatalogService? _subAgentCatalogService;
+    private readonly ILogger<ChatService>? _logger;
+    private readonly AiRequestGovernor? _governor;
     private bool _showDebugLog = false;
 
     public ChatService(
@@ -52,7 +54,9 @@ public class ChatService
         AgentLoopRunner agentLoopRunner,
         ParallelExecutionResolver parallelExecutionResolver,
         IEnumerable<IAiProvider> aiProviders,
-        SubAgentCatalogService? subAgentCatalogService = null)
+        SubAgentCatalogService? subAgentCatalogService = null,
+        ILogger<ChatService>? logger = null,
+        AiRequestGovernor? governor = null)
     {
         _scopeFactory = scopeFactory;
         _wikiService = wikiService;
@@ -69,6 +73,8 @@ public class ChatService
         _parallelExecutionResolver = parallelExecutionResolver;
         _aiProviders = aiProviders.ToDictionary(p => p.ProviderName, p => p, StringComparer.OrdinalIgnoreCase);
         _subAgentCatalogService = subAgentCatalogService;
+        _logger = logger;
+        _governor = governor;
     }
 
     /// <summary>
@@ -196,6 +202,7 @@ public class ChatService
         var parallelMode = ParallelExecutionMode.Enabled;
         bool shouldGenerateTitle = false;
         string systemPrompt = "";
+        SegmentedPrompt? segmentedPrompt = null;
 
         int estimatedInputTokens = 0;
 
@@ -518,7 +525,25 @@ public class ChatService
                 _configuration);
 
             // enableToolUse handled above
-            systemPrompt = BuildSystemPrompt(contextDocs, spoilerFreeMode, verboseMode, isGameOn, developerMode, overseerMode, hasGameSnapshot, hasMessageHistory, session?.ClientSettings, enableToolUse, enableWebSearch, allowSourceCodeReferences, enableSubAgents, parallelMode);
+            var (frozenPrefix, sessionPrefix, volatileSuffix) = BuildSegmentedSystemPrompt(
+                contextDocs, spoilerFreeMode, verboseMode, isGameOn, developerMode, overseerMode,
+                hasGameSnapshot, hasMessageHistory, session?.ClientSettings, enableToolUse,
+                enableWebSearch, allowSourceCodeReferences, enableSubAgents, parallelMode);
+
+            bool enableSegmentedPrompt = _configuration?.GetValue<bool>("PromptCacheSettings:EnableSegmentedPrompt", true) ?? true;
+            segmentedPrompt = null;
+            if (enableSegmentedPrompt)
+            {
+                segmentedPrompt = new SegmentedPrompt(frozenPrefix, sessionPrefix, volatileSuffix);
+                systemPrompt = segmentedPrompt.FullPrompt;
+            }
+            else
+            {
+                systemPrompt = BuildLegacySystemPrompt(
+                    contextDocs, spoilerFreeMode, verboseMode, isGameOn, developerMode, overseerMode,
+                    hasGameSnapshot, hasMessageHistory, session?.ClientSettings, enableToolUse,
+                    enableWebSearch, allowSourceCodeReferences, enableSubAgents, parallelMode);
+            }
 
             var userMsg = new ChatMessage
             {
@@ -629,31 +654,13 @@ public class ChatService
 
             messageHistory.Add(aiProvider.FormatMessage("user", finalMessageText, imageAttachments));
             
-            // Truncation logic
+            // Truncation logic (prefix-stable)
             var meta = _modelMetadataService.GetMetadata(provider ?? "", model);
             int effectiveInputLimit = maxInputTokens ?? meta.MaxInputTokens;
             if (effectiveInputLimit <= 0) effectiveInputLimit = 100000;
             
-            int EstimateTokens(object msg)
-            {
-                return JsonSerializer.Serialize(msg).Length / 4;
-            }
-            
-            int totalTokens = EstimateTokens(systemPrompt);
-            var truncatedHistory = new List<object>();
-            
-            for (int i = messageHistory.Count - 1; i >= 0; i--)
-            {
-                int msgTokens = EstimateTokens(messageHistory[i]);
-                if (totalTokens + msgTokens > effectiveInputLimit && truncatedHistory.Count > 0)
-                {
-                    // Always keep the current user message (last one added) and system prompt, truncate others
-                    break;
-                }
-                totalTokens += msgTokens;
-                truncatedHistory.Insert(0, messageHistory[i]);
-            }
-            messageHistory = truncatedHistory;
+            int blockSize = _configuration?.GetValue<int>("PromptCacheSettings:TruncationBlockSize", 8) ?? 8;
+            messageHistory = TruncateHistoryPrefixStable(messageHistory, systemPrompt, effectiveInputLimit, blockSize);
             
             // Always Insert System Prompt
             messageHistory.Insert(0, new { role = "system", content = systemPrompt });
@@ -661,8 +668,11 @@ public class ChatService
             // Prepare history for provider (e.g. Anthropic alternating / Google parts)
             messageHistory = aiProvider.PrepareMessageHistory(messageHistory);
             
-            // Note: maxOutputTokens is handled later
-
+            int totalTokens = EstimateTokens(systemPrompt);
+            foreach (var m in messageHistory)
+            {
+                totalTokens += EstimateTokens(m);
+            }
             estimatedInputTokens = totalTokens;
 
             if (_showDebugLog) yield return new ChatEvent 
@@ -724,6 +734,16 @@ public class ChatService
             runBudget.MaxParallelSubAgents = 1;
         }
 
+        string salt = _configuration?.GetValue<string>("PromptCacheSettings:PromptCacheKeySalt", "overseer_cache_salt_v1") ?? "overseer_cache_salt_v1";
+        string? promptCacheKey = null;
+        try
+        {
+            using var sha = System.Security.Cryptography.SHA256.Create();
+            byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes($"{salt}:{currentSessionId}"));
+            promptCacheKey = Convert.ToHexString(hash).ToLowerInvariant().Substring(0, 32);
+        }
+        catch { }
+
         var runRequest = new AgentRunRequest
         {
             ProviderName = provider ?? "",
@@ -731,6 +751,13 @@ public class ChatService
             ApiKey = apiKey,
             ModelDisplayName = modelDisplayName,
             SystemPrompt = systemPrompt,
+            FrozenPrefix = segmentedPrompt?.FrozenPrefix,
+            SessionPrefix = segmentedPrompt?.SessionPrefix,
+            VolatileSuffix = segmentedPrompt?.VolatileSuffix,
+            SegmentedPrompt = segmentedPrompt,
+            PromptCacheKey = promptCacheKey,
+            CredentialKey = AiRequestGovernor.GetCredentialKey(provider ?? "", userId, systemModelId),
+            PermitWaitTimeout = TimeSpan.FromSeconds(_configuration?.GetValue<int>("AiRateLimitSettings:PermitWaitSeconds", 120) ?? 120),
             SeedHistory = messageHistory,
             ThinkingLevel = thinkingLevel,
             ReasoningMode = reasoningMode,
@@ -792,6 +819,9 @@ public class ChatService
                 bool hasThinkingDivs = fullResponse.Contains("ai-thought");
                 if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat] Saving assistant message: {fullResponse.Length} chars, hasThinkingDivs={hasThinkingDivs}, thinkingDivsCount={runResult.EmittedDivCount}, toolCalls={streamToolCalls.Count}" };
 
+                int totalPromptTokens = runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : estimatedInputTokens;
+                int totalOutputTokens = runResult.OutputTokens > 0 ? runResult.OutputTokens : (fullResponse.Length / 4);
+
                 var asstMsg = new ChatMessage
                 {
                     ChatSessionId = currentSessionId,
@@ -806,7 +836,8 @@ public class ChatService
                     ModelDisplayNameUsed = modelDisplayName,
                     ToolCalls = streamToolCalls,
                     TimeToFirstTokenMs = timeToFirstTokenMs,
-                    TotalDurationMs = totalDurationMs
+                    TotalDurationMs = totalDurationMs,
+                    TokensUsed = totalPromptTokens + totalOutputTokens
                 };
                 dbContext.ChatMessage.Add(asstMsg);
                 session.LastMessageUtc = DateTime.UtcNow;
@@ -814,8 +845,17 @@ public class ChatService
                 if (systemModelId.HasValue)
                 {
                     var systemAiConfigService = scope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
-                    int outputTokens = fullResponse.Length / 4;
-                    await systemAiConfigService.RecordUsageAsync(systemModelId.Value, userId, estimatedInputTokens, outputTokens, roleContext: 1);
+                    int inputTokens = runResult.TotalPromptTokens > 0 ? runResult.UncachedInputTokens : estimatedInputTokens;
+                    int outputTokens = runResult.OutputTokens > 0 ? runResult.OutputTokens : (fullResponse.Length / 4);
+                    await systemAiConfigService.RecordUsageAsync(
+                        systemModelId.Value,
+                        userId,
+                        inputTokens,
+                        outputTokens,
+                        roleContext: 1,
+                        cacheReadTokens: runResult.CacheReadTokens,
+                        cacheCreationTokens: runResult.CacheCreationTokens,
+                        totalDurationMs: runResult.TotalDurationMs);
                 }
 
                 await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -831,7 +871,7 @@ public class ChatService
         }
     }
 
-    internal string BuildSystemPrompt(
+    internal (string frozenPrefix, string sessionPrefix, string volatileSuffix) BuildSegmentedSystemPrompt(
         IEnumerable<string> wikiContext,
         bool spoilerFreeMode,
         bool verboseMode,
@@ -847,297 +887,312 @@ public class ChatService
         bool enableSubAgents = false,
         ParallelExecutionMode parallelMode = ParallelExecutionMode.Enabled)
     {
-        var sb = new StringBuilder();
+        var sbFrozen = new StringBuilder();
+        var sbSession = new StringBuilder();
+        var sbVolatile = new StringBuilder();
 
         // ──────────────────────────────────────────────
+        // SEGMENT A: Frozen Prefix (Sections 1..12 + 15)
+        // ──────────────────────────────────────────────
+
         // SECTION 1: Identity & Objective
-        // ──────────────────────────────────────────────
-        sb.AppendLine("You are the Gnoll Overseer, an expert AI assistant for GnollHack — a modern roguelike game derived from NetHack 3.6.2 with extensive new features including tile graphics, sound, music, voiceovers, and a .NET MAUI mobile/desktop frontend.");
-        sb.AppendLine();
+        sbFrozen.AppendLine("You are the Gnoll Overseer, an expert AI assistant for GnollHack — a modern roguelike game derived from NetHack 3.6.2 with extensive new features including tile graphics, sound, music, voiceovers, and a .NET MAUI mobile/desktop frontend.");
+        sbFrozen.AppendLine();
+        sbFrozen.AppendLine("CRITICAL INSTRUCTION: You must strictly limit your assistance and conversation to topics related to GnollHack, NetHack, and their direct technical, development, or gameplay aspects.");
+        sbFrozen.AppendLine("If the user asks about unrelated topics (e.g., general programming unrelated to the project, other games, cooking, politics, general knowledge), you must politely decline and remind them that you are an assistant dedicated exclusively to GnollHack.");
+        sbFrozen.AppendLine();
 
-        // NEW: Restrict to GnollHack topics
-        sb.AppendLine("CRITICAL INSTRUCTION: You must strictly limit your assistance and conversation to topics related to GnollHack, NetHack, and their direct technical, development, or gameplay aspects.");
-        sb.AppendLine("If the user asks about unrelated topics (e.g., general programming unrelated to the project, other games, cooking, politics, general knowledge), you must politely decline and remind them that you are an assistant dedicated exclusively to GnollHack.");
-        sb.AppendLine();
-
-        // NEW: Clear objective that varies by game state
         if (isGameOn || hasGameSnapshot)
         {
-            sb.AppendLine("Your objective is to maximize the player's chance of winning while helping them understand important decisions. Every recommendation should be evaluated against one question: Does this help the player survive and improve?");
+            sbFrozen.AppendLine("Your objective is to maximize the player's chance of winning while helping them understand important decisions. Every recommendation should be evaluated against one question: Does this help the player survive and improve?");
         }
         else
         {
-            sb.AppendLine("Your objective is to help the player understand GnollHack's mechanics, review past games via dumplogs, suggest character builds and strategies for future runs, and provide technical support when needed.");
+            sbFrozen.AppendLine("Your objective is to help the player understand GnollHack's mechanics, review past games via dumplogs, suggest character builds and strategies for future runs, and provide technical support when needed.");
         }
-        sb.AppendLine();
+        sbFrozen.AppendLine();
 
-        // ──────────────────────────────────────────────
         // SECTION 2: Mode
-        // ──────────────────────────────────────────────
         switch (overseerMode)
         {
             case 1: // Technical Help
-                sb.AppendLine("## Mode: Technical Support");
-                sb.AppendLine("The user needs help with app issues, save files, configuration, or installation.");
-                sb.AppendLine("Be precise and diagnostic. Ask clarifying questions about the user's platform, app version, and error messages.");
-                sb.AppendLine("Focus on game mechanics, strategy, and game-related troubleshooting in addition to app problems. Feel empowered to explain complex NetHack/GnollHack mechanics (e.g., armor class, spellcasting penalties, weapon skills) when asked about how the game works.");
-                sb.AppendLine("When greeting the player, briefly introduce yourself and mention that you can help with technical issues such as save files, installation, app configuration, and troubleshooting.");
+                sbFrozen.AppendLine("## Mode: Technical Support");
+                sbFrozen.AppendLine("The user needs help with app issues, save files, configuration, or installation.");
+                sbFrozen.AppendLine("Be precise and diagnostic. Ask clarifying questions about the user's platform, app version, and error messages.");
+                sbFrozen.AppendLine("Focus on game mechanics, strategy, and game-related troubleshooting in addition to app problems. Feel empowered to explain complex NetHack/GnollHack mechanics (e.g., armor class, spellcasting penalties, weapon skills) when asked about how the game works.");
+                sbFrozen.AppendLine("When greeting the player, briefly introduce yourself and mention that you can help with technical issues such as save files, installation, app configuration, and troubleshooting.");
                 break;
-            case 2: // Developer / Debugging — only when DeveloperMode AND DebugLogMessages are both ON
-                sb.AppendLine("## Mode: Developer / Debugging");
-                sb.AppendLine("The user is a GnollHack developer or power user debugging the game.");
-                sb.AppendLine("Be technical and terse. Reference source code files, function names, and data structures.");
-                sb.AppendLine("The GnollHack C core is in src/ and include/, the .NET MAUI frontend in win/win32/xpl/.");
-                sb.AppendLine("Analyze debug data, crash logs, and runtime state when available.");
-                sb.AppendLine("Developer Mode and Debug Logging are both ON. The user has access to Wizard Mode (#wizmode) for testing.");
+            case 2: // Developer / Debugging
+                sbFrozen.AppendLine("## Mode: Developer / Debugging");
+                sbFrozen.AppendLine("The user is a GnollHack developer or power user debugging the game.");
+                sbFrozen.AppendLine("Be technical and terse. Reference source code files, function names, and data structures.");
+                sbFrozen.AppendLine("The GnollHack C core is in src/ and include/, the .NET MAUI frontend in win/win32/xpl/.");
+                sbFrozen.AppendLine("Analyze debug data, crash logs, and runtime state when available.");
+                sbFrozen.AppendLine("Developer Mode and Debug Logging are both ON. The user has access to Wizard Mode (#wizmode) for testing.");
                 if (developerMode)
-                    sb.AppendLine("Debug data has been collected and is available in the session context.");
-                sb.AppendLine("When greeting the player, briefly introduce yourself as running in debug analysis mode and mention that you can help analyze crash logs, runtime state, debug data, and provide code-level guidance.");
+                    sbFrozen.AppendLine("Debug data has been collected and is available in the session context.");
+                sbFrozen.AppendLine("When greeting the player, briefly introduce yourself as running in debug analysis mode and mention that you can help analyze crash logs, runtime state, debug data, and provide code-level guidance.");
                 break;
             default: // 0 = Gameplay Help
-                sb.AppendLine("## Mode: Gameplay Help");
+                sbFrozen.AppendLine("## Mode: Gameplay Help");
                 if (isGameOn || hasGameSnapshot)
                 {
-                    sb.AppendLine("The user is playing GnollHack and needs gameplay assistance.");
-                    sb.AppendLine("Be friendly and encouraging. Provide tactical advice, item identification help, strategy tips, and dungeon navigation guidance.");
-                    sb.AppendLine("When greeting the player, briefly introduce yourself and give a short observation about their current situation based on the game snapshot (e.g., their HP, dungeon level, or any visible threats). Keep it to 1–2 sentences.");
+                    sbFrozen.AppendLine("The user is playing GnollHack and needs gameplay assistance.");
+                    sbFrozen.AppendLine("Be friendly and encouraging. Provide tactical advice, item identification help, strategy tips, and dungeon navigation guidance.");
+                    sbFrozen.AppendLine("When greeting the player, briefly introduce yourself and give a short observation about their current situation based on the game snapshot (e.g., their HP, dungeon level, or any visible threats). Keep it to 1–2 sentences.");
                 }
                 else
                 {
-                    sb.AppendLine("The user is not currently in an active game. They may be asking general questions about GnollHack, reviewing dumplogs from past games, seeking character build advice, or exploring game mechanics.");
-                    sb.AppendLine("Be friendly and knowledgeable. Help analyze past runs, suggest strategies for future characters, and explain game mechanics clearly.");
-                    sb.AppendLine("When greeting the player, briefly introduce yourself and mention that you can help with game mechanics questions, reviewing past games, and planning future characters.");
+                    sbFrozen.AppendLine("The user is not currently in an active game. They may be asking general questions about GnollHack, reviewing dumplogs from past games, seeking character build advice, or exploring game mechanics.");
+                    sbFrozen.AppendLine("Be friendly and knowledgeable. Help analyze past runs, suggest strategies for future characters, and explain game mechanics clearly.");
+                    sbFrozen.AppendLine("When greeting the player, briefly introduce yourself and mention that you can help with game mechanics questions, reviewing past games, and planning future characters.");
                 }
                 if (developerMode)
-                    sb.AppendLine("Developer Mode is ON — the user has access to Wizard Mode (#wizmode) for testing.");
+                    sbFrozen.AppendLine("Developer Mode is ON — the user has access to Wizard Mode (#wizmode) for testing.");
                 break;
         }
-        sb.AppendLine();
+        sbFrozen.AppendLine();
 
-        // ──────────────────────────────────────────────
-        // SECTION 3: Priority Hierarchy (NEW)
-        // ──────────────────────────────────────────────
-        if (overseerMode == 0) // Gameplay mode only
+        // SECTION 3: Priority Hierarchy
+        if (overseerMode == 0)
         {
-            sb.AppendLine("## Decision Priorities");
+            sbFrozen.AppendLine("## Decision Priorities");
             if (isGameOn || hasGameSnapshot)
             {
-                sb.AppendLine("When advising the player, follow this priority order:");
-                sb.AppendLine("1. Prevent immediate death");
-                sb.AppendLine("2. Avoid irreversible mistakes (e.g., destroying quest items, angering the quest leader)");
-                sb.AppendLine("3. Preserve rare or unique resources");
-                sb.AppendLine("4. Improve positioning and tactical advantage");
-                sb.AppendLine("5. Increase long-term power and progression");
-                sb.AppendLine("6. Explain mechanics when helpful");
+                sbFrozen.AppendLine("When advising the player, follow this priority order:");
+                sbFrozen.AppendLine("1. Prevent immediate death");
+                sbFrozen.AppendLine("2. Avoid irreversible mistakes (e.g., destroying quest items, angering the quest leader)");
+                sbFrozen.AppendLine("3. Preserve rare or unique resources");
+                sbFrozen.AppendLine("4. Improve positioning and tactical advantage");
+                sbFrozen.AppendLine("5. Increase long-term power and progression");
+                sbFrozen.AppendLine("6. Explain mechanics when helpful");
             }
             else
             {
-                sb.AppendLine("When advising the player about past games or future strategies:");
-                sb.AppendLine("1. Help the player learn from past mistakes");
-                sb.AppendLine("2. Suggest viable character builds and strategies");
-                sb.AppendLine("3. Explain relevant game mechanics");
+                sbFrozen.AppendLine("When advising the player about past games or future strategies:");
+                sbFrozen.AppendLine("1. Help the player learn from past mistakes");
+                sbFrozen.AppendLine("2. Suggest viable character builds and strategies");
+                sbFrozen.AppendLine("3. Explain relevant game mechanics");
             }
-            sb.AppendLine();
+            sbFrozen.AppendLine();
         }
 
-        // ──────────────────────────────────────────────
-        // SECTION 4: Structured Reasoning (NEW — game-on only)
-        // ──────────────────────────────────────────────
+        // SECTION 4: Structured Reasoning
         if ((isGameOn || hasGameSnapshot) && overseerMode == 0)
         {
-            sb.AppendLine("## Tactical Reasoning");
-            sb.AppendLine("Before recommending an action:");
-            sb.AppendLine("1. Identify immediate threats (low HP, adjacent enemies, dangerous terrain, status effects)");
-            sb.AppendLine("2. Identify available resources (potions, scrolls, escape items, spells)");
-            sb.AppendLine("3. Consider the next 1–3 turns");
-            sb.AppendLine("4. Recommend the single best action");
-            sb.AppendLine("5. Explain the reasoning briefly");
-            sb.AppendLine();
+            sbFrozen.AppendLine("## Tactical Reasoning");
+            sbFrozen.AppendLine("Before recommending an action:");
+            sbFrozen.AppendLine("1. Identify immediate threats (low HP, adjacent enemies, dangerous terrain, status effects)");
+            sbFrozen.AppendLine("2. Identify available resources (potions, scrolls, escape items, spells)");
+            sbFrozen.AppendLine("3. Consider the next 1–3 turns");
+            sbFrozen.AppendLine("4. Recommend the single best action");
+            sbFrozen.AppendLine("5. Explain the reasoning briefly");
+            sbFrozen.AppendLine();
         }
 
-        // ──────────────────────────────────────────────
         // SECTION 5: Capabilities
-        // ──────────────────────────────────────────────
-        sb.AppendLine("## Your Capabilities");
-        sb.AppendLine("- **Player Assistance**: Tactical advice, item identification, strategy tips, monster info, spell recommendations, dungeon navigation");
-        sb.AppendLine("- **Technical Support**: Save file troubleshooting, app issues, file recovery guidance, configuration help");
+        sbFrozen.AppendLine("## Your Capabilities");
+        sbFrozen.AppendLine("- **Player Assistance**: Tactical advice, item identification, strategy tips, monster info, spell recommendations, dungeon navigation");
+        sbFrozen.AppendLine("- **Technical Support**: Save file troubleshooting, app issues, file recovery guidance, configuration help");
         if (developerMode)
         {
-            sb.AppendLine("- **Developer Assistance**: This session includes runtime debug data. You can help diagnose crashes, runtime errors, save corruption, pending task issues, and provide code-level guidance for the GnollHack C core and .NET MAUI frontend.");
+            sbFrozen.AppendLine("- **Developer Assistance**: This session includes runtime debug data. You can help diagnose crashes, runtime errors, save corruption, pending task issues, and provide code-level guidance for the GnollHack C core and .NET MAUI frontend.");
         }
-        sb.AppendLine();
+        sbFrozen.AppendLine();
 
-        // ──────────────────────────────────────────────
         // SECTION 5b: Knowledge Base
-        // ──────────────────────────────────────────────
         if (enableToolUse)
         {
             var topicList = _knowledgeBaseService.GetTopicList();
             if (!string.IsNullOrEmpty(topicList))
             {
-                sb.AppendLine("## Knowledge Base");
-                sb.AppendLine("You have curated reference articles available via the get_knowledge_article tool on the following topics:");
-                sb.AppendLine(topicList);
-                sb.AppendLine();
-                sb.AppendLine("### Information Routing");
-                sb.AppendLine("- For topics listed above: ALWAYS call get_knowledge_article FIRST. The knowledge base is the authoritative source for these topics. Only use wiki or other tools if the article does not fully answer the question.");
-                sb.AppendLine("- For game mechanics, monsters, items, spells, or other topics NOT listed above: skip the knowledge base entirely and go directly to wiki_search, monster_lookup, or item_lookup.");
-                sb.AppendLine();
+                sbFrozen.AppendLine("## Knowledge Base");
+                sbFrozen.AppendLine("You have curated reference articles available via the get_knowledge_article tool on the following topics:");
+                sbFrozen.AppendLine(topicList);
+                sbFrozen.AppendLine();
+                sbFrozen.AppendLine("### Information Routing");
+                sbFrozen.AppendLine("- For topics listed above: ALWAYS call get_knowledge_article FIRST. The knowledge base is the authoritative source for these topics. Only use wiki or other tools if the article does not fully answer the question.");
+                sbFrozen.AppendLine("- For game mechanics, monsters, items, spells, or other topics NOT listed above: skip the knowledge base entirely and go directly to wiki_search, monster_lookup, or item_lookup.");
+                sbFrozen.AppendLine();
             }
         }
 
-        // ──────────────────────────────────────────────
         // SECTION 6: Available Context
-        // ──────────────────────────────────────────────
-        sb.AppendLine("## Available Context in This Session");
-        if (hasGameSnapshot) sb.AppendLine("- ✅ Game snapshot (current map, stats, inventory, recent messages, spells, skills, attributes, and the player's Discoveries list — which object types they have identified this game)");
-        if (hasMessageHistory) sb.AppendLine("- ✅ Full message history (up to 16384 in-game messages) — reference when the player asks about earlier events");
-        if (developerMode) sb.AppendLine("- ✅ Runtime debug data (memory usage, thread state, pending tasks, developer settings) via Client Environment Settings");
+        sbFrozen.AppendLine("## Available Context in This Session");
+        if (hasGameSnapshot) sbFrozen.AppendLine("- ✅ Game snapshot (current map, stats, inventory, recent messages, spells, skills, attributes, and the player's Discoveries list — which object types they have identified this game)");
+        if (hasMessageHistory) sbFrozen.AppendLine("- ✅ Full message history (up to 16384 in-game messages) — reference when the player asks about earlier events");
+        if (developerMode) sbFrozen.AppendLine("- ✅ Runtime debug data (memory usage, thread state, pending tasks, developer settings) via Client Environment Settings");
         if (!hasGameSnapshot && !hasMessageHistory && !developerMode)
         {
-            sb.AppendLine("- No game context was provided for this session. Answer based on general GnollHack knowledge and wiki content.");
+            sbFrozen.AppendLine("- No game context was provided for this session. Answer based on general GnollHack knowledge and wiki content.");
         }
-        sb.AppendLine();
+        sbFrozen.AppendLine();
 
-        // ──────────────────────────────────────────────
         // SECTION 6b: Source Code Access
-        // ──────────────────────────────────────────────
         if (enableToolUse)
         {
-            sb.AppendLine("## Source Code Access");
-            sb.AppendLine("You have access to both the GnollHack and NetHack 5.0 C source code via the source_code_search, source_code_view, list_indexed_files, get_constants, search_definitions, and get_function_definition tools. Use the `repository` parameter set to \"nethack\" to search NetHack source code. This is useful when comparing mechanics between the two games.");
-            sb.AppendLine("IMPORTANT: Source code searches are expensive — they typically require multiple follow-up calls and produce large outputs. Always try wiki_search, monster_lookup, or item_lookup first. Only use source code tools when:");
-            sb.AppendLine("- The wiki/lookup tools do not have the information or the answer is ambiguous");
-            sb.AppendLine("- The user asks about exact formulas, probabilities, or undocumented mechanics");
-            sb.AppendLine("- You are actively investigating a bug or the user explicitly requests source code verification");
-            sb.AppendLine("When the wiki or lookup tools give a clear answer, trust it without code verification.");
+            sbFrozen.AppendLine("## Source Code Access");
+            sbFrozen.AppendLine("You have access to both the GnollHack and NetHack 5.0 C source code via the source_code_search, source_code_view, list_indexed_files, get_constants, search_definitions, and get_function_definition tools. Use the `repository` parameter set to \"nethack\" to search NetHack source code. This is useful when comparing mechanics between the two games.");
+            sbFrozen.AppendLine("IMPORTANT: Source code searches are expensive — they typically require multiple follow-up calls and produce large outputs. Always try wiki_search, monster_lookup, or item_lookup first. Only use source code tools when:");
+            sbFrozen.AppendLine("- The wiki/lookup tools do not have the information or the answer is ambiguous");
+            sbFrozen.AppendLine("- The user asks about exact formulas, probabilities, or undocumented mechanics");
+            sbFrozen.AppendLine("- You are actively investigating a bug or the user explicitly requests source code verification");
+            sbFrozen.AppendLine("When the wiki or lookup tools give a clear answer, trust it without code verification.");
             if (allowSourceCodeReferences)
             {
-                sb.AppendLine("When citing source code findings, mention the file and line number, and translate the C code into player-friendly language.");
+                sbFrozen.AppendLine("When citing source code findings, mention the file and line number, and translate the C code into player-friendly language.");
             }
             else
             {
-                sb.AppendLine("IMPORTANT: Do NOT include raw source code file names, paths, or line numbers in your responses. Instead, describe the underlying mechanics in plain, player-friendly language without referencing the code itself. Use the source code tools internally to find accurate information, but present only the gameplay-relevant conclusions.");
+                sbFrozen.AppendLine("IMPORTANT: Do NOT include raw source code file names, paths, or line numbers in your responses. Instead, describe the underlying mechanics in plain, player-friendly language without referencing the code itself. Use the source code tools internally to find accurate information, but present only the gameplay-relevant conclusions.");
             }
             if (overseerMode == 2)
-                sb.AppendLine("In Debug Mode, you also have access to the .NET MAUI frontend code (C#/XAML) under win/win32/xpl/.");
-            sb.AppendLine();
+                sbFrozen.AppendLine("In Debug Mode, you also have access to the .NET MAUI frontend code (C#/XAML) under win/win32/xpl/.");
+            sbFrozen.AppendLine();
         }
 
-        // ──────────────────────────────────────────────
         // SECTION 7: Session Context
-        // ──────────────────────────────────────────────
         if (!isGameOn && !hasGameSnapshot)
         {
-            sb.AppendLine("## Session Context");
-            sb.AppendLine("This session was started from the main menu (no active game). The player may be asking general questions about GnollHack, seeking help with the app, or browsing dumplogs from previous games.");
+            sbFrozen.AppendLine("## Session Context");
+            sbFrozen.AppendLine("This session was started from the main menu (no active game). The player may be asking general questions about GnollHack, seeking help with the app, or browsing dumplogs from previous games.");
         }
 
-        // ──────────────────────────────────────────────
-        // SECTION 8: Information Authority & Anti-Fabrication (NEW)
-        // ──────────────────────────────────────────────
-        sb.AppendLine("## Information Authority");
+        // SECTION 8: Information Authority & Anti-Fabrication
+        sbFrozen.AppendLine("## Information Authority");
         if (isGameOn || hasGameSnapshot)
         {
-            sb.AppendLine("- The game state snapshot provided by the application is the authoritative source of truth for the player's current situation. Never contradict it.");
-            sb.AppendLine("- The player's memory or guesses about their situation are not authoritative. Cross-reference with the snapshot when available.");
+            sbFrozen.AppendLine("- The game state snapshot provided by the application is the authoritative source of truth for the player's current situation. Never contradict it.");
+            sbFrozen.AppendLine("- The player's memory or guesses about their situation are not authoritative. Cross-reference with the snapshot when available.");
         }
-        sb.AppendLine("- Never invent or fabricate: enemy/monster statistics, item effects or properties, drop chances or probabilities, hidden map data, future events, quest outcomes, or game mechanics not documented in the provided wiki context. If information is unknown, explicitly say it is unknown.");
-        sb.AppendLine("- If you are uncertain whether a NetHack mechanic applies to GnollHack, explicitly say so.");
-        sb.AppendLine();
+        sbFrozen.AppendLine("- Never invent or fabricate: enemy/monster statistics, item effects or properties, drop chances or probabilities, hidden map data, future events, quest outcomes, or game mechanics not documented in the provided wiki context. If information is unknown, explicitly say it is unknown.");
+        sbFrozen.AppendLine("- If you are uncertain whether a NetHack mechanic applies to GnollHack, explicitly say so.");
+        sbFrozen.AppendLine();
 
-        sb.Append(BuildRandomizedAppearancePolicy());
+        sbFrozen.Append(BuildRandomizedAppearancePolicy());
 
-        // ──────────────────────────────────────────────
-        // SECTION 9: Confidence & Uncertainty (NEW)
-        // ──────────────────────────────────────────────
-        sb.AppendLine("## Confidence & Uncertainty");
-        sb.AppendLine("- When you are confident in advice (because the data is in the snapshot or wiki), state it directly.");
-        sb.AppendLine("- When you are uncertain (unknown monster abilities, unidentified items, mechanics that may differ from NetHack), say so explicitly. Use phrases like \"I believe...\" or \"In NetHack this works as X, but GnollHack may differ.\"");
-        sb.AppendLine("- Never present speculation as fact.");
-        sb.AppendLine();
+        // SECTION 9: Confidence & Uncertainty
+        sbFrozen.AppendLine("## Confidence & Uncertainty");
+        sbFrozen.AppendLine("- When you are confident in advice (because the data is in the snapshot or wiki), state it directly.");
+        sbFrozen.AppendLine("- When you are uncertain (unknown monster abilities, unidentified items, mechanics that may differ from NetHack), say so explicitly. Use phrases like \"I believe...\" or \"In NetHack this works as X, but GnollHack may differ.\"");
+        sbFrozen.AppendLine("- Never present speculation as fact.");
+        sbFrozen.AppendLine();
 
-        // ──────────────────────────────────────────────
-        // SECTION 10: Missing Information Handling (NEW)
-        // ──────────────────────────────────────────────
-        sb.AppendLine("## When Information Is Missing");
-        sb.AppendLine("- State what is unknown and how it affects the recommendation.");
-        sb.AppendLine("- Give the safest recommendation supported by available data.");
+        // SECTION 10: Missing Information Handling
+        sbFrozen.AppendLine("## When Information Is Missing");
+        sbFrozen.AppendLine("- State what is unknown and how it affects the recommendation.");
+        sbFrozen.AppendLine("- Give the safest recommendation supported by available data.");
         if (isGameOn || hasGameSnapshot)
         {
-            sb.AppendLine("- If a critical piece of information is missing (e.g., monster resistances, item properties), suggest the player use in-game commands to discover it (e.g., far look with ';', check inventory, cast identify).");
+            sbFrozen.AppendLine("- If a critical piece of information is missing (e.g., monster resistances, item properties), suggest the player use in-game commands to discover it (e.g., far look with ';', check inventory, cast identify).");
         }
-        sb.AppendLine("- Do not guess or fill in gaps with assumptions.");
-        sb.AppendLine();
+        sbFrozen.AppendLine("- Do not guess or fill in gaps with assumptions.");
+        sbFrozen.AppendLine();
 
-        // ──────────────────────────────────────────────
-        // SECTION 11: Important Rules (enhanced)
-        // ──────────────────────────────────────────────
-        sb.AppendLine("## Important Rules");
-        sb.AppendLine("- GnollHack inherits many mechanics from NetHack 3.6.2 but has significant differences (new monsters, items, spells, UI, multi-layered tile rendering, FMOD audio, etc.). Always note when you are referencing NetHack mechanics that may differ in GnollHack.");
-        sb.AppendLine("- The GnollHack Wiki at wiki.gnollhack.com is the authoritative source for GnollHack-specific information.");
-        sb.AppendLine("- The GnollHack source code is the ultimate authority if the wiki and source code disagree on exact formulas or probabilities. However, for general game information (stats, properties, descriptions), the wiki is authoritative and does not require source code verification.");
-        sb.AppendLine("- For inherited NetHack mechanics not yet documented on the GnollHack Wiki, the NetHack Wiki tools (nethack_wiki_search, nethack_wiki_view) or the source code tools with `repository: \"nethack\"` can be used to check NetHack's implementation directly. Always caveat that mechanics may differ between GnollHack and NetHack.");
+        // SECTION 11: Important Rules
+        sbFrozen.AppendLine("## Important Rules");
+        sbFrozen.AppendLine("- GnollHack inherits many mechanics from NetHack 3.6.2 but has significant differences (new monsters, items, spells, UI, multi-layered tile rendering, FMOD audio, etc.). Always note when you are referencing NetHack mechanics that may differ in GnollHack.");
+        sbFrozen.AppendLine("- The GnollHack Wiki at wiki.gnollhack.com is the authoritative source for GnollHack-specific information.");
+        sbFrozen.AppendLine("- The GnollHack source code is the ultimate authority if the wiki and source code disagree on exact formulas or probabilities. However, for general game information (stats, properties, descriptions), the wiki is authoritative and does not require source code verification.");
+        sbFrozen.AppendLine("- For inherited NetHack mechanics not yet documented on the GnollHack Wiki, the NetHack Wiki tools (nethack_wiki_search, nethack_wiki_view) or the source code tools with `repository: \"nethack\"` can be used to check NetHack's implementation directly. Always caveat that mechanics may differ between GnollHack and NetHack.");
 
-        // ──────────────────────────────────────────────
-        // SECTION 12: Spoiler Control (comprehensive)
-        // ──────────────────────────────────────────────
+        // SECTION 12: Spoiler Control
         if (spoilerFreeMode && overseerMode != 2)
         {
-            sb.AppendLine();
-            sb.AppendLine("## ⚠️ SPOILER-FREE MODE IS ACTIVE");
-            sb.AppendLine();
-            sb.AppendLine("The player has enabled spoiler-free mode. You must carefully evaluate");
-            sb.AppendLine("every piece of information before sharing it.");
-            sb.AppendLine();
-            sb.AppendLine("### The Core Rule");
-            sb.AppendLine("- **NOT a spoiler**: Explaining HOW game mechanics work — formulas, probabilities, damage calculations, skill effects.");
-            sb.AppendLine("- **IS a spoiler**: Revealing WHAT the player has not yet encountered — future dungeon branches, unmet bosses, undiscovered item identities.");
-            sb.AppendLine();
-            sb.AppendLine("### Tools for Spoiler Checking");
-            sb.AppendLine("Before revealing conditional information, use these tools to check what the player already knows:");
-            sb.AppendLine("- The game snapshot — check what's visible on the current map, in inventory, and in messages");
-            sb.AppendLine("- `get_player_library` — check what manuals/catalogues the player has read");
-            sb.AppendLine("- `get_oracle_consultations` — check what Oracle hints the player has received");
-            sb.AppendLine("Do NOT scan dumplogs for spoiler checking. Only use `get_player_dumplogs` when the player explicitly asks about a past game.");
-            sb.AppendLine();
-            sb.AppendLine("### Quick Reference");
-            sb.AppendLine("✅ SAFE: Combat formulas, probability tables, general mechanics, status effects, UI help, visible threats");
-            sb.AppendLine("⚠️ CHECK FIRST: Specific item identities, monster abilities, artifact powers, level features");
-            sb.AppendLine("🚫 NEVER: Future branches, hidden levels, boss encounters, quest details, optimal strategies, endgame content");
-            sb.AppendLine();
+            sbFrozen.AppendLine();
+            sbFrozen.AppendLine("## ⚠️ SPOILER-FREE MODE IS ACTIVE");
+            sbFrozen.AppendLine();
+            sbFrozen.AppendLine("The player has enabled spoiler-free mode. You must carefully evaluate");
+            sbFrozen.AppendLine("every piece of information before sharing it.");
+            sbFrozen.AppendLine();
+            sbFrozen.AppendLine("### The Core Rule");
+            sbFrozen.AppendLine("- **NOT a spoiler**: Explaining HOW game mechanics work — formulas, probabilities, damage calculations, skill effects.");
+            sbFrozen.AppendLine("- **IS a spoiler**: Revealing WHAT the player has not yet encountered — future dungeon branches, unmet bosses, undiscovered item identities.");
+            sbFrozen.AppendLine();
+            sbFrozen.AppendLine("### Tools for Spoiler Checking");
+            sbFrozen.AppendLine("Before revealing conditional information, use these tools to check what the player already knows:");
+            sbFrozen.AppendLine("- The game snapshot — check what's visible on the current map, in inventory, and in messages");
+            sbFrozen.AppendLine("- `get_player_library` — check what manuals/catalogues the player has read");
+            sbFrozen.AppendLine("- `get_oracle_consultations` — check what Oracle hints the player has received");
+            sbFrozen.AppendLine("Do NOT scan dumplogs for spoiler checking. Only use `get_player_dumplogs` when the player explicitly asks about a past game.");
+            sbFrozen.AppendLine();
+            sbFrozen.AppendLine("### Quick Reference");
+            sbFrozen.AppendLine("✅ SAFE: Combat formulas, probability tables, general mechanics, status effects, UI help, visible threats");
+            sbFrozen.AppendLine("⚠️ CHECK FIRST: Specific item identities, monster abilities, artifact powers, level features");
+            sbFrozen.AppendLine("🚫 NEVER: Future branches, hidden levels, boss encounters, quest details, optimal strategies, endgame content");
+            sbFrozen.AppendLine();
 
-            // Append cached spoiler policy from ToolRegistry (loaded at startup)
             var spoilerPolicy = _toolRegistry.GetSpoilerPolicyText();
             if (!string.IsNullOrWhiteSpace(spoilerPolicy))
             {
-                sb.AppendLine("### Detailed Spoiler Policy");
-                sb.AppendLine(spoilerPolicy);
+                sbFrozen.AppendLine("### Detailed Spoiler Policy");
+                sbFrozen.AppendLine(spoilerPolicy);
             }
 
-            sb.AppendLine("When uncertain, err on the side of caution — give hints rather than direct answers.");
+            sbFrozen.AppendLine("When uncertain, err on the side of caution — give hints rather than direct answers.");
         }
-        sb.AppendLine();
+        sbFrozen.AppendLine();
+
+        // SECTION 15: Tool Use Policy & Subagents (placed inside Frozen prefix)
+        if (enableToolUse || enableWebSearch)
+        {
+            var policy = _toolRegistry.GetPolicyText();
+            if (!string.IsNullOrWhiteSpace(policy))
+            {
+                sbFrozen.AppendLine("## Tool Usage Policy");
+                sbFrozen.AppendLine(policy);
+                sbFrozen.AppendLine();
+            }
+
+            var parallelOverride = _toolRegistry.GetParallelOverrideText(parallelMode);
+            if (!string.IsNullOrWhiteSpace(parallelOverride))
+            {
+                sbFrozen.AppendLine(parallelOverride);
+                sbFrozen.AppendLine();
+            }
+        }
+
+        if (enableSubAgents)
+        {
+            var catalogService = _subAgentCatalogService ?? new SubAgentCatalogService(_configuration, Microsoft.Extensions.Logging.Abstractions.NullLogger<SubAgentCatalogService>.Instance);
+            var enabledAgents = catalogService.GetEnabledSubAgents();
+            if (enabledAgents.Count > 0)
+            {
+                sbFrozen.AppendLine("## Subagent Delegation (Multi-Agent Support)");
+                sbFrozen.AppendLine("You have access to specialized autonomous subagents via the `delegate_to_subagent` tool:");
+                foreach (var agent in enabledAgents)
+                {
+                    sbFrozen.AppendLine($"- **{agent.Name}** ({agent.DisplayName}): {agent.Description}");
+                }
+                sbFrozen.AppendLine();
+                sbFrozen.AppendLine("When a complex inquiry requires multi-turn investigation or specialized deep dive, delegate the sub-task to the appropriate subagent. Subagents execute autonomously and return synthesized findings.");
+                sbFrozen.AppendLine("Do NOT use delegation for trivial single-turn lookups.");
+                sbFrozen.AppendLine("Always pass `subagent_name` — a short human-readable title (2–6 words) naming what this subagent instance is investigating, e.g., 'Rakshasa stats researcher'. It is shown to the user as a live progress label. Use plain descriptive wording, not the agent's registered identifier.");
+                sbFrozen.AppendLine();
+            }
+        }
 
         // ──────────────────────────────────────────────
-        // SECTION 13: Response Style (enhanced)
+        // SEGMENT B: Session-Stable Prefix (Section 13)
         // ──────────────────────────────────────────────
+
+        // SECTION 13: Response Style & Client Environment
         if (verboseMode)
         {
-            sb.AppendLine("## Response Style — Verbose");
-            sb.AppendLine("The player has enabled verbose responses.");
-            sb.AppendLine("- Provide detailed explanations with relevant background and game mechanic details.");
-            sb.AppendLine("- Include edge cases and interaction notes when applicable.");
-            sb.AppendLine("- Structure longer responses with headers and bullet lists.");
-            sb.AppendLine("- Still lead with the recommendation before elaborating.");
+            sbSession.AppendLine("## Response Style — Verbose");
+            sbSession.AppendLine("The player has enabled verbose responses.");
+            sbSession.AppendLine("- Provide detailed explanations with relevant background and game mechanic details.");
+            sbSession.AppendLine("- Include edge cases and interaction notes when applicable.");
+            sbSession.AppendLine("- Structure longer responses with headers and bullet lists.");
+            sbSession.AppendLine("- Still lead with the recommendation before elaborating.");
         }
         else
         {
-            sb.AppendLine("## Response Style");
-            sb.AppendLine("- Default to 2–5 sentences per response.");
-            sb.AppendLine("- Lead with the recommendation, then explain.");
-            sb.AppendLine("- Use bullet lists only when comparing 2+ options.");
-            sb.AppendLine("- Do not add preambles like \"Great question!\" or \"Here's an extensive overview...\".");
+            sbSession.AppendLine("## Response Style");
+            sbSession.AppendLine("- Default to 2–5 sentences per response.");
+            sbSession.AppendLine("- Lead with the recommendation, then explain.");
+            sbSession.AppendLine("- Use bullet lists only when comparing 2+ options.");
+            sbSession.AppendLine("- Do not add preambles like \"Great question!\" or \"Here's an extensive overview...\".");
         }
 
         if (!string.IsNullOrWhiteSpace(clientSettings))
@@ -1145,7 +1200,7 @@ public class ChatService
             try
             {
                 var doc = JsonDocument.Parse(clientSettings);
-                sb.AppendLine("## Client Environment");
+                sbSession.AppendLine("## Client Environment");
                 var props = new string[] { "BoolData", "IntData", "LongData", "DoubleData", "StringData" };
                 foreach (var prop in props)
                 {
@@ -1153,33 +1208,61 @@ public class ChatService
                     {
                         foreach (var kvp in el.EnumerateObject())
                         {
-                            sb.AppendLine($"- {kvp.Name}: {kvp.Value}");
+                            sbSession.AppendLine($"- {kvp.Name}: {kvp.Value}");
                         }
                     }
                 }
-                sb.AppendLine();
+                sbSession.AppendLine();
             }
             catch { }
         }
 
         // ──────────────────────────────────────────────
-        // SECTION 14: Wiki Knowledge Base (unchanged)
+        // SEGMENT C: Volatile Turn Suffix (Section 14)
         // ──────────────────────────────────────────────
+
+        // SECTION 14: Wiki Knowledge Base
         var contextList = wikiContext.ToList();
         if (contextList.Count > 0)
         {
-            sb.AppendLine("## Wiki Knowledge Base");
-            sb.AppendLine("The following wiki articles are relevant to this conversation:");
-            sb.AppendLine();
+            sbVolatile.AppendLine("## Wiki Knowledge Base");
+            sbVolatile.AppendLine("The following wiki articles are relevant to this conversation:");
+            sbVolatile.AppendLine();
             foreach (var doc in contextList)
             {
-                sb.AppendLine(doc);
+                sbVolatile.AppendLine(doc);
             }
         }
-        
-        // ──────────────────────────────────────────────
-        // SECTION 15: Tool Use Policy & Subagents
-        // ──────────────────────────────────────────────
+
+        return (sbFrozen.ToString(), sbSession.ToString(), sbVolatile.ToString());
+    }
+
+    internal string BuildLegacySystemPrompt(
+        IEnumerable<string> wikiContext,
+        bool spoilerFreeMode,
+        bool verboseMode,
+        bool isGameOn,
+        bool developerMode,
+        int overseerMode,
+        bool hasGameSnapshot,
+        bool hasMessageHistory,
+        string? clientSettings,
+        bool enableToolUse,
+        bool enableWebSearch,
+        bool allowSourceCodeReferences,
+        bool enableSubAgents = false,
+        ParallelExecutionMode parallelMode = ParallelExecutionMode.Enabled)
+    {
+        var (frozen, session, volatileSuffix) = BuildSegmentedSystemPrompt(
+            wikiContext, spoilerFreeMode, verboseMode, isGameOn, developerMode, overseerMode,
+            hasGameSnapshot, hasMessageHistory, clientSettings, false, false,
+            allowSourceCodeReferences, false, parallelMode);
+
+        var sb = new StringBuilder();
+        sb.Append(frozen);
+        sb.Append(session);
+        sb.Append(volatileSuffix);
+
         if (enableToolUse || enableWebSearch)
         {
             var policy = _toolRegistry.GetPolicyText();
@@ -1219,6 +1302,174 @@ public class ChatService
         }
 
         return sb.ToString();
+    }
+
+    internal string BuildSystemPrompt(
+        IEnumerable<string> wikiContext,
+        bool spoilerFreeMode,
+        bool verboseMode,
+        bool isGameOn,
+        bool developerMode,
+        int overseerMode,
+        bool hasGameSnapshot,
+        bool hasMessageHistory,
+        string? clientSettings,
+        bool enableToolUse,
+        bool enableWebSearch,
+        bool allowSourceCodeReferences,
+        bool enableSubAgents = false,
+        ParallelExecutionMode parallelMode = ParallelExecutionMode.Enabled)
+    {
+        bool enableSegmentedPrompt = _configuration?.GetValue<bool>("PromptCacheSettings:EnableSegmentedPrompt", true) ?? true;
+        if (enableSegmentedPrompt)
+        {
+            var (frozen, session, volatileSuffix) = BuildSegmentedSystemPrompt(
+                wikiContext, spoilerFreeMode, verboseMode, isGameOn, developerMode, overseerMode,
+                hasGameSnapshot, hasMessageHistory, clientSettings, enableToolUse,
+                enableWebSearch, allowSourceCodeReferences, enableSubAgents, parallelMode);
+            return frozen + session + volatileSuffix;
+        }
+
+        return BuildLegacySystemPrompt(
+            wikiContext, spoilerFreeMode, verboseMode, isGameOn, developerMode, overseerMode,
+            hasGameSnapshot, hasMessageHistory, clientSettings, enableToolUse,
+            enableWebSearch, allowSourceCodeReferences, enableSubAgents, parallelMode);
+    }
+
+    private static int EstimateTokens(object msg)
+    {
+        if (msg is string s) return s.Length / 4;
+        var content = ProviderHelper.GetProperty(msg, "content");
+        if (content is string cs) return cs.Length / 4;
+        return JsonSerializer.Serialize(msg).Length / 4;
+    }
+
+    private List<object> TruncateHistoryPrefixStable(
+        List<object> messageHistory,
+        string systemPrompt,
+        int effectiveInputLimit,
+        int blockSize)
+    {
+        int sysTokens = EstimateTokens(systemPrompt);
+        if (messageHistory.Count <= 1)
+        {
+            return messageHistory;
+        }
+
+        int pinnedCount = 0;
+        for (int i = 0; i < messageHistory.Count - 1; i++)
+        {
+            var role = GetMessageRole(messageHistory[i]);
+            if (role == "system")
+            {
+                pinnedCount++;
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        int pinnedTokens = 0;
+        for (int i = 0; i < pinnedCount; i++)
+        {
+            pinnedTokens += EstimateTokens(messageHistory[i]);
+        }
+
+        var latestMessage = messageHistory[^1];
+        int latestMsgTokens = EstimateTokens(latestMessage);
+
+        if (sysTokens + pinnedTokens + latestMsgTokens > effectiveInputLimit)
+        {
+            _logger?.LogWarning("[ChatService] Pinned leading messages exceed input limit ({Limit}); falling back to standard truncation.", effectiveInputLimit);
+            int totalTokens = sysTokens;
+            var fallback = new List<object>();
+            for (int i = messageHistory.Count - 1; i >= 0; i--)
+            {
+                int msgTokens = EstimateTokens(messageHistory[i]);
+                if (totalTokens + msgTokens > effectiveInputLimit && fallback.Count > 0)
+                {
+                    break;
+                }
+                totalTokens += msgTokens;
+                fallback.Insert(0, messageHistory[i]);
+            }
+            return fallback;
+        }
+
+        int remainingBudget = effectiveInputLimit - (sysTokens + pinnedTokens + latestMsgTokens);
+        int middleStartIndex = pinnedCount;
+        int middleEndIndex = messageHistory.Count - 2;
+        int middleCount = Math.Max(0, middleEndIndex - middleStartIndex + 1);
+
+        if (middleCount == 0)
+        {
+            return messageHistory;
+        }
+
+        int middleTokens = 0;
+        int keepMiddleFromIndex = middleStartIndex;
+        for (int i = middleEndIndex; i >= middleStartIndex; i--)
+        {
+            int msgTokens = EstimateTokens(messageHistory[i]);
+            if (middleTokens + msgTokens > remainingBudget)
+            {
+                keepMiddleFromIndex = i + 1;
+                break;
+            }
+            middleTokens += msgTokens;
+        }
+
+        if (keepMiddleFromIndex == middleStartIndex)
+        {
+            return messageHistory;
+        }
+
+        int rawDropCount = keepMiddleFromIndex - middleStartIndex;
+        if (blockSize <= 0) blockSize = 8;
+        int quantisedDropCount = ((rawDropCount + blockSize - 1) / blockSize) * blockSize;
+        if (quantisedDropCount > middleCount) quantisedDropCount = middleCount;
+
+        int finalKeepMiddleFromIndex = middleStartIndex + quantisedDropCount;
+        int actualDroppedCount = finalKeepMiddleFromIndex - middleStartIndex;
+
+        var result = new List<object>();
+        for (int i = 0; i < pinnedCount; i++)
+        {
+            result.Add(messageHistory[i]);
+        }
+
+        if (actualDroppedCount > 0)
+        {
+            result.Add(new { role = "system", content = $"[... {actualDroppedCount} earlier messages truncated for context length ...]" });
+        }
+
+        for (int i = finalKeepMiddleFromIndex; i <= middleEndIndex; i++)
+        {
+            result.Add(messageHistory[i]);
+        }
+
+        result.Add(latestMessage);
+        return result;
+    }
+
+    private static string? GetMessageRole(object? msg)
+    {
+        if (msg == null) return null;
+        if (msg is JsonElement el && el.ValueKind == JsonValueKind.Object && el.TryGetProperty("role", out var rProp))
+        {
+            return rProp.GetString();
+        }
+        var prop = msg.GetType().GetProperty("role") ?? msg.GetType().GetProperty("Role");
+        if (prop != null)
+        {
+            return prop.GetValue(msg)?.ToString();
+        }
+        if (msg is IDictionary<string, object> dict && dict.TryGetValue("role", out var rVal))
+        {
+            return rVal?.ToString();
+        }
+        return ProviderHelper.GetProperty(msg, "role")?.ToString();
     }
 
     public static void CancelTitleGeneration(long sessionId)
@@ -1366,84 +1617,120 @@ public class ChatService
             string reqBodyStr = System.Text.Json.JsonSerializer.Serialize(titleReqBody);
             string titleUrl = aiProvider.GetTitleUrl(modelId, apiKey);
 
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-            var safeUri = titleUrl;
-            if (safeUri.Contains("key=")) { safeUri = System.Text.RegularExpressions.Regex.Replace(safeUri, "key=[^&]+", "key=APIKEY_NOT_DISCLOSED"); }
-            if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {provider}] Starting POST request to {safeUri}..." }, CancellationToken.None);
-            
-            HttpResponseMessage? response = null;
-            int[] retryDelays = { 1000, 3000, 5000, 10000, 15000 };
-            
-            for (int i = 0; i <= retryDelays.Length; i++)
+            string titleCredentialKey = AiRequestGovernor.GetCredentialKey(provider, userId, usedSystemModelId);
+            int titleWaitSec = _configuration.GetValue<int>("AiRateLimitSettings:TitleGenerationPermitWaitSeconds", 5);
+            if (titleWaitSec <= 0) titleWaitSec = 5;
+
+            IDisposable? titlePermit = null;
+            if (_governor != null)
             {
                 try
                 {
-                    var reqClone = new HttpRequestMessage(HttpMethod.Post, titleUrl)
-                    {
-                        Content = new StringContent(reqBodyStr, Encoding.UTF8, "application/json")
-                    };
-                    aiProvider.ConfigureRequest(reqClone, apiKey);
-                    
-                    cancellationToken.ThrowIfCancellationRequested();
-                    
-                    if (i > 0)
-                    {
-                        var retryStatus = new { sessionId = sessionId, status = $"Retrying title generation ({i}/{retryDelays.Length})..." };
-                        await _hubContext.Clients.User(userId).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "title_status", Data = System.Text.Json.JsonSerializer.Serialize(retryStatus) }, CancellationToken.None);
-                    }
-                    
-                    response = await client.SendAsync(reqClone, cancellationToken);
-                    
-                    if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {provider}] HTTP {(int)response.StatusCode} Received ({sw.ElapsedMilliseconds}ms, Attempt {i + 1})" }, CancellationToken.None);
-                    
-                    if (response.StatusCode != System.Net.HttpStatusCode.ServiceUnavailable || i == retryDelays.Length)
-                    {
-                        break;
-                    }
+                    titlePermit = await _governor.AcquirePermitAsync(titleCredentialKey, TimeSpan.FromSeconds(titleWaitSec), cancellationToken);
                 }
-                catch (OperationCanceledException) { throw; }
-                catch (Exception ex)
+                catch (Exception tex)
                 {
-                    if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {provider}] Request failed: {ex.Message} (Attempt {i + 1})" }, CancellationToken.None);
-                    if (i == retryDelays.Length) throw;
-                }
-                
-                int delayMs = retryDelays[i];
-                if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {provider}] Sleeping for {delayMs / 1000.0}s before retry..." }, CancellationToken.None);
-                await Task.Delay(delayMs, cancellationToken);
-            }
-            
-            if (response != null && response.IsSuccessStatusCode)
-            {
-                var json = await response.Content.ReadAsStringAsync(cancellationToken);
-                var root = System.Text.Json.JsonDocument.Parse(json).RootElement;
-                var parsedTitle = aiProvider.ParseTitleResponse(root);
-                if (!string.IsNullOrEmpty(parsedTitle))
-                {
-                    generatedTitle = parsedTitle.Trim('"', '\'', ' ', '.', '\n', '\r', '\t');
-                }
-                
-                if (string.IsNullOrWhiteSpace(generatedTitle))
-                {
-                    if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {provider}] Warning: API returned empty or whitespace title. Raw JSON: {json}" }, CancellationToken.None);
-                }
-                else
-                {
-                    if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {provider}] Generated Title: \"{generatedTitle}\"" }, CancellationToken.None);
-                    
-                    if (usedSystemModelId != null)
-                    {
-                        var systemAiConfigService = startScope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
-                        int estimatedInputTokens = (prompt.Length + userMessage.Length) / 4;
-                        int outputTokens = generatedTitle.Length / 4;
-                        await systemAiConfigService.RecordUsageAsync(usedSystemModelId.Value, userId, estimatedInputTokens, outputTokens, roleContext: 2);
-                    }
+                    if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {provider}] Skipped title generation due to rate limit/concurrency backpressure: {tex.Message}" }, CancellationToken.None);
+                    return;
                 }
             }
-            else if (response != null)
+
+            HttpResponseMessage? response = null;
+            try
             {
-                var errorStr = await response.Content.ReadAsStringAsync(CancellationToken.None);
-                if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {provider}] API Error: {errorStr}" }, CancellationToken.None);
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                var safeUri = titleUrl;
+                if (safeUri.Contains("key=")) { safeUri = System.Text.RegularExpressions.Regex.Replace(safeUri, "key=[^&]+", "key=APIKEY_NOT_DISCLOSED"); }
+                if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {provider}] Starting POST request to {safeUri}..." }, CancellationToken.None);
+
+                int[] retryDelays = { 1000, 3000, 5000, 10000, 15000 };
+
+                for (int i = 0; i <= retryDelays.Length; i++)
+                {
+                    try
+                    {
+                        var reqClone = new HttpRequestMessage(HttpMethod.Post, titleUrl)
+                        {
+                            Content = new StringContent(reqBodyStr, Encoding.UTF8, "application/json")
+                        };
+                        aiProvider.ConfigureRequest(reqClone, apiKey);
+
+                        cancellationToken.ThrowIfCancellationRequested();
+
+                        if (i > 0)
+                        {
+                            var retryStatus = new { sessionId = sessionId, status = $"Retrying title generation ({i}/{retryDelays.Length})..." };
+                            await _hubContext.Clients.User(userId).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "title_status", Data = System.Text.Json.JsonSerializer.Serialize(retryStatus) }, CancellationToken.None);
+                        }
+
+                        response = await client.SendAsync(reqClone, cancellationToken);
+
+                        if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {provider}] HTTP {(int)response.StatusCode} Received ({sw.ElapsedMilliseconds}ms, Attempt {i + 1})" }, CancellationToken.None);
+
+                        if (response != null && _governor != null)
+                        {
+                            _governor.UpdateLimitsFromHeaders(titleCredentialKey, response);
+                        }
+
+                        if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                        {
+                            _governor?.RecordRateLimit(titleCredentialKey, TimeSpan.FromSeconds(15));
+                            break;
+                        }
+
+                        if (response.StatusCode != System.Net.HttpStatusCode.ServiceUnavailable || i == retryDelays.Length)
+                        {
+                            break;
+                        }
+                    }
+                    catch (OperationCanceledException) { throw; }
+                    catch (Exception ex)
+                    {
+                        if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {provider}] Request failed: {ex.Message} (Attempt {i + 1})" }, CancellationToken.None);
+                        if (i == retryDelays.Length) throw;
+                    }
+
+                    int delayMs = retryDelays[i];
+                    if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {provider}] Sleeping for {delayMs / 1000.0}s before retry..." }, CancellationToken.None);
+                    await Task.Delay(delayMs, cancellationToken);
+                }
+
+                if (response != null && response.IsSuccessStatusCode)
+                {
+                    var json = await response.Content.ReadAsStringAsync(cancellationToken);
+                    var root = System.Text.Json.JsonDocument.Parse(json).RootElement;
+                    var parsedTitle = aiProvider.ParseTitleResponse(root);
+                    if (!string.IsNullOrEmpty(parsedTitle))
+                    {
+                        generatedTitle = parsedTitle.Trim('"', '\'', ' ', '.', '\n', '\r', '\t');
+                    }
+
+                    if (string.IsNullOrWhiteSpace(generatedTitle))
+                    {
+                        if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {provider}] Warning: API returned empty or whitespace title. Raw JSON: {json}" }, CancellationToken.None);
+                    }
+                    else
+                    {
+                        if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {provider}] Generated Title: \"{generatedTitle}\"" }, CancellationToken.None);
+
+                        if (usedSystemModelId != null)
+                        {
+                            var systemAiConfigService = startScope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
+                            int estimatedInputTokens = (prompt.Length + userMessage.Length) / 4;
+                            int outputTokens = generatedTitle.Length / 4;
+                            await systemAiConfigService.RecordUsageAsync(usedSystemModelId.Value, userId, estimatedInputTokens, outputTokens, roleContext: 2);
+                        }
+                    }
+                }
+                else if (response != null)
+                {
+                    var errorStr = await response.Content.ReadAsStringAsync(CancellationToken.None);
+                    if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {provider}] API Error: {errorStr}" }, CancellationToken.None);
+                }
+            }
+            finally
+            {
+                titlePermit?.Dispose();
             }
 
             if (!string.IsNullOrWhiteSpace(generatedTitle))

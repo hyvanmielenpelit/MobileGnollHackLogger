@@ -866,7 +866,7 @@ public class DelegateToSubAgentToolTests
                 messageHistory.Add(new { role = "tool", content = r.Content });
         }
 
-        public Dictionary<string, object> BuildChatRequestBody(string modelId, List<object> messageHistory, int? maxOutputTokens, string? thinkingLevel, ToolsForRequest requestTools, string? reasoningMode = null, string? reasoningSummary = null, string? serviceTier = null, bool? parallelToolCalls = null)
+        public Dictionary<string, object> BuildChatRequestBody(string modelId, List<object> messageHistory, int? maxOutputTokens, string? thinkingLevel, ToolsForRequest requestTools, string? reasoningMode = null, string? reasoningSummary = null, string? serviceTier = null, bool? parallelToolCalls = null, SegmentedPrompt? segmentedPrompt = null, string? promptCacheKey = null)
         {
             LastModelId = modelId;
             LastMaxOutputTokens = maxOutputTokens;
@@ -876,6 +876,8 @@ public class DelegateToSubAgentToolTests
             LastMessageHistory = new List<object>(messageHistory);
             return new Dictionary<string, object>();
         }
+
+        public bool TryRewriteToolResult(List<object> messageHistory, string toolCallId, string replacementText) => false;
 
         public object BuildFunctionDeclaration(string name, string description, object parameterSchema) => new { name, description, parameterSchema };
         public object? BuildToolsPayload(List<object> providerTools, List<object> functionDeclarations) => null;

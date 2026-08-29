@@ -42,7 +42,8 @@ namespace Overseer.Services.Tools
             ModelMetadataService? modelMetadataService = null,
             IConfiguration? configuration = null)
         {
-            _handlers = handlers;
+            // Handlers sorted by ToolName (Ordinal) to ensure deterministic tool schema serialization across restarts and deployments.
+            _handlers = handlers.OrderBy(h => h.ToolName, StringComparer.Ordinal).ToList();
             _clientBridge = clientBridge;
             _logger = logger;
             _catalogService = catalogService;

@@ -353,6 +353,29 @@ public class DelegateToSubAgentTool : IToolHandler
                           + content;
             }
 
+            if (resolved.SystemModelId.HasValue && !string.IsNullOrEmpty(context.UserId))
+            {
+                try
+                {
+                    var systemAiConfigService = scope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
+                    int inputTokens = subAgentResult.TotalPromptTokens > 0 ? subAgentResult.UncachedInputTokens : subAgentResult.EstimatedInputTokens;
+                    int outputTokens = subAgentResult.OutputTokens > 0 ? subAgentResult.OutputTokens : subAgentResult.EstimatedOutputTokens;
+                    await systemAiConfigService.RecordUsageAsync(
+                        resolved.SystemModelId.Value,
+                        context.UserId,
+                        inputTokens,
+                        outputTokens,
+                        roleContext: 1,
+                        cacheReadTokens: subAgentResult.CacheReadTokens,
+                        cacheCreationTokens: subAgentResult.CacheCreationTokens,
+                        totalDurationMs: subAgentResult.TotalDurationMs);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to record subagent usage for SystemModelId {SystemModelId}", resolved.SystemModelId.Value);
+                }
+            }
+
             return new ToolResult
             {
                 Success = !aborted && !string.IsNullOrWhiteSpace(content),

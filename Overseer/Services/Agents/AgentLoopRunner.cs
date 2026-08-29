@@ -22,6 +22,7 @@ public class AgentLoopRunner
     private readonly ModelMetadataService _modelMetadataService;
     private readonly ILogger<AgentLoopRunner> _logger;
     private readonly SubAgentCatalogService? _subAgentCatalogService;
+    private readonly AiRequestGovernor? _governor;
 
     public AgentLoopRunner(
         IEnumerable<IAiProvider> aiProviders,
@@ -33,7 +34,8 @@ public class AgentLoopRunner
         KnowledgeBaseService knowledgeBaseService,
         ModelMetadataService modelMetadataService,
         ILogger<AgentLoopRunner> logger,
-        SubAgentCatalogService? subAgentCatalogService = null)
+        SubAgentCatalogService? subAgentCatalogService = null,
+        AiRequestGovernor? governor = null)
     {
         _aiProviders = aiProviders.ToDictionary(p => p.ProviderName, p => p, StringComparer.OrdinalIgnoreCase);
         _toolRegistry = toolRegistry;
@@ -45,6 +47,7 @@ public class AgentLoopRunner
         _modelMetadataService = modelMetadataService;
         _logger = logger;
         _subAgentCatalogService = subAgentCatalogService;
+        _governor = governor;
     }
 
     public async IAsyncEnumerable<ChatEvent> RunAsync(
@@ -92,6 +95,12 @@ public class AgentLoopRunner
         bool wasTruncatedByMaxTokens = false;
         bool hitBudgetLimit = false;
         bool hitIterationLimit = false;
+
+        int maxTurnResultLength = _configuration.GetValue<int>("ToolExecutionLimits:MaxTurnResultLength", 120000);
+        int cumulativeTurnResultLength = 0;
+        string? priorSnapshotToolCallId = null;
+        bool hasSupersededSnapshot = false;
+        int supersessionMinChars = _configuration.GetValue<int>("PromptCacheSettings:SupersessionMinChars", 20000);
 
         while (toolIterations <= maxToolIterations && hasToolsToRun && !cancellationToken.IsCancellationRequested)
         {
@@ -148,7 +157,9 @@ public class AgentLoopRunner
                 request.ReasoningMode,
                 request.ReasoningSummary,
                 request.ServiceTier,
-                parallelToolCalls: execContext.ParallelExecutionMode != ParallelExecutionMode.Disabled);
+                parallelToolCalls: execContext.ParallelExecutionMode != ParallelExecutionMode.Disabled,
+                segmentedPrompt: request.SegmentedPrompt,
+                promptCacheKey: request.PromptCacheKey);
 
             var jsonRequest = JsonSerializer.Serialize(requestBody);
             if (request.ShowDebugLog)
@@ -161,6 +172,9 @@ public class AgentLoopRunner
                 apiCallStartTime = System.Diagnostics.Stopwatch.GetTimestamp();
             }
 
+            string credentialKey = request.CredentialKey ?? AiRequestGovernor.GetCredentialKey(aiProvider.ProviderName, null, request.SystemModelId);
+            TimeSpan permitTimeout = request.PermitWaitTimeout ?? TimeSpan.FromSeconds(_configuration.GetValue<int>("AiRateLimitSettings:PermitWaitSeconds", 120));
+
             await foreach (var evt in ExecuteApiWithRetriesAsync(
                 async ct =>
                 {
@@ -172,6 +186,8 @@ public class AgentLoopRunner
                 (response, ct) => aiProvider.ParseStreamAsync(response, request.ShowDebugLog, ct),
                 aiProvider.ProviderName,
                 request.SystemModelId,
+                credentialKey,
+                permitTimeout,
                 mainPrefix,
                 request.ShowDebugLog,
                 cancellationToken))
@@ -193,6 +209,24 @@ public class AgentLoopRunner
                     try
                     {
                         currentIterationProviderItems.Add(JsonSerializer.Deserialize<JsonElement>(evt.Data));
+                    }
+                    catch { }
+                }
+                else if (evt.Type == "usage")
+                {
+                    try
+                    {
+                        var report = evt.UsageReport ?? (string.IsNullOrEmpty(evt.Data) ? null : JsonSerializer.Deserialize<TokenUsageReport>(evt.Data));
+                        if (report != null)
+                        {
+                            result.TotalPromptTokens += report.TotalPromptTokens;
+                            result.UncachedInputTokens += report.UncachedInputTokens;
+                            result.CacheReadTokens += report.CacheReadTokens;
+                            result.CacheCreationTokens += report.CacheCreationTokens;
+                            result.OutputTokens += report.OutputTokens;
+                            result.ReasoningTokens += report.ReasoningTokens;
+                            budget?.AddActualTokens(report);
+                        }
                     }
                     catch { }
                 }
@@ -357,11 +391,46 @@ public class AgentLoopRunner
                         _toolExecutor.GetEffectiveMaxResultLength(outcome.ToolName, execContext.MaxResultLength)
                             > execContext.MaxResultLength;
 
+                    string finalContent = exemptFromBatchBudget ? outcome.Content : batchBudget.Apply(outcome.Content);
+
+                    // Enforce cumulative turn-level output ceiling (Phase 4.2)
+                    if (cumulativeTurnResultLength + finalContent.Length > maxTurnResultLength)
+                    {
+                        int remainingBudget = Math.Max(0, maxTurnResultLength - cumulativeTurnResultLength);
+                        if (remainingBudget > 0 && finalContent.Length > remainingBudget)
+                        {
+                            finalContent = finalContent.Substring(0, remainingBudget) + "\n\n[Tool output truncated: cumulative turn limit reached]";
+                        }
+                        else if (remainingBudget == 0)
+                        {
+                            finalContent = "[Tool output omitted: cumulative turn limit reached]";
+                        }
+                    }
+                    cumulativeTurnResultLength += finalContent.Length;
+
+                    // Snapshot supersession (Phase 4.1)
+                    if (outcome.ToolName == "refresh_snapshot" && outcome.Success)
+                    {
+                        if (priorSnapshotToolCallId != null && !hasSupersededSnapshot && finalContent.Length >= supersessionMinChars)
+                        {
+                            bool rewritten = aiProvider.TryRewriteToolResult(messageHistory, priorSnapshotToolCallId, "[Game state snapshot superseded by the updated snapshot below]");
+                            if (rewritten)
+                            {
+                                hasSupersededSnapshot = true;
+                                if (request.ShowDebugLog)
+                                {
+                                    yield return new ChatEvent { Type = "debug", Data = $"{providerPrefix} Superseded prior refresh_snapshot result ({priorSnapshotToolCallId}) with compact marker." };
+                                }
+                            }
+                        }
+                        priorSnapshotToolCallId = outcome.ToolCallId;
+                    }
+
                     providerResults.Add(new ProviderToolResult
                     {
                         ToolCallId = outcome.ToolCallId,
                         ToolName = outcome.ToolName,
-                        Content = exemptFromBatchBudget ? outcome.Content : batchBudget.Apply(outcome.Content),
+                        Content = finalContent,
                         Success = outcome.Success,
                         ProviderToolCallId = currentIterationToolCalls[i].TryGetProperty("provider_id", out var pid) ? pid.GetString() : null
                     });
@@ -419,6 +488,21 @@ public class AgentLoopRunner
         result.TotalDurationMs = totalDurationMs;
         result.EstimatedOutputTokens = fullResponse.Length / 4;
 
+        double hitRate = (result.TotalPromptTokens > 0)
+            ? ((double)result.CacheReadTokens / result.TotalPromptTokens)
+            : 0.0;
+        _logger.LogInformation(
+            "[Session {SessionId}] Turn complete: iterations={Iterations}, totalPrompt={TotalPrompt}, uncached={Uncached}, cacheRead={CacheRead} ({HitRate:P0}), cacheWrite={CacheWrite}, output={Output}, duration={Duration}ms",
+            request.ToolExecutionContext?.SessionId,
+            toolIterations,
+            result.TotalPromptTokens,
+            result.UncachedInputTokens,
+            result.CacheReadTokens,
+            hitRate,
+            result.CacheCreationTokens,
+            result.OutputTokens,
+            totalDurationMs ?? 0);
+
         if (totalDurationMs.HasValue)
         {
             yield return new ChatEvent { Type = "duration", Data = totalDurationMs.Value.ToString() };
@@ -430,6 +514,8 @@ public class AgentLoopRunner
         Func<HttpResponseMessage, CancellationToken, IAsyncEnumerable<ChatEvent>> streamParser,
         string providerName,
         long? systemModelId,
+        string credentialKey,
+        TimeSpan permitWaitTimeout,
         string mainPrefix,
         bool showDebugLog,
         [EnumeratorCancellation] CancellationToken cancellationToken)
@@ -447,252 +533,331 @@ public class AgentLoopRunner
             }
             yield return new ChatEvent { Type = "status", Data = $"Waiting for {providerName}..." };
 
-            HttpResponseMessage? response = null;
-            Exception? requestException = null;
-            try
+            IDisposable? permit = null;
+            string? throttleError = null;
+            if (_governor != null && !string.IsNullOrEmpty(credentialKey))
             {
-                response = await requestFactory(cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                requestException = ex;
+                try
+                {
+                    permit = await _governor.AcquirePermitAsync(credentialKey, permitWaitTimeout, cancellationToken);
+                }
+                catch (TimeoutException tex)
+                {
+                    throttleError = $"Request throttled: {tex.Message}";
+                }
             }
 
-            if (requestException != null)
+            if (throttleError != null)
             {
-                sw.Stop();
-                bool isHttpClientTimeout = requestException is TaskCanceledException tce
-                    && (tce.InnerException is TimeoutException || requestException.Message.Contains("HttpClient.Timeout"));
-
-                int elapsedSeconds = (int)(sw.ElapsedMilliseconds / 1000);
-                if (isHttpClientTimeout)
-                {
-                    if (showDebugLog)
-                    {
-                        yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] HTTP request timed out after {elapsedSeconds}s (HttpClient.Timeout). Exception: {requestException.Message}" };
-                    }
-                    yield return new ChatEvent { Type = "error", Data = $"The request to {providerName} timed out after {elapsedSeconds} seconds. The AI provider may be overloaded or unresponsive. Please try again." };
-                }
-                else if (cancellationToken.IsCancellationRequested)
-                {
-                    if (showDebugLog)
-                    {
-                        yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] Request canceled in {elapsedSeconds}s" };
-                    }
-                }
-                else
-                {
-                    if (showDebugLog)
-                    {
-                        yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] Request failed in {elapsedSeconds}s: {requestException.GetType().Name}: {requestException.Message}" };
-                    }
-                    yield return new ChatEvent { Type = "error", Data = $"Request failed: {requestException.Message}" };
-                }
+                yield return new ChatEvent { Type = "error", Data = throttleError };
                 yield break;
             }
 
-            sw.Stop();
-
-            if (response!.IsSuccessStatusCode)
+            try
             {
-                if (showDebugLog)
-                {
-                    yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] HTTP {(int)response.StatusCode} Received ({sw.ElapsedMilliseconds}ms)" };
-                }
-                yield return new ChatEvent { Type = "status", Data = $"Streaming response..." };
-
-                bool hasYieldedChunks = false;
-                bool firstChunkReceived = false;
-                bool retryTriggered = false;
-                IAsyncEnumerator<ChatEvent>? enumerator = null;
-                Exception? streamException = null;
-
+                HttpResponseMessage? response = null;
+                Exception? requestException = null;
                 try
                 {
-                    enumerator = streamParser(response, cancellationToken).GetAsyncEnumerator(cancellationToken);
-                    while (true)
+                    response = await requestFactory(cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    requestException = ex;
+                }
+
+                if (requestException != null)
+                {
+                    sw.Stop();
+                    bool isHttpClientTimeout = requestException is TaskCanceledException tce
+                        && (tce.InnerException is TimeoutException || requestException.Message.Contains("HttpClient.Timeout"));
+
+                    int elapsedSeconds = (int)(sw.ElapsedMilliseconds / 1000);
+                    if (isHttpClientTimeout)
                     {
-                        bool hasNext = false;
-                        try
+                        if (showDebugLog)
                         {
-                            hasNext = await enumerator.MoveNextAsync();
+                            yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] HTTP request timed out after {elapsedSeconds}s (HttpClient.Timeout). Exception: {requestException.Message}" };
                         }
-                        catch (Exception ex) when (ex is OperationCanceledException || ex is System.IO.IOException)
+                        yield return new ChatEvent { Type = "error", Data = $"The request to {providerName} timed out after {elapsedSeconds} seconds. The AI provider may be overloaded or unresponsive. Please try again." };
+                    }
+                    else if (cancellationToken.IsCancellationRequested)
+                    {
+                        if (showDebugLog)
                         {
-                            streamException = ex;
-                            break;
+                            yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] Request canceled in {elapsedSeconds}s" };
                         }
-
-                        if (!hasNext) break;
-                        var evt = enumerator.Current;
-
-                        if (!firstChunkReceived && (evt.Type == "chunk" || evt.Type == "thinking_chunk" || evt.Type == "tool_call_complete"))
+                    }
+                    else
+                    {
+                        if (showDebugLog)
                         {
-                            firstChunkReceived = true;
+                            yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] Request failed in {elapsedSeconds}s: {requestException.GetType().Name}: {requestException.Message}" };
+                        }
+                        yield return new ChatEvent { Type = "error", Data = $"Request failed: {requestException.Message}" };
+                    }
+                    yield break;
+                }
+
+                sw.Stop();
+
+                if (response != null && _governor != null && !string.IsNullOrEmpty(credentialKey))
+                {
+                    _governor.UpdateLimitsFromHeaders(credentialKey, response);
+                }
+
+                if (response!.IsSuccessStatusCode)
+                {
+                    if (showDebugLog)
+                    {
+                        yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] HTTP {(int)response.StatusCode} Received ({sw.ElapsedMilliseconds}ms)" };
+                    }
+                    yield return new ChatEvent { Type = "status", Data = $"Streaming response..." };
+
+                    bool hasYieldedChunks = false;
+                    bool firstChunkReceived = false;
+                    bool retryTriggered = false;
+                    IAsyncEnumerator<ChatEvent>? enumerator = null;
+                    Exception? streamException = null;
+
+                    try
+                    {
+                        enumerator = streamParser(response, cancellationToken).GetAsyncEnumerator(cancellationToken);
+                        while (true)
+                        {
+                            bool hasNext = false;
+                            try
+                            {
+                                hasNext = await enumerator.MoveNextAsync();
+                            }
+                            catch (Exception ex) when (ex is OperationCanceledException || ex is System.IO.IOException)
+                            {
+                                streamException = ex;
+                                break;
+                            }
+
+                            if (!hasNext) break;
+                            var evt = enumerator.Current;
+
+                            if (!firstChunkReceived && (evt.Type == "chunk" || evt.Type == "thinking_chunk" || evt.Type == "tool_call_complete"))
+                            {
+                                firstChunkReceived = true;
+                                if (showDebugLog)
+                                {
+                                    yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] First token received after {sw.ElapsedMilliseconds}ms" };
+                                }
+                            }
+
+                            if (evt.Type == "chunk" || evt.Type == "thinking_chunk" || evt.Type == "tool_call_complete")
+                            {
+                                hasYieldedChunks = true;
+                            }
+
+                            if (evt.Type == "error" && !hasYieldedChunks)
+                            {
+                                bool isRetryable = evt.Data != null && (
+                                    evt.Data.Contains("[overloaded_error]") ||
+                                    evt.Data.Contains("[rate_limit_error]") ||
+                                    evt.Data.Contains("[api_error]") ||
+                                    evt.Data.Contains("529") ||
+                                    evt.Data.Contains("503") ||
+                                    evt.Data.Contains("502"));
+
+                                if (isRetryable && attempt < retryDelays.Length)
+                                {
+                                    int delaySeconds = retryDelays[attempt];
+                                    if (_governor != null && !string.IsNullOrEmpty(credentialKey))
+                                    {
+                                        _governor.RecordRateLimit(credentialKey, TimeSpan.FromSeconds(delaySeconds));
+                                    }
+
+                                    yield return new ChatEvent { Type = "status", Data = $"API Overloaded (attempt {attempt + 1}/{retryDelays.Length + 1}). Retrying in {delaySeconds}s..." };
+                                    if (showDebugLog)
+                                    {
+                                        yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] Sleeping for {delaySeconds}s before retry due to stream error: {evt.Data}" };
+                                    }
+
+                                    bool shouldBreak = false;
+                                    try
+                                    {
+                                        await Task.Delay(delaySeconds * 1000, cancellationToken);
+                                    }
+                                    catch (TaskCanceledException)
+                                    {
+                                        shouldBreak = true;
+                                    }
+
+                                    if (shouldBreak) break;
+
+                                    attempt++;
+                                    retryTriggered = true;
+                                    break;
+                                }
+                                else if (isRetryable)
+                                {
+                                    if (showDebugLog)
+                                    {
+                                        yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] Max retries exhausted for stream error: {evt.Data}" };
+                                    }
+                                    yield return new ChatEvent { Type = "error", Data = $"The {providerName} API is currently overloaded. Max retries ({retryDelays.Length + 1}) exceeded. Please try again later." };
+                                    break;
+                                }
+                            }
+
+                            if (!retryTriggered)
+                            {
+                                yield return evt;
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        if (enumerator != null) await enumerator.DisposeAsync();
+                    }
+
+                    if (streamException != null)
+                    {
+                        int elapsedSeconds = (int)(sw.ElapsedMilliseconds / 1000);
+                        if (cancellationToken.IsCancellationRequested)
+                        {
                             if (showDebugLog)
                             {
-                                yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] First token received after {sw.ElapsedMilliseconds}ms" };
+                                yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] Stream interrupted after {elapsedSeconds}s — request timeout reached." };
                             }
+                            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(streamException).Throw();
                         }
-
-                        if (evt.Type == "chunk" || evt.Type == "thinking_chunk" || evt.Type == "tool_call_complete")
+                        else
                         {
-                            hasYieldedChunks = true;
-                        }
-
-                        if (evt.Type == "error" && !hasYieldedChunks)
-                        {
-                            bool isRetryable = evt.Data != null && (
-                                evt.Data.Contains("[overloaded_error]") ||
-                                evt.Data.Contains("[rate_limit_error]") ||
-                                evt.Data.Contains("[api_error]") ||
-                                evt.Data.Contains("529") ||
-                                evt.Data.Contains("503") ||
-                                evt.Data.Contains("502"));
-
-                            if (isRetryable && attempt < retryDelays.Length)
+                            if (showDebugLog)
                             {
-                                int delaySeconds = retryDelays[attempt];
-                                yield return new ChatEvent { Type = "status", Data = $"API Overloaded (attempt {attempt + 1}/{retryDelays.Length + 1}). Retrying in {delaySeconds}s..." };
-                                if (showDebugLog)
-                                {
-                                    yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] Sleeping for {delaySeconds}s before retry due to stream error: {evt.Data}" };
-                                }
-
-                                bool shouldBreak = false;
-                                try
-                                {
-                                    await Task.Delay(delaySeconds * 1000, cancellationToken);
-                                }
-                                catch (TaskCanceledException)
-                                {
-                                    shouldBreak = true;
-                                }
-
-                                if (shouldBreak) break;
-
-                                attempt++;
-                                retryTriggered = true;
-                                break;
+                                yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] Stream reading failed after {elapsedSeconds}s: {streamException.GetType().Name}: {streamException.Message}" };
                             }
-                            else if (isRetryable)
-                            {
-                                if (showDebugLog)
-                                {
-                                    yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] Max retries exhausted for stream error: {evt.Data}" };
-                                }
-                                yield return new ChatEvent { Type = "error", Data = $"The {providerName} API is currently overloaded. Max retries ({retryDelays.Length + 1}) exceeded. Please try again later." };
-                                break;
-                            }
-                        }
-
-                        if (!retryTriggered)
-                        {
-                            yield return evt;
+                            yield return new ChatEvent { Type = "error", Data = $"Stream interrupted: {streamException.Message}" };
+                            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(streamException).Throw();
                         }
                     }
-                }
-                finally
-                {
-                    if (enumerator != null) await enumerator.DisposeAsync();
-                }
 
-                if (streamException != null)
-                {
-                    int elapsedSeconds = (int)(sw.ElapsedMilliseconds / 1000);
-                    if (cancellationToken.IsCancellationRequested)
+                    if (retryTriggered)
                     {
-                        if (showDebugLog)
-                        {
-                            yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] Stream interrupted after {elapsedSeconds}s — request timeout reached." };
-                        }
-                        System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(streamException).Throw();
+                        continue;
                     }
-                    else
-                    {
-                        if (showDebugLog)
-                        {
-                            yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] Stream reading failed after {elapsedSeconds}s: {streamException.GetType().Name}: {streamException.Message}" };
-                        }
-                        yield return new ChatEvent { Type = "error", Data = $"Stream interrupted: {streamException.Message}" };
-                        System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(streamException).Throw();
-                    }
-                }
 
-                if (retryTriggered)
-                {
-                    continue;
-                }
-
-                if (showDebugLog)
-                {
-                    yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] Stream completed." };
-                }
-                success = true;
-            }
-            else
-            {
-                var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
-                if (showDebugLog)
-                {
-                    yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] HTTP {(int)response.StatusCode} Received ({sw.ElapsedMilliseconds}ms)\nBody: {errorBody}" };
-                }
-
-                if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests) // 429
-                {
-                    if (systemModelId.HasValue)
+                    if (showDebugLog)
                     {
-                        using var errScope = _scopeFactory.CreateScope();
-                        var errService = errScope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
-                        await errService.RecordErrorAsync(systemModelId.Value, "429 Too Many Requests");
+                        yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] Stream completed." };
                     }
-                    yield return new ChatEvent { Type = "error", Data = "429 Rate Limited. Please try again later." };
-                    yield break;
-                }
-                else if (response.StatusCode == System.Net.HttpStatusCode.PaymentRequired || errorBody.Contains("402") || errorBody.Contains("insufficient_quota"))
-                {
-                    if (systemModelId.HasValue)
-                    {
-                        using var errScope = _scopeFactory.CreateScope();
-                        var errService = errScope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
-                        await errService.RecordErrorAsync(systemModelId.Value, $"Budget Exhausted: {errorBody}");
-                    }
-                    yield return new ChatEvent { Type = "error", Data = "The system provider budget has been exhausted. Please contact the administrator." };
-                    yield break;
-                }
-                else if (response.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable || response.StatusCode == System.Net.HttpStatusCode.BadGateway || response.StatusCode == System.Net.HttpStatusCode.InternalServerError)
-                {
-                    if (attempt < retryDelays.Length)
-                    {
-                        int delaySeconds = retryDelays[attempt];
-                        yield return new ChatEvent { Type = "status", Data = $"503 Unavailable. Retrying in {delaySeconds}s..." };
-                        if (showDebugLog)
-                        {
-                            yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] Sleeping for {delaySeconds}s before retry..." };
-                        }
-
-                        try
-                        {
-                            await Task.Delay(delaySeconds * 1000, cancellationToken);
-                        }
-                        catch (TaskCanceledException)
-                        {
-                            yield break;
-                        }
-
-                        attempt++;
-                    }
-                    else
-                    {
-                        yield return new ChatEvent { Type = "error", Data = "503 Unavailable. Max retries exceeded." };
-                        yield break;
-                    }
+                    success = true;
                 }
                 else
                 {
-                    yield return new ChatEvent { Type = "error", Data = $"API Error: {(int)response.StatusCode} - {errorBody}" };
-                    yield break;
+                    var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+                    if (showDebugLog)
+                    {
+                        yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] HTTP {(int)response.StatusCode} Received ({sw.ElapsedMilliseconds}ms)\nBody: {errorBody}" };
+                    }
+
+                    if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests) // 429
+                    {
+                        int maxRetries = _configuration.GetValue<int>("AiRateLimitSettings:Max429RetriesPerCall", 4);
+                        int maxRetryAfterSec = _configuration.GetValue<int>("AiRateLimitSettings:MaxRetryAfterSeconds", 90);
+                        double backoffSec = Math.Min(maxRetryAfterSec, Math.Pow(2, attempt + 1) + Random.Shared.NextDouble() * 1.5);
+                        TimeSpan delay = TimeSpan.FromSeconds(backoffSec);
+
+                        if (response.Headers.TryGetValues("Retry-After", out var rVals) && int.TryParse(rVals.FirstOrDefault(), out int raSec) && raSec > 0)
+                        {
+                            delay = TimeSpan.FromSeconds(Math.Min(maxRetryAfterSec, raSec));
+                        }
+                        else if (response.Headers.TryGetValues("retry-after-ms", out var rMsVals) && int.TryParse(rMsVals.FirstOrDefault(), out int raMs) && raMs > 0)
+                        {
+                            delay = TimeSpan.FromSeconds(Math.Min(maxRetryAfterSec, raMs / 1000.0));
+                        }
+
+                        if (_governor != null && !string.IsNullOrEmpty(credentialKey))
+                        {
+                            _governor.RecordRateLimit(credentialKey, delay);
+                        }
+
+                        if (attempt < maxRetries)
+                        {
+                            yield return new ChatEvent { Type = "status", Data = $"Rate limited (429). Retrying in {delay.TotalSeconds:F0}s (attempt {attempt + 1}/{maxRetries})..." };
+                            if (showDebugLog)
+                            {
+                                yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] 429 received. Cooldown {delay.TotalSeconds:F1}s before retry (attempt {attempt + 1}/{maxRetries})." };
+                            }
+
+                            try
+                            {
+                                await Task.Delay(delay, cancellationToken);
+                            }
+                            catch (TaskCanceledException)
+                            {
+                                yield break;
+                            }
+
+                            attempt++;
+                            continue;
+                        }
+                        else
+                        {
+                            if (systemModelId.HasValue)
+                            {
+                                using var errScope = _scopeFactory.CreateScope();
+                                var errService = errScope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
+                                await errService.RecordErrorAsync(systemModelId.Value, "429 Too Many Requests (retries exhausted)");
+                            }
+                            yield return new ChatEvent { Type = "error", Data = $"429 Rate Limited. Max retries ({maxRetries}) exceeded. Please try again later." };
+                            yield break;
+                        }
+                    }
+                    else if (response.StatusCode == System.Net.HttpStatusCode.PaymentRequired || errorBody.Contains("402") || errorBody.Contains("insufficient_quota"))
+                    {
+                        if (systemModelId.HasValue)
+                        {
+                            using var errScope = _scopeFactory.CreateScope();
+                            var errService = errScope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
+                            await errService.RecordErrorAsync(systemModelId.Value, $"Budget Exhausted: {errorBody}");
+                        }
+                        yield return new ChatEvent { Type = "error", Data = "The system provider budget has been exhausted. Please contact the administrator." };
+                        yield break;
+                    }
+                    else if (response.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable || response.StatusCode == System.Net.HttpStatusCode.BadGateway || response.StatusCode == System.Net.HttpStatusCode.InternalServerError)
+                    {
+                        if (attempt < retryDelays.Length)
+                        {
+                            int delaySeconds = retryDelays[attempt];
+                            yield return new ChatEvent { Type = "status", Data = $"503 Unavailable. Retrying in {delaySeconds}s..." };
+                            if (showDebugLog)
+                            {
+                                yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] Sleeping for {delaySeconds}s before retry..." };
+                            }
+
+                            try
+                            {
+                                await Task.Delay(delaySeconds * 1000, cancellationToken);
+                            }
+                            catch (TaskCanceledException)
+                            {
+                                yield break;
+                            }
+
+                            attempt++;
+                        }
+                        else
+                        {
+                            yield return new ChatEvent { Type = "error", Data = "503 Unavailable. Max retries exceeded." };
+                            yield break;
+                        }
+                    }
+                    else
+                    {
+                        yield return new ChatEvent { Type = "error", Data = $"API Error: {(int)response.StatusCode} - {errorBody}" };
+                        yield break;
+                    }
                 }
+            }
+            finally
+            {
+                permit?.Dispose();
             }
         }
     }

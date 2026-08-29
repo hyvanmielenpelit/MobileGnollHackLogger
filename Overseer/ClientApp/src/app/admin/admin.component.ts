@@ -2,7 +2,7 @@ import { Component, OnInit, OnDestroy, inject, ViewChild, ElementRef, ChangeDete
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
-import { AdminService, UserDto, GroupDto, SystemAiConfigDto, UserSystemAiConfigDto, GroupSystemAiConfigDto, DatabaseStorageMetrics, MaintenanceResult } from '../services/admin.service';
+import { AdminService, UserDto, GroupDto, SystemAiConfigDto, UserSystemAiConfigDto, GroupSystemAiConfigDto, DatabaseStorageMetrics, MaintenanceResult, AiTelemetrySummaryDto, AiGovernorStatusDto } from '../services/admin.service';
 import { AiModelFormComponent, AiModelFormResult } from '../shared/ai-model-form/ai-model-form.component';
 import { ConfigAnalyticsComponent } from './config-analytics/config-analytics.component';
 import { Subject, Subscription } from 'rxjs';
@@ -18,9 +18,19 @@ import { debounceTime } from 'rxjs/operators';
 export class AdminComponent implements OnInit, OnDestroy {
   private adminService = inject(AdminService);
   
-  activeTab: 'users' | 'groups' | 'configs' | 'database' | 'devtools' = 'users';
+  activeTab: 'users' | 'groups' | 'configs' | 'database' | 'devtools' | 'telemetry' = 'users';
   loading = false;
   usersLoading = false;
+
+  // Telemetry Tab state
+  telemetrySummary: AiTelemetrySummaryDto | null = null;
+  governorStatus: AiGovernorStatusDto | null = null;
+  telemetryLoading = false;
+  governorLoading = false;
+  telemetryTimeSpan: '7d' | '28d' | '30d' | '90d' | '180d' | '1y' | 'custom' = '30d';
+  todayDate: string = '';
+  telemetryStartDate: string = '';
+  telemetryEndDate: string = '';
 
   // Database Tab state
   storageMetrics: DatabaseStorageMetrics | null = null;
@@ -181,6 +191,8 @@ export class AdminComponent implements OnInit, OnDestroy {
   processingConfigs: number[] = [];
 
   ngOnInit() {
+    this.todayDate = this.formatLocalDate(new Date());
+
     this.filterSub = this.filterSubject.pipe(
       debounceTime(400)
     ).subscribe(val => {
@@ -993,11 +1005,113 @@ export class AdminComponent implements OnInit, OnDestroy {
 
   // --- Database Storage & Maintenance Tab ---
 
-  selectTab(tab: 'users' | 'groups' | 'configs' | 'database' | 'devtools') {
+  formatLocalDate(d: Date): string {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  applyTelemetryPreset(preset: '7d' | '28d' | '30d' | '90d' | '180d' | '1y' | 'custom', fetch = true) {
+    if (preset !== 'custom') {
+      const end = new Date();
+      const start = new Date();
+      if (preset === '7d') start.setDate(end.getDate() - 7);
+      else if (preset === '28d') start.setDate(end.getDate() - 28);
+      else if (preset === '30d') start.setDate(end.getDate() - 30);
+      else if (preset === '90d') start.setDate(end.getDate() - 90);
+      else if (preset === '180d') start.setDate(end.getDate() - 180);
+      else if (preset === '1y') start.setFullYear(end.getFullYear() - 1);
+
+      this.telemetryStartDate = this.formatLocalDate(start);
+      this.telemetryEndDate = this.formatLocalDate(end);
+    } else {
+      if (!this.telemetryStartDate || !this.telemetryEndDate) {
+        const end = new Date();
+        const start = new Date();
+        start.setDate(end.getDate() - 30);
+        this.telemetryStartDate = this.formatLocalDate(start);
+        this.telemetryEndDate = this.formatLocalDate(end);
+      }
+    }
+    if (fetch) {
+      this.loadTelemetry();
+    }
+  }
+
+  onTelemetryTimeSpanChange() {
+    this.applyTelemetryPreset(this.telemetryTimeSpan, true);
+  }
+
+  onCustomDateChange() {
+    if (this.telemetryStartDate && this.telemetryEndDate) {
+      if (new Date(this.telemetryEndDate) < new Date(this.telemetryStartDate)) {
+        this.telemetryEndDate = this.telemetryStartDate;
+      }
+    }
+    this.loadTelemetry();
+  }
+
+  selectTab(tab: 'users' | 'groups' | 'configs' | 'database' | 'devtools' | 'telemetry') {
     this.activeTab = tab;
     if (tab === 'database') {
       this.loadStorageMetrics();
+    } else if (tab === 'telemetry') {
+      if (!this.telemetryStartDate && !this.telemetryEndDate) {
+        this.applyTelemetryPreset(this.telemetryTimeSpan, false);
+      }
+      this.loadTelemetry();
+      this.loadGovernorStatus();
     }
+  }
+
+  loadTelemetry(showFeedback = false) {
+    this.telemetryLoading = true;
+    this.adminService.getAiTelemetrySummary(this.telemetryStartDate || undefined, this.telemetryEndDate || undefined).subscribe({
+      next: (data) => {
+        this.telemetrySummary = data;
+        this.telemetryLoading = false;
+        if (showFeedback) {
+          this.showAdminToast('AI Telemetry refreshed.', 'info', 'Telemetry Refreshed');
+        }
+      },
+      error: (err) => {
+        console.error('Failed to load telemetry', err);
+        this.telemetryLoading = false;
+        if (showFeedback) {
+          this.showAdminToast('Failed to load telemetry: ' + (err.error?.message || err.message), 'error', 'Error');
+        }
+      }
+    });
+  }
+
+  loadGovernorStatus(showFeedback = false) {
+    this.governorLoading = true;
+    this.adminService.getGovernorStatus().subscribe({
+      next: (data) => {
+        this.governorStatus = data;
+        this.governorLoading = false;
+        if (showFeedback) {
+          this.showAdminToast('Governor status refreshed.', 'info', 'Governor Refreshed');
+        }
+      },
+      error: (err) => {
+        console.error('Failed to load governor status', err);
+        this.governorLoading = false;
+      }
+    });
+  }
+
+  resetGovernorCooldown(credentialKey?: string) {
+    this.adminService.resetGovernorCooldown(credentialKey).subscribe({
+      next: () => {
+        this.showAdminToast('Governor cooldown reset successfully.', 'success', 'Cooldown Reset');
+        this.loadGovernorStatus();
+      },
+      error: (err) => {
+        this.showAdminToast('Failed to reset cooldown: ' + (err.error?.message || err.message), 'error', 'Error');
+      }
+    });
   }
 
   loadStorageMetrics(showFeedback = false) {

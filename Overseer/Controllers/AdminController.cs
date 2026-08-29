@@ -18,13 +18,15 @@ public class AdminController : ControllerBase
     private readonly IConfiguration _configuration;
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly CryptoService _cryptoService;
+    private readonly Overseer.Services.Providers.AiRequestGovernor _governor;
 
-    public AdminController(ApplicationDbContext dbContext, IConfiguration configuration, UserManager<ApplicationUser> userManager, CryptoService cryptoService)
+    public AdminController(ApplicationDbContext dbContext, IConfiguration configuration, UserManager<ApplicationUser> userManager, CryptoService cryptoService, Overseer.Services.Providers.AiRequestGovernor governor)
     {
         _dbContext = dbContext;
         _configuration = configuration;
         _userManager = userManager;
         _cryptoService = cryptoService;
+        _governor = governor;
     }
 
     private static readonly System.Collections.Generic.HashSet<string> AllowedCounters = new(System.StringComparer.OrdinalIgnoreCase)
@@ -887,7 +889,10 @@ public class AdminController : ControllerBase
                     ChatRequests = g.Count(x => x.Log.RoleContext == 1),
                     TitleRequests = g.Count(x => x.Log.RoleContext == 2),
                     InputTokens = g.Sum(x => (long)(x.Log.InputTokens ?? 0)),
-                    OutputTokens = g.Sum(x => (long)(x.Log.OutputTokens ?? 0))
+                    OutputTokens = g.Sum(x => (long)(x.Log.OutputTokens ?? 0)),
+                    CacheReadTokens = g.Sum(x => (long)(x.Log.CacheReadInputTokens ?? 0)),
+                    CacheCreationTokens = g.Sum(x => (long)(x.Log.CacheCreationInputTokens ?? 0)),
+                    AvgDurationMs = (int)(g.Average(x => x.Log.TotalDurationMs) ?? 0)
                 })
                 .OrderByDescending(r => r.ChatRequests + r.TitleRequests)
                 .Skip((pg - 1) * size)
@@ -907,7 +912,10 @@ public class AdminController : ControllerBase
                     ChatRequests = g.Count(l => l.RoleContext == 1),
                     TitleRequests = g.Count(l => l.RoleContext == 2),
                     InputTokens = g.Sum(l => (long)(l.InputTokens ?? 0)),
-                    OutputTokens = g.Sum(l => (long)(l.OutputTokens ?? 0))
+                    OutputTokens = g.Sum(l => (long)(l.OutputTokens ?? 0)),
+                    CacheReadTokens = g.Sum(l => (long)(l.CacheReadInputTokens ?? 0)),
+                    CacheCreationTokens = g.Sum(l => (long)(l.CacheCreationInputTokens ?? 0)),
+                    AvgDurationMs = (int)(g.Average(l => l.TotalDurationMs) ?? 0)
                 })
                 .FirstOrDefaultAsync();
 
@@ -917,6 +925,101 @@ public class AdminController : ControllerBase
                 TotalCount = row != null ? 1 : 0
             });
         }
+    }
+
+    // --- Governor & Telemetry ---
+
+    [HttpGet("governor/status")]
+    public IActionResult GetGovernorStatus()
+    {
+        var statusList = _governor.GetStatus();
+        var dto = new AiGovernorStatusDto
+        {
+            MaxConcurrentCalls = _governor.MaxConcurrentCalls,
+            MaxRetryAfterSeconds = _governor.MaxRetryAfterSeconds,
+            ActiveKeys = statusList.Select(s => new AiGovernorKeyStatusDto
+            {
+                CredentialKey = s.CredentialKey,
+                IsRateLimited = s.IsRateLimited,
+                RemainingCooldownSeconds = Math.Round(s.RemainingCooldownSeconds, 1)
+            }).ToList()
+        };
+        return Ok(dto);
+    }
+
+    [HttpPost("governor/reset-cooldown")]
+    public IActionResult ResetGovernorCooldown([FromBody] ResetCooldownRequest? request)
+    {
+        _governor.ClearCooldown(request?.CredentialKey);
+        return Ok();
+    }
+
+    [HttpGet("ai-telemetry/summary")]
+    public async Task<IActionResult> GetAiTelemetrySummary([FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate)
+    {
+        var query = _dbContext.SystemAiUsageLogs.AsQueryable();
+        if (startDate.HasValue) query = query.Where(l => l.TimestampUtc >= startDate.Value);
+        if (endDate.HasValue) query = query.Where(l => l.TimestampUtc < endDate.Value.AddDays(1));
+
+        var modelsData = await query
+            .GroupBy(l => new { l.Provider, l.ModelId })
+            .Select(g => new
+            {
+                Provider = g.Key.Provider,
+                ModelId = g.Key.ModelId,
+                Requests = g.LongCount(),
+                InputTokens = g.Sum(x => (long)(x.InputTokens ?? 0)),
+                OutputTokens = g.Sum(x => (long)(x.OutputTokens ?? 0)),
+                CacheReadTokens = g.Sum(x => (long)(x.CacheReadInputTokens ?? 0)),
+                CacheCreationTokens = g.Sum(x => (long)(x.CacheCreationInputTokens ?? 0)),
+                AvgDurationMs = (int)(g.Average(x => x.TotalDurationMs) ?? 0)
+            })
+            .ToListAsync();
+
+        var modelDtos = modelsData.Select(m =>
+        {
+            long totalInput = m.InputTokens;
+            double hitRatio = totalInput > 0 ? (double)m.CacheReadTokens / totalInput : 0.0;
+            return new AiModelUsageBreakdownDto
+            {
+                Provider = m.Provider,
+                ModelId = m.ModelId,
+                Requests = m.Requests,
+                InputTokens = m.InputTokens,
+                OutputTokens = m.OutputTokens,
+                CacheReadTokens = m.CacheReadTokens,
+                CacheCreationTokens = m.CacheCreationTokens,
+                CacheHitRatio = Math.Round(hitRatio, 4),
+                AvgDurationMs = m.AvgDurationMs
+            };
+        }).OrderByDescending(m => m.Requests).ToList();
+
+        long totalReqs = modelDtos.Sum(m => m.Requests);
+        long totalIn = modelDtos.Sum(m => m.InputTokens);
+        long totalOut = modelDtos.Sum(m => m.OutputTokens);
+        long totalRead = modelDtos.Sum(m => m.CacheReadTokens);
+        long totalCreate = modelDtos.Sum(m => m.CacheCreationTokens);
+        double overallHitRatio = totalIn > 0 ? (double)totalRead / totalIn : 0.0;
+        int overallAvgDuration = modelDtos.Count > 0 ? (int)modelDtos.Average(m => m.AvgDurationMs) : 0;
+
+        var chatReqs = await query.CountAsync(l => l.RoleContext == 1);
+        var titleReqs = await query.CountAsync(l => l.RoleContext == 2);
+
+        var summary = new AiTelemetrySummaryDto
+        {
+            TotalRequests = totalReqs,
+            TotalChatRequests = chatReqs,
+            TotalTitleRequests = titleReqs,
+            TotalInputTokens = totalIn,
+            TotalOutputTokens = totalOut,
+            TotalCacheReadTokens = totalRead,
+            TotalCacheCreationTokens = totalCreate,
+            CacheHitRatio = Math.Round(overallHitRatio, 4),
+            AvgDurationMs = overallAvgDuration,
+            Models = modelDtos
+        };
+
+        return Ok(summary);
     }
 
     // --- Helper Methods ---

@@ -37,7 +37,16 @@ public class AnthropicProviderTests
         Assert.NotNull(messages);
         Assert.Single(messages);
         Assert.Equal("user", ProviderHelper.GetProperty(messages[0], "role")?.ToString());
-        Assert.Equal("Hello, do this task.", ProviderHelper.GetProperty(messages[0], "content")?.ToString());
+        var content = ProviderHelper.GetProperty(messages[0], "content");
+        if (content is IEnumerable<object> blocks)
+        {
+            var firstBlock = System.Linq.Enumerable.First(blocks);
+            Assert.Equal("Hello, do this task.", ProviderHelper.GetProperty(firstBlock, "text")?.ToString());
+        }
+        else
+        {
+            Assert.Equal("Hello, do this task.", content?.ToString());
+        }
     }
 
     [Fact]

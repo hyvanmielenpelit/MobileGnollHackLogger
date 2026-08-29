@@ -51,7 +51,9 @@ public class GoogleProvider : IAiProvider
         string? reasoningMode = null,
         string? reasoningSummary = null,
         string? serviceTier = null,
-        bool? parallelToolCalls = null)
+        bool? parallelToolCalls = null,
+        SegmentedPrompt? segmentedPrompt = null,
+        string? promptCacheKey = null)
     {
         var (systemParts, contents) = ExtractSystemAndContents(messageHistory);
 
@@ -140,6 +142,7 @@ public class GoogleProvider : IAiProvider
                 var toolCallEvts = new List<ChatEvent>();
                 var debugEvts = new List<ChatEvent>();
                 var providerItemEvts = new List<ChatEvent>();
+                var usageEvts = new List<ChatEvent>();
                 ChatEvent? errorEvt = null;
 
                 try
@@ -228,14 +231,37 @@ public class GoogleProvider : IAiProvider
                         errorEvt = new ChatEvent { Type = "error", Data = $"Google stream error: [{errCode}] {errMessage}" };
                     }
 
-                    if (showDebugLog && json.TryGetProperty("usageMetadata", out var usageProp))
+                    if (json.TryGetProperty("usageMetadata", out var usageProp))
                     {
-                        var promptTokens = usageProp.TryGetProperty("promptTokenCount", out var pt) ? pt.ToString() : "?";
-                        var outputTokens = usageProp.TryGetProperty("candidatesTokenCount", out var ct) ? ct.ToString() : "?";
-                        var totalTokens = usageProp.TryGetProperty("totalTokenCount", out var tt) ? tt.ToString() : "?";
-                        string thoughtTokensStr = usageProp.TryGetProperty("thoughtsTokenCount", out var tht) ? $", thought_tokens={tht}" : "";
-                        string cachedTokensStr = usageProp.TryGetProperty("cachedContentTokenCount", out var cct) ? $", cached_tokens={cct}" : "";
-                        debugEvts.Add(new ChatEvent { Type = "debug", Data = $"[Main Chat - Google] usage: prompt_tokens={promptTokens}, output_tokens={outputTokens}, total_tokens={totalTokens}{thoughtTokensStr}{cachedTokensStr}" });
+                        int promptTokens = usageProp.TryGetProperty("promptTokenCount", out var pt) ? pt.GetInt32() : 0;
+                        int outputTokens = usageProp.TryGetProperty("candidatesTokenCount", out var ct) ? ct.GetInt32() : 0;
+                        int cachedTokens = usageProp.TryGetProperty("cachedContentTokenCount", out var cct) ? cct.GetInt32() : 0;
+                        int thoughtTokens = usageProp.TryGetProperty("thoughtsTokenCount", out var tht) ? tht.GetInt32() : 0;
+                        int uncached = Math.Max(0, promptTokens - cachedTokens);
+
+                        var report = new TokenUsageReport
+                        {
+                            TotalPromptTokens = promptTokens,
+                            CacheReadTokens = cachedTokens,
+                            CacheCreationTokens = 0,
+                            UncachedInputTokens = uncached,
+                            OutputTokens = outputTokens,
+                            ReasoningTokens = thoughtTokens
+                        };
+                        usageEvts.Add(new ChatEvent
+                        {
+                            Type = "usage",
+                            Data = JsonSerializer.Serialize(report),
+                            UsageReport = report
+                        });
+
+                        if (showDebugLog)
+                        {
+                            var totalTokens = usageProp.TryGetProperty("totalTokenCount", out var tt) ? tt.ToString() : (promptTokens + outputTokens).ToString();
+                            string thoughtTokensStr = thoughtTokens > 0 ? $", thought_tokens={thoughtTokens}" : "";
+                            string cachedTokensStr = cachedTokens > 0 ? $", cached_tokens={cachedTokens}" : "";
+                            debugEvts.Add(new ChatEvent { Type = "debug", Data = $"[Main Chat - Google] usage: prompt_tokens={promptTokens}, output_tokens={outputTokens}, total_tokens={totalTokens}{thoughtTokensStr}{cachedTokensStr}" });
+                        }
                     }
                 }
                 catch (JsonException) { }
@@ -243,6 +269,7 @@ public class GoogleProvider : IAiProvider
                 foreach (var dbg in debugEvts) yield return dbg;
                 if (errorEvt != null) yield return errorEvt;
                 foreach (var pEvt in providerItemEvts) yield return pEvt;
+                foreach (var uEvt in usageEvts) yield return uEvt;
                 if (!string.IsNullOrEmpty(thinkingChunkStr)) yield return new ChatEvent { Type = "thinking_chunk", Data = thinkingChunkStr };
                 if (!string.IsNullOrEmpty(chunkStr)) yield return new ChatEvent { Type = "chunk", Data = chunkStr };
                 foreach (var evt in toolCallEvts) yield return evt;
@@ -419,6 +446,125 @@ public class GoogleProvider : IAiProvider
         }
 
         messageHistory.Add(new { role = "user", parts = userParts });
+    }
+
+    public bool TryRewriteToolResult(List<object> messageHistory, string toolCallId, string replacementText)
+    {
+        for (int i = 0; i < messageHistory.Count; i++)
+        {
+            var msgObj = messageHistory[i];
+            var parts = ProviderHelper.GetProperty(msgObj, "parts") as IEnumerable<object>;
+            if (parts == null && msgObj is JsonElement je && je.ValueKind == JsonValueKind.Object && je.TryGetProperty("parts", out var partsProp) && partsProp.ValueKind == JsonValueKind.Array)
+            {
+                var newParts = new List<object>();
+                bool rewritten = false;
+                foreach (var part in partsProp.EnumerateArray())
+                {
+                    if (part.TryGetProperty("functionResponse", out var frProp))
+                    {
+                        string? fid = frProp.TryGetProperty("id", out var fidProp) ? fidProp.GetString() : null;
+                        string? fname = frProp.TryGetProperty("name", out var fnameProp) ? fnameProp.GetString() : null;
+                        if (fid == toolCallId || fname == toolCallId)
+                        {
+                            rewritten = true;
+                            if (!string.IsNullOrEmpty(fid))
+                            {
+                                newParts.Add(new
+                                {
+                                    functionResponse = new
+                                    {
+                                        id = fid,
+                                        name = fname,
+                                        response = new
+                                        {
+                                            name = fname,
+                                            content = replacementText
+                                        }
+                                    }
+                                });
+                            }
+                            else
+                            {
+                                newParts.Add(new
+                                {
+                                    functionResponse = new
+                                    {
+                                        name = fname,
+                                        response = new
+                                        {
+                                            name = fname,
+                                            content = replacementText
+                                        }
+                                    }
+                                });
+                            }
+                            continue;
+                        }
+                    }
+                    newParts.Add(part);
+                }
+                if (rewritten)
+                {
+                    messageHistory[i] = new { role = "user", parts = newParts };
+                    return true;
+                }
+            }
+            else if (parts != null)
+            {
+                var partsList = parts.ToList();
+                bool rewritten = false;
+                for (int p = 0; p < partsList.Count; p++)
+                {
+                    var fr = ProviderHelper.GetProperty(partsList[p], "functionResponse");
+                    if (fr != null)
+                    {
+                        string? fid = ProviderHelper.GetProperty(fr, "id")?.ToString();
+                        string? fname = ProviderHelper.GetProperty(fr, "name")?.ToString();
+                        if (fid == toolCallId || fname == toolCallId)
+                        {
+                            rewritten = true;
+                            if (!string.IsNullOrEmpty(fid))
+                            {
+                                partsList[p] = new
+                                {
+                                    functionResponse = new
+                                    {
+                                        id = fid,
+                                        name = fname,
+                                        response = new
+                                        {
+                                            name = fname,
+                                            content = replacementText
+                                        }
+                                    }
+                                };
+                            }
+                            else
+                            {
+                                partsList[p] = new
+                                {
+                                    functionResponse = new
+                                    {
+                                        name = fname,
+                                        response = new
+                                        {
+                                            name = fname,
+                                            content = replacementText
+                                        }
+                                    }
+                                };
+                            }
+                        }
+                    }
+                }
+                if (rewritten)
+                {
+                    messageHistory[i] = new { role = "user", parts = partsList };
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     public Dictionary<string, object> BuildTitleRequestBody(

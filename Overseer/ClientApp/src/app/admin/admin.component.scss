@@ -1,5 +1,6 @@
 .settings-container {
-  max-width: 1000px;
+  width: calc(100% - 40px);
+  max-width: none;
   margin: 20px auto;
   max-height: calc(100dvh - 40px);
   display: flex;
@@ -137,6 +138,25 @@
 }
 .modern-table tbody tr:last-child td {
   border-bottom: none;
+}
+.modern-table tfoot td {
+  padding: 12px 16px;
+  font-weight: 600;
+  color: #fff;
+  border-top: 2px solid var(--primary-color, #e0ba6d);
+  background-color: rgba(30, 30, 30, 0.95);
+}
+.modern-table .text-right,
+.text-right {
+  text-align: right;
+}
+.modern-table .text-center,
+.text-center {
+  text-align: center;
+}
+.modern-table .num-col,
+.num-col {
+  font-variant-numeric: tabular-nums;
 }
 
 /* Utilities */
@@ -1088,4 +1108,186 @@
     padding-top: 15px;
   }
 }
+
+/* Telemetry & Governor Dashboard Styles */
+.telemetry-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  align-items: flex-end;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 25px;
+
+  .control-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+
+    label {
+      font-size: 0.85em;
+      font-weight: 600;
+      color: #aaa;
+      letter-spacing: 0.3px;
+    }
+
+    .gh-input {
+      min-width: 180px;
+    }
+  }
+}
+
+.telemetry-section-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+  border-radius: 8px;
+  padding: 1.25rem;
+  margin-top: 25px;
+  margin-bottom: 25px;
+
+  h4 {
+    margin-top: 0;
+    margin-bottom: 15px;
+  }
+}
+
+.telemetry-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 15px;
+  margin-bottom: 25px;
+}
+
+.telemetry-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.telemetry-card-title {
+  font-size: 0.85em;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #aaa;
+  letter-spacing: 0.5px;
+}
+
+.telemetry-stat-value {
+  font-size: 1.8rem;
+  font-weight: 700;
+  margin-top: 5px;
+  color: #fff;
+
+  &.highlight-gold {
+    color: var(--primary-color, #e0ba6d);
+  }
+  &.highlight-blue {
+    color: #64b5f6;
+  }
+  &.highlight-teal {
+    color: #4db6ac;
+  }
+}
+
+progress.telemetry-progress-bar {
+  width: 100%;
+  height: 8px;
+  accent-color: var(--primary-color, #e0ba6d);
+  border-radius: 4px;
+  overflow: hidden;
+  border: none;
+  background: rgba(255, 255, 255, 0.1);
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+
+  &::-webkit-progress-bar {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+  }
+
+  &::-webkit-progress-value {
+    background: linear-gradient(90deg, #4db6ac, var(--primary-color, #e0ba6d));
+    border-radius: 4px;
+  }
+
+  &::-moz-progress-bar {
+    background: linear-gradient(90deg, #4db6ac, var(--primary-color, #e0ba6d));
+    border-radius: 4px;
+  }
+}
+
+.telemetry-details-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.badge-rate-limited {
+  background: rgba(244, 67, 54, 0.2);
+  color: #ef5350;
+  border: 1px solid rgba(244, 67, 54, 0.4);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.8em;
+}
+
+.badge-active {
+  background: rgba(76, 175, 80, 0.2);
+  color: #81c784;
+  border: 1px solid rgba(76, 175, 80, 0.4);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.8em;
+}
+
+.badge-provider {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.8em;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: capitalize;
+
+  &-google {
+    background: rgba(66, 133, 244, 0.15);
+    color: #8ab4f8;
+    border: 1px solid rgba(66, 133, 244, 0.3);
+  }
+
+  &-openai {
+    background: rgba(16, 163, 127, 0.15);
+    color: #55d6be;
+    border: 1px solid rgba(16, 163, 127, 0.3);
+  }
+
+  &-anthropic {
+    background: rgba(217, 119, 87, 0.15);
+    color: #f0997d;
+    border: 1px solid rgba(217, 119, 87, 0.3);
+  }
+
+  &-default {
+    background: rgba(255, 255, 255, 0.08);
+    color: #ddd;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+  }
+}
+
+.model-id-chip {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.85em;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #ccc;
+}
+
 

@@ -10,6 +10,13 @@ public class AgentRunRequest
     public string? ApiKey { get; set; }
     public string? ModelDisplayName { get; set; }
     public string? SystemPrompt { get; set; }
+    public string? FrozenPrefix { get; set; }
+    public string? SessionPrefix { get; set; }
+    public string? VolatileSuffix { get; set; }
+    public SegmentedPrompt? SegmentedPrompt { get; set; }
+    public string? PromptCacheKey { get; set; }
+    public string? CredentialKey { get; set; }
+    public TimeSpan? PermitWaitTimeout { get; set; }
     public List<object> SeedHistory { get; set; } = new();
     public string? ThinkingLevel { get; set; }
     public string? ReasoningMode { get; set; }

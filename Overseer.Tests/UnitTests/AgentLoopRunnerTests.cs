@@ -34,10 +34,12 @@ public class AgentLoopRunnerTests
             }
         }
 
-        public Dictionary<string, object> BuildChatRequestBody(string modelId, List<object> messageHistory, int? maxOutputTokens, string? thinkingLevel, ToolsForRequest requestTools, string? reasoningMode = null, string? reasoningSummary = null, string? serviceTier = null, bool? parallelToolCalls = null)
+        public Dictionary<string, object> BuildChatRequestBody(string modelId, List<object> messageHistory, int? maxOutputTokens, string? thinkingLevel, ToolsForRequest requestTools, string? reasoningMode = null, string? reasoningSummary = null, string? serviceTier = null, bool? parallelToolCalls = null, SegmentedPrompt? segmentedPrompt = null, string? promptCacheKey = null)
         {
             return new Dictionary<string, object> { { "model", modelId }, { "messages", messageHistory } };
         }
+
+        public bool TryRewriteToolResult(List<object> messageHistory, string toolCallId, string replacementText) => false;
 
         public object BuildFunctionDeclaration(string name, string description, object parameterSchema)
         {

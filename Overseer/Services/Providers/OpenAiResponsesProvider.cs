@@ -51,7 +51,9 @@ public class OpenAiResponsesProvider : IAiProvider
         string? reasoningMode = null,
         string? reasoningSummary = null,
         string? serviceTier = null,
-        bool? parallelToolCalls = null)
+        bool? parallelToolCalls = null,
+        SegmentedPrompt? segmentedPrompt = null,
+        string? promptCacheKey = null)
     {
         // Extract system message
         string systemContent = "";
@@ -91,6 +93,14 @@ public class OpenAiResponsesProvider : IAiProvider
             ["stream"] = true,
             ["store"] = false // Privacy: Do not store state on OpenAI's servers
         };
+
+        bool enablePromptCacheKey = _configuration?.GetValue<bool>("PromptCacheSettings:EnableOpenAiPromptCacheKey", true) ?? true;
+        if (enablePromptCacheKey && !string.IsNullOrEmpty(promptCacheKey))
+        {
+            // Note: OpenAI prompt caching reduces latency and token cost for cached prefix tokens,
+            // but cached input tokens still count against TPM (Tokens Per Minute) rate limits.
+            req["prompt_cache_key"] = promptCacheKey;
+        }
 
         if (!string.IsNullOrEmpty(systemContent))
         {
@@ -177,6 +187,7 @@ public class OpenAiResponsesProvider : IAiProvider
                     ChatEvent? errorEvt = null;
                     ChatEvent? debugEvt = null;
                     ChatEvent? providerItemEvt = null;
+                    ChatEvent? usageEvt = null;
 
                     try
                     {
@@ -300,6 +311,51 @@ public class OpenAiResponsesProvider : IAiProvider
                         else if (eventType == "response.completed" || eventType == "response.done" || eventType == "response.incomplete")
                         {
                             var respObj = json.TryGetProperty("response", out var rProp) ? rProp : json;
+
+                            if (respObj.TryGetProperty("usage", out var usageProp))
+                            {
+                                int inputTokens = usageProp.TryGetProperty("input_tokens", out var itProp) ? itProp.GetInt32() : 0;
+                                int outputTokens = usageProp.TryGetProperty("output_tokens", out var otProp) ? otProp.GetInt32() : 0;
+                                int cachedTokens = 0;
+                                if (usageProp.TryGetProperty("input_tokens_details", out var itdProp) &&
+                                    itdProp.TryGetProperty("cached_tokens", out var ctProp))
+                                {
+                                    cachedTokens = ctProp.GetInt32();
+                                }
+                                int reasoningTokens = 0;
+                                if (usageProp.TryGetProperty("output_tokens_details", out var otdProp) &&
+                                    otdProp.TryGetProperty("reasoning_tokens", out var rtProp))
+                                {
+                                    reasoningTokens = rtProp.GetInt32();
+                                }
+                                int uncached = Math.Max(0, inputTokens - cachedTokens);
+
+                                var report = new TokenUsageReport
+                                {
+                                    TotalPromptTokens = inputTokens,
+                                    CacheReadTokens = cachedTokens,
+                                    CacheCreationTokens = 0,
+                                    UncachedInputTokens = uncached,
+                                    OutputTokens = outputTokens,
+                                    ReasoningTokens = reasoningTokens
+                                };
+                                usageEvt = new ChatEvent
+                                {
+                                    Type = "usage",
+                                    Data = JsonSerializer.Serialize(report),
+                                    UsageReport = report
+                                };
+
+                                if (showDebugLog)
+                                {
+                                    debugEvt = new ChatEvent
+                                    {
+                                        Type = "debug",
+                                        Data = $"[Main Chat - OpenAI] usage: input_tokens={inputTokens}, output_tokens={outputTokens}, cached_tokens={cachedTokens}, reasoning_tokens={reasoningTokens}"
+                                    };
+                                }
+                            }
+
                             if (respObj.TryGetProperty("status", out var statusProp) && statusProp.GetString() == "incomplete")
                             {
                                 string reason = "unknown";
@@ -309,11 +365,11 @@ public class OpenAiResponsesProvider : IAiProvider
                                     reason = reasonProp.GetString() ?? "unknown";
                                 }
                                 string tokenUsage = "";
-                                if (respObj.TryGetProperty("usage", out var usageProp))
+                                if (respObj.TryGetProperty("usage", out var usageProp2))
                                 {
-                                    if (usageProp.TryGetProperty("output_tokens", out var otProp))
+                                    if (usageProp2.TryGetProperty("output_tokens", out var otProp2))
                                     {
-                                        tokenUsage = $", output_tokens={otProp.GetInt32()}";
+                                        tokenUsage = $", output_tokens={otProp2.GetInt32()}";
                                     }
                                 }
                                 debugEvt = new ChatEvent
@@ -350,6 +406,7 @@ public class OpenAiResponsesProvider : IAiProvider
                     if (debugEvt != null) yield return debugEvt;
                     if (errorEvt != null) yield return errorEvt;
                     if (providerItemEvt != null) yield return providerItemEvt;
+                    if (usageEvt != null) yield return usageEvt;
                     if (!string.IsNullOrEmpty(thinkingChunkStr)) yield return new ChatEvent { Type = "thinking_chunk", Data = thinkingChunkStr };
                     if (!string.IsNullOrEmpty(chunkStr)) yield return new ChatEvent { Type = "chunk", Data = chunkStr };
                     if (toolCallEvt != null) yield return toolCallEvt;
@@ -453,6 +510,43 @@ public class OpenAiResponsesProvider : IAiProvider
                 output = res.Content
             });
         }
+    }
+
+    public bool TryRewriteToolResult(List<object> messageHistory, string toolCallId, string replacementText)
+    {
+        for (int i = 0; i < messageHistory.Count; i++)
+        {
+            var item = messageHistory[i];
+            string? callId = null;
+            if (item is JsonElement je && je.ValueKind == JsonValueKind.Object)
+            {
+                if (je.TryGetProperty("type", out var tProp) && tProp.GetString() == "function_call_output" &&
+                    je.TryGetProperty("call_id", out var cidProp))
+                {
+                    callId = cidProp.GetString();
+                }
+            }
+            else
+            {
+                var typeVal = ProviderHelper.GetProperty(item, "type")?.ToString();
+                if (typeVal == "function_call_output")
+                {
+                    callId = ProviderHelper.GetProperty(item, "call_id")?.ToString();
+                }
+            }
+
+            if (callId == toolCallId)
+            {
+                messageHistory[i] = new
+                {
+                    type = "function_call_output",
+                    call_id = toolCallId,
+                    output = replacementText
+                };
+                return true;
+            }
+        }
+        return false;
     }
 
     public Dictionary<string, object> BuildTitleRequestBody(

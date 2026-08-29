@@ -137,11 +137,51 @@ export interface AnalyticsUserRow {
   titleRequests: number;
   inputTokens: number;
   outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  avgDurationMs: number;
 }
 
 export interface AnalyticsResponse {
   rows: AnalyticsUserRow[];
   totalCount: number;
+}
+
+export interface AiModelUsageBreakdownDto {
+  provider: string;
+  modelId: string;
+  requests: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  cacheHitRatio: number;
+  avgDurationMs: number;
+}
+
+export interface AiTelemetrySummaryDto {
+  totalRequests: number;
+  totalChatRequests: number;
+  totalTitleRequests: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCacheReadTokens: number;
+  totalCacheCreationTokens: number;
+  cacheHitRatio: number;
+  avgDurationMs: number;
+  models: AiModelUsageBreakdownDto[];
+}
+
+export interface AiGovernorKeyStatusDto {
+  credentialKey: string;
+  isRateLimited: boolean;
+  remainingCooldownSeconds: number;
+}
+
+export interface AiGovernorStatusDto {
+  maxConcurrentCalls: number;
+  maxRetryAfterSeconds: number;
+  activeKeys: AiGovernorKeyStatusDto[];
 }
 
 export interface TableStorageMetric {
@@ -354,5 +394,21 @@ export class AdminService {
 
   sendReportEmail(): Observable<{ success: boolean; message: string }> {
     return this.http.post<{ success: boolean; message: string }>('/api/admin/maintenance/send-report-email', {});
+  }
+
+  // Telemetry & Rate-Limit Governor
+  getGovernorStatus(): Observable<AiGovernorStatusDto> {
+    return this.http.get<AiGovernorStatusDto>('/api/Admin/governor/status');
+  }
+
+  resetGovernorCooldown(credentialKey?: string): Observable<void> {
+    return this.http.post<void>('/api/Admin/governor/reset-cooldown', { credentialKey });
+  }
+
+  getAiTelemetrySummary(startDate?: string, endDate?: string): Observable<AiTelemetrySummaryDto> {
+    let params: any = {};
+    if (startDate) params.startDate = startDate;
+    if (endDate) params.endDate = endDate;
+    return this.http.get<AiTelemetrySummaryDto>('/api/Admin/ai-telemetry/summary', { params });
   }
 }

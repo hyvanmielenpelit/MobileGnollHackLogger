@@ -24,6 +24,9 @@ public class SystemAiUsageLog
 
     public int? InputTokens { get; set; }
     public int? OutputTokens { get; set; }
+    public int? CacheReadInputTokens { get; set; }
+    public int? CacheCreationInputTokens { get; set; }
+    public int? TotalDurationMs { get; set; }
     
-    public int RoleContext { get; set; } = 1; // 1 = Chat, 2 = Title Generation
+    public int RoleContext { get; set; } = 1; // 1 = Chat, 2 = Title Generation, 3 = SubAgent
 }

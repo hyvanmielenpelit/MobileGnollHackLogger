@@ -237,10 +237,59 @@ public class AnalyticsUserRow
     public int TitleRequests { get; set; }
     public long InputTokens { get; set; }
     public long OutputTokens { get; set; }
+    public long CacheReadTokens { get; set; }
+    public long CacheCreationTokens { get; set; }
+    public int AvgDurationMs { get; set; }
 }
 
 public class AnalyticsResponse
 {
     public List<AnalyticsUserRow> Rows { get; set; } = new();
     public int TotalCount { get; set; }
+}
+
+public class AiTelemetrySummaryDto
+{
+    public long TotalRequests { get; set; }
+    public long TotalChatRequests { get; set; }
+    public long TotalTitleRequests { get; set; }
+    public long TotalInputTokens { get; set; }
+    public long TotalOutputTokens { get; set; }
+    public long TotalCacheReadTokens { get; set; }
+    public long TotalCacheCreationTokens { get; set; }
+    public double CacheHitRatio { get; set; }
+    public int AvgDurationMs { get; set; }
+    public List<AiModelUsageBreakdownDto> Models { get; set; } = new();
+}
+
+public class AiModelUsageBreakdownDto
+{
+    public string Provider { get; set; } = string.Empty;
+    public string ModelId { get; set; } = string.Empty;
+    public long Requests { get; set; }
+    public long InputTokens { get; set; }
+    public long OutputTokens { get; set; }
+    public long CacheReadTokens { get; set; }
+    public long CacheCreationTokens { get; set; }
+    public double CacheHitRatio { get; set; }
+    public int AvgDurationMs { get; set; }
+}
+
+public class AiGovernorStatusDto
+{
+    public int MaxConcurrentCalls { get; set; }
+    public int MaxRetryAfterSeconds { get; set; }
+    public List<AiGovernorKeyStatusDto> ActiveKeys { get; set; } = new();
+}
+
+public class AiGovernorKeyStatusDto
+{
+    public string CredentialKey { get; set; } = string.Empty;
+    public bool IsRateLimited { get; set; }
+    public double RemainingCooldownSeconds { get; set; }
+}
+
+public class ResetCooldownRequest
+{
+    public string? CredentialKey { get; set; }
 }

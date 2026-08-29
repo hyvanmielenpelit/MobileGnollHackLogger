@@ -24,7 +24,7 @@ export class ConfigAnalyticsComponent implements OnInit, OnChanges, OnDestroy {
 
   // Filter state
   mode: 'all' | 'individual' = 'all';
-  dataType: 'requests' | 'tokens' = 'requests';
+  dataType: 'requests' | 'tokens' | 'cache' = 'requests';
   timeSpan: '7d' | '30d' | '90d' | '1y' | 'custom' = '30d';
   
   // Chart sizing and gap configuration (easily configurable exact pixel values)
@@ -294,6 +294,29 @@ export class ConfigAnalyticsComponent implements OnInit, OnChanges, OnDestroy {
           label: 'Title Requests',
           backgroundColor: 'rgba(100, 181, 246, 0.85)', // blue
           borderColor: 'rgba(100, 181, 246, 1)',
+          borderWidth: 1,
+          borderRadius: 4,
+          barPercentage: calcBarPercentage,
+          categoryPercentage: calcCategoryPercentage
+        }
+      ];
+    } else if (this.dataType === 'cache') {
+      datasets = [
+        {
+          data: res.rows.map(r => r.cacheReadTokens),
+          label: 'Cache Read Tokens',
+          backgroundColor: 'rgba(77, 182, 172, 0.85)', // teal
+          borderColor: 'rgba(77, 182, 172, 1)',
+          borderWidth: 1,
+          borderRadius: 4,
+          barPercentage: calcBarPercentage,
+          categoryPercentage: calcCategoryPercentage
+        },
+        {
+          data: res.rows.map(r => r.cacheCreationTokens),
+          label: 'Cache Creation Tokens',
+          backgroundColor: 'rgba(186, 104, 200, 0.85)', // purple
+          borderColor: 'rgba(186, 104, 200, 1)',
           borderWidth: 1,
           borderRadius: 4,
           barPercentage: calcBarPercentage,
