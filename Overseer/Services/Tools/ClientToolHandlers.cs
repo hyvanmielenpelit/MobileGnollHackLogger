@@ -61,8 +61,10 @@ namespace Overseer.Services.Tools
         /* A snapshot truncated at an arbitrary character loses its tail sections -
            Discoveries and the dungeon overview - with no signal to the model that
            anything is missing. Match the client's own 60000-char cap
-           (DefaultMaxSnapshotChars in OverseerPage.xaml.cs). */
-        public override int? MaxResultLengthOverride => 60000;
+           (DefaultMaxSnapshotChars in OverseerPage.xaml.cs), plus headroom for the
+           "[SNAPSHOT TRUNCATED at 60000 characters.]" marker the client appends
+           after capping - cutting at exactly 60000 would delete it. */
+        public override int? MaxResultLengthOverride => 60200;
     }
 
     public class GetSaveInfoTool : ClientToolHandlerBase

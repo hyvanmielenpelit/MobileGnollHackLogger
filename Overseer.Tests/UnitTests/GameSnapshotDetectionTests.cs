@@ -111,6 +111,7 @@ public class GameSnapshotDetectionTests
             allowSourceCodeReferences: false);
 
         Assert.Contains("Game snapshot (current map, stats, inventory, recent messages, spells, skills, attributes, and the player's Discoveries list", prompt);
+        Assert.Contains("plus a Pets section listing every tame companion on the level with position, HP and full statistics", prompt);
         Assert.DoesNotContain("No game context was provided for this session.", prompt);
         Assert.Contains("When greeting the player, briefly introduce yourself and give a short observation about their current situation based on the game snapshot", prompt);
         Assert.Contains("Your objective is to maximize the player's chance of winning", prompt);
@@ -135,6 +136,7 @@ public class GameSnapshotDetectionTests
             allowSourceCodeReferences: false);
 
         Assert.DoesNotContain("Game snapshot (current map, stats, inventory, recent messages, spells, skills, attributes, and the player's Discoveries list", prompt);
+        Assert.DoesNotContain("plus a Pets section listing every tame companion on the level with position, HP and full statistics", prompt);
         Assert.Contains("No game context was provided for this session. Answer based on general GnollHack knowledge and wiki content.", prompt);
         Assert.Contains("The user is not currently in an active game.", prompt);
         Assert.Contains("Your objective is to help the player understand GnollHack's mechanics, review past games via dumplogs", prompt);

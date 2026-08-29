@@ -135,4 +135,31 @@ public class DumpHtmlSanitizerTests
 
         Assert.Equal("Name Value\n\nItem 10", result);
     }
+
+    [Fact]
+    public void PetSectionCoordinates_SurviveTagStripping_WhenEscaped()
+    {
+        // html_dump_char() escapes '<' and '>', and DumpHtmlSanitizer decodes
+        // entities last, so a pet position reaches the model intact.
+        string html = "<h2>Pets:</h2>\n"
+                    + "<div>3 pets on this level.</div>\n"
+                    + "<div>1 - Fido the little dog, &lt;12,7&gt;, 3 squares away, 7/8 HP</div>\n";
+        string result = DumpHtmlSanitizer.Sanitize(html);
+
+        Assert.Contains("<12,7>", result);
+        Assert.Equal("Pets:\n3 pets on this level.\n1 - Fido the little dog, <12,7>, 3 squares away, 7/8 HP", result);
+    }
+
+    [Fact]
+    public void UnescapedAngleBracketCoordinates_AreDestroyed()
+    {
+        // Documents the failure mode: if the engine ever writes the Pets section
+        // through the unescaped dump_html_ai_write() path, RemainingTagRegex eats
+        // every position silently. If this test starts failing, the sanitizer
+        // changed - reread the precondition in the pet-snapshot plan.
+        string html = "<div>1 - Fido the little dog, <12,7>, 3 squares away, 7/8 HP</div>\n";
+        string result = DumpHtmlSanitizer.Sanitize(html);
+
+        Assert.DoesNotContain("12,7", result);
+    }
 }

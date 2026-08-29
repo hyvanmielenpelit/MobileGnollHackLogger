@@ -261,5 +261,23 @@ public class ToolResultHandlingTests
         Assert.Equal(60000, effectiveOverride);
         Assert.Equal(10000, effectiveUnknown);
     }
+
+    [Fact]
+    public void RefreshSnapshotTool_CapLeavesRoomForTheClientTruncationMarker()
+    {
+        // The client caps sanitized snapshot text at DefaultMaxSnapshotChars (60000)
+        // and then APPENDS this marker, so a truncated snapshot arrives longer than
+        // the cap. If the server's cap does not cover both, ToolExecutor cuts off
+        // exactly the marker that refresh_snapshot.md tells the model to look for.
+        const int clientCap = 60000;
+        const string marker = "\n\n[SNAPSHOT TRUNCATED at 60000 characters.]";
+
+        var tool = new RefreshSnapshotTool();
+
+        Assert.NotNull(tool.MaxResultLengthOverride);
+        Assert.True(tool.MaxResultLengthOverride >= clientCap + marker.Length,
+            $"refresh_snapshot cap {tool.MaxResultLengthOverride} must cover the client's "
+            + $"{clientCap}-char cap plus its {marker.Length}-char truncation marker.");
+    }
 }
 

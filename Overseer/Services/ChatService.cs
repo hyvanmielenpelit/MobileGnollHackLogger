@@ -1019,7 +1019,7 @@ public class ChatService
 
         // SECTION 6: Available Context
         sbFrozen.AppendLine("## Available Context in This Session");
-        if (hasGameSnapshot) sbFrozen.AppendLine("- ✅ Game snapshot (current map, stats, inventory, recent messages, spells, skills, attributes, and the player's Discoveries list — which object types they have identified this game)");
+        if (hasGameSnapshot) sbFrozen.AppendLine("- ✅ Game snapshot (current map, stats, inventory, recent messages, spells, skills, attributes, and the player's Discoveries list — which object types they have identified this game — plus a Pets section listing every tame companion on the level with position, HP and full statistics)");
         if (hasMessageHistory) sbFrozen.AppendLine("- ✅ Full message history (up to 16384 in-game messages) — reference when the player asks about earlier events");
         if (developerMode) sbFrozen.AppendLine("- ✅ Runtime debug data (memory usage, thread state, pending tasks, developer settings) via Client Environment Settings");
         if (!hasGameSnapshot && !hasMessageHistory && !developerMode)

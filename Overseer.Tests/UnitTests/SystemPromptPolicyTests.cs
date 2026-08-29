@@ -145,4 +145,30 @@ public class SystemPromptPolicyTests
         string source = File.ReadAllText(chatServicePath);
         Assert.DoesNotContain("Tool Concurrency & Batching", source);
     }
+
+    [Fact]
+    public void ToolGuides_RefreshSnapshot_DocumentsThePetsSection()
+    {
+        var guideDir = GetGuideDirectory();
+        string refreshSnapshotText = File.ReadAllText(Path.Combine(guideDir, "refresh_snapshot.md"));
+
+        Assert.Contains("## The `Pets` section", refreshSnapshotText);
+        // the three claims the model must not lose: completeness, the legend
+        // cross-reference, and "(None)" meaning zero pets rather than no data
+        Assert.Contains("authoritative, complete roster", refreshSnapshotText);
+        Assert.Contains("Notable locations", refreshSnapshotText);
+        Assert.Contains("`(None)` means the hero has no pets", refreshSnapshotText);
+    }
+
+    [Fact]
+    public void ToolGuides_MonsterTools_PointAtThePetsSection()
+    {
+        var guideDir = GetGuideDirectory();
+
+        string monsterStatsText = File.ReadAllText(Path.Combine(guideDir, "get_monster_stats.md"));
+        Assert.Contains("`Pets` section", monsterStatsText);
+
+        string monsterLookupText = File.ReadAllText(Path.Combine(guideDir, "monster_lookup.md"));
+        Assert.Contains("`Pets` section", monsterLookupText);
+    }
 }
