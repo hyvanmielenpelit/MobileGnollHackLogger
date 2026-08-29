@@ -559,7 +559,11 @@ public class AnthropicProvider : IAiProvider
         foreach (var msg in messages)
         {
             var role = ProviderHelper.GetProperty(msg, "role")?.ToString();
-            if (role == "system") continue;
+            if (role == "system")
+            {
+                result.Add(msg);
+                continue;
+            }
 
             if (currentRole == null)
             {

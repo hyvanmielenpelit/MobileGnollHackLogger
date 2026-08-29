@@ -38,7 +38,8 @@
     "reasoningSummaries": ["auto", "concise", "detailed"],
     "contextWindowSize": 1050000,
     "maxOutputTokens": 128000,
-    "supportsSubAgentCoordination": false
+    "supportsSubAgentCoordination": false,
+    "supportsSubAgentExecution": false
   },
   {
     "prefixes": ["gpt-5.5"],

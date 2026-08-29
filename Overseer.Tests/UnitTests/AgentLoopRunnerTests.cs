@@ -44,7 +44,7 @@ public class AgentLoopRunnerTests
             return new { name, description, parameterSchema };
         }
 
-        public object? BuildToolsPayload(List<object> providerTools, List<object> functionDeclarations) => null;
+        public virtual object? BuildToolsPayload(List<object> providerTools, List<object> functionDeclarations) => null;
 
         public object? BuildWebSearchTool() => null;
 
@@ -63,7 +63,7 @@ public class AgentLoopRunnerTests
             return "https://mock.ai.test/stream";
         }
 
-        public async IAsyncEnumerable<ChatEvent> ParseStreamAsync(HttpResponseMessage response, bool showDebugLog, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        public virtual async IAsyncEnumerable<ChatEvent> ParseStreamAsync(HttpResponseMessage response, bool showDebugLog, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
         {
             yield return new ChatEvent { Type = "chunk", Data = "Hello from Mock AI!" };
             await Task.CompletedTask;
@@ -159,7 +159,7 @@ public class AgentLoopRunnerTests
         }
 
         Assert.Equal("Hello from Mock AI!", result.FinalText);
-        Assert.Equal("Completed", result.TerminationReason);
+        Assert.Equal("completed", result.TerminationReason);
         Assert.True(result.TimeToFirstTokenMs.HasValue);
 
         // Verify [Main Chat - MockProvider] prefix was emitted for debug events
@@ -220,5 +220,130 @@ public class AgentLoopRunnerTests
         var debugEvents = events.Where(e => e.Type == "debug").ToList();
         Assert.NotEmpty(debugEvents);
         Assert.Contains(debugEvents, d => d.Data != null && d.Data.StartsWith("[SubAgent:wiki_researcher - MockProvider]"));
+    }
+
+    private class ToolCallingMockProvider : MockAiProvider
+    {
+        private int _callCount = 0;
+
+        public override async IAsyncEnumerable<ChatEvent> ParseStreamAsync(HttpResponseMessage response, bool showDebugLog, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            _callCount++;
+            if (_callCount <= 2)
+            {
+                var tcJson = JsonSerializer.Serialize(new { id = $"call_{_callCount}", name = "mock_tool", arguments = "{}" });
+                yield return new ChatEvent { Type = "tool_call_complete", Data = tcJson };
+            }
+            else
+            {
+                yield return new ChatEvent { Type = "chunk", Data = "Final summary" };
+            }
+            await Task.CompletedTask;
+        }
+
+        public override object? BuildToolsPayload(List<object> providerTools, List<object> functionDeclarations) => new { };
+    }
+
+    private class MockToolHandler : IToolHandler
+    {
+        public string ToolName => "mock_tool";
+        public string Description { get; set; } = "A mock tool";
+        public ToolExecutionLocation ExecutionLocation => ToolExecutionLocation.Server;
+        public ToolCategory Category => ToolCategory.InformationRetrieval;
+        public int TimeoutSeconds => 10;
+        public JsonElement ParameterSchema => JsonSerializer.SerializeToElement(new { type = "object" });
+        public Task<ToolResult> ExecuteAsync(JsonElement parameters, ToolExecutionContext context, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new ToolResult { Success = true, Content = "Tool ran successfully." });
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenIterationLimitReached_SetsIterationLimitTerminationReason()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var sp = services.BuildServiceProvider();
+
+        var toolCallingProvider = new ToolCallingMockProvider();
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            { "AiPerformanceSettings:MaxToolIterations:Default", "1" }
+        }).Build();
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+
+        var clientBridge = new NullClientBridge();
+        var handlers = new List<IToolHandler> { new MockToolHandler() };
+        var toolRegistry = new ToolRegistry(handlers, clientBridge, NullLogger<ToolRegistry>.Instance);
+        var toolExecutor = new ToolExecutor(handlers, clientBridge, NullLogger<ToolExecutor>.Instance, cache, config);
+
+        var runner = new AgentLoopRunner(
+            new[] { toolCallingProvider },
+            toolRegistry,
+            toolExecutor,
+            new MockHttpClientFactory(),
+            config,
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            new KnowledgeBaseService(NullLogger<KnowledgeBaseService>.Instance, config),
+            new ModelMetadataService(),
+            NullLogger<AgentLoopRunner>.Instance);
+
+        var request = new AgentRunRequest
+        {
+            ProviderName = "MockProvider",
+            ModelId = "mock-model",
+            ApiKey = "test-key",
+            MaxToolIterations = 1,
+            SeedHistory = new List<object> { new { role = "user", content = "Run tools" } },
+            AiProvider = toolCallingProvider
+        };
+
+        var result = new AgentRunResult();
+        await foreach (var _ in runner.RunAsync(request, null, result, CancellationToken.None)) { }
+
+        Assert.Equal("iteration_limit", result.TerminationReason);
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenBudgetExhausted_SetsBudgetExhaustedTerminationReason()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var sp = services.BuildServiceProvider();
+
+        var toolCallingProvider = new ToolCallingMockProvider();
+        var config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+
+        var clientBridge = new NullClientBridge();
+        var handlers = new List<IToolHandler> { new MockToolHandler() };
+        var toolRegistry = new ToolRegistry(handlers, clientBridge, NullLogger<ToolRegistry>.Instance);
+        var toolExecutor = new ToolExecutor(handlers, clientBridge, NullLogger<ToolExecutor>.Instance, cache, config);
+
+        var runner = new AgentLoopRunner(
+            new[] { toolCallingProvider },
+            toolRegistry,
+            toolExecutor,
+            new MockHttpClientFactory(),
+            config,
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            new KnowledgeBaseService(NullLogger<KnowledgeBaseService>.Instance, config),
+            new ModelMetadataService(),
+            NullLogger<AgentLoopRunner>.Instance);
+
+        var request = new AgentRunRequest
+        {
+            ProviderName = "MockProvider",
+            ModelId = "mock-model",
+            ApiKey = "test-key",
+            SeedHistory = new List<object> { new { role = "user", content = "Run tools" } },
+            AiProvider = toolCallingProvider
+        };
+
+        var budget = new AgentRunBudget { MaxSubAgentRuns = 3, MaxTotalModelCalls = 1 };
+        var result = new AgentRunResult();
+        await foreach (var _ in runner.RunAsync(request, budget, result, CancellationToken.None)) { }
+
+        Assert.Equal("budget_exhausted", result.TerminationReason);
     }
 }

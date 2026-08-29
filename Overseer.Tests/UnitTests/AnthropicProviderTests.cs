@@ -1,0 +1,99 @@
+using System;
+using System.Collections.Generic;
+using System.Text.Json;
+using Microsoft.Extensions.Configuration;
+using Overseer.Services.Providers;
+using Overseer.Services.Tools;
+using Xunit;
+
+namespace Overseer.Tests.UnitTests;
+
+public class AnthropicProviderTests
+{
+    private static IConfiguration CreateConfig()
+    {
+        return new ConfigurationBuilder().Build();
+    }
+
+    [Fact]
+    public void PrepareMessageHistory_PreservesSystemMessages_AndBuildChatRequestBodyHoistsThem()
+    {
+        var provider = new AnthropicProvider(CreateConfig());
+        var rawMessages = new List<object>
+        {
+            provider.FormatMessage("system", "You are a specialized subagent.", null),
+            provider.FormatMessage("user", "Hello, do this task.", null)
+        };
+
+        var prepared = provider.PrepareMessageHistory(rawMessages);
+        Assert.Equal(2, prepared.Count);
+
+        var requestBody = provider.BuildChatRequestBody("claude-3-7-sonnet-20250219", prepared, 1024, null, new ToolsForRequest());
+
+        Assert.True(requestBody.ContainsKey("system"));
+        Assert.Equal("You are a specialized subagent.", requestBody["system"]);
+
+        var messages = requestBody["messages"] as List<object>;
+        Assert.NotNull(messages);
+        Assert.Single(messages);
+        Assert.Equal("user", ProviderHelper.GetProperty(messages[0], "role")?.ToString());
+        Assert.Equal("Hello, do this task.", ProviderHelper.GetProperty(messages[0], "content")?.ToString());
+    }
+
+    [Fact]
+    public void PrepareMessageHistory_PreservesAlternation_WhenMultipleUserMessagesExist()
+    {
+        var provider = new AnthropicProvider(CreateConfig());
+        var rawMessages = new List<object>
+        {
+            provider.FormatMessage("system", "System prompt", null),
+            provider.FormatMessage("user", "First user prompt", null),
+            provider.FormatMessage("user", "Second user prompt", null)
+        };
+
+        var prepared = provider.PrepareMessageHistory(rawMessages);
+        Assert.Equal(4, prepared.Count); // system, user, inserted assistant filler, user
+
+        var requestBody = provider.BuildChatRequestBody("claude-3-7-sonnet-20250219", prepared, 1024, null, new ToolsForRequest());
+        Assert.Equal("System prompt", requestBody["system"]);
+
+        var messages = requestBody["messages"] as List<object>;
+        Assert.NotNull(messages);
+        Assert.Equal(3, messages.Count);
+        Assert.Equal("user", ProviderHelper.GetProperty(messages[0], "role")?.ToString());
+        Assert.Equal("assistant", ProviderHelper.GetProperty(messages[1], "role")?.ToString());
+        Assert.Equal("user", ProviderHelper.GetProperty(messages[2], "role")?.ToString());
+    }
+
+    [Fact]
+    public void AppendToolResultsToHistory_RetainsSystemPromptAcrossToolRounds()
+    {
+        var provider = new AnthropicProvider(CreateConfig());
+        var history = new List<object>
+        {
+            provider.FormatMessage("system", "Subagent instructions", null),
+            provider.FormatMessage("user", "Investigate something", null)
+        };
+
+        var prepared = provider.PrepareMessageHistory(history);
+
+        // Assistant makes a tool call
+        var toolCalls = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\":\"tc_123\",\"name\":\"wiki_search\",\"arguments\":\"{\\\"query\\\":\\\"gnoll\\\"}\"}").RootElement
+        };
+        provider.AppendAssistantToolCallsToHistory(prepared, "Searching wiki...", toolCalls, null);
+
+        // Tool returns results
+        var toolResults = new List<ProviderToolResult>
+        {
+            new ProviderToolResult { ToolCallId = "tc_123", ToolName = "wiki_search", Content = "Gnolls are hyena-like creatures.", Success = true }
+        };
+        provider.AppendToolResultsToHistory(prepared, toolResults);
+
+        // Verify system prompt survived across the entire tool cycle
+        var requestBody = provider.BuildChatRequestBody("claude-3-7-sonnet-20250219", prepared, 1024, null, new ToolsForRequest());
+        Assert.True(requestBody.ContainsKey("system"));
+        Assert.Equal("Subagent instructions", requestBody["system"]);
+    }
+}

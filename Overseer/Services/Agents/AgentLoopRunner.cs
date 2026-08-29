@@ -87,11 +87,14 @@ public class AgentLoopRunner
         int toolIterations = 0;
         bool hasToolsToRun = true;
         bool wasTruncatedByMaxTokens = false;
+        bool hitBudgetLimit = false;
+        bool hitIterationLimit = false;
 
         while (toolIterations <= maxToolIterations && hasToolsToRun && !cancellationToken.IsCancellationRequested)
         {
             if (budget != null && !budget.TryIncrementModelCall())
             {
+                hitBudgetLimit = true;
                 if (request.ShowDebugLog)
                 {
                     yield return new ChatEvent
@@ -107,6 +110,7 @@ public class AgentLoopRunner
             }
             else if (toolIterations == maxToolIterations && hasToolsToRun)
             {
+                hitIterationLimit = true;
                 yield return new ChatEvent { Type = "tool_error", Data = "Tool call limit reached. Forcing final response." };
                 enableToolUse = false;
                 enableWebSearch = false;
@@ -318,12 +322,12 @@ public class AgentLoopRunner
 
                         if (outcome.Success)
                         {
-                            var resObj = new { id = outcome.ToolCallId, name = outcome.ToolName, result = outcome.Content };
+                            var resObj = new { id = outcome.ToolCallId, name = outcome.ToolName, result = outcome.Content, status = outcome.TerminationStatus ?? "completed" };
                             yield return new ChatEvent { Type = "tool_result", Data = JsonSerializer.Serialize(resObj) };
                         }
                         else
                         {
-                            var errObj = new { id = outcome.ToolCallId, name = outcome.ToolName, error = outcome.Content };
+                            var errObj = new { id = outcome.ToolCallId, name = outcome.ToolName, error = outcome.Content, status = outcome.TerminationStatus ?? "error" };
                             yield return new ChatEvent { Type = "tool_error", Data = JsonSerializer.Serialize(errObj) };
                         }
                     }
@@ -390,14 +394,11 @@ public class AgentLoopRunner
         thoughtWriter.CloseOpenThoughtDiv(sbFullResponse);
         result.EmittedDivCount = thoughtWriter.EmittedDivCount;
 
-        if (cancellationToken.IsCancellationRequested)
-        {
-            result.TerminationReason = "Canceled";
-        }
-        else
-        {
-            result.TerminationReason = "Completed";
-        }
+        result.TerminationReason =
+            cancellationToken.IsCancellationRequested ? "canceled"
+            : hitBudgetLimit                          ? "budget_exhausted"
+            : hitIterationLimit                       ? "iteration_limit"
+            : "completed";
 
         var fullResponse = ReasoningTextSanitizer.SanitizeStateless(sbFullResponse.ToString());
         if (wasTruncatedByMaxTokens && !fullResponse.Contains("[Response truncated: output token limit reached.]"))

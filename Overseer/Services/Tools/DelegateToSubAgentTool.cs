@@ -33,22 +33,29 @@ public class DelegateToSubAgentTool : IToolHandler
     {
         get
         {
+            var agentNames = _catalogService.GetEnabledSubAgents().Select(a => a.Name).ToArray();
+            var agentNameNode = new Dictionary<string, object>
+            {
+                ["type"] = "string",
+                ["description"] = "The registered name of the specialized subagent to invoke (e.g., 'wiki_researcher', 'source_investigator', 'game_data_analyst')."
+            };
+            if (agentNames.Length > 0)
+            {
+                agentNameNode["enum"] = agentNames;
+            }
+
             var schema = new
             {
                 type = "object",
-                properties = new
+                properties = new Dictionary<string, object>
                 {
-                    agent_name = new
-                    {
-                        type = "string",
-                        description = "The registered name of the specialized subagent to invoke (e.g., 'wiki_researcher', 'source_investigator', 'game_data_analyst')."
-                    },
-                    task = new
+                    ["agent_name"] = agentNameNode,
+                    ["task"] = new
                     {
                         type = "string",
                         description = "The specific task or inquiry for the subagent to execute autonomously."
                     },
-                    context = new
+                    ["context"] = new
                     {
                         type = "string",
                         description = "Optional background context, prior discoveries, or game state information relevant to the task."
@@ -305,7 +312,7 @@ public class DelegateToSubAgentTool : IToolHandler
                 }
 
                 // Explicit allow-list. Everything else from the subagent stays isolated
-                if (evt.Type == "debug" ||
+                if ((evt.Type == "debug" && context.ShowDebugLog) ||
                     evt.Type == "tool_start" ||
                     evt.Type == "tool_result" ||
                     evt.Type == "tool_error")
@@ -314,23 +321,46 @@ public class DelegateToSubAgentTool : IToolHandler
                 }
             }
 
+            string status = subAgentResult.TerminationReason ?? "completed";
+            bool completed = status == "completed";
+            bool aborted = status == "canceled" || status == "error";
+            string content = subAgentResult.FinalText ?? "";
+
+            if (!completed && !string.IsNullOrWhiteSpace(content))
+            {
+                content = $"[PARTIAL RESULT — subagent '{agentName}' terminated early: {status}. " +
+                          $"Findings below are incomplete and must not be presented as a complete answer.]\n\n"
+                          + content;
+            }
+
             return new ToolResult
             {
-                Success = subAgentResult.TerminationReason == "Completed" || !string.IsNullOrWhiteSpace(subAgentResult.FinalText),
-                Content = subAgentResult.FinalText ?? "",
-                ErrorMessage = subAgentResult.TerminationReason == "Completed" ? null : $"Subagent terminated with status: {subAgentResult.TerminationReason}",
+                Success = !aborted && !string.IsNullOrWhiteSpace(content),
+                Content = content,
+                // Success=false + non-empty Content: ToolBatchRunner prefers ErrorMessage over Content
+                // when Success is false, so ErrorMessage must be null for the banner to reach the model.
+                ErrorMessage = string.IsNullOrWhiteSpace(content)
+                    ? (completed ? null : $"Subagent terminated with status: {status}")
+                    : null,
                 NestedToolCalls = subAgentResult.ToolCalls,
-                TerminationStatus = subAgentResult.TerminationReason
+                TerminationStatus = status
             };
         }
         catch (OperationCanceledException) when (subAgentCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
             _logger.LogInformation("Subagent {AgentName} (ToolCallId: {ToolCallId}) was canceled by user request.", agentName, toolCallId);
+            string content = subAgentResult.FinalText ?? "";
+            if (!string.IsNullOrWhiteSpace(content))
+            {
+                content = $"[PARTIAL RESULT — subagent '{agentName}' terminated early: canceled. " +
+                          $"Findings below are incomplete and must not be presented as a complete answer.]\n\n"
+                          + content;
+            }
             return new ToolResult
             {
                 Success = false,
-                ErrorMessage = "Subagent execution was canceled by the user.",
-                Content = subAgentResult.FinalText ?? "",
+                ErrorMessage = string.IsNullOrWhiteSpace(content) ? "Subagent execution was canceled by the user." : null,
+                Content = content,
                 NestedToolCalls = subAgentResult.ToolCalls,
                 TerminationStatus = "canceled"
             };
@@ -338,11 +368,18 @@ public class DelegateToSubAgentTool : IToolHandler
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error in Subagent {AgentName} execution for Session {SessionId}", agentName, context.SessionId);
+            string content = subAgentResult.FinalText ?? "";
+            if (!string.IsNullOrWhiteSpace(content))
+            {
+                content = $"[PARTIAL RESULT — subagent '{agentName}' terminated early: error. " +
+                          $"Findings below are incomplete and must not be presented as a complete answer.]\n\n"
+                          + content;
+            }
             return new ToolResult
             {
                 Success = false,
-                ErrorMessage = $"Subagent execution error: {ex.Message}",
-                Content = subAgentResult.FinalText ?? "",
+                ErrorMessage = string.IsNullOrWhiteSpace(content) ? $"Subagent execution error: {ex.Message}" : null,
+                Content = content,
                 NestedToolCalls = subAgentResult.ToolCalls,
                 TerminationStatus = "error"
             };
@@ -381,13 +418,19 @@ public class DelegateToSubAgentTool : IToolHandler
         var settingsService = scopedServices.GetRequiredService<SettingsService>();
         var systemAiConfigService = scopedServices.GetRequiredService<SystemAiConfigService>();
 
+        bool IsEligible(string provider, string modelId) =>
+            scopedServices.GetServices<IAiProvider>()
+                .Any(p => string.Equals(p.ProviderName, provider, StringComparison.OrdinalIgnoreCase))
+            && _metadataService.GetMetadata(provider, modelId).SupportsSubAgentExecution;
+
         var session = await dbContext.ChatSession.FirstOrDefaultAsync(s => s.Id == context.SessionId, cancellationToken);
         string? userId = session?.AspNetUserId;
 
         // Step 1: Check if definition specifies a preferred model
         if (definition.ModelPreference != null &&
             !string.IsNullOrWhiteSpace(definition.ModelPreference.Provider) &&
-            !string.IsNullOrWhiteSpace(definition.ModelPreference.ModelId))
+            !string.IsNullOrWhiteSpace(definition.ModelPreference.ModelId) &&
+            IsEligible(definition.ModelPreference.Provider, definition.ModelPreference.ModelId))
         {
             string prefProvider = definition.ModelPreference.Provider;
             string prefModelId = definition.ModelPreference.ModelId;
@@ -422,7 +465,10 @@ public class DelegateToSubAgentTool : IToolHandler
                                 null);
                         }
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to decrypt API key during subagent model resolution (branch 1.1).");
+                    }
                 }
             }
 
@@ -474,7 +520,10 @@ public class DelegateToSubAgentTool : IToolHandler
                                 null);
                         }
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to decrypt API key during subagent model resolution (branch 1.3).");
+                    }
                 }
             }
         }
@@ -484,7 +533,7 @@ public class DelegateToSubAgentTool : IToolHandler
         if (context.ActiveSystemModelId.HasValue && !string.IsNullOrEmpty(userId))
         {
             var (sysConfig, errorMessage) = await systemAiConfigService.GetAndCheckSystemConfigAsync(context.ActiveSystemModelId.Value, userId, requiredRoleFilter: 1);
-            if (sysConfig != null && !string.IsNullOrWhiteSpace(sysConfig.EncryptedApiKey) &&
+            if (sysConfig != null && IsEligible(sysConfig.Provider, sysConfig.ModelId) && !string.IsNullOrWhiteSpace(sysConfig.EncryptedApiKey) &&
                 !string.IsNullOrWhiteSpace(sysConfig.ApiKeyNonce) && !string.IsNullOrWhiteSpace(sysConfig.ApiKeyTag))
             {
                 try
@@ -506,7 +555,10 @@ public class DelegateToSubAgentTool : IToolHandler
                             null);
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to decrypt API key during subagent model resolution (branch 2A).");
+                }
             }
             else if (errorMessage != null)
             {
@@ -519,7 +571,7 @@ public class DelegateToSubAgentTool : IToolHandler
         {
             var activeUserModel = await dbContext.UserAiModels.FirstOrDefaultAsync(
                 m => m.Id == context.ActiveUserModelId.Value && m.AspNetUserId == userId, cancellationToken);
-            if (activeUserModel != null)
+            if (activeUserModel != null && IsEligible(activeUserModel.Provider, activeUserModel.ModelId))
             {
                 string? userApiKey = null;
                 var userKey = await dbContext.UserAiApiKeys.FirstOrDefaultAsync(
@@ -531,7 +583,10 @@ public class DelegateToSubAgentTool : IToolHandler
                     {
                         userApiKey = cryptoService.Decrypt(userKey.EncryptedApiKey, userKey.ApiKeyNonce, userKey.ApiKeyTag, userId);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to decrypt API key during subagent model resolution (branch 2B).");
+                    }
                 }
 
                 if (string.IsNullOrWhiteSpace(userApiKey))
@@ -561,9 +616,11 @@ public class DelegateToSubAgentTool : IToolHandler
         // Branch 2C (User Default Model)
         if (!string.IsNullOrEmpty(userId))
         {
-            var defaultUserModel = await dbContext.UserAiModels
+            var userModels = await dbContext.UserAiModels
+                .Where(m => m.AspNetUserId == userId)
                 .OrderBy(m => m.OrderIndex)
-                .FirstOrDefaultAsync(m => m.AspNetUserId == userId, cancellationToken);
+                .ToListAsync(cancellationToken);
+            var defaultUserModel = userModels.FirstOrDefault(m => IsEligible(m.Provider, m.ModelId));
             if (defaultUserModel != null)
             {
                 string? userApiKey = null;
@@ -576,7 +633,10 @@ public class DelegateToSubAgentTool : IToolHandler
                     {
                         userApiKey = cryptoService.Decrypt(userKey.EncryptedApiKey, userKey.ApiKeyNonce, userKey.ApiKeyTag, userId);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to decrypt API key during subagent model resolution (branch 2C).");
+                    }
                 }
 
                 if (string.IsNullOrWhiteSpace(userApiKey))
@@ -607,7 +667,7 @@ public class DelegateToSubAgentTool : IToolHandler
         if (!string.IsNullOrEmpty(userId))
         {
             var sysModels = await settingsService.GetResolvedSystemModelsAsync(userId, roleFilter: 1);
-            var firstSys = sysModels.FirstOrDefault().Config;
+            var firstSys = sysModels.FirstOrDefault(c => c.Config != null && IsEligible(c.Config.Provider, c.Config.ModelId)).Config;
             if (firstSys != null && !string.IsNullOrWhiteSpace(firstSys.EncryptedApiKey) &&
                 !string.IsNullOrWhiteSpace(firstSys.ApiKeyNonce) && !string.IsNullOrWhiteSpace(firstSys.ApiKeyTag))
             {
@@ -630,7 +690,10 @@ public class DelegateToSubAgentTool : IToolHandler
                             null);
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to decrypt API key during subagent model resolution (branch 2D).");
+                }
             }
         }
 

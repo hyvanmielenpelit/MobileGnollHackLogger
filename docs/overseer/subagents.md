@@ -14,7 +14,7 @@ Overseer supports a **coordinator-specialist multi-agent architecture**:
 
 ### 1. Catalog & Definition (`SubAgentCatalogService` & `SubAgentCatalog.json`)
 - Registered subagents are defined in `Overseer/Data/SubAgentCatalog.json`.
-- Each definition specifies `name`, `displayName`, `description`, `systemPrompt`, `allowedTools`, `maxIterations`, `modelPreference` (`provider` and `modelId`), and reasoning defaults.
+- Each definition specifies `name`, `displayName`, `description`, `instructions`, `allowedTools`, `maxIterations`, `modelPreference` (`provider` and `modelId`), and reasoning defaults.
 - Validated on application startup against the `ToolRegistry` and `ModelMetadataService`.
 
 ### 2. Delegation Tool (`DelegateToSubAgentTool`)
@@ -30,7 +30,7 @@ Overseer supports a **coordinator-specialist multi-agent architecture**:
   6. **AppSettings Fallback**: Default model from `appsettings.json` (`AI:Provider`, `AI:Model`, `AI:APIKey`).
 - Output token limits resolve with precedence: Subagent definition override (`SubAgentDefinition.MaxOutputTokens`) → Inherited model row (`MaxOutputTokens`) → Static catalog defaults via `ModelMetadataService` (e.g. 128k for `gpt-5.6-luna`, 65k for `gemini-2.5-pro`).
 - Clones and propagates `ToolExecutionContext` (`SessionId`, `UserId`, `SpoilerFreeMode`, `AgentDepth = parent + 1`, `Budget`, `ActiveSystemModelId`, `ActiveUserModelId`) to maintain isolation and spoiler safety.
-- Forwards an explicit allow-list of subagent events (`debug`, `tool_start`, `tool_result`, `tool_error`) to the parent event sink while isolating subagent prose and reasoning (`chunk`, `thinking_chunk`), status updates (`status`), timing metrics (`ttft`, `duration`), and top-level errors (`error`) from coordinator chat streams.
+- Forwards an explicit allow-list of subagent events (`debug` (when `ShowDebugLog` is true), `tool_start`, `tool_result`, `tool_error`) to the parent event sink while isolating subagent prose and reasoning (`chunk`, `thinking_chunk`), status updates (`status`), timing metrics (`ttft`, `duration`), and top-level errors (`error`) from coordinator chat streams.
 - Executes the subagent loop via `AgentLoopRunner`.
 
 ### 3. Agent Loop Runner (`AgentLoopRunner`)
@@ -40,8 +40,8 @@ Overseer supports a **coordinator-specialist multi-agent architecture**:
 - Reusable across the main coordinator agent and specialist subagents.
 
 ### 4. Capability Gating & Availability (`SubAgentAvailability`)
-- Weak models (e.g., nano or flash-lite models) that lack complex coordination capabilities have `"supportsSubAgentCoordination": false` in their catalogs.
-- Models not suited for specialist task execution have `"supportsSubAgentExecution": false`.
+- Weak models (e.g., nano or flash-lite models) that lack complex coordination capabilities have `"supportsSubAgentCoordination": false` in their catalogs (`gemini-3.1-flash-lite`, `gemini-3.5-flash-lite`, `gpt-5.4-nano`).
+- Models not suited for specialist task execution have `"supportsSubAgentExecution": false` (`gemini-3.1-flash-lite`, `gemini-3.5-flash-lite`, `gpt-5.4-nano`).
 - The `delegate_to_subagent` tool is automatically omitted from the available tool list when a non-coordinating model is active.
 
 ### 5. Individual Cancellation & Observability
@@ -62,7 +62,9 @@ The subagent runtime is configured under the `SubAgentSettings` section in `apps
 |---------|---------|-------------|
 | `Enabled` | `true` | Master switch enabling or disabling subagent delegation tool availability. |
 | `TimeoutSeconds` | `600` | Maximum execution time per subagent run (in seconds). Default is 10 minutes. |
-| `MaxParallelSubAgents` | `3` | Maximum number of subagents allowed to run concurrently in parallel tool batches. |
+| `MaxParallelSubAgents` | `3` | Maximum number of subagents allowed to run concurrently in a single coordinator turn batch. |
+| `MaxProcessParallelSubAgents` | `12` | Maximum process-wide subagent execution slots across all users/sessions in `ToolExecutor`. |
+| `SubAgentQueueWaitSeconds` | `30` | Maximum time a subagent call will wait for a process execution slot before fast-failing. |
 | `MaxSubAgentRuns` | `6` | Maximum number of subagent invocations per coordinator user turn. |
 | `MaxTotalModelCalls` | `48` | Maximum combined LLM API iterations across coordinator and all subagents in a single turn. |
 | `MinCallsPerSessionWithSubAgents` | `200` | Minimum per-session tool execution limit floor when subagents are active. |

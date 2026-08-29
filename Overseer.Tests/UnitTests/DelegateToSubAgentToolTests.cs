@@ -554,6 +554,67 @@ public class DelegateToSubAgentToolTests
         Assert.Contains("Subagent execution is disabled", result.ErrorMessage);
     }
 
+    [Fact]
+    public void ParameterSchema_IncludesDynamicEnum_WhenEnabledAgentsExist()
+    {
+        var (tool, _, _, _) = CreateTestSetup();
+        var schema = tool.ParameterSchema;
+        var schemaJson = schema.GetRawText();
+
+        Assert.Contains("\"enum\":", schemaJson);
+        Assert.Contains("wiki_researcher", schemaJson);
+    }
+
+    [Fact]
+    public void ParameterSchema_OmitsDynamicEnum_WhenNoEnabledAgentsExist()
+    {
+        var emptyCatalog = new EmptySubAgentCatalogService(
+            new ConfigurationBuilder().Build(),
+            NullLogger<SubAgentCatalogService>.Instance);
+        var (tool, _, _, _) = CreateTestSetup(mockCatalog: emptyCatalog);
+
+        var schema = tool.ParameterSchema;
+        var schemaJson = schema.GetRawText();
+
+        Assert.DoesNotContain("\"enum\":", schemaJson);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_FiltersDebugEvents_WhenShowDebugLogFalse()
+    {
+        var (tool, db, _, _) = CreateTestSetup();
+        var session = new ChatSession { Id = 100, AspNetUserId = "user100", Title = "Test", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow };
+        db.ChatSession.Add(session);
+        await db.SaveChangesAsync();
+
+        var sinkEvents = new List<ChatEvent>();
+        var context = new ToolExecutionContext
+        {
+            SessionId = 100,
+            AgentDepth = 0,
+            MaxAgentDepth = 1,
+            EnableSubAgents = true,
+            ShowDebugLog = false,
+            EventSink = evt => { sinkEvents.Add(evt); return Task.CompletedTask; }
+        };
+
+        var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
+        var result = await tool.ExecuteAsync(validParams, context, CancellationToken.None);
+
+        Assert.True(result.Success);
+        // Verify EventSink does not receive debug events when ShowDebugLog is false
+        Assert.DoesNotContain(sinkEvents, e => e.Type == "debug");
+    }
+
+    private class EmptySubAgentCatalogService : SubAgentCatalogService
+    {
+        public EmptySubAgentCatalogService(IConfiguration config, ILogger<SubAgentCatalogService> logger)
+            : base(config, logger) { }
+
+        public override IReadOnlyList<SubAgentDefinition> GetEnabledSubAgents() => new List<SubAgentDefinition>();
+        public override IReadOnlyList<SubAgentDefinition> GetSubAgents() => new List<SubAgentDefinition>();
+    }
+
     private class DisallowedExecutionMetadataService : ModelMetadataService
     {
         public override ModelMetadata GetMetadata(string provider, string modelId)
@@ -579,6 +640,11 @@ public class DelegateToSubAgentToolTests
             if (string.Equals(name, _customAgent.Name, StringComparison.OrdinalIgnoreCase))
                 return _customAgent;
             return base.GetSubAgent(name);
+        }
+
+        public override IReadOnlyList<SubAgentDefinition> GetEnabledSubAgents()
+        {
+            return new List<SubAgentDefinition> { _customAgent };
         }
     }
 

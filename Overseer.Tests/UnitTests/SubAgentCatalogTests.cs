@@ -45,11 +45,11 @@ public class SubAgentCatalogTests
 
         var nanoMeta = metadataService.GetMetadata("OpenAI", "gpt-5.4-nano");
         Assert.False(nanoMeta.SupportsSubAgentCoordination);
-        Assert.True(nanoMeta.SupportsSubAgentExecution);
+        Assert.False(nanoMeta.SupportsSubAgentExecution);
 
         var flashLiteMeta = metadataService.GetMetadata("Google", "gemini-3.1-flash-lite");
         Assert.False(flashLiteMeta.SupportsSubAgentCoordination);
-        Assert.True(flashLiteMeta.SupportsSubAgentExecution);
+        Assert.False(flashLiteMeta.SupportsSubAgentExecution);
 
         var flashMeta = metadataService.GetMetadata("Google", "gemini-3.5-flash");
         Assert.True(flashMeta.SupportsSubAgentCoordination);

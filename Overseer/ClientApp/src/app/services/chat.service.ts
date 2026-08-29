@@ -37,7 +37,7 @@ export interface ChatMessageToolCall {
   parameters?: string;
   result?: string;
   error?: string;
-  status: 'running' | 'completed' | 'error' | 'canceled';
+  status: 'running' | 'completed' | 'error' | 'canceled' | 'iteration_limit' | 'budget_exhausted';
   agentName?: string;
   parentToolCallId?: string;
   depth?: number;

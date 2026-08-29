@@ -163,5 +163,54 @@ public class ToolExecutorRateLimitTests
         Assert.Equal(6, results.Length);
         Assert.All(results, r => Assert.True(r.Success));
     }
+
+    [Fact]
+    public async Task ExecuteAsync_SubAgentCalls_DoNotDepleteCoordinatorRateLimit()
+    {
+        using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 10000 });
+        var handler = new TestServerToolHandler();
+        var executor = new ToolExecutor(
+            new[] { handler },
+            new NullClientBridge(),
+            NullLogger<ToolExecutor>.Instance,
+            cache,
+            CreateConfiguration());
+
+        const int maxCalls = 5;
+        var coordinatorContext = new ToolExecutionContext
+        {
+            SessionId = 999,
+            MaxCallsPerSession = maxCalls,
+            AgentDepth = 0
+        };
+
+        var subAgentContext = new ToolExecutionContext
+        {
+            SessionId = 999,
+            MaxCallsPerSession = maxCalls,
+            AgentDepth = 1
+        };
+
+        // Fire 10 subagent calls (which have their own pool)
+        var subTasks = Enumerable.Range(0, 10).Select(_ =>
+            executor.ExecuteAsync("test_tool", JsonDocument.Parse("{}").RootElement, subAgentContext, CancellationToken.None)
+        ).ToList();
+        var subResults = await Task.WhenAll(subTasks);
+
+        // Subagents should succeed up to MinCallsPerSessionWithSubAgents (200)
+        Assert.All(subResults, r => Assert.True(r.Success));
+
+        // Now coordinator makes calls; coordinator's full maxCalls budget must still be available
+        var coordTasks = Enumerable.Range(0, 8).Select(_ =>
+            executor.ExecuteAsync("test_tool", JsonDocument.Parse("{}").RootElement, coordinatorContext, CancellationToken.None)
+        ).ToList();
+        var coordResults = await Task.WhenAll(coordTasks);
+
+        int coordSuccesses = coordResults.Count(r => r.Success);
+        int coordRateLimited = coordResults.Count(r => !r.Success);
+
+        Assert.Equal(maxCalls, coordSuccesses);
+        Assert.Equal(3, coordRateLimited);
+    }
 }
 

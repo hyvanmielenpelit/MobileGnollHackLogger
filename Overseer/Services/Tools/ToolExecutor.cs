@@ -23,6 +23,7 @@ namespace Overseer.Services.Tools
         private readonly SemaphoreSlim _externalLookupThrottler;
         private readonly SemaphoreSlim _subAgentThrottler;
         private readonly int _minCallsPerSessionWithSubAgents;
+        private readonly int _subAgentQueueWaitSeconds;
 
         public ToolExecutor(
             IEnumerable<IToolHandler> handlers,
@@ -38,12 +39,13 @@ namespace Overseer.Services.Tools
 
             int maxProcess = configuration.GetValue<int>("ToolExecutionLimits:MaxProcessParallelToolCalls", 30);
             int maxLookup = configuration.GetValue<int>("ToolExecutionLimits:MaxProcessExternalLookupCalls", 3);
-            int maxSubAgents = configuration.GetValue<int>("SubAgentSettings:MaxParallelSubAgents", 3);
-            _minCallsPerSessionWithSubAgents = configuration.GetValue<int>("SubAgentSettings:MinCallsPerSessionWithSubAgents", 60);
+            int maxProcessSubAgents = configuration.GetValue<int>("SubAgentSettings:MaxProcessParallelSubAgents", 12);
+            _subAgentQueueWaitSeconds = configuration.GetValue<int>("SubAgentSettings:SubAgentQueueWaitSeconds", 30);
+            _minCallsPerSessionWithSubAgents = configuration.GetValue<int>("SubAgentSettings:MinCallsPerSessionWithSubAgents", 200);
 
             _processThrottler = new SemaphoreSlim(Math.Max(1, maxProcess));
             _externalLookupThrottler = new SemaphoreSlim(Math.Max(1, maxLookup));
-            _subAgentThrottler = new SemaphoreSlim(Math.Max(1, maxSubAgents));
+            _subAgentThrottler = new SemaphoreSlim(Math.Max(1, maxProcessSubAgents));
         }
 
         public async Task<ToolResult> ExecuteAsync(
@@ -68,8 +70,11 @@ namespace Overseer.Services.Tools
                     toolName, callContext.SessionId, callContext.AgentName ?? "Coordinator", callContext.AgentDepth);
 
                 // 1. Session Rate Limiting (atomic — tools may run concurrently)
-                var rateLimitKey = $"tool_calls_session_{callContext.SessionId}";
-                int sessionLimit = callContext.AgentDepth > 0
+                bool isSubAgentCall = callContext.AgentDepth > 0;
+                var rateLimitKey = isSubAgentCall
+                    ? $"tool_calls_session_{callContext.SessionId}_sub"
+                    : $"tool_calls_session_{callContext.SessionId}";
+                int sessionLimit = isSubAgentCall
                     ? Math.Max(callContext.MaxCallsPerSession, _minCallsPerSessionWithSubAgents)
                     : callContext.MaxCallsPerSession;
                 bool allowed;
@@ -131,8 +136,25 @@ namespace Overseer.Services.Tools
                 {
                     if (categoryThrottler != null)
                     {
-                        await categoryThrottler.WaitAsync(cancellationToken);
-                        categorySlot = true;
+                        if (handler.Category == ToolCategory.SubAgent)
+                        {
+                            categorySlot = await categoryThrottler.WaitAsync(
+                                TimeSpan.FromSeconds(_subAgentQueueWaitSeconds), cancellationToken);
+                            if (!categorySlot)
+                            {
+                                return new ToolResult
+                                {
+                                    Success = false,
+                                    ErrorMessage = "The server is at subagent capacity. Try the lookup directly, or retry shortly.",
+                                    TerminationStatus = "error"
+                                };
+                            }
+                        }
+                        else
+                        {
+                            await categoryThrottler.WaitAsync(cancellationToken);
+                            categorySlot = true;
+                        }
                     }
                     if (requiresProcessThrottler)
                     {

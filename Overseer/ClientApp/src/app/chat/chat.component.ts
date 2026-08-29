@@ -1286,7 +1286,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         const toolInfo = JSON.parse(evt.data);
         const tc = this.streamingToolCalls.find(t => t.id === toolInfo.id && t.status === 'running');
         if (tc) {
-          tc.status = 'completed';
+          tc.status = toolInfo.status || 'completed';
           tc.result = toolInfo.result;
         }
         this.updateDesiredAvatarState();
@@ -1298,7 +1298,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         const toolInfo = JSON.parse(evt.data);
         const tc = this.streamingToolCalls.find(t => t.id === toolInfo.id && t.status === 'running');
         if (tc) {
-          tc.status = 'error';
+          tc.status = toolInfo.status || 'error';
           tc.error = toolInfo.error;
         }
         this.updateDesiredAvatarState();

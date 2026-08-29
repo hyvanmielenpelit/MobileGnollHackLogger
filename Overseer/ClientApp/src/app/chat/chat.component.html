@@ -282,6 +282,9 @@
                         @if (tc.status === 'completed') {
                           <span class="tool-status">✅</span>
                         }
+                        @if (tc.status === 'iteration_limit' || tc.status === 'budget_exhausted') {
+                          <span class="tool-status" title="Partial result — subagent ran out of budget">⚠️ <small>Partial</small></span>
+                        }
                         @if (tc.status === 'canceled') {
                           <span class="tool-status" title="Canceled">⏹️ <small>Canceled</small></span>
                         }
@@ -289,7 +292,7 @@
                           <span class="tool-status">❌</span>
                         }
                       </div>
-                      @if (tc.status === 'completed') {
+                      @if (tc.status === 'completed' || tc.status === 'iteration_limit' || tc.status === 'budget_exhausted') {
                         <div class="tool-call-result">
                           <details>
                             <summary>
@@ -407,6 +410,9 @@
                         @if (tc.status === 'completed') {
                           <span class="tool-status">✅</span>
                         }
+                        @if (tc.status === 'iteration_limit' || tc.status === 'budget_exhausted') {
+                          <span class="tool-status" title="Partial result — subagent ran out of budget">⚠️ <small>Partial</small></span>
+                        }
                         @if (tc.status === 'canceled') {
                           <span class="tool-status" title="Canceled">⏹️ <small>Canceled</small></span>
                         }
@@ -414,7 +420,7 @@
                           <span class="tool-status">❌</span>
                         }
                       </div>
-                      @if (tc.status === 'completed') {
+                      @if (tc.status === 'completed' || tc.status === 'iteration_limit' || tc.status === 'budget_exhausted') {
                         <div class="tool-call-result">
                           <details>
                             <summary>
