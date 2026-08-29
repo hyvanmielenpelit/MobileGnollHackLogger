@@ -1,5 +1,32 @@
 [
   {
+    "version": "1.0.27",
+    "date": "2026-08-29T11:15:00Z",
+    "summary": "Added configurable parallel tool execution modes for API keys and system models, introduced a model selector badge preference for restricted execution modes, added human-readable subagent activity labels in chat, and improved subagent resilience, rate limiting, and partial result handling.",
+    "changes": [
+      {
+        "type": "feature",
+        "text": "Added per-key and system-model parallel execution mode settings (Disabled/Sequential, On Request, Enabled) in API Keys and Admin settings to control concurrent tool calling behavior."
+      },
+      {
+        "type": "improvement",
+        "text": "Added a user setting to display 'Sequential' and 'On request' badges in the chat model selector and dropdowns when parallel execution is restricted for an active key."
+      },
+      {
+        "type": "improvement",
+        "text": "Added human-readable subagent display names in the chat interface to show clear and informative labels when delegating tasks to subagents."
+      },
+      {
+        "type": "improvement",
+        "text": "Improved subagent execution resilience with dedicated session rate limits, queue capacity limits, and clear partial result reporting when subagents terminate early."
+      },
+      {
+        "type": "fix",
+        "text": "Fixed subagent model resolution fallback to ensure subagents only select eligible models with valid decrypted API keys."
+      }
+    ]
+  },
+  {
     "version": "1.0.26",
     "date": "2026-08-28T22:58:00Z",
     "summary": "Introduced autonomous subagent delegation and execution tracking in chat, added game dump snapshot sanitization with readable ASCII dungeon maps, added the dynamic refresh_snapshot tool for live game updates, and added a subagent permission toggle in AI Settings.",
