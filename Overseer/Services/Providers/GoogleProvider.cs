@@ -68,7 +68,7 @@ public class GoogleProvider : IAiProvider
         }
 
         var genConfig = new Dictionary<string, object>();
-        int? configuredDefault = _configuration?.GetValue<int?>("DefaultMaxOutputTokens:Google");
+        int? configuredDefault = _configuration.GetValue<int?>("DefaultMaxOutputTokens:Google");
         int? effectiveMaxTokens = maxOutputTokens ?? configuredDefault;
         if (effectiveMaxTokens.HasValue)
         {

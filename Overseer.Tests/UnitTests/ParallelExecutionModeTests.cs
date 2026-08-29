@@ -84,15 +84,16 @@ public class ParallelExecutionModeTests
 
         using (var db = new ApplicationDbContext(options))
         {
+            var ct = TestContext.Current.CancellationToken;
             db.UserAiApiKeys.Add(new UserAiApiKey
             {
                 AspNetUserId = "user-123",
                 Provider = "OpenAI",
                 ParallelExecutionMode = ParallelExecutionMode.Disabled
             });
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(ct);
 
-            var resolved = await resolver.ResolveAsync("user-123", "OpenAI", null, db);
+            var resolved = await resolver.ResolveAsync("user-123", "OpenAI", null, db, ct);
             Assert.Equal(ParallelExecutionMode.Disabled, resolved);
         }
     }
@@ -109,6 +110,7 @@ public class ParallelExecutionModeTests
 
         using (var db = new ApplicationDbContext(options))
         {
+            var ct = TestContext.Current.CancellationToken;
             var sysConfig = new SystemAiApiConfiguration
             {
                 DisplayName = "Test System Model",
@@ -117,9 +119,9 @@ public class ParallelExecutionModeTests
                 ParallelExecutionMode = ParallelExecutionMode.OnRequest
             };
             db.SystemAiApiConfigurations.Add(sysConfig);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(ct);
 
-            var resolved = await resolver.ResolveAsync(null, null, sysConfig.Id, db);
+            var resolved = await resolver.ResolveAsync(null, null, sysConfig.Id, db, ct);
             Assert.Equal(ParallelExecutionMode.OnRequest, resolved);
         }
     }

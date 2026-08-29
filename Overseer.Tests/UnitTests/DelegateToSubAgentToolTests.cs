@@ -159,7 +159,7 @@ public class DelegateToSubAgentToolTests
             ThinkingLevel = "high",
             OrderIndex = 0
         });
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var context = new ToolExecutionContext { SessionId = 10, AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
         var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
@@ -186,7 +186,7 @@ public class DelegateToSubAgentToolTests
             MaxOutputTokens = null,
             OrderIndex = 0
         });
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var context = new ToolExecutionContext { SessionId = 20, AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
         var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
@@ -224,7 +224,7 @@ public class DelegateToSubAgentToolTests
             MaxOutputTokens = 50000,
             OrderIndex = 0
         });
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var context = new ToolExecutionContext { SessionId = 30, AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
         var validParams = JsonDocument.Parse("{\"agent_name\":\"custom_capped\",\"task\":\"do something\"}").RootElement;
@@ -250,7 +250,7 @@ public class DelegateToSubAgentToolTests
             ThinkingLevel = "invalid_thinking_level_xyz",
             OrderIndex = 0
         });
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var context = new ToolExecutionContext { SessionId = 40, AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
         var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
@@ -267,7 +267,7 @@ public class DelegateToSubAgentToolTests
         var (tool, db, _, _) = CreateTestSetup();
         var session = new ChatSession { Id = 50, AspNetUserId = "user50", Title = "Test", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow };
         db.ChatSession.Add(session);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var context = new ToolExecutionContext
         {
@@ -293,7 +293,7 @@ public class DelegateToSubAgentToolTests
         provider.EmitToolCallOnFirstIteration = true;
         var session = new ChatSession { Id = 60, AspNetUserId = "user60", Title = "Test", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow };
         db.ChatSession.Add(session);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var forwardedEvents = new List<ChatEvent>();
         var context = new ToolExecutionContext
@@ -333,7 +333,7 @@ public class DelegateToSubAgentToolTests
         provider.EmitToolCallOnFirstIteration = true;
         var session = new ChatSession { Id = 61, AspNetUserId = "user61", Title = "Test", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow };
         db.ChatSession.Add(session);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var forwardedEvents = new List<ChatEvent>();
         string expectedParentToolCallId = "parent-delegate-call-123";
@@ -374,7 +374,7 @@ public class DelegateToSubAgentToolTests
         var (tool, db, _, _) = CreateTestSetup(mockMetadata: new DisallowedExecutionMetadataService());
         var session = new ChatSession { Id = 70, AspNetUserId = "user70", Title = "Test", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow };
         db.ChatSession.Add(session);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var context = new ToolExecutionContext { SessionId = 70, AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
         var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
@@ -402,7 +402,7 @@ public class DelegateToSubAgentToolTests
 
         var session = new ChatSession { Id = 80, AspNetUserId = "user80", Title = "Test", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow };
         db.ChatSession.Add(session);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var context = new ToolExecutionContext { SessionId = 80, ActiveUserModelId = 102, AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
         var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
@@ -445,7 +445,7 @@ public class DelegateToSubAgentToolTests
 
         var session = new ChatSession { Id = 81, AspNetUserId = "user81", Title = "Test", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow };
         db.ChatSession.Add(session);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var context = new ToolExecutionContext { SessionId = 81, ActiveSystemModelId = 201, AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
         var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
@@ -484,7 +484,7 @@ public class DelegateToSubAgentToolTests
 
         var session = new ChatSession { Id = 82, AspNetUserId = "user82", Title = "Test", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow };
         db.ChatSession.Add(session);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var context = new ToolExecutionContext { SessionId = 82, AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
         var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
@@ -524,7 +524,7 @@ public class DelegateToSubAgentToolTests
 
         var session = new ChatSession { Id = 83, AspNetUserId = "user83", Title = "Test", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow };
         db.ChatSession.Add(session);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var context = new ToolExecutionContext { SessionId = 83, AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
         var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
@@ -543,7 +543,7 @@ public class DelegateToSubAgentToolTests
         var (tool, db, _, _) = CreateTestSetup();
         var session = new ChatSession { Id = 90, AspNetUserId = "user90", Title = "Test", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow };
         db.ChatSession.Add(session);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var context = new ToolExecutionContext { SessionId = 90, AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = false };
         var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
@@ -585,7 +585,7 @@ public class DelegateToSubAgentToolTests
         var (tool, db, _, _) = CreateTestSetup();
         var session = new ChatSession { Id = 100, AspNetUserId = "user100", Title = "Test", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow };
         db.ChatSession.Add(session);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var sinkEvents = new List<ChatEvent>();
         var context = new ToolExecutionContext

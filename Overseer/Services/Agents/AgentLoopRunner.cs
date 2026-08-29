@@ -271,7 +271,7 @@ public class AgentLoopRunner
                         sbFullResponse.Append($"\n\n**Error:** {evt.Data}");
                     }
 
-                    if (evt.Type == "debug" && evt.Data != null &&
+                    if (evt.Type == "debug" && !string.IsNullOrEmpty(evt.Data) &&
                         (evt.Data.Contains("Response incomplete: reason=max_output_tokens") ||
                          evt.Data.Contains("stop_reason=max_tokens") ||
                          evt.Data.Contains("finishReason=MAX_TOKENS")))
@@ -655,7 +655,7 @@ public class AgentLoopRunner
 
                             if (evt.Type == "error" && !hasYieldedChunks)
                             {
-                                bool isRetryable = evt.Data != null && (
+                                bool isRetryable = !string.IsNullOrEmpty(evt.Data) && (
                                     evt.Data.Contains("[overloaded_error]") ||
                                     evt.Data.Contains("[rate_limit_error]") ||
                                     evt.Data.Contains("[api_error]") ||

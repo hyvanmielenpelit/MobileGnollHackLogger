@@ -530,7 +530,7 @@ public class ChatService
                 hasGameSnapshot, hasMessageHistory, session?.ClientSettings, enableToolUse,
                 enableWebSearch, allowSourceCodeReferences, enableSubAgents, parallelMode);
 
-            bool enableSegmentedPrompt = _configuration?.GetValue<bool>("PromptCacheSettings:EnableSegmentedPrompt", true) ?? true;
+            bool enableSegmentedPrompt = _configuration.GetValue<bool>("PromptCacheSettings:EnableSegmentedPrompt", true);
             segmentedPrompt = null;
             if (enableSegmentedPrompt)
             {
@@ -659,7 +659,7 @@ public class ChatService
             int effectiveInputLimit = maxInputTokens ?? meta.MaxInputTokens;
             if (effectiveInputLimit <= 0) effectiveInputLimit = 100000;
             
-            int blockSize = _configuration?.GetValue<int>("PromptCacheSettings:TruncationBlockSize", 8) ?? 8;
+            int blockSize = _configuration.GetValue<int>("PromptCacheSettings:TruncationBlockSize", 8);
             messageHistory = TruncateHistoryPrefixStable(messageHistory, systemPrompt, effectiveInputLimit, blockSize);
             
             // Always Insert System Prompt
@@ -734,7 +734,7 @@ public class ChatService
             runBudget.MaxParallelSubAgents = 1;
         }
 
-        string salt = _configuration?.GetValue<string>("PromptCacheSettings:PromptCacheKeySalt", "overseer_cache_salt_v1") ?? "overseer_cache_salt_v1";
+        string salt = _configuration.GetValue<string>("PromptCacheSettings:PromptCacheKeySalt", "overseer_cache_salt_v1");
         string? promptCacheKey = null;
         try
         {
@@ -757,7 +757,7 @@ public class ChatService
             SegmentedPrompt = segmentedPrompt,
             PromptCacheKey = promptCacheKey,
             CredentialKey = AiRequestGovernor.GetCredentialKey(provider ?? "", userId, systemModelId),
-            PermitWaitTimeout = TimeSpan.FromSeconds(_configuration?.GetValue<int>("AiRateLimitSettings:PermitWaitSeconds", 120) ?? 120),
+            PermitWaitTimeout = TimeSpan.FromSeconds(_configuration.GetValue<int>("AiRateLimitSettings:PermitWaitSeconds", 120)),
             SeedHistory = messageHistory,
             ThinkingLevel = thinkingLevel,
             ReasoningMode = reasoningMode,
@@ -1320,7 +1320,7 @@ public class ChatService
         bool enableSubAgents = false,
         ParallelExecutionMode parallelMode = ParallelExecutionMode.Enabled)
     {
-        bool enableSegmentedPrompt = _configuration?.GetValue<bool>("PromptCacheSettings:EnableSegmentedPrompt", true) ?? true;
+        bool enableSegmentedPrompt = _configuration.GetValue<bool>("PromptCacheSettings:EnableSegmentedPrompt", true);
         if (enableSegmentedPrompt)
         {
             var (frozen, session, volatileSuffix) = BuildSegmentedSystemPrompt(
@@ -1667,7 +1667,7 @@ public class ChatService
 
                         if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {provider}] HTTP {(int)response.StatusCode} Received ({sw.ElapsedMilliseconds}ms, Attempt {i + 1})" }, CancellationToken.None);
 
-                        if (response != null && _governor != null)
+                        if (_governor != null)
                         {
                             _governor.UpdateLimitsFromHeaders(titleCredentialKey, response);
                         }
