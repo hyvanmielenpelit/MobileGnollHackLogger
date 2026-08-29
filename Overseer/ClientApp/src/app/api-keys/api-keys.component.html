@@ -61,12 +61,12 @@
                         (ngModelChange)="onParallelModeChange(provider, $event)"
                         [disabled]="savingParallelProvider === provider">
                   <option [ngValue]="2">Allowed</option>
-                  <option [ngValue]="1">Only when I ask</option>
-                  <option [ngValue]="0">Off</option>
+                  <option [ngValue]="1">On request</option>
+                  <option [ngValue]="0">Sequential only</option>
                 </select>
               </div>
               <p class="parallel-mode-hint">
-                Controls whether Overseer may run tool calls and subagents at the same time on this key. Turn this off for free or low-tier keys that hit rate limits. 'Only when I ask' is a request to the model, not a hard limit.
+                Controls whether Overseer may run tool calls and subagents at the same time on this key. Choose 'Sequential only' for free or low-tier keys that hit rate limits. 'On request' is a request to the model, not a hard limit.
               </p>
             </div>
           </div>

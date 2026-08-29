@@ -106,7 +106,7 @@ Overseer supports a tri-state **Per-Key Parallel Execution Mode** to accommodate
 | **Enabled** | `2` | Full Parallel Execution (Default) | Standard full concurrency limits | Standard parallel execution guidance in `_policy.md`. No override block appended. |
 
 ### UI Indication & Controls
-- **API Keys Settings**: Users can set parallel execution mode per provider (`Allowed`, `Only when I ask`, `Off`).
+- **API Keys Settings**: Users can set parallel execution mode per provider (`Allowed`, `On request`, `Sequential only`).
 - **Chat Model Selector**: Displays `Sequential` (solid amber) or `On request` (dashed amber) restriction badges when the active model's key is restricted.
 - **AI Settings**: Users can toggle *Show parallel-execution badge in the model selector* on or off.
 

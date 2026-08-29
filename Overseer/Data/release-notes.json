@@ -6,7 +6,7 @@
     "changes": [
       {
         "type": "feature",
-        "text": "Added per-key and system-model parallel execution mode settings (Disabled/Sequential, On Request, Enabled) in API Keys and Admin settings to control concurrent tool calling behavior."
+        "text": "Added per-provider Parallel Execution Mode settings (Allowed, On request, Sequential only) in API Keys management to prevent rate-limit errors on free or low-tier keys."
       },
       {
         "type": "improvement",
