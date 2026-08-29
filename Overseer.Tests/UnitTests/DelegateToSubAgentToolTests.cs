@@ -648,6 +648,124 @@ public class DelegateToSubAgentToolTests
         }
     }
 
+    [Fact]
+    public void ParameterSchema_IncludesOptionalSubagentNameParameter()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        var catalogService = new SubAgentCatalogService(config, NullLogger<SubAgentCatalogService>.Instance);
+        var manager = new OngoingChatManager(config);
+        var metadata = new ModelMetadataService();
+        var services = new ServiceCollection();
+        var sp = services.BuildServiceProvider();
+
+        var tool = new DelegateToSubAgentTool(
+            catalogService,
+            manager,
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            config,
+            metadata,
+            NullLogger<DelegateToSubAgentTool>.Instance);
+
+        var schema = tool.ParameterSchema;
+        Assert.True(schema.TryGetProperty("properties", out var props));
+        Assert.True(props.TryGetProperty("subagent_name", out var subProp));
+        Assert.Equal("string", subProp.GetProperty("type").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(subProp.GetProperty("description").GetString()));
+
+        Assert.True(schema.TryGetProperty("required", out var req));
+        var reqList = req.EnumerateArray().Select(e => e.GetString()).ToList();
+        Assert.Contains("agent_name", reqList);
+        Assert.Contains("task", reqList);
+        Assert.DoesNotContain("subagent_name", reqList);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Succeeds_WithSubagentName()
+    {
+        var (tool, db, provider, manager) = CreateTestSetup();
+        var context = new ToolExecutionContext { SessionId = 1, AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
+        var pars = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"Research stats\",\"subagent_name\":\"Rakshasa stats researcher\"}").RootElement;
+
+        var result = await tool.ExecuteAsync(pars, context, CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.NotNull(provider.LastMessageHistory);
+        Assert.NotEmpty(provider.LastMessageHistory);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Succeeds_WithoutSubagentName()
+    {
+        var (tool, db, provider, manager) = CreateTestSetup();
+        var context = new ToolExecutionContext { SessionId = 1, AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
+        var pars = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"Research stats\"}").RootElement;
+
+        var result = await tool.ExecuteAsync(pars, context, CancellationToken.None);
+
+        Assert.True(result.Success);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Succeeds_WithBlankOrOversizedSubagentName()
+    {
+        var (tool, db, provider, manager) = CreateTestSetup();
+        var context = new ToolExecutionContext { SessionId = 1, AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
+        var longTitle = new string('z', 500);
+        var pars = JsonDocument.Parse($"{{\"agent_name\":\"wiki_researcher\",\"task\":\"Research stats\",\"subagent_name\":\"{longTitle}\"}}").RootElement;
+
+        var result = await tool.ExecuteAsync(pars, context, CancellationToken.None);
+
+        Assert.True(result.Success);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Succeeds_WithNonStringSubagentName()
+    {
+        var (tool, db, provider, manager) = CreateTestSetup();
+        var context = new ToolExecutionContext { SessionId = 1, AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
+        var pars = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"Research stats\",\"subagent_name\":42}").RootElement;
+
+        var result = await tool.ExecuteAsync(pars, context, CancellationToken.None);
+
+        Assert.True(result.Success);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_PersonalizesSeedSystemMessage_WithoutMutatingCatalog()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        var catalogService = new SubAgentCatalogService(config, NullLogger<SubAgentCatalogService>.Instance);
+        string originalInstructions = catalogService.GetSubAgent("wiki_researcher")!.Instructions;
+
+        var (tool, db, provider, manager) = CreateTestSetup(mockCatalog: catalogService);
+        var context = new ToolExecutionContext { SessionId = 1, AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
+
+        // Delegation 1
+        var pars1 = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"Task 1\",\"subagent_name\":\"Instance One\"}").RootElement;
+        var result1 = await tool.ExecuteAsync(pars1, context, CancellationToken.None);
+        Assert.True(result1.Success);
+        Assert.NotNull(provider.LastMessageHistory);
+
+        var firstSysMsgObj = provider.LastMessageHistory[0];
+        string firstContent = (string)firstSysMsgObj.GetType().GetProperty("content")!.GetValue(firstSysMsgObj)!;
+        Assert.Contains("Instance One", firstContent);
+        Assert.Contains(originalInstructions, firstContent);
+
+        // Delegation 2
+        var pars2 = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"Task 2\",\"subagent_name\":\"Instance Two\"}").RootElement;
+        var result2 = await tool.ExecuteAsync(pars2, context, CancellationToken.None);
+        Assert.True(result2.Success);
+
+        var secondSysMsgObj = provider.LastMessageHistory[0];
+        string secondContent = (string)secondSysMsgObj.GetType().GetProperty("content")!.GetValue(secondSysMsgObj)!;
+        Assert.Contains("Instance Two", secondContent);
+        Assert.DoesNotContain("Instance One", secondContent);
+
+        // Catalog instruction verification
+        string afterInstructions = catalogService.GetSubAgent("wiki_researcher")!.Instructions;
+        Assert.Equal(originalInstructions, afterInstructions);
+    }
+
     private static (DelegateToSubAgentTool tool, ApplicationDbContext db, CapturingMockProvider provider, OngoingChatManager manager) CreateTestSetup(
         string providerName = "OpenAI",
         Dictionary<string, string?>? customConfig = null,
@@ -705,6 +823,7 @@ public class DelegateToSubAgentToolTests
         services.AddSingleton(toolRegistry);
         services.AddSingleton(toolExecutor);
         services.AddSingleton(new KnowledgeBaseService(NullLogger<KnowledgeBaseService>.Instance, config));
+        services.AddSingleton(catalogService);
         services.AddSingleton<IHttpClientFactory>(new MockHttpClientFactory());
         services.AddSingleton<IConfiguration>(config);
         services.AddSingleton<AgentLoopRunner>();
@@ -732,6 +851,7 @@ public class DelegateToSubAgentToolTests
         public string? LastServiceTier { get; private set; }
         public string? LastModelId { get; private set; }
         public string? LastApiKey { get; private set; }
+        public List<object>? LastMessageHistory { get; private set; }
         public bool EmitToolCallOnFirstIteration { get; set; } = false;
         private int _streamCallCount = 0;
 
@@ -753,6 +873,7 @@ public class DelegateToSubAgentToolTests
             LastThinkingLevel = thinkingLevel;
             LastReasoningMode = reasoningMode;
             LastServiceTier = serviceTier;
+            LastMessageHistory = new List<object>(messageHistory);
             return new Dictionary<string, object>();
         }
 

@@ -1146,6 +1146,7 @@ public class ChatService
                 sb.AppendLine();
                 sb.AppendLine("When a complex inquiry requires multi-turn investigation or specialized deep dive, delegate the sub-task to the appropriate subagent. Subagents execute autonomously and return synthesized findings.");
                 sb.AppendLine("Do NOT use delegation for trivial single-turn lookups.");
+                sb.AppendLine("Always pass `subagent_name` — a short human-readable title (2–6 words) naming what this subagent instance is investigating, e.g., 'Rakshasa stats researcher'. It is shown to the user as a live progress label. Use plain descriptive wording, not the agent's registered identifier.");
                 sb.AppendLine();
             }
         }

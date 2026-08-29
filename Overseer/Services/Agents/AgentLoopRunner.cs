@@ -21,6 +21,7 @@ public class AgentLoopRunner
     private readonly KnowledgeBaseService _knowledgeBaseService;
     private readonly ModelMetadataService _modelMetadataService;
     private readonly ILogger<AgentLoopRunner> _logger;
+    private readonly SubAgentCatalogService? _subAgentCatalogService;
 
     public AgentLoopRunner(
         IEnumerable<IAiProvider> aiProviders,
@@ -31,7 +32,8 @@ public class AgentLoopRunner
         IServiceScopeFactory scopeFactory,
         KnowledgeBaseService knowledgeBaseService,
         ModelMetadataService modelMetadataService,
-        ILogger<AgentLoopRunner> logger)
+        ILogger<AgentLoopRunner> logger,
+        SubAgentCatalogService? subAgentCatalogService = null)
     {
         _aiProviders = aiProviders.ToDictionary(p => p.ProviderName, p => p, StringComparer.OrdinalIgnoreCase);
         _toolRegistry = toolRegistry;
@@ -42,6 +44,7 @@ public class AgentLoopRunner
         _knowledgeBaseService = knowledgeBaseService;
         _modelMetadataService = modelMetadataService;
         _logger = logger;
+        _subAgentCatalogService = subAgentCatalogService;
     }
 
     public async IAsyncEnumerable<ChatEvent> RunAsync(
@@ -274,6 +277,7 @@ public class AgentLoopRunner
                     {
                         ToolCallId = tId,
                         Name = tName,
+                        DisplayName = TryBuildSubAgentDisplayName(tName, tArgsStr),
                         ArgsText = tArgsStr,
                         Status = "running",
                         SortOrder = streamToolCalls.Count,
@@ -691,6 +695,30 @@ public class AgentLoopRunner
         }
     }
 
+    private string? TryBuildSubAgentDisplayName(string? toolName, string? argsJson)
+    {
+        if (!string.Equals(toolName, "delegate_to_subagent", StringComparison.Ordinal)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(argsJson ?? "{}");
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return null;
+            string? agent = doc.RootElement.TryGetProperty("agent_name", out var agentProp) && agentProp.ValueKind == JsonValueKind.String
+                ? agentProp.GetString()
+                : null;
+            string? instance = null;
+            if (doc.RootElement.TryGetProperty("subagent_name", out var subProp) && subProp.ValueKind == JsonValueKind.String)
+            {
+                instance = subProp.GetString();
+            }
+            else if (doc.RootElement.TryGetProperty("subagentName", out var subCamelProp) && subCamelProp.ValueKind == JsonValueKind.String)
+            {
+                instance = subCamelProp.GetString();
+            }
+            return SubAgentUiHelper.BuildDisplayName(agent, instance, _subAgentCatalogService);
+        }
+        catch { return null; }
+    }
+
     private string EnrichToolStartData(string eventData, AgentRunRequest request)
     {
         try
@@ -724,6 +752,18 @@ public class AgentLoopRunner
                             rootObj["arguments"] = argsObj.ToJsonString();
                         }
                     }
+                }
+            }
+
+            // Subagent display name enrichment.
+            if (toolName == "delegate_to_subagent" &&
+                rootObj.TryGetPropertyValue("arguments", out var subArgsNode))
+            {
+                var subArgsStr = subArgsNode?.GetValue<string>();
+                var displayName = TryBuildSubAgentDisplayName(toolName, subArgsStr);
+                if (!string.IsNullOrEmpty(displayName))
+                {
+                    rootObj["display_name"] = displayName;
                 }
             }
 

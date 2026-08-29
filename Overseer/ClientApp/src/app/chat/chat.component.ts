@@ -67,7 +67,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     'get_artifact_stats': 'Reading artifact stats',
     'get_github_repo_info': 'Retrieving GitHub repository information',
     'search_github': 'Searching GitHub',
-    'delegate_to_subagent': 'Delegating to Subagent'
+    'delegate_to_subagent': 'Invoking subagent'
   };
 
   private static readonly NETHACK_TOOL_DISPLAY_NAMES: Record<string, string> = {
@@ -79,12 +79,47 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     'get_function_definition': 'Reading NetHack function definition'
   };
 
+  private static titleCaseIdentifier(id: string): string {
+    if (!id || typeof id !== 'string') return '';
+    return id.trim()
+      .split(/[_\-\s]+/)
+      .filter(t => t.length > 0)
+      .map(t => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase())
+      .join(' ');
+  }
+
+  private static lowercaseTypePhrase(typeName: string): string {
+    if (!typeName || typeof typeName !== 'string') return '';
+    return typeName.trim()
+      .split(' ')
+      .filter(w => w.length > 0)
+      .map(w => /^[A-Z][a-z]*$/.test(w) ? w.toLowerCase() : w)
+      .join(' ');
+  }
+
+  private static normalizeInstanceName(raw: any): string {
+    if (!raw || typeof raw !== 'string') return '';
+    const collapsed = raw.trim().replace(/\s+/g, ' ');
+    return collapsed.length > 80 ? collapsed.substring(0, 80) : collapsed;
+  }
+
   public static getToolDisplayName(name: string, argsOrRepo?: any): string {
     if (name === 'delegate_to_subagent') {
-      if (argsOrRepo?.agent_name) {
-        return `Subagent: ${argsOrRepo.agent_name}`;
+      if (typeof argsOrRepo === 'object' && argsOrRepo !== null) {
+        const agentName = typeof argsOrRepo.agent_name === 'string' ? argsOrRepo.agent_name.trim() : '';
+        if (agentName) {
+          const typeName = ChatComponent.titleCaseIdentifier(agentName);
+          const rawInstance = argsOrRepo.subagent_name ?? argsOrRepo.subagentName;
+          const instance = ChatComponent.normalizeInstanceName(rawInstance);
+          if (instance &&
+              instance.toLowerCase() !== typeName.toLowerCase() &&
+              instance.toLowerCase() !== agentName.toLowerCase()) {
+            return `Invoking ${ChatComponent.lowercaseTypePhrase(typeName)} subagent: ${instance}`;
+          }
+          return `Invoking subagent: ${typeName}`;
+        }
       }
-      return 'Delegating to Subagent';
+      return ChatComponent.TOOL_DISPLAY_NAMES['delegate_to_subagent'] || 'Invoking subagent';
     }
 
     const isNetHack = typeof argsOrRepo === 'string'
@@ -101,8 +136,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     if (!args) return '';
     try {
       if (name === 'delegate_to_subagent') {
-        if (args.agent_name && args.task) return `${args.agent_name}: "${args.task}"`;
-        if (args.task) return `"${args.task}"`;
+        return args.task ? `"${args.task}"` : '';
       }
       if (name === 'source_code_search') {
         if (args.query && args.file_filter) return `"${args.query}" in ${args.file_filter}`;
@@ -1264,7 +1298,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.debugService.log(`[Frontend] tool_start: ${toolInfo.name}, streamingMessage.length after=${this.streamingMessage.length}`);
 
         const args = JSON.parse(toolInfo.arguments || '{}');
-        const displayName = ChatComponent.getToolDisplayName(toolInfo.name, args);
+        const displayName = toolInfo.display_name || ChatComponent.getToolDisplayName(toolInfo.name, args);
         const argsText = this.buildToolArgsText(toolInfo.name, args);
         
         this.streamingToolCalls.push({ 
@@ -1724,7 +1758,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
             }
           }
           if (tc.name) {
-            tc.displayName = ChatComponent.getToolDisplayName(tc.name, argsObj);
+            tc.displayName = tc.displayName || ChatComponent.getToolDisplayName(tc.name, argsObj);
           }
         });
       }

@@ -267,7 +267,7 @@
                         } @else {
                           <span class="tool-icon">🛠️</span>
                         }
-                        <span class="tool-name">{{ tc.displayName || tc.name }}</span>
+                        <span class="tool-name" [title]="tc.displayName || tc.name">{{ tc.displayName || tc.name }}</span>
                         @if (tc.argsText) {
                           <span class="tool-args"> ({{ tc.argsText }})</span>
                         }
@@ -395,7 +395,7 @@
                         } @else {
                           <span class="tool-icon">🛠️</span>
                         }
-                        <span class="tool-name">{{ tc.displayName || tc.name }}</span>
+                        <span class="tool-name" [title]="tc.displayName || tc.name">{{ tc.displayName || tc.name }}</span>
                         @if (tc.argsText) {
                           <span class="tool-args"> ({{ tc.argsText }})</span>
                         }

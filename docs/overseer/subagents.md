@@ -19,6 +19,8 @@ Overseer supports a **coordinator-specialist multi-agent architecture**:
 
 ### 2. Delegation Tool (`DelegateToSubAgentTool`)
 - Implemented as an `IToolHandler` under `ToolCategory.SubAgent`.
+- Supports parameters `agent_name` (required), `task` (required), `context` (optional), and `subagent_name` (optional, 2–6 word human-readable instance title).
+- Automatically personalizes the subagent's seed system instructions with the instance title (`For this delegation you are acting as: "{subagentName}"...`) on a local string without mutating the singleton catalog.
 - Validates delegation depth (depth limit 1 prevents infinite recursion).
 - Registers the subagent execution with `OngoingChatManager` for individual cancellation.
 - Resolves subagent execution model, credentials, and parameters following the precedence hierarchy:
@@ -35,6 +37,7 @@ Overseer supports a **coordinator-specialist multi-agent architecture**:
 
 ### 3. Agent Loop Runner (`AgentLoopRunner`)
 - Core multi-turn agent loop driving LLM requests, parallel tool execution with `ToolBatchRunner`, thought markup generation, and error recovery.
+- Computes human-friendly display names for subagents via `SubAgentUiHelper` and enriches `tool_start` payloads with `display_name`.
 - Centralized clamping of `effectiveMaxOutputTokens` against `runMetadata.MaxOutputTokens` to prevent provider HTTP 400 errors.
 - Automatic detection of output truncation (`finishReason: MAX_TOKENS`, `stop_reason: max_tokens`, or `response.incomplete` status) with user-facing truncation notices (`_[Response truncated: output token limit reached.]_`).
 - Reusable across the main coordinator agent and specialist subagents.
@@ -48,10 +51,11 @@ Overseer supports a **coordinator-specialist multi-agent architecture**:
 - Each running subagent is registered in `OngoingChatManager.ActiveSubAgents`.
 - The user can cancel a specific subagent via `POST /api/chat/sessions/{sessionId}/subagents/{toolCallId}/cancel`.
 - Streamed diagnostic events are tagged with `[SubAgent:{agentName}]` and displayed live in the frontend debug log.
-- Subagent tool lifecycle events stream live to the client with `agent_name`, `parent_tool_call_id`, and `depth`, rendering as nested tool blocks during active streaming. These events are also buffered into `OngoingChatManager.AccumulatedEvents` so a reconnecting client replays the nested streaming blocks.
+- Subagent tool lifecycle events stream live to the client with `display_name`, `agent_name`, `parent_tool_call_id`, and `depth`, rendering as nested tool blocks during active streaming. These events are also buffered into `OngoingChatManager.AccumulatedEvents` so a reconnecting client replays the nested streaming blocks.
 
 ### 6. Persistence & Retention
-- Subagent tool executions are persisted in `ChatMessageToolCall` rows with `AgentName`, `ParentToolCallId`, and `Depth`.
+- Subagent tool executions are persisted in `ChatMessageToolCall` rows with `DisplayName`, `AgentName`, `ParentToolCallId`, and `Depth`.
+- `DisplayName` is clamped to 256 characters and persisted to the database, ensuring that even when `ChatRetentionService.PruneAgedToolCallResultsAsync` prunes aged `ArgsText` and `Result` fields, human-readable subagent titles remain intact on historical sessions.
 - On session load, nested tool calls are reconstructed and displayed in a hierarchical view.
 
 ## Configuration Reference (`SubAgentSettings`)

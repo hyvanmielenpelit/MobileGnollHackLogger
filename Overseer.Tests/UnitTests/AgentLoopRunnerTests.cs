@@ -138,7 +138,8 @@ public class AgentLoopRunnerTests
             sp.GetRequiredService<IServiceScopeFactory>(),
             new KnowledgeBaseService(NullLogger<KnowledgeBaseService>.Instance, config),
             new ModelMetadataService(),
-            NullLogger<AgentLoopRunner>.Instance);
+            NullLogger<AgentLoopRunner>.Instance,
+            new SubAgentCatalogService(config, NullLogger<SubAgentCatalogService>.Instance));
 
         var request = new AgentRunRequest
         {
@@ -193,7 +194,8 @@ public class AgentLoopRunnerTests
             sp.GetRequiredService<IServiceScopeFactory>(),
             new KnowledgeBaseService(NullLogger<KnowledgeBaseService>.Instance, config),
             new ModelMetadataService(),
-            NullLogger<AgentLoopRunner>.Instance);
+            NullLogger<AgentLoopRunner>.Instance,
+            new SubAgentCatalogService(config, NullLogger<SubAgentCatalogService>.Instance));
 
         var request = new AgentRunRequest
         {
@@ -286,7 +288,8 @@ public class AgentLoopRunnerTests
             sp.GetRequiredService<IServiceScopeFactory>(),
             new KnowledgeBaseService(NullLogger<KnowledgeBaseService>.Instance, config),
             new ModelMetadataService(),
-            NullLogger<AgentLoopRunner>.Instance);
+            NullLogger<AgentLoopRunner>.Instance,
+            new SubAgentCatalogService(config, NullLogger<SubAgentCatalogService>.Instance));
 
         var request = new AgentRunRequest
         {
@@ -329,7 +332,8 @@ public class AgentLoopRunnerTests
             sp.GetRequiredService<IServiceScopeFactory>(),
             new KnowledgeBaseService(NullLogger<KnowledgeBaseService>.Instance, config),
             new ModelMetadataService(),
-            NullLogger<AgentLoopRunner>.Instance);
+            NullLogger<AgentLoopRunner>.Instance,
+            new SubAgentCatalogService(config, NullLogger<SubAgentCatalogService>.Instance));
 
         var request = new AgentRunRequest
         {
@@ -345,5 +349,136 @@ public class AgentLoopRunnerTests
         await foreach (var _ in runner.RunAsync(request, budget, result, CancellationToken.None)) { }
 
         Assert.Equal("budget_exhausted", result.TerminationReason);
+    }
+
+    private class ToolEmittingMockProvider : MockAiProvider
+    {
+        private readonly string _toolName;
+        private readonly string _arguments;
+
+        public ToolEmittingMockProvider(string toolName, string arguments)
+        {
+            _toolName = toolName;
+            _arguments = arguments;
+        }
+
+        public override async IAsyncEnumerable<ChatEvent> ParseStreamAsync(HttpResponseMessage response, bool showDebugLog, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            var tcJson = JsonSerializer.Serialize(new { id = "call_1", name = _toolName, arguments = _arguments });
+            yield return new ChatEvent { Type = "tool_call_complete", Data = tcJson };
+            yield return new ChatEvent { Type = "chunk", Data = "Done." };
+            await Task.CompletedTask;
+        }
+
+        public override object? BuildToolsPayload(List<object> providerTools, List<object> functionDeclarations) => new { };
+    }
+
+    [Fact]
+    public async Task ToolStart_ForDelegateToSubAgent_IncludesDisplayName()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var sp = services.BuildServiceProvider();
+
+        var provider = new ToolEmittingMockProvider(
+            "delegate_to_subagent",
+            "{\"agent_name\":\"wiki_researcher\",\"task\":\"Stats\",\"subagent_name\":\"Rakshasa stats researcher\"}");
+
+        var config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+
+        var clientBridge = new NullClientBridge();
+        var handlers = new List<IToolHandler> { new MockToolHandler() };
+        var toolRegistry = new ToolRegistry(handlers, clientBridge, NullLogger<ToolRegistry>.Instance);
+        var toolExecutor = new ToolExecutor(handlers, clientBridge, NullLogger<ToolExecutor>.Instance, cache, config);
+
+        var runner = new AgentLoopRunner(
+            new[] { provider },
+            toolRegistry,
+            toolExecutor,
+            new MockHttpClientFactory(),
+            config,
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            new KnowledgeBaseService(NullLogger<KnowledgeBaseService>.Instance, config),
+            new ModelMetadataService(),
+            NullLogger<AgentLoopRunner>.Instance,
+            new SubAgentCatalogService(config, NullLogger<SubAgentCatalogService>.Instance));
+
+        var request = new AgentRunRequest
+        {
+            ProviderName = "MockProvider",
+            ModelId = "mock-model",
+            ApiKey = "test-key",
+            SeedHistory = new List<object> { new { role = "user", content = "Run" } },
+            AiProvider = provider
+        };
+
+        var events = new List<ChatEvent>();
+        var result = new AgentRunResult();
+        await foreach (var evt in runner.RunAsync(request, null, result, CancellationToken.None))
+        {
+            events.Add(evt);
+        }
+
+        var toolStart = events.FirstOrDefault(e => e.Type == "tool_start");
+        Assert.NotNull(toolStart);
+        Assert.NotNull(toolStart.Data);
+
+        using var doc = JsonDocument.Parse(toolStart.Data);
+        Assert.True(doc.RootElement.TryGetProperty("display_name", out var dispProp));
+        Assert.Equal("Invoking wiki researcher subagent: Rakshasa stats researcher", dispProp.GetString());
+    }
+
+    [Fact]
+    public async Task ToolStart_ForOtherTools_OmitsDisplayName()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var sp = services.BuildServiceProvider();
+
+        var provider = new ToolEmittingMockProvider("mock_tool", "{}");
+
+        var config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+
+        var clientBridge = new NullClientBridge();
+        var handlers = new List<IToolHandler> { new MockToolHandler() };
+        var toolRegistry = new ToolRegistry(handlers, clientBridge, NullLogger<ToolRegistry>.Instance);
+        var toolExecutor = new ToolExecutor(handlers, clientBridge, NullLogger<ToolExecutor>.Instance, cache, config);
+
+        var runner = new AgentLoopRunner(
+            new[] { provider },
+            toolRegistry,
+            toolExecutor,
+            new MockHttpClientFactory(),
+            config,
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            new KnowledgeBaseService(NullLogger<KnowledgeBaseService>.Instance, config),
+            new ModelMetadataService(),
+            NullLogger<AgentLoopRunner>.Instance,
+            new SubAgentCatalogService(config, NullLogger<SubAgentCatalogService>.Instance));
+
+        var request = new AgentRunRequest
+        {
+            ProviderName = "MockProvider",
+            ModelId = "mock-model",
+            ApiKey = "test-key",
+            SeedHistory = new List<object> { new { role = "user", content = "Run" } },
+            AiProvider = provider
+        };
+
+        var events = new List<ChatEvent>();
+        var result = new AgentRunResult();
+        await foreach (var evt in runner.RunAsync(request, null, result, CancellationToken.None))
+        {
+            events.Add(evt);
+        }
+
+        var toolStart = events.FirstOrDefault(e => e.Type == "tool_start");
+        Assert.NotNull(toolStart);
+        Assert.NotNull(toolStart.Data);
+
+        using var doc = JsonDocument.Parse(toolStart.Data);
+        Assert.False(doc.RootElement.TryGetProperty("display_name", out _));
     }
 }

@@ -554,6 +554,22 @@ describe('ChatComponent session loading and exclusivity', () => {
       expect(ChatComponent.getToolDisplayName('custom_unknown_tool')).toBe('custom_unknown_tool');
     });
 
+    it('should format subagent display names correctly', () => {
+      expect(ChatComponent.getToolDisplayName('delegate_to_subagent')).toBe('Invoking subagent');
+      expect(ChatComponent.getToolDisplayName('delegate_to_subagent', {})).toBe('Invoking subagent');
+      expect(ChatComponent.getToolDisplayName('delegate_to_subagent', { agent_name: 'wiki_researcher' })).toBe('Invoking subagent: Wiki Researcher');
+      expect(ChatComponent.getToolDisplayName('delegate_to_subagent', { agent_name: 'wiki_researcher', subagent_name: 'Rakshasa stats researcher' })).toBe('Invoking wiki researcher subagent: Rakshasa stats researcher');
+      expect(ChatComponent.getToolDisplayName('delegate_to_subagent', { agent_name: 'wiki_researcher', subagentName: 'Rakshasa stats researcher' })).toBe('Invoking wiki researcher subagent: Rakshasa stats researcher');
+      expect(ChatComponent.getToolDisplayName('delegate_to_subagent', { agent_name: 'wiki_researcher', subagent_name: '   ' })).toBe('Invoking subagent: Wiki Researcher');
+      expect(ChatComponent.getToolDisplayName('delegate_to_subagent', { agent_name: 'wiki_researcher', subagent_name: 'Wiki Researcher' })).toBe('Invoking subagent: Wiki Researcher');
+      expect(ChatComponent.getToolDisplayName('delegate_to_subagent', { agent_name: 'wiki_researcher', subagent_name: 'wiki_researcher' })).toBe('Invoking subagent: Wiki Researcher');
+      expect(ChatComponent.getToolDisplayName('delegate_to_subagent', { agent_name: 'wiki_researcher', subagent_name: 'a'.repeat(200) })).toBe('Invoking wiki researcher subagent: ' + 'a'.repeat(80));
+      expect(ChatComponent.getToolDisplayName('delegate_to_subagent', { agent_name: 'unknown_expert' })).toBe('Invoking subagent: Unknown Expert');
+      expect(ChatComponent.getToolDisplayName('delegate_to_subagent', { agent_name: 'custom-agent' })).toBe('Invoking subagent: Custom Agent');
+      expect(ChatComponent.getToolDisplayName('delegate_to_subagent', { agent_name: 42 as any })).toBe('Invoking subagent');
+      expect(ChatComponent.getToolDisplayName('delegate_to_subagent', 'nethack')).toBe('Invoking subagent');
+    });
+
     it('should format minimal status label with natural tool names when streaming', () => {
       component.streamingToolCalls = [{
         id: '1',
@@ -570,6 +586,53 @@ describe('ChatComponent session loading and exclusivity', () => {
         status: 'running'
       }];
       expect(component.getMinimalStatusLabel()).toBe('Searching GnollHack source code...');
+
+      component.streamingToolCalls = [{
+        id: '3',
+        name: 'delegate_to_subagent',
+        displayName: 'Invoking wiki researcher subagent: Rakshasa stats researcher',
+        status: 'running'
+      }];
+      expect(component.getMinimalStatusLabel()).toBe('Invoking wiki researcher subagent: Rakshasa stats researcher...');
+    });
+
+    it('should format tool args and preserve server-provided displayName in formatMessageToolCalls', () => {
+      const messages: any[] = [{
+        id: 1,
+        role: 'assistant',
+        content: 'Done',
+        toolCalls: [
+          {
+            id: 'tc1',
+            name: 'delegate_to_subagent',
+            displayName: 'Invoking wiki researcher subagent: Persisted Title',
+            argsText: '{"agent_name":"wiki_researcher","task":"Compare prayer timeouts","subagent_name":"Persisted Title"}'
+          },
+          {
+            id: 'tc2',
+            name: 'delegate_to_subagent',
+            displayName: null,
+            argsText: '{"agent_name":"source_investigator","task":"Investigate AC calculation"}'
+          },
+          {
+            id: 'tc3',
+            name: 'delegate_to_subagent',
+            displayName: null,
+            argsText: '{"agent_name":"wiki_researcher"}'
+          }
+        ]
+      }];
+
+      (component as any).formatMessageToolCalls(messages);
+
+      expect(messages[0].toolCalls[0].displayName).toBe('Invoking wiki researcher subagent: Persisted Title');
+      expect(messages[0].toolCalls[0].argsText).toBe('"Compare prayer timeouts"');
+
+      expect(messages[0].toolCalls[1].displayName).toBe('Invoking subagent: Source Investigator');
+      expect(messages[0].toolCalls[1].argsText).toBe('"Investigate AC calculation"');
+
+      expect(messages[0].toolCalls[2].displayName).toBe('Invoking subagent: Wiki Researcher');
+      expect(messages[0].toolCalls[2].argsText).toBe('');
     });
   });
 

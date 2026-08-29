@@ -59,6 +59,11 @@ public class DelegateToSubAgentTool : IToolHandler
                     {
                         type = "string",
                         description = "Optional background context, prior discoveries, or game state information relevant to the task."
+                    },
+                    ["subagent_name"] = new
+                    {
+                        type = "string",
+                        description = "A concise, human-friendly title (2-6 words, max 80 characters) for this specific subagent instance, describing its particular inquiry — e.g. 'Rakshasa stats researcher', 'Elbereth mechanics investigator'. Shown to the user in the UI. Omit if the task is generic."
                     }
                 },
                 required = new[] { "agent_name", "task" }
@@ -101,6 +106,7 @@ public class DelegateToSubAgentTool : IToolHandler
         string? agentName = null;
         string? taskText = null;
         string? contextText = null;
+        string? subagentName = null;
 
         if (parameters.ValueKind == JsonValueKind.Object)
         {
@@ -110,7 +116,13 @@ public class DelegateToSubAgentTool : IToolHandler
                 taskText = taskProp.GetString();
             if (parameters.TryGetProperty("context", out var ctxProp) && ctxProp.ValueKind == JsonValueKind.String)
                 contextText = ctxProp.GetString();
+            if (parameters.TryGetProperty("subagent_name", out var subProp) && subProp.ValueKind == JsonValueKind.String)
+                subagentName = subProp.GetString();
+            else if (parameters.TryGetProperty("subagentName", out var subCamelProp) && subCamelProp.ValueKind == JsonValueKind.String)
+                subagentName = subCamelProp.GetString();
         }
+
+        subagentName = SubAgentUiHelper.NormalizeInstanceName(subagentName);
 
         if (string.IsNullOrWhiteSpace(agentName) || string.IsNullOrWhiteSpace(taskText))
         {
@@ -232,8 +244,15 @@ public class DelegateToSubAgentTool : IToolHandler
                 fullUserPrompt += $"\n\nContext:\n{contextText}";
             }
 
+            string instructions = subAgentDef.Instructions;
+            if (!string.IsNullOrWhiteSpace(subagentName))
+            {
+                instructions += $"\n\nFor this delegation you are acting as: \"{subagentName}\". "
+                              + "Keep your investigation scoped to that focus.";
+            }
+
             seedHistory.Add(aiProvider.FormatMessage("user", fullUserPrompt, null));
-            seedHistory.Insert(0, new { role = "system", content = subAgentDef.Instructions });
+            seedHistory.Insert(0, new { role = "system", content = instructions });
             seedHistory = aiProvider.PrepareMessageHistory(seedHistory);
 
             var subAgentExecContext = context.CloneFor(toolCallId);
@@ -252,7 +271,7 @@ public class DelegateToSubAgentTool : IToolHandler
                 await context.EventSink.Invoke(new ChatEvent
                 {
                     Type = "debug",
-                    Data = $"[SubAgent:{agentName} - Model Configuration]\n" +
+                    Data = $"[SubAgent:{agentName}{(string.IsNullOrEmpty(subagentName) ? "" : $" (\"{subagentName}\")")} - Model Configuration]\n" +
                            $"Provider: {resolved.Provider}\n" +
                            $"Model: {resolved.ModelId}\n" +
                            $"Credential Source: {resolved.CredentialSource}\n" +
@@ -276,7 +295,7 @@ public class DelegateToSubAgentTool : IToolHandler
                 ModelId = resolved.ModelId,
                 ApiKey = resolved.ApiKey,
                 ModelDisplayName = subAgentDef.DisplayName,
-                SystemPrompt = subAgentDef.Instructions,
+                SystemPrompt = instructions,
                 SeedHistory = seedHistory,
                 ThinkingLevel = resolvedThinkingLevel,
                 ReasoningMode = resolvedReasoningMode,
