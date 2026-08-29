@@ -100,6 +100,7 @@ builder.Services.AddScoped<Overseer.Services.Providers.IAiProvider, Overseer.Ser
 builder.Services.AddScoped<Overseer.Services.Providers.IAiProvider, Overseer.Services.Providers.AnthropicProvider>();
 builder.Services.AddScoped<Overseer.Services.Providers.IAiProvider, Overseer.Services.Providers.GoogleProvider>();
 builder.Services.AddScoped<ChatService>();
+builder.Services.AddSingleton<Overseer.Services.ParallelExecutionResolver>();
 builder.Services.AddScoped<Overseer.Services.Agents.AgentLoopRunner>();
 builder.Services.AddScoped<SystemAiConfigService>();
 builder.Services.AddSingleton<OngoingChatManager>();

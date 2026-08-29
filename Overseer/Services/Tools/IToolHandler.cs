@@ -62,6 +62,7 @@ namespace Overseer.Services.Tools
         public bool EnableSubAgents { get; set; } = false;
         public long? ActiveUserModelId { get; set; }
         public long? ActiveSystemModelId { get; set; }
+        public MobileGnollHackLogger.Data.ParallelExecutionMode ParallelExecutionMode { get; set; } = MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled;
 
         public ToolExecutionContext CloneFor(string toolCallId)
         {
@@ -86,7 +87,8 @@ namespace Overseer.Services.Tools
                 ShowDebugLog = this.ShowDebugLog,
                 EnableSubAgents = this.EnableSubAgents,
                 ActiveUserModelId = this.ActiveUserModelId,
-                ActiveSystemModelId = this.ActiveSystemModelId
+                ActiveSystemModelId = this.ActiveSystemModelId,
+                ParallelExecutionMode = this.ParallelExecutionMode
             };
         }
     }

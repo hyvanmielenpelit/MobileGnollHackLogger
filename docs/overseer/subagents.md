@@ -31,7 +31,7 @@ Overseer supports a **coordinator-specialist multi-agent architecture**:
   5. **First Authorized System Model**: The first assigned system model available for chat (resolved `ModelRole` of 1 or 3).
   6. **AppSettings Fallback**: Default model from `appsettings.json` (`AI:Provider`, `AI:Model`, `AI:APIKey`).
 - Output token limits resolve with precedence: Subagent definition override (`SubAgentDefinition.MaxOutputTokens`) → Inherited model row (`MaxOutputTokens`) → Static catalog defaults via `ModelMetadataService` (e.g. 128k for `gpt-5.6-luna`, 65k for `gemini-2.5-pro`).
-- Clones and propagates `ToolExecutionContext` (`SessionId`, `UserId`, `SpoilerFreeMode`, `AgentDepth = parent + 1`, `Budget`, `ActiveSystemModelId`, `ActiveUserModelId`) to maintain isolation and spoiler safety.
+- Clones and propagates `ToolExecutionContext` (`SessionId`, `UserId`, `SpoilerFreeMode`, `AgentDepth = parent + 1`, `Budget`, `ActiveSystemModelId`, `ActiveUserModelId`, `ParallelExecutionMode`) to maintain isolation and spoiler safety.
 - Forwards an explicit allow-list of subagent events (`debug` (when `ShowDebugLog` is true), `tool_start`, `tool_result`, `tool_error`) to the parent event sink while isolating subagent prose and reasoning (`chunk`, `thinking_chunk`), status updates (`status`), timing metrics (`ttft`, `duration`), and top-level errors (`error`) from coordinator chat streams.
 - Executes the subagent loop via `AgentLoopRunner`.
 

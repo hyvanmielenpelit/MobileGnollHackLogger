@@ -59,6 +59,7 @@ export interface SystemAiConfigDto {
   monthlyTitleTokensCount: number;
   totalTitleTokensCount: number;
   modelRole: number;
+  parallelExecutionMode: number;
   apiKey?: string;
   note?: string | null;
 }

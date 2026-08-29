@@ -536,6 +536,12 @@
                       <span class="reasoning-badge">{{ selectedModel?.reasoningMode }}</span>
                     }
                     <span class="provider-badge">{{ selectedModel?.provider }}</span>
+                    @if (shouldRenderParallelBadge && selectedModel?.parallelExecutionMode === 0) {
+                      <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
+                    }
+                    @if (shouldRenderParallelBadge && selectedModel?.parallelExecutionMode === 1) {
+                      <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
+                    }
                     <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
                   </button>
                   @if (isModelDropdownOpen) {
@@ -553,6 +559,12 @@
                             <span class="reasoning-badge">{{ model.reasoningMode }}</span>
                           }
                           <span class="provider-badge">{{ model.provider }}</span>
+                          @if (shouldRenderParallelBadge && model.parallelExecutionMode === 0) {
+                            <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
+                          }
+                          @if (shouldRenderParallelBadge && model.parallelExecutionMode === 1) {
+                            <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
+                          }
                         </div>
                       }
                       @if (systemModels.length > 0) {
@@ -568,6 +580,12 @@
                             <span class="reasoning-badge">{{ model.reasoningMode }}</span>
                           }
                           <span class="provider-badge">{{ model.provider }}</span>
+                          @if (shouldRenderParallelBadge && model.parallelExecutionMode === 0) {
+                            <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
+                          }
+                          @if (shouldRenderParallelBadge && model.parallelExecutionMode === 1) {
+                            <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
+                          }
                         </div>
                       }
                     </div>
@@ -582,6 +600,12 @@
                       <span class="reasoning-badge">{{ selectedModel?.reasoningMode || singleModelInfo?.reasoningMode }}</span>
                     }
                     <span class="provider-badge">{{ selectedModel?.provider || singleModelInfo?.provider }}</span>
+                    @if (shouldRenderParallelBadge && (selectedModel?.parallelExecutionMode === 0 || (!selectedModel && singleModelInfo?.parallelExecutionMode === 0))) {
+                      <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
+                    }
+                    @if (shouldRenderParallelBadge && (selectedModel?.parallelExecutionMode === 1 || (!selectedModel && singleModelInfo?.parallelExecutionMode === 1))) {
+                      <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
+                    }
                   </div>
                 }
               </div>

@@ -8,6 +8,8 @@ export interface UserAiSettings {
   maxAttachmentSize?: number;
   spoilerFreeMode: boolean;
   showSourceCodeReferences?: boolean;
+  showParallelBadge?: boolean;
+  parallelBadgeEnabled?: boolean;
   maxResultLength?: number | null;
   maxCallsPerSession?: number | null;
   maxToolIterations?: number | null;
@@ -58,11 +60,13 @@ export interface UserAiModel {
   maxOutputTokens?: number | null;
   isSystem?: boolean;
   modelRole?: number;
+  parallelExecutionMode?: number;
 }
 
 export interface ApiKeyStatus {
   provider: string;
   hasKey: boolean;
+  parallelExecutionMode?: number;
 }
 
 @Injectable({
@@ -93,7 +97,7 @@ export class SettingsService {
     });
   }
 
-  saveSettings(spoilerFreeMode: boolean, enableWebSearch: boolean, enableToolUse: boolean, enableSubAgents: boolean, enableClientTools: boolean, enableGameActions: boolean, showSourceCodeReferences: boolean, maxResultLength: number | null, maxCallsPerSession: number | null, maxToolIterations: number | null, maxParallelToolCalls: number | null, showThoughtsAndTools: number, requestTimeout: number | null) {
+  saveSettings(spoilerFreeMode: boolean, enableWebSearch: boolean, enableToolUse: boolean, enableSubAgents: boolean, enableClientTools: boolean, enableGameActions: boolean, showSourceCodeReferences: boolean, maxResultLength: number | null, maxCallsPerSession: number | null, maxToolIterations: number | null, maxParallelToolCalls: number | null, showThoughtsAndTools: number, requestTimeout: number | null, showParallelBadge?: boolean) {
     return this.http.put('/api/settings', {
       spoilerFreeMode,
       enableWebSearch,
@@ -107,7 +111,8 @@ export class SettingsService {
       maxToolIterations,
       maxParallelToolCalls,
       showThoughtsAndTools,
-      requestTimeout
+      requestTimeout,
+      showParallelBadge
     });
   }
 
@@ -127,6 +132,10 @@ export class SettingsService {
 
   saveApiKey(provider: string, apiKey: string) {
     return this.http.put('/api/settings/apikeys', { provider, apiKey });
+  }
+
+  saveApiKeyParallelMode(provider: string, mode: number) {
+    return this.http.put(`/api/settings/apikeys/${provider}/parallel`, { mode });
   }
 
   deleteApiKeyForProvider(provider: string) {

@@ -289,6 +289,14 @@
           <option [ngValue]="3">Chat & Title Generation</option>
         </select>
       </div>
+      <div class="form-group flex-col mt-10">
+        <label>Parallel Execution Mode</label>
+        <select class="gh-input w-100" [(ngModel)]="parallelExecutionMode">
+          <option [ngValue]="2">Allowed</option>
+          <option [ngValue]="1">Only when asked</option>
+          <option [ngValue]="0">Disabled (Sequential)</option>
+        </select>
+      </div>
     }
     @if (!isAdmin && mode === 'edit') {
       <div class="form-group flex-col">

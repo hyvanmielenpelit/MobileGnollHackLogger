@@ -17,10 +17,12 @@ export class ApiKeysComponent implements OnInit {
 
   providers = ['Anthropic', 'Google', 'OpenAI'];
   keyStatuses: Record<string, boolean> = {};
+  keyParallelModes: Record<string, number> = {};
   newKeys: Record<string, string> = {};
   
   loading = false;
   savingProvider = '';
+  savingParallelProvider = '';
   deletingProvider: string | null = null;
   
   ngOnInit() {
@@ -32,12 +34,28 @@ export class ApiKeysComponent implements OnInit {
     this.settingsService.getApiKeys().subscribe({
       next: (statuses) => {
         this.keyStatuses = {};
+        this.keyParallelModes = {};
         for (const status of statuses) {
           this.keyStatuses[status.provider] = status.hasKey;
+          this.keyParallelModes[status.provider] = status.parallelExecutionMode ?? 2;
         }
         this.loading = false;
       },
       error: () => this.loading = false
+    });
+  }
+
+  onParallelModeChange(provider: string, mode: number) {
+    const numMode = Number(mode);
+    this.keyParallelModes[provider] = numMode;
+    this.savingParallelProvider = provider;
+    this.settingsService.saveApiKeyParallelMode(provider, numMode).subscribe({
+      next: () => {
+        this.savingParallelProvider = '';
+      },
+      error: () => {
+        this.savingParallelProvider = '';
+      }
     });
   }
 

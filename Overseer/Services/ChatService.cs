@@ -13,6 +13,7 @@ using Overseer.Extensions;
 using Overseer.Services.Tools;
 using Overseer.Services.Providers;
 using Overseer.Services.Agents;
+using ParallelExecutionMode = MobileGnollHackLogger.Data.ParallelExecutionMode;
 
 namespace Overseer.Services;
 
@@ -31,6 +32,7 @@ public class ChatService
     private readonly KnowledgeBaseService _knowledgeBaseService;
     private readonly OngoingChatManager _ongoingChatManager;
     private readonly AgentLoopRunner _agentLoopRunner;
+    private readonly ParallelExecutionResolver _parallelExecutionResolver;
     private readonly Dictionary<string, IAiProvider> _aiProviders;
     private readonly SubAgentCatalogService? _subAgentCatalogService;
     private bool _showDebugLog = false;
@@ -48,6 +50,7 @@ public class ChatService
         KnowledgeBaseService knowledgeBaseService,
         OngoingChatManager ongoingChatManager,
         AgentLoopRunner agentLoopRunner,
+        ParallelExecutionResolver parallelExecutionResolver,
         IEnumerable<IAiProvider> aiProviders,
         SubAgentCatalogService? subAgentCatalogService = null)
     {
@@ -63,6 +66,7 @@ public class ChatService
         _knowledgeBaseService = knowledgeBaseService;
         _ongoingChatManager = ongoingChatManager;
         _agentLoopRunner = agentLoopRunner;
+        _parallelExecutionResolver = parallelExecutionResolver;
         _aiProviders = aiProviders.ToDictionary(p => p.ProviderName, p => p, StringComparer.OrdinalIgnoreCase);
         _subAgentCatalogService = subAgentCatalogService;
     }
@@ -189,6 +193,8 @@ public class ChatService
         int? userMaxCallsPerSession = null;
         int? userMaxToolIterations = null;
         int? userMaxParallelToolCalls = null;
+        var parallelMode = ParallelExecutionMode.Enabled;
+        bool shouldGenerateTitle = false;
         string systemPrompt = "";
 
         int estimatedInputTokens = 0;
@@ -231,6 +237,7 @@ public class ChatService
                     yield break;
                 }
 
+                parallelMode = _parallelExecutionResolver.Resolve(config, null);
                 userModelId = null;
                 provider = config.Provider;
                 model = config.ModelId;
@@ -305,6 +312,7 @@ public class ChatService
                             apiKey = _cryptoService.Decrypt(config.EncryptedApiKey, config.ApiKeyNonce, config.ApiKeyTag, "SYSTEM_API_KEY");
                         }
                         systemModelId = config.Id;
+                        parallelMode = _parallelExecutionResolver.Resolve(config, null);
                     }
                 }
             }
@@ -318,6 +326,7 @@ public class ChatService
             if (!systemModelId.HasValue)
             {
                 var providerKey = await dbContext.UserAiApiKeys.FirstOrDefaultAsync(k => k.AspNetUserId == userId && k.Provider == provider);
+                parallelMode = _parallelExecutionResolver.Resolve(null, providerKey);
                 if (providerKey != null && !string.IsNullOrEmpty(providerKey.EncryptedApiKey) && !string.IsNullOrEmpty(providerKey.ApiKeyNonce) && !string.IsNullOrEmpty(providerKey.ApiKeyTag))
                 {
                     apiKey = _cryptoService.Decrypt(providerKey.EncryptedApiKey, providerKey.ApiKeyNonce, providerKey.ApiKeyTag, userId);
@@ -340,7 +349,6 @@ public class ChatService
             bool hasMessageHistory = false;
 
             ChatSession? session = null;
-            bool shouldGenerateTitle = false;
 
             session = await dbContext.ChatSession.FindAsync(sessionId);
             if (session == null || session.AspNetUserId != userId)
@@ -397,7 +405,7 @@ public class ChatService
                 shouldGenerateTitle = true;
             }
 
-            if (shouldGenerateTitle)
+            if (shouldGenerateTitle && parallelMode != ParallelExecutionMode.Disabled)
             {
                 _ = Task.Run(async () =>
                 {
@@ -475,7 +483,7 @@ public class ChatService
                 _configuration);
 
             // enableToolUse handled above
-            systemPrompt = BuildSystemPrompt(contextDocs, spoilerFreeMode, verboseMode, isGameOn, developerMode, overseerMode, hasGameSnapshot, hasMessageHistory, session?.ClientSettings, enableToolUse, enableWebSearch, allowSourceCodeReferences, enableSubAgents);
+            systemPrompt = BuildSystemPrompt(contextDocs, spoilerFreeMode, verboseMode, isGameOn, developerMode, overseerMode, hasGameSnapshot, hasMessageHistory, session?.ClientSettings, enableToolUse, enableWebSearch, allowSourceCodeReferences, enableSubAgents, parallelMode);
 
             var userMsg = new ChatMessage
             {
@@ -625,7 +633,7 @@ public class ChatService
             if (_showDebugLog) yield return new ChatEvent 
             { 
                 Type = "debug", 
-                Data = $"[Model Configuration]\nProvider: {provider}\nModel: {model}\nDisplay Name: {(string.IsNullOrEmpty(modelDisplayName) ? "None" : modelDisplayName)}\nThinking Level: {(string.IsNullOrEmpty(thinkingLevel) ? "None" : thinkingLevel)}\nService Tier: {(string.IsNullOrEmpty(serviceTier) ? "None" : serviceTier)}\nMax Input Tokens (Limit): {effectiveInputLimit}\nMax Output Tokens: {(maxOutputTokens.HasValue ? maxOutputTokens.Value.ToString() : "Default")}\nEstimated Request Input Tokens: ~{totalTokens}" 
+                Data = $"[Model Configuration]\nProvider: {provider}\nModel: {model}\nDisplay Name: {(string.IsNullOrEmpty(modelDisplayName) ? "None" : modelDisplayName)}\nThinking Level: {(string.IsNullOrEmpty(thinkingLevel) ? "None" : thinkingLevel)}\nService Tier: {(string.IsNullOrEmpty(serviceTier) ? "None" : serviceTier)}\nParallel Execution: {parallelMode}\nMax Input Tokens (Limit): {effectiveInputLimit}\nMax Output Tokens: {(maxOutputTokens.HasValue ? maxOutputTokens.Value.ToString() : "Default")}\nEstimated Request Input Tokens: ~{totalTokens}" 
             };
         }
 
@@ -650,6 +658,7 @@ public class ChatService
             Budget = runBudget,
             ActiveUserModelId = userModelId,
             ActiveSystemModelId = systemModelId,
+            ParallelExecutionMode = parallelMode,
             EventSink = async (evt) => {
                 evt.SessionId = currentSessionId;
                 _ongoingChatManager.ProcessEvent(currentSessionId, evt);
@@ -672,6 +681,13 @@ public class ChatService
         int maxParallelClientTools = Math.Clamp(
             Math.Clamp(cfgClientDefault, Math.Max(1, cfgClientMin), Math.Max(1, cfgClientMax)),
             1, maxParallelTools);
+
+        if (parallelMode == ParallelExecutionMode.Disabled)
+        {
+            maxParallelTools = 1;
+            maxParallelClientTools = 1;
+            runBudget.MaxParallelSubAgents = 1;
+        }
 
         var runRequest = new AgentRunRequest
         {
@@ -706,6 +722,14 @@ public class ChatService
         await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runBudget, runResult, cancellationToken))
         {
             yield return evt;
+        }
+
+        if (shouldGenerateTitle && parallelMode == ParallelExecutionMode.Disabled)
+        {
+            _ = Task.Run(async () =>
+            {
+                await GenerateTitleAsync(currentSessionId, message, userId);
+            });
         }
 
         string fullResponse = runResult.FinalText ?? "";
@@ -785,7 +809,8 @@ public class ChatService
         bool enableToolUse,
         bool enableWebSearch,
         bool allowSourceCodeReferences,
-        bool enableSubAgents = false)
+        bool enableSubAgents = false,
+        ParallelExecutionMode parallelMode = ParallelExecutionMode.Enabled)
     {
         var sb = new StringBuilder();
 
@@ -1127,6 +1152,13 @@ public class ChatService
             {
                 sb.AppendLine("## Tool Usage Policy");
                 sb.AppendLine(policy);
+                sb.AppendLine();
+            }
+
+            var parallelOverride = _toolRegistry.GetParallelOverrideText(parallelMode);
+            if (!string.IsNullOrWhiteSpace(parallelOverride))
+            {
+                sb.AppendLine(parallelOverride);
                 sb.AppendLine();
             }
         }

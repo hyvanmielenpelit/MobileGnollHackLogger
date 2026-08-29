@@ -53,6 +53,22 @@
                 </button>
               </div>
             }
+            <div class="parallel-mode-section">
+              <div class="parallel-mode-row">
+                <label [for]="'parallel-' + provider" class="parallel-mode-label">Parallel execution</label>
+                <select [id]="'parallel-' + provider" class="gh-input parallel-select"
+                        [ngModel]="keyParallelModes[provider] ?? 2"
+                        (ngModelChange)="onParallelModeChange(provider, $event)"
+                        [disabled]="savingParallelProvider === provider">
+                  <option [ngValue]="2">Allowed</option>
+                  <option [ngValue]="1">Only when I ask</option>
+                  <option [ngValue]="0">Off</option>
+                </select>
+              </div>
+              <p class="parallel-mode-hint">
+                Controls whether Overseer may run tool calls and subagents at the same time on this key. Turn this off for free or low-tier keys that hit rate limits. 'Only when I ask' is a request to the model, not a hard limit.
+              </p>
+            </div>
           </div>
           <!-- API Key Info Dialog -->
           <dialog #apiKeyInfoDialog class="gh-dialog">

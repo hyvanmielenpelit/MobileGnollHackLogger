@@ -1044,6 +1044,7 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
 
 @media (max-width: 992px) {
   .provider-badge,
+  .parallel-badge,
   .setting-indicator,
   .vertical-separator,
   .model-name-container {
@@ -1512,6 +1513,27 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
   padding: 1px 5px;
   border-radius: 4px;
   text-transform: uppercase;
+}
+
+.parallel-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  white-space: nowrap;
+
+  &.badge-sequential {
+    color: #fbbf24;
+    border: 1px solid #fbbf24;
+    background: rgba(251, 191, 36, 0.15);
+  }
+
+  &.badge-on-request {
+    color: #fbbf24;
+    border: 1px dashed #fbbf24;
+    background: rgba(251, 191, 36, 0.1);
+  }
 }
 
 .model-selector-wrapper {

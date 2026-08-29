@@ -46,6 +46,8 @@ public class SystemAiApiConfiguration : IRateLimitedEntity
 
     public bool IsSystemWide { get; set; }
 
+    public ParallelExecutionMode ParallelExecutionMode { get; set; } = ParallelExecutionMode.Enabled;
+
     public int ModelRole { get; set; } = 3; // 1 = Chat, 2 = Title Generation, 3 = Both
 
     [MaxLength(2048)]

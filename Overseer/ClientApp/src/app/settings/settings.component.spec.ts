@@ -43,6 +43,8 @@ describe('SettingsComponent', () => {
         maxCallsPerSession: 10,
         maxToolIterations: 3,
         maxParallelToolCalls: 4,
+        showParallelBadge: false,
+        parallelBadgeEnabled: true,
         requestTimeout: 60
       };
       spyOn(settingsService, 'getSettings').and.returnValue(of(mockSettings));
@@ -53,6 +55,8 @@ describe('SettingsComponent', () => {
 
       expect(component.spoilerFreeMode).toBeFalse();
       expect(component.showSourceCodeReferences).toBeTrue();
+      expect(component.showParallelBadge).toBeFalse();
+      expect(component.parallelBadgeEnabled).toBeTrue();
       expect(component.showThoughtsAndTools).toBe(1);
       expect(component.enableSubAgents).toBeFalse();
       expect(component.enableClientTools).toBeFalse();
@@ -62,6 +66,23 @@ describe('SettingsComponent', () => {
       expect(component.maxToolIterations).toBe(3);
       expect(component.maxParallelToolCalls).toBe(4);
       expect(component.requestTimeout).toBe(60);
+    });
+
+    it('should mark isDirty when showParallelBadge is toggled', () => {
+      const mockSettings: UserAiSettings = {
+        hasApiKey: true,
+        spoilerFreeMode: true,
+        showParallelBadge: true
+      };
+      spyOn(settingsService, 'getSettings').and.returnValue(of(mockSettings));
+
+      fixture = TestBed.createComponent(SettingsComponent);
+      component = fixture.componentInstance;
+      fixture.detectChanges();
+
+      expect(component.isDirty).toBeFalse();
+      component.showParallelBadge = false;
+      expect(component.isDirty).toBeTrue();
     });
 
     it('should catch TypeError: Failed to fetch on getSettings without unhandled error', () => {

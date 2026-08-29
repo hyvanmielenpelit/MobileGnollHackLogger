@@ -214,6 +214,7 @@ public class AdminController : ControllerBase
                 MonthlyTitleTokensCount = c.MonthlyTitleTokensCount,
                 TotalTitleTokensCount = c.TotalTitleTokensCount,
                 ModelRole = c.ModelRole,
+                ParallelExecutionMode = (int)c.ParallelExecutionMode,
                 Note = c.Note
             })
             .ToListAsync();
@@ -254,6 +255,7 @@ public class AdminController : ControllerBase
             MaxMonthlyTitleTokens = request.MaxMonthlyTitleTokens,
             MaxTotalTitleTokens = request.MaxTotalTitleTokens,
             ModelRole = request.ModelRole,
+            ParallelExecutionMode = (MobileGnollHackLogger.Data.ParallelExecutionMode)request.ParallelExecutionMode,
             OrderIndex = orderIndex,
             Note = request.Note
         };
@@ -299,6 +301,7 @@ public class AdminController : ControllerBase
         config.MaxMonthlyTitleTokens = request.MaxMonthlyTitleTokens;
         config.MaxTotalTitleTokens = request.MaxTotalTitleTokens;
         config.ModelRole = request.ModelRole;
+        config.ParallelExecutionMode = (MobileGnollHackLogger.Data.ParallelExecutionMode)request.ParallelExecutionMode;
         config.Note = request.Note;
 
         if (request.ApiKey != null)

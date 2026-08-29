@@ -278,6 +278,7 @@ public class DelegateToSubAgentTool : IToolHandler
                            $"Thinking Level: {resolvedThinkingLevel ?? "None"}\n" +
                            $"Reasoning Mode: {resolvedReasoningMode ?? "None"}\n" +
                            $"Service Tier: {resolvedServiceTier ?? "None"}\n" +
+                           $"Parallel Execution: {subAgentExecContext.ParallelExecutionMode}\n" +
                            $"Max Output Tokens: {resolvedMaxOutputTokens?.ToString() ?? "Provider default"}\n" +
                            $"Max Output Tokens Source: {maxOutputTokensSource}\n" +
                            $"Spoiler Free Mode: {subAgentExecContext.SpoilerFreeMode}\n" +

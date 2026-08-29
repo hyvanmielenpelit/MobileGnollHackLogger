@@ -328,6 +328,12 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   isTitleGenerationInProgress = false;
   showThoughtsAndTools = 0;
   spoilerFreeMode = false;
+  showParallelBadge = true;
+  parallelBadgeEnabled = true;
+
+  get shouldRenderParallelBadge(): boolean {
+    return this.showParallelBadge && this.parallelBadgeEnabled;
+  }
 
   userModels: import('../services/settings.service').UserAiModel[] = [];
   systemModels: import('../services/settings.service').UserAiModel[] = [];
@@ -866,6 +872,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           
           this.showThoughtsAndTools = Number(settings.showThoughtsAndTools ?? 0);
           this.spoilerFreeMode = settings.spoilerFreeMode === true;
+          this.showParallelBadge = settings.showParallelBadge ?? true;
+          this.parallelBadgeEnabled = settings.parallelBadgeEnabled ?? true;
           this.debugService.log(`[Overseer] showThoughtsAndTools loaded: ${this.showThoughtsAndTools} (type: ${typeof this.showThoughtsAndTools})`);
 
           const tModels0 = performance.now();

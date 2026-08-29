@@ -94,6 +94,8 @@ public class SettingsController : ControllerBase
             enableClientTools = settings?.EnableClientTools ?? true,
             enableGameActions = settings?.EnableGameActions ?? false,
             showThoughtsAndTools = settings?.ShowThoughtsAndTools ?? 0,
+            showParallelBadge = settings?.ShowParallelBadge ?? true,
+            parallelBadgeEnabled = _configuration.GetValue<bool>("ParallelExecutionSettings:ShowBadge", true),
             requestTimeout = settings?.RequestTimeout,
             showDebugLog = showDebugLog,
             performanceLimits = new {
@@ -182,7 +184,7 @@ public class SettingsController : ControllerBase
                 return BadRequest($"RequestTimeout must be between {min} and {max}");
         }
 
-        await _settingsService.SaveSettingsAsync(userId, request.SpoilerFreeMode, request.EnableWebSearch, request.EnableToolUse, request.EnableClientTools, request.EnableGameActions, request.ShowSourceCodeReferences, request.MaxResultLength, request.MaxCallsPerSession, request.MaxToolIterations, request.MaxParallelToolCalls, request.ShowThoughtsAndTools, request.RequestTimeout, request.EnableSubAgents);
+        await _settingsService.SaveSettingsAsync(userId, request.SpoilerFreeMode, request.EnableWebSearch, request.EnableToolUse, request.EnableClientTools, request.EnableGameActions, request.ShowSourceCodeReferences, request.MaxResultLength, request.MaxCallsPerSession, request.MaxToolIterations, request.MaxParallelToolCalls, request.ShowThoughtsAndTools, request.RequestTimeout, request.EnableSubAgents, request.ShowParallelBadge);
         
         return Ok();
     }
@@ -237,12 +239,36 @@ public class SettingsController : ControllerBase
         return Ok();
     }
 
+    [HttpPut("apikeys/{provider}/parallel")]
+    public async Task<IActionResult> SetApiKeyParallelMode(string provider, [FromBody] SetApiKeyParallelModeRequest request)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId == null) return Unauthorized();
+
+        if (request.Mode < 0 || request.Mode > 2)
+            return BadRequest("Mode must be 0 (Disabled), 1 (OnRequest), or 2 (Enabled).");
+
+        if (!SettingsService.SupportedProviders.Contains(provider, StringComparer.OrdinalIgnoreCase))
+            return BadRequest($"Unsupported provider '{provider}'. Supported providers are: {string.Join(", ", SettingsService.SupportedProviders)}.");
+
+        var matchedProvider = SettingsService.SupportedProviders.First(p => p.Equals(provider, StringComparison.OrdinalIgnoreCase));
+
+        await _settingsService.SaveApiKeyParallelModeAsync(userId, matchedProvider, request.Mode);
+        return Ok();
+    }
+
     [HttpGet("usermodels")]
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     public async Task<IActionResult> GetUserModels()
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (userId == null) return Unauthorized();
+
+        var apiKeysStatus = await _settingsService.GetApiKeysStatusAsync(userId);
+        var keyModeMap = apiKeysStatus.ToDictionary(
+            s => (string)((dynamic)s).Provider,
+            s => (int)((dynamic)s).ParallelExecutionMode,
+            StringComparer.OrdinalIgnoreCase);
 
         var models = await _settingsService.GetUserModelsAsync(userId);
         var dtos = models.Select(m => new {
@@ -258,7 +284,8 @@ public class SettingsController : ControllerBase
             ReasoningSummary = m.ReasoningSummary,
             ServiceTier = m.ServiceTier,
             IsSystem = false,
-            ModelRole = 3
+            ModelRole = 3,
+            ParallelExecutionMode = keyModeMap.TryGetValue(m.Provider, out var mode) ? mode : 2
         }).ToList();
 
         var systemConfigs = await _settingsService.GetResolvedSystemModelsAsync(userId);
@@ -275,7 +302,8 @@ public class SettingsController : ControllerBase
             ReasoningSummary = x.Config.ReasoningSummary,
             ServiceTier = x.Config.ServiceTier,
             IsSystem = true,
-            ModelRole = x.ResolvedRole
+            ModelRole = x.ResolvedRole,
+            ParallelExecutionMode = (int)x.Config.ParallelExecutionMode
         });
 
         dtos.AddRange(sysDtos);
@@ -582,7 +610,13 @@ public class UpdateSettingsRequest
     public bool? EnableGameActions { get; set; }
     public bool? ShowSourceCodeReferences { get; set; }
     public int? ShowThoughtsAndTools { get; set; }
+    public bool? ShowParallelBadge { get; set; }
     public int? RequestTimeout { get; set; }
+}
+
+public class SetApiKeyParallelModeRequest
+{
+    public int Mode { get; set; }
 }
 
 public class SaveApiKeyRequest

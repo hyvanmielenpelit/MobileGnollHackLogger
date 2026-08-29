@@ -22,4 +22,7 @@ public class UserAiApiKey
     
     [MaxLength(32)]
     public string? ApiKeyTag { get; set; }
+
+    public ParallelExecutionMode ParallelExecutionMode { get; set; } = ParallelExecutionMode.Enabled;
 }
+

@@ -17,6 +17,7 @@ export interface AiModelFormResult {
   isEnabled?: boolean;
   isSystemWide?: boolean;
   modelRole?: number;
+  parallelExecutionMode?: number;
   note?: string | null;
 }
 
@@ -62,6 +63,7 @@ export class AiModelFormComponent implements OnInit {
   isEnabled = true;
   isSystemWide = false;
   modelRole: number = 3;
+  parallelExecutionMode: number = 2;
   note: string | null = null;
 
   // State
@@ -158,6 +160,7 @@ export class AiModelFormComponent implements OnInit {
         this.isEnabled = this.initialData.isEnabled ?? true;
         this.isSystemWide = this.initialData.isSystemWide ?? false;
         this.modelRole = this.initialData.modelRole ?? 3;
+        this.parallelExecutionMode = this.initialData.parallelExecutionMode ?? 2;
         this.note = this.initialData.note || null;
       }
 
@@ -466,6 +469,7 @@ export class AiModelFormComponent implements OnInit {
       result.isEnabled = this.isEnabled;
       result.isSystemWide = this.isSystemWide;
       result.modelRole = this.modelRole;
+      result.parallelExecutionMode = this.parallelExecutionMode;
       result.note = this.note;
     }
 

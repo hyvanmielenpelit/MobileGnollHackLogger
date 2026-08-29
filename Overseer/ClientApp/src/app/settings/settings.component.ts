@@ -55,6 +55,10 @@ export class SettingsComponent implements OnInit, OnDestroy {
   showThoughtsAndTools = 0;
   initShowThoughtsAndTools = 0;
 
+  showParallelBadge = true;
+  initShowParallelBadge = true;
+  parallelBadgeEnabled = true;
+
   enableWebSearch = true;
   initEnableWebSearch = true;
   enableToolUse = true;
@@ -93,6 +97,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
   get isDirty(): boolean {
     return this.spoilerFreeMode !== this.initSpoilerFreeMode ||
            this.showSourceCodeReferences !== this.initShowSourceCodeReferences ||
+           this.showParallelBadge !== this.initShowParallelBadge ||
            this.enableWebSearch !== this.initEnableWebSearch ||
            this.enableToolUse !== this.initEnableToolUse ||
            this.enableSubAgents !== this.initEnableSubAgents ||
@@ -212,6 +217,13 @@ export class SettingsComponent implements OnInit, OnDestroy {
           if (s.showSourceCodeReferences !== undefined) {
             this.showSourceCodeReferences = s.showSourceCodeReferences;
             this.initShowSourceCodeReferences = s.showSourceCodeReferences;
+          }
+          if (s.showParallelBadge !== undefined) {
+            this.showParallelBadge = s.showParallelBadge;
+            this.initShowParallelBadge = s.showParallelBadge;
+          }
+          if (s.parallelBadgeEnabled !== undefined) {
+            this.parallelBadgeEnabled = s.parallelBadgeEnabled;
           }
           if (s.enableWebSearch !== undefined) {
             this.enableWebSearch = s.enableWebSearch;
@@ -365,7 +377,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
   saveSettings() {
     this.loading = true;
     this.saved = false;
-    this.settingsService.saveSettings(this.spoilerFreeMode, this.enableWebSearch, this.enableToolUse, this.enableSubAgents, this.enableClientTools, this.enableGameActions, this.showSourceCodeReferences, this.maxResultLength, this.maxCallsPerSession, this.maxToolIterations, this.maxParallelToolCalls, Number(this.showThoughtsAndTools), this.requestTimeout).subscribe({
+    this.settingsService.saveSettings(this.spoilerFreeMode, this.enableWebSearch, this.enableToolUse, this.enableSubAgents, this.enableClientTools, this.enableGameActions, this.showSourceCodeReferences, this.maxResultLength, this.maxCallsPerSession, this.maxToolIterations, this.maxParallelToolCalls, Number(this.showThoughtsAndTools), this.requestTimeout, this.showParallelBadge).subscribe({
       next: () => {
         this.loading = false;
         this.settingsService.showThoughtsAndToolsUpdated.next(Number(this.showThoughtsAndTools));
@@ -374,6 +386,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
         this.initSpoilerFreeMode = this.spoilerFreeMode;
         this.initShowSourceCodeReferences = this.showSourceCodeReferences;
+        this.initShowParallelBadge = this.showParallelBadge;
         this.initEnableWebSearch = this.enableWebSearch;
         this.initEnableToolUse = this.enableToolUse;
         this.initEnableSubAgents = this.enableSubAgents;

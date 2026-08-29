@@ -88,6 +88,39 @@
   gap: 10px;
 }
 
+.parallel-mode-section {
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.parallel-mode-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+}
+
+.parallel-mode-label {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text-color, #e0e0e0);
+}
+
+.parallel-select {
+  width: auto;
+  min-width: 150px;
+  padding: 5px 10px;
+  font-size: 0.9rem;
+}
+
+.parallel-mode-hint {
+  margin: 8px 0 0 0;
+  font-size: 0.8rem;
+  color: var(--text-muted, #888);
+  line-height: 1.4;
+}
+
 
 
 @media (max-width: 600px) {

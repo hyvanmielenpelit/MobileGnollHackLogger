@@ -117,6 +117,9 @@ costs the player a full model round trip per lookup.
   tools usually run one at a time). Calls beyond the cap are queued, not dropped — so
   batching is always safe, but do not assume every call in a large batch finishes
   simultaneously.
+- **This section can be overridden.** If a "Parallel Execution Policy" section appears
+  later in this prompt, its instructions replace the batching rule above for this
+  conversation. The classification of lookups as independent or dependent still applies.
 
 ### Truncated results
 If a tool result ends with `... (truncated: batch output budget reached)`, is replaced by

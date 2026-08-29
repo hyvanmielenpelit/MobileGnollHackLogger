@@ -44,6 +44,7 @@ public class GameSnapshotDetectionTests
         services.AddScoped<OngoingChatManager>();
         services.AddScoped<IAiProvider, OpenAiResponsesProvider>();
         services.AddScoped<Overseer.Services.Agents.AgentLoopRunner>();
+        services.AddSingleton<Overseer.Services.ParallelExecutionResolver>();
         services.AddScoped<ChatService>();
 
         var provider = services.BuildServiceProvider();

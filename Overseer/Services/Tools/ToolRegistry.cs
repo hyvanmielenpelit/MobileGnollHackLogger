@@ -31,6 +31,8 @@ namespace Overseer.Services.Tools
         private readonly string _guidesPath;
         private string _policyText = string.Empty;
         private string _spoilerPolicyText = string.Empty;
+        private string _policyParallelDisabledText = string.Empty;
+        private string _policyParallelOnRequestText = string.Empty;
 
         public ToolRegistry(
             IEnumerable<IToolHandler> handlers,
@@ -77,6 +79,18 @@ namespace Overseer.Services.Tools
                 _spoilerPolicyText = File.ReadAllText(spoilerPolicyFile);
             }
 
+            var parallelDisabledFile = Path.Combine(_guidesPath, "_policy_parallel_disabled.md");
+            if (File.Exists(parallelDisabledFile))
+            {
+                _policyParallelDisabledText = File.ReadAllText(parallelDisabledFile);
+            }
+
+            var parallelOnRequestFile = Path.Combine(_guidesPath, "_policy_parallel_on_request.md");
+            if (File.Exists(parallelOnRequestFile))
+            {
+                _policyParallelOnRequestText = File.ReadAllText(parallelOnRequestFile);
+            }
+
             foreach (var handler in _handlers)
             {
                 var guideFile = Path.Combine(_guidesPath, $"{handler.ToolName}.md");
@@ -99,6 +113,16 @@ namespace Overseer.Services.Tools
         public string GetSpoilerPolicyText()
         {
             return _spoilerPolicyText;
+        }
+
+        public string GetParallelOverrideText(MobileGnollHackLogger.Data.ParallelExecutionMode mode)
+        {
+            return mode switch
+            {
+                MobileGnollHackLogger.Data.ParallelExecutionMode.Disabled => _policyParallelDisabledText,
+                MobileGnollHackLogger.Data.ParallelExecutionMode.OnRequest => _policyParallelOnRequestText,
+                _ => string.Empty
+            };
         }
 
         public ToolsForRequest BuildToolsForRequest(

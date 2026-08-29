@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
+using System.Text.Json;
+using ParallelExecutionMode = MobileGnollHackLogger.Data.ParallelExecutionMode;
 
 namespace Overseer.Services;
 
@@ -19,7 +21,9 @@ public class SettingsService
         return await _dbContext.UserAiSettings.FindAsync(userId);
     }
 
-    public async Task SaveSettingsAsync(string userId, bool? spoilerFreeMode = null, bool? enableWebSearch = null, bool? enableToolUse = null, bool? enableClientTools = null, bool? enableGameActions = null, bool? showSourceCodeReferences = null, int? maxResultLength = null, int? maxCallsPerSession = null, int? maxToolIterations = null, int? maxParallelToolCalls = null, int? showThoughtsAndTools = null, int? requestTimeout = null, bool? enableSubAgents = null)
+    public static readonly string[] SupportedProviders = new[] { "OpenAI", "Anthropic", "Google" };
+
+    public async Task SaveSettingsAsync(string userId, bool? spoilerFreeMode = null, bool? enableWebSearch = null, bool? enableToolUse = null, bool? enableClientTools = null, bool? enableGameActions = null, bool? showSourceCodeReferences = null, int? maxResultLength = null, int? maxCallsPerSession = null, int? maxToolIterations = null, int? maxParallelToolCalls = null, int? showThoughtsAndTools = null, int? requestTimeout = null, bool? enableSubAgents = null, bool? showParallelBadge = null)
     {
         var settings = await _dbContext.UserAiSettings.FindAsync(userId);
         if (settings == null)
@@ -43,6 +47,7 @@ public class SettingsService
         if (showSourceCodeReferences.HasValue) settings.ShowSourceCodeReferences = showSourceCodeReferences.Value;
         if (showThoughtsAndTools.HasValue) settings.ShowThoughtsAndTools = showThoughtsAndTools.Value;
         if (requestTimeout.HasValue) settings.RequestTimeout = requestTimeout.Value;
+        if (showParallelBadge.HasValue) settings.ShowParallelBadge = showParallelBadge.Value;
 
         await _dbContext.SaveChangesAsync();
     }
@@ -98,12 +103,15 @@ public class SettingsService
     public async Task<List<dynamic>> GetApiKeysStatusAsync(string userId)
     {
         var statuses = new List<dynamic>();
-        var providers = new[] { "OpenAI", "Anthropic", "Google" };
         
-        foreach (var p in providers)
+        foreach (var p in SupportedProviders)
         {
             var key = await _dbContext.UserAiApiKeys.FirstOrDefaultAsync(k => k.AspNetUserId == userId && k.Provider == p);
-            statuses.Add(new { Provider = p, HasKey = key != null && !string.IsNullOrEmpty(key.EncryptedApiKey) });
+            statuses.Add(new { 
+                Provider = p, 
+                HasKey = key != null && !string.IsNullOrEmpty(key.EncryptedApiKey),
+                ParallelExecutionMode = (int)(key?.ParallelExecutionMode ?? ParallelExecutionMode.Enabled)
+            });
         }
         
         return statuses;
@@ -126,12 +134,27 @@ public class SettingsService
         await _dbContext.SaveChangesAsync();
     }
 
+    public async Task SaveApiKeyParallelModeAsync(string userId, string provider, int mode)
+    {
+        var entry = await _dbContext.UserAiApiKeys.FirstOrDefaultAsync(k => k.AspNetUserId == userId && k.Provider == provider);
+        if (entry == null)
+        {
+            entry = new UserAiApiKey { AspNetUserId = userId, Provider = provider };
+            _dbContext.UserAiApiKeys.Add(entry);
+        }
+
+        entry.ParallelExecutionMode = (ParallelExecutionMode)mode;
+        await _dbContext.SaveChangesAsync();
+    }
+
     public async Task DeleteApiKeyForProviderAsync(string userId, string provider)
     {
         var entry = await _dbContext.UserAiApiKeys.FirstOrDefaultAsync(k => k.AspNetUserId == userId && k.Provider == provider);
         if (entry != null)
         {
-            _dbContext.UserAiApiKeys.Remove(entry);
+            entry.EncryptedApiKey = null;
+            entry.ApiKeyNonce = null;
+            entry.ApiKeyTag = null;
             await _dbContext.SaveChangesAsync();
         }
     }

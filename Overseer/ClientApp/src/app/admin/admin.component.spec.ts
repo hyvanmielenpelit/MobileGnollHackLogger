@@ -110,7 +110,8 @@ describe('AdminComponent', () => {
         dailyTitleTokensCount: 0,
         monthlyTitleTokensCount: 0,
         totalTitleTokensCount: 0,
-        modelRole: 1
+        modelRole: 1,
+        parallelExecutionMode: 2
       }];
 
       (adminService.getUsers as jasmine.Spy).and.returnValue(of(mockUsers));

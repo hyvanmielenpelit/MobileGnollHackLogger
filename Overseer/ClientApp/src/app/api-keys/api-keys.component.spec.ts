@@ -71,4 +71,22 @@ describe('ApiKeysComponent', () => {
     expect(component.keyStatuses['Anthropic']).toBeFalse();
     expect(component.savingProvider).toBe('');
   });
+
+  it('should load parallel execution mode and save on change', () => {
+    spyOn(settingsService, 'getApiKeys').and.returnValue(of([
+      { provider: 'OpenAI', hasKey: true, parallelExecutionMode: 0 },
+      { provider: 'Anthropic', hasKey: false, parallelExecutionMode: 1 }
+    ]));
+    const saveModeSpy = spyOn(settingsService, 'saveApiKeyParallelMode').and.returnValue(of({}));
+
+    component.loadStatuses();
+
+    expect(component.keyParallelModes['OpenAI']).toBe(0);
+    expect(component.keyParallelModes['Anthropic']).toBe(1);
+
+    component.onParallelModeChange('OpenAI', 2);
+    expect(saveModeSpy).toHaveBeenCalledWith('OpenAI', 2);
+    expect(component.keyParallelModes['OpenAI']).toBe(2);
+    expect(component.savingParallelProvider).toBe('');
+  });
 });

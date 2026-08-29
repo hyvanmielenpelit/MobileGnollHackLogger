@@ -12,6 +12,7 @@ public class UserAiSettings
     
     public bool SpoilerFreeMode { get; set; } = true;
     public bool ShowSourceCodeReferences { get; set; } = false;
+    public bool ShowParallelBadge { get; set; } = true;
     public int ShowThoughtsAndTools { get; set; } = 1;
 
     public int? MaxResultLength { get; set; }

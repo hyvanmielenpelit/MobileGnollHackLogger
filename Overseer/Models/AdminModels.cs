@@ -70,6 +70,7 @@ public class SystemAiApiConfigurationDto
     public long MonthlyTitleTokensCount { get; set; }
     public long TotalTitleTokensCount { get; set; }
     public int ModelRole { get; set; }
+    public int ParallelExecutionMode { get; set; } = 2;
     public string? Note { get; set; }
 }
 
@@ -100,6 +101,7 @@ public class CreateSystemAiApiConfigurationRequest
     public long? MaxMonthlyTitleTokens { get; set; }
     public long? MaxTotalTitleTokens { get; set; }
     public int ModelRole { get; set; } = 3;
+    public int ParallelExecutionMode { get; set; } = 2;
     public string? Note { get; set; }
 }
 

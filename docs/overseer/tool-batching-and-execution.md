@@ -93,11 +93,31 @@ The LLM is guided by strict batching and accuracy directives injected into Secti
 
 ---
 
-## 6. Testing & Verification
+---
 
-The tool batching and execution architecture is verified by 5 dedicated test fixtures under `Overseer.Tests/UnitTests/`:
+## 6. Per-Key Parallel Execution Mode
+
+Overseer supports a tri-state **Per-Key Parallel Execution Mode** to accommodate free or low-tier API keys that hit aggressive rate limits (e.g. RPM/TPM restrictions):
+
+| Mode | Enum Value | Description | Concurrency Enforcement | System Prompt Directive |
+|---|---|---|---|---|
+| **Disabled** | `0` | Sequential Only | `maxParallelTools = 1`<br>`maxParallelClientTools = 1`<br>`runBudget.MaxParallelSubAgents = 1`<br>Deferred title generation until chat stream finishes | Injects `_policy_parallel_disabled.md` directing the model to emit tool calls strictly one at a time. |
+| **OnRequest** | `1` | On Request Only | Standard full concurrency limits | Injects `_policy_parallel_on_request.md` directing the model to keep lookups sequential unless the user explicitly requested parallel execution. |
+| **Enabled** | `2` | Full Parallel Execution (Default) | Standard full concurrency limits | Standard parallel execution guidance in `_policy.md`. No override block appended. |
+
+### UI Indication & Controls
+- **API Keys Settings**: Users can set parallel execution mode per provider (`Allowed`, `Only when I ask`, `Off`).
+- **Chat Model Selector**: Displays `Sequential` (solid amber) or `On request` (dashed amber) restriction badges when the active model's key is restricted.
+- **AI Settings**: Users can toggle *Show parallel-execution badge in the model selector* on or off.
+
+---
+
+## 7. Testing & Verification
+
+The tool batching and execution architecture is verified by 6 dedicated test fixtures under `Overseer.Tests/UnitTests/`:
 
 - **`ParallelToolExecutionTests.cs`**: Verifies concurrent execution ordering, global and client semaphore throttles, cancellation propagation, and channel streaming in `ToolBatchRunner`.
+- **`ParallelExecutionModeTests.cs`**: Verifies per-key mode resolution (`ParallelExecutionResolver`), prompt override injection, tool execution context cloning, and subagent concurrency limits.
 - **`ToolBatchResultBudgetTests.cs`**: Verifies exact character budget consumption, truncation markers, and skip states in `ToolBatchResultBudget`.
 - **`ToolExecutorRateLimitTests.cs`**: Verifies session-level call quotas and process-level semaphore throttles in `ToolExecutor`.
 - **`ToolResultHandlingTests.cs`**: Verifies individual tool result clamping, JSON payload protection, and error handling.
