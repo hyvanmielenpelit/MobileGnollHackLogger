@@ -1,12 +1,32 @@
 [
   {
     "version": "1.0.27",
-    "date": "2026-08-29T11:15:00Z",
-    "summary": "Added configurable parallel tool execution modes for API keys and system models, introduced a model selector badge preference for restricted execution modes, added human-readable subagent activity labels in chat, and improved subagent resilience, rate limiting, and partial result handling.",
+    "date": "2026-08-29T17:45:00Z",
+    "summary": "Added configurable parallel tool execution modes and pet awareness in game snapshots, optimized token efficiency and prompt caching for Anthropic and Google models, introduced an AI request governor to mitigate rate limits, added detailed token usage analytics to Admin, and improved subagent resilience, display names, and auto-saving settings.",
     "changes": [
       {
         "type": "feature",
         "text": "Added per-provider Parallel Execution Mode settings (Allowed, On request, Sequential only) in API Keys management to prevent rate-limit errors on free or low-tier keys."
+      },
+      {
+        "type": "feature",
+        "text": "Added pet awareness to game snapshots, allowing the Overseer to recognize tame companions on the current level along with their positions, stats, and equipment."
+      },
+      {
+        "type": "improvement",
+        "text": "Optimized prompt segmentation and caching for Anthropic and Google models to significantly reduce input token usage, latency, and TPM consumption."
+      },
+      {
+        "type": "improvement",
+        "text": "Added an AI request governor with automatic concurrency management and rate-limit cooldown handling to prevent API quota throttling."
+      },
+      {
+        "type": "improvement",
+        "text": "Added detailed token usage breakdown and prompt cache efficiency metrics to the Admin analytics dashboard."
+      },
+      {
+        "type": "improvement",
+        "text": "Added tool-call history digests to retain structured context about past tool executions and parallel batches across multi-turn chats."
       },
       {
         "type": "improvement",
