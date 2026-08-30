@@ -8,13 +8,9 @@ description: >-
   isolation. Read this skill before starting any multi-file or cross-project change.
 ---
 
-# Server Implementation Planning Workflow (Claude Code Pointer)
+The full skill lives in this repository's tool-neutral agent directory (`.agents/`),
+which is shared with other AI coding agents. This file is only a pointer.
 
-The canonical repository-specific planning overlay lives in:
-`.agents/skills/server_implementation_planning/SKILL.md` (path relative to repository root).
-
-**Read `.agents/skills/server_implementation_planning/SKILL.md` in full before proceeding, and follow it.**
-
-## General Planning Baseline & Claude Code Plan Mode
-
-The general 5-phase lifecycle, Subagent Use rules, and Claude Code plan-mode mechanics (e.g. `~/.claude/plans/<slug>.md` copy to `.plans/`, `ExitPlanMode` workflow, and `inherit`/`haiku` model tier mappings) are provided by the global **`agent-implementation-planning`** skill.
+Read `.agents/skills/server_implementation_planning/SKILL.md` (path relative to the repository root) in full
+before proceeding, and follow it. Any `references/` files it links are relative to that
+same directory.

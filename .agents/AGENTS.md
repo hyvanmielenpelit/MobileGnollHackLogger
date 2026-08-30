@@ -33,7 +33,7 @@ To compile SCSS files:
 ## Temporary and Guidance Files
 
 - **NEVER** store temporary files, scratch scripts, or guidance files in the repository root, in a scratch directory under the repository root, or anywhere else within the repository.
-- Always save temporary files and guidance files directly to the agent's dedicated scratch directory: `<appDataDir>\brain\<conversation-id>\scratch\` as specified in the global agent rules.
+- Use your harness's own scratch directory; the global rules name the exact path for each. The sole in-tree exception is `.plans/`.
 
 ## Entity Framework Core Migrations
 
@@ -63,7 +63,7 @@ When making changes to database models that require EF Core migrations, you MUST
 
 ## Environment & Shell Conventions
 
-- **Operating System:** Development and tool execution take place on Windows. For PowerShell commands, syntax rules, quoting, and file I/O best practices, follow the global `powershell-agent-guidelines` skill.
+- **Operating System:** Development and tool execution take place on Windows. For PowerShell commands, syntax rules, quoting, and file I/O best practices, follow the global `agent-powershell-guidelines` skill.
 
 ## Implementation Plans
 
@@ -89,8 +89,16 @@ A plan is **not** required for single-file fixes, typo and comment corrections, 
 
 - **Do NOT publish anything** (e.g., via `dotnet publish` or similar commands) unless explicitly requested by the user.
 
-## Shared Skills & Prerequisites Note
+## Shared Skills
 
-- Global skills and baseline rules (`powershell-agent-guidelines`, `agent-implementation-planning`) are supplied by the `hyvanmielenpelit/SharedAgentSkills` repository and bootstrapped via its `setup.ps1` script.
-- On environments without `SharedAgentSkills` installed, repository rules and local overlay skills provide standalone fallback guidance.
+Global skills and baseline rules are supplied by the `hyvanmielenpelit/SharedAgentSkills`
+repository and installed with its `setup.ps1`. **This is a prerequisite, not an option** --
+clone it and run the script once per machine. See its `docs/ai-skill-management.md`.
 
+- `agent-implementation-planning` -- planning lifecycle, plan format, `.plans/` conventions
+- `agent-subagent-guidelines` -- the mandatory **Subagent Use** plan section, model tiers
+  and how to resolve them, file-level exclusivity, protecting uncommitted changes
+- `agent-powershell-guidelines` -- Windows and PowerShell 5.1 rules
+
+Each project overlay skill also carries a short self-contained fallback, so a machine
+without the shared skills degrades to a thin baseline rather than to nothing.
