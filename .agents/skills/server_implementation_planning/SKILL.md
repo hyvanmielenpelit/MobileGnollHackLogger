@@ -4,8 +4,9 @@ description: >-
   Full workflow for writing, delivering, and executing implementation plans for
   non-trivial MobileGnollHackLogger and Overseer tasks. Covers when a plan is
   required, the mandatory research-plan-approve-execute-verify lifecycle, plan document
-  structure, subagent use, artifact delivery to .plans/, and .plans/ research
-  isolation. Read this skill before starting any multi-file or cross-project change.
+  structure, subagent use, artifact delivery to the shared plans repository, the
+  .plans/ fallback, and research isolation. Read this skill before starting any
+  multi-file or cross-project change.
 ---
 
 # Server Implementation Planning Workflow (Project Overlay)
@@ -16,17 +17,23 @@ This skill defines the repository-specific planning requirements and build bound
 
 > **If the shared skills are not installed**, this is the whole baseline:
 > a written plan is required for any change touching more than one file or crossing a
-> build boundary; save it as
-> `.plans/YYYY-MM-DD/task_name/implementation_plan_v1.md` (never overwrite a version --
-> increment); print the path; **wait for explicit approval before editing any file**;
-> track progress in `task.md`; finish with `walkthrough.md`. Install the full guidance
-> from `https://github.com/hyvanmielenpelit/SharedAgentSkills` (`.\setup.ps1`).
+> build boundary; save it in the shared plans repository as
+> `<plans-root>/hyvanmielenpelit/MobileGnollHackLogger/YYYY-MM-DD/task_name/implementation_plan_v1.md`,
+> resolving `<plans-root>` as `AGENT_PLANS_ROOT`, else `C:\hmp\plans`, else a `plans`
+> directory beside this one -- and if none resolves, fall back to this repository's
+> gitignored `.plans/YYYY-MM-DD/task_name/` **and say so in chat**. Never overwrite a
+> version -- increment. Print the path; **wait for explicit approval before editing any
+> file**; track progress in `task.md`; finish with `walkthrough.md`. **Never commit or
+> push in this repository.** Clone the plans repository from
+> `https://github.com/hyvanmielenpelit/plans` and install the full guidance from
+> `https://github.com/hyvanmielenpelit/SharedAgentSkills` (`.\setup.ps1`).
 
 > [!IMPORTANT]
 > **Global Baseline Delegation**: the 5-phase lifecycle, plan document structure, the
-> Execution Target line, `.plans/` naming and `_v<N>` versioning, follow-up rounds, and
-> `.plans/` research isolation are defined in the global **`agent-implementation-planning`**
-> skill. Subagent tiers, how to resolve them, and file-level exclusivity are in
+> Execution Target line, the plans repository layout and scope directories, `_v<N>`
+> versioning and harmonization, the commit protocol, the `.plans/` fallback, follow-up
+> rounds, and research isolation are defined in the global
+> **`agent-implementation-planning`** skill. Subagent tiers, how to resolve them, and file-level exclusivity are in
 > **`agent-subagent-guidelines`**. Harness mechanics -- plan mode under Claude Code,
 > artifact delivery under Antigravity -- are in `claude-plan-mode` or
 > `gemini-antigravity-conventions`, whichever is installed for your application.

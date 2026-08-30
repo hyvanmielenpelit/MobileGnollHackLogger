@@ -45,7 +45,10 @@ commit. When modifying an existing file, match what it already uses.
 **Non-trivial tasks require a written implementation plan, approved by the user before
 any source file is modified.** Read the `server-implementation-planning` skill for this
 repository's build boundaries, and the global `agent-implementation-planning` skill for
-the lifecycle, plan format, `.plans/` naming, and versioning.
+the lifecycle, plan format, plans repository layout, versioning, the commit protocol,
+and the `.plans/` fallback. Plans go to
+`<plans-root>/hyvanmielenpelit/MobileGnollHackLogger/YYYY-MM-DD/task_name/`, not into
+this repository, and **an agent never commits or pushes here**.
 
 ### When to Plan
 
@@ -62,6 +65,8 @@ questions, or read-only investigation.
 
 ### Claude Code Plan Mode
 
-Plan mode restricts editing to its own plan file, which conflicts with the `.plans/`
-rule. The reconciliation — write to the harness plan file, copy to `.plans/` **before**
-requesting approval, then `ExitPlanMode` — is in the global **`claude-plan-mode`** skill.
+Plan mode restricts editing to its own plan file, which conflicts with the plans
+repository rule. The reconciliation — write to the harness plan file, copy to the plans
+repository **before** requesting approval, commit the round, then `ExitPlanMode` — is in
+the global **`claude-plan-mode`** skill. Reaching the plans root needs
+`permissions.additionalDirectories` in `.claude/settings.json`, or `/add-dir`.

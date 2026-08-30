@@ -33,7 +33,7 @@ To compile SCSS files:
 ## Temporary and Guidance Files
 
 - **NEVER** store temporary files, scratch scripts, or guidance files in the repository root, in a scratch directory under the repository root, or anywhere else within the repository.
-- Use your harness's own scratch directory; the global rules name the exact path for each. The sole in-tree exception is `.plans/`.
+- Use your harness's own scratch directory; the global rules name the exact path for each. The sole in-tree exception is `.plans/`, and only as the fallback when the shared `plans` repository cannot be reached.
 
 ## Entity Framework Core Migrations
 
@@ -79,15 +79,32 @@ A plan is **not** required for single-file fixes, typo and comment corrections, 
 
 ### Plan and Document Delivery
 
-- Deliver plans, reviews, analyses, reports, and other structured documents as **Markdown files** saved under the repository's gitignored `.plans/` directory: `.plans/YYYY-MM-DD/task_name/<document_name>_v<N>.md` (where N=1 for the first version).
+- Deliver plans, reviews, analyses, reports, and other structured documents as **Markdown files** saved in the shared `plans` repository: `<plans-root>/hyvanmielenpelit/MobileGnollHackLogger/YYYY-MM-DD/task_name/<document_name>_v<N>.md` (where N=1 for the first version). Resolve `<plans-root>` as `AGENT_PLANS_ROOT`, else `C:\hmp\plans`, else a `plans` directory beside this repository; never create it yourself.
+- **Fallback**: if no root resolves, write to this repository's gitignored `.plans/YYYY-MM-DD/task_name/` and **say so in chat**, naming the reason and the intended scope. Never fall back silently.
 - **Document versioning**: the first version always gets a `_v1` suffix. Never overwrite an existing version — to revise, create a new file with the next version number (`_v2`, `_v3`, etc.). `task.md` and `walkthrough.md` are singular (no version suffix). Follow-up rounds use lettered variants (`task_A.md`, `walkthrough_A.md`, etc.).
+- **Version harmonization**: when a task directory holds several versioned documents describing one coherent piece of work, revising any of them bumps **all** of them to the same `_v<N>` — including unchanged ones, which are copied verbatim to the new number. Mixed versions inside a set are a defect.
+- **Commit policy**: the `plans` repository is the **only** repository an agent may commit or push to, and there it commits once per round without being asked. Committing or pushing **in this repository is forbidden** unless the user explicitly asks — including in the `.plans/` fallback.
 - **Wait for explicit user approval before editing any file.** Do not begin implementation alongside the plan. Always print the plan's file path.
-- **Harness rules take precedence**: `.plans/` is the source of truth across all AI agents. If a harness keeps a private plan file or artifact, copy the finished plan to `.plans/` immediately before requesting user approval.
-- **`.plans/` Research Isolation**: Do NOT browse or read `.plans/` during Phase 1 (Research) to prevent stale or superseded designs from corrupting analysis.
+- **Harness rules take precedence**: the plans repository is the source of truth across all AI agents. If a harness keeps a private plan file or artifact, copy the finished plan there immediately before requesting user approval.
+- **Research Isolation**: Do NOT browse or read the plans repository or `.plans/` during Phase 1 (Research), and never read another repository's scope, to prevent stale or superseded designs from corrupting analysis.
 
 ## Publishing
 
 - **Do NOT publish anything** (e.g., via `dotnet publish` or similar commands) unless explicitly requested by the user.
+
+## Skill Naming
+
+Skills in this repository use the **`server_`** prefix. Canonical bodies live in
+`.agents/skills/<underscore_name>/SKILL.md`; the `.claude/skills/<kebab-name>/` stubs are
+**generated** by `SharedAgentSkills\tools\sync_stubs.ps1` and must never be hand-edited.
+
+> [!IMPORTANT]
+> **Never use the `client_` prefix here.** It is reserved for **GnollHack**, which is the
+> real game client of this server -- the two prefixes name the tiers of one system. A
+> `client_` skill in this repository would read as "the GnollHack client" to anyone who
+> knows the convention, and skill names are what a triggering agent matches on.
+>
+> For browser-side concerns use **`frontend_`**, as in `frontend_packages_management`.
 
 ## Shared Skills
 
@@ -95,7 +112,7 @@ Global skills and baseline rules are supplied by the `hyvanmielenpelit/SharedAge
 repository and installed with its `setup.ps1`. **This is a prerequisite, not an option** --
 clone it and run the script once per machine. See its `docs/ai-skill-management.md`.
 
-- `agent-implementation-planning` -- planning lifecycle, plan format, `.plans/` conventions
+- `agent-implementation-planning` -- planning lifecycle, plan format, plans repository conventions, versioning and harmonization, the commit protocol, the `.plans/` fallback
 - `agent-subagent-guidelines` -- the mandatory **Subagent Use** plan section, model tiers
   and how to resolve them, file-level exclusivity, protecting uncommitted changes
 - `agent-powershell-guidelines` -- Windows and PowerShell 5.1 rules
