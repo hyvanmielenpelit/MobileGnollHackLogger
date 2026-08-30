@@ -1,11 +1,11 @@
 ---
-name: client_packages_management
-description: Guidelines for managing and updating client-side web packages in the MobileGnollHackLogger project.
+name: frontend_packages_management
+description: Guidelines for managing and updating front-end web packages (libman, npm, and manually vendored libraries) in the MobileGnollHackLogger and Overseer projects. Covers Bootstrap, jQuery, and wwwroot/lib dependencies.
 ---
 
-# Client Packages Management
+# Front-End Packages Management
 
-The MobileGnollHackLogger project relies on a combination of Library Manager (`libman.json`) and manual downloads to manage client-side web packages located in `wwwroot/lib/`. 
+The MobileGnollHackLogger project relies on a combination of Library Manager (`libman.json`) and manual downloads to manage front-end web packages located in `wwwroot/lib/`. 
 
 ## 1. Library Manager (`libman`)
 We use `libman` to manage the following standard dependencies from `cdnjs`:
