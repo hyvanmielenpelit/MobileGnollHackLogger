@@ -19,4 +19,5 @@ public class AgentRunResult
     public int? TimeToFirstTokenMs { get; set; }
     public int? TotalDurationMs { get; set; }
     public string? TerminationReason { get; set; }
+    public string? ActualServiceTier { get; set; }
 }

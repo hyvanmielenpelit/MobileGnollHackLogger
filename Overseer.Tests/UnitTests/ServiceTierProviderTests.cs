@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Overseer.Services.Providers;
 using Overseer.Services.Tools;
@@ -141,5 +142,105 @@ public class ServiceTierProviderTests
             "gpt-5", history, 1000, "high", emptyTools, null, null, null, parallelToolCalls: true);
         Assert.False(bodyNoTools.ContainsKey("parallel_tool_calls"));
         Assert.False(bodyNoTools.ContainsKey("tools"));
+    }
+
+    [Fact]
+    public void GoogleProvider_ExtractServiceTierFromHeaders_WithHeader_ReturnsTier()
+    {
+        var provider = new GoogleProvider(_configuration);
+        using var response = new HttpResponseMessage();
+        response.Headers.Add("x-gemini-service-tier", "priority");
+
+        var tier = provider.ExtractServiceTierFromHeaders(response);
+        Assert.Equal("priority", tier);
+
+        using var responseStandard = new HttpResponseMessage();
+        responseStandard.Headers.Add("x-gemini-service-tier", "standard");
+
+        var standardTier = provider.ExtractServiceTierFromHeaders(responseStandard);
+        Assert.Equal("standard", standardTier);
+    }
+
+    [Fact]
+    public void GoogleProvider_ExtractServiceTierFromHeaders_WithoutHeader_ReturnsNull()
+    {
+        var provider = new GoogleProvider(_configuration);
+        using var response = new HttpResponseMessage();
+
+        var tier = provider.ExtractServiceTierFromHeaders(response);
+        Assert.Null(tier);
+    }
+
+    [Fact]
+    public void GoogleProvider_ExtractServiceTierFromBody_MeasuredPayloads()
+    {
+        var provider = new GoogleProvider(_configuration);
+
+        var priorityJson = "{\"usageMetadata\":{\"promptTokenCount\":8,\"candidatesTokenCount\":1,\"totalTokenCount\":9,\"serviceTier\":\"priority\"}}";
+        using var docPriority = JsonDocument.Parse(priorityJson);
+        Assert.Equal("priority", provider.ExtractServiceTierFromBody(docPriority.RootElement));
+
+        var standardJson = "{\"usageMetadata\":{\"promptTokenCount\":8,\"candidatesTokenCount\":1,\"totalTokenCount\":9,\"serviceTier\":\"standard\"}}";
+        using var docStandard = JsonDocument.Parse(standardJson);
+        Assert.Equal("standard", provider.ExtractServiceTierFromBody(docStandard.RootElement));
+
+        var absentJson = "{\"usageMetadata\":{\"promptTokenCount\":8,\"candidatesTokenCount\":1,\"totalTokenCount\":9}}";
+        using var docAbsent = JsonDocument.Parse(absentJson);
+        Assert.Null(provider.ExtractServiceTierFromBody(docAbsent.RootElement));
+    }
+
+    [Fact]
+    public void OpenAiResponsesProvider_ExtractServiceTierFromBody_MeasuredPayloads()
+    {
+        var provider = new OpenAiResponsesProvider(_configuration);
+
+        var defaultJson = "{\"id\":\"resp_1\",\"service_tier\":\"default\",\"usage\":{}}";
+        using var docDefault = JsonDocument.Parse(defaultJson);
+        Assert.Equal("default", provider.ExtractServiceTierFromBody(docDefault.RootElement));
+
+        var nullJson = "{\"id\":\"resp_2\",\"service_tier\":null,\"usage\":{}}";
+        using var docNull = JsonDocument.Parse(nullJson);
+        Assert.Null(provider.ExtractServiceTierFromBody(docNull.RootElement));
+    }
+
+    [Fact]
+    public void AnthropicProvider_ExtractServiceTierFromBody_MeasuredPayloads()
+    {
+        var provider = new AnthropicProvider(_configuration);
+
+        var priorityJson = "{\"usage\":{\"input_tokens\":10,\"service_tier\":\"priority\"}}";
+        using var docPriority = JsonDocument.Parse(priorityJson);
+        Assert.Equal("priority", provider.ExtractServiceTierFromBody(docPriority.RootElement));
+
+        var sseMessageStartJson = "{\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":10,\"service_tier\":\"priority\"}}}";
+        using var docSse = JsonDocument.Parse(sseMessageStartJson);
+        Assert.Equal("priority", provider.ExtractServiceTierFromBody(docSse.RootElement));
+    }
+
+    [Theory]
+    [InlineData("priority", "priority")]
+    [InlineData("standard", "standard")]
+    [InlineData("SERVICE_TIER_PRIORITY", "priority")]
+    [InlineData("Priority", "priority")]
+    [InlineData("SERVICE_TIER_UNSPECIFIED", null)]
+    [InlineData("", null)]
+    [InlineData(null, null)]
+    [InlineData("some_future_tier", "some_future_tier")]
+    public void ProviderHelper_NormalizeServiceTier_NormalizesCorrectly(string? input, string? expected)
+    {
+        var actual = ProviderHelper.NormalizeServiceTier(input);
+        Assert.Equal(expected, actual);
+    }
+
+    [Fact]
+    public void IAiProvider_DefaultExtractServiceTierFromHeaders_ReturnsNull()
+    {
+        IAiProvider provider = new AnthropicProvider(_configuration);
+        using var response = new HttpResponseMessage();
+        response.Headers.Add("x-gemini-service-tier", "priority");
+        response.Headers.Add("openai-service-tier", "priority");
+
+        var tier = provider.ExtractServiceTierFromHeaders(response);
+        Assert.Null(tier);
     }
 }

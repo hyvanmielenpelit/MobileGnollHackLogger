@@ -44,4 +44,23 @@ public static class ProviderHelper
             _ => element
         };
     }
+
+    /// <summary>
+    /// Normalises a provider-reported service tier to a lowercase, prefix-free form.
+    /// Google was measured returning "priority"/"standard", but the public ServiceTier enum
+    /// table is truncated, so a "SERVICE_TIER_" prefix is stripped defensively. Unknown
+    /// values are lowercased and returned unchanged.
+    /// </summary>
+    public static string? NormalizeServiceTier(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var value = raw.Trim();
+        const string prefix = "SERVICE_TIER_";
+        if (value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            value = value.Substring(prefix.Length);
+        }
+        value = value.ToLowerInvariant();
+        return value.Length == 0 || value == "unspecified" ? null : value;
+    }
 }

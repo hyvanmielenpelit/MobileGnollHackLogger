@@ -17,6 +17,7 @@ Documentation and developer references for the Gnoll Overseer AI assistant web a
 | [**Changelog Guide**](overseer/changelog-guide.md) | JSON schema reference, change classification types, and manual editing rules for `Overseer/Data/release-notes.json`. |
 | [**AI Changelog Generation**](overseer/ai-changelog.md) | Instructions on how to use a local AI agent (`overseer_changelog` skill) to autonomously generate release notes from Git commits. |
 | [**Adding AI Models**](overseer/adding-ai-models.md) | Instructions and schemas for adding new AI models (e.g. Google Gemini) to the Overseer model catalogs. |
+| [**Gemini Service Tier Measurements**](overseer/gemini-service-tier-measurements.md) | Measured availability, latency, and `service_tier` honouring for each supported Gemini model, plus where Google reports the served tier. Snapshot dated 2026-08-31 — expect it to shift when a new Gemini generation ships. |
 | [**Chat & Data Retention**](overseer/chat-data-retention.md) | Specification and architecture for user session quotas, soft-delete lifecycle, tool call payload pruning, disk attachment cleanup, and automated database maintenance. |
 | [**Sentry Logging Architecture**](overseer/sentry-logging-architecture.md) | Specification and architecture for Sentry crash logging, server event processing, proxy tunneling, and frontend network error suppression. |
 | [**Sentry Source Maps Guide**](overseer/sentry-sourcemaps.md) | Guide to generating, injecting Debug IDs, and uploading Angular source maps to Sentry while excluding them from public deployment. |
@@ -46,6 +47,7 @@ This repository contains specialized AI skills located in [`.agents/skills/`](..
 - `overseer_changelog` — Autonomously generates release notes from path-filtered Git commits.
 - `adding_gemini_models` — Parses new Gemini model definitions into Overseer catalog.
 - `testing_guidelines` — Running backend and frontend tests safely.
+- `supported_ai_models` — Which model generations Overseer supports, and measured Gemini service tier behaviour.
 - `scss_compilation` — Compiling host SCSS styles.
 - `configuration_management` — Managing application settings and User Secrets.
 
@@ -62,6 +64,7 @@ docs/
 │   ├── changelog-guide.md         # In-app changelog schema & maintenance
 │   ├── ai-changelog.md            # AI-assisted release notes generation
 │   ├── adding-ai-models.md        # Adding LLM models to catalog
+│   ├── gemini-service-tier-measurements.md # Measured Gemini service tier / availability results
 │   ├── chat-data-retention.md     # Chat & data retention architectural specification
 │   ├── sentry-logging-architecture.md # Sentry crash logging architecture & error filtering
 │   ├── sentry-sourcemaps.md       # Sentry source map injection & upload guide

@@ -36,6 +36,16 @@ public class ChatMessage
     [MaxLength(64)]
     public string? ServiceTierUsed { get; set; }
 
+    /// <summary>
+    /// The service tier the provider actually served the request on, as reported by the
+    /// provider. Null when the provider did not report one. Distinct from
+    /// <see cref="ServiceTierUsed"/>, which records what Overseer requested — the two use
+    /// different value spaces per provider (OpenAI requests "auto"/"fast" and serves
+    /// "default"/"priority"; Anthropic requests "auto" and serves "standard"/"priority").
+    /// </summary>
+    [MaxLength(64)]
+    public string? ActualServiceTierUsed { get; set; }
+
     [MaxLength(256)]
     public string? ModelDisplayNameUsed { get; set; }
 

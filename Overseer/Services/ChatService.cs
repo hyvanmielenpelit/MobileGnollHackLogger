@@ -833,6 +833,7 @@ public class ChatService
                     ThinkingLevelUsed = thinkingLevel,
                     ReasoningModeUsed = reasoningMode,
                     ServiceTierUsed = serviceTier,
+                    ActualServiceTierUsed = runResult.ActualServiceTier,
                     ModelDisplayNameUsed = modelDisplayName,
                     ToolCalls = streamToolCalls,
                     TimeToFirstTokenMs = timeToFirstTokenMs,
@@ -1665,20 +1666,33 @@ public class ChatService
 
                         response = await client.SendAsync(reqClone, cancellationToken);
 
-                        if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {provider}] HTTP {(int)response.StatusCode} Received ({sw.ElapsedMilliseconds}ms, Attempt {i + 1})" }, CancellationToken.None);
+                        string? headerTier = response != null ? aiProvider.ExtractServiceTierFromHeaders(response) : null;
+
+                        if (_showDebugLog && response != null) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {provider}] HTTP {(int)response.StatusCode} Received ({sw.ElapsedMilliseconds}ms, Attempt {i + 1})" }, CancellationToken.None);
+
+                        if (!string.IsNullOrEmpty(headerTier) && response != null && !response.IsSuccessStatusCode && _showDebugLog)
+                        {
+                            bool downgraded = !string.IsNullOrEmpty(serviceTier) && serviceTier.Equals("priority", StringComparison.OrdinalIgnoreCase) && !headerTier.Equals("priority", StringComparison.OrdinalIgnoreCase);
+                            string requestedNote = string.IsNullOrEmpty(serviceTier) ? "" : $", requested={serviceTier}";
+                            await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent
+                            {
+                                Type = "debug",
+                                Data = $"[Title Gen - {provider}] service tier: served={headerTier}{requestedNote}" + (downgraded ? " — DOWNGRADED" : "")
+                            }, CancellationToken.None);
+                        }
 
                         if (_governor != null)
                         {
-                            _governor.UpdateLimitsFromHeaders(titleCredentialKey, response);
+                            _governor.UpdateLimitsFromHeaders(titleCredentialKey, response!);
                         }
 
-                        if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                        if (response!.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
                         {
                             _governor?.RecordRateLimit(titleCredentialKey, TimeSpan.FromSeconds(15));
                             break;
                         }
 
-                        if (response.StatusCode != System.Net.HttpStatusCode.ServiceUnavailable || i == retryDelays.Length)
+                        if (response!.StatusCode != System.Net.HttpStatusCode.ServiceUnavailable || i == retryDelays.Length)
                         {
                             break;
                         }
@@ -1699,6 +1713,21 @@ public class ChatService
                 {
                     var json = await response.Content.ReadAsStringAsync(cancellationToken);
                     var root = System.Text.Json.JsonDocument.Parse(json).RootElement;
+                    var bodyTier = aiProvider.ExtractServiceTierFromBody(root);
+                    var headerTier = aiProvider.ExtractServiceTierFromHeaders(response);
+                    var actualTier = bodyTier ?? headerTier;
+
+                    if (!string.IsNullOrEmpty(actualTier) && _showDebugLog)
+                    {
+                        bool downgraded = !string.IsNullOrEmpty(serviceTier) && serviceTier.Equals("priority", StringComparison.OrdinalIgnoreCase) && !actualTier.Equals("priority", StringComparison.OrdinalIgnoreCase);
+                        string requestedNote = string.IsNullOrEmpty(serviceTier) ? "" : $", requested={serviceTier}";
+                        await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent
+                        {
+                            Type = "debug",
+                            Data = $"[Title Gen - {provider}] service tier: served={actualTier}{requestedNote}" + (downgraded ? " — DOWNGRADED" : "")
+                        }, CancellationToken.None);
+                    }
+
                     var parsedTitle = aiProvider.ParseTitleResponse(root);
                     if (!string.IsNullOrEmpty(parsedTitle))
                     {

@@ -28,6 +28,36 @@ Tests that call external APIs (like OpenAI, Anthropic, or Google) consume quota 
 > [!NOTE]
 > **Solution File Format**: The repository uses the modern Visual Studio solution format **`MobileGnollHackLogger.slnx`** (not `.sln`). Use `dotnet build MobileGnollHackLogger.slnx` or `dotnet test MobileGnollHackLogger.slnx --filter "Category!=UsesExternalApi"` when building or testing the entire solution from the CLI.
 
+## 1b. What to Expect from Live Gemini Calls
+
+Before writing or debugging a test that calls the Google Gemini API, read
+**[`docs/overseer/gemini-service-tier-measurements.md`](../../../docs/overseer/gemini-service-tier-measurements.md)**.
+It records measured availability, latency, and `service_tier` behaviour per Gemini model, so
+you can tell a genuine Overseer defect apart from a Google capacity condition.
+
+The two facts that most often cause wasted debugging:
+
+*   **The newest Gemini model may be effectively unavailable.** In the 2026-08-31 measurements,
+    `gemini-3.7-flash` returned HTTP 503 or hung on **24 of 24** attempts, on both the `priority`
+    and `standard` service tiers, while `gemini-3.6-flash` succeeded 24/24 in the same session.
+    This is a provider capacity condition, not a bug in this codebase.
+*   **Requesting `service_tier: priority` does not prevent 503s.** Google honours the request and
+    fails anyway. Never write a test that asserts the absence of 503s.
+
+Consequences for test design:
+
+*   Apply the 429/503 tolerance in §2 below to **every** live Gemini test — it is mandatory here,
+    not a nicety.
+*   Keep the model configurable (e.g. via a User Secrets key) so a saturated model can be swapped
+    without editing test code.
+*   Read the served tier from the response **body** (`usageMetadata.serviceTier`), never from the
+    `x-gemini-service-tier` header, which Google omits on `:streamGenerateContent`.
+
+> [!IMPORTANT]
+> **The availability figures above expire.** The most recently released Gemini model is the most
+> used and therefore usually the congested one. After a new Gemini generation ships, expect the
+> congestion to move to the new model — re-measure rather than trusting the recorded numbers.
+
 ## 2. Graceful Error Handling (429 & 503)
 
 External APIs are subject to rate limiting (`429 Too Many Requests`) and service unavailability (`503 Service Unavailable`). 

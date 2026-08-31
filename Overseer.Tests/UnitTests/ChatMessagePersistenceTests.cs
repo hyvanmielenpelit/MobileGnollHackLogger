@@ -41,6 +41,7 @@ public class ChatMessagePersistenceTests
             ThinkingLevelUsed = "high",
             ReasoningModeUsed = "pro",
             ServiceTierUsed = "priority",
+            ActualServiceTierUsed = "priority",
             TimeToFirstTokenMs = 120,
             TotalDurationMs = 850
         };
@@ -55,6 +56,7 @@ public class ChatMessagePersistenceTests
         Assert.Equal("high", savedMessage.ThinkingLevelUsed);
         Assert.Equal("pro", savedMessage.ReasoningModeUsed);
         Assert.Equal("priority", savedMessage.ServiceTierUsed);
+        Assert.Equal("priority", savedMessage.ActualServiceTierUsed);
         Assert.Equal(120, savedMessage.TimeToFirstTokenMs);
         Assert.Equal(850, savedMessage.TotalDurationMs);
     }

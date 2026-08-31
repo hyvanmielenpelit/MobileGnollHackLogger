@@ -1,7 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Net.Http;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
+using Overseer.Services;
 using Overseer.Services.Providers;
 using Overseer.Services.Tools;
 using Xunit;
@@ -104,5 +109,26 @@ public class AnthropicProviderTests
         var requestBody = provider.BuildChatRequestBody("claude-3-7-sonnet-20250219", prepared, 1024, null, new ToolsForRequest());
         Assert.True(requestBody.ContainsKey("system"));
         Assert.Equal("Subagent instructions", requestBody["system"]);
+    }
+
+    [Fact]
+    public async Task ParseStreamAsync_WithMessageStartServiceTier_EmitsServiceTierEvent()
+    {
+        var provider = new AnthropicProvider(CreateConfig());
+        var sse = "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":10,\"service_tier\":\"priority\"}}}\n\n";
+        using var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+        {
+            Content = new StringContent(sse, System.Text.Encoding.UTF8, "text/event-stream")
+        };
+
+        var events = new List<ChatEvent>();
+        await foreach (var evt in provider.ParseStreamAsync(response, showDebugLog: true, CancellationToken.None))
+        {
+            events.Add(evt);
+        }
+
+        var tierEvents = events.Where(e => e.Type == "service_tier").ToList();
+        Assert.Single(tierEvents);
+        Assert.Equal("priority", tierEvents[0].Data);
     }
 }

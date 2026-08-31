@@ -175,6 +175,8 @@ public class AgentLoopRunner
             string credentialKey = request.CredentialKey ?? AiRequestGovernor.GetCredentialKey(aiProvider.ProviderName, null, request.SystemModelId);
             TimeSpan permitTimeout = request.PermitWaitTimeout ?? TimeSpan.FromSeconds(_configuration.GetValue<int>("AiRateLimitSettings:PermitWaitSeconds", 120));
 
+            string? loggedTier = null;
+
             await foreach (var evt in ExecuteApiWithRetriesAsync(
                 async ct =>
                 {
@@ -190,9 +192,33 @@ public class AgentLoopRunner
                 permitTimeout,
                 mainPrefix,
                 request.ShowDebugLog,
-                cancellationToken))
+                cancellationToken,
+                aiProvider,
+                request.ServiceTier))
             {
-                if (evt.Type == "provider_history_reset")
+                if (evt.Type == "service_tier")
+                {
+                    result.ActualServiceTier = evt.Data;
+                    if (request.ShowDebugLog && !string.IsNullOrEmpty(evt.Data) && evt.Data != loggedTier)
+                    {
+                        loggedTier = evt.Data;
+                        bool downgraded =
+                            !string.IsNullOrEmpty(request.ServiceTier) &&
+                            request.ServiceTier.Equals("priority", StringComparison.OrdinalIgnoreCase) &&
+                            !evt.Data.Equals("priority", StringComparison.OrdinalIgnoreCase);
+                        string requestedNote = string.IsNullOrEmpty(request.ServiceTier)
+                            ? ""
+                            : $", requested={request.ServiceTier}";
+                        yield return new ChatEvent
+                        {
+                            Type = "debug",
+                            Data = $"{providerPrefix} service tier: served={evt.Data}{requestedNote}"
+                                 + (downgraded ? " — DOWNGRADED" : "")
+                        };
+                    }
+                    continue;
+                }
+                else if (evt.Type == "provider_history_reset")
                 {
                     currentIterationProviderItems.Clear();
                 }
@@ -518,7 +544,9 @@ public class AgentLoopRunner
         TimeSpan permitWaitTimeout,
         string mainPrefix,
         bool showDebugLog,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
+        [EnumeratorCancellation] CancellationToken cancellationToken,
+        IAiProvider aiProvider,
+        string? requestedServiceTier)
     {
         int[] retryDelays = { 1, 5, 10, 20, 30, 60 };
         int attempt = 0;
@@ -617,6 +645,7 @@ public class AgentLoopRunner
                     bool hasYieldedChunks = false;
                     bool firstChunkReceived = false;
                     bool retryTriggered = false;
+                    bool sawTierEvent = false;
                     IAsyncEnumerator<ChatEvent>? enumerator = null;
                     Exception? streamException = null;
 
@@ -638,6 +667,11 @@ public class AgentLoopRunner
 
                             if (!hasNext) break;
                             var evt = enumerator.Current;
+
+                            if (evt.Type == "service_tier")
+                            {
+                                sawTierEvent = true;
+                            }
 
                             if (!firstChunkReceived && (evt.Type == "chunk" || evt.Type == "thinking_chunk" || evt.Type == "tool_call_complete"))
                             {
@@ -713,6 +747,25 @@ public class AgentLoopRunner
                     finally
                     {
                         if (enumerator != null) await enumerator.DisposeAsync();
+                    }
+
+                    if (showDebugLog && !string.IsNullOrEmpty(requestedServiceTier) &&
+                        !requestedServiceTier.Equals("none", StringComparison.OrdinalIgnoreCase) &&
+                        !requestedServiceTier.Equals("standard", StringComparison.OrdinalIgnoreCase) &&
+                        !sawTierEvent)
+                    {
+                        var allowedHeaders = response.Headers
+                            .Where(h => h.Key.StartsWith("x-", StringComparison.OrdinalIgnoreCase)
+                                     || h.Key.StartsWith("openai-", StringComparison.OrdinalIgnoreCase)
+                                     || h.Key.StartsWith("anthropic-", StringComparison.OrdinalIgnoreCase)
+                                     || h.Key.Equals("retry-after", StringComparison.OrdinalIgnoreCase))
+                            .Select(h => $"{h.Key}={string.Join(",", h.Value)}");
+                        var headerSummary = string.Join("; ", allowedHeaders);
+                        yield return new ChatEvent
+                        {
+                            Type = "debug",
+                            Data = $"{mainPrefix} - {providerName}] Unresolved service tier (requested: {requestedServiceTier}, none reported in stream). Headers: [{(string.IsNullOrEmpty(headerSummary) ? "none" : headerSummary)}]"
+                        };
                     }
 
                     if (streamException != null)

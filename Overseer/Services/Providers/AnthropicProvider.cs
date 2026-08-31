@@ -261,6 +261,7 @@ public class AnthropicProvider : IAiProvider
                 ChatEvent? toolCallEvt = null;
                 ChatEvent? errorEvt = null;
                 ChatEvent? debugEvt = null;
+                ChatEvent? tierEvt = null;
                 ChatEvent? usageEvt = null;
                 var providerItemEvts = new List<ChatEvent>();
 
@@ -425,6 +426,12 @@ public class AnthropicProvider : IAiProvider
                         {
                             if (json.TryGetProperty("message", out var msg))
                             {
+                                var tier = ExtractServiceTierFromBody(msg);
+                                if (tier != null)
+                                {
+                                    tierEvt = new ChatEvent { Type = "service_tier", Data = tier };
+                                }
+
                                 var resolvedModel = msg.TryGetProperty("model", out var mp) ? mp.GetString() : "unknown";
                                 string usageInfo = "";
                                 if (msg.TryGetProperty("usage", out var usage))
@@ -493,6 +500,7 @@ public class AnthropicProvider : IAiProvider
                 {
                     foreach (var pEvt in providerItemEvts) yield return pEvt;
                 }
+                if (tierEvt != null) yield return tierEvt;
                 if (usageEvt != null) yield return usageEvt;
                 if (!string.IsNullOrEmpty(thinkingChunkStr)) yield return new ChatEvent { Type = "thinking_chunk", Data = thinkingChunkStr };
                 if (!string.IsNullOrEmpty(chunkStr)) yield return new ChatEvent { Type = "chunk", Data = chunkStr };
@@ -793,5 +801,17 @@ public class AnthropicProvider : IAiProvider
         }
 
         return result;
+    }
+
+    public string? ExtractServiceTierFromBody(JsonElement root)
+    {
+        var target = root.TryGetProperty("message", out var msg) ? msg : root;
+        if (target.TryGetProperty("usage", out var usage) &&
+            usage.TryGetProperty("service_tier", out var tier) &&
+            tier.ValueKind == JsonValueKind.String)
+        {
+            return ProviderHelper.NormalizeServiceTier(tier.GetString());
+        }
+        return null;
     }
 }

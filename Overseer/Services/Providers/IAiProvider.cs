@@ -71,5 +71,15 @@ public interface IAiProvider
     object BuildFunctionDeclaration(string name, string description, object parameterSchema);
 
     object? BuildToolsPayload(List<object> providerTools, List<object> functionDeclarations);
+
+    // Diagnostics & Observability
+    // Header-based tier reporting only works on Google's non-streaming :generateContent
+    // endpoint — measured absent on :streamGenerateContent on 2026-08-31. Prefer
+    // ExtractServiceTierFromBody wherever a parsed response body is available.
+    string? ExtractServiceTierFromHeaders(HttpResponseMessage response) => null;
+
+    // Reads the served tier from a parsed response root. The same shape works for a
+    // streaming chunk and for a non-streaming response for all supported providers.
+    string? ExtractServiceTierFromBody(JsonElement root) => null;
 }
 

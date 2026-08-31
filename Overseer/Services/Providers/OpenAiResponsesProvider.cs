@@ -187,6 +187,7 @@ public class OpenAiResponsesProvider : IAiProvider
                     ChatEvent? errorEvt = null;
                     ChatEvent? debugEvt = null;
                     ChatEvent? providerItemEvt = null;
+                    ChatEvent? tierEvt = null;
                     ChatEvent? usageEvt = null;
 
                     try
@@ -312,6 +313,12 @@ public class OpenAiResponsesProvider : IAiProvider
                         {
                             var respObj = json.TryGetProperty("response", out var rProp) ? rProp : json;
 
+                            var tier = ExtractServiceTierFromBody(respObj);
+                            if (tier != null)
+                            {
+                                tierEvt = new ChatEvent { Type = "service_tier", Data = tier };
+                            }
+
                             if (respObj.TryGetProperty("usage", out var usageProp))
                             {
                                 int inputTokens = usageProp.TryGetProperty("input_tokens", out var itProp) ? itProp.GetInt32() : 0;
@@ -406,6 +413,7 @@ public class OpenAiResponsesProvider : IAiProvider
                     if (debugEvt != null) yield return debugEvt;
                     if (errorEvt != null) yield return errorEvt;
                     if (providerItemEvt != null) yield return providerItemEvt;
+                    if (tierEvt != null) yield return tierEvt;
                     if (usageEvt != null) yield return usageEvt;
                     if (!string.IsNullOrEmpty(thinkingChunkStr)) yield return new ChatEvent { Type = "thinking_chunk", Data = thinkingChunkStr };
                     if (!string.IsNullOrEmpty(chunkStr)) yield return new ChatEvent { Type = "chunk", Data = chunkStr };
@@ -621,5 +629,14 @@ public class OpenAiResponsesProvider : IAiProvider
         combined.AddRange(providerTools);
         combined.AddRange(functionDeclarations);
         return combined.Count > 0 ? combined : null;
+    }
+
+    public string? ExtractServiceTierFromBody(JsonElement root)
+    {
+        if (root.TryGetProperty("service_tier", out var tier) && tier.ValueKind == JsonValueKind.String)
+        {
+            return ProviderHelper.NormalizeServiceTier(tier.GetString());
+        }
+        return null;
     }
 }

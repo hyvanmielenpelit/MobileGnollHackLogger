@@ -143,6 +143,7 @@ public class GoogleProvider : IAiProvider
                 var debugEvts = new List<ChatEvent>();
                 var providerItemEvts = new List<ChatEvent>();
                 var usageEvts = new List<ChatEvent>();
+                ChatEvent? tierEvt = null;
                 ChatEvent? errorEvt = null;
 
                 try
@@ -233,6 +234,12 @@ public class GoogleProvider : IAiProvider
 
                     if (json.TryGetProperty("usageMetadata", out var usageProp))
                     {
+                        var tier = ExtractServiceTierFromBody(json);
+                        if (tier != null)
+                        {
+                            tierEvt = new ChatEvent { Type = "service_tier", Data = tier };
+                        }
+
                         int promptTokens = usageProp.TryGetProperty("promptTokenCount", out var pt) ? pt.GetInt32() : 0;
                         int outputTokens = usageProp.TryGetProperty("candidatesTokenCount", out var ct) ? ct.GetInt32() : 0;
                         int cachedTokens = usageProp.TryGetProperty("cachedContentTokenCount", out var cct) ? cct.GetInt32() : 0;
@@ -269,6 +276,7 @@ public class GoogleProvider : IAiProvider
                 foreach (var dbg in debugEvts) yield return dbg;
                 if (errorEvt != null) yield return errorEvt;
                 foreach (var pEvt in providerItemEvts) yield return pEvt;
+                if (tierEvt != null) yield return tierEvt;
                 foreach (var uEvt in usageEvts) yield return uEvt;
                 if (!string.IsNullOrEmpty(thinkingChunkStr)) yield return new ChatEvent { Type = "thinking_chunk", Data = thinkingChunkStr };
                 if (!string.IsNullOrEmpty(chunkStr)) yield return new ChatEvent { Type = "chunk", Data = chunkStr };
@@ -635,6 +643,28 @@ public class GoogleProvider : IAiProvider
             toolsList.Add(new { functionDeclarations = functionDeclarations });
         }
         return toolsList.Count > 0 ? toolsList : null;
+    }
+
+    // Measured present on :generateContent (even on 503 responses) and absent on
+    // :streamGenerateContent. Reached solely from the non-streaming title-generation path.
+    public string? ExtractServiceTierFromHeaders(HttpResponseMessage response)
+    {
+        if (response.Headers.TryGetValues("x-gemini-service-tier", out var values))
+        {
+            return ProviderHelper.NormalizeServiceTier(values.FirstOrDefault());
+        }
+        return null;
+    }
+
+    public string? ExtractServiceTierFromBody(JsonElement root)
+    {
+        if (root.TryGetProperty("usageMetadata", out var usage) &&
+            usage.TryGetProperty("serviceTier", out var tier) &&
+            tier.ValueKind == JsonValueKind.String)
+        {
+            return ProviderHelper.NormalizeServiceTier(tier.GetString());
+        }
+        return null;
     }
 
     private (List<object> systemParts, List<object> contents) ExtractSystemAndContents(List<object> messages)
