@@ -120,6 +120,20 @@ The `Overseer` SPA is built separately from the ASP.NET Core host. Changes to Ty
 
 New or replaced raster assets are converted to **WebP at quality 85**.
 
+### Documentation and Solution Items (`docs/` and `MobileGnollHackLogger.slnx`)
+
+When adding, moving, or renaming documentation files under `docs/` (e.g., `docs/`, `docs/overseer/`, or any new documentation subdirectories):
+- You MUST also add or update `<File Path="..." />` entries inside the corresponding `<Folder Name="/docs/...">` element in `MobileGnollHackLogger.slnx`.
+- Rationale: Visual Studio does not show arbitrary repository files in the Solution Explorer unless they are registered in the `.slnx` solution file. Adding them ensures human developers can navigate and open all documentation directly in Visual Studio.
+- Example entry in `MobileGnollHackLogger.slnx`:
+  ```xml
+  <Folder Name="/docs/overseer/">
+    ...
+    <File Path="docs/overseer/my-new-guide.md" />
+  </Folder>
+  ```
+- Any plan that adds or moves documentation files under `docs/` must list `MobileGnollHackLogger.slnx` under Affected Files.
+
 ### Publishing
 
 **Never publish** (`dotnet publish` or equivalent) unless the user explicitly asks. A plan must not include a publish step on its own initiative.
@@ -136,6 +150,7 @@ one, and no two agents may touch both ends of a chain concurrently.
 | `site2.scss` -> `npx sass` -> `site2.css` **and** `site2.min.css` | Both outputs are regenerated together. **No agent may edit the generated CSS**, and none may touch it in parallel with the SCSS edit. |
 | Model change in `GnollHackServer.Data` -> `dotnet ef migrations add` -> `dotnet ef database update` -> dependent code | Do not parallelize across the migration step. The agent runs **both** commands itself; no human assignment is needed. |
 | Overseer TypeScript / templates -> Angular client rebuild -> (release only) Sentry source-map upload | Changes are not visible until the client is rebuilt. The source-map upload is its own step and only on release. |
+| New/moved files under `docs/` -> add to `MobileGnollHackLogger.slnx` | Solution Explorer accessibility. Visual Studio does not show documentation files unless they are declared in `.slnx`. |
 
 ## Subagent Use
 

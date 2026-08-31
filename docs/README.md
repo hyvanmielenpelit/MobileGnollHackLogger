@@ -71,3 +71,7 @@ docs/
 │   └── tool-batching-and-execution.md # Tool batching, concurrency & output budgets
 └── account/                       # GnollHack Account documentation (reserved)
 ```
+
+> [!NOTE]
+> **Visual Studio Solution Inclusion**: When adding new documentation files under `docs/`, ensure they are also added to the Visual Studio solution file (`MobileGnollHackLogger.slnx`) under the corresponding `<Folder Name="/docs/...">` element so they are directly accessible in Visual Studio Solution Explorer.
+

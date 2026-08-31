@@ -55,6 +55,10 @@ When making changes to database models that require EF Core migrations, you MUST
 | Program Entry & Startup | `MobileGnollHackLogger/Program.cs` |
 | Visual Studio Solution | `MobileGnollHackLogger.slnx` |
 
+### Documentation & Solution File (MobileGnollHackLogger.slnx)
+- Whenever you add, move, or rename files under `docs/` (e.g. `docs/` or `docs/overseer/`), you **MUST** also add them to the Visual Studio solution file (`MobileGnollHackLogger.slnx`) under the corresponding `<Folder Name="/docs/...">` solution items folder.
+- **Rationale**: Visual Studio Solution Explorer only displays repository documentation if the files are registered in the `.slnx` solution file. Adding them ensures human developers can access, browse, and edit all documentation directly inside Visual Studio.
+
 ## NetHack Wiki Re-Indexing Policy
 
 - **Startup-Only Indexing**: `NetHackWikiService` only indexes files once during application startup and does NOT run periodic background re-indexing timers.
