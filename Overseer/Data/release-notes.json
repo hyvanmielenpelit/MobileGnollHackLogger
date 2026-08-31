@@ -1,5 +1,20 @@
 [
   {
+    "version": "1.0.28",
+    "date": "2026-08-31T16:30:00Z",
+    "summary": "Added tracking and persistence for actual served AI service tiers across Google Gemini, OpenAI, and Anthropic providers, and fixed an issue with saving system API keys in the Admin panel.",
+    "changes": [
+      {
+        "type": "improvement",
+        "text": "Added tracking and database persistence of the actual served AI service tier returned by Google Gemini, OpenAI, and Anthropic providers, including service tier reporting in session metadata, message issue reports, and debug logs for tier downgrades."
+      },
+      {
+        "type": "fix",
+        "text": "Fixed an issue in the Admin panel where system AI API keys failed to save properly."
+      }
+    ]
+  },
+  {
     "version": "1.0.27",
     "date": "2026-08-29T17:45:00Z",
     "summary": "Added configurable parallel tool execution modes and pet awareness in game snapshots, optimized token efficiency and prompt caching for Anthropic and Google models, introduced an AI request governor to mitigate rate limits, added detailed token usage analytics to Admin, and improved subagent resilience, display names, and auto-saving settings.",
