@@ -1027,6 +1027,9 @@ public class AdminController : ControllerBase
     private void EncryptApiKey(SystemAiApiConfiguration config, string plainText)
     {
         var (ciphertext, nonce, tag) = _cryptoService.Encrypt(plainText, "SYSTEM_API_KEY");
+        config.EncryptedApiKey = ciphertext;
+        config.ApiKeyNonce = nonce;
+        config.ApiKeyTag = tag;
     }
 
     [HttpGet("system-alerts")]
