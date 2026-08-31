@@ -11,6 +11,7 @@
   <Folder Name="/docs/overseer/">
     <File Path="docs/overseer/adding-ai-models.md" />
     <File Path="docs/overseer/ai-changelog.md" />
+    <File Path="docs/overseer/anthropic-model-latency-measurements.md" />
     <File Path="docs/overseer/changelog-guide.md" />
     <File Path="docs/overseer/chat-data-retention.md" />
     <File Path="docs/overseer/commands.md" />

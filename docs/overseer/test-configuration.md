@@ -32,6 +32,7 @@ The following secrets are used by the test suite:
 | `AI:ServiceTier:APIKey` | `ServiceTierLiveApiTests` | **Required** | Google AI Studio API key used by live Gemini service-tier contract tests. |
 | `AI:ServiceTier:Model` | `ServiceTierLiveApiTests` | Optional | Gemini model identifier. Defaults to `gemini-3.5-flash-lite` if omitted. |
 | `AI:LiveTests:AllowedModels` | `LiveApiModelPolicy` | Optional | Comma-separated allow-list of Gemini models permitted in live tests. Defaults to `gemini-3.5-flash-lite`. |
+| `AI:AnthropicLatency:APIKey` | Latency measurement harness | Optional | Anthropic API key used to reproduce [`anthropic-model-latency-measurements.md`](anthropic-model-latency-measurements.md). Not read by any test in the suite. |
 | `AI:ServiceTier:Provider` | *(None)* | **Unused** | Unused by test code (`ServiceTierLiveApiTests` constructs `GoogleProvider` directly). Do not set. |
 
 ---
@@ -49,7 +50,8 @@ The complete `secrets.json` schema with placeholders:
   "AesEncryptionKey": "<32-byte-base64-aes-key>",
   "AI:ServiceTier:APIKey": "<google-ai-studio-api-key>",
   "AI:ServiceTier:Model": "gemini-3.5-flash-lite",
-  "AI:LiveTests:AllowedModels": "gemini-3.5-flash-lite"
+  "AI:LiveTests:AllowedModels": "gemini-3.5-flash-lite",
+  "AI:AnthropicLatency:APIKey": "<anthropic-api-key>"
 }
 ```
 
@@ -74,6 +76,9 @@ dotnet user-secrets set "AesEncryptionKey" "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 # Required for ServiceTierLiveApiTests
 dotnet user-secrets set "AI:ServiceTier:APIKey" "<your-google-ai-studio-api-key>" --project Overseer.Tests
 dotnet user-secrets set "AI:ServiceTier:Model" "gemini-3.5-flash-lite" --project Overseer.Tests
+
+# Optional: reproducing the Anthropic latency measurements (not used by any test)
+dotnet user-secrets set "AI:AnthropicLatency:APIKey" "<your-anthropic-api-key>" --project Overseer.Tests
 ```
 
 Alternatively, in Visual Studio:
@@ -83,7 +88,9 @@ Alternatively, in Visual Studio:
 
 ---
 
-## 5. Finding a Replacement Model
+## 5. Finding or Replacing a Model
+
+### Google Gemini
 
 If a configured Gemini model is retired by Google or returns `404 NOT_FOUND`, query Google's Model Service using your configured API key to find available models:
 
@@ -112,6 +119,20 @@ If the replacement model is not in the default allow-list, add it to `AI:LiveTes
 dotnet user-secrets set "AI:LiveTests:AllowedModels" "gemini-3.5-flash-lite,<model-id>" --project Overseer.Tests
 ```
 
+### Anthropic Claude
+
+Anthropic model ids are **exact strings with no date suffix** -- `claude-sonnet-5`, not
+`claude-sonnet-5-20260630`. A date-suffixed id returns `404 not_found_error`. Anthropic also
+authenticates with the `x-api-key` **header**, not a `?key=` query string as Google does:
+
+```powershell
+$k = ((dotnet user-secrets list --project Overseer.Tests | Select-String "AI:AnthropicLatency:APIKey") -split '=', 2)[1].Trim()
+((curl.exe -sS "https://api.anthropic.com/v1/models?limit=100" -H "x-api-key: $k" -H "anthropic-version: 2023-06-01") | ConvertFrom-Json).data | Select-Object id, display_name, created_at
+```
+
+For measured latency and availability per Claude model, and which one to prefer in live
+tests, see [`anthropic-model-latency-measurements.md`](anthropic-model-latency-measurements.md).
+
 ---
 
 ## 6. Troubleshooting
@@ -124,6 +145,10 @@ dotnet user-secrets set "AI:LiveTests:AllowedModels" "gemini-3.5-flash-lite,<mod
 | `Permission denied for Google API key in ... Google returned HTTP 403 PERMISSION_DENIED:` | The API key is valid but lacks permissions for the requested model or project. | Verify project permissions in Google Cloud Console or AI Studio, or create a new key. |
 | `Model '<model>' is not in the live-test allow-list [...]` (Test Skipped) | The configured model is too slow for normal test execution (`gemini-3.6-flash`, `gemini-3.7-flash`). | Use `gemini-3.5-flash-lite` for tests, or override the allow-list via `AI:LiveTests:AllowedModels`. |
 | `SKIPPED ASSERTIONS: Google returned 429 / 503` (Test Skipped) | Google Gemini API capacity congestion or rate limiting. | This is an external provider capacity condition, not a software bug. Tests automatically tolerate this by skipping assertions. |
+| Anthropic `401 authentication_error` | The Anthropic API key is invalid, revoked, or mistyped. | Issue a new key in the Anthropic Console and update `AI:AnthropicLatency:APIKey`. |
+| Anthropic `404 not_found_error` | The Claude model id does not exist -- most often a date suffix appended to a current id (`claude-sonnet-5-20260630`). | Use the exact id with no date suffix. List available ids with the command in [section 5](#anthropic-claude). |
+| Anthropic `529 overloaded_error` | Anthropic capacity congestion. | An external provider condition, not a bug. Treat it exactly like Gemini 429/503: log a warning and pass. |
+| Anthropic `400 invalid_request_error` naming data retention, on `claude-fable-5` only | Claude Fable 5 is unavailable to organisations configured for zero data retention. | An account configuration fact, not a code defect. Use another model, or change the org retention setting. |
 
 ---
 

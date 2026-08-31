@@ -68,6 +68,36 @@ Consequences for test design:
 > used and therefore usually the congested one. After a new Gemini generation ships, expect the
 > congestion to move to the new model — re-measure rather than trusting the recorded numbers.
 
+## 1c. What to Expect from Live Anthropic Calls
+
+Before writing or debugging a test that calls the Anthropic API, read
+**[`docs/overseer/anthropic-model-latency-measurements.md`](../../../docs/overseer/anthropic-model-latency-measurements.md)**.
+It records measured latency, time-to-first-token, and availability for all seven supported Claude
+models.
+
+The picture is very different from Gemini, and the differences change how you write the test:
+
+*   **Availability was not a problem.** 168 of 168 live calls returned HTTP 200 - no 429, no
+    `529 overloaded_error`, no timeouts. Do not design Anthropic tests around scarcity the way the
+    Gemini results require.
+*   **Tolerate `529` anyway.** Anthropic's overload status is **`529 overloaded_error`**, not 503.
+    Add it to the 429/503 tolerance rule in section 2 below - a single clean window is not a
+    guarantee, and a test that fails on 529 will eventually be red through no fault of this codebase.
+*   **Prefer `claude-sonnet-5` for live tests.** It was the most consistent model measured (~2.4 s
+    median, worst call only 1.29x the median, nothing over 3.1 s) and the cheapest per call.
+    `claude-opus-4-7` was marginally faster but costs 2.5x as much on output. **Avoid `claude-fable-5`**
+    (~4.6 s median) **and `claude-sonnet-4-6`** (p90 of 7.7 s, which makes suite runtime unpredictable).
+*   **Model ids carry no date suffix.** `claude-sonnet-5`, never `claude-sonnet-5-20260630` - a
+    date-suffixed id returns `404 not_found_error`.
+*   **Set `thinking` and `display` explicitly** in any test that compares models or asserts on timing.
+    Omitting `thinking` runs adaptive thinking on Fable 5 / Opus 5 / Sonnet 5 but **no thinking at all**
+    on Opus 4.8 / 4.7 / 4.6 / Sonnet 4.6, so a test that omits it is not testing what it looks like.
+
+> [!NOTE]
+> **`Overseer.Tests/LiveApiModelPolicy.cs` is Gemini-only** - its `DefaultModel` is
+> `gemini-3.5-flash-lite` and it would reject any Claude id. Making it provider-aware is prerequisite
+> work before a live Anthropic test can honour the recommendation above.
+
 ## 2. Graceful Error Handling (429 & 503)
 
 External APIs are subject to rate limiting (`429 Too Many Requests`) and service unavailability (`503 Service Unavailable`). 
