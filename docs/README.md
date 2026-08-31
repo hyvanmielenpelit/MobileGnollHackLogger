@@ -21,6 +21,7 @@ Documentation and developer references for the Gnoll Overseer AI assistant web a
 | [**Chat & Data Retention**](overseer/chat-data-retention.md) | Specification and architecture for user session quotas, soft-delete lifecycle, tool call payload pruning, disk attachment cleanup, and automated database maintenance. |
 | [**Sentry Logging Architecture**](overseer/sentry-logging-architecture.md) | Specification and architecture for Sentry crash logging, server event processing, proxy tunneling, and frontend network error suppression. |
 | [**Sentry Source Maps Guide**](overseer/sentry-sourcemaps.md) | Guide to generating, injecting Debug IDs, and uploading Angular source maps to Sentry while excluding them from public deployment. |
+| [**Test Configuration & Secrets**](overseer/test-configuration.md) | User Secrets schema, required AI credentials for live API tests, and setup troubleshooting. |
 | [**Tool Batching & Execution**](overseer/tool-batching-and-execution.md) | Specification and architecture for multi-turn tool execution, concurrency throttles, output budgets, and real-time streaming. |
 
 ---
@@ -68,6 +69,7 @@ docs/
 │   ├── chat-data-retention.md     # Chat & data retention architectural specification
 │   ├── sentry-logging-architecture.md # Sentry crash logging architecture & error filtering
 │   ├── sentry-sourcemaps.md       # Sentry source map injection & upload guide
+│   ├── test-configuration.md      # User Secrets schema, required AI credentials for live API tests, and setup troubleshooting
 │   └── tool-batching-and-execution.md # Tool batching, concurrency & output budgets
 └── account/                       # GnollHack Account documentation (reserved)
 ```

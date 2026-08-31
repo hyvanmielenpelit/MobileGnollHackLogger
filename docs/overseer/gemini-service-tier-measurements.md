@@ -19,7 +19,8 @@ endpoint Overseer's main chat uses (`GoogleProvider.GetChatStreamUrl`), plus
 >
 > Treat the *structural* findings (which tier gets honoured, where the served tier is
 > reported) as durable, and the *availability and latency* findings as a snapshot. Re-run
-> the measurements (see [Reproducing](#reproducing) below) rather than trusting this table
+> the measurements (see [Reproducing](#reproducing) below) and review the test allow-list
+> ([Which model to use in tests](#which-model-to-use-in-tests)) rather than trusting this table
 > after a new model release.
 
 ---
@@ -170,12 +171,32 @@ Consequences for anyone writing code against this API:
 
 Requires a Google API key in the `Overseer.Tests` User Secrets store under
 `AI:ServiceTier:APIKey`, plus `AI:ServiceTier:Provider` and `AI:ServiceTier:Model`. See
-the [`configuration_management`](../../.agents/skills/configuration_management/SKILL.md)
+[`docs/overseer/test-configuration.md`](test-configuration.md) and the
+[`configuration_management`](../../.agents/skills/configuration_management/SKILL.md)
 skill for how User Secrets are managed in this repository.
 
 > [!CAUTION]
 > **Never commit an API key.** These keys belong in User Secrets only — never in
 > `appsettings.json`, never in a test fixture, never in a document in this repository.
+
+### Which model to use in tests
+
+**Live tests must use `gemini-3.5-flash-lite`.** It is the only model measured fast
+enough to keep the suite quick: median ~0.7 s with a 0.9 s worst case across 16 calls,
+against ~2.4 s median and a **59 s** tail for `gemini-3.6-flash`, and zero successes in
+24 attempts for `gemini-3.7-flash`.
+
+This is enforced by `Overseer.Tests/LiveApiModelPolicy.cs`, an **allow-list**: a model
+outside it causes the live tests to skip with a message naming the setting to change.
+The list defaults to `gemini-3.5-flash-lite` and is overridden with
+`AI:LiveTests:AllowedModels` in User Secrets. It is an allow-list rather than a
+deny-list on purpose — the next Gemini release will be the newest, most-used, and
+slowest model, and a deny-list would admit it silently.
+
+The contract these tests verify is a **protocol** property —
+`usageMetadata.serviceTier` was observed on `gemini-3.5-flash-lite`, `gemini-3.6-flash`,
+and `gemini-3.7-flash` alike — so testing it against the fast model loses no coverage.
+For secrets configuration and troubleshooting, see [`docs/overseer/test-configuration.md`](test-configuration.md).
 
 The automated equivalent lives in the `Overseer.Tests` project's live contract tests,
 categorised `UsesExternalApi`. Per the

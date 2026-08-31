@@ -41,12 +41,23 @@ namespace Overseer.Tests
             var testModel = config["AI:Model"] ?? "";
             var testThinkingLevel = config["AI:ThinkingLevel"];
 
-            Assert.False(string.IsNullOrEmpty(testProvider), "AI:Provider is not configured in User Secrets.");
-            Assert.False(string.IsNullOrEmpty(testApiKey), "AI:APIKey is not configured in User Secrets.");
-
             // Also need AesEncryptionKey for CryptoService
             var aesKey = config["AesEncryptionKey"];
-            Assert.False(string.IsNullOrEmpty(aesKey), "AesEncryptionKey is not configured in User Secrets.");
+
+            var missing = LiveTestSecrets.DescribeMissing(
+                config,
+                nameof(ChatServiceTests),
+                new LiveTestSecrets.Required("AI:Provider", "AI provider for the chat test: Google, OpenAI, or Anthropic."),
+                new LiveTestSecrets.Required("AI:APIKey",   "API key for that provider."),
+                new LiveTestSecrets.Required("AI:Model",    "Model id, e.g. gemini-3.5-flash-lite."),
+                new LiveTestSecrets.Required("AesEncryptionKey", "AES key used by CryptoService to encrypt the stored test API key."));
+            Assert.True(missing is null, missing);
+
+            if (string.Equals(testProvider, "Google", StringComparison.OrdinalIgnoreCase) &&
+                !LiveApiModelPolicy.IsAllowed(config, testModel))
+            {
+                Assert.Skip(LiveApiModelPolicy.DisallowedMessage(config, testModel, "AI:Model"));
+            }
 
             // 2. Setup Dependency Injection
             var services = new ServiceCollection();

@@ -24,6 +24,7 @@ Tests that call external APIs (like OpenAI, Anthropic, or Google) consume quota 
     // To run tests while SKIPPING this file (to save AI API quota), use:
     // dotnet test MobileGnollHackLogger.slnx --filter "Category!=UsesExternalApi"
     ```
+*   **Test Secrets & Configuration**: Live API credentials must be stored in User Secrets (never committed). See **[`docs/overseer/test-configuration.md`](../../../docs/overseer/test-configuration.md)** for the complete schema, setup commands, and troubleshooting guide.
 
 > [!NOTE]
 > **Solution File Format**: The repository uses the modern Visual Studio solution format **`MobileGnollHackLogger.slnx`** (not `.sln`). Use `dotnet build MobileGnollHackLogger.slnx` or `dotnet test MobileGnollHackLogger.slnx --filter "Category!=UsesExternalApi"` when building or testing the entire solution from the CLI.
@@ -48,8 +49,17 @@ Consequences for test design:
 
 *   Apply the 429/503 tolerance in §2 below to **every** live Gemini test — it is mandatory here,
     not a nicety.
-*   Keep the model configurable (e.g. via a User Secrets key) so a saturated model can be swapped
-    without editing test code.
+*   **Live tests must run against `gemini-3.5-flash-lite`.** The newer flash models are
+    too slow for the suite: `gemini-3.6-flash` was measured at a ~2.4 s median with a
+    59 s tail, and `gemini-3.7-flash` at zero successes in 24 attempts, versus ~0.7 s
+    median for `gemini-3.5-flash-lite`. Never point a live test at the newest Gemini
+    model, and **never choose a test model on availability alone — latency matters just
+    as much.**
+*   This is enforced by the allow-list in `Overseer.Tests/LiveApiModelPolicy.cs`, which
+    defaults to `gemini-3.5-flash-lite` and is overridden with
+    `AI:LiveTests:AllowedModels`. A disallowed model **skips** the test rather than
+    failing it. When a new Gemini generation ships, treat the allow-list as something to
+    re-measure, not to extend on faith.
 *   Read the served tier from the response **body** (`usageMetadata.serviceTier`), never from the
     `x-gemini-service-tier` header, which Google omits on `:streamGenerateContent`.
 

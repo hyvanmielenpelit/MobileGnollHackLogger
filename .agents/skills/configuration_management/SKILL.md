@@ -89,4 +89,7 @@ User Secrets are stored outside the project tree to prevent accidental commits.
   - To remove a secret: `dotnet user-secrets remove "Section:Key"`
 - **Reading**: `IConfiguration` automatically loads User Secrets in the Development environment. Access them using the standard configuration patterns (e.g., `_configuration["Section:Key"]`).
 
+### Test Configuration (`Overseer.Tests`)
+For `Overseer.Tests`, all live AI credentials and encryption keys are stored exclusively in User Secrets and **never** in `appsettings.json`. For the authoritative schema, required keys list, setup commands, and troubleshooting guide, see **[`docs/overseer/test-configuration.md`](../../../docs/overseer/test-configuration.md)**.
+
 **Remember**: When setting up a new service or dependency that requires authentication or API keys, always instruct the user or use the `dotnet user-secrets set` command to configure the secret, and only add the empty/non-sensitive structural placeholder to `appsettings.json` if absolutely necessary for binding.

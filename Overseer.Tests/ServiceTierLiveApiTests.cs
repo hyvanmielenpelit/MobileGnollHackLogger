@@ -42,10 +42,21 @@ namespace Overseer.Tests
                 .AddUserSecrets<ServiceTierLiveApiTests>()
                 .Build();
 
-            var apiKey = config["AI:ServiceTier:APIKey"] ?? "";
-            var model = config["AI:ServiceTier:Model"] ?? "";
-            Assert.False(string.IsNullOrEmpty(apiKey), "AI:ServiceTier:APIKey is not configured in User Secrets.");
-            Assert.False(string.IsNullOrEmpty(model), "AI:ServiceTier:Model is not configured in User Secrets.");
+            var missing = LiveTestSecrets.DescribeMissing(
+                config,
+                nameof(ServiceTierLiveApiTests),
+                new LiveTestSecrets.Required("AI:ServiceTier:APIKey",
+                    "Google AI Studio API key used by the live service-tier tests."));
+            Assert.True(missing is null, missing);
+
+            // Non-null past DescribeMissing, which fails the test when this key is missing or blank.
+            var apiKey = config["AI:ServiceTier:APIKey"]!;
+
+            var model = LiveApiModelPolicy.ResolveModel(config, "AI:ServiceTier:Model");
+            if (!LiveApiModelPolicy.IsAllowed(config, model))
+            {
+                Assert.Skip(LiveApiModelPolicy.DisallowedMessage(config, model, "AI:ServiceTier:Model"));
+            }
 
             var provider = new GoogleProvider(config);
             return (config, provider, apiKey, model);
@@ -92,6 +103,16 @@ namespace Overseer.Tests
                                       "See docs/overseer/gemini-service-tier-measurements.md.");
                     Assert.True(true);
                     return;
+                }
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorBody = await response.Content.ReadAsStringAsync(ct);
+                    var configError = LiveTestSecrets.DescribeGoogleConfigError(
+                        response.StatusCode,
+                        errorBody,
+                        model, "AI:ServiceTier:Model", "AI:ServiceTier:APIKey");
+                    Assert.True(configError is null, configError);
                 }
 
                 Assert.True(response.IsSuccessStatusCode, $"Expected success or 429/503, got {(int)response.StatusCode}");
@@ -154,6 +175,16 @@ namespace Overseer.Tests
                                       "See docs/overseer/gemini-service-tier-measurements.md.");
                     Assert.True(true);
                     return;
+                }
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorBody = await response.Content.ReadAsStringAsync(ct);
+                    var configError = LiveTestSecrets.DescribeGoogleConfigError(
+                        response.StatusCode,
+                        errorBody,
+                        model, "AI:ServiceTier:Model", "AI:ServiceTier:APIKey");
+                    Assert.True(configError is null, configError);
                 }
 
                 Assert.True(response.IsSuccessStatusCode, $"Expected success or 429/503, got {(int)response.StatusCode}");
@@ -220,6 +251,16 @@ namespace Overseer.Tests
                                       "See docs/overseer/gemini-service-tier-measurements.md.");
                     Assert.True(true);
                     return;
+                }
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorBody = await response.Content.ReadAsStringAsync(ct);
+                    var configError = LiveTestSecrets.DescribeGoogleConfigError(
+                        response.StatusCode,
+                        errorBody,
+                        model, "AI:ServiceTier:Model", "AI:ServiceTier:APIKey");
+                    Assert.True(configError is null, configError);
                 }
 
                 Assert.True(response.IsSuccessStatusCode, $"Expected success or 429/503, got {(int)response.StatusCode}");

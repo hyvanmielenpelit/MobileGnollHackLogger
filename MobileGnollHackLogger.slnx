@@ -19,6 +19,7 @@
     <File Path="docs/overseer/sentry-logging-architecture.md" />
     <File Path="docs/overseer/sentry-sourcemaps.md" />
     <File Path="docs/overseer/subagents.md" />
+    <File Path="docs/overseer/test-configuration.md" />
     <File Path="docs/overseer/tool-batching-and-execution.md" />
   </Folder>
   <Project Path="GnollHackServer.Data/GnollHackServer.Data.csproj" />
