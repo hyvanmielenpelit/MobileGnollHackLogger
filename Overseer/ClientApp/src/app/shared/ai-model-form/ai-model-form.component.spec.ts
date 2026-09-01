@@ -521,31 +521,45 @@ describe('AiModelFormComponent', () => {
       expect(component.maxOutputTokens).toBe(2000);
     });
 
-    it('should reset to Add-mode defaults when provider is changed in Edit mode', () => {
+    it('should ignore onProviderChange when in Edit mode', () => {
       expect(component.thinkingLevel).toBe('medium');
       expect(component.maxInputTokens).toBe(50000);
+      expect(component.availableModels.length).toBe(4);
 
-      // User changes provider
+      // Attempt provider change in Edit mode
       component.provider = 'OpenAI';
       component.onProviderChange();
 
-      expect(component.isProviderChanged).toBeTrue();
-      expect(component.thinkingLevel).toBe('');
-      expect(component.pickerThinkingLevelSelect).toBe('');
-      expect(component.serviceTier).toBe('');
-      expect(component.maxInputTokens).toBeNull();
-      expect(component.maxOutputTokens).toBeNull();
-      expect(component.displayNameMode).toBe('model_name');
+      // Properties and available models must not be purged or reset
+      expect(component.thinkingLevel).toBe('medium');
+      expect(component.maxInputTokens).toBe(50000);
+      expect(component.availableModels.length).toBe(4);
+    });
 
-      // Models are fetched for the new provider
-      component.availableModels = mockModels;
+    it('should disable the provider select in Edit mode and enable it in Add mode', async () => {
+      const editFixture = TestBed.createComponent(AiModelFormComponent);
+      const editComponent = editFixture.componentInstance;
+      editComponent.mode = 'edit';
+      editComponent.providers = ['Anthropic', 'OpenAI'];
+      editFixture.detectChanges();
+      await editFixture.whenStable();
+      editFixture.detectChanges();
 
-      // Now selecting a model applies fresh Add-mode defaults
-      component.pickerModelSelect = 'gpt-4o';
-      component.onPickerModelSelect();
+      const editSelect: HTMLSelectElement = editFixture.nativeElement.querySelector('select');
+      expect(editSelect.disabled).toBeTrue();
+      expect(editSelect.title).toBe('Provider cannot be changed for an existing configuration');
 
-      expect(component.maxInputTokens).toBe(128000);
-      expect(component.maxOutputTokens).toBe(4096);
+      const addFixture = TestBed.createComponent(AiModelFormComponent);
+      const addComponent = addFixture.componentInstance;
+      addComponent.mode = 'add';
+      addComponent.providers = ['Anthropic', 'OpenAI'];
+      addFixture.detectChanges();
+      await addFixture.whenStable();
+      addFixture.detectChanges();
+
+      const addSelect: HTMLSelectElement = addFixture.nativeElement.querySelector('select');
+      expect(addSelect.disabled).toBeFalse();
+      expect(addSelect.title).toBe('');
     });
 
     it('should apply fresh defaults on model pick in Add mode', () => {

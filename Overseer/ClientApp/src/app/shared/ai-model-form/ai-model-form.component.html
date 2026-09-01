@@ -24,7 +24,7 @@
 
     <div class="form-group flex-col">
       <label>Provider</label>
-      <select class="gh-input w-100" [(ngModel)]="provider" (change)="onProviderChange()">
+      <select class="gh-input w-100" [(ngModel)]="provider" (change)="onProviderChange()" [disabled]="mode === 'edit'" [attr.disabled]="mode === 'edit' ? '' : null" [title]="mode === 'edit' ? 'Provider cannot be changed for an existing configuration' : ''">
         @for (p of providers; track p) {
           <option [value]="p">{{ p }}</option>
         }

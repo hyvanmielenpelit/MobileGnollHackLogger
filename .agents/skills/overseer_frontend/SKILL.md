@@ -277,9 +277,9 @@ When configuring or editing AI models in `AiModelFormComponent` (used across `/m
 - **Switching to "Custom..." Model**:
   - If the user switches the model dropdown to "Custom...", all current property values are preserved by setting the picker dropdowns to `'custom'` and placing the retained values into the corresponding custom text inputs.
 
-### 3. Provider Change Lifecycle (Edit Mode Reset)
-- **Provider Switch Reset**: If the provider dropdown is changed in Edit Mode, the component marks `isProviderChanged = true` and purges all previous model properties, custom input fields, and resets `displayNameMode` to `'model_name'`.
-- Upon loading models for the newly selected provider, the form applies fresh Add-mode defaults, preventing cross-provider state leakage.
+### 3. Provider Immutability in Edit Mode
+- **Provider Immutability**: In Edit Mode (`mode === 'edit'`), the Provider dropdown is disabled (`[disabled]="mode === 'edit'"`) and programmatic provider changes via `onProviderChange()` are ignored. The AI Provider can only be chosen during creation in Add Mode (`mode === 'add'`).
+- Because the provider cannot change during edits, property preservation always operates within models of the same provider.
 
 ## Angular Unit Testing
 

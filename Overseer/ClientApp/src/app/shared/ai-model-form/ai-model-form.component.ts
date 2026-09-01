@@ -77,7 +77,6 @@ export class AiModelFormComponent implements OnInit {
   modelError = '';
   availableModels: ApiModelDto[] = [];
   selectedModelObj: ApiModelDto | null = null;
-  isProviderChanged = false;
   
   // UI Selection State
   pickerModelSelect = '';
@@ -198,7 +197,6 @@ export class AiModelFormComponent implements OnInit {
   }
 
   ngOnInit() {
-    this.isProviderChanged = false;
     if (this.initialProvider) {
       this.provider = this.initialProvider;
     } else if (this.providers.length > 0) {
@@ -256,7 +254,9 @@ export class AiModelFormComponent implements OnInit {
   }
 
   onProviderChange() {
-    this.isProviderChanged = true;
+    if (this.mode === 'edit') {
+      return;
+    }
     this.availableModels = [];
     this.selectedModelObj = null;
     this.modelError = '';
@@ -385,7 +385,7 @@ export class AiModelFormComponent implements OnInit {
     }
     
     this.selectedModelObj = this.availableModels.find(m => m.id === this.modelId) || null;
-    const isEditPreserveMode = this.mode === 'edit' && !this.isProviderChanged;
+    const isEditPreserveMode = this.mode === 'edit';
 
     if (isEditPreserveMode) {
       const currentThinking = this.pickerThinkingLevelSelect === 'custom' ? this.customThinkingLevel : this.thinkingLevel;
