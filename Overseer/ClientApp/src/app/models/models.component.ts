@@ -372,6 +372,7 @@ export class ModelsComponent implements OnInit {
       formData.provider, 
       formData.modelId, 
       formData.displayName, 
+      formData.displayNameMode,
       formData.thinkingLevel || undefined,
       formData.reasoningMode || undefined,
       formData.reasoningSummary || undefined,
@@ -410,6 +411,7 @@ export class ModelsComponent implements OnInit {
       this.settingsService.updateUserModel(
         this.editingModel.id, 
         formData.displayName, 
+        formData.displayNameMode,
         formData.thinkingLevel || undefined, 
         formData.reasoningMode || undefined,
         formData.reasoningSummary || undefined,

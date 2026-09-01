@@ -21,6 +21,9 @@ public class UserAiModel
     public string? DisplayName { get; set; }  // User-facing label
 
     [MaxLength(32)]
+    public string? DisplayNameMode { get; set; }  // "model_name" | "model_id" | "custom"; null = legacy row
+
+    [MaxLength(32)]
     public string? ThinkingLevel { get; set; }
 
     [MaxLength(32)]

@@ -3,8 +3,11 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SettingsService, ApiModelDto } from '../../services/settings.service';
 
+export type DisplayNameMode = 'model_name' | 'model_id' | 'custom';
+
 export interface AiModelFormResult {
   displayName: string;
+  displayNameMode: DisplayNameMode;
   provider: string;
   modelId: string;
   thinkingLevel: string | null;
@@ -43,6 +46,9 @@ export class AiModelFormComponent implements OnInit {
 
   // Form fields
   displayName = '';
+  displayNameMode: DisplayNameMode = 'model_name';
+  customDisplayName = '';
+  private needsDisplayNameModeInference = false;
   provider = '';
   modelId = '';
   customModelId = '';
@@ -79,10 +85,66 @@ export class AiModelFormComponent implements OnInit {
   pickerReasoningSummarySelect = '';
   pickerServiceTierSelect = '';
   sortMode: 'alphabetical_asc' | 'alphabetical_desc' | 'created_asc' | 'created_desc' = 'created_desc';
-  lastAutoDisplayName = '';
   showApiKeyInfo = false;
   editingApiKey = false;
   deleteApiKey = false;
+
+  /** The model id currently in effect, whether picked from the catalog or typed. */
+  get currentModelId(): string {
+    return this.pickerModelSelect === 'custom' ? this.customModelId : this.modelId;
+  }
+
+  /** The catalog-supplied name, or '' when the model is custom / not in the catalog. */
+  get catalogDisplayName(): string {
+    const m = this.selectedModelObj;
+    if (!m) return '';
+    return m.displayName || m.description || m.id;
+  }
+
+  getPreviewDisplayName(): string {
+    switch (this.displayNameMode) {
+      case 'model_id':
+        return this.currentModelId;
+      case 'custom':
+        return this.customDisplayName.trim() || this.currentModelId;
+      default:
+        return this.catalogDisplayName || this.currentModelId;
+    }
+  }
+
+  /** The value actually saved. Must never be empty: SystemAiApiConfiguration.DisplayName is non-nullable. */
+  getEffectiveDisplayName(): string {
+    return this.getPreviewDisplayName();
+  }
+
+  private isKnownMode(value: any): value is DisplayNameMode {
+    return value === 'model_name' || value === 'model_id' || value === 'custom';
+  }
+
+  /** Legacy rows only: reconstruct the mode from the stored name. */
+  private inferDisplayNameMode() {
+    const stored = (this.displayName || '').trim();
+    if (!stored) {
+      this.displayNameMode = 'model_name';
+      this.customDisplayName = '';
+    } else if (this.catalogDisplayName && stored === this.catalogDisplayName) {
+      this.displayNameMode = 'model_name';
+      this.customDisplayName = '';
+    } else if (stored === this.currentModelId) {
+      this.displayNameMode = 'model_id';
+      this.customDisplayName = '';
+    } else {
+      this.displayNameMode = 'custom';
+      this.customDisplayName = stored;
+    }
+  }
+
+  private resolveDisplayNameModeIfNeeded() {
+    if (this.needsDisplayNameModeInference) {
+      this.inferDisplayNameMode();
+      this.needsDisplayNameModeInference = false;
+    }
+  }
 
   get sortedModels() {
     return [...this.availableModels].sort((a, b) => {
@@ -145,6 +207,13 @@ export class AiModelFormComponent implements OnInit {
 
     if (this.initialData) {
       this.displayName = this.initialData.displayName || '';
+      if (this.isKnownMode(this.initialData.displayNameMode)) {
+        this.displayNameMode = this.initialData.displayNameMode;
+        this.customDisplayName = this.displayNameMode === 'custom' ? (this.initialData.displayName || '') : '';
+        this.needsDisplayNameModeInference = false;
+      } else {
+        this.needsDisplayNameModeInference = true;
+      }
       this.modelId = this.initialData.modelId || '';
       this.thinkingLevel = this.initialData.thinkingLevel || '';
       this.reasoningMode = this.initialData.reasoningMode || '';
@@ -174,6 +243,7 @@ export class AiModelFormComponent implements OnInit {
         this.fetchModels(true);
       } else {
         this.setAllToCustom();
+        this.resolveDisplayNameModeIfNeeded();
       }
     } else {
       // Add mode
@@ -227,6 +297,7 @@ export class AiModelFormComponent implements OnInit {
           this.modelError = 'No models available or API key not configured.';
           if (isInitializingEdit) {
             this.setAllToCustom();
+            this.resolveDisplayNameModeIfNeeded();
           }
           return;
         }
@@ -261,6 +332,7 @@ export class AiModelFormComponent implements OnInit {
                 this.customServiceTier = this.serviceTier;
               }
            }
+           this.resolveDisplayNameModeIfNeeded();
         } else {
            if (this.sortedModels.length > 0) {
               this.pickerModelSelect = this.sortedModels[0].id;
@@ -276,6 +348,7 @@ export class AiModelFormComponent implements OnInit {
         this.modelError = err.error?.message || err.message || 'Error fetching models.';
         if (isInitializingEdit) {
           this.setAllToCustom();
+          this.resolveDisplayNameModeIfNeeded();
         }
       }
     });
@@ -329,13 +402,6 @@ export class AiModelFormComponent implements OnInit {
       
       this.maxInputTokens = this.selectedModelObj.maxInputTokens || null;
       this.maxOutputTokens = this.selectedModelObj.maxOutputTokens || null;
-      
-      if (this.isAdmin) {
-          if (!this.displayName || this.displayName === this.lastAutoDisplayName) {
-              this.displayName = this.selectedModelObj.description || this.selectedModelObj.id;
-              this.lastAutoDisplayName = this.displayName;
-          }
-      }
     } else {
       this.thinkingLevel = '';
       this.pickerThinkingLevelSelect = '';
@@ -345,12 +411,6 @@ export class AiModelFormComponent implements OnInit {
       this.pickerReasoningSummarySelect = '';
       this.serviceTier = '';
       this.pickerServiceTierSelect = '';
-      if (this.isAdmin) {
-        if (!this.displayName || this.displayName === this.lastAutoDisplayName) {
-          this.displayName = '';
-          this.lastAutoDisplayName = '';
-        }
-      }
     }
   }
 
@@ -425,6 +485,7 @@ export class AiModelFormComponent implements OnInit {
 
   onSave() {
     this.modelError = '';
+    this.resolveDisplayNameModeIfNeeded();
     const finalModelId = this.pickerModelSelect === 'custom' ? this.customModelId : this.modelId;
     const finalThinkingLevel = this.pickerThinkingLevelSelect === 'custom' ? this.customThinkingLevel : this.thinkingLevel;
     const finalReasoningMode = this.pickerReasoningModeSelect === 'custom' ? this.customReasoningMode : this.reasoningMode;
@@ -436,20 +497,25 @@ export class AiModelFormComponent implements OnInit {
         return;
     }
 
-    let finalDisplayName = this.displayName;
-    if (!finalDisplayName || finalDisplayName.trim() === '') {
-      finalDisplayName = this.selectedModelObj?.description || this.selectedModelObj?.id || finalModelId;
+    const finalDisplayName = this.getEffectiveDisplayName();
+
+    if (!finalDisplayName) {
+      this.modelError = 'Display Name could not be resolved. Choose Custom and enter a name.';
+      return;
     }
 
     if (this.isAdmin) {
       if (!/^[a-zA-Z0-9 _\-.]+$/.test(finalDisplayName)) {
-        this.modelError = 'Display Name can only contain letters, numbers, spaces, underscores, dashes, and dots.';
+        this.modelError = this.displayNameMode === 'custom'
+          ? 'Display Name can only contain letters, numbers, spaces, underscores, dashes, and dots.'
+          : `The resolved name "${finalDisplayName}" contains characters that are not allowed. Choose Custom and enter a name.`;
         return;
       }
     }
 
     const result: AiModelFormResult = {
       displayName: finalDisplayName,
+      displayNameMode: this.displayNameMode,
       provider: this.provider,
       modelId: finalModelId,
       thinkingLevel: finalThinkingLevel || null,

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Overseer.Models;
 using Overseer.Services;
 using Overseer.Services.Providers;
 using Overseer.Extensions;
@@ -276,6 +277,7 @@ public class SettingsController : ControllerBase
             Provider = m.Provider,
             ModelId = m.ModelId,
             DisplayName = (string?)m.DisplayName,
+            DisplayNameMode = (string?)m.DisplayNameMode,
             ThinkingLevel = (string?)m.ThinkingLevel,
             OrderIndex = m.OrderIndex,
             MaxInputTokens = (int?)m.MaxInputTokens,
@@ -294,6 +296,7 @@ public class SettingsController : ControllerBase
             Provider = x.Config.Provider,
             ModelId = x.Config.ModelId,
             DisplayName = (string?)x.Config.DisplayName,
+            DisplayNameMode = (string?)x.Config.DisplayNameMode,
             ThinkingLevel = (string?)x.Config.ThinkingLevel,
             OrderIndex = x.Config.OrderIndex,
             MaxInputTokens = (int?)x.Config.MaxInputTokens,
@@ -323,6 +326,7 @@ public class SettingsController : ControllerBase
             Provider = request.Provider,
             ModelId = request.ModelId,
             DisplayName = request.DisplayName,
+            DisplayNameMode = DisplayNameModes.Normalize(request.DisplayNameMode),
             ThinkingLevel = request.ThinkingLevel,
             ReasoningMode = request.ReasoningMode,
             ReasoningSummary = request.ReasoningSummary,
@@ -344,6 +348,7 @@ public class SettingsController : ControllerBase
             userId,
             id,
             request.DisplayName,
+            DisplayNameModes.Normalize(request.DisplayNameMode),
             request.ThinkingLevel,
             request.ReasoningMode,
             request.ReasoningSummary,
@@ -630,6 +635,7 @@ public class AddUserModelRequest
     public string Provider { get; set; } = string.Empty;
     public string ModelId { get; set; } = string.Empty;
     public string? DisplayName { get; set; }
+    public string? DisplayNameMode { get; set; }
     public string? ThinkingLevel { get; set; }
     public string? ReasoningMode { get; set; }
     public string? ReasoningSummary { get; set; }
@@ -641,6 +647,7 @@ public class AddUserModelRequest
 public class UpdateUserModelRequest
 {
     public string? DisplayName { get; set; }
+    public string? DisplayNameMode { get; set; }
     public string? ThinkingLevel { get; set; }
     public string? ReasoningMode { get; set; }
     public string? ReasoningSummary { get; set; }

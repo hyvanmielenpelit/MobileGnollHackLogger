@@ -33,6 +33,7 @@ public class SystemAiApiConfigurationDto
 {
     public long Id { get; set; }
     public string DisplayName { get; set; } = string.Empty;
+    public string? DisplayNameMode { get; set; }
     public string Provider { get; set; } = string.Empty;
     public string ModelId { get; set; } = string.Empty;
     public string? ThinkingLevel { get; set; }
@@ -77,6 +78,7 @@ public class SystemAiApiConfigurationDto
 public class CreateSystemAiApiConfigurationRequest
 {
     public string DisplayName { get; set; } = string.Empty;
+    public string? DisplayNameMode { get; set; }
     public string Provider { get; set; } = string.Empty;
     public string ModelId { get; set; } = string.Empty;
     public string? ThinkingLevel { get; set; }

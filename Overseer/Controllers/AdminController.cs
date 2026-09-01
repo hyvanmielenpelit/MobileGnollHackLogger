@@ -179,6 +179,7 @@ public class AdminController : ControllerBase
             {
                 Id = c.Id,
                 DisplayName = c.DisplayName,
+                DisplayNameMode = c.DisplayNameMode,
                 Provider = c.Provider,
                 ModelId = c.ModelId,
                 ThinkingLevel = c.ThinkingLevel,
@@ -234,6 +235,7 @@ public class AdminController : ControllerBase
         var config = new SystemAiApiConfiguration
         {
             DisplayName = request.DisplayName,
+            DisplayNameMode = DisplayNameModes.Normalize(request.DisplayNameMode),
             Provider = request.Provider,
             ModelId = request.ModelId,
             ThinkingLevel = request.ThinkingLevel,
@@ -280,6 +282,7 @@ public class AdminController : ControllerBase
         if (config == null) return NotFound();
 
         config.DisplayName = request.DisplayName;
+        config.DisplayNameMode = DisplayNameModes.Normalize(request.DisplayNameMode);
         config.Provider = request.Provider;
         config.ModelId = request.ModelId;
         config.ThinkingLevel = request.ThinkingLevel;

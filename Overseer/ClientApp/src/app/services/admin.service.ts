@@ -22,6 +22,7 @@ export interface GroupDto {
 export interface SystemAiConfigDto {
   id: number;
   displayName: string;
+  displayNameMode?: string | null;
   provider: string;
   modelId: string;
   thinkingLevel: string | null;

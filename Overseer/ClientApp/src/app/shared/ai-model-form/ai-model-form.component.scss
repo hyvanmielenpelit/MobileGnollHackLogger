@@ -191,3 +191,30 @@
   }
 }
 
+.display-name-preview {
+  font-size: 0.9em;
+  color: #b8b8b8;
+
+  strong {
+    color: var(--gh-gold);
+  }
+}
+
+.model-properties-fieldset {
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+  border-radius: 6px;
+  padding: 12px 14px 14px 14px;
+  margin-top: 15px;
+  margin-bottom: 15px;
+  background: rgba(0, 0, 0, 0.15);
+
+  legend {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--gh-gold, #f39c12);
+    padding: 0 6px;
+    letter-spacing: 0.5px;
+  }
+}
+
+

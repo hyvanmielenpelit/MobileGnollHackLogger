@@ -11,6 +11,9 @@ public class SystemAiApiConfiguration : IRateLimitedEntity
     [MaxLength(256)]
     public string DisplayName { get; set; } = default!;
 
+    [MaxLength(32)]
+    public string? DisplayNameMode { get; set; }  // "model_name" | "model_id" | "custom"; null = legacy row
+
     [MaxLength(64)]
     public string Provider { get; set; } = default!;
 

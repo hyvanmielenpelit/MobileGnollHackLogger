@@ -51,6 +51,7 @@ export interface UserAiModel {
   provider: string;
   modelId: string;
   displayName?: string;
+  displayNameMode?: string;
   thinkingLevel?: string;
   reasoningMode?: string;
   reasoningSummary?: string;
@@ -152,12 +153,12 @@ export class SettingsService {
     });
   }
 
-  addUserModel(provider: string, modelId: string, displayName?: string, thinkingLevel?: string, reasoningMode?: string, reasoningSummary?: string, serviceTier?: string, maxInputTokens?: number | null, maxOutputTokens?: number | null) {
-    return this.http.post<{ id: number }>('/api/settings/usermodels', { provider, modelId, displayName, thinkingLevel, reasoningMode, reasoningSummary, serviceTier, maxInputTokens, maxOutputTokens });
+  addUserModel(provider: string, modelId: string, displayName?: string, displayNameMode?: string, thinkingLevel?: string, reasoningMode?: string, reasoningSummary?: string, serviceTier?: string, maxInputTokens?: number | null, maxOutputTokens?: number | null) {
+    return this.http.post<{ id: number }>('/api/settings/usermodels', { provider, modelId, displayName, displayNameMode, thinkingLevel, reasoningMode, reasoningSummary, serviceTier, maxInputTokens, maxOutputTokens });
   }
 
-  updateUserModel(id: number, displayName?: string, thinkingLevel?: string, reasoningMode?: string, reasoningSummary?: string, serviceTier?: string, maxInputTokens?: number | null, maxOutputTokens?: number | null) {
-    return this.http.put(`/api/settings/usermodels/${id}`, { displayName, thinkingLevel, reasoningMode, reasoningSummary, serviceTier, maxInputTokens, maxOutputTokens });
+  updateUserModel(id: number, displayName?: string, displayNameMode?: string, thinkingLevel?: string, reasoningMode?: string, reasoningSummary?: string, serviceTier?: string, maxInputTokens?: number | null, maxOutputTokens?: number | null) {
+    return this.http.put(`/api/settings/usermodels/${id}`, { displayName, displayNameMode, thinkingLevel, reasoningMode, reasoningSummary, serviceTier, maxInputTokens, maxOutputTokens });
   }
 
   deleteUserModel(id: number) {

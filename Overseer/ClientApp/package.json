@@ -1,6 +1,6 @@
 {
   "name": "overseer",
-  "version": "1.0.28",
+  "version": "1.0.29",
   "scripts": {
     "ng": "ng",
     "start": "ng serve --port 44447",

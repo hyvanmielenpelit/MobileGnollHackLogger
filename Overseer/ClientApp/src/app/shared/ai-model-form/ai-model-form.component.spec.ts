@@ -34,6 +34,18 @@ describe('AiModelFormComponent', () => {
       contextWindowSize: 200000,
       maxInputTokens: 200000,
       maxOutputTokens: 8192
+    },
+    {
+      id: 'custom-uncatalogued',
+      displayName: '',
+      description: 'custom-uncatalogued',
+      createdAt: 1720000000,
+      supportedThinkingLevels: [],
+      supportedReasoningModes: [],
+      supportedReasoningSummaries: [],
+      contextWindowSize: 64000,
+      maxInputTokens: 64000,
+      maxOutputTokens: 2048
     }
   ];
 
@@ -57,7 +69,7 @@ describe('AiModelFormComponent', () => {
     expect(component).toBeTruthy();
   });
 
-  describe('Admin mode model selection and display name lifecycle', () => {
+  describe('Display name options and preview logic', () => {
     beforeEach(() => {
       component.isAdmin = true;
       component.mode = 'add';
@@ -65,74 +77,28 @@ describe('AiModelFormComponent', () => {
       fixture.detectChanges();
     });
 
-    it('should auto-populate displayName when selecting catalog models in admin mode', () => {
+    it('should not mutate displayName or customDisplayName on model selection', () => {
       component.fetchModels();
-      expect(component.availableModels.length).toBe(2);
+      expect(component.availableModels.length).toBe(3);
 
       component.pickerModelSelect = 'gpt-4o';
       component.onPickerModelSelect();
-      expect(component.displayName).toBe('GPT-4o Omnimodel');
-      expect(component.lastAutoDisplayName).toBe('GPT-4o Omnimodel');
+      expect(component.displayName).toBe('');
+      expect(component.customDisplayName).toBe('');
 
       component.pickerModelSelect = 'claude-3-5-sonnet';
       component.onPickerModelSelect();
-      expect(component.displayName).toBe('Claude 3.5 Sonnet v2');
-      expect(component.lastAutoDisplayName).toBe('Claude 3.5 Sonnet v2');
+      expect(component.displayName).toBe('');
+      expect(component.customDisplayName).toBe('');
     });
 
-    it('should reset displayName and lastAutoDisplayName to empty string when selecting Custom after a catalog model', () => {
+    it('should emit catalog displayName in model_name mode', () => {
       component.fetchModels();
-
       component.pickerModelSelect = 'gpt-4o';
       component.onPickerModelSelect();
-      expect(component.displayName).toBe('GPT-4o Omnimodel');
+      component.displayNameMode = 'model_name';
 
-      component.pickerModelSelect = 'custom';
-      component.onPickerModelSelect();
-      expect(component.displayName).toBe('');
-      expect(component.lastAutoDisplayName).toBe('');
-    });
-
-    it('should repopulate displayName when switching from Custom back to a catalog model', () => {
-      component.fetchModels();
-
-      component.pickerModelSelect = 'gpt-4o';
-      component.onPickerModelSelect();
-      expect(component.displayName).toBe('GPT-4o Omnimodel');
-
-      component.pickerModelSelect = 'custom';
-      component.onPickerModelSelect();
-      expect(component.displayName).toBe('');
-
-      component.pickerModelSelect = 'claude-3-5-sonnet';
-      component.onPickerModelSelect();
-      expect(component.displayName).toBe('Claude 3.5 Sonnet v2');
-      expect(component.lastAutoDisplayName).toBe('Claude 3.5 Sonnet v2');
-    });
-
-    it('should preserve manually customized displayName when switching to Custom', () => {
-      component.fetchModels();
-
-      component.pickerModelSelect = 'gpt-4o';
-      component.onPickerModelSelect();
-      expect(component.displayName).toBe('GPT-4o Omnimodel');
-
-      // User manually customizes the display name
-      component.displayName = 'My Custom GPT';
-
-      // Switch to custom
-      component.pickerModelSelect = 'custom';
-      component.onPickerModelSelect();
-      expect(component.displayName).toBe('My Custom GPT');
-    });
-
-    it('should fall back finalDisplayName to custom model ID onSave when displayName is empty', () => {
-      component.fetchModels();
-
-      component.pickerModelSelect = 'custom';
-      component.customModelId = 'custom-llama-3';
-      component.onPickerModelSelect();
-      expect(component.displayName).toBe('');
+      expect(component.getPreviewDisplayName()).toBe('GPT-4o');
 
       let savedResult: AiModelFormResult | undefined;
       component.save.subscribe((result) => {
@@ -142,8 +108,180 @@ describe('AiModelFormComponent', () => {
       component.onSave();
 
       expect(savedResult).toBeDefined();
-      expect(savedResult!.modelId).toBe('custom-llama-3');
-      expect(savedResult!.displayName).toBe('custom-llama-3');
+      expect(savedResult!.displayName).toBe('GPT-4o');
+      expect(savedResult!.displayNameMode).toBe('model_name');
+    });
+
+    it('should fall back to model id in model_name mode when model is uncatalogued or custom', () => {
+      component.fetchModels();
+      
+      // Uncatalogued model (empty catalog displayName)
+      component.pickerModelSelect = 'custom-uncatalogued';
+      component.onPickerModelSelect();
+      component.displayNameMode = 'model_name';
+      expect(component.getPreviewDisplayName()).toBe('custom-uncatalogued');
+
+      // Custom model ID
+      component.pickerModelSelect = 'custom';
+      component.customModelId = 'my-custom-model-id';
+      component.onPickerModelSelect();
+      expect(component.getPreviewDisplayName()).toBe('my-custom-model-id');
+
+      let savedResult: AiModelFormResult | undefined;
+      component.save.subscribe((result) => {
+        savedResult = result;
+      });
+
+      component.onSave();
+      expect(savedResult).toBeDefined();
+      expect(savedResult!.displayName).toBe('my-custom-model-id');
+      expect(savedResult!.displayNameMode).toBe('model_name');
+    });
+
+    it('should always emit model id in model_id mode even if catalog displayName exists', () => {
+      component.fetchModels();
+      component.pickerModelSelect = 'gpt-4o';
+      component.onPickerModelSelect();
+      component.displayNameMode = 'model_id';
+
+      expect(component.getPreviewDisplayName()).toBe('gpt-4o');
+
+      let savedResult: AiModelFormResult | undefined;
+      component.save.subscribe((result) => {
+        savedResult = result;
+      });
+
+      component.onSave();
+      expect(savedResult).toBeDefined();
+      expect(savedResult!.displayName).toBe('gpt-4o');
+      expect(savedResult!.displayNameMode).toBe('model_id');
+    });
+
+    it('should emit custom string in custom mode or fall back to model id when empty', () => {
+      component.fetchModels();
+      component.pickerModelSelect = 'gpt-4o';
+      component.onPickerModelSelect();
+      component.displayNameMode = 'custom';
+
+      // Custom string typed
+      component.customDisplayName = 'My Special GPT';
+      expect(component.getPreviewDisplayName()).toBe('My Special GPT');
+
+      let savedResult: AiModelFormResult | undefined;
+      component.save.subscribe((result) => {
+        savedResult = result;
+      });
+
+      component.onSave();
+      expect(savedResult).toBeDefined();
+      expect(savedResult!.displayName).toBe('My Special GPT');
+      expect(savedResult!.displayNameMode).toBe('custom');
+
+      // Whitespace / empty custom string falls back to model id
+      component.customDisplayName = '   ';
+      expect(component.getPreviewDisplayName()).toBe('gpt-4o');
+      expect(component.getEffectiveDisplayName()).toBe('gpt-4o');
+    });
+
+    it('should preserve customDisplayName across model changes in custom mode', () => {
+      component.fetchModels();
+      component.displayNameMode = 'custom';
+      component.customDisplayName = 'My Preserved Name';
+
+      component.pickerModelSelect = 'gpt-4o';
+      component.onPickerModelSelect();
+      expect(component.customDisplayName).toBe('My Preserved Name');
+
+      component.pickerModelSelect = 'claude-3-5-sonnet';
+      component.onPickerModelSelect();
+      expect(component.customDisplayName).toBe('My Preserved Name');
+    });
+
+    it('should restore custom mode and customDisplayName directly in edit mode without inference when displayNameMode is persisted', () => {
+      component.mode = 'edit';
+      component.initialData = {
+        id: 1,
+        provider: 'OpenAI',
+        modelId: 'gpt-4o',
+        displayName: 'My Configured Custom Name',
+        displayNameMode: 'custom',
+        hasApiKey: true
+      };
+
+      component.ngOnInit();
+
+      expect(component.displayNameMode).toBe('custom');
+      expect(component.customDisplayName).toBe('My Configured Custom Name');
+    });
+
+    it('should perform legacy inference when displayNameMode is absent on initialData', () => {
+      // Case A: displayName matches catalog displayName ('GPT-4o') -> 'model_name'
+      component.mode = 'edit';
+      component.initialData = {
+        id: 1,
+        provider: 'OpenAI',
+        modelId: 'gpt-4o',
+        displayName: 'GPT-4o',
+        hasApiKey: true
+      };
+      component.ngOnInit();
+      expect(component.displayNameMode).toBe('model_name');
+      expect(component.customDisplayName).toBe('');
+
+      // Case B: displayName matches modelId ('gpt-4o') -> 'model_id'
+      component.initialData = {
+        id: 2,
+        provider: 'OpenAI',
+        modelId: 'gpt-4o',
+        displayName: 'gpt-4o',
+        hasApiKey: true
+      };
+      component.ngOnInit();
+      expect(component.displayNameMode).toBe('model_id');
+      expect(component.customDisplayName).toBe('');
+
+      // Case C: displayName is custom ('My Legacy Custom GPT') -> 'custom'
+      component.initialData = {
+        id: 3,
+        provider: 'OpenAI',
+        modelId: 'gpt-4o',
+        displayName: 'My Legacy Custom GPT',
+        hasApiKey: true
+      };
+      component.ngOnInit();
+      expect(component.displayNameMode).toBe('custom');
+      expect(component.customDisplayName).toBe('My Legacy Custom GPT');
+    });
+
+    it('should resolve legacy inference even when getAvailableModels returns empty array', () => {
+      (settingsService.getAvailableModels as jasmine.Spy).and.returnValue(of([]));
+
+      component.mode = 'edit';
+      component.initialData = {
+        id: 4,
+        provider: 'OpenAI',
+        modelId: 'gpt-4o',
+        displayName: 'Special Unlisted Model Name',
+        hasApiKey: true
+      };
+
+      component.ngOnInit();
+
+      expect(component.pickerModelSelect).toBe('custom');
+      expect(component.displayNameMode).toBe('custom');
+      expect(component.customDisplayName).toBe('Special Unlisted Model Name');
+    });
+
+    it('should validate admin display name characters and give descriptive error', () => {
+      component.fetchModels();
+      component.pickerModelSelect = 'gpt-4o';
+      component.onPickerModelSelect();
+      component.displayNameMode = 'custom';
+      component.customDisplayName = 'Invalid / Name @ 123!';
+
+      component.onSave();
+
+      expect(component.modelError).toContain('Display Name can only contain letters, numbers, spaces, underscores, dashes, and dots.');
     });
   });
 
@@ -154,17 +292,20 @@ describe('AiModelFormComponent', () => {
       fixture.detectChanges();
     });
 
-    it('should not mutate displayName on catalog or custom model selection', () => {
+    it('should not mutate displayName or customDisplayName on catalog or custom model selection', () => {
       component.fetchModels();
       expect(component.displayName).toBe('');
+      expect(component.customDisplayName).toBe('');
 
       component.pickerModelSelect = 'gpt-4o';
       component.onPickerModelSelect();
       expect(component.displayName).toBe('');
+      expect(component.customDisplayName).toBe('');
 
       component.pickerModelSelect = 'custom';
       component.onPickerModelSelect();
       expect(component.displayName).toBe('');
+      expect(component.customDisplayName).toBe('');
     });
   });
 
