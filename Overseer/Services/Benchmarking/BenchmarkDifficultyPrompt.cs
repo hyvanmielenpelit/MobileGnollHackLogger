@@ -45,7 +45,10 @@ public static class BenchmarkDifficultyPrompt
             sb.AppendLine($"Question Text: {q.QuestionText}");
             if (!string.IsNullOrWhiteSpace(q.ExpectedPoints))
             {
-                sb.AppendLine($"Reference Rubric: {q.ExpectedPoints}");
+                sb.AppendLine("Reference Rubric:");
+                sb.AppendLine("--- BEGIN RUBRIC ---");
+                sb.AppendLine(q.ExpectedPoints);
+                sb.AppendLine("--- END RUBRIC ---");
             }
             sb.AppendLine();
         }
@@ -53,11 +56,11 @@ public static class BenchmarkDifficultyPrompt
         sb.AppendLine("--- OUTPUT JSON SCHEMA ---");
         sb.AppendLine(@"{
   ""questions"": [
-    {
-      ""id"": 1,
-      ""difficulty"": 55,
-      ""rationale"": ""Requires knowledge of prayer timeout calculations and altar alignment rules.""
-    }
+  {
+    ""id"": 1,
+    ""difficulty"": 55,
+    ""rationale"": ""Requires knowledge of prayer timeout calculations and altar alignment rules.""
+  }
   ]
 }");
 

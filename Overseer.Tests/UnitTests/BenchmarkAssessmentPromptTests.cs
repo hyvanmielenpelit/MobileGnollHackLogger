@@ -1,0 +1,151 @@
+namespace Overseer.Tests.UnitTests;
+
+using System.Collections.Generic;
+using MobileGnollHackLogger.Data;
+using Overseer.Services.Benchmarking;
+using Xunit;
+
+public class BenchmarkAssessmentPromptTests
+{
+    [Fact]
+    public void BuildPerQuestionPrompt_FormatsRubricWithDelimiters()
+    {
+        var rubric = "**REQUIRED** (accuracy + completeness)\n- Fact 1\n- Fact 2\n\n**SOURCE** — src/role.c";
+        var prompt = BenchmarkAssessmentPrompt.BuildPerQuestionPrompt(
+            suiteName: "Test Suite",
+            orderIndex: 1,
+            questionText: "What is the Gnoll race?",
+            difficulty: BenchmarkDifficulty.Simple,
+            expectedPoints: rubric,
+            answerText: "The Gnoll race replaces the gnome in GnollHack.",
+            status: BenchmarkAnswerStatus.Ok,
+            durationMs: 2500);
+
+        Assert.Contains("Assessment Rubric / Reference Points:\n--- BEGIN RUBRIC ---\n" + rubric + "\n--- END RUBRIC ---", prompt.Replace("\r\n", "\n"));
+        Assert.DoesNotContain($"Assessment Rubric / Reference Points: {rubric}", prompt);
+    }
+
+    [Fact]
+    public void BuildPerQuestionPrompt_OmitsRubricWhenNullOrWhitespace()
+    {
+        var prompt = BenchmarkAssessmentPrompt.BuildPerQuestionPrompt(
+            suiteName: "Test Suite",
+            orderIndex: 1,
+            questionText: "What is the Gnoll race?",
+            difficulty: BenchmarkDifficulty.Simple,
+            expectedPoints: null,
+            answerText: "Some answer",
+            status: BenchmarkAnswerStatus.Ok,
+            durationMs: 2000);
+
+        Assert.DoesNotContain("--- BEGIN RUBRIC ---", prompt);
+        Assert.DoesNotContain("Assessment Rubric", prompt);
+    }
+
+    [Fact]
+    public void BuildPerQuestionPrompt_DelimitsCandidateAnswerAndHidesModelNameAndThought()
+    {
+        var answerText = "Candidate answer about dragon armor.";
+        var prompt = BenchmarkAssessmentPrompt.BuildPerQuestionPrompt(
+            suiteName: "Test Suite",
+            orderIndex: 3,
+            questionText: "What are the stats of silver dragon scale mail?",
+            difficulty: BenchmarkDifficulty.Simple,
+            expectedPoints: "Base AC 1",
+            answerText: answerText,
+            status: BenchmarkAnswerStatus.Ok,
+            durationMs: 1500);
+
+        Assert.Contains("=== START OF CANDIDATE ANSWER ===\n" + answerText + "\n=== END OF CANDIDATE ANSWER ===", prompt.Replace("\r\n", "\n"));
+        Assert.DoesNotContain("gpt-4", prompt);
+        Assert.DoesNotContain("claude-3-5", prompt);
+    }
+
+    [Fact]
+    public void BuildPerQuestionPrompt_ProviderError_MarksExcludedAndOmitsCandidateAnswerBlock()
+    {
+        var prompt = BenchmarkAssessmentPrompt.BuildPerQuestionPrompt(
+            suiteName: "Test Suite",
+            orderIndex: 2,
+            questionText: "Explain weapon quality modifiers.",
+            difficulty: BenchmarkDifficulty.Intermediate,
+            expectedPoints: "Quality modifiers multiply damage dice.",
+            answerText: "",
+            status: BenchmarkAnswerStatus.ProviderError,
+            durationMs: 500);
+
+        Assert.Contains("Status: ProviderError", prompt);
+        Assert.Contains("Excluded: Provider API error", prompt);
+        Assert.DoesNotContain("=== START OF CANDIDATE ANSWER ===", prompt);
+    }
+
+    [Fact]
+    public void BuildFinalSynthesisPrompt_FormatsRubricWithDelimiters()
+    {
+        var rubric = "**REQUIRED** — base AC 1 and reflection";
+        var verdicts = new List<BenchmarkPerQuestionVerdictSummary>
+        {
+            new BenchmarkPerQuestionVerdictSummary
+            {
+                OrderIndex = 1,
+                QuestionText = "Stats of silver dragon scale mail?",
+                ExpectedPoints = rubric,
+                AccuracyLevel = 5,
+                CompletenessLevel = 5,
+                ConcisenessLevel = 5,
+                ReadabilityLevel = 5,
+                QualityScore = 87,
+                SpeedScore = 90,
+                DurationMs = 2500,
+                AssessedDifficulty = 25,
+                CriticalError = false,
+                ReviewComment = "Accurate and thorough.",
+                Status = BenchmarkAnswerStatus.Ok
+            }
+        };
+
+        var prompt = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt("Test Suite", verdicts);
+
+        Assert.Contains("Rubric:\n--- BEGIN RUBRIC ---\n" + rubric + "\n--- END RUBRIC ---", prompt.Replace("\r\n", "\n"));
+        Assert.DoesNotContain($"Rubric: {rubric}", prompt);
+    }
+
+    [Fact]
+    public void BenchmarkDifficultyPrompt_BuildPrompt_FormatsRubricWithDelimiters()
+    {
+        var rubric = "**REQUIRED** — pray timeout formula";
+        var items = new List<BenchmarkDifficultyQuestionItem>
+        {
+            new BenchmarkDifficultyQuestionItem
+            {
+                Id = 1,
+                OrderIndex = 1,
+                QuestionText = "How does prayer timeout work?",
+                AuthorBand = BenchmarkDifficulty.Simple,
+                ExpectedPoints = rubric
+            }
+        };
+
+        var prompt = BenchmarkDifficultyPrompt.BuildPrompt("Test Suite", items);
+
+        Assert.Contains("Reference Rubric:\n--- BEGIN RUBRIC ---\n" + rubric + "\n--- END RUBRIC ---", prompt.Replace("\r\n", "\n"));
+        Assert.DoesNotContain($"Reference Rubric: {rubric}", prompt);
+    }
+
+    [Fact]
+    public void Prompts_WithAtxHeadingsInRubric_SafelyDelimited()
+    {
+        var complexRubric = "### Question 99: Internal Rubric Heading\n- Item 1\n- Item 2";
+        var prompt = BenchmarkAssessmentPrompt.BuildPerQuestionPrompt(
+            suiteName: "Test Suite",
+            orderIndex: 1,
+            questionText: "Explain multi-layer rendering.",
+            difficulty: BenchmarkDifficulty.Advanced,
+            expectedPoints: complexRubric,
+            answerText: "Layer types enum",
+            status: BenchmarkAnswerStatus.Ok,
+            durationMs: 3000);
+
+        Assert.Contains("--- BEGIN RUBRIC ---\n" + complexRubric + "\n--- END RUBRIC ---", prompt.Replace("\r\n", "\n"));
+    }
+}

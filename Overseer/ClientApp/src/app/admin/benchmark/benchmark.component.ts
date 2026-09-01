@@ -20,12 +20,12 @@ import {
 } from '../../services/admin-benchmark.service';
 import { SystemAiConfigDto } from '../../services/admin.service';
 
-import { MarkdownPipe } from '../../chat/markdown.pipe';
+import { CollapsibleMarkdownComponent } from '../../shared/collapsible-markdown/collapsible-markdown.component';
 
 @Component({
   selector: 'app-admin-benchmark',
   standalone: true,
-  imports: [CommonModule, FormsModule, MarkdownPipe],
+  imports: [CommonModule, FormsModule, CollapsibleMarkdownComponent],
   templateUrl: './benchmark.component.html',
   styleUrls: ['./benchmark.component.scss']
 })
@@ -115,24 +115,6 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   // Suite Dialogs
   editingSuiteId: number | null = null;
   suiteForm: CreateBenchmarkSuiteRequest = { name: '', description: '' };
-  expandedSuiteDescriptions = new Set<number>();
-
-  toggleSuiteDescription(suiteId: number) {
-    if (this.expandedSuiteDescriptions.has(suiteId)) {
-      this.expandedSuiteDescriptions.delete(suiteId);
-    } else {
-      this.expandedSuiteDescriptions.add(suiteId);
-    }
-  }
-
-  isSuiteDescriptionExpanded(suiteId: number): boolean {
-    return this.expandedSuiteDescriptions.has(suiteId);
-  }
-
-  isLongDescription(desc: string | null | undefined): boolean {
-    if (!desc) return false;
-    return desc.length > 200 || desc.includes('\n');
-  }
 
   // Questions Dialog
   currentSuiteForQuestions: BenchmarkSuiteDto | null = null;

@@ -192,7 +192,7 @@ describe('AdminBenchmarkComponent', () => {
     expect(component.getScoreBadgeClass(null)).toBe('badge-score-na');
   });
 
-  it('should render suite description markdown with strong and list tags and sanitize XSS vectors', () => {
+  it('should render suite description markdown via CollapsibleMarkdownComponent and sanitize XSS vectors', () => {
     component.activeSubTab = 'suites';
     component.suites = [
       {
@@ -206,46 +206,53 @@ describe('AdminBenchmarkComponent', () => {
     ];
     fixture.detectChanges();
 
-    const descEl = fixture.nativeElement.querySelector('.suite-desc-md');
-    expect(descEl).toBeTruthy();
-    expect(descEl.querySelector('strong')?.textContent).toContain('Bold Title');
-    expect(descEl.querySelector('ul')).toBeTruthy();
-    expect(descEl.querySelectorAll('li').length).toBe(2);
+    const compEl = fixture.nativeElement.querySelector('.suite-desc-container app-collapsible-markdown');
+    expect(compEl).toBeTruthy();
+    const contentEl = compEl.querySelector('.markdown-content');
+    expect(contentEl).toBeTruthy();
+    expect(contentEl.querySelector('strong')?.textContent).toContain('Bold Title');
+    expect(contentEl.querySelector('ul')).toBeTruthy();
+    expect(contentEl.querySelectorAll('li').length).toBe(2);
     // Ensure script and onerror attributes were stripped by DOMPurify
-    expect(descEl.querySelector('script')).toBeNull();
-    expect(descEl.innerHTML).not.toContain('onerror');
-    expect(descEl.innerHTML).not.toContain('<script');
+    expect(contentEl.querySelector('script')).toBeNull();
+    expect(contentEl.innerHTML).not.toContain('onerror');
+    expect(contentEl.innerHTML).not.toContain('<script');
   });
 
-  it('should toggle suite description expand state and flip aria-expanded', () => {
+  it('should render question expected criteria via CollapsibleMarkdownComponent in questions list', () => {
     component.activeSubTab = 'suites';
-    const longText = 'Paragraph 1 of long text.\n\nParagraph 2 with lots of details about the suite.\n\n' + 'Additional sentences. '.repeat(15);
-    component.suites = [
+    component.currentSuiteForQuestions = {
+      id: 1,
+      name: 'Default Suite',
+      description: 'Test',
+      createdAtUtc: '2026-09-01T00:00:00Z',
+      modifiedAtUtc: null,
+      questionCount: 1
+    };
+    component.questions = [
       {
         id: 1,
-        name: 'Long Suite',
-        description: longText,
+        benchmarkSuiteId: 1,
+        orderIndex: 1,
+        questionText: 'What are the stats of silver dragon scale mail?',
+        difficulty: 1,
+        assessedDifficulty: 15,
+        assessedDifficultyModel: 'claude-3-5-sonnet',
+        assessedDifficultyAtUtc: '2026-09-01T00:00:00Z',
         createdAtUtc: '2026-09-01T00:00:00Z',
-        modifiedAtUtc: null,
-        questionCount: 18
+        expectedPoints: '**REQUIRED** (accuracy + completeness)\n- Base AC 1\n- Confeers cold resistance and reflection\n\n**SOURCE** — src/objects.c'
       }
     ];
     fixture.detectChanges();
 
-    expect(component.isLongDescription(longText)).toBeTrue();
-    expect(component.isSuiteDescriptionExpanded(1)).toBeFalse();
-
-    const toggleBtn = fixture.nativeElement.querySelector('.desc-expand-toggle');
-    expect(toggleBtn).toBeTruthy();
-    expect(toggleBtn.getAttribute('aria-expanded')).toBe('false');
-    expect(toggleBtn.textContent.trim()).toBe('Show more');
-
-    toggleBtn.click();
-    fixture.detectChanges();
-
-    expect(component.isSuiteDescriptionExpanded(1)).toBeTrue();
-    expect(toggleBtn.getAttribute('aria-expanded')).toBe('true');
-    expect(toggleBtn.textContent.trim()).toBe('Show less');
+    const criteriaBox = fixture.nativeElement.querySelector('.q-criteria-box');
+    expect(criteriaBox).toBeTruthy();
+    const collapsibleComp = criteriaBox.querySelector('app-collapsible-markdown');
+    expect(collapsibleComp).toBeTruthy();
+    const markdownContent = collapsibleComp.querySelector('.markdown-content');
+    expect(markdownContent).toBeTruthy();
+    expect(markdownContent.querySelector('strong')?.textContent).toContain('REQUIRED');
+    expect(markdownContent.querySelectorAll('li').length).toBe(2);
   });
 
   it('should render model answers, thought text, and assessor comments as plain text and not innerHTML', () => {

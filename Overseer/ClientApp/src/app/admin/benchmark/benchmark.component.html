@@ -356,16 +356,7 @@
 
             @if (suite.description) {
               <div class="suite-desc-container mb-15">
-                <div class="suite-desc-md" [class.collapsed]="isLongDescription(suite.description) && !isSuiteDescriptionExpanded(suite.id)" [innerHTML]="suite.description | markdown"></div>
-                @if (isLongDescription(suite.description)) {
-                  <button
-                    type="button"
-                    class="btn-link desc-expand-toggle"
-                    [attr.aria-expanded]="isSuiteDescriptionExpanded(suite.id)"
-                    (click)="toggleSuiteDescription(suite.id)">
-                    {{ isSuiteDescriptionExpanded(suite.id) ? 'Show less' : 'Show more' }}
-                  </button>
-                }
+                <app-collapsible-markdown [text]="suite.description" label="suite description" />
               </div>
             }
 
@@ -833,7 +824,7 @@
                 @if (q.expectedPoints) {
                   <div class="q-criteria-box">
                     <span class="criteria-label">Expected Answer Criteria:</span>
-                    <span class="criteria-content">{{ q.expectedPoints }}</span>
+                    <app-collapsible-markdown [text]="q.expectedPoints" label="expected answer criteria" />
                   </div>
                 }
               </div>
@@ -874,8 +865,8 @@
       </div>
       <div class="form-group">
         <label for="qExpectedInput">Expected Answer Criteria (Optional)</label>
-        <span class="text-muted" style="font-size: 12px; margin-bottom: 4px;">Key facts, formulas, or mechanics the AI evaluator should look for when scoring the answer.</span>
-        <textarea id="qExpectedInput" class="gh-input" rows="3" [(ngModel)]="questionForm.expectedPoints" placeholder="e.g. Starting stats (high STR/CON), neutral or chaotic alignment, starting equipment: two-handed sword or battle-axe, leather armor, food rations."></textarea>
+        <span class="text-muted" style="font-size: 12px; margin-bottom: 4px;">Key facts, formulas, or mechanics the AI evaluator should look for when scoring the answer (Markdown supported: bold, lists, tables).</span>
+        <textarea id="qExpectedInput" class="gh-input" rows="6" style="font-family: monospace; font-size: 13px;" [(ngModel)]="questionForm.expectedPoints" placeholder="**REQUIRED** (accuracy + completeness)&#10;- Fact 1.&#10;- Fact 2.&#10;&#10;**CRITICAL ERROR** (set criticalError) — when the answer:&#10;- Asserts a major hallucination.&#10;&#10;**SCOPE** (conciseness)&#10;- Out-of-scope details.&#10;&#10;**FORM** (readability)&#10;- Short table or bullet list.&#10;&#10;**SOURCE** — src/role.c line 1217; GnollHack wiki"></textarea>
       </div>
     </div>
     <div class="dialog-footer">

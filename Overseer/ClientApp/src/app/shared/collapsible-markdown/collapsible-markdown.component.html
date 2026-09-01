@@ -1,0 +1,21 @@
+@if (text) {
+  <div class="collapsible-markdown-container">
+    <div
+      #contentEl
+      class="markdown-content"
+      [class.collapsed]="!isExpanded && isOverflowing"
+      [style.max-height]="(!isExpanded && isOverflowing) ? (collapsedMaxHeight + 'px') : null"
+      [innerHTML]="text | markdown">
+    </div>
+    @if (isOverflowing) {
+      <button
+        type="button"
+        class="desc-expand-toggle"
+        [attr.aria-expanded]="isExpanded"
+        [attr.aria-label]="(isExpanded ? 'Show less' : 'Show more') + (label ? ' of ' + label : '')"
+        (click)="toggleExpand()">
+        {{ isExpanded ? 'Show less' : 'Show more' }}
+      </button>
+    }
+  </div>
+}
