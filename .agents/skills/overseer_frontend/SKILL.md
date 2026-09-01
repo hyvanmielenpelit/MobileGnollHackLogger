@@ -257,6 +257,30 @@ When switching between chat sessions or loading a conversation in `ChatComponent
 7. **Loader Styling**: The conversation loader must use a semantic SCSS class (`.conversation-loader`) centered within the `.messages` container, with no ad-hoc inline styles.
 8. **Scroll Position on Load Completion**: When a session finishes loading, the chat view must automatically scroll to the bottom of the conversation (`scrollToBottomClamped(false)`), ensuring that the user is positioned at the newest messages and not stuck at scroll position 0 (top).
 
+## AI Model Form Property Preservation & Provider Lifecycle
+
+When configuring or editing AI models in `AiModelFormComponent` (used across `/models` and `/admin` config dialogs), the form distinguishes between **Add Mode** and **Edit Mode**:
+
+### 1. Add Mode vs. Edit Mode Behavior
+- **Add Mode (`mode === 'add'`)**: Selecting a model from the dropdown automatically populates all property fields with the model's defaults (e.g. recommended or medium thinking level, default reasoning mode/summary, and maximum input/output token limits).
+- **Edit Mode (`mode === 'edit'`)**: When modifying an existing model within the same provider, all existing property values configured by the user are preserved unless they are invalid or unsupported by the newly selected model.
+
+### 2. Property Retention Rules (Same Provider in Edit Mode)
+- **Effective Value Resolution**: The component resolves effective property values by evaluating both standard dropdown selections and custom text input fields.
+- **Thinking Level, Reasoning Mode, Reasoning Summary, Service Tier**:
+  - If the existing configured value is supported by the new model (or is empty / Default), it remains unchanged.
+  - If the existing value is unsupported by the new model, it gracefully falls back to the new model's recommended default (e.g., `recommendedThinkingLevel` or `'medium'`); if the feature is entirely unsupported by the new model, the property resets to `''`.
+- **Token Limits (`maxInputTokens` / `maxOutputTokens`)**:
+  - User-configured limits are preserved as long as they do not exceed the new model's maximum capacity.
+  - If a configured token limit exceeds the new model's maximum limit, it is clamped to that maximum limit.
+  - If the limit was previously unconfigured (`null`), it remains unconfigured.
+- **Switching to "Custom..." Model**:
+  - If the user switches the model dropdown to "Custom...", all current property values are preserved by setting the picker dropdowns to `'custom'` and placing the retained values into the corresponding custom text inputs.
+
+### 3. Provider Change Lifecycle (Edit Mode Reset)
+- **Provider Switch Reset**: If the provider dropdown is changed in Edit Mode, the component marks `isProviderChanged = true` and purges all previous model properties, custom input fields, and resets `displayNameMode` to `'model_name'`.
+- Upon loading models for the newly selected provider, the form applies fresh Add-mode defaults, preventing cross-provider state leakage.
+
 ## Angular Unit Testing
 
 Always execute unit tests before completing frontend modifications in Overseer. Refer to [`testing_guidelines`](file:///c:/hmp/MobileGnollHackLogger/.agents/skills/testing_guidelines/SKILL.md) for full instructions.

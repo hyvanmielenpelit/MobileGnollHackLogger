@@ -77,6 +77,7 @@ export class AiModelFormComponent implements OnInit {
   modelError = '';
   availableModels: ApiModelDto[] = [];
   selectedModelObj: ApiModelDto | null = null;
+  isProviderChanged = false;
   
   // UI Selection State
   pickerModelSelect = '';
@@ -197,6 +198,7 @@ export class AiModelFormComponent implements OnInit {
   }
 
   ngOnInit() {
+    this.isProviderChanged = false;
     if (this.initialProvider) {
       this.provider = this.initialProvider;
     } else if (this.providers.length > 0) {
@@ -254,10 +256,31 @@ export class AiModelFormComponent implements OnInit {
   }
 
   onProviderChange() {
+    this.isProviderChanged = true;
     this.availableModels = [];
     this.selectedModelObj = null;
     this.modelError = '';
     
+    this.thinkingLevel = '';
+    this.customThinkingLevel = '';
+    this.pickerThinkingLevelSelect = '';
+    this.reasoningMode = '';
+    this.customReasoningMode = '';
+    this.pickerReasoningModeSelect = '';
+    this.reasoningSummary = '';
+    this.customReasoningSummary = '';
+    this.pickerReasoningSummarySelect = '';
+    this.serviceTier = '';
+    this.customServiceTier = '';
+    this.pickerServiceTierSelect = '';
+    this.maxInputTokens = null;
+    this.maxOutputTokens = null;
+    this.customModelId = '';
+    this.modelId = '';
+    this.pickerModelSelect = '';
+    this.displayNameMode = 'model_name';
+    this.customDisplayName = '';
+
     if (!this.isAdmin) {
       this.fetchModels();
     } else {
@@ -362,55 +385,175 @@ export class AiModelFormComponent implements OnInit {
     }
     
     this.selectedModelObj = this.availableModels.find(m => m.id === this.modelId) || null;
-    if (this.selectedModelObj) {
-      if (this.selectedModelObj.supportedThinkingLevels && this.selectedModelObj.supportedThinkingLevels.length > 0) {
-        if (this.selectedModelObj.isRecommended && this.selectedModelObj.recommendedThinkingLevel && this.selectedModelObj.supportedThinkingLevels.includes(this.selectedModelObj.recommendedThinkingLevel)) {
-          this.thinkingLevel = this.selectedModelObj.recommendedThinkingLevel;
+    const isEditPreserveMode = this.mode === 'edit' && !this.isProviderChanged;
+
+    if (isEditPreserveMode) {
+      const currentThinking = this.pickerThinkingLevelSelect === 'custom' ? this.customThinkingLevel : this.thinkingLevel;
+      const currentReasoningMode = this.pickerReasoningModeSelect === 'custom' ? this.customReasoningMode : this.reasoningMode;
+      const currentReasoningSummary = this.pickerReasoningSummarySelect === 'custom' ? this.customReasoningSummary : this.reasoningSummary;
+      const currentServiceTier = this.pickerServiceTierSelect === 'custom' ? this.customServiceTier : this.serviceTier;
+
+      if (this.selectedModelObj) {
+        // Thinking Level
+        const supportedThinking = this.selectedModelObj.supportedThinkingLevels || [];
+        if (!currentThinking) {
+          this.thinkingLevel = '';
+          this.pickerThinkingLevelSelect = '';
+          this.customThinkingLevel = '';
+        } else if (supportedThinking.includes(currentThinking)) {
+          this.thinkingLevel = currentThinking;
+          this.pickerThinkingLevelSelect = currentThinking;
+          this.customThinkingLevel = '';
         } else {
-          this.thinkingLevel = this.selectedModelObj.supportedThinkingLevels.includes('medium') 
-            ? 'medium' 
-            : this.selectedModelObj.supportedThinkingLevels[0];
+          if (supportedThinking.length > 0) {
+            if (this.selectedModelObj.recommendedThinkingLevel && supportedThinking.includes(this.selectedModelObj.recommendedThinkingLevel)) {
+              this.thinkingLevel = this.selectedModelObj.recommendedThinkingLevel;
+            } else {
+              this.thinkingLevel = supportedThinking.includes('medium') ? 'medium' : supportedThinking[0];
+            }
+            this.pickerThinkingLevelSelect = this.thinkingLevel;
+          } else {
+            this.thinkingLevel = '';
+            this.pickerThinkingLevelSelect = '';
+          }
+          this.customThinkingLevel = '';
         }
-        this.pickerThinkingLevelSelect = this.thinkingLevel;
+
+        // Reasoning Mode
+        const supportedReasoningModes = this.selectedModelObj.supportedReasoningModes || [];
+        if (!currentReasoningMode) {
+          this.reasoningMode = '';
+          this.pickerReasoningModeSelect = '';
+          this.customReasoningMode = '';
+        } else if (supportedReasoningModes.includes(currentReasoningMode)) {
+          this.reasoningMode = currentReasoningMode;
+          this.pickerReasoningModeSelect = currentReasoningMode;
+          this.customReasoningMode = '';
+        } else {
+          if (supportedReasoningModes.length > 0) {
+            this.reasoningMode = supportedReasoningModes.includes('medium') ? 'medium' : supportedReasoningModes[0];
+            this.pickerReasoningModeSelect = this.reasoningMode;
+          } else {
+            this.reasoningMode = '';
+            this.pickerReasoningModeSelect = '';
+          }
+          this.customReasoningMode = '';
+        }
+
+        // Reasoning Summary
+        const supportedReasoningSummaries = this.selectedModelObj.supportedReasoningSummaries || [];
+        if (!currentReasoningSummary) {
+          this.reasoningSummary = '';
+          this.pickerReasoningSummarySelect = '';
+          this.customReasoningSummary = '';
+        } else if (supportedReasoningSummaries.includes(currentReasoningSummary)) {
+          this.reasoningSummary = currentReasoningSummary;
+          this.pickerReasoningSummarySelect = currentReasoningSummary;
+          this.customReasoningSummary = '';
+        } else {
+          if (supportedReasoningSummaries.length > 0) {
+            this.reasoningSummary = supportedReasoningSummaries.includes('auto') ? 'auto' : supportedReasoningSummaries[0];
+            this.pickerReasoningSummarySelect = this.reasoningSummary;
+          } else {
+            this.reasoningSummary = '';
+            this.pickerReasoningSummarySelect = '';
+          }
+          this.customReasoningSummary = '';
+        }
+
+        // Service Tier
+        const supportedTiers = this.selectedModelObj.supportedServiceTiers || this.getProviderServiceTiers();
+        if (!currentServiceTier || supportedTiers.includes(currentServiceTier)) {
+          this.serviceTier = currentServiceTier;
+          this.pickerServiceTierSelect = currentServiceTier;
+          this.customServiceTier = '';
+        } else {
+          this.serviceTier = '';
+          this.pickerServiceTierSelect = '';
+          this.customServiceTier = '';
+        }
+
+        // Token Clamping
+        if (this.maxInputTokens !== null && typeof this.selectedModelObj.maxInputTokens === 'number') {
+          if (this.maxInputTokens > this.selectedModelObj.maxInputTokens) {
+            this.maxInputTokens = this.selectedModelObj.maxInputTokens;
+          }
+        }
+        if (this.maxOutputTokens !== null && typeof this.selectedModelObj.maxOutputTokens === 'number') {
+          if (this.maxOutputTokens > this.selectedModelObj.maxOutputTokens) {
+            this.maxOutputTokens = this.selectedModelObj.maxOutputTokens;
+          }
+        }
+      } else {
+        // "Custom..." model selected: preserve current values into custom fields
+        this.thinkingLevel = '';
+        this.pickerThinkingLevelSelect = currentThinking ? 'custom' : '';
+        this.customThinkingLevel = currentThinking;
+
+        this.reasoningMode = '';
+        this.pickerReasoningModeSelect = currentReasoningMode ? 'custom' : '';
+        this.customReasoningMode = currentReasoningMode;
+
+        this.reasoningSummary = '';
+        this.pickerReasoningSummarySelect = currentReasoningSummary ? 'custom' : '';
+        this.customReasoningSummary = currentReasoningSummary;
+
+        this.serviceTier = '';
+        this.pickerServiceTierSelect = currentServiceTier ? 'custom' : '';
+        this.customServiceTier = currentServiceTier;
+      }
+    } else {
+      // Add mode or after provider change (fresh defaults)
+      if (this.selectedModelObj) {
+        if (this.selectedModelObj.supportedThinkingLevels && this.selectedModelObj.supportedThinkingLevels.length > 0) {
+          if (this.selectedModelObj.recommendedThinkingLevel && this.selectedModelObj.supportedThinkingLevels.includes(this.selectedModelObj.recommendedThinkingLevel)) {
+            this.thinkingLevel = this.selectedModelObj.recommendedThinkingLevel;
+          } else {
+            this.thinkingLevel = this.selectedModelObj.supportedThinkingLevels.includes('medium') 
+              ? 'medium' 
+              : this.selectedModelObj.supportedThinkingLevels[0];
+          }
+          this.pickerThinkingLevelSelect = this.thinkingLevel;
+        } else {
+          this.thinkingLevel = '';
+          this.pickerThinkingLevelSelect = '';
+        }
+        
+        if (this.selectedModelObj.supportedReasoningModes && this.selectedModelObj.supportedReasoningModes.length > 0) {
+          this.reasoningMode = this.selectedModelObj.supportedReasoningModes.includes('medium') 
+            ? 'medium' 
+            : this.selectedModelObj.supportedReasoningModes[0];
+          this.pickerReasoningModeSelect = this.reasoningMode;
+        } else {
+          this.reasoningMode = '';
+          this.pickerReasoningModeSelect = '';
+        }
+
+        if (this.selectedModelObj.supportedReasoningSummaries && this.selectedModelObj.supportedReasoningSummaries.length > 0) {
+          this.reasoningSummary = this.selectedModelObj.supportedReasoningSummaries.includes('auto') 
+            ? 'auto' 
+            : this.selectedModelObj.supportedReasoningSummaries[0];
+          this.pickerReasoningSummarySelect = this.reasoningSummary;
+        } else {
+          this.reasoningSummary = '';
+          this.pickerReasoningSummarySelect = '';
+        }
+        
+        this.serviceTier = '';
+        this.pickerServiceTierSelect = '';
+        
+        this.maxInputTokens = this.selectedModelObj.maxInputTokens || null;
+        this.maxOutputTokens = this.selectedModelObj.maxOutputTokens || null;
       } else {
         this.thinkingLevel = '';
         this.pickerThinkingLevelSelect = '';
-      }
-      
-      if (this.selectedModelObj.supportedReasoningModes && this.selectedModelObj.supportedReasoningModes.length > 0) {
-        this.reasoningMode = this.selectedModelObj.supportedReasoningModes.includes('medium') 
-          ? 'medium' 
-          : this.selectedModelObj.supportedReasoningModes[0];
-        this.pickerReasoningModeSelect = this.reasoningMode;
-      } else {
         this.reasoningMode = '';
         this.pickerReasoningModeSelect = '';
-      }
-
-      if (this.selectedModelObj.supportedReasoningSummaries && this.selectedModelObj.supportedReasoningSummaries.length > 0) {
-        this.reasoningSummary = this.selectedModelObj.supportedReasoningSummaries.includes('auto') 
-          ? 'auto' 
-          : this.selectedModelObj.supportedReasoningSummaries[0];
-        this.pickerReasoningSummarySelect = this.reasoningSummary;
-      } else {
         this.reasoningSummary = '';
         this.pickerReasoningSummarySelect = '';
+        this.serviceTier = '';
+        this.pickerServiceTierSelect = '';
       }
-      
-      this.serviceTier = '';
-      this.pickerServiceTierSelect = '';
-      
-      this.maxInputTokens = this.selectedModelObj.maxInputTokens || null;
-      this.maxOutputTokens = this.selectedModelObj.maxOutputTokens || null;
-    } else {
-      this.thinkingLevel = '';
-      this.pickerThinkingLevelSelect = '';
-      this.reasoningMode = '';
-      this.pickerReasoningModeSelect = '';
-      this.reasoningSummary = '';
-      this.pickerReasoningSummarySelect = '';
-      this.serviceTier = '';
-      this.pickerServiceTierSelect = '';
     }
   }
 

@@ -36,6 +36,19 @@ describe('AiModelFormComponent', () => {
       maxOutputTokens: 8192
     },
     {
+      id: 'claude-3-haiku',
+      displayName: 'Claude 3 Haiku',
+      description: 'Claude 3 Haiku',
+      createdAt: 1715000000,
+      supportedThinkingLevels: ['low', 'medium'],
+      recommendedThinkingLevel: 'low',
+      supportedReasoningModes: [],
+      supportedReasoningSummaries: [],
+      contextWindowSize: 100000,
+      maxInputTokens: 100000,
+      maxOutputTokens: 4096
+    },
+    {
       id: 'custom-uncatalogued',
       displayName: '',
       description: 'custom-uncatalogued',
@@ -79,7 +92,7 @@ describe('AiModelFormComponent', () => {
 
     it('should not mutate displayName or customDisplayName on model selection', () => {
       component.fetchModels();
-      expect(component.availableModels.length).toBe(3);
+      expect(component.availableModels.length).toBe(4);
 
       component.pickerModelSelect = 'gpt-4o';
       component.onPickerModelSelect();
@@ -393,6 +406,165 @@ describe('AiModelFormComponent', () => {
       expect(component.customModelId).toBe('gpt-4o');
       expect(component.pickerThinkingLevelSelect).toBe('custom');
       expect(component.customThinkingLevel).toBe('low');
+    });
+  });
+
+  describe('Edit mode property preservation on model switch', () => {
+    beforeEach(() => {
+      component.isAdmin = true;
+      component.mode = 'edit';
+      component.initialData = {
+        id: 10,
+        provider: 'Anthropic',
+        modelId: 'claude-3-5-sonnet',
+        thinkingLevel: 'medium',
+        reasoningMode: '',
+        reasoningSummary: '',
+        serviceTier: 'auto',
+        maxInputTokens: 50000,
+        maxOutputTokens: 2000,
+        hasApiKey: true
+      };
+      component.ngOnInit();
+      fixture.detectChanges();
+    });
+
+    it('should preserve valid thinkingLevel, serviceTier, and tokens when switching models', () => {
+      expect(component.pickerModelSelect).toBe('claude-3-5-sonnet');
+      expect(component.thinkingLevel).toBe('medium');
+      expect(component.serviceTier).toBe('auto');
+      expect(component.maxInputTokens).toBe(50000);
+      expect(component.maxOutputTokens).toBe(2000);
+
+      // Switch to claude-3-haiku which supports 'medium' and has 100k input / 4096 output limits
+      component.pickerModelSelect = 'claude-3-haiku';
+      component.onPickerModelSelect();
+
+      expect(component.modelId).toBe('claude-3-haiku');
+      expect(component.thinkingLevel).toBe('medium');
+      expect(component.pickerThinkingLevelSelect).toBe('medium');
+      expect(component.customThinkingLevel).toBe('');
+      expect(component.serviceTier).toBe('auto');
+      expect(component.maxInputTokens).toBe(50000);
+      expect(component.maxOutputTokens).toBe(2000);
+    });
+
+    it('should gracefully fall back invalid thinkingLevel to recommended/medium when switching models', () => {
+      // Set initial data with 'high' thinking level
+      component.initialData = {
+        id: 11,
+        provider: 'Anthropic',
+        modelId: 'claude-3-5-sonnet',
+        thinkingLevel: 'high',
+        maxInputTokens: 50000,
+        maxOutputTokens: 2000,
+        hasApiKey: true
+      };
+      component.ngOnInit();
+
+      expect(component.thinkingLevel).toBe('high');
+
+      // Switch to claude-3-haiku which only supports ['low', 'medium'] with recommended 'low'
+      component.pickerModelSelect = 'claude-3-haiku';
+      component.onPickerModelSelect();
+
+      expect(component.thinkingLevel).toBe('low');
+      expect(component.pickerThinkingLevelSelect).toBe('low');
+      expect(component.maxInputTokens).toBe(50000);
+    });
+
+    it('should reset thinkingLevel to empty when switching to a model that does not support thinking', () => {
+      expect(component.thinkingLevel).toBe('medium');
+
+      // Switch to gpt-4o which does not support thinking
+      component.pickerModelSelect = 'gpt-4o';
+      component.onPickerModelSelect();
+
+      expect(component.thinkingLevel).toBe('');
+      expect(component.pickerThinkingLevelSelect).toBe('');
+      expect(component.customThinkingLevel).toBe('');
+    });
+
+    it('should clamp maxInputTokens and maxOutputTokens if they exceed the new model limits', () => {
+      component.initialData = {
+        id: 12,
+        provider: 'Anthropic',
+        modelId: 'claude-3-5-sonnet',
+        thinkingLevel: 'medium',
+        maxInputTokens: 150000,
+        maxOutputTokens: 6000,
+        hasApiKey: true
+      };
+      component.ngOnInit();
+
+      // Switch to custom-uncatalogued which has maxInput: 64000, maxOutput: 2048
+      component.pickerModelSelect = 'custom-uncatalogued';
+      component.onPickerModelSelect();
+
+      expect(component.maxInputTokens).toBe(64000);
+      expect(component.maxOutputTokens).toBe(2048);
+    });
+
+    it('should preserve properties into custom fields when switching to Custom model', () => {
+      expect(component.thinkingLevel).toBe('medium');
+      expect(component.serviceTier).toBe('auto');
+
+      component.pickerModelSelect = 'custom';
+      component.onPickerModelSelect();
+
+      expect(component.modelId).toBe('');
+      expect(component.pickerThinkingLevelSelect).toBe('custom');
+      expect(component.customThinkingLevel).toBe('medium');
+      expect(component.pickerServiceTierSelect).toBe('custom');
+      expect(component.customServiceTier).toBe('auto');
+      expect(component.maxInputTokens).toBe(50000);
+      expect(component.maxOutputTokens).toBe(2000);
+    });
+
+    it('should reset to Add-mode defaults when provider is changed in Edit mode', () => {
+      expect(component.thinkingLevel).toBe('medium');
+      expect(component.maxInputTokens).toBe(50000);
+
+      // User changes provider
+      component.provider = 'OpenAI';
+      component.onProviderChange();
+
+      expect(component.isProviderChanged).toBeTrue();
+      expect(component.thinkingLevel).toBe('');
+      expect(component.pickerThinkingLevelSelect).toBe('');
+      expect(component.serviceTier).toBe('');
+      expect(component.maxInputTokens).toBeNull();
+      expect(component.maxOutputTokens).toBeNull();
+      expect(component.displayNameMode).toBe('model_name');
+
+      // Models are fetched for the new provider
+      component.availableModels = mockModels;
+
+      // Now selecting a model applies fresh Add-mode defaults
+      component.pickerModelSelect = 'gpt-4o';
+      component.onPickerModelSelect();
+
+      expect(component.maxInputTokens).toBe(128000);
+      expect(component.maxOutputTokens).toBe(4096);
+    });
+
+    it('should apply fresh defaults on model pick in Add mode', () => {
+      const addFixture = TestBed.createComponent(AiModelFormComponent);
+      const addComponent = addFixture.componentInstance;
+      addComponent.isAdmin = true;
+      addComponent.mode = 'add';
+      addComponent.apiKey = 'dummy-key';
+      addComponent.ngOnInit();
+      addComponent.fetchModels();
+      addFixture.detectChanges();
+
+      addComponent.pickerModelSelect = 'claude-3-haiku';
+      addComponent.onPickerModelSelect();
+
+      expect(addComponent.thinkingLevel).toBe('low');
+      expect(addComponent.pickerThinkingLevelSelect).toBe('low');
+      expect(addComponent.maxInputTokens).toBe(100000);
+      expect(addComponent.maxOutputTokens).toBe(4096);
     });
   });
 });
