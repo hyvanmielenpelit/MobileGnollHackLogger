@@ -525,19 +525,100 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     });
   }
 
-  moveQuestion(index: number, direction: 'up' | 'down') {
-    if (!this.currentSuiteForQuestions) return;
-    const targetIndex = direction === 'up' ? index - 1 : index + 1;
-    if (targetIndex < 0 || targetIndex >= this.questions.length) return;
+  // --- Question Drag & Drop Reordering ---
 
-    const item = this.questions.splice(index, 1)[0];
-    this.questions.splice(targetIndex, 0, item);
+  onQuestionDragStart(event: DragEvent, index: number) {
+    if (event.dataTransfer) {
+      event.dataTransfer.setData('text/plain', JSON.stringify({ index }));
+      event.dataTransfer.effectAllowed = 'move';
+      const target = (event.target as HTMLElement).closest('.question-list-item') as HTMLElement;
+      if (target) {
+        setTimeout(() => target.classList.add('dragging'), 0);
+      }
+    }
+  }
 
-    const orderedIds = this.questions.map(q => q.id);
-    this.benchmarkService.reorderQuestions(this.currentSuiteForQuestions.id, orderedIds).subscribe({
-      next: () => this.loadQuestions(this.currentSuiteForQuestions!.id),
-      error: (err) => console.error('Failed to reorder questions', err)
-    });
+  onQuestionDragEnd(event: DragEvent) {
+    const target = (event.target as HTMLElement).closest('.question-list-item') as HTMLElement;
+    if (target) {
+      target.classList.remove('dragging');
+    }
+    const items = document.querySelectorAll('.question-list-item');
+    items.forEach(item => item.classList.remove('drag-over', 'drag-over-top', 'drag-over-bottom'));
+  }
+
+  onQuestionDragOver(event: DragEvent) {
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'move';
+    }
+    const targetItem = (event.target as HTMLElement).closest('.question-list-item');
+    if (targetItem) {
+      const rect = targetItem.getBoundingClientRect();
+      const midY = rect.top + rect.height / 2;
+      targetItem.classList.remove('drag-over-top', 'drag-over-bottom');
+      if (event.clientY < midY) {
+        targetItem.classList.add('drag-over-top');
+      } else {
+        targetItem.classList.add('drag-over-bottom');
+      }
+    }
+  }
+
+  onQuestionDragLeave(event: DragEvent) {
+    const targetItem = (event.target as HTMLElement).closest('.question-list-item');
+    if (targetItem) {
+      targetItem.classList.remove('drag-over-top', 'drag-over-bottom');
+    }
+  }
+
+  onQuestionDrop(event: DragEvent, dropIndex: number) {
+    event.preventDefault();
+    const targetItem = (event.target as HTMLElement).closest('.question-list-item');
+    if (targetItem) {
+      targetItem.classList.remove('drag-over-top', 'drag-over-bottom');
+    }
+
+    if (event.dataTransfer && this.currentSuiteForQuestions) {
+      const dataStr = event.dataTransfer.getData('text/plain');
+      if (dataStr) {
+        try {
+          const data = JSON.parse(dataStr);
+          const dragIndex = data.index;
+          if (dragIndex !== undefined && dragIndex !== dropIndex) {
+            const item = this.questions[dragIndex];
+            this.questions.splice(dragIndex, 1);
+
+            let insertIndex = dropIndex;
+            if (targetItem) {
+              const rect = targetItem.getBoundingClientRect();
+              const midY = rect.top + rect.height / 2;
+              if (event.clientY >= midY) {
+                insertIndex++;
+              }
+              if (dragIndex < dropIndex && event.clientY < midY) {
+                // Dragging down but dropped on top half
+              } else if (dragIndex < dropIndex) {
+                insertIndex--;
+              }
+            }
+
+            this.questions.splice(insertIndex, 0, item);
+
+            // Re-assign order numbers locally
+            this.questions.forEach((q, idx) => q.orderIndex = idx + 1);
+
+            const orderedIds = this.questions.map(q => q.id);
+            this.benchmarkService.reorderQuestions(this.currentSuiteForQuestions.id, orderedIds).subscribe({
+              next: () => this.loadQuestions(this.currentSuiteForQuestions!.id),
+              error: (err) => console.error('Failed to reorder questions', err)
+            });
+          }
+        } catch (e) {
+          console.error('Failed to parse drag data', e);
+        }
+      }
+    }
   }
 
   // --- Run Execution ---
