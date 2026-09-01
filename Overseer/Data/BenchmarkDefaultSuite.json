@@ -1,0 +1,96 @@
+{
+  "name": "GnollHack Roguelike Intelligence Benchmark Suite",
+  "description": "Standard 15-question benchmark evaluating domain game knowledge, spoiler comprehension, monster/item stats, and C codebase logic.",
+  "questions": [
+    {
+      "orderIndex": 1,
+      "difficulty": "Simple",
+      "questionText": "What are the base stats, alignment, and starting inventory of a Gnoll Barbarian in GnollHack?",
+      "expectedPoints": "Gnoll barbarian starting stats (high STR/CON), neutral or chaotic alignment, two-handed sword or battle-axe, leather armor, food rations."
+    },
+    {
+      "orderIndex": 2,
+      "difficulty": "Simple",
+      "questionText": "What happens when a player drinks a cursed potion of gain level in GnollHack?",
+      "expectedPoints": "Rises up through the dungeon ceiling to the level above, or fails in special non-connected branch levels and endgames."
+    },
+    {
+      "orderIndex": 3,
+      "difficulty": "Simple",
+      "questionText": "How does the ring of slow digestion interact with hunger and nutrition in GnollHack?",
+      "expectedPoints": "Stops standard 1-point intrinsic hunger per turn; does not stop hunger consumed by active spellcasting or special intrinsic burns."
+    },
+    {
+      "orderIndex": 4,
+      "difficulty": "Simple",
+      "questionText": "What are the resistances and special attacks of an Adult Red Dragon in GnollHack?",
+      "expectedPoints": "Fire resistance, fire breath weapon attack, claw/bite physical attacks, high AC and HP."
+    },
+    {
+      "orderIndex": 5,
+      "difficulty": "Simple",
+      "questionText": "What is the weight, base AC, and intrinsic property granted by Silver Dragon Scale Mail in GnollHack?",
+      "expectedPoints": "Base weight (40), base AC (9 / effective AC reduction), reflection intrinsic property."
+    },
+    {
+      "orderIndex": 6,
+      "difficulty": "Intermediate",
+      "questionText": "Explain how the Blessed Scroll of Identify functions differently from an Uncursed Scroll of Identify in GnollHack.",
+      "expectedPoints": "Blessed identifies all items in inventory or a random percentage (typically 1 to all / 20-100%); uncursed identifies exactly one selected item."
+    },
+    {
+      "orderIndex": 7,
+      "difficulty": "Intermediate",
+      "questionText": "How does prayer timeout work in GnollHack? What conditions make a god angry upon praying, and what determines prayer recovery time?",
+      "expectedPoints": "Prayer timeout counter (~800-1000 turns based on luck/piety), praying within timeout angers deity, luck penalty, hostile minion summoning or smiting."
+    },
+    {
+      "orderIndex": 8,
+      "difficulty": "Intermediate",
+      "questionText": "Describe the differences between NetHack 3.6.2 and GnollHack regarding the skill system, weapon proficiencies, and spellcasting failure rates.",
+      "expectedPoints": "GnollHack skill leveling through continuous usage/exercise, spell failure adjustments based on armor encumbrance and mental stats, expanded weapon tiers."
+    },
+    {
+      "orderIndex": 9,
+      "difficulty": "Intermediate",
+      "questionText": "What is the exact mechanic for taming monsters using food in GnollHack? Which monster types cannot be tamed this way?",
+      "expectedPoints": "Throwing appropriate food (meat for domestic canines/felines, veggies/fruits for equines/herbivores), peaceful monster taming chance; mindless, undead, demons, and unique/quest leaders cannot be tamed with food."
+    },
+    {
+      "orderIndex": 10,
+      "difficulty": "Intermediate",
+      "questionText": "Explain the mechanics of Elbereth in GnollHack. How does writing it with a wand of fire compare to writing it with a finger or athame in terms of durability and success?",
+      "expectedPoints": "Engraved Elbereth causes non-humanoid monsters to flee when stepping on or attacking; finger creates dust engraving (erodes easily), athame semi-permanent, wand of fire/lightning burns into floor (permanent until dug or magic eroded)."
+    },
+    {
+      "orderIndex": 11,
+      "difficulty": "Advanced",
+      "questionText": "In the GnollHack C core game logic, how is monster difficulty and level generation scaling computed in makemon.c?",
+      "expectedPoints": "Dungeon depth scaling, player experience level (u.ulevel) weighting, mon_difficulty function in monst.c/makemon.c, generation flags and out-of-depth spawn probabilities."
+    },
+    {
+      "orderIndex": 12,
+      "difficulty": "Advanced",
+      "questionText": "Explain the multi-layer glyph rendering architecture in GnollHack: how are glyphs mapped to layer types (LAYER_FLOOR, LAYER_FEATURE, LAYER_OBJECT, LAYER_MONSTER) and rendered by SkiaSharp?",
+      "expectedPoints": "Glyph2Tile mapping array, LayerInfo multi-layer struct, separation into background, floor, feature, traps, objects, monsters, effects layers, SkiaSharp canvas drawing in GnollHackM frontend."
+    },
+    {
+      "orderIndex": 13,
+      "difficulty": "Advanced",
+      "questionText": "In the GnollHack source code, what are the flags and attack tuples defined in monst.c for the Master Kaen monster?",
+      "expectedPoints": "MON macro definition in monst.c, high difficulty level, deadly martial arts/hand-to-hand claw/punch attack tuples, high MR, fast movement speed."
+    },
+    {
+      "orderIndex": 14,
+      "difficulty": "Advanced",
+      "questionText": "Describe how the save/restore system in GnollHack preserves game state across platforms. What structs are serialized, and how are pointer adjustments handled during restore?",
+      "expectedPoints": "save.c and restore.c serialization, you (struct you) state, dlevel struct, mon/obj linked lists converted to ID references and reconstructed in restore.c."
+    },
+    {
+      "orderIndex": 15,
+      "difficulty": "Advanced",
+      "questionText": "How does the native P/Invoke bridge connect the C core game loop to the .NET MAUI frontend via window_procs callbacks?",
+      "expectedPoints": "libshare native bridge in win/win32/xpl/libshare, struct window_procs function pointer table initialized at startup, P/Invoke delegate marshalling in GnollHackService.cs."
+    }
+  ]
+}

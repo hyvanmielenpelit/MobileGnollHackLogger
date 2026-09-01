@@ -5,12 +5,13 @@ import { RouterModule } from '@angular/router';
 import { AdminService, UserDto, GroupDto, SystemAiConfigDto, UserSystemAiConfigDto, GroupSystemAiConfigDto, DatabaseStorageMetrics, MaintenanceResult, AiTelemetrySummaryDto, AiGovernorStatusDto } from '../services/admin.service';
 import { AiModelFormComponent, AiModelFormResult } from '../shared/ai-model-form/ai-model-form.component';
 import { ConfigAnalyticsComponent } from './config-analytics/config-analytics.component';
+import { AdminBenchmarkComponent } from './benchmark/benchmark.component';
 import { Subject, Subscription } from 'rxjs';
 import { debounceTime } from 'rxjs/operators';
 
 @Component({
     selector: 'app-admin',
-    imports: [CommonModule, FormsModule, RouterModule, AiModelFormComponent, ConfigAnalyticsComponent],
+    imports: [CommonModule, FormsModule, RouterModule, AiModelFormComponent, ConfigAnalyticsComponent, AdminBenchmarkComponent],
     templateUrl: './admin.component.html',
     changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './admin.component.scss'
@@ -18,7 +19,7 @@ import { debounceTime } from 'rxjs/operators';
 export class AdminComponent implements OnInit, OnDestroy {
   private adminService = inject(AdminService);
   
-  activeTab: 'users' | 'groups' | 'configs' | 'database' | 'devtools' | 'telemetry' = 'users';
+  activeTab: 'users' | 'groups' | 'configs' | 'database' | 'devtools' | 'telemetry' | 'benchmark' = 'users';
   loading = false;
   usersLoading = false;
 
@@ -812,8 +813,20 @@ export class AdminComponent implements OnInit, OnDestroy {
     }
   }
 
+  overrideRoleChat = true;
+  overrideRoleTitle = true;
+  overrideRoleBenchmark = false;
+
+  get overrideModelRole(): number {
+    return (this.overrideRoleChat ? 1 : 0) | (this.overrideRoleTitle ? 2 : 0) | (this.overrideRoleBenchmark ? 4 : 0);
+  }
+
   openEditUserOverride(assignment: any) {
     this.editingOverride = { ...assignment };
+    const role = assignment.modelRole ?? 3;
+    this.overrideRoleChat = (role & 1) === 1;
+    this.overrideRoleTitle = (role & 2) === 2;
+    this.overrideRoleBenchmark = (role & 4) === 4;
     this.overrideContext = 'user';
     this.editConfigOverrideDialog.nativeElement.showModal();
   }
@@ -821,16 +834,19 @@ export class AdminComponent implements OnInit, OnDestroy {
   openEditGroupOverride(assignment: any) {
     this.overrideContext = 'group';
     this.editingOverride = { ...assignment };
+    const role = assignment.modelRole ?? 3;
+    this.overrideRoleChat = (role & 1) === 1;
+    this.overrideRoleTitle = (role & 2) === 2;
+    this.overrideRoleBenchmark = (role & 4) === 4;
     this.editConfigOverrideDialog.nativeElement.showModal();
   }
 
   formatModelRole(role: number): string {
-    switch (role) {
-      case 1: return 'Chat Only';
-      case 2: return 'Title Generation Only';
-      case 3: return 'Chat & Title';
-      default: return 'Unknown';
-    }
+    const roles: string[] = [];
+    if ((role & 1) === 1) roles.push('Chat');
+    if ((role & 2) === 2) roles.push('Title Generation');
+    if ((role & 4) === 4) roles.push('Benchmark');
+    return roles.length > 0 ? roles.join(' & ') : 'None';
   }
 
   formatLevel(level: string | null | undefined): string {
@@ -859,12 +875,20 @@ export class AdminComponent implements OnInit, OnDestroy {
     return tier.charAt(0).toUpperCase() + tier.slice(1);
   }
 
+  modelRoleBadges(role: number): Array<{ label: string; cssClass: string }> {
+    const badges: Array<{ label: string; cssClass: string }> = [];
+    if ((role & 1) === 1) badges.push({ label: 'Chat', cssClass: 'badge-role-chat' });
+    if ((role & 2) === 2) badges.push({ label: 'Title', cssClass: 'badge-role-title' });
+    if ((role & 4) === 4) badges.push({ label: 'Benchmark', cssClass: 'badge-role-benchmark' });
+    return badges;
+  }
+
   getModelRoleClass(role: number): string {
     switch (role) {
       case 1: return 'badge-role-chat';
       case 2: return 'badge-role-title';
-      case 3: return 'badge-role-all';
-      default: return '';
+      case 4: return 'badge-role-benchmark';
+      default: return 'badge-role-all';
     }
   }
 
@@ -874,12 +898,12 @@ export class AdminComponent implements OnInit, OnDestroy {
   }
 
   saveOverride() {
-    if (!this.editingOverride) return;
+    if (!this.editingOverride || this.overrideModelRole === 0) return;
 
     const payload = {
       ...this.editingOverride,
       isEnabled: this.editingOverride.isEnabled,
-      modelRole: Number(this.editingOverride.modelRole)
+      modelRole: this.overrideModelRole
     };
 
     if (this.overrideContext === 'user') {
@@ -1052,7 +1076,7 @@ export class AdminComponent implements OnInit, OnDestroy {
     this.loadTelemetry();
   }
 
-  selectTab(tab: 'users' | 'groups' | 'configs' | 'database' | 'devtools' | 'telemetry') {
+  selectTab(tab: 'users' | 'groups' | 'configs' | 'database' | 'devtools' | 'telemetry' | 'benchmark') {
     this.activeTab = tab;
     if (tab === 'database') {
       this.loadStorageMetrics();

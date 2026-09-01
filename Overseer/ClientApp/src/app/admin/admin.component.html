@@ -12,6 +12,7 @@
       <button class="admin-tab" [class.admin-tab-active]="activeTab === 'configs'" (click)="selectTab('configs')">System Configs</button>
       <button class="admin-tab" [class.admin-tab-active]="activeTab === 'database'" (click)="selectTab('database')">Database</button>
       <button class="admin-tab" [class.admin-tab-active]="activeTab === 'telemetry'" (click)="selectTab('telemetry')">AI Telemetry</button>
+      <button class="admin-tab" [class.admin-tab-active]="activeTab === 'benchmark'" (click)="selectTab('benchmark')">AI Benchmark</button>
       <button class="admin-tab" [class.admin-tab-active]="activeTab === 'devtools'" (click)="selectTab('devtools')">Developer Tools</button>
       <div class="indicator-right"></div>
     </div>
@@ -200,7 +201,9 @@
                         <div class="mb-4 d-flex align-items-center" style="flex-wrap: wrap; gap: 8px;">
                           <span>{{ config.modelId }}</span>
                           <span class="provider-badge">{{ config.provider }}</span>
-                          <span class="status-badge" [ngClass]="getModelRoleClass(config.modelRole)">{{ formatModelRole(config.modelRole) }}</span>
+                          @for (badge of modelRoleBadges(config.modelRole); track badge.label) {
+                            <span class="status-badge" [ngClass]="badge.cssClass">{{ badge.label }}</span>
+                          }
                           @if (config.isSystemWide) {
                             <span class="badge-system-wide">System Wide</span>
                           }
@@ -585,6 +588,7 @@
                 <div class="telemetry-details-list mt-10" style="font-size: 0.85em;">
                   <div>Chat Turns: <span class="text-light">{{ (telemetrySummary?.totalChatRequests || 0) | number }}</span></div>
                   <div>Title Generation: <span class="text-light">{{ (telemetrySummary?.totalTitleRequests || 0) | number }}</span></div>
+                  <div>Benchmark Runs: <span class="text-light">{{ (telemetrySummary?.totalBenchmarkRequests || 0) | number }}</span></div>
                   <div>Avg Duration: <span class="text-light">{{ (telemetrySummary?.avgDurationMs || 0) | number }} ms</span></div>
                 </div>
               </div>
@@ -723,6 +727,12 @@
             </div>
           </div>
         }
+      </div>
+    }
+
+    @if (activeTab === 'benchmark') {
+      <div class="tab-pane">
+        <app-admin-benchmark [systemConfigs]="configs"></app-admin-benchmark>
       </div>
     }
   </div>
@@ -975,15 +985,24 @@
       </div>
       <div class="form-group mt-15">
         <label>Model Role Filter</label>
-        <select [(ngModel)]="editingOverride.modelRole" class="gh-input w-100">
-          <option [value]="1">Chat Only</option>
-          <option [value]="2">Title Generation Only</option>
-          <option [value]="3">All</option>
-        </select>
+        <div class="checkbox-row" style="flex-direction: row; gap: 20px; flex-wrap: wrap;">
+          <label class="checkbox-label">
+            <input type="checkbox" [(ngModel)]="overrideRoleChat"> Chat
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" [(ngModel)]="overrideRoleTitle"> Title Generation
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" [(ngModel)]="overrideRoleBenchmark"> Benchmark
+          </label>
+        </div>
+        @if (overrideModelRole === 0) {
+          <span class="field-validation-error" style="color: var(--danger-color, #ff6b6b); font-size: 0.85rem; margin-top: 4px;">Select at least one role.</span>
+        }
       </div>
       <div class="dialog-actions mt-auto pt-20">
         <button class="btn-gh btn-gh-cancel" (click)="closeEditOverride()">Cancel</button>
-        <button class="btn-gh" (click)="saveOverride()">Save</button>
+        <button class="btn-gh" (click)="saveOverride()" [disabled]="overrideModelRole === 0">Save</button>
       </div>
     </div>
   }

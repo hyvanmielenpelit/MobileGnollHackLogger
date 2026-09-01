@@ -10,6 +10,7 @@
   </Folder>
   <Folder Name="/docs/overseer/">
     <File Path="docs/overseer/adding-ai-models.md" />
+    <File Path="docs/overseer/ai-benchmark.md" />
     <File Path="docs/overseer/ai-changelog.md" />
     <File Path="docs/overseer/anthropic-model-latency-measurements.md" />
     <File Path="docs/overseer/changelog-guide.md" />

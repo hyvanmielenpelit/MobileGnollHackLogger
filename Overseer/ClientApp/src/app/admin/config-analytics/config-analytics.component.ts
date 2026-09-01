@@ -298,6 +298,16 @@ export class ConfigAnalyticsComponent implements OnInit, OnChanges, OnDestroy {
           borderRadius: 4,
           barPercentage: calcBarPercentage,
           categoryPercentage: calcCategoryPercentage
+        },
+        {
+          data: res.rows.map(r => r.benchmarkRequests || 0),
+          label: 'Benchmark Requests',
+          backgroundColor: 'rgba(255, 183, 77, 0.85)', // amber
+          borderColor: 'rgba(255, 183, 77, 1)',
+          borderWidth: 1,
+          borderRadius: 4,
+          barPercentage: calcBarPercentage,
+          categoryPercentage: calcCategoryPercentage
         }
       ];
     } else if (this.dataType === 'cache') {

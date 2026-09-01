@@ -173,6 +173,16 @@ public class AdminController : ControllerBase
     [HttpGet("systemconfigs")]
     public async Task<IActionResult> GetSystemConfigs()
     {
+        var userAssignmentCounts = await _dbContext.UserSystemAiApiConfigurations
+            .GroupBy(u => u.SystemAiApiConfigurationId)
+            .Select(g => new { ConfigId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.ConfigId, x => x.Count);
+
+        var groupAssignmentCounts = await _dbContext.GroupSystemAiApiConfigurations
+            .GroupBy(g => g.SystemAiApiConfigurationId)
+            .Select(g => new { ConfigId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.ConfigId, x => x.Count);
+
         var configs = await _dbContext.SystemAiApiConfigurations
             .OrderBy(c => c.OrderIndex)
             .Select(c => new SystemAiApiConfigurationDto
@@ -222,12 +232,23 @@ public class AdminController : ControllerBase
             })
             .ToListAsync();
 
+        foreach (var c in configs)
+        {
+            c.UserAssignmentCount = userAssignmentCounts.GetValueOrDefault(c.Id, 0);
+            c.GroupAssignmentCount = groupAssignmentCounts.GetValueOrDefault(c.Id, 0);
+        }
+
         return Ok(configs);
     }
 
     [HttpPost("systemconfigs")]
     public async Task<IActionResult> CreateSystemConfig([FromBody] CreateSystemAiApiConfigurationRequest request)
     {
+        if (request.ModelRole < 1 || request.ModelRole > 7)
+        {
+            return BadRequest("ModelRole must be between 1 and 7.");
+        }
+
         var orderIndex = await _dbContext.SystemAiApiConfigurations.AnyAsync() 
             ? await _dbContext.SystemAiApiConfigurations.MaxAsync(c => c.OrderIndex) + 1 
             : 0;
@@ -278,6 +299,11 @@ public class AdminController : ControllerBase
     [HttpPut("systemconfigs/{id}")]
     public async Task<IActionResult> UpdateSystemConfig(long id, [FromBody] UpdateSystemAiApiConfigurationRequest request)
     {
+        if (request.ModelRole < 1 || request.ModelRole > 7)
+        {
+            return BadRequest("ModelRole must be between 1 and 7.");
+        }
+
         var config = await _dbContext.SystemAiApiConfigurations.FindAsync(id);
         if (config == null) return NotFound();
 
@@ -445,6 +471,11 @@ public class AdminController : ControllerBase
     [HttpPost("users/{userId}/systemconfigs")]
     public async Task<IActionResult> AssignSystemConfigToUser(string userId, [FromBody] AssignConfigToUserRequest request)
     {
+        if (request.ModelRole < 1 || request.ModelRole > 7)
+        {
+            return BadRequest("ModelRole must be between 1 and 7.");
+        }
+
         if (await _dbContext.UserSystemAiApiConfigurations.AnyAsync(a => a.AspNetUserId == userId && a.SystemAiApiConfigurationId == request.SystemAiApiConfigurationId))
         {
             return BadRequest("This configuration is already assigned to the user.");
@@ -524,6 +555,11 @@ public class AdminController : ControllerBase
     [HttpPut("user-systemconfigs/{id}")]
     public async Task<IActionResult> UpdateUserSystemConfig(long id, [FromBody] UpdateUserSystemAiConfigRequest request)
     {
+        if (request.ModelRole < 1 || request.ModelRole > 7)
+        {
+            return BadRequest("ModelRole must be between 1 and 7.");
+        }
+
         var assignment = await _dbContext.UserSystemAiApiConfigurations.FindAsync(id);
         if (assignment == null) return NotFound();
 
@@ -652,6 +688,11 @@ public class AdminController : ControllerBase
     [HttpPost("groups/{groupId}/systemconfigs")]
     public async Task<IActionResult> AssignSystemConfigToGroup(long groupId, [FromBody] AssignConfigToGroupRequest request)
     {
+        if (request.ModelRole < 1 || request.ModelRole > 7)
+        {
+            return BadRequest("ModelRole must be between 1 and 7.");
+        }
+
         if (await _dbContext.GroupSystemAiApiConfigurations.AnyAsync(a => a.GroupId == groupId && a.SystemAiApiConfigurationId == request.SystemAiApiConfigurationId))
         {
             return BadRequest("This configuration is already assigned to the group.");
@@ -735,6 +776,11 @@ public class AdminController : ControllerBase
     [HttpPut("group-systemconfigs/{id}")]
     public async Task<IActionResult> UpdateGroupSystemConfig(long id, [FromBody] UpdateGroupSystemAiConfigRequest request)
     {
+        if (request.ModelRole < 1 || request.ModelRole > 7)
+        {
+            return BadRequest("ModelRole must be between 1 and 7.");
+        }
+
         var assignment = await _dbContext.GroupSystemAiApiConfigurations.FindAsync(id);
         if (assignment == null) return NotFound();
 
@@ -891,13 +937,14 @@ public class AdminController : ControllerBase
                     UserName = g.Key.UserName ?? "",
                     ChatRequests = g.Count(x => x.Log.RoleContext == 1),
                     TitleRequests = g.Count(x => x.Log.RoleContext == 2),
+                    BenchmarkRequests = g.Count(x => x.Log.RoleContext == 4),
                     InputTokens = g.Sum(x => (long)(x.Log.InputTokens ?? 0)),
                     OutputTokens = g.Sum(x => (long)(x.Log.OutputTokens ?? 0)),
                     CacheReadTokens = g.Sum(x => (long)(x.Log.CacheReadInputTokens ?? 0)),
                     CacheCreationTokens = g.Sum(x => (long)(x.Log.CacheCreationInputTokens ?? 0)),
                     AvgDurationMs = (int)(g.Average(x => x.Log.TotalDurationMs) ?? 0)
                 })
-                .OrderByDescending(r => r.ChatRequests + r.TitleRequests)
+                .OrderByDescending(r => r.ChatRequests + r.TitleRequests + r.BenchmarkRequests)
                 .Skip((pg - 1) * size)
                 .Take(size)
                 .ToListAsync();
@@ -914,6 +961,7 @@ public class AdminController : ControllerBase
                     UserName = "All Users",
                     ChatRequests = g.Count(l => l.RoleContext == 1),
                     TitleRequests = g.Count(l => l.RoleContext == 2),
+                    BenchmarkRequests = g.Count(l => l.RoleContext == 4),
                     InputTokens = g.Sum(l => (long)(l.InputTokens ?? 0)),
                     OutputTokens = g.Sum(l => (long)(l.OutputTokens ?? 0)),
                     CacheReadTokens = g.Sum(l => (long)(l.CacheReadInputTokens ?? 0)),
@@ -1007,12 +1055,14 @@ public class AdminController : ControllerBase
 
         var chatReqs = await query.CountAsync(l => l.RoleContext == 1);
         var titleReqs = await query.CountAsync(l => l.RoleContext == 2);
+        var benchmarkReqs = await query.CountAsync(l => l.RoleContext == 4);
 
         var summary = new AiTelemetrySummaryDto
         {
             TotalRequests = totalReqs,
             TotalChatRequests = chatReqs,
             TotalTitleRequests = titleReqs,
+            TotalBenchmarkRequests = benchmarkReqs,
             TotalInputTokens = totalIn,
             TotalOutputTokens = totalOut,
             TotalCacheReadTokens = totalRead,

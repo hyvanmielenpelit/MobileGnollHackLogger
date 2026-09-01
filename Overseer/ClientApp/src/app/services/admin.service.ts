@@ -63,6 +63,8 @@ export interface SystemAiConfigDto {
   parallelExecutionMode: number;
   apiKey?: string;
   note?: string | null;
+  userAssignmentCount?: number;
+  groupAssignmentCount?: number;
 }
 
 export interface UserSystemAiConfigDto {
@@ -136,6 +138,7 @@ export interface AnalyticsUserRow {
   userName: string;
   chatRequests: number;
   titleRequests: number;
+  benchmarkRequests: number;
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
@@ -164,6 +167,7 @@ export interface AiTelemetrySummaryDto {
   totalRequests: number;
   totalChatRequests: number;
   totalTitleRequests: number;
+  totalBenchmarkRequests: number;
   totalInputTokens: number;
   totalOutputTokens: number;
   totalCacheReadTokens: number;

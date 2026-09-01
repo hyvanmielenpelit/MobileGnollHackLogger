@@ -73,6 +73,8 @@ public class SystemAiApiConfigurationDto
     public int ModelRole { get; set; }
     public int ParallelExecutionMode { get; set; } = 2;
     public string? Note { get; set; }
+    public int UserAssignmentCount { get; set; }
+    public int GroupAssignmentCount { get; set; }
 }
 
 public class CreateSystemAiApiConfigurationRequest
@@ -237,6 +239,7 @@ public class AnalyticsUserRow
     public string UserName { get; set; } = string.Empty;
     public int ChatRequests { get; set; }
     public int TitleRequests { get; set; }
+    public int BenchmarkRequests { get; set; }
     public long InputTokens { get; set; }
     public long OutputTokens { get; set; }
     public long CacheReadTokens { get; set; }
@@ -255,6 +258,7 @@ public class AiTelemetrySummaryDto
     public long TotalRequests { get; set; }
     public long TotalChatRequests { get; set; }
     public long TotalTitleRequests { get; set; }
+    public long TotalBenchmarkRequests { get; set; }
     public long TotalInputTokens { get; set; }
     public long TotalOutputTokens { get; set; }
     public long TotalCacheReadTokens { get; set; }

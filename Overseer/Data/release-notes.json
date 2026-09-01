@@ -1,5 +1,32 @@
 [
   {
+    "version": "1.0.29",
+    "date": "2026-09-01T14:00:00Z",
+    "summary": "Introduced an automated AI Intelligence Benchmark test suite in Admin, added blind assessor evaluation, provider error classification and retry mechanisms, ModelRole bitmask support for benchmark-only models, and comprehensive Markdown report export.",
+    "changes": [
+      {
+        "type": "feature",
+        "text": "Added an automated AI Intelligence Benchmark subsystem in the Admin panel featuring configurable question suites across Simple, Intermediate, and Advanced difficulty tiers."
+      },
+      {
+        "type": "feature",
+        "text": "Implemented blind LLM assessment with automated 0–10 scoring, qualitative reviews, and arithmetic versus holistic score divergence detection."
+      },
+      {
+        "type": "feature",
+        "text": "Added transient provider error classification (HTTP 429, 503, 529, timeouts) to exclude infrastructure outages from scores, with one-click re-runs for failed questions."
+      },
+      {
+        "type": "feature",
+        "text": "Expanded System AI Configurations with a ModelRole bitmask (Chat, Title, Benchmark), allowing dedicated models for benchmarking without exposing them to end-user chat."
+      },
+      {
+        "type": "improvement",
+        "text": "Added exportable 7-section Markdown benchmark reports and benchmark request volume tracking in telemetry analytics."
+      }
+    ]
+  },
+  {
     "version": "1.0.28",
     "date": "2026-08-31T16:30:00Z",
     "summary": "Added tracking and persistence for actual served AI service tiers across Google Gemini, OpenAI, and Anthropic providers, and fixed an issue with saving system API keys in the Admin panel.",

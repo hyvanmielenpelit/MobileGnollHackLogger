@@ -299,11 +299,20 @@
       </div>
       <div class="form-group flex-col mt-10">
         <label>Model Role</label>
-        <select class="gh-input w-100" [(ngModel)]="modelRole">
-          <option [ngValue]="1">Chat Only</option>
-          <option [ngValue]="2">Title Generation Only</option>
-          <option [ngValue]="3">Chat & Title Generation</option>
-        </select>
+        <div class="checkbox-row" style="flex-direction: row; gap: 20px; flex-wrap: wrap;">
+          <label class="checkbox-label">
+            <input type="checkbox" [(ngModel)]="roleChat"> Chat
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" [(ngModel)]="roleTitle"> Title Generation
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" [(ngModel)]="roleBenchmark"> Benchmark
+          </label>
+        </div>
+        @if (modelRole === 0) {
+          <span class="field-validation-error" style="color: var(--danger-color, #ff6b6b); font-size: 0.85rem; margin-top: 4px;">Select at least one role.</span>
+        }
       </div>
       <div class="form-group flex-col mt-10">
         <label>Parallel Execution Mode</label>
@@ -319,7 +328,7 @@
 
   <div class="dialog-actions">
     <button class="btn-gh btn-gh-cancel" (click)="onCancel()" [disabled]="saving">Cancel</button>
-    <button class="btn-gh" (click)="onSave()" [disabled]="saving">
+    <button class="btn-gh" (click)="onSave()" [disabled]="saving || (isAdmin && modelRole === 0)">
       @if (!saving) {
         <span>{{ mode === 'edit' ? 'Save Changes' : (isAdmin ? 'Create Config' : 'Add Model') }}</span>
       }

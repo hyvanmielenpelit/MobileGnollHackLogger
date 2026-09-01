@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using MobileGnollHackLogger.Data;
 
@@ -11,9 +12,11 @@ using MobileGnollHackLogger.Data;
 namespace GnollHackServer.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260901132331_AddAiBenchmarkSuites")]
+    partial class AddAiBenchmarkSuites
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -241,16 +244,6 @@ namespace GnollHackServer.Data.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
 
-                    b.Property<int?>("AssessedDifficulty")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime?>("AssessedDifficultyAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("AssessedDifficultyModel")
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
-
                     b.Property<long>("BenchmarkSuiteId")
                         .HasColumnType("bigint");
 
@@ -262,9 +255,6 @@ namespace GnollHackServer.Data.Migrations
 
                     b.Property<string>("ExpectedPoints")
                         .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime>("ModifiedAtUtc")
-                        .HasColumnType("datetime2");
 
                     b.Property<int>("OrderIndex")
                         .HasColumnType("int");
@@ -349,36 +339,12 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<int?>("ComputedScore")
                         .HasColumnType("int");
 
-                    b.Property<bool>("DifficultyFallbackUsed")
-                        .HasColumnType("bit");
-
                     b.Property<string>("ErrorMessage")
                         .HasMaxLength(2048)
                         .HasColumnType("nvarchar(2048)");
 
                     b.Property<int?>("FinalScore")
                         .HasColumnType("int");
-
-                    b.Property<int>("MaxParallelQuestionsUsed")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("QualityIndex")
-                        .HasColumnType("int");
-
-                    b.Property<int>("ScoringMethodVersion")
-                        .HasColumnType("int");
-
-                    b.Property<long?>("ScoringProfileId")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("ScoringProfileSnapshotJson")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<int?>("SpeedIndex")
-                        .HasColumnType("int");
-
-                    b.Property<bool>("SpeedMeasurementDegraded")
-                        .HasColumnType("bit");
 
                     b.Property<DateTime>("StartedAtUtc")
                         .HasColumnType("datetime2");
@@ -435,9 +401,6 @@ namespace GnollHackServer.Data.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
 
-                    b.Property<long>("TotalAnswerDurationMs")
-                        .HasColumnType("bigint");
-
                     b.Property<long>("TotalCacheCreationTokens")
                         .HasColumnType("bigint");
 
@@ -462,8 +425,6 @@ namespace GnollHackServer.Data.Migrations
 
                     b.HasIndex("BenchmarkSuiteId");
 
-                    b.HasIndex("ScoringProfileId");
-
                     b.HasIndex("StartedByUserId");
 
                     b.HasIndex("TestedModelConfigurationId");
@@ -479,12 +440,6 @@ namespace GnollHackServer.Data.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
 
-                    b.Property<int?>("AccuracyLevel")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("AccuracyScore")
-                        .HasColumnType("int");
-
                     b.Property<string>("ActualServiceTierUsed")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
@@ -492,16 +447,6 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<string>("AnswerText")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
-
-                    b.Property<int?>("AssessedDifficulty")
-                        .HasColumnType("int");
-
-                    b.Property<string>("AssessmentError")
-                        .HasMaxLength(2048)
-                        .HasColumnType("nvarchar(2048)");
-
-                    b.Property<int>("AssessmentStatus")
-                        .HasColumnType("int");
 
                     b.Property<long>("BenchmarkRunId")
                         .HasColumnType("bigint");
@@ -511,21 +456,6 @@ namespace GnollHackServer.Data.Migrations
 
                     b.Property<int?>("CacheReadInputTokens")
                         .HasColumnType("int");
-
-                    b.Property<int?>("CompletenessLevel")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("CompletenessScore")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("ConcisenessLevel")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("ConcisenessScore")
-                        .HasColumnType("int");
-
-                    b.Property<bool>("CriticalError")
-                        .HasColumnType("bit");
 
                     b.Property<int>("Difficulty")
                         .HasColumnType("int");
@@ -549,26 +479,14 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<int?>("OutputTokens")
                         .HasColumnType("int");
 
-                    b.Property<int?>("QualityScore")
-                        .HasColumnType("int");
-
                     b.Property<string>("QuestionText")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
-
-                    b.Property<int?>("ReadabilityLevel")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("ReadabilityScore")
-                        .HasColumnType("int");
 
                     b.Property<string>("ReviewComment")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<int?>("Score")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("SpeedScore")
                         .HasColumnType("int");
 
                     b.Property<int>("Status")
@@ -588,68 +506,6 @@ namespace GnollHackServer.Data.Migrations
                     b.HasIndex("BenchmarkRunId", "OrderIndex");
 
                     b.ToTable("BenchmarkRunAnswers");
-                });
-
-            modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkScoringProfile", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int>("CriticalErrorCeiling")
-                        .HasColumnType("int");
-
-                    b.Property<bool>("IsDefault")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("LevelScoresJson")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<int>("MaxParallelQuestions")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("ModifiedAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<double>("SpeedDecayK")
-                        .HasColumnType("float");
-
-                    b.Property<int>("SpeedTargetMs")
-                        .HasColumnType("int");
-
-                    b.Property<double>("WeightAccuracy")
-                        .HasColumnType("float");
-
-                    b.Property<double>("WeightCompleteness")
-                        .HasColumnType("float");
-
-                    b.Property<double>("WeightConciseness")
-                        .HasColumnType("float");
-
-                    b.Property<double>("WeightReadability")
-                        .HasColumnType("float");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("IsDefault")
-                        .IsUnique()
-                        .HasFilter("[IsDefault] = 1");
-
-                    b.HasIndex("Name")
-                        .IsUnique();
-
-                    b.ToTable("BenchmarkScoringProfiles");
                 });
 
             modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkSuite", b =>
@@ -2116,10 +1972,6 @@ namespace GnollHackServer.Data.Migrations
                         .WithMany("Runs")
                         .HasForeignKey("BenchmarkSuiteId");
 
-                    b.HasOne("MobileGnollHackLogger.Data.BenchmarkScoringProfile", "ScoringProfile")
-                        .WithMany()
-                        .HasForeignKey("ScoringProfileId");
-
                     b.HasOne("MobileGnollHackLogger.Data.ApplicationUser", "StartedByUser")
                         .WithMany()
                         .HasForeignKey("StartedByUserId");
@@ -2131,8 +1983,6 @@ namespace GnollHackServer.Data.Migrations
                     b.Navigation("AssessorModelConfiguration");
 
                     b.Navigation("BenchmarkSuite");
-
-                    b.Navigation("ScoringProfile");
 
                     b.Navigation("StartedByUser");
 

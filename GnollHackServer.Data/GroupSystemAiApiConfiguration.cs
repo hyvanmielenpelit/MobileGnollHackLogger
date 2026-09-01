@@ -14,7 +14,7 @@ public class GroupSystemAiApiConfiguration : IRateLimitedEntity
 
     public bool IsEnabled { get; set; } = true;
 
-    public int ModelRole { get; set; } = 3; // 1 = Chat, 2 = Title Generation, 3 = Both
+    public int ModelRole { get; set; } = 3; // Bitmask: 1 = Chat, 2 = Title Generation, 4 = Benchmark (valid: 1-7, 0 is invalid). Next capability is bit 8.
 
     public int OrderIndex { get; set; }
 

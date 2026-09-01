@@ -68,9 +68,21 @@ export class AiModelFormComponent implements OnInit {
   hasApiKey = false;
   isEnabled = true;
   isSystemWide = false;
-  modelRole: number = 3;
+  roleChat = true;
+  roleTitle = true;
+  roleBenchmark = false;
   parallelExecutionMode: number = 2;
   note: string | null = null;
+
+  get modelRole(): number {
+    return (this.roleChat ? 1 : 0) | (this.roleTitle ? 2 : 0) | (this.roleBenchmark ? 4 : 0);
+  }
+
+  set modelRole(val: number) {
+    this.roleChat = (val & 1) === 1;
+    this.roleTitle = (val & 2) === 2;
+    this.roleBenchmark = (val & 4) === 4;
+  }
 
   // State
   loadingModels = false;
@@ -648,6 +660,10 @@ export class AiModelFormComponent implements OnInit {
     }
 
     if (this.isAdmin) {
+      if (this.modelRole === 0) {
+        this.modelError = 'Select at least one role.';
+        return;
+      }
       if (!/^[a-zA-Z0-9 _\-.]+$/.test(finalDisplayName)) {
         this.modelError = this.displayNameMode === 'custom'
           ? 'Display Name can only contain letters, numbers, spaces, underscores, dashes, and dots.'

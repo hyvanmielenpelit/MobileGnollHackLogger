@@ -8,10 +8,52 @@ When working on the frontend for the Overseer project within MobileGnollHackLogg
 
 1. **Prefer Angular Components**: Whenever implementing frontend features or UI elements, always prefer using Angular components.
 2. **Component Structure**: Always use separate files for templates (`.html`) and styles (`.scss`). Do not use inline templates or styles in the component TypeScript file.
-3. **No Basic JS Popups**: NEVER use `alert()`, `confirm()`, or `prompt()` JavaScript popups under any circumstances. When these are needed, handle them using Modern Web Guidance best practices (e.g., inline error messages, custom `<dialog>` components for confirmations/inputs).
-4. **Follow Google's Modern Web Guidance**: Ensure that the frontend design and implementation adhere strictly to Google's Modern Web Guidance. This includes utilizing modern web development best practices for UI/Layout, Scroll/Motion, Performance, and System/APIs.
+3. **No Basic JS Popups**: NEVER use `alert()`, `confirm()`, or `prompt()` JavaScript popups under any circumstances. When these are needed, use inline error messages or a native `<dialog>` for confirmations and inputs, per **Popups and Modals** below.
+4. **Follow modern web platform best practices**: UI/Layout, Scroll/Motion, Performance, Accessibility, and System/APIs. The baseline is in **Modern Web Baseline** below, and it binds in every harness.
 
-**IMPORTANT**: When working on HTML/CSS and client-side JS tasks, you MUST execute the `modern-web-guidance` skill FIRST to ensure up-to-date best practices are applied.
+### Before writing HTML, CSS, or client-side JS
+
+**If your harness provides a `modern-web-guidance` skill, execute it first.** It ships with
+Antigravity (it is Google's) and carries more current and more detailed guidance than this file.
+
+**If it does not — Claude Code does not, and neither does `hyvanmielenpelit/SharedAgentSkills` —
+then the Modern Web Baseline below is the standard, and it is sufficient to proceed.** Do not stall
+waiting for a skill your harness has no way to load, and do not silently skip the requirement
+either: say in chat which of the two applied.
+
+> [!NOTE]
+> Claude Code's nearest skills are `artifact-design` (design fundamentals for self-contained Claude
+> Artifact pages) and `dataviz` (chart and dashboard design). **Neither is a substitute here** —
+> they target standalone generated pages, not an existing Angular application with its own design
+> system. Use them only if the task really is a chart or a standalone artifact.
+
+## Modern Web Baseline
+
+Harness-neutral, and the floor for any Overseer frontend work.
+
+### Semantics and accessibility
+- Interactive controls are real elements: `<button type="button">`, `<a href>`, `<label>` — never a `div` with a click handler.
+- Every control has an accessible name. An icon-only button needs `aria-label`, and the name must be **distinct**: `aria-label="Copy reply to question 3"`, not three buttons all named "Copy".
+- State the user must notice goes in a live region: `aria-live="polite"` for transient confirmations ("Copied"), `role="status"` for progress that advances on its own. A change that is only visible is invisible to a screen-reader user.
+- Keyboard reachable in a sensible order, with a **visible** focus ring. Never `outline: none` without a replacement.
+- Respect `prefers-reduced-motion` for spinners, transitions, and auto-scrolling.
+- Colour is never the only carrier of meaning — pair it with text or shape.
+
+### Layout and content
+- Long or unbounded content gets an explicit strategy: `overflow-x: auto` on wide blocks, `white-space: pre-wrap` plus a collapsed max-height and an expand control on long text. A page that grows without limit is a defect, not a detail.
+- When content is collapsed or truncated for display, actions on it (copy, download, export) still operate on the **full** value.
+- Prefer modern layout primitives (flex, grid, logical properties, container queries) over fixed pixel scaffolding.
+
+### Platform APIs
+- Feature-detect before use, and handle rejection. `navigator.clipboard` is **undefined outside a secure context** and can reject even inside one — show an inline failure message, never a bare `console.error`.
+- Object URLs from `URL.createObjectURL` are revoked after use.
+- Filenames built from user or model data are sanitised to a whitelist (`[A-Za-z0-9._-]`), never interpolated raw.
+- Never render untrusted or model-generated text as HTML. Plain text in `<pre>`, never `[innerHTML]`.
+
+### Angular specifics
+- Standalone components; `@if` / `@for` control flow with `track`; `OnPush` change detection with explicit `markForCheck()`.
+- Every subscription, timer, and observer is torn down in `ngOnDestroy`.
+- Polling uses `switchMap` so requests cannot stack, and backs off on error rather than hammering.
 
 ## Styling UI Elements
 
@@ -28,7 +70,7 @@ When creating UI elements in the Overseer frontend, adhere to the following stan
 - Common button styles are managed centrally in `styles.scss`. Avoid duplicating base button styles.
 
 ### Popups and Modals
-- **Use the Native `<dialog>` Element**: Following Modern Web Guidance, new popups and modals must use the semantic HTML `<dialog>` element rather than custom `div`-based overlays.
+- **Use the Native `<dialog>` Element**: New popups and modals must use the semantic HTML `<dialog>` element rather than custom `div`-based overlays.
 - Apply the `.gh-dialog` class to `<dialog>` elements for consistent theming (glassmorphism, padding, backdrop).
 - Control the dialog via its native API (`dialog.showModal()` and `dialog.close()`) using Angular `@ViewChild` references.
 - DO NOT use `.modal-overlay` wrappers for new popups, as `<dialog>` provides native accessibility, focus management, and top-layer positioning.

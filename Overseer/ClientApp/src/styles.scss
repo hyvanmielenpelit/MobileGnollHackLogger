@@ -808,6 +808,12 @@ label.checkbox-label,
     border: 1px solid rgba(168, 85, 247, 0.5);
     color: #c084fc;
   }
+
+  &.badge-role-benchmark {
+    background-color: rgba(16, 185, 129, 0.15);
+    border: 1px solid rgba(16, 185, 129, 0.5);
+    color: #34d399;
+  }
 }
 
 /* --- Error Message --- */

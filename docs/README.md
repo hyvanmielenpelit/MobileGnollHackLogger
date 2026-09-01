@@ -16,6 +16,7 @@ Documentation and developer references for the Gnoll Overseer AI assistant web a
 | [**Commands Reference**](overseer/commands.md) | Comprehensive reference of all CLI commands used to develop, build, test, and run the backend and frontend. |
 | [**Changelog Guide**](overseer/changelog-guide.md) | JSON schema reference, change classification types, and manual editing rules for `Overseer/Data/release-notes.json`. |
 | [**AI Changelog Generation**](overseer/ai-changelog.md) | Instructions on how to use a local AI agent (`overseer_changelog` skill) to autonomously generate release notes from Git commits. |
+| [**AI Intelligence Benchmark**](overseer/ai-benchmark.md) | Architectural specification, difficulty tiers, blind assessor evaluation, provider error isolation, and Markdown reporting for the benchmark test suite. |
 | [**Adding AI Models**](overseer/adding-ai-models.md) | Instructions and schemas for adding new AI models (e.g. Google Gemini) to the Overseer model catalogs. |
 | [**Gemini Service Tier Measurements**](overseer/gemini-service-tier-measurements.md) | Measured availability, latency, and `service_tier` honouring for each supported Gemini model, plus where Google reports the served tier. Snapshot dated 2026-08-31 — expect it to shift when a new Gemini generation ships. |
 | [**Chat & Data Retention**](overseer/chat-data-retention.md) | Specification and architecture for user session quotas, soft-delete lifecycle, tool call payload pruning, disk attachment cleanup, and automated database maintenance. |
@@ -64,6 +65,7 @@ docs/
 │   ├── commands.md                # Build, test, run, and DB migrations CLI reference
 │   ├── changelog-guide.md         # In-app changelog schema & maintenance
 │   ├── ai-changelog.md            # AI-assisted release notes generation
+│   ├── ai-benchmark.md            # AI intelligence benchmark test suite architecture & guide
 │   ├── adding-ai-models.md        # Adding LLM models to catalog
 │   ├── gemini-service-tier-measurements.md # Measured Gemini service tier / availability results
 │   ├── chat-data-retention.md     # Chat & data retention architectural specification

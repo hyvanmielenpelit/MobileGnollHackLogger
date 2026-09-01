@@ -32,6 +32,11 @@ namespace MobileGnollHackLogger.Data
         public DbSet<GroupSystemAiApiConfiguration> GroupSystemAiApiConfigurations { get; set; } = null!;
         public DbSet<SystemAiUsageLog> SystemAiUsageLogs { get; set; } = null!;
         public DbSet<SystemAiErrorLog> SystemAiErrorLogs { get; set; } = null!;
+        public DbSet<BenchmarkSuite> BenchmarkSuites { get; set; } = null!;
+        public DbSet<BenchmarkQuestion> BenchmarkQuestions { get; set; } = null!;
+        public DbSet<BenchmarkRun> BenchmarkRuns { get; set; } = null!;
+        public DbSet<BenchmarkRunAnswer> BenchmarkRunAnswers { get; set; } = null!;
+        public DbSet<BenchmarkScoringProfile> BenchmarkScoringProfiles { get; set; } = null!;
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
@@ -91,6 +96,65 @@ namespace MobileGnollHackLogger.Data
 
             modelBuilder.Entity<ChatMessageToolCall>()
                 .HasIndex(tc => new { tc.ChatMessageId, tc.SortOrder });
+
+            modelBuilder.Entity<BenchmarkSuite>()
+                .HasIndex(s => s.Name)
+                .IsUnique();
+
+            modelBuilder.Entity<BenchmarkQuestion>()
+                .HasOne(q => q.BenchmarkSuite)
+                .WithMany(s => s.Questions)
+                .HasForeignKey(q => q.BenchmarkSuiteId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<BenchmarkRun>()
+                .HasOne(r => r.BenchmarkSuite)
+                .WithMany(s => s.Runs)
+                .HasForeignKey(r => r.BenchmarkSuiteId)
+                .OnDelete(DeleteBehavior.ClientSetNull);
+
+            modelBuilder.Entity<BenchmarkRun>()
+                .HasOne(r => r.TestedModelConfiguration)
+                .WithMany()
+                .HasForeignKey(r => r.TestedModelConfigurationId)
+                .OnDelete(DeleteBehavior.ClientSetNull);
+
+            modelBuilder.Entity<BenchmarkRun>()
+                .HasOne(r => r.AssessorModelConfiguration)
+                .WithMany()
+                .HasForeignKey(r => r.AssessorModelConfigurationId)
+                .OnDelete(DeleteBehavior.ClientSetNull);
+
+            modelBuilder.Entity<BenchmarkRun>()
+                .HasOne(r => r.StartedByUser)
+                .WithMany()
+                .HasForeignKey(r => r.StartedByUserId)
+                .HasPrincipalKey(u => u.Id)
+                .OnDelete(DeleteBehavior.ClientSetNull);
+
+            modelBuilder.Entity<BenchmarkRun>()
+                .HasOne(r => r.ScoringProfile)
+                .WithMany()
+                .HasForeignKey(r => r.ScoringProfileId)
+                .OnDelete(DeleteBehavior.ClientSetNull);
+
+            modelBuilder.Entity<BenchmarkScoringProfile>()
+                .HasIndex(p => p.Name)
+                .IsUnique();
+
+            modelBuilder.Entity<BenchmarkScoringProfile>()
+                .HasIndex(p => p.IsDefault)
+                .IsUnique()
+                .HasFilter("[IsDefault] = 1");
+
+            modelBuilder.Entity<BenchmarkRunAnswer>()
+                .HasOne(a => a.BenchmarkRun)
+                .WithMany(r => r.Answers)
+                .HasForeignKey(a => a.BenchmarkRunId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<BenchmarkRunAnswer>()
+                .HasIndex(a => new { a.BenchmarkRunId, a.OrderIndex });
 
             modelBuilder.Entity<Bones>()
                 .Property(b => b.Created)
