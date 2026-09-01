@@ -62,129 +62,145 @@
           <div class="alert alert-danger mb-20">{{ runErrorMessage }}</div>
         }
 
-        <div class="form-grid">
-          <div class="form-group">
-            <label for="suiteSelect">Benchmark Suite</label>
-            <select id="suiteSelect" class="gh-input" [(ngModel)]="selectedSuiteId">
-              @if (suites.length === 0) {
-                <option [ngValue]="null" disabled>{{ loadingSuites ? 'Loading suites...' : 'No suites available' }}</option>
-              }
-              @for (suite of suites; track suite.id) {
-                <option [ngValue]="suite.id">{{ suite.name }} ({{ suite.questionCount }} questions)</option>
-              }
-            </select>
-          </div>
+        <div class="setup-form-rows">
+          <!-- Row 1: Suite and Scoring Profile -->
+          <div class="form-row two-cols">
+            <div class="form-group">
+              <label for="suiteSelect">Benchmark Suite</label>
+              <select id="suiteSelect" class="gh-input" [(ngModel)]="selectedSuiteId">
+                @if (suites.length === 0) {
+                  <option [ngValue]="null" disabled>{{ loadingSuites ? 'Loading suites...' : 'No suites available' }}</option>
+                }
+                @for (suite of suites; track suite.id) {
+                  <option [ngValue]="suite.id">{{ suite.name }} ({{ suite.questionCount }} questions)</option>
+                }
+              </select>
+            </div>
 
-          <div class="form-group">
-            <label for="profileSelect">Scoring Profile</label>
-            <select id="profileSelect" class="gh-input" [(ngModel)]="selectedScoringProfileId">
-              @for (profile of scoringProfiles; track profile.id) {
-                <option [ngValue]="profile.id">{{ profile.name }} {{ profile.isDefault ? '(Default)' : '' }} [Acc {{ profile.weightAccuracy * 100 }}%, Comp {{ profile.weightCompleteness * 100 }}%]</option>
-              }
-            </select>
-          </div>
-
-          <!-- Model Under Test -->
-          <div class="form-group">
-            <label>Model Under Test</label>
-            <div class="custom-model-selector tested-model-selector">
-              <button type="button" class="selector-trigger" (click)="toggleTestedModelDropdown($event)" [class.open]="isTestedModelDropdownOpen">
-                <span class="model-name" [class.text-muted]="!selectedTestedModel">{{ selectedTestedModel?.displayName || selectedTestedModel?.modelId || 'Select Model' }}</span>
-                @if (selectedTestedModel?.thinkingLevel) {
-                  <span class="thinking-badge">{{ formatThinkingLevel(selectedTestedModel?.thinkingLevel) }}</span>
+            <div class="form-group">
+              <label for="profileSelect">Scoring Profile</label>
+              <select id="profileSelect" class="gh-input" [(ngModel)]="selectedScoringProfileId">
+                @for (profile of scoringProfiles; track profile.id) {
+                  <option [ngValue]="profile.id">{{ formatProfileOption(profile) }}</option>
                 }
-                @if (showReasoningBadge(selectedTestedModel?.reasoningMode)) {
-                  <span class="reasoning-badge">{{ selectedTestedModel?.reasoningMode }}</span>
-                }
-                @if (selectedTestedModel?.provider) {
-                  <span class="provider-badge">{{ selectedTestedModel?.provider }}</span>
-                }
-                @if (selectedTestedModel?.parallelExecutionMode === 0) {
-                  <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
-                }
-                @if (selectedTestedModel?.parallelExecutionMode === 1) {
-                  <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
-                }
-                <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
-              </button>
-              @if (isTestedModelDropdownOpen) {
-                <div class="selector-dropdown">
-                  @if (benchmarkCapableConfigs.length === 0) {
-                    <div class="empty-dropdown-hint">No system AI configs with the Benchmark role are enabled. Enable the Benchmark role in System Configs.</div>
-                  }
-                  @for (model of benchmarkCapableConfigs; track model.id) {
-                    <div class="model-option" (click)="selectTestedModel(model)" [class.selected]="testedConfigId === model.id">
-                      <span class="model-name">{{ model.displayName || model.modelId }}</span>
-                      @if (model.thinkingLevel) {
-                        <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
-                      }
-                      @if (showReasoningBadge(model.reasoningMode)) {
-                        <span class="reasoning-badge">{{ model.reasoningMode }}</span>
-                      }
-                      <span class="provider-badge">{{ model.provider }}</span>
-                      @if (model.parallelExecutionMode === 0) {
-                        <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
-                      }
-                      @if (model.parallelExecutionMode === 1) {
-                        <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
-                      }
-                    </div>
-                  }
-                </div>
-              }
+              </select>
             </div>
           </div>
 
-          <!-- Assessor Model -->
-          <div class="form-group">
-            <label>Assessor Model (Evaluator)</label>
-            <div class="custom-model-selector assessor-model-selector">
-              <button type="button" class="selector-trigger" (click)="toggleAssessorModelDropdown($event)" [class.open]="isAssessorModelDropdownOpen">
-                <span class="model-name" [class.text-muted]="!selectedAssessorModel">{{ selectedAssessorModel?.displayName || selectedAssessorModel?.modelId || 'Select Model' }}</span>
-                @if (selectedAssessorModel?.thinkingLevel) {
-                  <span class="thinking-badge">{{ formatThinkingLevel(selectedAssessorModel?.thinkingLevel) }}</span>
-                }
-                @if (showReasoningBadge(selectedAssessorModel?.reasoningMode)) {
-                  <span class="reasoning-badge">{{ selectedAssessorModel?.reasoningMode }}</span>
-                }
-                @if (selectedAssessorModel?.provider) {
-                  <span class="provider-badge">{{ selectedAssessorModel?.provider }}</span>
-                }
-                @if (selectedAssessorModel?.parallelExecutionMode === 0) {
-                  <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
-                }
-                @if (selectedAssessorModel?.parallelExecutionMode === 1) {
-                  <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
-                }
-                <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
-              </button>
-              @if (isAssessorModelDropdownOpen) {
-                <div class="selector-dropdown">
-                  @if (benchmarkCapableConfigs.length === 0) {
-                    <div class="empty-dropdown-hint">No system AI configs with the Benchmark role are enabled. Enable the Benchmark role in System Configs.</div>
+          <!-- Row 2: Model Under Test and Assessor Model -->
+          <div class="form-row two-cols">
+            <!-- Model Under Test -->
+            <div class="form-group">
+              <label>Model Under Test</label>
+              <div class="custom-model-selector tested-model-selector">
+                <button type="button" class="selector-trigger" (click)="toggleTestedModelDropdown($event)" [class.open]="isTestedModelDropdownOpen">
+                  <span class="model-name" [class.text-muted]="!selectedTestedModel">{{ selectedTestedModel?.displayName || selectedTestedModel?.modelId || 'Select Model' }}</span>
+                  @if (selectedTestedModel?.thinkingLevel) {
+                    <span class="thinking-badge">{{ formatThinkingLevel(selectedTestedModel?.thinkingLevel) }}</span>
                   }
-                  @for (model of benchmarkCapableConfigs; track model.id) {
-                    <div class="model-option" (click)="selectAssessorModel(model)" [class.selected]="assessorConfigId === model.id">
-                      <span class="model-name">{{ model.displayName || model.modelId }}</span>
-                      @if (model.thinkingLevel) {
-                        <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
-                      }
-                      @if (showReasoningBadge(model.reasoningMode)) {
-                        <span class="reasoning-badge">{{ model.reasoningMode }}</span>
-                      }
-                      <span class="provider-badge">{{ model.provider }}</span>
-                      @if (model.parallelExecutionMode === 0) {
-                        <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
-                      }
-                      @if (model.parallelExecutionMode === 1) {
-                        <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
-                      }
-                    </div>
+                  @if (showReasoningBadge(selectedTestedModel?.reasoningMode)) {
+                    <span class="reasoning-badge">{{ selectedTestedModel?.reasoningMode }}</span>
                   }
-                </div>
-              }
+                  @if (selectedTestedModel?.provider) {
+                    <span class="provider-badge">{{ selectedTestedModel?.provider }}</span>
+                  }
+                  @if (selectedTestedModel?.parallelExecutionMode === 0) {
+                    <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
+                  }
+                  @if (selectedTestedModel?.parallelExecutionMode === 1) {
+                    <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
+                  }
+                  <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </button>
+                @if (isTestedModelDropdownOpen) {
+                  <div class="selector-dropdown">
+                    @if (benchmarkCapableConfigs.length === 0) {
+                      <div class="empty-dropdown-hint">No system AI configs with the Benchmark role are enabled. Enable the Benchmark role in System Configs.</div>
+                    }
+                    @for (model of benchmarkCapableConfigs; track model.id) {
+                      <div class="model-option" (click)="selectTestedModel(model)" [class.selected]="testedConfigId === model.id">
+                        <span class="model-name">{{ model.displayName || model.modelId }}</span>
+                        @if (model.thinkingLevel) {
+                          <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
+                        }
+                        @if (showReasoningBadge(model.reasoningMode)) {
+                          <span class="reasoning-badge">{{ model.reasoningMode }}</span>
+                        }
+                        <span class="provider-badge">{{ model.provider }}</span>
+                        @if (model.parallelExecutionMode === 0) {
+                          <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
+                        }
+                        @if (model.parallelExecutionMode === 1) {
+                          <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
+                        }
+                      </div>
+                    }
+                  </div>
+                }
+              </div>
+            </div>
+
+            <!-- Assessor Model -->
+            <div class="form-group">
+              <label>Assessor Model (Evaluator)</label>
+              <div class="custom-model-selector assessor-model-selector">
+                <button type="button" class="selector-trigger" (click)="toggleAssessorModelDropdown($event)" [class.open]="isAssessorModelDropdownOpen">
+                  <span class="model-name" [class.text-muted]="!selectedAssessorModel">{{ selectedAssessorModel?.displayName || selectedAssessorModel?.modelId || 'Select Model' }}</span>
+                  @if (selectedAssessorModel?.thinkingLevel) {
+                    <span class="thinking-badge">{{ formatThinkingLevel(selectedAssessorModel?.thinkingLevel) }}</span>
+                  }
+                  @if (showReasoningBadge(selectedAssessorModel?.reasoningMode)) {
+                    <span class="reasoning-badge">{{ selectedAssessorModel?.reasoningMode }}</span>
+                  }
+                  @if (selectedAssessorModel?.provider) {
+                    <span class="provider-badge">{{ selectedAssessorModel?.provider }}</span>
+                  }
+                  @if (selectedAssessorModel?.parallelExecutionMode === 0) {
+                    <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
+                  }
+                  @if (selectedAssessorModel?.parallelExecutionMode === 1) {
+                    <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
+                  }
+                  <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </button>
+                @if (isAssessorModelDropdownOpen) {
+                  <div class="selector-dropdown">
+                    @if (benchmarkCapableConfigs.length === 0) {
+                      <div class="empty-dropdown-hint">No system AI configs with the Benchmark role are enabled. Enable the Benchmark role in System Configs.</div>
+                    }
+                    @for (model of benchmarkCapableConfigs; track model.id) {
+                      <div class="model-option" (click)="selectAssessorModel(model)" [class.selected]="assessorConfigId === model.id">
+                        <span class="model-name">{{ model.displayName || model.modelId }}</span>
+                        @if (model.thinkingLevel) {
+                          <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
+                        }
+                        @if (showReasoningBadge(model.reasoningMode)) {
+                          <span class="reasoning-badge">{{ model.reasoningMode }}</span>
+                        }
+                        <span class="provider-badge">{{ model.provider }}</span>
+                        @if (model.parallelExecutionMode === 0) {
+                          <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
+                        }
+                        @if (model.parallelExecutionMode === 1) {
+                          <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
+                        }
+                      </div>
+                    }
+                  </div>
+                }
+              </div>
             </div>
           </div>
+        </div>
+
+        <div class="compliance-purpose-box mt-20">
+          <div class="compliance-header">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+            <strong>Evaluation Purpose & Compliance</strong>
+          </div>
+          <p class="compliance-text">
+            Internal evaluation of candidate AI models for the Overseer assistant within GnollHack. Benchmark outputs are third-party generated content used solely for automated capability evaluation and scoring, and are not used for training, fine-tuning, distilling, or developing competing AI models.
+          </p>
         </div>
 
         <div class="form-actions mt-20">
@@ -313,7 +329,7 @@
         </button>
         <button class="btn-gh" (click)="importDefaultSuite()">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-          Import Default 15-Question Suite
+          Import Default Suite
         </button>
       </div>
 
@@ -339,8 +355,28 @@
             </div>
 
             @if (suite.description) {
-              <p class="suite-desc text-muted">{{ suite.description }}</p>
+              <div class="suite-desc-container mb-15">
+                <div class="suite-desc-md" [class.collapsed]="isLongDescription(suite.description) && !isSuiteDescriptionExpanded(suite.id)" [innerHTML]="suite.description | markdown"></div>
+                @if (isLongDescription(suite.description)) {
+                  <button
+                    type="button"
+                    class="btn-link desc-expand-toggle"
+                    [attr.aria-expanded]="isSuiteDescriptionExpanded(suite.id)"
+                    (click)="toggleSuiteDescription(suite.id)">
+                    {{ isSuiteDescriptionExpanded(suite.id) ? 'Show less' : 'Show more' }}
+                  </button>
+                }
+              </div>
             }
+
+            <div class="suite-footprint-info text-muted mb-15">
+              <strong>Stored Footprint:</strong>
+              @if (footprints[suite.id]) {
+                {{ footprints[suite.id].runCount }} {{ footprints[suite.id].runCount === 1 ? 'run' : 'runs' }} ({{ footprints[suite.id].totalAnswerCharacters | number }} answer chars)
+              } @else {
+                0 runs
+              }
+            </div>
 
             <div class="suite-card-actions">
               <button class="btn-gh btn-gh-primary" (click)="openManageQuestions(suite)">
@@ -351,6 +387,11 @@
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polygon points="12 8 8 12 12 16 16 12 12 8"></polygon></svg>
                 {{ ratingDifficulty ? 'Rating...' : 'AI Rate Difficulty' }}
               </button>
+              @if (footprints[suite.id] && footprints[suite.id].runCount > 0) {
+                <button class="btn-gh btn-gh-danger" (click)="openBulkDeleteDialog(suite)" title="Delete all runs for this suite">
+                  Delete Runs
+                </button>
+              }
             </div>
           </div>
         }
@@ -702,8 +743,8 @@
         <input id="suiteNameInput" type="text" class="gh-input" [(ngModel)]="suiteForm.name" placeholder="e.g. Core Roguelike Mechanics">
       </div>
       <div class="form-group">
-        <label for="suiteDescInput">Description (Optional)</label>
-        <textarea id="suiteDescInput" class="gh-input" rows="3" [(ngModel)]="suiteForm.description" placeholder="Description of the test suite"></textarea>
+        <label for="suiteDescInput">Description (Optional) <span class="text-muted font-normal">(Markdown supported)</span></label>
+        <textarea id="suiteDescInput" class="gh-input font-mono" rows="6" [(ngModel)]="suiteForm.description" placeholder="Description of the test suite (Markdown supported: headings, lists, tables, code)"></textarea>
       </div>
     </div>
     <div class="dialog-footer">
@@ -840,6 +881,111 @@
     <div class="dialog-footer">
       <button class="btn-gh" (click)="questionFormDialog.close()">Cancel</button>
       <button class="btn-gh btn-gh-primary" [disabled]="!questionForm.questionText.trim()" (click)="saveQuestion()">Save Question</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- SAME-PROVIDER WARNING DIALOG -->
+<dialog #sameProviderDialog class="gh-dialog benchmark-form-dialog">
+  @if (sameProviderWarning) {
+    <div class="dialog-content flex-col">
+      <div class="dialog-header">
+        <div class="dialog-title-group">
+          <h3>Same-Provider Assessment Warning</h3>
+        </div>
+        <button type="button" class="btn-icon-action" aria-label="Close dialog" (click)="closeSameProviderDialog()" title="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="dialog-body">
+        <div class="alert alert-warning mb-15">
+          <strong>Methodological Notice:</strong> Both candidate and assessor models belong to <strong>{{ sameProviderWarning.provider }}</strong>.
+        </div>
+        <p class="mb-10">
+          <strong>Model Under Test:</strong> {{ sameProviderWarning.testedModelDisplayName }}<br>
+          <strong>Assessor Model:</strong> {{ sameProviderWarning.assessorModelDisplayName }}<br>
+          <strong>Provider Family:</strong> {{ sameProviderWarning.provider }}
+        </p>
+        <p class="text-muted mb-15">
+          Evaluating a model with an assessor from the same provider family is methodologically weaker and may exhibit self-preference bias. Cross-provider assessment is generally recommended.
+        </p>
+        <p class="text-muted">
+          Would you like to acknowledge this warning and proceed with the benchmark run?
+        </p>
+      </div>
+      <div class="dialog-footer">
+        <button class="btn-gh" (click)="closeSameProviderDialog()">Cancel</button>
+        <button class="btn-gh btn-gh-primary" (click)="confirmSameProviderRun()">Acknowledge & Start Run</button>
+      </div>
+    </div>
+  }
+</dialog>
+
+<!-- BULK DELETE SUITE RUNS DIALOG -->
+<dialog #bulkDeleteDialog class="gh-dialog benchmark-form-dialog">
+  @if (suiteForBulkDelete) {
+    <div class="dialog-content flex-col">
+      <div class="dialog-header">
+        <div class="dialog-title-group">
+          <h3>Delete All Runs: {{ suiteForBulkDelete.name }}</h3>
+        </div>
+        <button type="button" class="btn-icon-action" aria-label="Close dialog" (click)="closeBulkDeleteDialog()" title="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="dialog-body">
+        <p class="mb-15">
+          Are you sure you want to delete all stored benchmark runs for suite <strong>{{ suiteForBulkDelete.name }}</strong>?
+        </p>
+        <div class="footprint-stat-card mb-15">
+          <div><strong>Runs to delete:</strong> {{ footprints[suiteForBulkDelete.id]?.runCount ?? 0 }}</div>
+          <div><strong>Stored Answer Text:</strong> {{ (footprints[suiteForBulkDelete.id]?.totalAnswerCharacters ?? 0) | number }} characters</div>
+        </div>
+        <p class="text-danger">
+          This action is permanent and cannot be undone.
+        </p>
+      </div>
+      <div class="dialog-footer">
+        <button class="btn-gh" (click)="closeBulkDeleteDialog()" [disabled]="deletingSuiteRuns">Cancel</button>
+        <button class="btn-gh btn-gh-danger" (click)="confirmDeleteSuiteRuns()" [disabled]="deletingSuiteRuns">
+          {{ deletingSuiteRuns ? 'Deleting...' : 'Delete All Suite Runs' }}
+        </button>
+      </div>
+    </div>
+  }
+</dialog>
+
+<!-- CONFIRM ACTION DIALOG -->
+<dialog #confirmActionDialog class="gh-dialog benchmark-form-dialog" (cancel)="closeConfirmDialog()">
+  <div class="dialog-content flex-col">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3>{{ confirmDialogTitle || 'Confirm Action' }}</h3>
+      </div>
+      <button type="button" class="btn-icon-action" aria-label="Close dialog" (click)="closeConfirmDialog()" title="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="dialog-body">
+      <p class="mb-15">{{ confirmDialogMessage }}</p>
+      @if (confirmDialogDangerNotice) {
+        <p class="text-danger mb-0">{{ confirmDialogDangerNotice }}</p>
+      }
+    </div>
+    <div class="dialog-footer">
+      <button class="btn-gh" (click)="closeConfirmDialog()">Cancel</button>
+      <button [class]="confirmDialogButtonClass || 'btn-gh btn-gh-danger'" (click)="executeConfirmAction()">
+        {{ confirmDialogButtonText || 'Delete' }}
+      </button>
     </div>
   </div>
 </dialog>

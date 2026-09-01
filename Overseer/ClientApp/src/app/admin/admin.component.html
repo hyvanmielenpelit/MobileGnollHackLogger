@@ -727,12 +727,13 @@
             </div>
           </div>
         }
-      </div>
-    }
 
-    @if (activeTab === 'benchmark') {
-      <div class="tab-pane">
-        <app-admin-benchmark [systemConfigs]="configs"></app-admin-benchmark>
+        <!-- AI BENCHMARK TAB -->
+        @if (activeTab === 'benchmark') {
+          <div>
+            <app-admin-benchmark [systemConfigs]="configs"></app-admin-benchmark>
+          </div>
+        }
       </div>
     }
   </div>

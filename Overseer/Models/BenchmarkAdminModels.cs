@@ -66,6 +66,22 @@ public class StartBenchmarkRunRequest
     public long TestedModelConfigurationId { get; set; }
     public long AssessorModelConfigurationId { get; set; }
     public long? ScoringProfileId { get; set; }
+    public bool AcknowledgeSameProvider { get; set; }
+}
+
+public class SameProviderWarningDto
+{
+    public bool SameProvider { get; set; } = true;
+    public string Provider { get; set; } = string.Empty;
+    public string TestedModelDisplayName { get; set; } = string.Empty;
+    public string AssessorModelDisplayName { get; set; } = string.Empty;
+    public string Message { get; set; } = string.Empty;
+}
+
+public class BenchmarkFootprintDto
+{
+    public int RunCount { get; set; }
+    public long TotalAnswerCharacters { get; set; }
 }
 
 public class RescoreRunRequest
@@ -206,6 +222,8 @@ public class BenchmarkRunDetailDto
     public int MaxParallelQuestionsUsed { get; set; }
     public int AnsweredQuestionCount { get; set; }
     public int TotalQuestionCount { get; set; }
+    public string? PurposeStatementUsed { get; set; }
+    public bool SameProviderAcknowledged { get; set; }
     public string? AssessmentJson { get; set; }
     public string? AssessmentText { get; set; }
     public bool AssessmentParseFailed { get; set; }

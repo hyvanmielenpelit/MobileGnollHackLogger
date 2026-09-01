@@ -106,6 +106,7 @@ builder.Services.AddScoped<Overseer.Services.Agents.AgentLoopRunner>();
 builder.Services.AddScoped<SystemAiConfigService>();
 builder.Services.AddSingleton<OngoingChatManager>();
 builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkRunManager>();
+builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkComplianceGuard>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkScoringProfileService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkService>();
 builder.Services.AddScoped<SettingsService>();

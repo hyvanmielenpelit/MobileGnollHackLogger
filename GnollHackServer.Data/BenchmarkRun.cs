@@ -138,6 +138,11 @@ public class BenchmarkRun
 
     public int TotalQuestionCount { get; set; }
 
+    [MaxLength(2048)]
+    public string? PurposeStatementUsed { get; set; }
+
+    public bool SameProviderAcknowledged { get; set; }
+
     public string? AssessmentJson { get; set; }
 
     public string? AssessmentText { get; set; }

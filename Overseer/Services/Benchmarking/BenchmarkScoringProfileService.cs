@@ -321,7 +321,7 @@ public class BenchmarkScoringProfileService
     {
         var defaultProfile = new BenchmarkScoringProfile
         {
-            Name = "Standard Intelligence Index (Default)",
+            Name = "Standard Intelligence Index",
             IsDefault = true,
             WeightAccuracy = 0.55,
             WeightCompleteness = 0.25,

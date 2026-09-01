@@ -25,17 +25,20 @@ public class AdminBenchmarkController : ControllerBase
     private readonly BenchmarkService _benchmarkService;
     private readonly BenchmarkScoringProfileService _scoringProfileService;
     private readonly BenchmarkRunManager _runManager;
+    private readonly BenchmarkComplianceGuard _complianceGuard;
 
     public AdminBenchmarkController(
         ApplicationDbContext dbContext,
         BenchmarkService benchmarkService,
         BenchmarkScoringProfileService scoringProfileService,
-        BenchmarkRunManager runManager)
+        BenchmarkRunManager runManager,
+        BenchmarkComplianceGuard complianceGuard)
     {
         _dbContext = dbContext;
         _benchmarkService = benchmarkService;
         _scoringProfileService = scoringProfileService;
         _runManager = runManager;
+        _complianceGuard = complianceGuard;
     }
 
     // --- Scoring Profiles CRUD ---
@@ -179,6 +182,12 @@ public class AdminBenchmarkController : ControllerBase
     [HttpPost("suites/{id}/rate-difficulty")]
     public async Task<IActionResult> RateSuiteDifficulty(long id, [FromBody] RateDifficultyRequest request)
     {
+        var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync();
+        if (!canSpend)
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests, denialReason);
+        }
+
         var (success, count, error) = await _benchmarkService.RateSuiteDifficultyAsync(id, request.AssessorModelConfigurationId);
         if (!success)
         {
@@ -190,6 +199,12 @@ public class AdminBenchmarkController : ControllerBase
     [HttpPost("questions/{id}/rate-difficulty")]
     public async Task<IActionResult> RateQuestionDifficulty(long id, [FromBody] RateDifficultyRequest request)
     {
+        var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync();
+        if (!canSpend)
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests, denialReason);
+        }
+
         var (success, difficulty, error) = await _benchmarkService.RateQuestionDifficultyAsync(id, request.AssessorModelConfigurationId);
         if (!success)
         {
@@ -303,6 +318,12 @@ public class AdminBenchmarkController : ControllerBase
 
         if (suite == null) return NotFound();
 
+        var (canAdd, addDenial) = _complianceGuard.CanAddQuestions(0, suite.Questions.Count);
+        if (!canAdd)
+        {
+            return BadRequest($"Cannot duplicate suite: question count ({suite.Questions.Count}) exceeds maximum allowed ({_complianceGuard.MaxQuestionsPerSuite}).");
+        }
+
         string baseName = suite.Name + " (Copy)";
         string newName = baseName;
         int copyCounter = 1;
@@ -413,6 +434,13 @@ public class AdminBenchmarkController : ControllerBase
 
         if (root.TryGetProperty("questions", out var qArray) && qArray.ValueKind == JsonValueKind.Array)
         {
+            int qCount = qArray.GetArrayLength();
+            var (canAddDefault, _) = _complianceGuard.CanAddQuestions(0, qCount);
+            if (!canAddDefault)
+            {
+                return null;
+            }
+
             int order = 1;
             foreach (var qEl in qArray.EnumerateArray())
             {
@@ -475,6 +503,12 @@ public class AdminBenchmarkController : ControllerBase
 
         var suite = await _dbContext.BenchmarkSuites.FindAsync(suiteId);
         if (suite == null) return NotFound();
+
+        var (canAdd, addDenial) = await _complianceGuard.CanAddQuestionsAsync(suiteId, 1);
+        if (!canAdd)
+        {
+            return BadRequest(addDenial);
+        }
 
         var maxOrder = await _dbContext.BenchmarkQuestions
             .Where(q => q.BenchmarkSuiteId == suiteId)
@@ -596,6 +630,12 @@ public class AdminBenchmarkController : ControllerBase
             return Conflict("A benchmark run is already in progress.");
         }
 
+        var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync();
+        if (!canSpend)
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests, denialReason);
+        }
+
         var suite = await _dbContext.BenchmarkSuites
             .Include(s => s.Questions)
             .FirstOrDefaultAsync(s => s.Id == request.SuiteId);
@@ -611,6 +651,19 @@ public class AdminBenchmarkController : ControllerBase
 
         if (assessorConfig == null || string.IsNullOrWhiteSpace(assessorConfig.EncryptedApiKey) || (assessorConfig.ModelRole & 4) != 4)
             return BadRequest("Assessor model configuration is invalid, missing an API key, or not configured with the Benchmark role.");
+
+        bool isSameProvider = _complianceGuard.IsSameProvider(testedConfig, assessorConfig);
+        if (isSameProvider && !request.AcknowledgeSameProvider)
+        {
+            return StatusCode(StatusCodes.Status409Conflict, new SameProviderWarningDto
+            {
+                SameProvider = true,
+                Provider = testedConfig.Provider,
+                TestedModelDisplayName = testedConfig.DisplayName,
+                AssessorModelDisplayName = assessorConfig.DisplayName,
+                Message = $"Both the model under test ({testedConfig.DisplayName}) and the assessor model ({assessorConfig.DisplayName}) belong to the same provider ({testedConfig.Provider}). Evaluation of a model by its own provider family may produce biased grading."
+            });
+        }
 
         string userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
 
@@ -640,7 +693,9 @@ public class AdminBenchmarkController : ControllerBase
             StartedByUserId = string.IsNullOrEmpty(userId) ? null : userId,
             Status = BenchmarkRunStatus.Running,
             StartedAtUtc = DateTime.UtcNow,
-            TotalQuestionCount = suite.Questions.Count
+            TotalQuestionCount = suite.Questions.Count,
+            PurposeStatementUsed = _complianceGuard.GetPurposeStatement(),
+            SameProviderAcknowledged = isSameProvider && request.AcknowledgeSameProvider
         };
 
         _dbContext.BenchmarkRuns.Add(run);
@@ -710,6 +765,8 @@ public class AdminBenchmarkController : ControllerBase
             MaxParallelQuestionsUsed = run.MaxParallelQuestionsUsed,
             AnsweredQuestionCount = run.AnsweredQuestionCount,
             TotalQuestionCount = run.TotalQuestionCount,
+            PurposeStatementUsed = run.PurposeStatementUsed,
+            SameProviderAcknowledged = run.SameProviderAcknowledged,
             AssessmentJson = run.AssessmentJson,
             AssessmentText = run.AssessmentText,
             AssessmentParseFailed = run.AssessmentParseFailed,
@@ -823,6 +880,12 @@ public class AdminBenchmarkController : ControllerBase
     [HttpPost("runs/{id}/answers/{answerId}/reassess")]
     public async Task<IActionResult> ReassessAnswer(long id, long answerId, [FromBody] ReassessAnswerRequest? request)
     {
+        var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync();
+        if (!canSpend)
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests, denialReason);
+        }
+
         var (success, error) = await _benchmarkService.ReassessQuestionAsync(answerId, request?.AssessorModelConfigurationId);
         if (!success)
         {
@@ -851,6 +914,12 @@ public class AdminBenchmarkController : ControllerBase
         if (_runManager.CurrentRunId.HasValue)
         {
             return Conflict("A benchmark run is already in progress.");
+        }
+
+        var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync();
+        if (!canSpend)
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests, denialReason);
         }
 
         var run = await _dbContext.BenchmarkRuns
@@ -891,6 +960,49 @@ public class AdminBenchmarkController : ControllerBase
         string filename = $"{SanitizeFilename(run.SuiteName)}_{SanitizeFilename(run.TestedModelDisplayNameUsed)}_{run.StartedAtUtc:yyyyMMdd_HHmmss}.md";
 
         return File(Encoding.UTF8.GetBytes(markdown), "text/markdown; charset=utf-8", filename);
+    }
+
+    [HttpGet("suites/{id}/runs/footprint")]
+    public async Task<IActionResult> GetSuiteRunsFootprint(long id)
+    {
+        var runIds = await _dbContext.BenchmarkRuns
+            .Where(r => r.BenchmarkSuiteId == id)
+            .Select(r => r.Id)
+            .ToListAsync();
+
+        int runCount = runIds.Count;
+        long totalChars = 0;
+        if (runCount > 0)
+        {
+            totalChars = await _dbContext.BenchmarkRunAnswers
+                .Where(a => runIds.Contains(a.BenchmarkRunId) && a.AnswerText != null)
+                .SumAsync(a => (long)a.AnswerText.Length);
+        }
+
+        return Ok(new BenchmarkFootprintDto
+        {
+            RunCount = runCount,
+            TotalAnswerCharacters = totalChars
+        });
+    }
+
+    [HttpDelete("suites/{id}/runs")]
+    public async Task<IActionResult> DeleteSuiteRuns(long id)
+    {
+        var runs = await _dbContext.BenchmarkRuns
+            .Where(r => r.BenchmarkSuiteId == id)
+            .ToListAsync();
+
+        if (_runManager.CurrentRunId.HasValue && runs.Any(r => r.Id == _runManager.CurrentRunId.Value))
+        {
+            return BadRequest("Cannot delete runs while a run in this suite is currently active.");
+        }
+
+        int count = runs.Count;
+        _dbContext.BenchmarkRuns.RemoveRange(runs);
+        await _dbContext.SaveChangesAsync();
+
+        return Ok(new { deletedCount = count });
     }
 
     [HttpDelete("runs/{id}")]

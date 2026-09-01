@@ -97,6 +97,20 @@ export interface StartBenchmarkRunRequest {
   testedModelConfigurationId: number;
   assessorModelConfigurationId: number;
   scoringProfileId?: number | null;
+  acknowledgeSameProvider?: boolean;
+}
+
+export interface SameProviderWarningDto {
+  sameProvider: boolean;
+  provider: string;
+  testedModelDisplayName: string;
+  assessorModelDisplayName: string;
+  message: string;
+}
+
+export interface BenchmarkFootprintDto {
+  runCount: number;
+  totalAnswerCharacters: number;
 }
 
 export interface BenchmarkRunAnswerDto {
@@ -177,6 +191,8 @@ export interface BenchmarkRunDetailDto {
   maxParallelQuestionsUsed: number;
   answeredQuestionCount: number;
   totalQuestionCount: number;
+  purposeStatementUsed?: string | null;
+  sameProviderAcknowledged?: boolean;
   assessmentJson?: string | null;
   assessmentText?: string | null;
   assessmentParseFailed: boolean;
@@ -335,5 +351,13 @@ export class AdminBenchmarkService {
 
   deleteRun(id: number): Observable<void> {
     return this.http.delete<void>(`/api/admin/benchmark/runs/${id}`);
+  }
+
+  getSuiteRunsFootprint(suiteId: number): Observable<BenchmarkFootprintDto> {
+    return this.http.get<BenchmarkFootprintDto>(`/api/admin/benchmark/suites/${suiteId}/runs/footprint`);
+  }
+
+  deleteSuiteRuns(suiteId: number): Observable<{ deletedCount: number }> {
+    return this.http.delete<{ deletedCount: number }>(`/api/admin/benchmark/suites/${suiteId}/runs`);
   }
 }

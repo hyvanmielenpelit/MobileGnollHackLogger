@@ -1,4 +1,4 @@
-﻿namespace MobileGnollHackLogger.Data;
+namespace MobileGnollHackLogger.Data;
 
 using System;
 using System.Collections.Generic;
@@ -11,7 +11,6 @@ public class BenchmarkSuite
     [MaxLength(128)]
     public string Name { get; set; } = default!;
 
-    [MaxLength(512)]
     public string? Description { get; set; }
 
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;

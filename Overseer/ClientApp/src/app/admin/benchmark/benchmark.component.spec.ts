@@ -24,9 +24,15 @@ describe('AdminBenchmarkComponent', () => {
       'updateSuite',
       'deleteSuite',
       'duplicateSuite',
-      'importDefaultSuite'
+      'importDefaultSuite',
+      'getSuiteRunsFootprint',
+      'deleteSuiteRuns',
+      'reorderQuestions',
+      'rateSuiteDifficulty',
+      'rateQuestionDifficulty'
     ]);
 
+    benchmarkServiceMock.getSuiteRunsFootprint.and.returnValue(of({ runCount: 0, totalAnswerCharacters: 0 }));
     benchmarkServiceMock.getSuites.and.returnValue(of([
       { id: 1, name: 'Default Suite', description: 'Test', createdAtUtc: '2026-09-01T00:00:00Z', modifiedAtUtc: null, questionCount: 15 }
     ]));
@@ -184,5 +190,205 @@ describe('AdminBenchmarkComponent', () => {
     expect(component.getScoreBadgeClass(65)).toBe('badge-score-mid');
     expect(component.getScoreBadgeClass(40)).toBe('badge-score-low');
     expect(component.getScoreBadgeClass(null)).toBe('badge-score-na');
+  });
+
+  it('should render suite description markdown with strong and list tags and sanitize XSS vectors', () => {
+    component.activeSubTab = 'suites';
+    component.suites = [
+      {
+        id: 1,
+        name: 'Markdown Suite',
+        description: '**Bold Title**\n\n- Item 1\n- Item 2\n\n<script>alert("xss")</script><img src=x onerror="alert(1)">',
+        createdAtUtc: '2026-09-01T00:00:00Z',
+        modifiedAtUtc: null,
+        questionCount: 18
+      }
+    ];
+    fixture.detectChanges();
+
+    const descEl = fixture.nativeElement.querySelector('.suite-desc-md');
+    expect(descEl).toBeTruthy();
+    expect(descEl.querySelector('strong')?.textContent).toContain('Bold Title');
+    expect(descEl.querySelector('ul')).toBeTruthy();
+    expect(descEl.querySelectorAll('li').length).toBe(2);
+    // Ensure script and onerror attributes were stripped by DOMPurify
+    expect(descEl.querySelector('script')).toBeNull();
+    expect(descEl.innerHTML).not.toContain('onerror');
+    expect(descEl.innerHTML).not.toContain('<script');
+  });
+
+  it('should toggle suite description expand state and flip aria-expanded', () => {
+    component.activeSubTab = 'suites';
+    const longText = 'Paragraph 1 of long text.\n\nParagraph 2 with lots of details about the suite.\n\n' + 'Additional sentences. '.repeat(15);
+    component.suites = [
+      {
+        id: 1,
+        name: 'Long Suite',
+        description: longText,
+        createdAtUtc: '2026-09-01T00:00:00Z',
+        modifiedAtUtc: null,
+        questionCount: 18
+      }
+    ];
+    fixture.detectChanges();
+
+    expect(component.isLongDescription(longText)).toBeTrue();
+    expect(component.isSuiteDescriptionExpanded(1)).toBeFalse();
+
+    const toggleBtn = fixture.nativeElement.querySelector('.desc-expand-toggle');
+    expect(toggleBtn).toBeTruthy();
+    expect(toggleBtn.getAttribute('aria-expanded')).toBe('false');
+    expect(toggleBtn.textContent.trim()).toBe('Show more');
+
+    toggleBtn.click();
+    fixture.detectChanges();
+
+    expect(component.isSuiteDescriptionExpanded(1)).toBeTrue();
+    expect(toggleBtn.getAttribute('aria-expanded')).toBe('true');
+    expect(toggleBtn.textContent.trim()).toBe('Show less');
+  });
+
+  it('should render model answers, thought text, and assessor comments as plain text and not innerHTML', () => {
+    component.selectedRunDetail = {
+      id: 10,
+      benchmarkSuiteId: 1,
+      suiteName: 'Test Suite',
+      testedModelConfigurationId: 1,
+      testedModelDisplayNameUsed: 'Candidate Model',
+      testedModelProviderUsed: 'Anthropic',
+      testedModelIdUsed: 'claude-3-5-sonnet',
+      testedModelThinkingLevelUsed: null,
+      testedModelReasoningModeUsed: null,
+      testedModelReasoningSummaryUsed: null,
+      testedModelServiceTierUsed: null,
+      testedModelMaxOutputTokensUsed: null,
+      testedModelParallelExecutionModeUsed: 0,
+      assessorModelConfigurationId: 1,
+      assessorModelDisplayNameUsed: 'Assessor Model',
+      assessorModelProviderUsed: 'Anthropic',
+      assessorModelIdUsed: 'claude-3-5-sonnet',
+      assessorModelThinkingLevelUsed: null,
+      assessorModelReasoningModeUsed: null,
+      startedByUserId: null,
+      startedByUserName: 'admin',
+      status: 2,
+      startedAtUtc: '2026-09-01T00:00:00Z',
+      completedAtUtc: '2026-09-01T00:05:00Z',
+      finalScore: 85,
+      computedScore: 85,
+      qualityIndex: 85,
+      speedIndex: 90,
+      totalAnswerDurationMs: 12000,
+      scoringProfileId: 1,
+      scoringProfileName: 'Default',
+      scoringProfileSnapshotJson: null,
+      scoringMethodVersion: 1,
+      difficultyFallbackUsed: false,
+      speedMeasurementDegraded: false,
+      maxParallelQuestionsUsed: 1,
+      answeredQuestionCount: 1,
+      totalQuestionCount: 1,
+      purposeStatementUsed: 'Test Purpose',
+      sameProviderAcknowledged: false,
+      assessmentJson: null,
+      assessmentText: '<div id="assessment-html">Assessor <b>Overview</b></div>',
+      assessmentParseFailed: false,
+      totalInputTokens: 100,
+      totalOutputTokens: 100,
+      totalCacheReadTokens: 0,
+      totalCacheCreationTokens: 0,
+      totalDurationMs: 12000,
+      errorMessage: null,
+      answers: [
+        {
+          id: 101,
+          benchmarkRunId: 10,
+          orderIndex: 1,
+          questionText: 'Test Question 1',
+          difficulty: 1,
+          assessedDifficulty: 10,
+          answerText: 'Model Answer with <strong>raw html tag</strong> and <script>alert("hack")</script>',
+          thoughtText: 'Thought with <em>markdown/html</em> syntax',
+          status: 1,
+          assessmentStatus: 1,
+          assessmentError: null,
+          errorMessage: null,
+          httpStatusCode: 200,
+          score: 85,
+          accuracyLevel: 5,
+          completenessLevel: 5,
+          concisenessLevel: 5,
+          readabilityLevel: 5,
+          criticalError: false,
+          accuracyScore: 87,
+          completenessScore: 87,
+          concisenessScore: 87,
+          readabilityScore: 87,
+          qualityScore: 87,
+          speedScore: 92,
+          reviewComment: 'Assessor comment with <span class="badge">tag</span>',
+          durationMs: 3000,
+          timeToFirstTokenMs: 200,
+          actualServiceTierUsed: null,
+          toolCallSummary: null,
+          inputTokens: 50,
+          outputTokens: 50,
+          cacheReadInputTokens: 0,
+          cacheCreationInputTokens: 0
+        }
+      ]
+    };
+    component.expandedQuestions.add(1);
+    component.expandedThoughts.add(1);
+    fixture.detectChanges();
+
+    const answerBox = fixture.nativeElement.querySelector('.answer-box');
+    expect(answerBox).toBeTruthy();
+    expect(answerBox.querySelector('strong')).toBeNull();
+    expect(answerBox.textContent).toContain('<strong>raw html tag</strong>');
+
+    const thoughtBox = fixture.nativeElement.querySelector('.thought-box');
+    expect(thoughtBox).toBeTruthy();
+    expect(thoughtBox.querySelector('em')).toBeNull();
+    expect(thoughtBox.textContent).toContain('<em>markdown/html</em>');
+
+    const assessorComment = fixture.nativeElement.querySelector('.assessor-comment-box');
+    expect(assessorComment).toBeTruthy();
+    expect(assessorComment.querySelector('span.badge')).toBeNull();
+    expect(assessorComment.textContent).toContain('<span class="badge">tag</span>');
+
+    const proseReview = fixture.nativeElement.querySelector('.prose-review');
+    expect(proseReview).toBeTruthy();
+    expect(proseReview.querySelector('#assessment-html')).toBeNull();
+    expect(proseReview.textContent).toContain('<div id="assessment-html">');
+  });
+
+  it('should display "Import Default Suite" on import button without hardcoded question count', () => {
+    component.activeSubTab = 'suites';
+    fixture.detectChanges();
+
+    const importBtn = fixture.nativeElement.querySelectorAll('.suites-toolbar .btn-gh')[1];
+    expect(importBtn.textContent.trim()).toBe('Import Default Suite');
+    expect(importBtn.textContent).not.toContain('15-Question');
+  });
+
+  it('should open confirmActionDialog modal on deleteSuite and delete when confirmed', () => {
+    spyOn(window, 'confirm');
+    benchmarkServiceMock.deleteSuite.and.returnValue(of(void 0));
+    component.activeSubTab = 'suites';
+    component.suites = [
+      { id: 42, name: 'Target Suite', description: 'Test', createdAtUtc: '2026-09-01T00:00:00Z', modifiedAtUtc: null, questionCount: 1 }
+    ];
+    fixture.detectChanges();
+
+    component.deleteSuite(42);
+
+    expect(window.confirm).not.toHaveBeenCalled();
+    expect(component.confirmDialogTitle).toBe('Delete Benchmark Suite');
+    expect(component.confirmDialogMessage).toContain('"Target Suite"');
+
+    component.executeConfirmAction();
+
+    expect(benchmarkServiceMock.deleteSuite).toHaveBeenCalledWith(42);
   });
 });

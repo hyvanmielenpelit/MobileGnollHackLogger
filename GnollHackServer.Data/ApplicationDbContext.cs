@@ -138,6 +138,9 @@ namespace MobileGnollHackLogger.Data
                 .HasForeignKey(r => r.ScoringProfileId)
                 .OnDelete(DeleteBehavior.ClientSetNull);
 
+            modelBuilder.Entity<BenchmarkRun>()
+                .HasIndex(r => r.StartedAtUtc);
+
             modelBuilder.Entity<BenchmarkScoringProfile>()
                 .HasIndex(p => p.Name)
                 .IsUnique();

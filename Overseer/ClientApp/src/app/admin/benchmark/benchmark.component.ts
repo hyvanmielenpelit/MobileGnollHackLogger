@@ -14,14 +14,18 @@ import {
   UpdateBenchmarkQuestionRequest,
   CreateBenchmarkScoringProfileRequest,
   UpdateBenchmarkScoringProfileRequest,
-  StartBenchmarkRunRequest
+  StartBenchmarkRunRequest,
+  SameProviderWarningDto,
+  BenchmarkFootprintDto
 } from '../../services/admin-benchmark.service';
 import { SystemAiConfigDto } from '../../services/admin.service';
+
+import { MarkdownPipe } from '../../chat/markdown.pipe';
 
 @Component({
   selector: 'app-admin-benchmark',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, MarkdownPipe],
   templateUrl: './benchmark.component.html',
   styleUrls: ['./benchmark.component.scss']
 })
@@ -34,6 +38,17 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   @ViewChild('runDetailDialog') runDetailDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('scoringProfilesDialog') scoringProfilesDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('scoringProfileFormDialog') scoringProfileFormDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('sameProviderDialog') sameProviderDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('bulkDeleteDialog') bulkDeleteDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('confirmActionDialog') confirmActionDialog!: ElementRef<HTMLDialogElement>;
+
+  // Confirm Action Dialog State
+  confirmDialogTitle = '';
+  confirmDialogMessage = '';
+  confirmDialogDangerNotice = '';
+  confirmDialogButtonText = 'Delete';
+  confirmDialogButtonClass = 'btn-gh btn-gh-danger';
+  private pendingConfirmAction: (() => void) | null = null;
 
   private benchmarkService = inject(AdminBenchmarkService);
   private cdr = inject(ChangeDetectorRef);
@@ -72,6 +87,12 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   isAssessorModelDropdownOpen = false;
   startingRun = false;
   runErrorMessage: string | null = null;
+  sameProviderWarning: SameProviderWarningDto | null = null;
+
+  // Stored Footprint & Bulk Deletion
+  footprints: { [suiteId: number]: BenchmarkFootprintDto } = {};
+  suiteForBulkDelete: BenchmarkSuiteDto | null = null;
+  deletingSuiteRuns = false;
 
   // Active Run Tracking
   activeRunId: number | null = null;
@@ -94,6 +115,24 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   // Suite Dialogs
   editingSuiteId: number | null = null;
   suiteForm: CreateBenchmarkSuiteRequest = { name: '', description: '' };
+  expandedSuiteDescriptions = new Set<number>();
+
+  toggleSuiteDescription(suiteId: number) {
+    if (this.expandedSuiteDescriptions.has(suiteId)) {
+      this.expandedSuiteDescriptions.delete(suiteId);
+    } else {
+      this.expandedSuiteDescriptions.add(suiteId);
+    }
+  }
+
+  isSuiteDescriptionExpanded(suiteId: number): boolean {
+    return this.expandedSuiteDescriptions.has(suiteId);
+  }
+
+  isLongDescription(desc: string | null | undefined): boolean {
+    if (!desc) return false;
+    return desc.length > 200 || desc.includes('\n');
+  }
 
   // Questions Dialog
   currentSuiteForQuestions: BenchmarkSuiteDto | null = null;
@@ -222,6 +261,11 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     });
   }
 
+  formatProfileOption(profile: BenchmarkScoringProfileDto): string {
+    const cleanName = (profile.name || '').replace(/\s*\(Default\)$/i, '').trim();
+    return profile.isDefault ? `${cleanName} (Default)` : cleanName;
+  }
+
   openManageProfiles() {
     this.scoringProfilesDialog?.nativeElement.showModal();
   }
@@ -316,11 +360,51 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     });
   }
 
+  openConfirmDialog(options: {
+    title: string;
+    message: string;
+    dangerNotice?: string;
+    buttonText?: string;
+    buttonClass?: string;
+    action: () => void;
+  }) {
+    this.confirmDialogTitle = options.title;
+    this.confirmDialogMessage = options.message;
+    this.confirmDialogDangerNotice = options.dangerNotice || '';
+    this.confirmDialogButtonText = options.buttonText || 'Delete';
+    this.confirmDialogButtonClass = options.buttonClass || 'btn-gh btn-gh-danger';
+    this.pendingConfirmAction = options.action;
+    this.confirmActionDialog?.nativeElement.showModal();
+  }
+
+  closeConfirmDialog() {
+    this.confirmActionDialog?.nativeElement.close();
+    this.pendingConfirmAction = null;
+  }
+
+  executeConfirmAction() {
+    const action = this.pendingConfirmAction;
+    this.closeConfirmDialog();
+    if (action) {
+      action();
+    }
+  }
+
   deleteProfile(profileId: number) {
-    if (!confirm('Are you sure you want to delete this scoring profile?')) return;
-    this.benchmarkService.deleteScoringProfile(profileId).subscribe({
-      next: () => this.loadProfiles(),
-      error: (err) => alert(err?.error || 'Failed to delete profile.')
+    const profile = this.scoringProfiles.find(p => p.id === profileId);
+    const name = profile ? `"${profile.name}"` : 'this scoring profile';
+    this.openConfirmDialog({
+      title: 'Delete Scoring Profile',
+      message: `Are you sure you want to delete ${name}?`,
+      dangerNotice: 'This action is permanent and cannot be undone.',
+      buttonText: 'Delete Profile',
+      buttonClass: 'btn-gh btn-gh-danger',
+      action: () => {
+        this.benchmarkService.deleteScoringProfile(profileId).subscribe({
+          next: () => this.loadProfiles(),
+          error: (err) => console.error('Failed to delete profile', err)
+        });
+      }
     });
   }
 
@@ -335,11 +419,55 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
         if (this.suites.length > 0 && (!this.selectedSuiteId || !this.suites.some(s => s.id === this.selectedSuiteId))) {
           this.selectedSuiteId = this.suites[0].id;
         }
+        this.loadAllFootprints();
         this.cdr.detectChanges();
       },
       error: (err) => {
         this.loadingSuites = false;
         console.error('Failed to load benchmark suites', err);
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  loadAllFootprints() {
+    for (const suite of this.suites) {
+      this.benchmarkService.getSuiteRunsFootprint(suite.id).subscribe({
+        next: (fp) => {
+          this.footprints[suite.id] = fp;
+          this.cdr.detectChanges();
+        },
+        error: (err) => console.error(`Failed to load footprint for suite ${suite.id}`, err)
+      });
+    }
+  }
+
+  openBulkDeleteDialog(suite: BenchmarkSuiteDto) {
+    this.suiteForBulkDelete = suite;
+    this.bulkDeleteDialog?.nativeElement.showModal();
+  }
+
+  closeBulkDeleteDialog() {
+    this.suiteForBulkDelete = null;
+    this.bulkDeleteDialog?.nativeElement.close();
+  }
+
+  confirmDeleteSuiteRuns() {
+    if (!this.suiteForBulkDelete) return;
+    const suiteId = this.suiteForBulkDelete.id;
+    this.deletingSuiteRuns = true;
+
+    this.benchmarkService.deleteSuiteRuns(suiteId).subscribe({
+      next: () => {
+        this.deletingSuiteRuns = false;
+        this.closeBulkDeleteDialog();
+        this.loadHistory();
+        this.loadAllFootprints();
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.deletingSuiteRuns = false;
+        alert(err?.error || 'Failed to delete suite runs.');
         this.cdr.detectChanges();
       }
     });
@@ -381,10 +509,20 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   deleteSuite(id: number) {
-    if (!confirm('Are you sure you want to delete this benchmark suite?')) return;
-    this.benchmarkService.deleteSuite(id).subscribe({
-      next: () => this.loadSuites(),
-      error: (err) => console.error('Failed to delete suite', err)
+    const suite = this.suites.find(s => s.id === id);
+    const name = suite ? `"${suite.name}"` : 'this benchmark suite';
+    this.openConfirmDialog({
+      title: 'Delete Benchmark Suite',
+      message: `Are you sure you want to delete ${name}?`,
+      dangerNotice: 'This action is permanent and will delete the suite and all its questions.',
+      buttonText: 'Delete Suite',
+      buttonClass: 'btn-gh btn-gh-danger',
+      action: () => {
+        this.benchmarkService.deleteSuite(id).subscribe({
+          next: () => this.loadSuites(),
+          error: (err) => console.error('Failed to delete suite', err)
+        });
+      }
     });
   }
 
@@ -513,15 +651,23 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   deleteQuestion(id: number) {
-    if (!confirm('Are you sure you want to delete this question?')) return;
-    this.benchmarkService.deleteQuestion(id).subscribe({
-      next: () => {
-        if (this.currentSuiteForQuestions) {
-          this.loadQuestions(this.currentSuiteForQuestions.id);
-          this.loadSuites();
-        }
-      },
-      error: (err) => console.error('Failed to delete question', err)
+    this.openConfirmDialog({
+      title: 'Delete Benchmark Question',
+      message: 'Are you sure you want to delete this question?',
+      dangerNotice: 'This action is permanent and cannot be undone.',
+      buttonText: 'Delete Question',
+      buttonClass: 'btn-gh btn-gh-danger',
+      action: () => {
+        this.benchmarkService.deleteQuestion(id).subscribe({
+          next: () => {
+            if (this.currentSuiteForQuestions) {
+              this.loadQuestions(this.currentSuiteForQuestions.id);
+              this.loadSuites();
+            }
+          },
+          error: (err) => console.error('Failed to delete question', err)
+        });
+      }
     });
   }
 
@@ -623,7 +769,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
 
   // --- Run Execution ---
 
-  startBenchmark() {
+  startBenchmark(acknowledgeSameProvider: boolean = false) {
     if (!this.selectedSuiteId || !this.testedConfigId || !this.assessorConfigId) return;
 
     this.startingRun = true;
@@ -633,23 +779,41 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       suiteId: this.selectedSuiteId,
       testedModelConfigurationId: this.testedConfigId,
       assessorModelConfigurationId: this.assessorConfigId,
-      scoringProfileId: this.selectedScoringProfileId
+      scoringProfileId: this.selectedScoringProfileId,
+      acknowledgeSameProvider: acknowledgeSameProvider
     };
 
     this.benchmarkService.startRun(req).subscribe({
       next: (res) => {
         this.startingRun = false;
+        this.sameProviderDialog?.nativeElement.close();
+        this.sameProviderWarning = null;
         this.activeRunId = res.runId;
         this.startPolling(res.runId);
         this.loadHistory();
+        this.loadAllFootprints();
         this.cdr.detectChanges();
       },
       error: (err) => {
         this.startingRun = false;
-        this.runErrorMessage = err?.error || 'Failed to start benchmark run.';
+        if (err?.status === 409 && err.error?.sameProvider) {
+          this.sameProviderWarning = err.error as SameProviderWarningDto;
+          this.sameProviderDialog?.nativeElement.showModal();
+        } else {
+          this.runErrorMessage = err?.error || 'Failed to start benchmark run.';
+        }
         this.cdr.detectChanges();
       }
     });
+  }
+
+  closeSameProviderDialog() {
+    this.sameProviderDialog?.nativeElement.close();
+    this.sameProviderWarning = null;
+  }
+
+  confirmSameProviderRun() {
+    this.startBenchmark(true);
   }
 
   cancelActiveRun() {
@@ -789,15 +953,24 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   deleteRun(runId: number) {
-    if (!confirm('Are you sure you want to delete this benchmark run?')) return;
-    this.benchmarkService.deleteRun(runId).subscribe({
-      next: () => {
-        if (this.selectedRunDetail?.id === runId) {
-          this.closeRunDetail();
-        }
-        this.loadHistory();
-      },
-      error: (err) => console.error('Failed to delete run', err)
+    this.openConfirmDialog({
+      title: 'Delete Benchmark Run',
+      message: `Are you sure you want to delete benchmark run #${runId}?`,
+      dangerNotice: 'This action is permanent and cannot be undone.',
+      buttonText: 'Delete Run',
+      buttonClass: 'btn-gh btn-gh-danger',
+      action: () => {
+        this.benchmarkService.deleteRun(runId).subscribe({
+          next: () => {
+            if (this.selectedRunDetail?.id === runId) {
+              this.closeRunDetail();
+            }
+            this.loadHistory();
+            this.loadAllFootprints();
+          },
+          error: (err) => console.error('Failed to delete run', err)
+        });
+      }
     });
   }
 

@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using MobileGnollHackLogger.Data;
 
@@ -11,9 +12,11 @@ using MobileGnollHackLogger.Data;
 namespace GnollHackServer.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260901203341_WidenBenchmarkSuiteDescription")]
+    partial class WidenBenchmarkSuiteDescription
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -362,15 +365,8 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<int>("MaxParallelQuestionsUsed")
                         .HasColumnType("int");
 
-                    b.Property<string>("PurposeStatementUsed")
-                        .HasMaxLength(2048)
-                        .HasColumnType("nvarchar(2048)");
-
                     b.Property<int?>("QualityIndex")
                         .HasColumnType("int");
-
-                    b.Property<bool>("SameProviderAcknowledged")
-                        .HasColumnType("bit");
 
                     b.Property<int>("ScoringMethodVersion")
                         .HasColumnType("int");
@@ -470,8 +466,6 @@ namespace GnollHackServer.Data.Migrations
                     b.HasIndex("BenchmarkSuiteId");
 
                     b.HasIndex("ScoringProfileId");
-
-                    b.HasIndex("StartedAtUtc");
 
                     b.HasIndex("StartedByUserId");
 
@@ -673,7 +667,8 @@ namespace GnollHackServer.Data.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<string>("Description")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)");
 
                     b.Property<DateTime>("ModifiedAtUtc")
                         .HasColumnType("datetime2");
