@@ -47,6 +47,11 @@ export interface UpdateBenchmarkScoringProfileRequest {
   maxParallelQuestions: number;
 }
 
+export interface RateSuiteDifficultyResultDto {
+  ratedCount: number;
+  suite: BenchmarkSuiteDto;
+}
+
 export interface BenchmarkSuiteDto {
   id: number;
   name: string;
@@ -54,6 +59,8 @@ export interface BenchmarkSuiteDto {
   createdAtUtc: string;
   modifiedAtUtc: string | null;
   questionCount: number;
+  assessedQuestionCount: number;
+  difficultyFullyAssessed: boolean;
 }
 
 export interface CreateBenchmarkSuiteRequest {
@@ -76,6 +83,14 @@ export interface BenchmarkQuestionDto {
   assessedDifficulty?: number | null;
   assessedDifficultyModel?: string | null;
   assessedDifficultyAtUtc?: string | null;
+  assessedDifficultyModelConfigurationId?: number | null;
+  assessedDifficultyProviderUsed?: string | null;
+  assessedDifficultyModelIdUsed?: string | null;
+  assessedDifficultyThinkingLevelUsed?: string | null;
+  assessedDifficultyReasoningModeUsed?: string | null;
+  assessedDifficultyReasoningSummaryUsed?: string | null;
+  assessedDifficultyServiceTierUsed?: string | null;
+  assessedDifficultyMaxOutputTokensUsed?: number | null;
   createdAtUtc: string;
   modifiedAtUtc?: string | null;
 }
@@ -259,8 +274,8 @@ export class AdminBenchmarkService {
   }
 
   // Difficulty Rating
-  rateSuiteDifficulty(suiteId: number, assessorModelConfigurationId: number): Observable<{ ratedCount: number }> {
-    return this.http.post<{ ratedCount: number }>(`/api/admin/benchmark/suites/${suiteId}/rate-difficulty`, { assessorModelConfigurationId });
+  rateSuiteDifficulty(suiteId: number, assessorModelConfigurationId: number): Observable<RateSuiteDifficultyResultDto> {
+    return this.http.post<RateSuiteDifficultyResultDto>(`/api/admin/benchmark/suites/${suiteId}/rate-difficulty`, { assessorModelConfigurationId });
   }
 
   rateQuestionDifficulty(questionId: number, assessorModelConfigurationId: number): Observable<{ difficulty: number }> {
@@ -301,8 +316,8 @@ export class AdminBenchmarkService {
     return this.http.post<BenchmarkQuestionDto>(`/api/admin/benchmark/suites/${suiteId}/questions`, req);
   }
 
-  updateQuestion(id: number, req: UpdateBenchmarkQuestionRequest): Observable<void> {
-    return this.http.put<void>(`/api/admin/benchmark/questions/${id}`, req);
+  updateQuestion(id: number, req: UpdateBenchmarkQuestionRequest): Observable<BenchmarkQuestionDto> {
+    return this.http.put<BenchmarkQuestionDto>(`/api/admin/benchmark/questions/${id}`, req);
   }
 
   deleteQuestion(id: number): Observable<void> {

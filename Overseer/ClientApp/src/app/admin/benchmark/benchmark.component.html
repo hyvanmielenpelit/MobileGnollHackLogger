@@ -75,6 +75,15 @@
                   <option [ngValue]="suite.id">{{ suite.name }} ({{ suite.questionCount }} questions)</option>
                 }
               </select>
+              @if (selectedSuite && !selectedSuite.difficultyFullyAssessed) {
+                <div class="alert alert-warning mt-10">
+                  <strong>{{ difficultyProgressLabel(selectedSuite) }}.</strong>
+                  Every question must have an assessed difficulty before this suite can be run.
+                  <button type="button" class="btn-link" (click)="openDifficultyAssessorDialog(selectedSuite)">
+                    Assess question difficulty
+                  </button>
+                </div>
+              }
             </div>
 
             <div class="form-group">
@@ -206,7 +215,7 @@
         <div class="form-actions mt-20">
           <button
             class="btn-gh btn-gh-primary"
-            [disabled]="startingRun || !selectedSuiteId || !testedConfigId || !assessorConfigId || (activeRunDetail && formatStatus(activeRunDetail.status) === 'Running')"
+            [disabled]="!canStartRun"
             (click)="startBenchmark()">
             @if (startingRun) {
               Starting...
@@ -340,6 +349,15 @@
               <div class="suite-title-group">
                 <h4>{{ suite.name }}</h4>
                 <span class="question-count-badge">{{ suite.questionCount }} Questions</span>
+                <span class="suite-assessment-badge" [class]="'assess-' + difficultyProgressClass(suite)"
+                      [title]="'Only suites with every question assessed can be run.'">
+                  @if (suite.difficultyFullyAssessed) {
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                  } @else {
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                  }
+                  {{ difficultyProgressLabel(suite) }}
+                </span>
               </div>
               <div class="suite-top-actions">
                 <button class="action-btn" (click)="openEditSuite(suite)" title="Edit Suite">
@@ -374,9 +392,9 @@
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
                 Manage Questions
               </button>
-              <button class="btn-gh" (click)="rateSuiteDifficulty(suite.id)" [disabled]="ratingDifficulty" title="Auto-rate difficulty for all questions">
+              <button class="btn-gh" (click)="openDifficultyAssessorDialog(suite)" [disabled]="ratingDifficulty" title="Auto-rate difficulty for all questions">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polygon points="12 8 8 12 12 16 16 12 12 8"></polygon></svg>
-                {{ ratingDifficulty ? 'Rating...' : 'AI Rate Difficulty' }}
+                {{ ratingDifficulty ? 'Assessing...' : 'Assess Question Difficulty' }}
               </button>
               @if (footprints[suite.id] && footprints[suite.id].runCount > 0) {
                 <button class="btn-gh btn-gh-danger" (click)="openBulkDeleteDialog(suite)" title="Delete all runs for this suite">
@@ -767,9 +785,9 @@
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             Add Question
           </button>
-          <button class="btn-gh" (click)="rateSuiteDifficulty(currentSuiteForQuestions.id)" [disabled]="ratingDifficulty">
+          <button class="btn-gh" (click)="openDifficultyAssessorDialog(currentSuiteForQuestions!)" [disabled]="ratingDifficulty">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polygon points="12 8 8 12 12 16 16 12 12 8"></polygon></svg>
-            {{ ratingDifficulty ? 'Rating...' : 'AI Auto-Rate All Difficulties' }}
+            {{ ratingDifficulty ? 'Assessing...' : 'AI Auto-Rate All Difficulties' }}
           </button>
         </div>
 
@@ -803,7 +821,7 @@
                   </div>
 
                   <div class="card-actions-group">
-                    <button class="action-btn" (click)="rateQuestionDifficulty(q.id)" [disabled]="ratingQuestionId === q.id" title="Auto-rate Difficulty with AI">
+                    <button class="action-btn" (click)="openDifficultyAssessorDialog(currentSuiteForQuestions!, q)" [disabled]="ratingQuestionId === q.id" title="Auto-rate Difficulty with AI">
                       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="12 8 8 12 12 16 16 12 12 8"></polygon></svg>
                     </button>
                     <button class="action-btn" (click)="openEditQuestion(q)" title="Edit Question">
@@ -814,6 +832,29 @@
                     </button>
                   </div>
                 </div>
+
+                @if (q.assessedDifficulty != null && q.assessedDifficultyModel) {
+                  <div class="q-assessor-info">
+                    <span class="q-assessor-label">Assessed by</span>
+                    <span class="q-model-name">{{ q.assessedDifficultyModel }}</span>
+                    @if (q.assessedDifficultyThinkingLevelUsed) {
+                      <span class="q-model-badge">{{ formatThinkingLevel(q.assessedDifficultyThinkingLevelUsed) }}</span>
+                    }
+                    @if (showReasoningBadge(q.assessedDifficultyReasoningModeUsed)) {
+                      <span class="q-model-badge">{{ q.assessedDifficultyReasoningModeUsed }}</span>
+                    }
+                    @if (q.assessedDifficultyServiceTierUsed) {
+                      <span class="q-model-badge">{{ formatServiceTier(q.assessedDifficultyServiceTierUsed) }}</span>
+                    }
+                    @if (q.assessedDifficultyAtUtc) {
+                      <span class="q-assessor-time" [title]="q.assessedDifficultyAtUtc | date:'medium'">
+                        {{ q.assessedDifficultyAtUtc | date:'shortDate' }}
+                      </span>
+                    }
+                  </div>
+                } @else {
+                  <div class="q-assessor-info q-not-assessed">Difficulty not assessed</div>
+                }
 
                 <!-- Middle Row: Question Prompt Text (Full Width) -->
                 <div class="question-text-row">
@@ -976,6 +1017,90 @@
       <button class="btn-gh" (click)="closeConfirmDialog()">Cancel</button>
       <button [class]="confirmDialogButtonClass || 'btn-gh btn-gh-danger'" (click)="executeConfirmAction()">
         {{ confirmDialogButtonText || 'Delete' }}
+      </button>
+    </div>
+  </div>
+</dialog>
+
+<!-- DIFFICULTY ASSESSOR DIALOG -->
+<dialog #difficultyAssessorDialog class="gh-dialog benchmark-form-dialog difficulty-assessor-dialog" (cancel)="closeDifficultyAssessorDialog()">
+  <div class="dialog-content flex-col">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3>Assess Question Difficulty</h3>
+      </div>
+      <button type="button" class="btn-icon-action" aria-label="Close dialog" (click)="closeDifficultyAssessorDialog()" title="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="dialog-body">
+      <p class="text-muted mb-15">
+        Select the model that will rate the intrinsic difficulty (1–100) of
+        {{ difficultyAssessmentScope === 'suite'
+            ? (suiteForDifficultyAssessment?.name + ' — ' + (suiteForDifficultyAssessment?.questionCount || 0) + ' questions')
+            : 'this question' }}.
+        The selected model and its settings are stored with each assessed question.
+      </p>
+
+      <div class="form-group mb-15">
+        <label>Assessment Model</label>
+        <div class="custom-model-selector difficulty-assessor-model-selector">
+          <button type="button" class="selector-trigger" (click)="toggleDifficultyAssessorDropdown($event)" [class.open]="isDifficultyAssessorDropdownOpen">
+            <span class="model-name" [class.text-muted]="!selectedDifficultyAssessorModel">{{ selectedDifficultyAssessorModel?.displayName || selectedDifficultyAssessorModel?.modelId || 'Select Model' }}</span>
+            @if (selectedDifficultyAssessorModel?.thinkingLevel) {
+              <span class="thinking-badge">{{ formatThinkingLevel(selectedDifficultyAssessorModel?.thinkingLevel) }}</span>
+            }
+            @if (showReasoningBadge(selectedDifficultyAssessorModel?.reasoningMode)) {
+              <span class="reasoning-badge">{{ selectedDifficultyAssessorModel?.reasoningMode }}</span>
+            }
+            @if (selectedDifficultyAssessorModel?.provider) {
+              <span class="provider-badge">{{ selectedDifficultyAssessorModel?.provider }}</span>
+            }
+            @if (selectedDifficultyAssessorModel?.parallelExecutionMode === 0) {
+              <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
+            }
+            @if (selectedDifficultyAssessorModel?.parallelExecutionMode === 1) {
+              <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
+            }
+            <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </button>
+          @if (isDifficultyAssessorDropdownOpen) {
+            <div class="selector-dropdown">
+              @if (benchmarkCapableConfigs.length === 0) {
+                <div class="empty-dropdown-hint">No system AI configs with the Benchmark role are enabled. Enable the Benchmark role in System Configs.</div>
+              }
+              @for (model of benchmarkCapableConfigs; track model.id) {
+                <div class="model-option" (click)="selectDifficultyAssessorModel(model)" [class.selected]="difficultyAssessorConfigId === model.id">
+                  <span class="model-name">{{ model.displayName || model.modelId }}</span>
+                  @if (model.thinkingLevel) {
+                    <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
+                  }
+                  @if (showReasoningBadge(model.reasoningMode)) {
+                    <span class="reasoning-badge">{{ model.reasoningMode }}</span>
+                  }
+                  <span class="provider-badge">{{ model.provider }}</span>
+                  @if (model.parallelExecutionMode === 0) {
+                    <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
+                  }
+                  @if (model.parallelExecutionMode === 1) {
+                    <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
+                  }
+                </div>
+              }
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+    <div class="dialog-footer">
+      <button class="btn-gh" (click)="closeDifficultyAssessorDialog()">Cancel</button>
+      <button class="btn-gh btn-gh-primary"
+              [disabled]="!difficultyAssessorConfigId || ratingDifficulty"
+              (click)="confirmDifficultyAssessment()">
+        {{ ratingDifficulty ? 'Assessing...' : 'Assess Difficulty' }}
       </button>
     </div>
   </div>

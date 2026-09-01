@@ -142,26 +142,7 @@ public class BenchmarkService
                 .OrderBy(q => q.OrderIndex)
                 .ToList();
 
-            // Auto-rate difficulty if any question is unrated or modified after rating
-            bool anyUnrated = questions.Any(q => !q.AssessedDifficulty.HasValue || (q.AssessedDifficultyAtUtc.HasValue && q.AssessedDifficultyAtUtc < q.ModifiedAtUtc));
-            if (anyUnrated && run.BenchmarkSuiteId.HasValue)
-            {
-                try
-                {
-                    _logger.LogInformation("Auto-rating difficulty for suite {SuiteId} prior to benchmark run.", run.BenchmarkSuiteId.Value);
-                    await RateSuiteDifficultyInternalAsync(db, configService, run.BenchmarkSuiteId.Value, assessorConfig, assessorApiKey, cancellationToken);
-                    // Reload questions to pick up new difficulty values
-                    questions = await db.BenchmarkQuestions
-                        .Where(q => q.BenchmarkSuiteId == run.BenchmarkSuiteId.Value)
-                        .OrderBy(q => q.OrderIndex)
-                        .ToListAsync(cancellationToken);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Auto difficulty rating failed; falling back to authored bands.");
-                    run.DifficultyFallbackUsed = true;
-                }
-            }
+
 
             run.TotalQuestionCount = questions.Count;
             int maxParallel = profile.MaxParallelQuestions;
@@ -1097,9 +1078,7 @@ public class BenchmarkService
         }
 
         var rated = parseResult.Items.First();
-        question.AssessedDifficulty = rated.Difficulty;
-        question.AssessedDifficultyModel = assessorConfig.DisplayName ?? assessorConfig.ModelId;
-        question.AssessedDifficultyAtUtc = DateTime.UtcNow;
+        BenchmarkQuestionAssessment.ApplySnapshot(question, rated.Difficulty, assessorConfig, DateTime.UtcNow);
 
         await db.SaveChangesAsync(cancellationToken);
 
@@ -1199,9 +1178,7 @@ public class BenchmarkService
         {
             if (ratingsById.TryGetValue(q.Id, out var item))
             {
-                q.AssessedDifficulty = item.Difficulty;
-                q.AssessedDifficultyModel = assessorConfig.DisplayName ?? assessorConfig.ModelId;
-                q.AssessedDifficultyAtUtc = DateTime.UtcNow;
+                BenchmarkQuestionAssessment.ApplySnapshot(q, item.Difficulty, assessorConfig, DateTime.UtcNow);
                 ratedCount++;
             }
         }

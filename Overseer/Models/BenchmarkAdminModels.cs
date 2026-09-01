@@ -12,6 +12,8 @@ public class BenchmarkSuiteDto
     public DateTime CreatedAtUtc { get; set; }
     public DateTime? ModifiedAtUtc { get; set; }
     public int QuestionCount { get; set; }
+    public int AssessedQuestionCount { get; set; }
+    public bool DifficultyFullyAssessed { get; set; }
 }
 
 public class CreateBenchmarkSuiteRequest
@@ -37,6 +39,14 @@ public class BenchmarkQuestionDto
     public int? AssessedDifficulty { get; set; }
     public string? AssessedDifficultyModel { get; set; }
     public DateTime? AssessedDifficultyAtUtc { get; set; }
+    public long? AssessedDifficultyModelConfigurationId { get; set; }
+    public string? AssessedDifficultyProviderUsed { get; set; }
+    public string? AssessedDifficultyModelIdUsed { get; set; }
+    public string? AssessedDifficultyThinkingLevelUsed { get; set; }
+    public string? AssessedDifficultyReasoningModeUsed { get; set; }
+    public string? AssessedDifficultyReasoningSummaryUsed { get; set; }
+    public string? AssessedDifficultyServiceTierUsed { get; set; }
+    public int? AssessedDifficultyMaxOutputTokensUsed { get; set; }
     public DateTime CreatedAtUtc { get; set; }
     public DateTime ModifiedAtUtc { get; set; }
 }
@@ -261,4 +271,10 @@ public class BenchmarkRunSummaryDto
     public int AnsweredQuestionCount { get; set; }
     public int TotalQuestionCount { get; set; }
     public long TotalDurationMs { get; set; }
+}
+
+public class RateSuiteDifficultyResultDto
+{
+    public int RatedCount { get; set; }
+    public BenchmarkSuiteDto Suite { get; set; } = new();
 }

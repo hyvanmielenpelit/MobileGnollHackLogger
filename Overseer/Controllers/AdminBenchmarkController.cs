@@ -41,6 +41,41 @@ public class AdminBenchmarkController : ControllerBase
         _complianceGuard = complianceGuard;
     }
 
+    private static BenchmarkSuiteDto ToSuiteDto(BenchmarkSuite s) => new()
+    {
+        Id = s.Id,
+        Name = s.Name,
+        Description = s.Description,
+        CreatedAtUtc = s.CreatedAtUtc,
+        ModifiedAtUtc = s.ModifiedAtUtc,
+        QuestionCount = s.Questions.Count,
+        AssessedQuestionCount = s.Questions.Count(q => q.AssessedDifficulty != null),
+        DifficultyFullyAssessed = s.Questions.Count > 0 && s.Questions.Count(q => q.AssessedDifficulty != null) == s.Questions.Count
+    };
+
+    private static BenchmarkQuestionDto ToQuestionDto(BenchmarkQuestion q) => new()
+    {
+        Id = q.Id,
+        BenchmarkSuiteId = q.BenchmarkSuiteId,
+        OrderIndex = q.OrderIndex,
+        QuestionText = q.QuestionText,
+        Difficulty = q.Difficulty,
+        ExpectedPoints = q.ExpectedPoints,
+        AssessedDifficulty = q.AssessedDifficulty,
+        AssessedDifficultyModel = q.AssessedDifficultyModel,
+        AssessedDifficultyAtUtc = q.AssessedDifficultyAtUtc,
+        AssessedDifficultyModelConfigurationId = q.AssessedDifficultyModelConfigurationId,
+        AssessedDifficultyProviderUsed = q.AssessedDifficultyProviderUsed,
+        AssessedDifficultyModelIdUsed = q.AssessedDifficultyModelIdUsed,
+        AssessedDifficultyThinkingLevelUsed = q.AssessedDifficultyThinkingLevelUsed,
+        AssessedDifficultyReasoningModeUsed = q.AssessedDifficultyReasoningModeUsed,
+        AssessedDifficultyReasoningSummaryUsed = q.AssessedDifficultyReasoningSummaryUsed,
+        AssessedDifficultyServiceTierUsed = q.AssessedDifficultyServiceTierUsed,
+        AssessedDifficultyMaxOutputTokensUsed = q.AssessedDifficultyMaxOutputTokensUsed,
+        CreatedAtUtc = q.CreatedAtUtc,
+        ModifiedAtUtc = q.ModifiedAtUtc
+    };
+
     // --- Scoring Profiles CRUD ---
 
     [HttpGet("scoring-profiles")]
@@ -193,7 +228,12 @@ public class AdminBenchmarkController : ControllerBase
         {
             return BadRequest(error ?? "Failed to rate suite difficulty.");
         }
-        return Ok(new { ratedCount = count });
+        
+        var suite = await _dbContext.BenchmarkSuites
+            .Include(s => s.Questions)
+            .FirstOrDefaultAsync(s => s.Id == id);
+            
+        return Ok(new RateSuiteDifficultyResultDto { RatedCount = count, Suite = ToSuiteDto(suite!) });
     }
 
     [HttpPost("questions/{id}/rate-difficulty")]
@@ -224,16 +264,9 @@ public class AdminBenchmarkController : ControllerBase
         }
 
         var suites = await _dbContext.BenchmarkSuites
+            .Include(s => s.Questions)
             .OrderBy(s => s.Name)
-            .Select(s => new BenchmarkSuiteDto
-            {
-                Id = s.Id,
-                Name = s.Name,
-                Description = s.Description,
-                CreatedAtUtc = s.CreatedAtUtc,
-                ModifiedAtUtc = s.ModifiedAtUtc,
-                QuestionCount = s.Questions.Count
-            })
+            .Select(s => ToSuiteDto(s))
             .ToListAsync();
 
         return Ok(suites);
@@ -269,7 +302,9 @@ public class AdminBenchmarkController : ControllerBase
             Description = suite.Description,
             CreatedAtUtc = suite.CreatedAtUtc,
             ModifiedAtUtc = suite.ModifiedAtUtc,
-            QuestionCount = 0
+            QuestionCount = 0,
+            AssessedQuestionCount = 0,
+            DifficultyFullyAssessed = false
         });
     }
 
@@ -351,6 +386,14 @@ public class AdminBenchmarkController : ControllerBase
                 AssessedDifficulty = q.AssessedDifficulty,
                 AssessedDifficultyModel = q.AssessedDifficultyModel,
                 AssessedDifficultyAtUtc = q.AssessedDifficultyAtUtc,
+                AssessedDifficultyModelConfigurationId = q.AssessedDifficultyModelConfigurationId,
+                AssessedDifficultyProviderUsed = q.AssessedDifficultyProviderUsed,
+                AssessedDifficultyModelIdUsed = q.AssessedDifficultyModelIdUsed,
+                AssessedDifficultyThinkingLevelUsed = q.AssessedDifficultyThinkingLevelUsed,
+                AssessedDifficultyReasoningModeUsed = q.AssessedDifficultyReasoningModeUsed,
+                AssessedDifficultyReasoningSummaryUsed = q.AssessedDifficultyReasoningSummaryUsed,
+                AssessedDifficultyServiceTierUsed = q.AssessedDifficultyServiceTierUsed,
+                AssessedDifficultyMaxOutputTokensUsed = q.AssessedDifficultyMaxOutputTokensUsed,
                 CreatedAtUtc = DateTime.UtcNow,
                 ModifiedAtUtc = DateTime.UtcNow
             });
@@ -379,15 +422,7 @@ public class AdminBenchmarkController : ControllerBase
             return BadRequest("Default suite file not found.");
         }
 
-        return Ok(new BenchmarkSuiteDto
-        {
-            Id = suite.Id,
-            Name = suite.Name,
-            Description = suite.Description,
-            CreatedAtUtc = suite.CreatedAtUtc,
-            ModifiedAtUtc = suite.ModifiedAtUtc,
-            QuestionCount = suite.Questions.Count
-        });
+        return Ok(ToSuiteDto(suite));
     }
 
     private async Task<BenchmarkSuite?> EnsureDefaultSuiteInternalAsync(bool forceNewCopy = false)
@@ -474,20 +509,7 @@ public class AdminBenchmarkController : ControllerBase
         var questions = await _dbContext.BenchmarkQuestions
             .Where(q => q.BenchmarkSuiteId == suiteId)
             .OrderBy(q => q.OrderIndex)
-            .Select(q => new BenchmarkQuestionDto
-            {
-                Id = q.Id,
-                BenchmarkSuiteId = q.BenchmarkSuiteId,
-                OrderIndex = q.OrderIndex,
-                QuestionText = q.QuestionText,
-                Difficulty = q.Difficulty,
-                ExpectedPoints = q.ExpectedPoints,
-                AssessedDifficulty = q.AssessedDifficulty,
-                AssessedDifficultyModel = q.AssessedDifficultyModel,
-                AssessedDifficultyAtUtc = q.AssessedDifficultyAtUtc,
-                CreatedAtUtc = q.CreatedAtUtc,
-                ModifiedAtUtc = q.ModifiedAtUtc
-            })
+            .Select(q => ToQuestionDto(q))
             .ToListAsync();
 
         return Ok(questions);
@@ -530,20 +552,7 @@ public class AdminBenchmarkController : ControllerBase
         _dbContext.BenchmarkQuestions.Add(question);
         await _dbContext.SaveChangesAsync();
 
-        return Ok(new BenchmarkQuestionDto
-        {
-            Id = question.Id,
-            BenchmarkSuiteId = question.BenchmarkSuiteId,
-            OrderIndex = question.OrderIndex,
-            QuestionText = question.QuestionText,
-            Difficulty = question.Difficulty,
-            ExpectedPoints = question.ExpectedPoints,
-            AssessedDifficulty = question.AssessedDifficulty,
-            AssessedDifficultyModel = question.AssessedDifficultyModel,
-            AssessedDifficultyAtUtc = question.AssessedDifficultyAtUtc,
-            CreatedAtUtc = question.CreatedAtUtc,
-            ModifiedAtUtc = question.ModifiedAtUtc
-        });
+        return Ok(ToQuestionDto(question));
     }
 
     [HttpPut("questions/{id}")]
@@ -557,16 +566,27 @@ public class AdminBenchmarkController : ControllerBase
         var question = await _dbContext.BenchmarkQuestions.FindAsync(id);
         if (question == null) return NotFound();
 
-        question.QuestionText = request.QuestionText.Trim();
-        question.Difficulty = request.Difficulty;
-        question.ExpectedPoints = request.ExpectedPoints?.Trim();
-        question.ModifiedAtUtc = DateTime.UtcNow;
+        string newText = request.QuestionText.Trim();
+        string? newPoints = request.ExpectedPoints?.Trim();
 
-        var suite = await _dbContext.BenchmarkSuites.FindAsync(question.BenchmarkSuiteId);
-        if (suite != null) suite.ModifiedAtUtc = DateTime.UtcNow;
+        bool contentChanged = question.QuestionText != newText
+            || question.Difficulty != request.Difficulty
+            || question.ExpectedPoints != newPoints;
+
+        question.QuestionText = newText;
+        question.Difficulty = request.Difficulty;
+        question.ExpectedPoints = newPoints;
+
+        if (contentChanged)
+        {
+            BenchmarkQuestionAssessment.Clear(question);
+            question.ModifiedAtUtc = DateTime.UtcNow;
+            var suite = await _dbContext.BenchmarkSuites.FindAsync(question.BenchmarkSuiteId);
+            if (suite != null) suite.ModifiedAtUtc = DateTime.UtcNow;
+        }
 
         await _dbContext.SaveChangesAsync();
-        return Ok();
+        return Ok(ToQuestionDto(question));
     }
 
     [HttpDelete("questions/{id}")]
@@ -642,6 +662,15 @@ public class AdminBenchmarkController : ControllerBase
 
         if (suite == null) return NotFound("Benchmark suite not found.");
         if (suite.Questions.Count == 0) return BadRequest("Benchmark suite has no questions.");
+
+        int unassessedCount = suite.Questions.Count(q => q.AssessedDifficulty == null);
+        if (unassessedCount > 0)
+        {
+            return BadRequest(
+                $"Benchmark suite '{suite.Name}' has {unassessedCount} of {suite.Questions.Count} " +
+                "question(s) without an assessed difficulty. Assess question difficulty for the whole " +
+                "suite before running a benchmark.");
+        }
 
         var testedConfig = await _dbContext.SystemAiApiConfigurations.FindAsync(request.TestedModelConfigurationId);
         var assessorConfig = await _dbContext.SystemAiApiConfigurations.FindAsync(request.AssessorModelConfigurationId);

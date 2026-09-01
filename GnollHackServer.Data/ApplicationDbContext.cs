@@ -107,6 +107,12 @@ namespace MobileGnollHackLogger.Data
                 .HasForeignKey(q => q.BenchmarkSuiteId)
                 .OnDelete(DeleteBehavior.Cascade);
 
+            modelBuilder.Entity<BenchmarkQuestion>()
+                .HasOne(q => q.AssessedDifficultyModelConfiguration)
+                .WithMany()
+                .HasForeignKey(q => q.AssessedDifficultyModelConfigurationId)
+                .OnDelete(DeleteBehavior.ClientSetNull);
+
             modelBuilder.Entity<BenchmarkRun>()
                 .HasOne(r => r.BenchmarkSuite)
                 .WithMany(s => s.Runs)

@@ -25,6 +25,31 @@ public class BenchmarkQuestion
 
     public DateTime? AssessedDifficultyAtUtc { get; set; }
 
+    // Difficulty assessor snapshot (the model that produced AssessedDifficulty).
+    // AssessedDifficultyModel above holds the display name; these hold the rest of its settings.
+    public long? AssessedDifficultyModelConfigurationId { get; set; }
+    public SystemAiApiConfiguration? AssessedDifficultyModelConfiguration { get; set; }
+
+    [MaxLength(64)]
+    public string? AssessedDifficultyProviderUsed { get; set; }
+
+    [MaxLength(128)]
+    public string? AssessedDifficultyModelIdUsed { get; set; }
+
+    [MaxLength(32)]
+    public string? AssessedDifficultyThinkingLevelUsed { get; set; }
+
+    [MaxLength(32)]
+    public string? AssessedDifficultyReasoningModeUsed { get; set; }
+
+    [MaxLength(32)]
+    public string? AssessedDifficultyReasoningSummaryUsed { get; set; }
+
+    [MaxLength(64)]
+    public string? AssessedDifficultyServiceTierUsed { get; set; }
+
+    public int? AssessedDifficultyMaxOutputTokensUsed { get; set; }
+
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 
     public DateTime ModifiedAtUtc { get; set; } = DateTime.UtcNow;

@@ -667,6 +667,39 @@
   border: 1px solid rgba(224, 186, 109, 0.3);
 }
 
+.suite-assessment-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+
+  svg {
+    flex-shrink: 0;
+  }
+
+  &.assess-complete {
+    background: rgba(76, 175, 80, 0.15);
+    color: #81c784;
+    border: 1px solid rgba(76, 175, 80, 0.35);
+  }
+
+  &.assess-partial {
+    background: rgba(255, 152, 0, 0.15);
+    color: #ffb74d;
+    border: 1px solid rgba(255, 152, 0, 0.35);
+  }
+
+  &.assess-none {
+    background: rgba(136, 136, 136, 0.08);
+    color: #9a9a9a;
+    border: 1px solid rgba(136, 136, 136, 0.35);
+  }
+}
+
 .critical-badge {
   display: inline-block;
   padding: 2px 6px;
@@ -930,6 +963,43 @@
     margin-left: auto;
   }
 
+  .q-assessor-info {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 4px 0 8px 0;
+
+    &.q-not-assessed {
+      color: #777;
+      font-style: italic;
+      font-size: 11px;
+    }
+  }
+
+  .q-assessor-label,
+  .q-assessor-time {
+    font-size: 11px;
+    color: #888;
+  }
+
+  .q-model-name {
+    font-size: 11px;
+    color: #888;
+    letter-spacing: 0.5px;
+  }
+
+  .q-model-badge {
+    font-size: 10px;
+    font-weight: 600;
+    color: #888;
+    border: 1px solid rgba(136, 136, 136, 0.4);
+    background: rgba(136, 136, 136, 0.05);
+    padding: 1px 4px;
+    border-radius: 3px;
+    text-transform: uppercase;
+  }
+
   .question-text-row {
     width: 100%;
 
@@ -1082,6 +1152,19 @@
   overflow: hidden;
   border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.15));
   background: rgba(20, 20, 20, 0.98);
+}
+
+.gh-dialog.difficulty-assessor-dialog {
+  overflow: visible;
+
+  .dialog-content {
+    overflow: visible;
+  }
+
+  .dialog-body {
+    overflow: visible;
+    min-height: 220px;
+  }
 }
 
 .gh-dialog.benchmark-questions-dialog[open],

@@ -266,7 +266,7 @@ public class BenchmarkComplianceGuardTests
     private static async Task<(BenchmarkSuite suite, SystemAiApiConfiguration modelA, SystemAiApiConfiguration modelB, SystemAiApiConfiguration modelC)> SeedConfigsAndSuite(ApplicationDbContext db)
     {
         var suite = new BenchmarkSuite { Name = "Test Suite", Description = "Desc" };
-        suite.Questions.Add(new BenchmarkQuestion { QuestionText = "Q1", OrderIndex = 1, Difficulty = BenchmarkDifficulty.Simple });
+        suite.Questions.Add(new BenchmarkQuestion { QuestionText = "Q1", OrderIndex = 1, Difficulty = BenchmarkDifficulty.Simple, AssessedDifficulty = 25 });
         db.BenchmarkSuites.Add(suite);
 
         var modelA = new SystemAiApiConfiguration
@@ -572,5 +572,45 @@ public class BenchmarkComplianceGuardTests
         var fpAfter = Assert.IsType<BenchmarkFootprintDto>(Assert.IsType<OkObjectResult>(fpResultAfter).Value);
         Assert.Equal(0, fpAfter.RunCount);
         Assert.Equal(0, fpAfter.TotalAnswerCharacters);
+    }
+
+    [Fact]
+    public async Task StartRun_RejectsUnassessedSuite_AndAllowsFullyAssessedSuite()
+    {
+        var (controller, db, _) = CreateTestBenchmarkController(maxRunsPerHour: 10);
+        var (suite, modelA, _, modelC) = await SeedConfigsAndSuite(db);
+
+        // Add an unassessed question to the suite
+        suite.Questions.Add(new BenchmarkQuestion
+        {
+            QuestionText = "Q2 Unassessed",
+            OrderIndex = 2,
+            Difficulty = BenchmarkDifficulty.Intermediate,
+            AssessedDifficulty = null
+        });
+        await db.SaveChangesAsync();
+
+        var request = new StartBenchmarkRunRequest
+        {
+            SuiteId = suite.Id,
+            TestedModelConfigurationId = modelA.Id,
+            AssessorModelConfigurationId = modelC.Id,
+            AcknowledgeSameProvider = false
+        };
+
+        // Should be rejected because 1 question is unassessed
+        var rejectedResult = await controller.StartRun(request);
+        var badRequest = Assert.IsType<BadRequestObjectResult>(rejectedResult);
+        var errorMsg = Assert.IsType<string>(badRequest.Value);
+        Assert.Contains("without an assessed difficulty", errorMsg);
+        Assert.Contains("1 of 2 question(s)", errorMsg);
+
+        // Now assess the question
+        suite.Questions.First(q => q.OrderIndex == 2).AssessedDifficulty = 60;
+        await db.SaveChangesAsync();
+
+        // Should succeed
+        var acceptedResult = await controller.StartRun(request);
+        Assert.IsType<AcceptedResult>(acceptedResult);
     }
 }

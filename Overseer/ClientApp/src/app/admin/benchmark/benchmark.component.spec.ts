@@ -34,7 +34,7 @@ describe('AdminBenchmarkComponent', () => {
 
     benchmarkServiceMock.getSuiteRunsFootprint.and.returnValue(of({ runCount: 0, totalAnswerCharacters: 0 }));
     benchmarkServiceMock.getSuites.and.returnValue(of([
-      { id: 1, name: 'Default Suite', description: 'Test', createdAtUtc: '2026-09-01T00:00:00Z', modifiedAtUtc: null, questionCount: 15 }
+      { id: 1, name: 'Default Suite', description: 'Test', createdAtUtc: '2026-09-01T00:00:00Z', modifiedAtUtc: null, questionCount: 15, assessedQuestionCount: 15, difficultyFullyAssessed: true }
     ]));
     benchmarkServiceMock.getScoringProfiles.and.returnValue(of([
       {
@@ -201,7 +201,9 @@ describe('AdminBenchmarkComponent', () => {
         description: '**Bold Title**\n\n- Item 1\n- Item 2\n\n<script>alert("xss")</script><img src=x onerror="alert(1)">',
         createdAtUtc: '2026-09-01T00:00:00Z',
         modifiedAtUtc: null,
-        questionCount: 18
+        questionCount: 18,
+        assessedQuestionCount: 18,
+        difficultyFullyAssessed: true
       }
     ];
     fixture.detectChanges();
@@ -227,7 +229,9 @@ describe('AdminBenchmarkComponent', () => {
       description: 'Test',
       createdAtUtc: '2026-09-01T00:00:00Z',
       modifiedAtUtc: null,
-      questionCount: 1
+      questionCount: 1,
+      assessedQuestionCount: 1,
+      difficultyFullyAssessed: true
     };
     component.questions = [
       {
@@ -384,7 +388,7 @@ describe('AdminBenchmarkComponent', () => {
     benchmarkServiceMock.deleteSuite.and.returnValue(of(void 0));
     component.activeSubTab = 'suites';
     component.suites = [
-      { id: 42, name: 'Target Suite', description: 'Test', createdAtUtc: '2026-09-01T00:00:00Z', modifiedAtUtc: null, questionCount: 1 }
+      { id: 42, name: 'Target Suite', description: 'Test', createdAtUtc: '2026-09-01T00:00:00Z', modifiedAtUtc: null, questionCount: 1, assessedQuestionCount: 0, difficultyFullyAssessed: false }
     ];
     fixture.detectChanges();
 
@@ -397,5 +401,185 @@ describe('AdminBenchmarkComponent', () => {
     component.executeConfirmAction();
 
     expect(benchmarkServiceMock.deleteSuite).toHaveBeenCalledWith(42);
+  });
+
+  it('should open difficultyAssessorDialog on clicking Assess Question Difficulty without calling rateSuiteDifficulty immediately', () => {
+    component.activeSubTab = 'suites';
+    const testSuite = {
+      id: 1,
+      name: 'Default Suite',
+      description: 'Test',
+      createdAtUtc: '2026-09-01T00:00:00Z',
+      modifiedAtUtc: null,
+      questionCount: 15,
+      assessedQuestionCount: 10,
+      difficultyFullyAssessed: false
+    };
+    component.suites = [testSuite];
+    fixture.detectChanges();
+
+    spyOn(component.difficultyAssessorDialog.nativeElement, 'showModal');
+
+    component.openDifficultyAssessorDialog(testSuite);
+
+    expect(component.difficultyAssessorDialog.nativeElement.showModal).toHaveBeenCalled();
+    expect(component.suiteForDifficultyAssessment).toBe(testSuite);
+    expect(component.difficultyAssessmentScope).toBe('suite');
+    expect(benchmarkServiceMock.rateSuiteDifficulty).not.toHaveBeenCalled();
+  });
+
+  it('should resolve default difficulty assessor preferring question stored config id if benchmark-capable', () => {
+    const questionWithValidConfig = {
+      id: 1,
+      benchmarkSuiteId: 1,
+      orderIndex: 1,
+      questionText: 'Q1',
+      difficulty: 1,
+      expectedPoints: null,
+      assessedDifficultyModelConfigurationId: 1,
+      createdAtUtc: '2026-09-01T00:00:00Z'
+    };
+    expect(component.resolveDefaultDifficultyAssessor(questionWithValidConfig)).toBe(1);
+
+    const questionWithInvalidConfig = {
+      id: 2,
+      benchmarkSuiteId: 1,
+      orderIndex: 2,
+      questionText: 'Q2',
+      difficulty: 1,
+      expectedPoints: null,
+      assessedDifficultyModelConfigurationId: 999,
+      createdAtUtc: '2026-09-01T00:00:00Z'
+    };
+    // Falls back to assessorConfigId or first benchmark capable config (id: 1)
+    expect(component.resolveDefaultDifficultyAssessor(questionWithInvalidConfig)).toBe(1);
+  });
+
+  it('should render suite progress badge classes correctly', () => {
+    const partialSuite = {
+      id: 1,
+      name: 'Partial Suite',
+      description: null,
+      createdAtUtc: '2026-09-01T00:00:00Z',
+      modifiedAtUtc: null,
+      questionCount: 18,
+      assessedQuestionCount: 10,
+      difficultyFullyAssessed: false
+    };
+    expect(component.difficultyProgressLabel(partialSuite)).toBe('Difficulty 10/18 Assessed');
+    expect(component.difficultyProgressClass(partialSuite)).toBe('partial');
+
+    const completeSuite = {
+      id: 2,
+      name: 'Complete Suite',
+      description: null,
+      createdAtUtc: '2026-09-01T00:00:00Z',
+      modifiedAtUtc: null,
+      questionCount: 18,
+      assessedQuestionCount: 18,
+      difficultyFullyAssessed: true
+    };
+    expect(component.difficultyProgressLabel(completeSuite)).toBe('Difficulty 18/18 Assessed');
+    expect(component.difficultyProgressClass(completeSuite)).toBe('complete');
+
+    const emptySuite = {
+      id: 3,
+      name: 'Empty Suite',
+      description: null,
+      createdAtUtc: '2026-09-01T00:00:00Z',
+      modifiedAtUtc: null,
+      questionCount: 0,
+      assessedQuestionCount: 0,
+      difficultyFullyAssessed: false
+    };
+    expect(component.difficultyProgressClass(emptySuite)).toBe('none');
+  });
+
+  it('should disable start button and render warning notice when selected suite is not fully assessed', () => {
+    component.activeSubTab = 'run';
+    component.selectedSuiteId = 1;
+    component.testedConfigId = 1;
+    component.assessorConfigId = 1;
+    component.suites = [
+      {
+        id: 1,
+        name: 'Incomplete Suite',
+        description: null,
+        createdAtUtc: '2026-09-01T00:00:00Z',
+        modifiedAtUtc: null,
+        questionCount: 10,
+        assessedQuestionCount: 5,
+        difficultyFullyAssessed: false
+      }
+    ];
+    fixture.detectChanges();
+
+    expect(component.canStartRun).toBeFalse();
+
+    const warningEl = fixture.nativeElement.querySelector('.alert.alert-warning');
+    expect(warningEl).toBeTruthy();
+    expect(warningEl.textContent).toContain('Difficulty 5/10 Assessed');
+    expect(warningEl.textContent).toContain('Every question must have an assessed difficulty');
+
+    const startBtn = fixture.nativeElement.querySelector('.form-actions button.btn-gh-primary');
+    expect(startBtn.disabled).toBeTrue();
+  });
+
+  it('should render per-question assessor info and badges when assessed, or not assessed message', () => {
+    component.activeSubTab = 'suites';
+    component.currentSuiteForQuestions = {
+      id: 1,
+      name: 'Test Suite',
+      description: null,
+      createdAtUtc: '2026-09-01T00:00:00Z',
+      modifiedAtUtc: null,
+      questionCount: 2,
+      assessedQuestionCount: 1,
+      difficultyFullyAssessed: false
+    };
+    component.questions = [
+      {
+        id: 1,
+        benchmarkSuiteId: 1,
+        orderIndex: 1,
+        questionText: 'Question 1',
+        difficulty: 1,
+        expectedPoints: null,
+        assessedDifficulty: 40,
+        assessedDifficultyModel: 'Claude 3.5 Sonnet',
+        assessedDifficultyThinkingLevelUsed: 'High',
+        assessedDifficultyReasoningModeUsed: 'Extended',
+        assessedDifficultyServiceTierUsed: 'standard_only',
+        assessedDifficultyAtUtc: '2026-09-01T12:00:00Z',
+        createdAtUtc: '2026-09-01T00:00:00Z'
+      },
+      {
+        id: 2,
+        benchmarkSuiteId: 1,
+        orderIndex: 2,
+        questionText: 'Question 2',
+        difficulty: 2,
+        expectedPoints: null,
+        assessedDifficulty: null,
+        assessedDifficultyModel: null,
+        createdAtUtc: '2026-09-01T00:00:00Z'
+      }
+    ];
+    fixture.detectChanges();
+
+    const assessorInfos = fixture.nativeElement.querySelectorAll('.q-assessor-info');
+    expect(assessorInfos.length).toBe(2);
+
+    // Question 1: assessed with badges
+    expect(assessorInfos[0].textContent).toContain('Assessed by');
+    expect(assessorInfos[0].textContent).toContain('Claude 3.5 Sonnet');
+    const badges = assessorInfos[0].querySelectorAll('.q-model-badge');
+    expect(badges.length).toBe(3);
+    expect(badges[0].textContent).toContain('High');
+    expect(badges[1].textContent).toContain('Extended');
+    expect(badges[2].textContent).toContain('Standard Only');
+
+    // Question 2: not assessed
+    expect(assessorInfos[1].textContent).toContain('Difficulty not assessed');
   });
 });

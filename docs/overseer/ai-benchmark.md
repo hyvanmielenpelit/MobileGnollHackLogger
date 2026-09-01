@@ -57,9 +57,15 @@ BenchmarkSuite (1) ────┴───< (N) BenchmarkQuestion
 
 - **`BenchmarkScoringProfile`**: Name, `IsDefault`, dimensional weights, `LevelScoresJson`, `CriticalErrorCeiling`, `SpeedTargetMs`, `SpeedDecayK`, `MaxParallelQuestions`.
 - **`BenchmarkSuite`**: Unique suite name, description (accepts Markdown, rendered as sanitized HTML), timestamps, and questions.
-- **`BenchmarkQuestion`**: Order index, question text, difficulty tier, `AssessedDifficulty` ($1\text{--}100$), `AssessedDifficultyModel`, `AssessedDifficultyAtUtc`, expected rubric points.
-- **`BenchmarkRun`**: Tested and assessor snapshot fields, run status, `QualityIndex`, `SpeedIndex`, `TotalAnswerDurationMs`, `ScoringProfileId`, `ScoringProfileSnapshotJson`, `ScoringMethodVersion`, `DifficultyFallbackUsed`, `SpeedMeasurementDegraded`, `MaxParallelQuestionsUsed`, token accounting, and assessment synthesis.
+- **`BenchmarkQuestion`**: Order index, question text, difficulty tier, `AssessedDifficulty` ($1\text{--}100$), `AssessedDifficultyModel` (display name of assessing model), `AssessedDifficultyAtUtc`, expected rubric points, and assessor configuration snapshot (`AssessedDifficultyModelConfigurationId`, `AssessedDifficultyProviderUsed`, `AssessedDifficultyModelIdUsed`, `AssessedDifficultyThinkingLevelUsed`, `AssessedDifficultyReasoningModeUsed`, `AssessedDifficultyReasoningSummaryUsed`, `AssessedDifficultyServiceTierUsed`, `AssessedDifficultyMaxOutputTokensUsed`).
+- **`BenchmarkRun`**: Tested and assessor snapshot fields, run status, `QualityIndex`, `SpeedIndex`, `TotalAnswerDurationMs`, `ScoringProfileId`, `ScoringProfileSnapshotJson`, `ScoringMethodVersion`, `DifficultyFallbackUsed` (retained for historical runs; not set by new runs), `SpeedMeasurementDegraded`, `MaxParallelQuestionsUsed`, token accounting, and assessment synthesis.
 - **`BenchmarkRunAnswer`**: Order index, question text, sanitized visible answer text, thought text (reasoning), dimensional levels (0–6), dimensional scores, `QualityScore`, `SpeedScore`, `CriticalError`, `AssessedDifficulty`, `AssessmentStatus`, assessor comment, and token/duration metrics.
+
+### Difficulty Assessment Lifecycle
+1. **Explicit Assessor Selection**: Question and suite difficulty ratings are explicit actions where the administrator chooses any benchmark-capable System AI Configuration via a modal selector dialog.
+2. **Clear on Edit**: When a question's text, author difficulty tier, or expected criteria rubric is modified, any existing assessed difficulty and assessor snapshot are automatically cleared.
+3. **Suite Completion Tracking**: Each suite card displays a completion badge indicating progress (`Difficulty n/total Assessed`), styled green at full completion, amber when partial, and neutral at zero.
+4. **Run Gating**: Benchmark runs require every question in the suite to be assessed before execution. Starting a run with unassessed questions is rejected with HTTP 400 BadRequest. The legacy pre-run silent auto-rating step has been removed.
 
 ### Content Rendering & Security Principles
 Rendering policy strictly depends on content author:
@@ -83,19 +89,19 @@ All benchmark endpoints require the `AdminOnly` authorization policy:
 - `DELETE /api/admin/benchmark/scoring-profiles/{id}`: Delete profile (default cannot be deleted).
 
 ### Difficulty Rating
-- `POST /api/admin/benchmark/suites/{id}/rate-difficulty`: Auto-rate difficulty for all questions in a suite.
-- `POST /api/admin/benchmark/questions/{id}/rate-difficulty`: Auto-rate difficulty for a single question.
+- `POST /api/admin/benchmark/suites/{id}/rate-difficulty`: Auto-rate difficulty for all questions in a suite with an explicitly selected assessor model; returns `{ ratedCount, suite }`.
+- `POST /api/admin/benchmark/questions/{id}/rate-difficulty`: Auto-rate difficulty for a single question with an explicitly selected assessor model; returns `{ difficulty }`.
 
 ### Suites & Questions
-- `GET /api/admin/benchmark/suites`: List all suites with question counts.
+- `GET /api/admin/benchmark/suites`: List all suites with question counts and assessed question progress.
 - `POST /api/admin/benchmark/suites`: Create a new suite.
 - `PUT /api/admin/benchmark/suites/{id}`: Update suite name and description.
 - `DELETE /api/admin/benchmark/suites/{id}`: Delete suite.
-- `POST /api/admin/benchmark/suites/{id}/duplicate`: Clone a suite and its questions.
-- `POST /api/admin/benchmark/suites/import-default`: Import the default suite.
-- `GET /api/admin/benchmark/suites/{id}/questions`: List questions by order index.
+- `POST /api/admin/benchmark/suites/{id}/duplicate`: Clone a suite, its questions, and their assessment snapshots.
+- `POST /api/admin/benchmark/suites/import-default`: Import the default suite (arrives unassessed).
+- `GET /api/admin/benchmark/suites/{id}/questions`: List questions by order index with assessor snapshot properties.
 - `POST /api/admin/benchmark/suites/{id}/questions`: Add a question to a suite.
-- `PUT /api/admin/benchmark/questions/{id}`: Update a question.
+- `PUT /api/admin/benchmark/questions/{id}`: Update a question (clears assessment snapshot if content changed).
 - `DELETE /api/admin/benchmark/questions/{id}`: Delete a question.
 - `PUT /api/admin/benchmark/suites/{id}/questions/reorder`: Reorder questions via ID array.
 
