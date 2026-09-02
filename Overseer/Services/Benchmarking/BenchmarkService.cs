@@ -24,6 +24,7 @@ public class BenchmarkService
     private readonly AgentLoopRunner _agentLoopRunner;
     private readonly CryptoService _cryptoService;
     private readonly BenchmarkRunManager _runManager;
+    private readonly BenchmarkDifficultyJobManager _difficultyJobManager;
     private readonly BenchmarkScoringProfileService _scoringProfileService;
     private readonly IConfiguration _configuration;
     private readonly ILogger<BenchmarkService> _logger;
@@ -44,6 +45,7 @@ public class BenchmarkService
         AgentLoopRunner agentLoopRunner,
         CryptoService cryptoService,
         BenchmarkRunManager runManager,
+        BenchmarkDifficultyJobManager difficultyJobManager,
         BenchmarkScoringProfileService scoringProfileService,
         IConfiguration configuration,
         ILogger<BenchmarkService> logger)
@@ -53,6 +55,7 @@ public class BenchmarkService
         _agentLoopRunner = agentLoopRunner;
         _cryptoService = cryptoService;
         _runManager = runManager;
+        _difficultyJobManager = difficultyJobManager;
         _scoringProfileService = scoringProfileService;
         _configuration = configuration;
         _logger = logger;
@@ -1005,150 +1008,67 @@ public class BenchmarkService
         }
     }
 
-    public async Task<(bool Success, int RatedCount, string? ErrorMessage)> RateSuiteDifficultyAsync(
-        long suiteId,
-        long assessorConfigId,
-        CancellationToken cancellationToken = default)
+    public async Task RunDifficultyAssessmentAsync(string jobId, CancellationToken cancellationToken)
     {
+        var job = _difficultyJobManager.TryGet(jobId);
+        if (job == null)
+        {
+            _logger.LogWarning("RunDifficultyAssessmentAsync: job {JobId} not found.", jobId);
+            return;
+        }
+
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var configService = scope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
 
-        var assessorConfig = await db.SystemAiApiConfigurations.FindAsync(assessorConfigId);
-        if (assessorConfig == null || string.IsNullOrWhiteSpace(assessorConfig.EncryptedApiKey))
-        {
-            return (false, 0, "Assessor model configuration missing or has no API key.");
-        }
-
-        string assessorApiKey = _cryptoService.Decrypt(assessorConfig.EncryptedApiKey, assessorConfig.ApiKeyNonce!, assessorConfig.ApiKeyTag!, "SYSTEM_API_KEY");
-
-        return await RateSuiteDifficultyInternalAsync(db, configService, suiteId, assessorConfig, assessorApiKey, cancellationToken);
-    }
-
-    public async Task<(bool Success, int? Difficulty, string? ErrorMessage)> RateQuestionDifficultyAsync(
-        long questionId,
-        long assessorConfigId,
-        CancellationToken cancellationToken = default)
-    {
-        using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var configService = scope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
-
-        var question = await db.BenchmarkQuestions
-            .Include(q => q.BenchmarkSuite)
-            .FirstOrDefaultAsync(q => q.Id == questionId, cancellationToken);
-
-        if (question == null)
-        {
-            return (false, null, "Question not found.");
-        }
-
-        var assessorConfig = await db.SystemAiApiConfigurations.FindAsync(assessorConfigId);
-        if (assessorConfig == null || string.IsNullOrWhiteSpace(assessorConfig.EncryptedApiKey))
-        {
-            return (false, null, "Assessor model configuration missing or has no API key.");
-        }
-
-        string assessorApiKey = _cryptoService.Decrypt(assessorConfig.EncryptedApiKey, assessorConfig.ApiKeyNonce!, assessorConfig.ApiKeyTag!, "SYSTEM_API_KEY");
-
-        var items = new List<BenchmarkDifficultyQuestionItem>
-        {
-            new()
-            {
-                Id = question.Id,
-                OrderIndex = question.OrderIndex,
-                QuestionText = question.QuestionText,
-                AuthorBand = question.Difficulty,
-                ExpectedPoints = question.ExpectedPoints
-            }
-        };
-
-        string prompt = BenchmarkDifficultyPrompt.BuildPrompt(question.BenchmarkSuite?.Name ?? "GnollHack Suite", items);
-
-        var runRequest = new AgentRunRequest
-        {
-            ProviderName = assessorConfig.Provider,
-            ModelId = assessorConfig.ModelId,
-            ApiKey = assessorApiKey,
-            ModelDisplayName = assessorConfig.DisplayName,
-            SystemPrompt = "You are an objective game mechanics expert. Rate the difficulty of the questions based strictly on the JSON schema requested.",
-            ThinkingLevel = assessorConfig.ThinkingLevel,
-            ReasoningMode = assessorConfig.ReasoningMode,
-            ReasoningSummary = assessorConfig.ReasoningSummary,
-            ServiceTier = assessorConfig.ServiceTier,
-            MaxOutputTokens = assessorConfig.MaxOutputTokens ?? 2048,
-            MaxToolIterations = 0,
-            EnableToolUse = false,
-            EnableWebSearch = false,
-            EnableSubAgents = false,
-            SystemModelId = assessorConfig.Id,
-            Budget = new AgentRunBudget { MaxTotalModelCalls = 2 },
-            SeedHistory = new List<object>
-            {
-                new { role = "user", content = prompt }
-            }
-        };
-
-        var runResult = new AgentRunResult();
-        var sw = Stopwatch.StartNew();
-        await foreach (var _ in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, runResult, cancellationToken)) { }
-        sw.Stop();
-
-        var parseResult = BenchmarkDifficultyParser.Parse(runResult.FinalText);
-        if (!parseResult.Success || parseResult.Items.Count == 0)
-        {
-            return (false, null, parseResult.ErrorMessage ?? "Failed to parse difficulty rating response.");
-        }
-
-        var rated = parseResult.Items.First();
-        BenchmarkQuestionAssessment.ApplySnapshot(question, rated.Difficulty, assessorConfig, DateTime.UtcNow);
-
-        await db.SaveChangesAsync(cancellationToken);
-
-        try
-        {
-            await configService.RecordUsageAsync(
-                assessorConfig.Id,
-                string.Empty,
-                runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : runResult.EstimatedInputTokens,
-                runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens,
-                roleContext: 4,
-                cacheReadTokens: runResult.CacheReadTokens,
-                cacheCreationTokens: runResult.CacheCreationTokens,
-                totalDurationMs: (int)sw.ElapsedMilliseconds);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to record usage for difficulty rating.");
-        }
-
-        return (true, rated.Difficulty, null);
-    }
-
-    private async Task<(bool Success, int RatedCount, string? ErrorMessage)> RateSuiteDifficultyInternalAsync(
-        ApplicationDbContext db,
-        SystemAiConfigService configService,
-        long suiteId,
-        SystemAiApiConfiguration assessorConfig,
-        string assessorApiKey,
-        CancellationToken cancellationToken)
-    {
         var suite = await db.BenchmarkSuites
             .Include(s => s.Questions)
-            .FirstOrDefaultAsync(s => s.Id == suiteId, cancellationToken);
+            .FirstOrDefaultAsync(s => s.Id == job.SuiteId, cancellationToken);
 
         if (suite == null)
         {
-            return (false, 0, "Suite not found.");
+            job.AddLog("Suite not found.", "error");
+            job.SetStatus(BenchmarkDifficultyJobStatus.Failed);
+            _difficultyJobManager.Complete(job.Id, BenchmarkDifficultyJobStatus.Failed);
+            return;
         }
 
-        var questionsToRate = suite.Questions.OrderBy(q => q.OrderIndex).ToList();
+        var assessorConfig = await db.SystemAiApiConfigurations.FindAsync(new object[] { job.AssessorConfigId }, cancellationToken);
+        if (assessorConfig == null || string.IsNullOrWhiteSpace(assessorConfig.EncryptedApiKey))
+        {
+            job.AddLog("Assessor model configuration missing or has no API key.", "error");
+            job.SetStatus(BenchmarkDifficultyJobStatus.Failed);
+            _difficultyJobManager.Complete(job.Id, BenchmarkDifficultyJobStatus.Failed);
+            return;
+        }
+
+        string assessorApiKey = _cryptoService.Decrypt(assessorConfig.EncryptedApiKey, assessorConfig.ApiKeyNonce!, assessorConfig.ApiKeyTag!, "SYSTEM_API_KEY");
+
+        var targetQuestionIds = new HashSet<long>(job.Items.Select(i => i.QuestionId));
+        var questionsToRate = suite.Questions
+            .Where(q => targetQuestionIds.Contains(q.Id))
+            .OrderBy(q => q.OrderIndex)
+            .ToList();
+
         if (questionsToRate.Count == 0)
         {
-            return (true, 0, null);
+            job.SetStatus(BenchmarkDifficultyJobStatus.Completed);
+            _difficultyJobManager.Complete(job.Id, BenchmarkDifficultyJobStatus.Completed);
+            return;
         }
 
-        var items = questionsToRate.Select(q => new BenchmarkDifficultyQuestionItem
+        int batchSize = _configuration.GetValue<int>("Benchmark:Difficulty:BatchSize", 4);
+        int rawResponseExcerptLength = _configuration.GetValue<int>("Benchmark:Difficulty:RawResponseExcerptLength", 4000);
+        int maxModelCalls = 2 * questionsToRate.Count + 8;
+
+        // Second line of defence behind BenchmarkDifficultyFailurePolicy: an error the
+        // classifier reads as transient, but which is in fact permanent, would otherwise fail
+        // every batch in turn. Counted across batches and reset by any successful parse.
+        int maxConsecutiveProviderErrors = _configuration.GetValue<int>(
+            "Benchmark:Difficulty:MaxConsecutiveProviderErrors", 3);
+        int consecutiveProviderErrors = 0;
+
+        var questionItems = questionsToRate.Select(q => new BenchmarkDifficultyQuestionItem
         {
             Id = q.Id,
             OrderIndex = q.OrderIndex,
@@ -1157,8 +1077,273 @@ public class BenchmarkService
             ExpectedPoints = q.ExpectedPoints
         }).ToList();
 
-        string prompt = BenchmarkDifficultyPrompt.BuildPrompt(suite.Name, items);
+        var initialBatches = BenchmarkDifficultyBatchPlanner.Plan(questionItems, batchSize);
+        var batchQueue = new Queue<IReadOnlyList<BenchmarkDifficultyQuestionItem>>(initialBatches);
+        var reattemptedSingleQuestions = new HashSet<long>();
 
+        while (batchQueue.Count > 0)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                job.MarkRemainingSkipped();
+                job.SetStatus(BenchmarkDifficultyJobStatus.Cancelled);
+                _difficultyJobManager.Complete(job.Id, BenchmarkDifficultyJobStatus.Cancelled);
+                return;
+            }
+
+            if (job.TotalModelCalls >= maxModelCalls)
+            {
+                job.AddLog($"Runaway guard triggered: total model calls reached limit ({maxModelCalls}).", "error");
+                job.MarkRemainingSkipped();
+                job.SetStatus(BenchmarkDifficultyJobStatus.Failed);
+                _difficultyJobManager.Complete(job.Id, BenchmarkDifficultyJobStatus.Failed);
+                return;
+            }
+
+            var currentBatch = batchQueue.Dequeue();
+            var batchQuestionIds = currentBatch.Select(q => q.Id).ToList();
+            job.UpdateItemsStatus(batchQuestionIds, BenchmarkDifficultyItemStatus.Assessing);
+
+            try
+            {
+                string prompt = BenchmarkDifficultyPrompt.BuildPrompt(suite.Name, currentBatch);
+                int maxOutput = assessorConfig.MaxOutputTokens ?? Math.Clamp(1024 + 768 * currentBatch.Count, 4096, 32768);
+
+                var (runResult, sw, terminalError) = await ExecuteAssessorCallAsync(assessorConfig, assessorApiKey, prompt, maxOutput, cancellationToken);
+                await RecordJobUsageAsync(job, configService, assessorConfig, runResult, sw);
+
+                var failureAction = BenchmarkDifficultyFailurePolicy.Decide(terminalError);
+                if (failureAction != BenchmarkDifficultyFailureAction.ParseResponse)
+                {
+                    consecutiveProviderErrors++;
+                    string providerExcerpt = GetExcerpt(terminalError, rawResponseExcerptLength);
+
+                    if (failureAction == BenchmarkDifficultyFailureAction.AbortJob)
+                    {
+                        _logger.LogError("Difficulty assessment aborted: assessor rejected the request for batch [{BatchIds}]: {Error}",
+                            string.Join(",", batchQuestionIds), GetExcerpt(terminalError, 1000));
+                        foreach (long qId in batchQuestionIds)
+                        {
+                            job.SetItemFailed(qId, terminalError!);
+                        }
+                        job.AddLog($"Assessor model rejected the request; aborting job: {terminalError}", "error", providerExcerpt);
+                        job.MarkRemainingSkipped();
+                        job.SetStatus(BenchmarkDifficultyJobStatus.Failed);
+                        _difficultyJobManager.Complete(job.Id, BenchmarkDifficultyJobStatus.Failed);
+                        return;
+                    }
+
+                    // FailBatch: transient. Fail these questions and move on — a repair prompt
+                    // or a smaller batch cannot help an overloaded or rate-limited endpoint.
+                    _logger.LogWarning("Difficulty assessment batch [{BatchIds}] failed with a provider error: {Error}",
+                        string.Join(",", batchQuestionIds), GetExcerpt(terminalError, 1000));
+                    foreach (long qId in batchQuestionIds)
+                    {
+                        job.SetItemFailed(qId, terminalError!);
+                    }
+                    job.AddLog($"Provider error assessing batch of {currentBatch.Count} questions: {terminalError}", "error", providerExcerpt);
+
+                    if (consecutiveProviderErrors >= maxConsecutiveProviderErrors)
+                    {
+                        job.AddLog($"Aborting after {consecutiveProviderErrors} consecutive provider errors.", "error");
+                        job.MarkRemainingSkipped();
+                        job.SetStatus(BenchmarkDifficultyJobStatus.Failed);
+                        _difficultyJobManager.Complete(job.Id, BenchmarkDifficultyJobStatus.Failed);
+                        return;
+                    }
+
+                    continue;
+                }
+
+                var parseResult = BenchmarkDifficultyParser.Parse(runResult.FinalText);
+
+                if (!parseResult.Success)
+                {
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        job.MarkRemainingSkipped();
+                        job.SetStatus(BenchmarkDifficultyJobStatus.Cancelled);
+                        _difficultyJobManager.Complete(job.Id, BenchmarkDifficultyJobStatus.Cancelled);
+                        return;
+                    }
+
+                    if (job.TotalModelCalls >= maxModelCalls)
+                    {
+                        job.AddLog($"Runaway guard triggered before repair attempt ({maxModelCalls}).", "error");
+                        job.MarkRemainingSkipped();
+                        job.SetStatus(BenchmarkDifficultyJobStatus.Failed);
+                        _difficultyJobManager.Complete(job.Id, BenchmarkDifficultyJobStatus.Failed);
+                        return;
+                    }
+
+                    string rawExcerpt = GetExcerpt(runResult.FinalText, rawResponseExcerptLength);
+                    _logger.LogWarning("Difficulty parse attempt 1 failed for batch [{BatchIds}]. Excerpt: {Excerpt}",
+                        string.Join(",", batchQuestionIds),
+                        GetExcerpt(runResult.FinalText, 1000));
+                    job.AddLog($"Parse attempt 1 failed for batch of {currentBatch.Count} questions. Retrying with repair prompt...", "warning", rawExcerpt);
+
+                    string repairPrompt = BenchmarkDifficultyPrompt.BuildRepairPrompt(suite.Name, currentBatch, rawExcerpt);
+                    var (repairResult, repairSw, repairTerminalError) = await ExecuteAssessorCallAsync(assessorConfig, assessorApiKey, repairPrompt, maxOutput, cancellationToken);
+                    await RecordJobUsageAsync(job, configService, assessorConfig, repairResult, repairSw);
+
+                    // The repair attempt can hit the same wall. Do not fall through to the
+                    // split: splitting a batch the provider refused only multiplies the
+                    // refusals.
+                    var repairFailureAction = BenchmarkDifficultyFailurePolicy.Decide(repairTerminalError);
+                    if (repairFailureAction != BenchmarkDifficultyFailureAction.ParseResponse)
+                    {
+                        consecutiveProviderErrors++;
+                        string repairProviderExcerpt = GetExcerpt(repairTerminalError, rawResponseExcerptLength);
+                        _logger.LogWarning("Difficulty repair attempt for batch [{BatchIds}] failed with a provider error: {Error}",
+                            string.Join(",", batchQuestionIds), GetExcerpt(repairTerminalError, 1000));
+
+                        foreach (long qId in batchQuestionIds)
+                        {
+                            job.SetItemFailed(qId, repairTerminalError!);
+                        }
+
+                        bool abortAfterRepair =
+                            repairFailureAction == BenchmarkDifficultyFailureAction.AbortJob ||
+                            consecutiveProviderErrors >= maxConsecutiveProviderErrors;
+
+                        if (abortAfterRepair)
+                        {
+                            job.AddLog($"Assessor model rejected the repair request; aborting job: {repairTerminalError}", "error", repairProviderExcerpt);
+                            job.MarkRemainingSkipped();
+                            job.SetStatus(BenchmarkDifficultyJobStatus.Failed);
+                            _difficultyJobManager.Complete(job.Id, BenchmarkDifficultyJobStatus.Failed);
+                            return;
+                        }
+
+                        job.AddLog($"Provider error on repair attempt for batch of {currentBatch.Count} questions: {repairTerminalError}", "error", repairProviderExcerpt);
+                        continue;
+                    }
+
+                    parseResult = BenchmarkDifficultyParser.Parse(repairResult.FinalText);
+                    if (!parseResult.Success)
+                    {
+                        string repairRawExcerpt = GetExcerpt(repairResult.FinalText, rawResponseExcerptLength);
+                        _logger.LogWarning("Difficulty parse attempt 2 failed for batch [{BatchIds}]. Excerpt: {Excerpt}",
+                            string.Join(",", batchQuestionIds),
+                            GetExcerpt(repairResult.FinalText, 1000));
+
+                        var splitBatches = BenchmarkDifficultyBatchPlanner.Split(currentBatch);
+                        if (splitBatches.Count > 0)
+                        {
+                            job.AddLog($"Parse attempt 2 failed for batch of {currentBatch.Count} questions. Splitting into {splitBatches.Count} smaller batches.", "warning", repairRawExcerpt);
+                            foreach (var half in splitBatches)
+                            {
+                                batchQueue.Enqueue(half);
+                            }
+                            continue;
+                        }
+                        else
+                        {
+                            long failedId = currentBatch[0].Id;
+                            string errMsg = parseResult.ErrorMessage ?? "Failed to parse difficulty rating after repair attempt.";
+                            job.SetItemFailed(failedId, errMsg);
+                            job.AddLog($"Question {failedId} difficulty assessment failed: {errMsg}", "error", repairRawExcerpt);
+                            continue;
+                        }
+                    }
+                }
+
+                // The assessor answered and the answer parsed, so whatever provider trouble
+                // preceded it has cleared.
+                consecutiveProviderErrors = 0;
+
+                if (parseResult.Salvaged)
+                {
+                    job.AddLog($"Batch of {currentBatch.Count} questions parsed using salvage strategy.", "warning");
+                }
+
+                var dbQuestionsInBatch = questionsToRate.Where(q => batchQuestionIds.Contains(q.Id)).ToList();
+                var ratingsById = parseResult.Items.ToDictionary(i => i.Id);
+                var matchedQuestionIds = new HashSet<long>();
+
+                foreach (var q in dbQuestionsInBatch)
+                {
+                    if (ratingsById.TryGetValue(q.Id, out var parsedItem))
+                    {
+                        BenchmarkQuestionAssessment.ApplySnapshot(q, parsedItem.Difficulty, assessorConfig, DateTime.UtcNow);
+                        job.SetItemRated(q.Id, parsedItem.Difficulty);
+                        matchedQuestionIds.Add(q.Id);
+                    }
+                }
+
+                var unmatchedParsedItems = parseResult.Items.Where(i => !matchedQuestionIds.Contains(i.Id)).ToList();
+                var unratedDbQuestions = dbQuestionsInBatch.Where(q => !matchedQuestionIds.Contains(q.Id)).ToList();
+
+                if (unmatchedParsedItems.Count > 0 && unratedDbQuestions.Count > 0)
+                {
+                    int matchCount = Math.Min(unmatchedParsedItems.Count, unratedDbQuestions.Count);
+                    for (int i = 0; i < matchCount; i++)
+                    {
+                        var q = unratedDbQuestions[i];
+                        var parsedItem = unmatchedParsedItems[i];
+                        job.AddLog($"Question ID mismatch: returned id {parsedItem.Id} positionally matched to question {q.Id} (order {q.OrderIndex}).", "warning");
+                        _logger.LogWarning("Difficulty assessment ID mismatch: model returned id {ModelId} for question {QuestionId}", parsedItem.Id, q.Id);
+
+                        BenchmarkQuestionAssessment.ApplySnapshot(q, parsedItem.Difficulty, assessorConfig, DateTime.UtcNow);
+                        job.SetItemRated(q.Id, parsedItem.Difficulty);
+                        matchedQuestionIds.Add(q.Id);
+                    }
+                }
+
+                await db.SaveChangesAsync(cancellationToken);
+
+                var stillUnrated = currentBatch.Where(q => !matchedQuestionIds.Contains(q.Id)).ToList();
+                foreach (var unratedQ in stillUnrated)
+                {
+                    if (reattemptedSingleQuestions.Add(unratedQ.Id))
+                    {
+                        job.AddLog($"Question {unratedQ.Id} missing from assessor response; requeuing as single-item batch.", "warning");
+                        batchQueue.Enqueue(new List<BenchmarkDifficultyQuestionItem> { unratedQ });
+                    }
+                    else
+                    {
+                        job.SetItemFailed(unratedQ.Id, "Question was omitted by the assessor model.");
+                        job.AddLog($"Question {unratedQ.Id} omitted by assessor after single re-queue.", "error");
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "Error processing difficulty assessment batch [{BatchIds}]", string.Join(",", batchQuestionIds));
+                job.AddLog($"Exception assessing batch: {ex.Message}", "error");
+                foreach (long qId in batchQuestionIds)
+                {
+                    job.SetItemFailed(qId, ex.Message);
+                }
+            }
+        }
+
+        if (cancellationToken.IsCancellationRequested)
+        {
+            job.MarkRemainingSkipped();
+            job.SetStatus(BenchmarkDifficultyJobStatus.Cancelled);
+            _difficultyJobManager.Complete(job.Id, BenchmarkDifficultyJobStatus.Cancelled);
+        }
+        else
+        {
+            var dto = job.ToDto();
+            BenchmarkDifficultyJobStatus finalStatus = dto.FailedCount > 0
+                ? BenchmarkDifficultyJobStatus.CompletedWithErrors
+                : BenchmarkDifficultyJobStatus.Completed;
+
+            job.SetStatus(finalStatus);
+            _difficultyJobManager.Complete(job.Id, finalStatus);
+            job.AddLog($"Assessment finished with status: {finalStatus}. Rated: {dto.RatedCount}, Failed: {dto.FailedCount}.", "info");
+        }
+    }
+
+    private async Task<(AgentRunResult Result, Stopwatch Sw, string? TerminalError)> ExecuteAssessorCallAsync(
+        SystemAiApiConfiguration assessorConfig,
+        string assessorApiKey,
+        string prompt,
+        int maxOutputTokens,
+        CancellationToken cancellationToken)
+    {
         var runRequest = new AgentRunRequest
         {
             ProviderName = assessorConfig.Provider,
@@ -1170,7 +1355,7 @@ public class BenchmarkService
             ReasoningMode = assessorConfig.ReasoningMode,
             ReasoningSummary = assessorConfig.ReasoningSummary,
             ServiceTier = assessorConfig.ServiceTier,
-            MaxOutputTokens = assessorConfig.MaxOutputTokens ?? 4096,
+            MaxOutputTokens = maxOutputTokens,
             MaxToolIterations = 0,
             EnableToolUse = false,
             EnableWebSearch = false,
@@ -1185,36 +1370,42 @@ public class BenchmarkService
 
         var runResult = new AgentRunResult();
         var sw = Stopwatch.StartNew();
-        await foreach (var _ in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, runResult, cancellationToken)) { }
-        sw.Stop();
 
-        var parseResult = BenchmarkDifficultyParser.Parse(runResult.FinalText);
-        if (!parseResult.Success)
+        // A terminal provider error is also appended to the response text by the agent loop,
+        // so a caller that swallows these events cannot tell an HTTP 400 apart from a model
+        // that answered badly — and would escalate through repair prompts and batch splits
+        // against an endpoint that is refusing the request outright.
+        string? terminalError = null;
+        await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, runResult, cancellationToken))
         {
-            return (false, 0, parseResult.ErrorMessage ?? "Failed to parse suite difficulty ratings.");
-        }
-
-        var ratingsById = parseResult.Items.ToDictionary(i => i.Id);
-        int ratedCount = 0;
-
-        foreach (var q in questionsToRate)
-        {
-            if (ratingsById.TryGetValue(q.Id, out var item))
+            if (evt.Type == "error")
             {
-                BenchmarkQuestionAssessment.ApplySnapshot(q, item.Difficulty, assessorConfig, DateTime.UtcNow);
-                ratedCount++;
+                terminalError = evt.Data?.ToString();
             }
         }
+        sw.Stop();
 
-        await db.SaveChangesAsync(cancellationToken);
+        return (runResult, sw, terminalError);
+    }
+
+    private async Task RecordJobUsageAsync(
+        BenchmarkDifficultyJob job,
+        SystemAiConfigService configService,
+        SystemAiApiConfiguration assessorConfig,
+        AgentRunResult runResult,
+        Stopwatch sw)
+    {
+        int promptTokens = runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : runResult.EstimatedInputTokens;
+        int outputTokens = runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens;
+        job.RecordModelCall(promptTokens, outputTokens);
 
         try
         {
             await configService.RecordUsageAsync(
                 assessorConfig.Id,
                 string.Empty,
-                runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : runResult.EstimatedInputTokens,
-                runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens,
+                promptTokens,
+                outputTokens,
                 roleContext: 4,
                 cacheReadTokens: runResult.CacheReadTokens,
                 cacheCreationTokens: runResult.CacheCreationTokens,
@@ -1222,10 +1413,17 @@ public class BenchmarkService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to record usage for suite difficulty rating.");
+            _logger.LogWarning(ex, "Failed to record usage for difficulty assessment call.");
         }
+    }
 
-        return (true, ratedCount, null);
+    private static string GetExcerpt(string? text, int maxLength)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return string.Empty;
+        }
+        return text.Length <= maxLength ? text : text.Substring(0, maxLength) + "...";
     }
 
     public async Task<(bool Success, string? ErrorMessage)> RescoreRunAsync(long runId, long? targetProfileId = null)

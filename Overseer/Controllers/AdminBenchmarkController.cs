@@ -15,6 +15,7 @@ using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services.Benchmarking;
+using Microsoft.Extensions.DependencyInjection;
 
 [Route("api/admin/benchmark")]
 [Authorize(Policy = "AdminOnly")]
@@ -25,20 +26,26 @@ public class AdminBenchmarkController : ControllerBase
     private readonly BenchmarkService _benchmarkService;
     private readonly BenchmarkScoringProfileService _scoringProfileService;
     private readonly BenchmarkRunManager _runManager;
+    private readonly BenchmarkDifficultyJobManager _difficultyJobManager;
     private readonly BenchmarkComplianceGuard _complianceGuard;
+    private readonly IServiceScopeFactory _scopeFactory;
 
     public AdminBenchmarkController(
         ApplicationDbContext dbContext,
         BenchmarkService benchmarkService,
         BenchmarkScoringProfileService scoringProfileService,
         BenchmarkRunManager runManager,
-        BenchmarkComplianceGuard complianceGuard)
+        BenchmarkDifficultyJobManager difficultyJobManager,
+        BenchmarkComplianceGuard complianceGuard,
+        IServiceScopeFactory scopeFactory)
     {
         _dbContext = dbContext;
         _benchmarkService = benchmarkService;
         _scoringProfileService = scoringProfileService;
         _runManager = runManager;
+        _difficultyJobManager = difficultyJobManager;
         _complianceGuard = complianceGuard;
+        _scopeFactory = scopeFactory;
     }
 
     private static BenchmarkSuiteDto ToSuiteDto(BenchmarkSuite s) => new()
@@ -214,8 +221,8 @@ public class AdminBenchmarkController : ControllerBase
 
     // --- Difficulty Rating Actions ---
 
-    [HttpPost("suites/{id}/rate-difficulty")]
-    public async Task<IActionResult> RateSuiteDifficulty(long id, [FromBody] RateDifficultyRequest request)
+    [HttpPost("difficulty-assessments")]
+    public async Task<IActionResult> StartDifficultyAssessment([FromBody] StartDifficultyAssessmentRequest request)
     {
         var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync();
         if (!canSpend)
@@ -223,34 +230,132 @@ public class AdminBenchmarkController : ControllerBase
             return StatusCode(StatusCodes.Status429TooManyRequests, denialReason);
         }
 
-        var (success, count, error) = await _benchmarkService.RateSuiteDifficultyAsync(id, request.AssessorModelConfigurationId);
-        if (!success)
-        {
-            return BadRequest(error ?? "Failed to rate suite difficulty.");
-        }
-        
         var suite = await _dbContext.BenchmarkSuites
             .Include(s => s.Questions)
-            .FirstOrDefaultAsync(s => s.Id == id);
-            
-        return Ok(new RateSuiteDifficultyResultDto { RatedCount = count, Suite = ToSuiteDto(suite!) });
+            .FirstOrDefaultAsync(s => s.Id == request.SuiteId);
+
+        if (suite == null)
+        {
+            return BadRequest("Benchmark suite not found.");
+        }
+
+        List<BenchmarkQuestion> targetQuestions;
+        string scopeType = "suite";
+
+        if (request.QuestionIds != null && request.QuestionIds.Count > 0)
+        {
+            scopeType = "questions";
+            var suiteQuestionIds = suite.Questions.Select(q => q.Id).ToHashSet();
+            foreach (var qId in request.QuestionIds)
+            {
+                if (!suiteQuestionIds.Contains(qId))
+                {
+                    return BadRequest($"Question ID {qId} does not belong to suite {request.SuiteId}.");
+                }
+            }
+
+            var requestIdsSet = request.QuestionIds.ToHashSet();
+            targetQuestions = suite.Questions
+                .Where(q => requestIdsSet.Contains(q.Id))
+                .OrderBy(q => q.OrderIndex)
+                .ToList();
+        }
+        else
+        {
+            targetQuestions = suite.Questions
+                .OrderBy(q => q.OrderIndex)
+                .ToList();
+        }
+
+        if (targetQuestions.Count == 0)
+        {
+            return BadRequest("No questions found to assess.");
+        }
+
+        var assessorConfig = await _dbContext.SystemAiApiConfigurations.FindAsync(request.AssessorModelConfigurationId);
+        if (assessorConfig == null)
+        {
+            return BadRequest("Assessor model configuration not found.");
+        }
+        if (!assessorConfig.IsEnabled)
+        {
+            return BadRequest("The assessor configuration is disabled.");
+        }
+        if (string.IsNullOrWhiteSpace(assessorConfig.EncryptedApiKey))
+        {
+            return BadRequest("The assessor configuration has no API key.");
+        }
+        if ((assessorConfig.ModelRole & 4) != 4)
+        {
+            return BadRequest("The selected assessor configuration does not have the Benchmark role enabled.");
+        }
+
+        var cts = new CancellationTokenSource();
+        var job = new BenchmarkDifficultyJob
+        {
+            SuiteId = suite.Id,
+            SuiteName = suite.Name,
+            Scope = scopeType,
+            AssessorConfigId = assessorConfig.Id,
+            AssessorDisplayName = assessorConfig.DisplayName,
+            Cts = cts,
+            Items = targetQuestions.Select(q => new BenchmarkDifficultyJobItem
+            {
+                QuestionId = q.Id,
+                OrderIndex = q.OrderIndex,
+                QuestionTextExcerpt = q.QuestionText.Length <= 160 ? q.QuestionText : q.QuestionText.Substring(0, 160) + "...",
+                Status = BenchmarkDifficultyItemStatus.Pending
+            }).ToList()
+        };
+
+        if (!_difficultyJobManager.TryStart(job, out var existingJob))
+        {
+            return StatusCode(StatusCodes.Status409Conflict, existingJob?.ToDto());
+        }
+
+        _ = Task.Run(async () =>
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var svc = scope.ServiceProvider.GetRequiredService<BenchmarkService>();
+            await svc.RunDifficultyAssessmentAsync(job.Id, cts.Token);
+        });
+
+        return Accepted(new { jobId = job.Id });
     }
 
-    [HttpPost("questions/{id}/rate-difficulty")]
-    public async Task<IActionResult> RateQuestionDifficulty(long id, [FromBody] RateDifficultyRequest request)
+    [HttpGet("difficulty-assessments/{jobId}")]
+    public IActionResult GetDifficultyAssessment(string jobId)
     {
-        var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync();
-        if (!canSpend)
+        var job = _difficultyJobManager.TryGet(jobId);
+        if (job == null)
         {
-            return StatusCode(StatusCodes.Status429TooManyRequests, denialReason);
+            return NotFound();
+        }
+        return Ok(job.ToDto());
+    }
+
+    [HttpGet("difficulty-assessments/active")]
+    public IActionResult GetActiveDifficultyAssessment()
+    {
+        var current = _difficultyJobManager.Current;
+        if (current == null || current.Status != BenchmarkDifficultyJobStatus.Running)
+        {
+            return NoContent();
+        }
+        return Ok(current.ToDto());
+    }
+
+    [HttpPost("difficulty-assessments/{jobId}/cancel")]
+    public IActionResult CancelDifficultyAssessment(string jobId)
+    {
+        var job = _difficultyJobManager.TryGet(jobId);
+        if (job == null)
+        {
+            return NotFound();
         }
 
-        var (success, difficulty, error) = await _benchmarkService.RateQuestionDifficultyAsync(id, request.AssessorModelConfigurationId);
-        if (!success)
-        {
-            return BadRequest(error ?? "Failed to rate question difficulty.");
-        }
-        return Ok(new { difficulty });
+        bool cancelled = _difficultyJobManager.TryCancel(jobId);
+        return Ok(new { cancelled });
     }
 
     // --- Suites CRUD ---

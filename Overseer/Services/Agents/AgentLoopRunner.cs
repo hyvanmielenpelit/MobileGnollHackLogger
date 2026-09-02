@@ -63,6 +63,30 @@ public class AgentLoopRunner
         string providerPrefix = $"{mainPrefix} - {aiProvider.ProviderName}]";
 
         var messageHistory = new List<object>(request.SeedHistory);
+
+        // AgentRunRequest.SystemPrompt used to be read nowhere: providers take the system
+        // prompt from a { role = "system" } history entry or from SegmentedPrompt, and only
+        // ChatService and DelegateToSubAgentTool inserted one. Every BenchmarkService path
+        // therefore ran with no system prompt at all. Inject it here, but never when the
+        // caller has already supplied one (ChatService sets both) or when a segmented prompt
+        // is in play — the providers build `system` from SegmentedPrompt in that case.
+        if (!string.IsNullOrWhiteSpace(request.SystemPrompt) && request.SegmentedPrompt == null &&
+            !messageHistory.Any(m => string.Equals(
+                ProviderHelper.GetProperty(m, "role")?.ToString(), "system", StringComparison.OrdinalIgnoreCase)))
+        {
+            messageHistory.Insert(0, new { role = "system", content = request.SystemPrompt });
+        }
+
+        // A caller may hand us a provider-neutral seed history ({ role, content }); ChatService
+        // and DelegateToSubAgentTool pre-format theirs, BenchmarkService does not. Normalizing
+        // here is what turns { role = "user", content = "..." } into Gemini's
+        // { role: "user", parts: [{ text: "..." }] } — without it Google rejects the body with
+        // `Unknown name "content" at 'contents[0]'`. All three implementations are idempotent:
+        // Google passes a message that already has `parts` straight through, OpenAI's is a
+        // no-op, and Anthropic's alternation pass leaves an already-alternating history
+        // unchanged, so pre-formatted callers are not disturbed.
+        messageHistory = aiProvider.PrepareMessageHistory(messageHistory);
+
         var thoughtWriter = new ThoughtMarkupWriter();
         var sbFullResponse = new StringBuilder();
         var streamToolCalls = result.ToolCalls;

@@ -33,7 +33,8 @@ public static class BenchmarkDifficultyPrompt
         sb.AppendLine("1. Evaluate ONLY the question text, author difficulty band, and rubric reference points.");
         sb.AppendLine("2. Assign an integer difficulty between 1 and 100 to each question.");
         sb.AppendLine("3. Provide a brief 1-sentence rationale for each difficulty score.");
-        sb.AppendLine("4. Respond ONLY with a valid JSON object matching the schema below.");
+        sb.AppendLine("4. The 'id' value MUST be copied verbatim from the 'ID:' field of the question it rates. Do not renumber.");
+        sb.AppendLine("5. Respond with the JSON object and nothing else — no prose, no explanation, no Markdown code fences.");
         sb.AppendLine();
         sb.AppendLine("--- QUESTIONS TO RATE ---");
         sb.AppendLine();
@@ -53,16 +54,44 @@ public static class BenchmarkDifficultyPrompt
             sb.AppendLine();
         }
 
+        long exampleId = questions.Count > 0 ? questions[0].Id : 1;
+
         sb.AppendLine("--- OUTPUT JSON SCHEMA ---");
-        sb.AppendLine(@"{
+        sb.AppendLine(@$"{{
   ""questions"": [
-  {
-    ""id"": 1,
+  {{
+    ""id"": {exampleId},
     ""difficulty"": 55,
     ""rationale"": ""Requires knowledge of prayer timeout calculations and altar alignment rules.""
-  }
+  }}
   ]
-}");
+}}");
+
+        return sb.ToString();
+    }
+
+    public static string BuildRepairPrompt(string suiteName, IReadOnlyList<BenchmarkDifficultyQuestionItem> questions, string? previousResponseExcerpt)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("RETRY REQUEST: Your previous response could not be parsed into valid question difficulty ratings.");
+        sb.AppendLine();
+
+        if (!string.IsNullOrWhiteSpace(previousResponseExcerpt))
+        {
+            string excerpt = previousResponseExcerpt.Length > 1000
+                ? previousResponseExcerpt.Substring(0, 1000) + "..."
+                : previousResponseExcerpt;
+
+            sb.AppendLine("--- PREVIOUS RESPONSE EXCERPT (FAILED TO PARSE) ---");
+            sb.AppendLine(excerpt);
+            sb.AppendLine("---------------------------------------------------");
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("Please correct your output. You MUST respond with ONLY a valid JSON object matching the required schema below.");
+        sb.AppendLine("Ensure all question IDs match the exact database IDs listed below without renumbering.");
+        sb.AppendLine();
+        sb.Append(BuildPrompt(suiteName, questions));
 
         return sb.ToString();
     }

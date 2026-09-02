@@ -240,17 +240,20 @@ public class BenchmarkComplianceGuardTests
             { "AesEncryptionKey", Convert.ToBase64String(new byte[32]) }
         }).Build());
 
+        var difficultyJobManager = new BenchmarkDifficultyJobManager();
+
         var benchmarkService = new BenchmarkService(
             scopeFactory,
             null!,
             null!,
             cryptoService,
             runManager,
+            difficultyJobManager,
             scoringProfileService,
             config,
             NullLogger<BenchmarkService>.Instance);
 
-        var controller = new AdminBenchmarkController(db, benchmarkService, scoringProfileService, runManager, guard)
+        var controller = new AdminBenchmarkController(db, benchmarkService, scoringProfileService, runManager, difficultyJobManager, guard, scopeFactory)
         {
             ControllerContext = new ControllerContext
             {
@@ -437,13 +440,13 @@ public class BenchmarkComplianceGuardTests
         db.BenchmarkRuns.Add(CreateTestRun("ExhaustingRun", DateTime.UtcNow.AddMinutes(-5)));
         await db.SaveChangesAsync();
 
-        // 1. RateSuiteDifficulty -> 429
-        var r1 = await controller.RateSuiteDifficulty(suite.Id, new RateDifficultyRequest { AssessorModelConfigurationId = modelC.Id });
+        // 1. StartDifficultyAssessment -> 429
+        var r1 = await controller.StartDifficultyAssessment(new StartDifficultyAssessmentRequest { SuiteId = suite.Id, AssessorModelConfigurationId = modelC.Id });
         Assert.Equal(StatusCodes.Status429TooManyRequests, Assert.IsType<ObjectResult>(r1).StatusCode);
 
-        // 2. RateQuestionDifficulty -> 429
+        // 2. StartDifficultyAssessment for single question -> 429
         var qId = suite.Questions.First().Id;
-        var r2 = await controller.RateQuestionDifficulty(qId, new RateDifficultyRequest { AssessorModelConfigurationId = modelC.Id });
+        var r2 = await controller.StartDifficultyAssessment(new StartDifficultyAssessmentRequest { SuiteId = suite.Id, QuestionIds = new List<long> { qId }, AssessorModelConfigurationId = modelC.Id });
         Assert.Equal(StatusCodes.Status429TooManyRequests, Assert.IsType<ObjectResult>(r2).StatusCode);
 
         // 3. ReassessAnswer -> 429

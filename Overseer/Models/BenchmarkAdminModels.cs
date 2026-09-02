@@ -65,9 +65,50 @@ public class UpdateBenchmarkQuestionRequest
     public string? ExpectedPoints { get; set; }
 }
 
-public class RateDifficultyRequest
+public class StartDifficultyAssessmentRequest
 {
+    public long SuiteId { get; set; }
+    public List<long>? QuestionIds { get; set; }
     public long AssessorModelConfigurationId { get; set; }
+}
+
+public class DifficultyAssessmentJobItemDto
+{
+    public long QuestionId { get; set; }
+    public int OrderIndex { get; set; }
+    public string QuestionTextExcerpt { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public int? Difficulty { get; set; }
+    public string? ErrorMessage { get; set; }
+}
+
+public class DifficultyAssessmentJobLogEntryDto
+{
+    public DateTime TimestampUtc { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public string Severity { get; set; } = "info";
+    public string? RawExcerpt { get; set; }
+}
+
+public class DifficultyAssessmentJobDto
+{
+    public string Id { get; set; } = string.Empty;
+    public long SuiteId { get; set; }
+    public string SuiteName { get; set; } = string.Empty;
+    public string Scope { get; set; } = "suite";
+    public long AssessorConfigId { get; set; }
+    public string AssessorDisplayName { get; set; } = string.Empty;
+    public DateTime StartedAtUtc { get; set; }
+    public DateTime? CompletedAtUtc { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public int RatedCount { get; set; }
+    public int FailedCount { get; set; }
+    public int TotalCount { get; set; }
+    public int TotalModelCalls { get; set; }
+    public int PromptTokens { get; set; }
+    public int OutputTokens { get; set; }
+    public List<DifficultyAssessmentJobItemDto> Items { get; set; } = new();
+    public List<DifficultyAssessmentJobLogEntryDto> Log { get; set; } = new();
 }
 
 public class StartBenchmarkRunRequest
@@ -284,8 +325,3 @@ public class BenchmarkRunSummaryDto
     public long TotalDurationMs { get; set; }
 }
 
-public class RateSuiteDifficultyResultDto
-{
-    public int RatedCount { get; set; }
-    public BenchmarkSuiteDto Suite { get; set; } = new();
-}

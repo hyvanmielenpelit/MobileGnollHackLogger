@@ -47,9 +47,46 @@ export interface UpdateBenchmarkScoringProfileRequest {
   maxParallelQuestions: number;
 }
 
-export interface RateSuiteDifficultyResultDto {
+export interface StartDifficultyAssessmentRequest {
+  suiteId: number;
+  questionIds?: number[] | null;
+  assessorModelConfigurationId: number;
+}
+
+export interface DifficultyAssessmentJobItemDto {
+  questionId: number;
+  orderIndex: number;
+  questionTextExcerpt: string;
+  status: string;
+  difficulty: number | null;
+  errorMessage: string | null;
+}
+
+export interface DifficultyAssessmentJobLogEntryDto {
+  timestampUtc: string;
+  message: string;
+  severity: string;
+  rawExcerpt: string | null;
+}
+
+export interface DifficultyAssessmentJobDto {
+  id: string;
+  suiteId: number;
+  suiteName: string;
+  scope: string;
+  assessorConfigId: number;
+  assessorDisplayName: string;
+  startedAtUtc: string;
+  completedAtUtc: string | null;
+  status: string;
   ratedCount: number;
-  suite: BenchmarkSuiteDto;
+  failedCount: number;
+  totalCount: number;
+  totalModelCalls: number;
+  promptTokens: number;
+  outputTokens: number;
+  items: DifficultyAssessmentJobItemDto[];
+  log: DifficultyAssessmentJobLogEntryDto[];
 }
 
 export interface BenchmarkSuiteDto {
@@ -279,13 +316,21 @@ export class AdminBenchmarkService {
     return this.http.delete<void>(`/api/admin/benchmark/scoring-profiles/${id}`);
   }
 
-  // Difficulty Rating
-  rateSuiteDifficulty(suiteId: number, assessorModelConfigurationId: number): Observable<RateSuiteDifficultyResultDto> {
-    return this.http.post<RateSuiteDifficultyResultDto>(`/api/admin/benchmark/suites/${suiteId}/rate-difficulty`, { assessorModelConfigurationId });
+  // Difficulty Assessment
+  startDifficultyAssessment(req: StartDifficultyAssessmentRequest): Observable<{ jobId: string }> {
+    return this.http.post<{ jobId: string }>('/api/admin/benchmark/difficulty-assessments', req);
   }
 
-  rateQuestionDifficulty(questionId: number, assessorModelConfigurationId: number): Observable<{ difficulty: number }> {
-    return this.http.post<{ difficulty: number }>(`/api/admin/benchmark/questions/${questionId}/rate-difficulty`, { assessorModelConfigurationId });
+  getDifficultyAssessment(jobId: string): Observable<DifficultyAssessmentJobDto> {
+    return this.http.get<DifficultyAssessmentJobDto>(`/api/admin/benchmark/difficulty-assessments/${jobId}`);
+  }
+
+  getActiveDifficultyAssessment(): Observable<DifficultyAssessmentJobDto | null> {
+    return this.http.get<DifficultyAssessmentJobDto | null>('/api/admin/benchmark/difficulty-assessments/active');
+  }
+
+  cancelDifficultyAssessment(jobId: string): Observable<{ cancelled: boolean }> {
+    return this.http.post<{ cancelled: boolean }>(`/api/admin/benchmark/difficulty-assessments/${jobId}/cancel`, {});
   }
 
   // Suites

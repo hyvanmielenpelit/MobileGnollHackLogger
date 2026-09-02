@@ -1,59 +1,5 @@
 [
   {
-    "version": "1.0.30",
-    "date": "2026-09-02T16:30:00Z",
-    "summary": "Added granular retry and reassessment actions for AI intelligence benchmarks, including single-question and final synthesis re-runs, flexible assessor selection, and resilient assessment failure handling.",
-    "changes": [
-      {
-        "type": "feature",
-        "text": "Added per-question re-run and reassessment actions in the Admin benchmark run detail view, allowing individual question replies and assessments to be regenerated without repeating the full benchmark run."
-      },
-      {
-        "type": "feature",
-        "text": "Introduced an assessor selection dialog for retries and reassessments, enabling benchmarks to use an alternative evaluation model if the original assessor is disabled or unavailable."
-      },
-      {
-        "type": "feature",
-        "text": "Added dedicated actions to re-run final synthesis assessments and retry all unscored or failed assessments across a benchmark run in bulk."
-      },
-      {
-        "type": "fix",
-        "text": "Hardened benchmark assessment failure handling so that assessor errors or unparseable evaluations are recorded per question with truncated error details rather than failing the entire benchmark run."
-      },
-      {
-        "type": "improvement",
-        "text": "Updated benchmark reports and question metrics to display the specific evaluator when an individual question is scored by a different assessor than the overall run."
-      }
-    ]
-  },
-  {
-    "version": "1.0.29",
-    "date": "2026-09-01T14:00:00Z",
-    "summary": "Introduced an automated AI Intelligence Benchmark test suite in Admin, added blind assessor evaluation, provider error classification and retry mechanisms, ModelRole bitmask support for benchmark-only models, and comprehensive Markdown report export.",
-    "changes": [
-      {
-        "type": "feature",
-        "text": "Added an automated AI Intelligence Benchmark subsystem in the Admin panel featuring configurable question suites across Simple, Intermediate, and Advanced difficulty tiers."
-      },
-      {
-        "type": "feature",
-        "text": "Implemented blind LLM assessment with automated 0–10 scoring, qualitative reviews, and arithmetic versus holistic score divergence detection."
-      },
-      {
-        "type": "feature",
-        "text": "Added transient provider error classification (HTTP 429, 503, 529, timeouts) to exclude infrastructure outages from scores, with one-click re-runs for failed questions."
-      },
-      {
-        "type": "feature",
-        "text": "Expanded System AI Configurations with a ModelRole bitmask (Chat, Title, Benchmark), allowing dedicated models for benchmarking without exposing them to end-user chat."
-      },
-      {
-        "type": "improvement",
-        "text": "Added exportable 7-section Markdown benchmark reports and benchmark request volume tracking in telemetry analytics."
-      }
-    ]
-  },
-  {
     "version": "1.0.28",
     "date": "2026-08-31T16:30:00Z",
     "summary": "Added tracking and persistence for actual served AI service tiers across Google Gemini, OpenAI, and Anthropic providers, and fixed an issue with saving system API keys in the Admin panel.",

@@ -386,6 +386,42 @@
   <!-- TAB 3: MANAGE SUITES -->
   @if (activeSubTab === 'suites') {
     <div class="benchmark-tab-content" role="tabpanel" id="bm-panel-suites" aria-labelledby="bm-tab-suites" tabindex="0">
+      @if (actionErrorMessage) {
+        <div class="alert alert-danger mb-20" role="alert" aria-live="assertive">
+          <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+          <div class="alert-content">
+            <div class="alert-title">Action Error</div>
+            <div class="alert-message">{{ actionErrorMessage }}</div>
+          </div>
+        </div>
+      }
+
+      @if (difficultyJobIsRunning && !isDifficultyAssessorDialogOpen) {
+        <div class="active-run-banner difficulty-active-banner mb-20">
+          <div class="banner-header">
+            <div class="pulse-indicator" aria-hidden="true"></div>
+            <div>
+              <h4>Difficulty Assessment in Progress</h4>
+              <p class="text-muted">Suite: {{ difficultyJob?.suiteName }} | Assessor: {{ difficultyJob?.assessorDisplayName }}</p>
+            </div>
+          </div>
+          <div class="banner-progress" role="status">
+            <span>{{ difficultyProgressLabel() }}</span>
+            <button type="button" class="btn-gh" (click)="openDifficultyAssessorDialog()">
+              Show Progress
+            </button>
+            <button type="button" class="btn-gh btn-gh-delete" [disabled]="terminatingDifficultyJob" (click)="terminateDifficultyAssessment()">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+              Terminate Assessment
+            </button>
+          </div>
+        </div>
+      }
+
       <div class="suites-toolbar mb-20">
         <button type="button" class="btn-gh" (click)="openCreateSuite()">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
@@ -461,8 +497,8 @@
               <button type="button" class="btn-gh" (click)="openManageQuestions(suite)">
                 Manage Questions
               </button>
-              <button type="button" class="btn-gh" (click)="openDifficultyAssessorDialog(suite)" [disabled]="ratingDifficulty">
-                {{ ratingDifficulty ? 'Assessing...' : 'Assess Question Difficulty' }}
+              <button type="button" class="btn-gh" (click)="openDifficultyAssessorDialog(suite)">
+                Assess Question Difficulty
               </button>
               @if (footprints[suite.id] && footprints[suite.id].runCount > 0) {
                 <button type="button" class="btn-gh btn-gh-delete" (click)="openBulkDeleteDialog(suite)">
@@ -500,6 +536,20 @@
       </div>
 
       <div class="dialog-body">
+        @if (actionErrorMessage) {
+          <div class="alert alert-danger mb-20" role="alert" aria-live="assertive">
+            <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="8" x2="12" y2="12"></line>
+              <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+            <div class="alert-content">
+              <div class="alert-title">Action Error</div>
+              <div class="alert-message">{{ actionErrorMessage }}</div>
+            </div>
+          </div>
+        }
+
         @if (isRunBusy()) {
           <div class="retry-progress-strip mb-20" role="status">
             <span>Retry in progress on this run…</span>
@@ -1011,8 +1061,8 @@
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             Add Question
           </button>
-          <button type="button" class="btn-gh" (click)="openDifficultyAssessorDialog(currentSuiteForQuestions!)" [disabled]="ratingDifficulty">
-            {{ ratingDifficulty ? 'Assessing...' : 'AI Auto-Rate All Difficulties' }}
+          <button type="button" class="btn-gh" (click)="openDifficultyAssessorDialog(currentSuiteForQuestions!)">
+            AI Auto-Rate All Difficulties
           </button>
         </div>
 
@@ -1046,7 +1096,7 @@
                   </div>
 
                   <div class="card-actions-group">
-                    <button type="button" class="action-btn" (click)="openDifficultyAssessorDialog(currentSuiteForQuestions!, q)" [disabled]="ratingQuestionId === q.id"
+                    <button type="button" class="action-btn" (click)="openDifficultyAssessorDialog(currentSuiteForQuestions!, q)"
                             [attr.aria-label]="'Auto-rate difficulty for question ' + (q.orderIndex + 1)"
                             [attr.interestfor]="'tip-rate-q-' + q.id"
                             [attr.style]="'anchor-name: --tip-rate-q-' + q.id">
@@ -1275,11 +1325,16 @@
 </dialog>
 
 <!-- DIFFICULTY ASSESSOR DIALOG -->
-<dialog #difficultyAssessorDialog class="gh-dialog benchmark-form-dialog difficulty-assessor-dialog" (cancel)="closeDifficultyAssessorDialog()">
+<dialog #difficultyAssessorDialog class="gh-dialog benchmark-form-dialog difficulty-assessor-dialog"
+        aria-labelledby="difficultyDialogTitle"
+        (cancel)="closeDifficultyAssessorDialog()">
   <div class="dialog-content flex-col">
     <div class="dialog-header">
       <div class="dialog-title-group">
-        <h3>Assess Question Difficulty</h3>
+        <h3 id="difficultyDialogTitle">
+          @if (difficultyDialogPhase === 'select') { Assess Question Difficulty }
+          @else { Assessing Question Difficulty }
+        </h3>
       </div>
       <button type="button" class="btn-icon-action" aria-label="Close difficulty assessor" (click)="closeDifficultyAssessorDialog()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
@@ -1289,71 +1344,170 @@
       </button>
     </div>
     <div class="dialog-body">
-      <p class="text-muted mb-15">
-        Select the model that will rate the intrinsic difficulty (1–100) of
-        {{ difficultyAssessmentScope === 'suite'
-            ? (suiteForDifficultyAssessment?.name + ' — ' + (suiteForDifficultyAssessment?.questionCount || 0) + ' questions')
-            : 'this question' }}.
-        The selected model and its settings are stored with each assessed question.
-      </p>
+      @if (difficultyDialogPhase === 'select') {
+        @if (difficultyDialogError) {
+          <div class="alert alert-danger mb-15" role="alert">
+            {{ difficultyDialogError }}
+          </div>
+        }
 
-      <div class="form-group mb-15">
-        <label>Assessment Model</label>
-        <div class="custom-model-selector difficulty-assessor-model-selector">
-          <button type="button" class="selector-trigger" (click)="toggleDifficultyAssessorDropdown($event)" [class.open]="isDifficultyAssessorDropdownOpen">
-            <span class="model-name" [class.text-muted]="!selectedDifficultyAssessorModel">{{ selectedDifficultyAssessorModel?.displayName || selectedDifficultyAssessorModel?.modelId || 'Select Model' }}</span>
-            @if (selectedDifficultyAssessorModel?.thinkingLevel) {
-              <span class="thinking-badge">{{ formatThinkingLevel(selectedDifficultyAssessorModel?.thinkingLevel) }}</span>
-            }
-            @if (showReasoningBadge(selectedDifficultyAssessorModel?.reasoningMode)) {
-              <span class="reasoning-badge">{{ selectedDifficultyAssessorModel?.reasoningMode }}</span>
-            }
-            @if (selectedDifficultyAssessorModel?.provider) {
-              <span class="provider-badge">{{ selectedDifficultyAssessorModel?.provider }}</span>
-            }
-            @if (selectedDifficultyAssessorModel?.parallelExecutionMode === 0) {
-              <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
-            }
-            @if (selectedDifficultyAssessorModel?.parallelExecutionMode === 1) {
-              <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
-            }
-            <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
-          </button>
-          @if (isDifficultyAssessorDropdownOpen) {
-            <div class="selector-dropdown">
-              @if (benchmarkCapableConfigs.length === 0) {
-                <div class="empty-dropdown-hint">No system AI configs with the Benchmark role are enabled. Enable the Benchmark role in System Configs.</div>
+        <p class="text-muted mb-15">
+          Select the model that will rate the intrinsic difficulty (1–100) of
+          {{ difficultyAssessmentScope === 'suite'
+              ? (suiteForDifficultyAssessment?.name + ' — ' + (suiteForDifficultyAssessment?.questionCount || 0) + ' questions')
+              : 'this question' }}.
+          The selected model and its settings are stored with each assessed question.
+        </p>
+
+        <div class="form-group mb-15">
+          <label>Assessment Model</label>
+          <div class="custom-model-selector difficulty-assessor-model-selector">
+            <button type="button" class="selector-trigger" (click)="toggleDifficultyAssessorDropdown($event)" [class.open]="isDifficultyAssessorDropdownOpen">
+              <span class="model-name" [class.text-muted]="!selectedDifficultyAssessorModel">{{ selectedDifficultyAssessorModel?.displayName || selectedDifficultyAssessorModel?.modelId || 'Select Model' }}</span>
+              @if (selectedDifficultyAssessorModel?.thinkingLevel) {
+                <span class="thinking-badge">{{ formatThinkingLevel(selectedDifficultyAssessorModel?.thinkingLevel) }}</span>
               }
-              @for (model of benchmarkCapableConfigs; track model.id) {
-                <div class="model-option" (click)="selectDifficultyAssessorModel(model)" [class.selected]="difficultyAssessorConfigId === model.id">
-                  <span class="model-name">{{ model.displayName || model.modelId }}</span>
-                  @if (model.thinkingLevel) {
-                    <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
-                  }
-                  @if (showReasoningBadge(model.reasoningMode)) {
-                    <span class="reasoning-badge">{{ model.reasoningMode }}</span>
-                  }
-                  <span class="provider-badge">{{ model.provider }}</span>
-                  @if (model.parallelExecutionMode === 0) {
-                    <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
-                  }
-                  @if (model.parallelExecutionMode === 1) {
-                    <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
-                  }
-                </div>
+              @if (showReasoningBadge(selectedDifficultyAssessorModel?.reasoningMode)) {
+                <span class="reasoning-badge">{{ selectedDifficultyAssessorModel?.reasoningMode }}</span>
               }
-            </div>
-          }
+              @if (selectedDifficultyAssessorModel?.provider) {
+                <span class="provider-badge">{{ selectedDifficultyAssessorModel?.provider }}</span>
+              }
+              @if (selectedDifficultyAssessorModel?.parallelExecutionMode === 0) {
+                <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
+              }
+              @if (selectedDifficultyAssessorModel?.parallelExecutionMode === 1) {
+                <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
+              }
+              <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </button>
+            @if (isDifficultyAssessorDropdownOpen) {
+              <div class="selector-dropdown">
+                @if (benchmarkCapableConfigs.length === 0) {
+                  <div class="empty-dropdown-hint">No system AI configs with the Benchmark role are enabled. Enable the Benchmark role in System Configs.</div>
+                }
+                @for (model of benchmarkCapableConfigs; track model.id) {
+                  <div class="model-option" (click)="selectDifficultyAssessorModel(model)" [class.selected]="difficultyAssessorConfigId === model.id">
+                    <span class="model-name">{{ model.displayName || model.modelId }}</span>
+                    @if (model.thinkingLevel) {
+                      <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
+                    }
+                    @if (showReasoningBadge(model.reasoningMode)) {
+                      <span class="reasoning-badge">{{ model.reasoningMode }}</span>
+                    }
+                    <span class="provider-badge">{{ model.provider }}</span>
+                    @if (model.parallelExecutionMode === 0) {
+                      <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
+                    }
+                    @if (model.parallelExecutionMode === 1) {
+                      <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
+                    }
+                  </div>
+                }
+              </div>
+            }
+          </div>
         </div>
-      </div>
+      }
+
+      @if (difficultyDialogPhase === 'progress') {
+        <h4 #difficultyProgressHeading tabindex="-1" class="progress-heading">
+          {{ difficultyJob?.suiteName }} — {{ difficultyJob?.assessorDisplayName }}
+        </h4>
+
+        <div class="difficulty-progress-block">
+          <label class="progress-label" for="difficultyProgressBar">Assessment progress</label>
+          @if (difficultyJob && difficultyJob.totalCount > 0) {
+            <progress id="difficultyProgressBar" class="difficulty-progress"
+                      [value]="difficultyProgressValue" [max]="difficultyProgressMax"></progress>
+          } @else {
+            <progress id="difficultyProgressBar" class="difficulty-progress"></progress>
+          }
+          <p class="progress-status" role="status" aria-live="polite">{{ difficultyProgressLabel() }}</p>
+        </div>
+
+        <ul class="difficulty-item-list">
+          @for (item of difficultyJob?.items; track item.questionId) {
+            <li class="difficulty-item-row">
+              <span class="difficulty-item-index">Q{{ item.orderIndex }}</span>
+              <span class="difficulty-item-excerpt" [title]="item.questionTextExcerpt">{{ item.questionTextExcerpt }}</span>
+              <span class="difficulty-status-chip" [class]="'status-' + item.status.toLowerCase()">
+                @if (item.status === 'Rated' && item.difficulty != null) {
+                  Rated {{ item.difficulty }}
+                } @else {
+                  {{ item.status }}
+                }
+              </span>
+            </li>
+          }
+        </ul>
+
+        @if (failedDifficultyItems.length > 0) {
+          <div class="alert alert-danger mt-15" role="alert">
+            {{ failedDifficultyItems.length }} question(s) failed difficulty assessment.
+          </div>
+          <details class="difficulty-diagnostics mt-10">
+            <summary>Diagnostics</summary>
+            <div class="diagnostics-toolbar">
+              <button type="button" class="action-btn"
+                      aria-label="Copy difficulty assessment diagnostics"
+                      interestfor="tip-copy-difficulty-diagnostics"
+                      style="anchor-name: --tip-copy-difficulty-diagnostics"
+                      (click)="copyDifficultyDiagnostics()">
+                @if (copiedDiagnostics) {
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                       viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                       stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                  </svg>
+                } @else {
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                       viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                       stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                  </svg>
+                }
+              </button>
+              <div popover="hint" class="gh-tooltip" id="tip-copy-difficulty-diagnostics"
+                   style="position-anchor: --tip-copy-difficulty-diagnostics">Copy diagnostics</div>
+              <p class="diagnostics-copy-status" role="status" aria-live="polite">
+                {{ copiedDiagnostics ? 'Diagnostics copied to clipboard' : '' }}
+              </p>
+            </div>
+            <pre tabindex="0">{{ difficultyDiagnosticsText }}</pre>
+          </details>
+        }
+      }
     </div>
     <div class="dialog-footer">
-      <button type="button" class="btn-gh btn-gh-cancel" (click)="closeDifficultyAssessorDialog()">Cancel</button>
-      <button type="button" class="btn-gh"
-              [disabled]="!difficultyAssessorConfigId || ratingDifficulty"
-              (click)="confirmDifficultyAssessment()">
-        {{ ratingDifficulty ? 'Assessing...' : 'Assess Difficulty' }}
-      </button>
+      @if (difficultyDialogPhase === 'select') {
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeDifficultyAssessorDialog()">Cancel</button>
+        <button type="button" class="btn-gh"
+                [disabled]="!difficultyAssessorConfigId || difficultyJobStarting"
+                (click)="confirmDifficultyAssessment()">
+          Assess Difficulty
+        </button>
+      }
+
+      @if (difficultyDialogPhase === 'progress' && difficultyJobIsRunning) {
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeDifficultyAssessorDialog()">Run in Background</button>
+        <button type="button" class="btn-gh btn-gh-delete" [disabled]="terminatingDifficultyJob" (click)="terminateDifficultyAssessment()">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+          Terminate Assessment
+        </button>
+      }
+
+      @if (difficultyDialogPhase === 'progress' && difficultyJobIsTerminal) {
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeDifficultyAssessorDialog()">Close</button>
+        <button type="button" class="btn-gh" (click)="assessAgain()">Assess Again</button>
+        @if (failedDifficultyItems.length > 0) {
+          <button type="button" class="btn-gh" [disabled]="difficultyJobStarting" (click)="retryFailedQuestions()">
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
+            Retry Failed Questions
+          </button>
+        }
+      }
     </div>
   </div>
 </dialog>

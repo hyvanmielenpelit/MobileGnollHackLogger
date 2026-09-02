@@ -484,6 +484,7 @@ public class BenchmarkServiceTests
             null!,
             null!,
             new BenchmarkRunManager(),
+            new BenchmarkDifficultyJobManager(),
             null!,
             new ConfigurationBuilder().Build(),
             NullLogger<BenchmarkService>.Instance);
@@ -549,6 +550,7 @@ public class BenchmarkServiceTests
             null!,
             null!,
             new BenchmarkRunManager(),
+            new BenchmarkDifficultyJobManager(),
             null!,
             new ConfigurationBuilder().Build(),
             NullLogger<BenchmarkService>.Instance);

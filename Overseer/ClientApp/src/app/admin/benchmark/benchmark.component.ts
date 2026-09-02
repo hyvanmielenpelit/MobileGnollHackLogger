@@ -17,7 +17,10 @@ import {
   UpdateBenchmarkScoringProfileRequest,
   StartBenchmarkRunRequest,
   SameProviderWarningDto,
-  RateSuiteDifficultyResultDto,
+  StartDifficultyAssessmentRequest,
+  DifficultyAssessmentJobDto,
+  DifficultyAssessmentJobItemDto,
+  DifficultyAssessmentJobLogEntryDto,
   BenchmarkFootprintDto
 } from '../../services/admin-benchmark.service';
 import { SystemAiConfigDto } from '../../services/admin.service';
@@ -45,6 +48,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   @ViewChild('bulkDeleteDialog') bulkDeleteDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('confirmActionDialog') confirmActionDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('difficultyAssessorDialog') difficultyAssessorDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('difficultyProgressHeading') difficultyProgressHeading?: ElementRef<HTMLElement>;
   @ViewChild('retryDialog') retryDialog!: ElementRef<HTMLDialogElement>;
 
   // Confirm Action Dialog State
@@ -146,15 +150,97 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   currentSuiteForQuestions: BenchmarkSuiteDto | null = null;
   questions: BenchmarkQuestionDto[] = [];
   loadingQuestions = false;
-  ratingDifficulty = false;
-  ratingQuestionId: number | null = null;
-
-  // Difficulty Assessor Dialog
+  // Difficulty Assessor Dialog State
   suiteForDifficultyAssessment: BenchmarkSuiteDto | null = null;
   difficultyAssessorConfigId: number | null = null;
   isDifficultyAssessorDropdownOpen = false;
   difficultyAssessmentScope: 'suite' | 'question' = 'suite';
   questionIdForDifficultyAssessment: number | null = null;
+
+  difficultyDialogPhase: 'select' | 'progress' = 'select';
+  difficultyJob: DifficultyAssessmentJobDto | null = null;
+  difficultyJobStarting = false;
+  terminatingDifficultyJob = false;
+  private difficultyPollInterval: any = null;
+  private visibilityChangeHandler: (() => void) | null = null;
+
+  actionErrorMessage: string | null = null;
+  difficultyDialogError: string | null = null;
+  copiedDiagnostics = false;
+  private copiedDiagnosticsTimer: ReturnType<typeof setTimeout> | null = null;
+
+  get ratingDifficulty(): boolean {
+    return this.difficultyJobIsRunning;
+  }
+
+  get ratingQuestionId(): number | null {
+    if (this.difficultyJobIsRunning && this.difficultyJob?.scope === 'questions' && this.difficultyJob.items.length === 1) {
+      return this.difficultyJob.items[0].questionId;
+    }
+    return null;
+  }
+
+  get difficultyJobIsRunning(): boolean {
+    return this.difficultyJob != null && this.difficultyJob.status === 'Running';
+  }
+
+  get difficultyJobIsTerminal(): boolean {
+    return this.difficultyJob != null && this.difficultyJob.status !== 'Running';
+  }
+
+  get difficultyProgressValue(): number {
+    if (!this.difficultyJob) return 0;
+    return this.difficultyJob.ratedCount + this.difficultyJob.failedCount;
+  }
+
+  get difficultyProgressMax(): number {
+    return this.difficultyJob?.totalCount || 100;
+  }
+
+  get difficultyJobProgressLabel(): string {
+    return this.difficultyProgressLabel();
+  }
+
+  get failedDifficultyItems(): DifficultyAssessmentJobItemDto[] {
+    return this.difficultyJob?.items.filter(i => i.status === 'Failed') || [];
+  }
+
+  get difficultyDiagnosticsText(): string {
+    if (!this.difficultyJob) return '';
+    const lines: string[] = [];
+    lines.push(`Job ID: ${this.difficultyJob.id}`);
+    lines.push(`Suite: ${this.difficultyJob.suiteName} (ID: ${this.difficultyJob.suiteId})`);
+    lines.push(`Assessor: ${this.difficultyJob.assessorDisplayName}`);
+    lines.push(`Status: ${this.difficultyJob.status}`);
+    lines.push(`Model Calls: ${this.difficultyJob.totalModelCalls}`);
+    lines.push(`Prompt Tokens: ${this.difficultyJob.promptTokens}, Output Tokens: ${this.difficultyJob.outputTokens}`);
+    lines.push('');
+    lines.push('--- LOG ---');
+    for (const entry of this.difficultyJob.log) {
+      lines.push(`[${entry.timestampUtc}] [${entry.severity.toUpperCase()}] ${entry.message}`);
+      if (entry.rawExcerpt) {
+        lines.push(`  Excerpt: ${entry.rawExcerpt}`);
+      }
+    }
+    return lines.join('\n');
+  }
+
+  async copyDifficultyDiagnostics(): Promise<void> {
+    const text = this.difficultyDiagnosticsText;
+    if (!text) { return; }
+    try {
+      await navigator.clipboard.writeText(text);
+      this.copiedDiagnostics = true;
+      if (this.copiedDiagnosticsTimer) { clearTimeout(this.copiedDiagnosticsTimer); }
+      this.copiedDiagnosticsTimer = setTimeout(() => {
+        this.copiedDiagnostics = false;
+        this.copiedDiagnosticsTimer = null;
+        this.cdr.detectChanges();
+      }, 2000);
+    } catch {
+      this.difficultyDialogError = 'Could not copy the diagnostics to the clipboard.';
+    }
+  }
 
   // Question Form Dialog
   editingQuestionId: number | null = null;
@@ -166,6 +252,22 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     this.loadProfiles();
     this.loadHistory();
     this.setDefaultModelSelections();
+    this.checkActiveDifficultyAssessment();
+  }
+
+  checkActiveDifficultyAssessment(): void {
+    this.benchmarkService.getActiveDifficultyAssessment().subscribe({
+      next: (job) => {
+        if (job) {
+          this.difficultyJob = job;
+          if (job.status === 'Running') {
+            this.startDifficultyPolling(job.id);
+          }
+          this.cdr.detectChanges();
+        }
+      },
+      error: (err) => console.error('Failed to check active difficulty assessment', err)
+    });
   }
 
   /**
@@ -219,6 +321,8 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   ngOnDestroy() {
     this.stopPolling();
     this.stopDetailPolling();
+    this.stopDifficultyPolling();
+    if (this.copiedDiagnosticsTimer) { clearTimeout(this.copiedDiagnosticsTimer); }
   }
 
   @HostListener('document:click', ['$event'])
@@ -573,6 +677,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     if (!this.suiteForBulkDelete) return;
     const suiteId = this.suiteForBulkDelete.id;
     this.deletingSuiteRuns = true;
+    this.actionErrorMessage = null;
 
     this.benchmarkService.deleteSuiteRuns(suiteId).subscribe({
       next: () => {
@@ -584,7 +689,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       },
       error: (err) => {
         this.deletingSuiteRuns = false;
-        alert(err?.error || 'Failed to delete suite runs.');
+        this.actionErrorMessage = err?.error || 'Failed to delete suite runs.';
         this.cdr.detectChanges();
       }
     });
@@ -659,18 +764,36 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
 
   // --- Difficulty Assessor Dialog Actions ---
 
-  openDifficultyAssessorDialog(suite: BenchmarkSuiteDto, question: BenchmarkQuestionDto | null = null) {
-    this.suiteForDifficultyAssessment = suite;
-    this.difficultyAssessmentScope = question == null ? 'suite' : 'question';
-    this.questionIdForDifficultyAssessment = question?.id ?? null;
-    this.isDifficultyAssessorDropdownOpen = false;
-    this.difficultyAssessorConfigId = this.resolveDefaultDifficultyAssessor(question);
+  isDifficultyAssessorDialogOpen = false;
+
+  openDifficultyAssessorDialog(suite?: BenchmarkSuiteDto | null, question: BenchmarkQuestionDto | null = null) {
+    this.actionErrorMessage = null;
+    this.difficultyDialogError = null;
+    this.isDifficultyAssessorDialogOpen = true;
+
+    if (this.difficultyJobIsRunning) {
+      this.difficultyDialogPhase = 'progress';
+    } else {
+      if (suite) {
+        this.suiteForDifficultyAssessment = suite;
+      }
+      this.difficultyAssessmentScope = question == null ? 'suite' : 'question';
+      this.questionIdForDifficultyAssessment = question?.id ?? null;
+      this.isDifficultyAssessorDropdownOpen = false;
+      this.difficultyAssessorConfigId = this.resolveDefaultDifficultyAssessor(question);
+      this.difficultyDialogPhase = 'select';
+    }
+
     this.difficultyAssessorDialog?.nativeElement.showModal();
   }
 
   closeDifficultyAssessorDialog() {
+    this.isDifficultyAssessorDialogOpen = false;
     this.difficultyAssessorDialog?.nativeElement.close();
     this.isDifficultyAssessorDropdownOpen = false;
+    if (this.difficultyJobIsTerminal) {
+      this.difficultyDialogPhase = 'select';
+    }
   }
 
   resolveDefaultDifficultyAssessor(question: BenchmarkQuestionDto | null): number | null {
@@ -696,66 +819,148 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
 
   confirmDifficultyAssessment() {
     if (!this.difficultyAssessorConfigId) return;
-    const configId = this.difficultyAssessorConfigId;
-    const scope = this.difficultyAssessmentScope;
-    const suiteId = this.suiteForDifficultyAssessment?.id;
-    const questionId = this.questionIdForDifficultyAssessment;
-    this.closeDifficultyAssessorDialog();
+    this.difficultyJobStarting = true;
+    this.difficultyDialogError = null;
 
-    if (scope === 'question' && questionId != null) {
-      this.rateQuestionDifficulty(questionId, configId);
-    } else if (suiteId != null) {
-      this.rateSuiteDifficulty(suiteId, configId);
+    const suiteId = this.suiteForDifficultyAssessment?.id || (this.difficultyJob?.suiteId ?? 0);
+    const questionIds = this.difficultyAssessmentScope === 'question' && this.questionIdForDifficultyAssessment != null
+      ? [this.questionIdForDifficultyAssessment]
+      : null;
+
+    this.benchmarkService.startDifficultyAssessment({
+      suiteId,
+      questionIds,
+      assessorModelConfigurationId: this.difficultyAssessorConfigId
+    }).subscribe({
+      next: (res) => {
+        this.difficultyJobStarting = false;
+        this.difficultyDialogPhase = 'progress';
+        this.isDifficultyAssessorDropdownOpen = false;
+        this.startDifficultyPolling(res.jobId);
+        this.cdr.detectChanges();
+        this.difficultyProgressHeading?.nativeElement.focus();
+      },
+      error: (err) => {
+        this.difficultyJobStarting = false;
+        if (err.status === 409 && err.error) {
+          this.difficultyJob = err.error as DifficultyAssessmentJobDto;
+          this.difficultyDialogPhase = 'progress';
+          this.isDifficultyAssessorDropdownOpen = false;
+          this.startDifficultyPolling(this.difficultyJob.id);
+          this.cdr.detectChanges();
+          this.difficultyProgressHeading?.nativeElement.focus();
+        } else {
+          this.difficultyDialogError = err?.error || 'Failed to start difficulty assessment.';
+          this.cdr.detectChanges();
+        }
+      }
+    });
+  }
+
+  startDifficultyPolling(jobId: string) {
+    this.stopDifficultyPolling();
+
+    this.pollDifficultyJob(jobId);
+
+    this.difficultyPollInterval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) {
+        return;
+      }
+      this.pollDifficultyJob(jobId);
+    }, 1500);
+
+    if (typeof document !== 'undefined') {
+      this.visibilityChangeHandler = () => {
+        if (!document.hidden) {
+          this.pollDifficultyJob(jobId);
+        }
+      };
+      document.addEventListener('visibilitychange', this.visibilityChangeHandler);
     }
   }
 
-  rateSuiteDifficulty(suiteId: number, assessorConfigId?: number) {
-    const configId = assessorConfigId ?? this.assessorConfigId;
-    if (!configId) {
-      return;
-    }
-    this.ratingDifficulty = true;
-    this.benchmarkService.rateSuiteDifficulty(suiteId, configId).subscribe({
-      next: (res) => {
-        this.ratingDifficulty = false;
-        const idx = this.suites.findIndex(s => s.id === suiteId);
-        if (idx !== -1 && res.suite) {
-          this.suites[idx] = res.suite;
-        } else {
+  private pollDifficultyJob(jobId: string) {
+    this.benchmarkService.getDifficultyAssessment(jobId).subscribe({
+      next: (job) => {
+        this.difficultyJob = job;
+        if (job.status !== 'Running') {
+          this.stopDifficultyPolling();
           this.loadSuites();
-        }
-        if (this.currentSuiteForQuestions?.id === suiteId) {
-          this.loadQuestions(suiteId);
+          if (this.currentSuiteForQuestions) {
+            this.loadQuestions(this.currentSuiteForQuestions.id);
+          }
         }
         this.cdr.detectChanges();
       },
       error: (err) => {
-        this.ratingDifficulty = false;
-        alert(err?.error || 'Failed to rate suite difficulty.');
+        console.error('Failed to poll difficulty job', err);
+      }
+    });
+  }
+
+  stopDifficultyPolling() {
+    if (this.difficultyPollInterval) {
+      clearInterval(this.difficultyPollInterval);
+      this.difficultyPollInterval = null;
+    }
+    if (this.visibilityChangeHandler && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.visibilityChangeHandler);
+      this.visibilityChangeHandler = null;
+    }
+  }
+
+  terminateDifficultyAssessment() {
+    if (!this.difficultyJob) return;
+    this.terminatingDifficultyJob = true;
+    this.benchmarkService.cancelDifficultyAssessment(this.difficultyJob.id).subscribe({
+      next: () => {
+        this.terminatingDifficultyJob = false;
+        this.pollDifficultyJob(this.difficultyJob!.id);
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.terminatingDifficultyJob = false;
+        this.actionErrorMessage = err?.error || 'Failed to cancel assessment.';
         this.cdr.detectChanges();
       }
     });
   }
 
-  rateQuestionDifficulty(questionId: number, assessorConfigId?: number) {
-    const configId = assessorConfigId ?? this.assessorConfigId;
-    if (!configId) {
-      return;
-    }
-    this.ratingQuestionId = questionId;
-    this.benchmarkService.rateQuestionDifficulty(questionId, configId).subscribe({
+  assessAgain() {
+    this.difficultyDialogPhase = 'select';
+    this.cdr.detectChanges();
+  }
+
+  retryFailedQuestions() {
+    if (!this.difficultyJob || this.failedDifficultyItems.length === 0) return;
+    this.difficultyJobStarting = true;
+    this.difficultyDialogError = null;
+
+    const failedIds = this.failedDifficultyItems.map(i => i.questionId);
+    this.benchmarkService.startDifficultyAssessment({
+      suiteId: this.difficultyJob.suiteId,
+      questionIds: failedIds,
+      assessorModelConfigurationId: this.difficultyJob.assessorConfigId
+    }).subscribe({
       next: (res) => {
-        this.ratingQuestionId = null;
-        if (this.currentSuiteForQuestions) {
-          this.loadQuestions(this.currentSuiteForQuestions.id);
-        }
-        this.loadSuites();
+        this.difficultyJobStarting = false;
+        this.difficultyDialogPhase = 'progress';
+        this.startDifficultyPolling(res.jobId);
         this.cdr.detectChanges();
+        this.difficultyProgressHeading?.nativeElement.focus();
       },
       error: (err) => {
-        this.ratingQuestionId = null;
-        alert(err?.error || 'Failed to rate question difficulty.');
-        this.cdr.detectChanges();
+        this.difficultyJobStarting = false;
+        if (err.status === 409 && err.error) {
+          this.difficultyJob = err.error as DifficultyAssessmentJobDto;
+          this.difficultyDialogPhase = 'progress';
+          this.startDifficultyPolling(this.difficultyJob.id);
+          this.cdr.detectChanges();
+          this.difficultyProgressHeading?.nativeElement.focus();
+        } else {
+          this.difficultyDialogError = err?.error || 'Failed to retry failed questions.';
+          this.cdr.detectChanges();
+        }
       }
     });
   }
@@ -1171,6 +1376,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
 
     if (scope === 'assessment') {
       if (!answer) return;
+      this.actionErrorMessage = null;
       this.reassessingAnswerId = answer.id;
       this.benchmarkService.reassessAnswer(runId, answer.id, assessorId).subscribe({
         next: () => {
@@ -1178,12 +1384,13 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
         },
         error: (err) => {
           this.reassessingAnswerId = null;
-          alert(err?.error || 'Failed to start reassessment.');
+          this.actionErrorMessage = err?.error || 'Failed to start reassessment.';
           this.cdr.detectChanges();
         }
       });
     } else if (scope === 'question') {
       if (!answer) return;
+      this.actionErrorMessage = null;
       this.rerunningAnswerId = answer.id;
       this.benchmarkService.rerunAnswer(runId, answer.id, assessorId).subscribe({
         next: () => {
@@ -1191,11 +1398,12 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
         },
         error: (err) => {
           this.rerunningAnswerId = null;
-          alert(err?.error || 'Failed to start rerun.');
+          this.actionErrorMessage = err?.error || 'Failed to start rerun.';
           this.cdr.detectChanges();
         }
       });
     } else if (scope === 'synthesis') {
+      this.actionErrorMessage = null;
       this.runningSynthesis = true;
       this.benchmarkService.rerunFinalSynthesis(runId, assessorId).subscribe({
         next: () => {
@@ -1203,11 +1411,12 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
         },
         error: (err) => {
           this.runningSynthesis = false;
-          alert(err?.error || 'Failed to start final synthesis.');
+          this.actionErrorMessage = err?.error || 'Failed to start final synthesis.';
           this.cdr.detectChanges();
         }
       });
     } else if (scope === 'assessments') {
+      this.actionErrorMessage = null;
       this.retryingAssessments = true;
       this.benchmarkService.retryFailedAssessments(runId, assessorId).subscribe({
         next: () => {
@@ -1215,7 +1424,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
         },
         error: (err) => {
           this.retryingAssessments = false;
-          alert(err?.error || 'Failed to retry failed assessments.');
+          this.actionErrorMessage = err?.error || 'Failed to retry failed assessments.';
           this.cdr.detectChanges();
         }
       });
@@ -1223,6 +1432,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   rescoreRun(runId: number) {
+    this.actionErrorMessage = null;
     this.rescoringRun = true;
     this.benchmarkService.rescoreRun(runId, this.selectedScoringProfileId).subscribe({
       next: () => {
@@ -1232,13 +1442,14 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       },
       error: (err) => {
         this.rescoringRun = false;
-        alert(err?.error || 'Failed to rescore run.');
+        this.actionErrorMessage = err?.error || 'Failed to rescore run.';
         this.cdr.detectChanges();
       }
     });
   }
 
   reassessAnswer(runId: number, answerId: number) {
+    this.actionErrorMessage = null;
     this.reassessingAnswerId = answerId;
     this.benchmarkService.reassessAnswer(runId, answerId, this.assessorConfigId).subscribe({
       next: () => {
@@ -1248,7 +1459,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       },
       error: (err) => {
         this.reassessingAnswerId = null;
-        alert(err?.error || 'Failed to reassess answer.');
+        this.actionErrorMessage = err?.error || 'Failed to reassess answer.';
         this.cdr.detectChanges();
       }
     });
@@ -1415,8 +1626,24 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     return tier.charAt(0).toUpperCase() + tier.slice(1);
   }
 
-  difficultyProgressLabel(suite: BenchmarkSuiteDto): string {
-    return `Difficulty ${suite.assessedQuestionCount}/${suite.questionCount} Assessed`;
+  difficultyProgressLabel(suite?: BenchmarkSuiteDto | null): string {
+    if (suite) {
+      return `Difficulty ${suite.assessedQuestionCount}/${suite.questionCount} Assessed`;
+    }
+    if (!this.difficultyJob) return '';
+    const total = this.difficultyJob.totalCount;
+    const rated = this.difficultyJob.ratedCount;
+    const failed = this.difficultyJob.failedCount;
+    if (this.difficultyJob.status === 'Cancelled') {
+      return `Assessment cancelled. Rated ${rated} of ${total} questions.`;
+    }
+    if (this.difficultyJob.status === 'Failed') {
+      return `Assessment failed. Rated ${rated} of ${total} questions.`;
+    }
+    if (failed > 0) {
+      return `Rated ${rated} of ${total} questions (${failed} failed).`;
+    }
+    return `Rated ${rated} of ${total} questions.`;
   }
 
   difficultyProgressClass(suite: BenchmarkSuiteDto): string {

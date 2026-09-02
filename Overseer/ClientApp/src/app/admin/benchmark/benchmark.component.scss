@@ -1283,7 +1283,25 @@
   }
 }
 
-.gh-dialog.difficulty-assessor-dialog,
+.gh-dialog.difficulty-assessor-dialog {
+  /* Wider than the 640px shared by the other form dialogs: the terminal footer carries
+     three buttons — Close, Assess Again, Retry Failed Questions — and .btn-gh's 34px
+     end-ornament padding plus its 140px minimum leaves their Cinzel labels wrapping to
+     two lines at 640px. */
+  width: min(820px, 94vw);
+  max-width: min(820px, 94vw);
+  overflow: visible;
+
+  .dialog-content {
+    overflow: visible;
+  }
+
+  .dialog-body {
+    overflow-y: auto;
+    min-height: 28rem;
+  }
+}
+
 .gh-dialog.retry-dialog {
   overflow: visible;
 
@@ -1294,6 +1312,207 @@
   .dialog-body {
     overflow: visible;
     min-height: 220px;
+  }
+}
+
+.progress-heading {
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--primary-color);
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 4px;
+    border-radius: 4px;
+  }
+}
+
+.difficulty-progress-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+
+  .progress-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: #ccc;
+    margin: 0;
+  }
+
+  .difficulty-progress {
+    width: 100%;
+    height: 10px;
+    border-radius: 5px;
+    overflow: hidden;
+    appearance: none;
+    -webkit-appearance: none;
+    accent-color: var(--primary-color);
+
+    &::-webkit-progress-bar {
+      background-color: #2a2a2a;
+      border-radius: 5px;
+    }
+
+    &::-webkit-progress-value {
+      background-color: var(--primary-color);
+      border-radius: 5px;
+    }
+
+    &::-moz-progress-bar {
+      background-color: var(--primary-color);
+      border-radius: 5px;
+    }
+  }
+
+  .progress-status {
+    margin: 0;
+    font-size: 13px;
+    color: #aaa;
+  }
+}
+
+.difficulty-item-list {
+  list-style: none;
+  margin: 0 0 16px 0;
+  padding: 0;
+  border: 1px solid #333;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.2);
+  max-height: 20rem;
+  overflow-y: auto;
+
+  .difficulty-item-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    .difficulty-item-index {
+      font-family: monospace;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--primary-color);
+      min-width: 32px;
+      flex-shrink: 0;
+    }
+
+    .difficulty-item-excerpt {
+      flex: 1;
+      font-size: 13px;
+      color: #ddd;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+}
+
+.difficulty-status-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+
+  &.status-pending {
+    background: rgba(255, 255, 255, 0.1);
+    color: #aaa;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+  }
+
+  &.status-assessing {
+    background: rgba(0, 200, 255, 0.15);
+    color: #00d4ff;
+    border: 1px solid rgba(0, 200, 255, 0.3);
+    animation: pulse-assessing 1.5s infinite ease-in-out;
+  }
+
+  &.status-rated {
+    background: rgba(46, 160, 67, 0.15);
+    color: #3fb950;
+    border: 1px solid rgba(46, 160, 67, 0.3);
+  }
+
+  &.status-failed {
+    background: rgba(248, 81, 73, 0.15);
+    color: #f85149;
+    border: 1px solid rgba(248, 81, 73, 0.3);
+  }
+}
+
+@keyframes pulse-assessing {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(0, 200, 255, 0.4);
+  }
+  50% {
+    opacity: 0.8;
+    box-shadow: 0 0 0 4px rgba(0, 200, 255, 0);
+  }
+}
+
+.difficulty-diagnostics {
+  summary {
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    color: #aaa;
+    margin-bottom: 8px;
+
+    &:hover {
+      color: #ddd;
+    }
+  }
+
+  .diagnostics-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+
+  .diagnostics-copy-status {
+    margin: 0;
+    font-size: 12px;
+    color: var(--primary-color);
+    min-height: 1em;      /* reserve the line so the toolbar does not jump when it fills */
+  }
+
+  pre {
+    max-height: 16rem;
+    overflow-y: auto;
+    background: #111;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 10px;
+    font-family: monospace;
+    font-size: 12px;
+    color: #ccc;
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0;
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 1px;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .difficulty-status-chip.status-assessing {
+    animation: none;
   }
 }
 
@@ -1365,6 +1584,7 @@
 .dialog-footer {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 12px;
   padding: 14px 24px;
   border-top: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
@@ -1373,6 +1593,10 @@
   bottom: 0;
   z-index: 10;
   flex-shrink: 0;
+
+  .btn-gh {
+    white-space: nowrap;
+  }
 
   /* Matches the global .dialog-actions behaviour. column-reverse keeps the
      affirmative action first in the DOM, where screen readers and the Enter

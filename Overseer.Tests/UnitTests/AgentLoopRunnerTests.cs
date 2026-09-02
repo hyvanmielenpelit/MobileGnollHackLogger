@@ -34,7 +34,7 @@ public class AgentLoopRunnerTests
             }
         }
 
-        public Dictionary<string, object> BuildChatRequestBody(string modelId, List<object> messageHistory, int? maxOutputTokens, string? thinkingLevel, ToolsForRequest requestTools, string? reasoningMode = null, string? reasoningSummary = null, string? serviceTier = null, bool? parallelToolCalls = null, SegmentedPrompt? segmentedPrompt = null, string? promptCacheKey = null)
+        public virtual Dictionary<string, object> BuildChatRequestBody(string modelId, List<object> messageHistory, int? maxOutputTokens, string? thinkingLevel, ToolsForRequest requestTools, string? reasoningMode = null, string? reasoningSummary = null, string? serviceTier = null, bool? parallelToolCalls = null, SegmentedPrompt? segmentedPrompt = null, string? promptCacheKey = null)
         {
             return new Dictionary<string, object> { { "model", modelId }, { "messages", messageHistory } };
         }
@@ -71,7 +71,7 @@ public class AgentLoopRunnerTests
             await Task.CompletedTask;
         }
 
-        public List<object> PrepareMessageHistory(List<object> messages)
+        public virtual List<object> PrepareMessageHistory(List<object> messages)
         {
             return new List<object>(messages);
         }
@@ -482,5 +482,194 @@ public class AgentLoopRunnerTests
 
         using var doc = JsonDocument.Parse(toolStart.Data);
         Assert.False(doc.RootElement.TryGetProperty("display_name", out _));
+    }
+
+    /// <summary>
+    /// Captures the message history as the provider actually received it, and converts a
+    /// provider-neutral <c>{ role, content }</c> message the way <c>GoogleProvider</c> does —
+    /// which is the conversion the benchmark paths were missing.
+    /// </summary>
+    private class HistoryCapturingMockProvider : MockAiProvider
+    {
+        public List<object>? CapturedHistory { get; private set; }
+
+        public int PrepareCallCount { get; private set; }
+
+        public override List<object> PrepareMessageHistory(List<object> messages)
+        {
+            PrepareCallCount++;
+
+            var formatted = new List<object>();
+            foreach (var msg in messages)
+            {
+                var role = ProviderHelper.GetProperty(msg, "role")?.ToString() ?? "user";
+                if (ProviderHelper.GetProperty(msg, "parts") != null)
+                {
+                    formatted.Add(msg);          // already provider-shaped: passthrough
+                    continue;
+                }
+
+                var content = ProviderHelper.GetProperty(msg, "content")?.ToString() ?? "";
+                var mappedRole = (role == "assistant" || role == "model") ? "model" : role;
+                formatted.Add(new { role = mappedRole, parts = new[] { new { text = content } } });
+            }
+            return formatted;
+        }
+
+        public override Dictionary<string, object> BuildChatRequestBody(string modelId, List<object> messageHistory, int? maxOutputTokens, string? thinkingLevel, ToolsForRequest requestTools, string? reasoningMode = null, string? reasoningSummary = null, string? serviceTier = null, bool? parallelToolCalls = null, SegmentedPrompt? segmentedPrompt = null, string? promptCacheKey = null)
+        {
+            CapturedHistory ??= new List<object>(messageHistory);
+            return base.BuildChatRequestBody(modelId, messageHistory, maxOutputTokens, thinkingLevel, requestTools, reasoningMode, reasoningSummary, serviceTier, parallelToolCalls, segmentedPrompt, promptCacheKey);
+        }
+    }
+
+    private static AgentLoopRunner CreateRunner(IAiProvider provider, IConfiguration config, MemoryCache cache, IServiceProvider sp)
+    {
+        var clientBridge = new NullClientBridge();
+        var handlers = new List<IToolHandler>();
+        var toolRegistry = new ToolRegistry(handlers, clientBridge, NullLogger<ToolRegistry>.Instance);
+        var toolExecutor = new ToolExecutor(handlers, clientBridge, NullLogger<ToolExecutor>.Instance, cache, config);
+
+        return new AgentLoopRunner(
+            new[] { provider },
+            toolRegistry,
+            toolExecutor,
+            new MockHttpClientFactory(),
+            config,
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            new KnowledgeBaseService(NullLogger<KnowledgeBaseService>.Instance, config),
+            new ModelMetadataService(),
+            NullLogger<AgentLoopRunner>.Instance,
+            new SubAgentCatalogService(config, NullLogger<SubAgentCatalogService>.Instance));
+    }
+
+    private static async Task<HistoryCapturingMockProvider> RunAndCaptureHistoryAsync(AgentRunRequest request)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var sp = services.BuildServiceProvider();
+        var config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+
+        var provider = new HistoryCapturingMockProvider();
+        request.ProviderName = "MockProvider";
+        request.AiProvider = provider;
+
+        var runner = CreateRunner(provider, config, cache, sp);
+        var result = new AgentRunResult();
+        await foreach (var _ in runner.RunAsync(request, null, result, CancellationToken.None)) { }
+
+        Assert.NotNull(provider.CapturedHistory);
+        return provider;
+    }
+
+    private static string RoleOf(object message) =>
+        ProviderHelper.GetProperty(message, "role")?.ToString() ?? "";
+
+    private static string TextOf(object message) =>
+        JsonSerializer.Serialize(ProviderHelper.GetProperty(message, "parts"));
+
+    [Fact]
+    public async Task RunAsync_NormalizesRawSeedHistoryThroughTheProvider()
+    {
+        // The reported Gemini failure: BenchmarkService hands over { role, content } and
+        // never calls PrepareMessageHistory, so Google received a `content` field it rejects.
+        var provider = await RunAndCaptureHistoryAsync(new AgentRunRequest
+        {
+            ModelId = "mock-model",
+            ApiKey = "test-key",
+            SeedHistory = new List<object> { new { role = "user", content = "Hello" } }
+        });
+
+        var history = provider.CapturedHistory!;
+        Assert.Single(history);
+        Assert.Equal("user", RoleOf(history[0]));
+        Assert.Equal("[{\"text\":\"Hello\"}]", TextOf(history[0]));
+        Assert.Null(ProviderHelper.GetProperty(history[0], "content"));
+    }
+
+    [Fact]
+    public async Task RunAsync_LeavesAnAlreadyProviderShapedSeedHistoryUnchanged()
+    {
+        // ChatService and DelegateToSubAgentTool already normalize before handing over, so
+        // the runner's own pass has to be idempotent for them.
+        var provider = await RunAndCaptureHistoryAsync(new AgentRunRequest
+        {
+            ModelId = "mock-model",
+            ApiKey = "test-key",
+            SeedHistory = new List<object>
+            {
+                new { role = "user", parts = new[] { new { text = "Already shaped" } } }
+            }
+        });
+
+        var history = provider.CapturedHistory!;
+        Assert.Single(history);
+        Assert.Equal("user", RoleOf(history[0]));
+        Assert.Equal("[{\"text\":\"Already shaped\"}]", TextOf(history[0]));
+    }
+
+    [Fact]
+    public async Task RunAsync_InjectsSystemPromptWhenTheHistoryHasNone()
+    {
+        // AgentRunRequest.SystemPrompt was read nowhere, so every BenchmarkService path ran
+        // with no system prompt at all.
+        var provider = await RunAndCaptureHistoryAsync(new AgentRunRequest
+        {
+            ModelId = "mock-model",
+            ApiKey = "test-key",
+            SystemPrompt = "You are an objective game mechanics expert.",
+            SeedHistory = new List<object> { new { role = "user", content = "rate this" } }
+        });
+
+        var history = provider.CapturedHistory!;
+        Assert.Equal(2, history.Count);
+        Assert.Equal("system", RoleOf(history[0]));
+        Assert.Equal("[{\"text\":\"You are an objective game mechanics expert.\"}]", TextOf(history[0]));
+        Assert.Equal("user", RoleOf(history[1]));
+        Assert.Single(history, m => RoleOf(m) == "system");
+    }
+
+    [Fact]
+    public async Task RunAsync_DoesNotInjectSystemPromptWhenTheCallerSuppliedOne()
+    {
+        // ChatService sets both SystemPrompt and an explicit system message; injecting again
+        // would duplicate the whole prompt.
+        var provider = await RunAndCaptureHistoryAsync(new AgentRunRequest
+        {
+            ModelId = "mock-model",
+            ApiKey = "test-key",
+            SystemPrompt = "Injected copy",
+            SeedHistory = new List<object>
+            {
+                new { role = "system", content = "The caller own prompt" },
+                new { role = "user", content = "hi" }
+            }
+        });
+
+        var history = provider.CapturedHistory!;
+        Assert.Equal(2, history.Count);
+        Assert.Single(history, m => RoleOf(m) == "system");
+        Assert.Equal("[{\"text\":\"The caller own prompt\"}]", TextOf(history[0]));
+    }
+
+    [Fact]
+    public async Task RunAsync_DoesNotInjectSystemPromptWhenASegmentedPromptIsInPlay()
+    {
+        // With a segmented prompt the providers build `system` from the segments; a history
+        // entry would be a second, competing source.
+        var provider = await RunAndCaptureHistoryAsync(new AgentRunRequest
+        {
+            ModelId = "mock-model",
+            ApiKey = "test-key",
+            SystemPrompt = "Should not be injected",
+            SegmentedPrompt = new SegmentedPrompt("frozen", "session", "volatile"),
+            SeedHistory = new List<object> { new { role = "user", content = "hi" } }
+        });
+
+        var history = provider.CapturedHistory!;
+        Assert.Single(history);
+        Assert.Equal("user", RoleOf(history[0]));
+        Assert.DoesNotContain(history, m => RoleOf(m) == "system");
     }
 }

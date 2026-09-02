@@ -1,7 +1,7 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { AdminBenchmarkComponent } from './benchmark.component';
 import { AdminBenchmarkService } from '../../services/admin-benchmark.service';
 
@@ -28,8 +28,10 @@ describe('AdminBenchmarkComponent', () => {
       'getSuiteRunsFootprint',
       'deleteSuiteRuns',
       'reorderQuestions',
-      'rateSuiteDifficulty',
-      'rateQuestionDifficulty',
+      'startDifficultyAssessment',
+      'getDifficultyAssessment',
+      'getActiveDifficultyAssessment',
+      'cancelDifficultyAssessment',
       'reassessAnswer',
       'rerunAnswer',
       'rerunFinalSynthesis',
@@ -37,6 +39,7 @@ describe('AdminBenchmarkComponent', () => {
       'rescoreRun'
     ]);
 
+    benchmarkServiceMock.getActiveDifficultyAssessment.and.returnValue(of(null));
     benchmarkServiceMock.getSuiteRunsFootprint.and.returnValue(of({ runCount: 0, totalAnswerCharacters: 0 }));
     benchmarkServiceMock.getSuites.and.returnValue(of([
       { id: 1, name: 'Default Suite', description: 'Test', createdAtUtc: '2026-09-01T00:00:00Z', modifiedAtUtc: null, questionCount: 15, assessedQuestionCount: 15, difficultyFullyAssessed: true }
@@ -430,7 +433,7 @@ describe('AdminBenchmarkComponent', () => {
     expect(component.difficultyAssessorDialog.nativeElement.showModal).toHaveBeenCalled();
     expect(component.suiteForDifficultyAssessment).toBe(testSuite);
     expect(component.difficultyAssessmentScope).toBe('suite');
-    expect(benchmarkServiceMock.rateSuiteDifficulty).not.toHaveBeenCalled();
+    expect(benchmarkServiceMock.startDifficultyAssessment).not.toHaveBeenCalled();
   });
 
   it('should resolve default difficulty assessor preferring question stored config id if benchmark-capable', () => {
@@ -498,6 +501,242 @@ describe('AdminBenchmarkComponent', () => {
       difficultyFullyAssessed: false
     };
     expect(component.difficultyProgressClass(emptySuite)).toBe('none');
+  });
+
+  it('should start difficulty assessment on confirm, set phase to progress, and start polling', () => {
+    const testSuite = {
+      id: 1,
+      name: 'Default Suite',
+      description: 'Test',
+      createdAtUtc: '2026-09-01T00:00:00Z',
+      modifiedAtUtc: null,
+      questionCount: 15,
+      assessedQuestionCount: 0,
+      difficultyFullyAssessed: false
+    };
+    component.suiteForDifficultyAssessment = testSuite;
+    component.difficultyAssessmentScope = 'suite';
+    component.difficultyAssessorConfigId = 1;
+
+    const mockJob = {
+      id: 'job-123',
+      suiteId: 1,
+      suiteName: 'Default Suite',
+      scope: 'suite',
+      assessorConfigId: 1,
+      assessorDisplayName: 'Test Assessor',
+      startedAtUtc: '2026-09-02T00:00:00Z',
+      completedAtUtc: null,
+      status: 'Running',
+      ratedCount: 0,
+      failedCount: 0,
+      totalCount: 15,
+      totalModelCalls: 0,
+      promptTokens: 0,
+      outputTokens: 0,
+      items: [],
+      log: []
+    };
+
+    benchmarkServiceMock.startDifficultyAssessment.and.returnValue(of({ jobId: 'job-123' }));
+    benchmarkServiceMock.getDifficultyAssessment.and.returnValue(of(mockJob));
+
+    component.confirmDifficultyAssessment();
+
+    expect(benchmarkServiceMock.startDifficultyAssessment).toHaveBeenCalledWith({
+      suiteId: 1,
+      questionIds: null,
+      assessorModelConfigurationId: 1
+    });
+    expect(component.difficultyDialogPhase).toBe('progress');
+    expect(benchmarkServiceMock.getDifficultyAssessment).toHaveBeenCalledWith('job-123');
+    expect(component.difficultyJob).toEqual(mockJob);
+    expect(component.difficultyJobIsRunning).toBeTrue();
+  });
+
+  it('should handle 409 conflict when starting difficulty assessment by adopting running job', () => {
+    component.suiteForDifficultyAssessment = {
+      id: 1,
+      name: 'Default Suite',
+      description: 'Test',
+      createdAtUtc: '2026-09-01T00:00:00Z',
+      modifiedAtUtc: null,
+      questionCount: 15,
+      assessedQuestionCount: 0,
+      difficultyFullyAssessed: false
+    };
+    component.difficultyAssessorConfigId = 1;
+
+    const existingJob = {
+      id: 'job-conflict',
+      suiteId: 1,
+      suiteName: 'Default Suite',
+      scope: 'suite',
+      assessorConfigId: 1,
+      assessorDisplayName: 'Test Assessor',
+      startedAtUtc: '2026-09-02T00:00:00Z',
+      completedAtUtc: null,
+      status: 'Running',
+      ratedCount: 5,
+      failedCount: 0,
+      totalCount: 15,
+      totalModelCalls: 2,
+      promptTokens: 100,
+      outputTokens: 50,
+      items: [],
+      log: []
+    };
+
+    const errorResponse = { status: 409, error: existingJob };
+    benchmarkServiceMock.startDifficultyAssessment.and.returnValue(throwError(() => errorResponse));
+    benchmarkServiceMock.getDifficultyAssessment.and.returnValue(of(existingJob));
+
+    component.confirmDifficultyAssessment();
+
+    expect(component.difficultyDialogPhase).toBe('progress');
+    expect(component.difficultyJob).toEqual(existingJob);
+    expect(component.difficultyJobIsRunning).toBeTrue();
+  });
+
+  it('should cancel running assessment on terminateDifficultyAssessment', () => {
+    const runningJob = {
+      id: 'job-to-cancel',
+      suiteId: 1,
+      suiteName: 'Default Suite',
+      scope: 'suite',
+      assessorConfigId: 1,
+      assessorDisplayName: 'Test Assessor',
+      startedAtUtc: '2026-09-02T00:00:00Z',
+      completedAtUtc: null,
+      status: 'Running',
+      ratedCount: 2,
+      failedCount: 0,
+      totalCount: 10,
+      totalModelCalls: 1,
+      promptTokens: 50,
+      outputTokens: 20,
+      items: [],
+      log: []
+    };
+
+    component.difficultyJob = runningJob;
+    benchmarkServiceMock.cancelDifficultyAssessment.and.returnValue(of({ cancelled: true }));
+    benchmarkServiceMock.getDifficultyAssessment.and.returnValue(of({ ...runningJob, status: 'Cancelled' }));
+
+    component.terminateDifficultyAssessment();
+
+    expect(benchmarkServiceMock.cancelDifficultyAssessment).toHaveBeenCalledWith('job-to-cancel');
+  });
+
+  it('should retry failed questions by starting assessment with failed question ids', () => {
+    const failedJob = {
+      id: 'job-failed',
+      suiteId: 1,
+      suiteName: 'Default Suite',
+      scope: 'suite',
+      assessorConfigId: 1,
+      assessorDisplayName: 'Test Assessor',
+      startedAtUtc: '2026-09-02T00:00:00Z',
+      completedAtUtc: '2026-09-02T00:01:00Z',
+      status: 'Failed',
+      ratedCount: 1,
+      failedCount: 2,
+      totalCount: 3,
+      totalModelCalls: 3,
+      promptTokens: 150,
+      outputTokens: 60,
+      items: [
+        { questionId: 101, orderIndex: 1, questionTextExcerpt: 'Q1', status: 'Rated', difficulty: 50, errorMessage: null },
+        { questionId: 102, orderIndex: 2, questionTextExcerpt: 'Q2', status: 'Failed', difficulty: null, errorMessage: 'Timeout' },
+        { questionId: 103, orderIndex: 3, questionTextExcerpt: 'Q3', status: 'Failed', difficulty: null, errorMessage: 'Parse error' }
+      ],
+      log: []
+    };
+
+    component.difficultyJob = failedJob;
+    benchmarkServiceMock.startDifficultyAssessment.and.returnValue(of({ jobId: 'retry-job-1' }));
+    benchmarkServiceMock.getDifficultyAssessment.and.returnValue(of({ ...failedJob, id: 'retry-job-1', status: 'Running' }));
+
+    component.retryFailedQuestions();
+
+    expect(benchmarkServiceMock.startDifficultyAssessment).toHaveBeenCalledWith({
+      suiteId: 1,
+      questionIds: [102, 103],
+      assessorModelConfigurationId: 1
+    });
+  });
+
+  describe('difficulty diagnostics copy button', () => {
+    const buildFailedJob = () => ({
+      id: 'job-diag',
+      suiteId: 1,
+      suiteName: 'Default Suite',
+      scope: 'suite',
+      assessorConfigId: 1,
+      assessorDisplayName: 'Test Assessor',
+      startedAtUtc: '2026-09-02T00:00:00Z',
+      completedAtUtc: '2026-09-02T00:01:00Z',
+      status: 'Failed',
+      ratedCount: 1,
+      failedCount: 1,
+      totalCount: 2,
+      totalModelCalls: 3,
+      promptTokens: 150,
+      outputTokens: 60,
+      items: [
+        { questionId: 101, orderIndex: 1, questionTextExcerpt: 'Q1', status: 'Rated', difficulty: 50, errorMessage: null },
+        { questionId: 102, orderIndex: 2, questionTextExcerpt: 'Q2', status: 'Failed', difficulty: null, errorMessage: 'Timeout' }
+      ],
+      log: []
+    });
+
+    beforeEach(() => {
+      component.difficultyDialogPhase = 'progress';
+      component.difficultyJob = buildFailedJob();
+      fixture.detectChanges();
+    });
+
+    it('should write the diagnostics text to the clipboard, announce it, and reset after the timeout', fakeAsync(() => {
+      const writeTextSpy = spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.resolve());
+      const expectedText = component.difficultyDiagnosticsText;
+      expect(expectedText).toContain('Job ID: job-diag');
+
+      const copyButton = fixture.nativeElement.querySelector(
+        'button[aria-label="Copy difficulty assessment diagnostics"]'
+      ) as HTMLButtonElement;
+      expect(copyButton).toBeTruthy();
+
+      copyButton.click();
+      tick();
+      fixture.detectChanges();
+
+      expect(writeTextSpy).toHaveBeenCalledWith(expectedText);
+      expect(component.copiedDiagnostics).toBeTrue();
+
+      const status = fixture.nativeElement.querySelector('.diagnostics-copy-status') as HTMLElement;
+      expect(status.textContent?.trim()).toBe('Diagnostics copied to clipboard');
+
+      tick(2000);
+      fixture.detectChanges();
+
+      expect(component.copiedDiagnostics).toBeFalse();
+      expect(status.textContent?.trim()).toBe('');
+    }));
+
+    it('should surface a clipboard failure in the inline dialog error rather than throwing', fakeAsync(() => {
+      spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.reject(new Error('denied')));
+
+      const copyButton = fixture.nativeElement.querySelector(
+        'button[aria-label="Copy difficulty assessment diagnostics"]'
+      ) as HTMLButtonElement;
+
+      copyButton.click();
+      tick();
+      fixture.detectChanges();
+
+      expect(component.copiedDiagnostics).toBeFalse();
+      expect(component.difficultyDialogError).toBe('Could not copy the diagnostics to the clipboard.');
+    }));
   });
 
   it('should disable start button and render warning notice when selected suite is not fully assessed', () => {
