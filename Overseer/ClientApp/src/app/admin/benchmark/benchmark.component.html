@@ -77,7 +77,16 @@
         </div>
 
         @if (runErrorMessage) {
-          <div class="alert alert-danger mb-20">{{ runErrorMessage }}</div>
+          <div class="alert alert-danger mb-20" role="alert" aria-live="assertive">
+            <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="8" x2="12" y2="12"></line>
+              <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+            <div class="alert-content">
+              <div class="alert-body">{{ runErrorMessage }}</div>
+            </div>
+          </div>
         }
 
         <div class="setup-form-rows">
@@ -94,12 +103,25 @@
                 }
               </select>
               @if (selectedSuite && !selectedSuite.difficultyFullyAssessed) {
-                <div class="alert alert-warning mt-10">
-                  <strong>{{ difficultyProgressLabel(selectedSuite) }}.</strong>
-                  Every question must have an assessed difficulty before this suite can be run.
-                  <button type="button" class="btn-link" (click)="openDifficultyAssessorDialog(selectedSuite)">
-                    Assess question difficulty
-                  </button>
+                <div class="alert alert-warning mt-10" role="alert">
+                  <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                    <line x1="12" y1="9" x2="12" y2="13"></line>
+                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                  </svg>
+                  <div class="alert-content">
+                    <div class="alert-heading">
+                      <strong>{{ difficultyProgressLabel(selectedSuite) }}</strong>
+                    </div>
+                    <div class="alert-body">
+                      Every question must have an assessed difficulty before this suite can be run.
+                    </div>
+                    <div class="alert-actions">
+                      <button type="button" class="alert-action-btn" (click)="openDifficultyAssessorDialog(selectedSuite)">
+                        Assess question difficulty
+                      </button>
+                    </div>
+                  </div>
                 </div>
               }
             </div>
@@ -506,8 +528,18 @@
         </div>
 
         @if (hasDivergence(selectedRunDetail.finalScore, selectedRunDetail.qualityIndex ?? selectedRunDetail.computedScore)) {
-          <div class="alert alert-warning mb-20">
-            ⚠️ <strong>Index Divergence:</strong> The assessor's holistic score ({{ selectedRunDetail.finalScore }}) diverges significantly from the difficulty-weighted Intelligence Index ({{ selectedRunDetail.qualityIndex ?? selectedRunDetail.computedScore }}). Check assessor qualitative comments.
+          <div class="alert alert-warning mb-20" role="alert">
+            <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+              <line x1="12" y1="9" x2="12" y2="13"></line>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+            <div class="alert-content">
+              <div class="alert-heading"><strong>Index Divergence</strong></div>
+              <div class="alert-body">
+                The assessor's holistic score ({{ selectedRunDetail.finalScore }}) diverges significantly from the difficulty-weighted Intelligence Index ({{ selectedRunDetail.qualityIndex ?? selectedRunDetail.computedScore }}). Check assessor qualitative comments.
+              </div>
+            </div>
           </div>
         }
 
@@ -570,8 +602,16 @@
               @if (expandedQuestions.has(ans.orderIndex)) {
                 <div class="question-card-body">
                   @if (ans.status === 2 || formatAnswerStatus(ans.status) === 'ProviderError') {
-                    <div class="alert alert-danger mb-15">
-                      <strong>Provider Outage/Error (HTTP {{ ans.httpStatusCode }}):</strong> {{ ans.errorMessage }}
+                    <div class="alert alert-danger mb-15" role="alert">
+                      <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                      </svg>
+                      <div class="alert-content">
+                        <div class="alert-heading"><strong>Provider Outage/Error (HTTP {{ ans.httpStatusCode }})</strong></div>
+                        <div class="alert-body">{{ ans.errorMessage }}</div>
+                      </div>
                     </div>
                   }
 
@@ -749,10 +789,17 @@
     <div class="dialog-body">
       @if (profileValidationErrors.length > 0) {
         <div class="alert alert-danger mb-15" role="alert" aria-live="assertive">
-          <h4 class="visually-hidden">Profile could not be saved</h4>
-          @for (err of profileValidationErrors; track err) {
-            <div>{{ err }}</div>
-          }
+          <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+          <div class="alert-content">
+            <h4 class="visually-hidden">Profile could not be saved</h4>
+            @for (err of profileValidationErrors; track err) {
+              <div class="alert-body">{{ err }}</div>
+            }
+          </div>
         </div>
       }
 
@@ -1074,8 +1121,18 @@
         </button>
       </div>
       <div class="dialog-body">
-        <div class="alert alert-warning mb-15">
-          <strong>Methodological Notice:</strong> Both candidate and assessor models belong to <strong>{{ sameProviderWarning.provider }}</strong>.
+        <div class="alert alert-warning mb-15" role="alert">
+          <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+            <line x1="12" y1="9" x2="12" y2="13"></line>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+          <div class="alert-content">
+            <div class="alert-heading"><strong>Methodological Notice</strong></div>
+            <div class="alert-body">
+              Both candidate and assessor models belong to <strong>{{ sameProviderWarning.provider }}</strong>.
+            </div>
+          </div>
         </div>
         <p class="mb-10">
           <strong>Model Under Test:</strong> {{ sameProviderWarning.testedModelDisplayName }}<br>
