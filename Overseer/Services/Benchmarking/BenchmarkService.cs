@@ -587,7 +587,7 @@ public class BenchmarkService
         {
             await configService.RecordUsageAsync(
                 testedConfig.Id,
-                run.StartedByUserId ?? string.Empty,
+                run.StartedByUserId,
                 answer.InputTokens ?? 0,
                 answer.OutputTokens ?? 0,
                 roleContext: 4,
@@ -701,7 +701,7 @@ public class BenchmarkService
         {
             await configService.RecordUsageAsync(
                 testedConfig.Id,
-                run.StartedByUserId ?? string.Empty,
+                run.StartedByUserId,
                 answer.InputTokens ?? 0,
                 answer.OutputTokens ?? 0,
                 roleContext: 4,
@@ -860,7 +860,7 @@ public class BenchmarkService
         {
             await configService.RecordUsageAsync(
                 assessorConfig.Id,
-                run.StartedByUserId ?? string.Empty,
+                run.StartedByUserId,
                 runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : runResult.EstimatedInputTokens,
                 runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens,
                 roleContext: 4,
@@ -994,7 +994,7 @@ public class BenchmarkService
         {
             await configService.RecordUsageAsync(
                 assessorConfig.Id,
-                run.StartedByUserId ?? string.Empty,
+                run.StartedByUserId,
                 runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : runResult.EstimatedInputTokens,
                 runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens,
                 roleContext: 4,
@@ -1110,7 +1110,7 @@ public class BenchmarkService
                 int maxOutput = assessorConfig.MaxOutputTokens ?? Math.Clamp(1024 + 768 * currentBatch.Count, 4096, 32768);
 
                 var (runResult, sw, terminalError) = await ExecuteAssessorCallAsync(assessorConfig, assessorApiKey, prompt, maxOutput, cancellationToken);
-                await RecordJobUsageAsync(job, configService, assessorConfig, runResult, sw);
+                await RecordJobUsageAsync(job, configService, assessorConfig, runResult, sw, rawResponseExcerptLength);
 
                 var failureAction = BenchmarkDifficultyFailurePolicy.Decide(terminalError);
                 if (failureAction != BenchmarkDifficultyFailureAction.ParseResponse)
@@ -1184,7 +1184,7 @@ public class BenchmarkService
 
                     string repairPrompt = BenchmarkDifficultyPrompt.BuildRepairPrompt(suite.Name, currentBatch, rawExcerpt);
                     var (repairResult, repairSw, repairTerminalError) = await ExecuteAssessorCallAsync(assessorConfig, assessorApiKey, repairPrompt, maxOutput, cancellationToken);
-                    await RecordJobUsageAsync(job, configService, assessorConfig, repairResult, repairSw);
+                    await RecordJobUsageAsync(job, configService, assessorConfig, repairResult, repairSw, rawResponseExcerptLength);
 
                     // The repair attempt can hit the same wall. Do not fall through to the
                     // split: splitting a batch the provider refused only multiplies the
@@ -1310,10 +1310,24 @@ public class BenchmarkService
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.LogError(ex, "Error processing difficulty assessment batch [{BatchIds}]", string.Join(",", batchQuestionIds));
-                job.AddLog($"Exception assessing batch: {ex.Message}", "error");
+
+                string shortDescription = ExceptionDetails.DescribeShort(ex);
+                job.AddLog($"Exception assessing batch: {shortDescription}", "error",
+                    ExceptionDetails.Describe(ex, rawResponseExcerptLength));
+
                 foreach (long qId in batchQuestionIds)
                 {
-                    job.SetItemFailed(qId, ex.Message);
+                    job.SetItemFailed(qId, shortDescription);
+                }
+
+                // An Added entity that the database rejected fails identically on every
+                // later save in this scope, so one bad insert would otherwise doom every
+                // remaining batch. Nothing in this loop legitimately inserts rows.
+                // Modified entries are the question updates and are left alone: detaching
+                // them would silently discard a rating for a requeued question.
+                if (ex is DbUpdateException dbUpdateEx)
+                {
+                    DetachFailedInserts(dbUpdateEx, job);
                 }
             }
         }
@@ -1334,6 +1348,43 @@ public class BenchmarkService
             job.SetStatus(finalStatus);
             _difficultyJobManager.Complete(job.Id, finalStatus);
             job.AddLog($"Assessment finished with status: {finalStatus}. Rated: {dto.RatedCount}, Failed: {dto.FailedCount}.", "info");
+        }
+    }
+
+    /// <summary>
+    /// Detaches entities a failed insert left in the change tracker, so the next save in
+    /// the same scope is not doomed to repeat the same failure.
+    /// </summary>
+    private void DetachFailedInserts(DbUpdateException ex, BenchmarkDifficultyJob job)
+    {
+        try
+        {
+            var added = ex.Entries
+                .Where(e => e.State == EntityState.Added)
+                .ToList();
+
+            if (added.Count == 0)
+            {
+                return;
+            }
+
+            var typeNames = added
+                .Select(e => e.Entity.GetType().Name)
+                .Distinct()
+                .ToList();
+
+            foreach (var entry in added)
+            {
+                entry.State = EntityState.Detached;
+            }
+
+            job.AddLog($"Discarded {added.Count} rejected pending insert(s) ({string.Join(", ", typeNames)}) so later batches can save.", "warning");
+            _logger.LogWarning("Detached {Count} rejected pending insert(s) after a failed save: {Types}",
+                added.Count, string.Join(", ", typeNames));
+        }
+        catch (Exception detachEx)
+        {
+            _logger.LogWarning(detachEx, "Failed to detach rejected pending inserts after a failed save.");
         }
     }
 
@@ -1393,7 +1444,8 @@ public class BenchmarkService
         SystemAiConfigService configService,
         SystemAiApiConfiguration assessorConfig,
         AgentRunResult runResult,
-        Stopwatch sw)
+        Stopwatch sw,
+        int detailExcerptLength)
     {
         int promptTokens = runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : runResult.EstimatedInputTokens;
         int outputTokens = runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens;
@@ -1403,7 +1455,7 @@ public class BenchmarkService
         {
             await configService.RecordUsageAsync(
                 assessorConfig.Id,
-                string.Empty,
+                job.StartedByUserId,
                 promptTokens,
                 outputTokens,
                 roleContext: 4,
@@ -1414,6 +1466,11 @@ public class BenchmarkService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to record usage for difficulty assessment call.");
+
+            // Visible in the Diagnostics panel: a usage failure used to reach the ILogger
+            // only, which made the batch failures it caused look causeless.
+            job.AddLog("Failed to record model usage for this call; assessment continues.", "warning",
+                ExceptionDetails.Describe(ex, detailExcerptLength));
         }
     }
 

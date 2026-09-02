@@ -37,6 +37,10 @@ public class BenchmarkDifficultyJob
     public string Scope { get; set; } = "suite";
     public long AssessorConfigId { get; set; }
     public string AssessorDisplayName { get; set; } = string.Empty;
+
+    /// <summary>The admin who started the job; usage is recorded against them.</summary>
+    public string? StartedByUserId { get; set; }
+
     public DateTime StartedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime? CompletedAtUtc { get; set; }
     public BenchmarkDifficultyJobStatus Status { get; set; } = BenchmarkDifficultyJobStatus.Running;

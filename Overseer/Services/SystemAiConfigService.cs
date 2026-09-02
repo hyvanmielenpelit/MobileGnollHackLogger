@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using MobileGnollHackLogger.Data;
 
 namespace Overseer.Services;
@@ -6,10 +7,12 @@ namespace Overseer.Services;
 public class SystemAiConfigService
 {
     private readonly ApplicationDbContext _dbContext;
+    private readonly ILogger<SystemAiConfigService> _logger;
 
-    public SystemAiConfigService(ApplicationDbContext dbContext)
+    public SystemAiConfigService(ApplicationDbContext dbContext, ILogger<SystemAiConfigService> logger)
     {
         _dbContext = dbContext;
+        _logger = logger;
     }
 
     public async Task<(SystemAiApiConfiguration? Config, string? ErrorMessage)> GetAndCheckSystemConfigAsync(long configId, string userId, int? requiredRoleFilter = null)
@@ -131,7 +134,7 @@ public class SystemAiConfigService
 
     public async Task RecordUsageAsync(
         long configId,
-        string userId,
+        string? userId,
         int inputTokens,
         int outputTokens,
         int roleContext = 1,
@@ -149,46 +152,78 @@ public class SystemAiConfigService
 
         IncrementUsage(config, roleContext, totalTokens);
 
-        // User specific limit
-        var userAssignment = await _dbContext.UserSystemAiApiConfigurations
-            .FirstOrDefaultAsync(u => u.SystemAiApiConfigurationId == configId && u.AspNetUserId == userId);
-        if (userAssignment != null && userAssignment.IsEnabled)
+        bool hasUser = !string.IsNullOrEmpty(userId);
+
+        if (hasUser)
         {
-            ResetCountersIfNeeded(userAssignment, now);
-            IncrementUsage(userAssignment, roleContext, totalTokens);
+            // User specific limit
+            var userAssignment = await _dbContext.UserSystemAiApiConfigurations
+                .FirstOrDefaultAsync(u => u.SystemAiApiConfigurationId == configId && u.AspNetUserId == userId);
+            if (userAssignment != null && userAssignment.IsEnabled)
+            {
+                ResetCountersIfNeeded(userAssignment, now);
+                IncrementUsage(userAssignment, roleContext, totalTokens);
+            }
+
+            // Group specific limit
+            var userGroupIds = await _dbContext.UserGroups
+                .Where(ug => ug.AspNetUserId == userId)
+                .Select(ug => ug.GroupId)
+                .ToListAsync();
+            var groupAssignments = await _dbContext.GroupSystemAiApiConfigurations
+                .Where(g => g.SystemAiApiConfigurationId == configId && userGroupIds.Contains(g.GroupId) && g.IsEnabled)
+                .ToListAsync();
+            foreach (var g in groupAssignments)
+            {
+                ResetCountersIfNeeded(g, now);
+                IncrementUsage(g, roleContext, totalTokens);
+            }
         }
 
-        // Group specific limit
-        var userGroupIds = await _dbContext.UserGroups
-            .Where(ug => ug.AspNetUserId == userId)
-            .Select(ug => ug.GroupId)
-            .ToListAsync();
-        var groupAssignments = await _dbContext.GroupSystemAiApiConfigurations
-            .Where(g => g.SystemAiApiConfigurationId == configId && userGroupIds.Contains(g.GroupId) && g.IsEnabled)
-            .ToListAsync();
-        foreach (var g in groupAssignments)
+        // SystemAiUsageLog.AspNetUserId is a required foreign key to AspNetUsers, so a row
+        // without a user cannot be stored. Attempting it anyway is not merely futile: the
+        // rejected insert stays in the change tracker in Added state and every later
+        // SaveChanges on this shared context fails on it too.
+        SystemAiUsageLog? log = null;
+        if (hasUser)
         {
-            ResetCountersIfNeeded(g, now);
-            IncrementUsage(g, roleContext, totalTokens);
+            log = new SystemAiUsageLog
+            {
+                SystemAiApiConfigurationId = configId,
+                AspNetUserId = userId!,
+                TimestampUtc = now,
+                InputTokens = inputTokens,
+                OutputTokens = outputTokens,
+                CacheReadInputTokens = cacheReadTokens,
+                CacheCreationInputTokens = cacheCreationTokens,
+                TotalDurationMs = totalDurationMs,
+                ModelId = config.ModelId,
+                Provider = config.Provider,
+                RoleContext = roleContext
+            };
+            _dbContext.SystemAiUsageLogs.Add(log);
+        }
+        else
+        {
+            _logger.LogWarning(
+                "Usage for system AI configuration {ConfigId} (role context {RoleContext}) was counted but not logged: no user id was supplied.",
+                configId, roleContext);
         }
 
-        var log = new SystemAiUsageLog
+        try
         {
-            SystemAiApiConfigurationId = configId,
-            AspNetUserId = userId,
-            TimestampUtc = now,
-            InputTokens = inputTokens,
-            OutputTokens = outputTokens,
-            CacheReadInputTokens = cacheReadTokens,
-            CacheCreationInputTokens = cacheCreationTokens,
-            TotalDurationMs = totalDurationMs,
-            ModelId = config.ModelId,
-            Provider = config.Provider,
-            RoleContext = roleContext
-        };
-        _dbContext.SystemAiUsageLogs.Add(log);
-
-        await _dbContext.SaveChangesAsync();
+            await _dbContext.SaveChangesAsync();
+        }
+        catch
+        {
+            // Leave the caller's context usable: the counter updates are valid and will
+            // commit with the next save, but a rejected log row would fail forever.
+            if (log != null)
+            {
+                _dbContext.Entry(log).State = EntityState.Detached;
+            }
+            throw;
+        }
     }
 
     private void IncrementUsage(IRateLimitedEntity entity, int roleContext, long totalTokens)

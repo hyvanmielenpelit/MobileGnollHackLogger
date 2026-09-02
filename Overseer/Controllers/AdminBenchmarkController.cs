@@ -290,6 +290,8 @@ public class AdminBenchmarkController : ControllerBase
             return BadRequest("The selected assessor configuration does not have the Benchmark role enabled.");
         }
 
+        string startedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+
         var cts = new CancellationTokenSource();
         var job = new BenchmarkDifficultyJob
         {
@@ -298,6 +300,7 @@ public class AdminBenchmarkController : ControllerBase
             Scope = scopeType,
             AssessorConfigId = assessorConfig.Id,
             AssessorDisplayName = assessorConfig.DisplayName,
+            StartedByUserId = string.IsNullOrEmpty(startedByUserId) ? null : startedByUserId,
             Cts = cts,
             Items = targetQuestions.Select(q => new BenchmarkDifficultyJobItem
             {
