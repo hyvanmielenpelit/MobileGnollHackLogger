@@ -967,6 +967,22 @@ public class AdminBenchmarkController : ControllerBase
         return Ok(dto);
     }
 
+    /// <summary>
+    /// Returns the id of the run currently executing, so a client that reloaded mid-run can
+    /// reattach to it. Only the id is returned; the client calls <see cref="GetRun"/> for the
+    /// detail rather than duplicating that projection here.
+    /// </summary>
+    [HttpGet("runs/active")]
+    public IActionResult GetActiveRun()
+    {
+        var runId = _runManager.CurrentRunId;
+        if (!runId.HasValue)
+        {
+            return NoContent();
+        }
+        return Ok(new { runId = runId.Value });
+    }
+
     [HttpGet("runs")]
     public async Task<IActionResult> GetRuns([FromQuery] long? suiteId, [FromQuery] int? take)
     {

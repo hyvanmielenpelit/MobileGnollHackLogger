@@ -20,6 +20,22 @@ The benchmark framework consists of:
 - **Configurable Scoring Profiles**: Entities defining weights, level-to-score mappings, critical error ceilings, speed target latencies, decay factors, and maximum parallel questions.
 - **Exportable Markdown Reports**: Generates comprehensive 7-section Markdown reports containing run manifests, results summaries with Intelligence and Speed indices, question replies, tool traces, scoring methodology, and final qualitative synthesis.
 
+### Run Progress Dialog
+
+Starting a run opens a modal progress dialog, reachable again at any time from the **Show Progress** button on the active-run banner. It presents the run as the three sequential stages the executor actually performs, rather than as a single loop:
+
+1. **Collecting answers** — every question is answered, in parallel up to `MaxParallelQuestionsUsed`.
+2. **Assessing answers** — every answer is scored by the assessor model.
+3. **Synthesis and scoring** — the holistic report and final indices are produced.
+
+The stage is derived client-side from `BenchmarkRunDetailDto`: answers present versus `TotalQuestionCount` separates stage 1 from stage 2, and the answers' `AssessmentStatus` values separate stage 2 from stage 3. Two determinate progress bars — Answers and Assessments — stay visible in every stage, so a full Answers bar during assessment does not read as a hang.
+
+The per-question list merges the suite's questions (fetched once when the dialog opens) with the run's answers. A question with no answer row shows `Pending`. There is deliberately no inferred "in progress" state: `BenchmarkService` creates a `BenchmarkRunAnswer` only after the model replies, so no per-question in-flight state is knowable from the client. Reporting one would require server-side run state in `BenchmarkRunManager`, which this dialog does not add.
+
+Diagnostics are assembled **client-side from the run detail**, not from a server-side log — `BenchmarkRunManager` keeps none, and the DTO already carries the run manifest, token counters, flags, and per-question error and HTTP status codes. Answer text, thought text, and assessor comments are deliberately excluded: they are long, model-generated, and already reachable through the run detail dialog and the Markdown report.
+
+Reloading the admin page mid-run restores the banner via `GET /api/admin/benchmark/runs/active`. The dialog is **not** auto-opened on load, so it never steals focus from work in progress.
+
 ---
 
 ## 2. BARS Rating Scales & Score Mapping
@@ -109,6 +125,7 @@ All benchmark endpoints require the `AdminOnly` authorization policy:
 - `POST /api/admin/benchmark/runs`: Start a benchmark run (gated by hourly/daily caps and same-provider acknowledgement).
 - `GET /api/admin/benchmark/runs`: List historical runs with filtering.
 - `GET /api/admin/benchmark/runs/{id}`: Full run detail with question answers, compliance purpose statement, and assessment.
+- `GET /api/admin/benchmark/runs/active`: Return `{ runId }` for the run currently executing, or 204 when idle. Lets a client that reloaded mid-run reattach to it; the client then calls `GET .../runs/{id}` for the detail.
 - `POST /api/admin/benchmark/runs/{id}/rescore`: Recompute indices for an existing run against a scoring profile (ungated arithmetic).
 - `POST /api/admin/benchmark/runs/{id}/answers/{answerId}/reassess`: Re-assess a single question's answer (gated by spend caps).
 - `POST /api/admin/benchmark/runs/{id}/cancel`: Cancel an active run.

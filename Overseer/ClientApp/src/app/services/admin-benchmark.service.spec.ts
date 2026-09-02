@@ -58,4 +58,25 @@ describe('AdminBenchmarkService', () => {
     expect(req.request.method).toBe('POST');
     req.flush({ runId: 42 });
   });
+
+  it('should get the active run from the runs/active endpoint', () => {
+    let result: { runId: number } | null | undefined;
+    service.getActiveRun().subscribe(res => result = res);
+
+    const req = httpMock.expectOne('/api/admin/benchmark/runs/active');
+    expect(req.request.method).toBe('GET');
+    req.flush({ runId: 42 });
+
+    expect(result).toEqual({ runId: 42 });
+  });
+
+  it('should surface an idle server (204, empty body) as null', () => {
+    let result: { runId: number } | null | undefined = { runId: 1 };
+    service.getActiveRun().subscribe(res => result = res);
+
+    const req = httpMock.expectOne('/api/admin/benchmark/runs/active');
+    req.flush(null, { status: 204, statusText: 'No Content' });
+
+    expect(result).toBeNull();
+  });
 });

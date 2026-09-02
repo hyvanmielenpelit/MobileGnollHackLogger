@@ -1302,6 +1302,17 @@
   }
 }
 
+.gh-dialog.benchmark-run-progress-dialog {
+  width: min(900px, 94vw);
+  max-width: min(900px, 94vw);
+  height: min(85dvh, 840px);
+  max-height: 85dvh;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.15));
+  background: rgba(20, 20, 20, 0.98);
+}
+
 .gh-dialog.retry-dialog {
   overflow: visible;
 
@@ -1328,7 +1339,7 @@
   }
 }
 
-.difficulty-progress-block {
+.job-progress-block {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1341,7 +1352,7 @@
     margin: 0;
   }
 
-  .difficulty-progress {
+  .job-progress {
     width: 100%;
     height: 10px;
     border-radius: 5px;
@@ -1373,7 +1384,7 @@
   }
 }
 
-.difficulty-item-list {
+.job-item-list {
   list-style: none;
   margin: 0 0 16px 0;
   padding: 0;
@@ -1383,7 +1394,7 @@
   max-height: 20rem;
   overflow-y: auto;
 
-  .difficulty-item-row {
+  .job-item-row {
     display: flex;
     align-items: center;
     gap: 12px;
@@ -1394,7 +1405,7 @@
       border-bottom: none;
     }
 
-    .difficulty-item-index {
+    .job-item-index {
       font-family: monospace;
       font-size: 13px;
       font-weight: 600;
@@ -1403,7 +1414,7 @@
       flex-shrink: 0;
     }
 
-    .difficulty-item-excerpt {
+    .job-item-excerpt {
       flex: 1;
       font-size: 13px;
       color: #ddd;
@@ -1414,7 +1425,7 @@
   }
 }
 
-.difficulty-status-chip {
+.job-status-chip {
   display: inline-flex;
   align-items: center;
   font-size: 11px;
@@ -1438,17 +1449,130 @@
     animation: pulse-assessing 1.5s infinite ease-in-out;
   }
 
-  &.status-rated {
+  &.status-rated,
+  &.status-scored {
     background: rgba(46, 160, 67, 0.15);
     color: #3fb950;
     border: 1px solid rgba(46, 160, 67, 0.3);
   }
 
-  &.status-failed {
+  /* An answer is in, its assessment has not started. Deliberately calmer than
+     status-scored so the two are distinguishable without reading the word. */
+  &.status-ok {
+    background: rgba(46, 160, 67, 0.08);
+    color: #8fce9a;
+    border: 1px solid rgba(46, 160, 67, 0.2);
+  }
+
+  &.status-failed,
+  &.status-providererror {
     background: rgba(248, 81, 73, 0.15);
     color: #f85149;
     border: 1px solid rgba(248, 81, 73, 0.3);
   }
+
+  &.status-skipped {
+    background: rgba(212, 160, 23, 0.12);
+    color: #d4a017;
+    border: 1px solid rgba(212, 160, 23, 0.3);
+  }
+}
+
+/* The run's three sequential stages. A single answered/total bar would fill to 100%
+   and then sit motionless through the whole assessment stage, which reads as a hang. */
+.run-stage-rail {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 16px 0;
+  padding: 0;
+
+  .run-stage {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    padding: 8px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.02);
+    font-size: 12px;
+    color: #888;
+
+    .run-stage-index {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      flex-shrink: 0;
+      border-radius: 50%;
+      border: 1px solid currentColor;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .run-stage-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    &.is-done {
+      color: #3fb950;
+      border-color: rgba(46, 160, 67, 0.3);
+      background: rgba(46, 160, 67, 0.08);
+    }
+
+    &.is-current {
+      color: var(--primary-color);
+      border-color: rgba(212, 160, 23, 0.45);
+      background: rgba(212, 160, 23, 0.1);
+      font-weight: 600;
+    }
+  }
+}
+
+/* Not a live region: these counts change on every 2-second poll, and announcing
+   them alongside the stage line would be announcement spam. */
+.run-stat-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  margin: 0 0 16px 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.2);
+
+  .run-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-inline-size: 0;
+
+    dt {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #888;
+    }
+
+    dd {
+      margin: 0;
+      font-family: monospace;
+      font-size: 14px;
+      color: #ddd;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  }
+}
+
+.run-question-list {
+  max-height: 22rem;
 }
 
 @keyframes pulse-assessing {
@@ -1462,7 +1586,10 @@
   }
 }
 
-.difficulty-diagnostics {
+.job-diagnostics {
+  border-top: 1px solid #333;
+  padding-top: 12px;
+
   summary {
     cursor: pointer;
     font-size: 13px;
@@ -1473,6 +1600,29 @@
     &:hover {
       color: #ddd;
     }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 4px;
+      border-radius: 4px;
+    }
+  }
+
+  &[open] > summary {
+    color: var(--primary-color);
+  }
+
+  .job-diagnostics-count {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-left: 6px;
+    background: rgba(248, 81, 73, 0.15);
+    color: #f85149;
+    border: 1px solid rgba(248, 81, 73, 0.3);
   }
 
   .diagnostics-toolbar {
@@ -1511,17 +1661,24 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .difficulty-status-chip.status-assessing {
+  /* .active-run-banner .pulse-indicator is the selector that actually wins: the pulse
+     rule is nested inside the banner, so a bare .pulse-indicator here would lose on
+     specificity. The bare form is kept for any future use outside the banner. */
+  .job-status-chip.status-assessing,
+  .active-run-banner .pulse-indicator,
+  .pulse-indicator {
     animation: none;
   }
 }
 
 .gh-dialog.benchmark-questions-dialog[open],
 .gh-dialog.benchmark-run-detail-dialog[open],
+.gh-dialog.benchmark-run-progress-dialog[open],
 .gh-dialog.benchmark-scoring-profiles-dialog[open],
 .gh-dialog.benchmark-form-dialog[open],
 .gh-dialog.benchmark-questions-dialog:modal,
 .gh-dialog.benchmark-run-detail-dialog:modal,
+.gh-dialog.benchmark-run-progress-dialog:modal,
 .gh-dialog.benchmark-scoring-profiles-dialog:modal,
 .gh-dialog.benchmark-form-dialog:modal {
   display: flex;

@@ -27,6 +27,24 @@ import { SystemAiConfigDto } from '../../services/admin.service';
 
 import { CollapsibleMarkdownComponent } from '../../shared/collapsible-markdown/collapsible-markdown.component';
 import { ensureOverlayPolyfills } from '../../utils/polyfills.util';
+import { SystemService } from '../../services/system.service';
+import { parseServerUtcDate, elapsedMsBetween } from '../../utils/date.util';
+
+/**
+ * One row of the run progress list: a suite question merged with its answer, if the run
+ * has produced one yet. A question with no answer is genuinely Pending — the executor
+ * writes an answer row only after the model replies, so no in-flight state is knowable
+ * from the client.
+ */
+export interface BenchmarkRunProgressRow {
+  orderIndex: number;
+  questionText: string;
+  /** Formatted answer status, or 'Pending' when the run has not answered this question yet. */
+  status: string;
+  /** Formatted assessment status, or '' when there is no answer yet. */
+  assessmentStatus: string;
+  errorMessage: string | null;
+}
 
 @Component({
   selector: 'app-admin-benchmark',
@@ -50,6 +68,8 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   @ViewChild('difficultyAssessorDialog') difficultyAssessorDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('difficultyProgressHeading') difficultyProgressHeading?: ElementRef<HTMLElement>;
   @ViewChild('retryDialog') retryDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('runProgressDialog') runProgressDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('runProgressHeading') runProgressHeading?: ElementRef<HTMLElement>;
 
   // Confirm Action Dialog State
   confirmDialogTitle = '';
@@ -67,6 +87,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   private pendingConfirmAction: (() => void) | null = null;
 
   private benchmarkService = inject(AdminBenchmarkService);
+  private systemService = inject(SystemService);
   private cdr = inject(ChangeDetectorRef);
 
   activeSubTab: 'run' | 'history' | 'suites' = 'run';
@@ -114,9 +135,34 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   deletingSuiteRuns = false;
 
   // Active Run Tracking
+  private static readonly RUN_POLL_INTERVAL_MS = 2000;
+  private static readonly RUN_ELAPSED_TICK_MS = 1000;
+  private runElapsedInterval: any = null;
+  lastRunPollAtUtc: string | null = null;
+  lastRunPollError: string | null = null;
+  runQuestionsLoadError: string | null = null;
+  overseerBuildVersion: string | null = null;
+
   activeRunId: number | null = null;
   activeRunDetail: BenchmarkRunDetailDto | null = null;
   private pollInterval: any = null;
+  /**
+   * Kept separate from visibilityChangeHandler, which belongs to difficulty polling.
+   * One shared field would let whichever poller stops last detach the other's listener.
+   */
+  private runVisibilityChangeHandler: (() => void) | null = null;
+
+  // Run Progress Dialog
+  isRunProgressDialogOpen = false;
+  runProgressQuestions: BenchmarkQuestionDto[] = [];
+  /**
+   * Suite the cached runProgressQuestions belong to; null means nothing is loaded. This,
+   * not the array's length, is what gates the fetch — a suite that genuinely has no
+   * questions would otherwise be re-fetched on every dialog open.
+   */
+  private runProgressQuestionsSuiteId: number | null = null;
+  copiedRunDiagnostics = false;
+  private copiedRunDiagnosticsTimer: ReturnType<typeof setTimeout> | null = null;
 
   // History
   historyRuns: BenchmarkRunSummaryDto[] = [];
@@ -253,6 +299,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     this.loadHistory();
     this.setDefaultModelSelections();
     this.checkActiveDifficultyAssessment();
+    this.checkActiveRun();
   }
 
   checkActiveDifficultyAssessment(): void {
@@ -320,9 +367,11 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
 
   ngOnDestroy() {
     this.stopPolling();
+    this.stopRunElapsedTicker();
     this.stopDetailPolling();
     this.stopDifficultyPolling();
     if (this.copiedDiagnosticsTimer) { clearTimeout(this.copiedDiagnosticsTimer); }
+    if (this.copiedRunDiagnosticsTimer) { clearTimeout(this.copiedRunDiagnosticsTimer); }
   }
 
   @HostListener('document:click', ['$event'])
@@ -1167,11 +1216,15 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
         this.startingRun = false;
         this.sameProviderDialog?.nativeElement.close();
         this.sameProviderWarning = null;
+        this.lastRunPollError = null;
+        this.runQuestionsLoadError = null;
+        this.runDiagnosticsCopyFailed = false;
         this.activeRunId = res.runId;
         this.startPolling(res.runId);
         this.loadHistory();
         this.loadAllFootprints();
         this.cdr.detectChanges();
+        this.openRunProgressDialog();
       },
       error: (err) => {
         this.startingRun = false;
@@ -1209,8 +1262,20 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     this.stopPolling();
     this.pollRunDetail(runId);
     this.pollInterval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) {
+        return;
+      }
       this.pollRunDetail(runId);
-    }, 2000);
+    }, AdminBenchmarkComponent.RUN_POLL_INTERVAL_MS);
+
+    if (typeof document !== 'undefined') {
+      this.runVisibilityChangeHandler = () => {
+        if (!document.hidden) {
+          this.pollRunDetail(runId);
+        }
+      };
+      document.addEventListener('visibilitychange', this.runVisibilityChangeHandler);
+    }
   }
 
   private stopPolling() {
@@ -1218,22 +1283,495 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       clearInterval(this.pollInterval);
       this.pollInterval = null;
     }
+    if (this.runVisibilityChangeHandler && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.runVisibilityChangeHandler);
+      this.runVisibilityChangeHandler = null;
+    }
+  }
+
+  private startRunElapsedTicker(): void {
+    this.stopRunElapsedTicker();
+    this.runElapsedInterval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) {
+        return;
+      }
+      this.cdr.detectChanges();
+    }, AdminBenchmarkComponent.RUN_ELAPSED_TICK_MS);
+  }
+
+  private stopRunElapsedTicker(): void {
+    if (this.runElapsedInterval) {
+      clearInterval(this.runElapsedInterval);
+      this.runElapsedInterval = null;
+    }
   }
 
   private pollRunDetail(runId: number) {
     this.benchmarkService.getRun(runId).subscribe({
       next: (run) => {
+        this.lastRunPollAtUtc = new Date().toISOString();
+        this.lastRunPollError = null;
         this.activeRunDetail = run;
         const statusStr = this.formatStatus(run.status);
         if (statusStr !== 'Running') {
           this.stopPolling();
+          this.stopRunElapsedTicker();
           this.loadHistory();
+        } else if (this.isRunProgressDialogOpen && !this.runElapsedInterval) {
+          this.startRunElapsedTicker();
         }
         this.cdr.detectChanges();
       },
       error: (err) => {
+        this.lastRunPollAtUtc = new Date().toISOString();
+        const httpStatus = err?.status ? ` (HTTP ${err.status})` : '';
+        const msg = typeof err?.error === 'string' ? err.error : (err?.error?.message || err?.message || 'Polling failed');
+        this.lastRunPollError = `${msg}${httpStatus}`;
         console.error('Failed to poll run detail', err);
         this.stopPolling();
+      }
+    });
+  }
+
+  // --- Run Progress Dialog ---
+
+  /**
+   * Which of the run's three sequential stages is executing. Derived entirely from the run
+   * detail: the executor answers every question, then assesses every answer, then produces
+   * the holistic synthesis, and each transition is visible in the DTO.
+   */
+  get runStage(): 'answering' | 'assessing' | 'finalizing' | 'terminal' {
+    const run = this.activeRunDetail;
+    if (!run) return 'answering';
+    if (this.formatStatus(run.status) !== 'Running') return 'terminal';
+    if (run.answers.length < run.totalQuestionCount) return 'answering';
+    if (run.answers.some(a => this.isAssessmentIncomplete(a))) return 'assessing';
+    return 'finalizing';
+  }
+
+  get runStageLabel(): string {
+    const run = this.activeRunDetail;
+    if (!run) return '';
+    const total = this.runTotalQuestionCount;
+    switch (this.runStage) {
+      case 'answering':
+        return `Stage 1 of 3 — Collecting answers. Answered ${this.runAnsweredCount} of ${total}.`;
+      case 'assessing':
+        return `Stage 2 of 3 — Assessing answers. Scored ${this.runScoredCount} of ${total}.`;
+      case 'finalizing':
+        return `Stage 3 of 3 — Synthesis and scoring. All ${total} answers assessed.`;
+      default: {
+        const status = this.formatStatus(run.status);
+        const label = status === 'CompletedWithErrors' ? 'Completed with errors' : status;
+        const failed = this.runFailedAnswerCount;
+        return failed > 0
+          ? `${label}. Answered ${this.runAnsweredCount} of ${total}, ${failed} failed.`
+          : `${label}. Answered ${this.runAnsweredCount} of ${total}.`;
+      }
+    }
+  }
+
+  get runAnsweredCount(): number {
+    return this.activeRunDetail?.answers.length ?? 0;
+  }
+
+  /** Answers that reached a terminal assessment state — scored or failed to assess. */
+  get runScoredCount(): number {
+    return (this.activeRunDetail?.answers ?? []).filter(a => {
+      const s = this.formatAssessmentStatus(a.assessmentStatus);
+      return s === 'Scored' || s === 'Failed';
+    }).length;
+  }
+
+  get runFailedAnswerCount(): number {
+    return this.runFailedAnswers.length;
+  }
+
+  get runFailedAnswers(): BenchmarkRunAnswerDto[] {
+    return (this.activeRunDetail?.answers ?? []).filter(a => this.isAnswerFailed(a));
+  }
+
+  get runTotalQuestionCount(): number {
+    return this.activeRunDetail?.totalQuestionCount ?? 0;
+  }
+
+  get runIsRunning(): boolean {
+    return this.activeRunDetail != null && this.formatStatus(this.activeRunDetail.status) === 'Running';
+  }
+
+  get runIsTerminal(): boolean {
+    return this.activeRunDetail != null && this.formatStatus(this.activeRunDetail.status) !== 'Running';
+  }
+
+  /**
+   * The suite's questions merged with whatever answers the run has produced. Falls back to
+   * the answers alone when the suite fetch has not landed (or failed), so the list is never
+   * empty while the run is visibly progressing.
+   */
+  get runProgressRows(): BenchmarkRunProgressRow[] {
+    const run = this.activeRunDetail;
+    if (!run) return [];
+
+    const answersByIndex = new Map<number, BenchmarkRunAnswerDto>();
+    for (const a of run.answers) {
+      answersByIndex.set(a.orderIndex, a);
+    }
+
+    const source = this.runProgressQuestions.length > 0
+      ? this.runProgressQuestions.map(q => ({ orderIndex: q.orderIndex, questionText: q.questionText }))
+      : run.answers.map(a => ({ orderIndex: a.orderIndex, questionText: a.questionText }));
+
+    return [...source]
+      .sort((a, b) => a.orderIndex - b.orderIndex)
+      .map(q => {
+        const ans = answersByIndex.get(q.orderIndex);
+        if (!ans) {
+          return {
+            orderIndex: q.orderIndex,
+            questionText: q.questionText,
+            status: 'Pending',
+            assessmentStatus: '',
+            errorMessage: null
+          };
+        }
+        return {
+          orderIndex: q.orderIndex,
+          questionText: q.questionText,
+          status: this.formatAnswerStatus(ans.status),
+          assessmentStatus: this.formatAssessmentStatus(ans.assessmentStatus),
+          errorMessage: ans.errorMessage ?? null
+        };
+      });
+  }
+
+  /**
+   * The chip's word, never a hue alone. 'Answered' rather than 'Assessing' while the
+   * assessment is merely queued — claiming work that has not started would be a guess.
+   */
+  runRowChipLabel(row: BenchmarkRunProgressRow): string {
+    if (row.status === 'Pending') return 'Pending';
+    if (row.status === 'ProviderError') return 'Provider Error';
+    if (row.status !== 'Ok') return row.status;
+    if (row.assessmentStatus === 'Scored') return 'Scored';
+    if (row.assessmentStatus === 'Failed') return 'Assessment Failed';
+    if (row.assessmentStatus === 'Assessing') return 'Assessing';
+    return 'Answered';
+  }
+
+  runRowChipClass(row: BenchmarkRunProgressRow): string {
+    if (row.status === 'Pending') return 'status-pending';
+    if (row.status === 'ProviderError') return 'status-providererror';
+    if (row.status === 'Failed') return 'status-failed';
+    if (row.status === 'Skipped') return 'status-skipped';
+    if (row.assessmentStatus === 'Scored') return 'status-scored';
+    if (row.assessmentStatus === 'Failed') return 'status-failed';
+    if (row.assessmentStatus === 'Assessing') return 'status-assessing';
+    return 'status-ok';
+  }
+
+  /** Recomputed each second by the elapsed ticker (and on each poll tick). */
+  get runElapsedLabel(): string {
+    const run = this.activeRunDetail;
+    if (!run?.startedAtUtc) return '—';
+    const ms = elapsedMsBetween(run.startedAtUtc, run.completedAtUtc);
+    return this.formatElapsed(ms);
+  }
+
+  get runAverageAnswerDurationLabel(): string {
+    const run = this.activeRunDetail;
+    if (!run || run.answers.length === 0) return '—';
+    return this.formatDuration(Math.round(run.totalAnswerDurationMs / run.answers.length));
+  }
+
+  /**
+   * Everything an operator would paste into a bug report, assembled from the run detail.
+   * Answer text, thought text, and assessor comments are deliberately excluded: they are
+   * long model-generated content already reachable through the run detail dialog and the
+   * Markdown report. No credential or connection string appears in the DTO.
+   */
+  get runDiagnosticsText(): string {
+    const run = this.activeRunDetail;
+    const lines: string[] = [];
+
+    // Header
+    lines.push('=== BENCHMARK RUN DIAGNOSTICS ===');
+    lines.push(`Captured:         ${new Date().toISOString()}`);
+    lines.push(`Overseer build:   ${this.overseerBuildVersion || 'unknown'}`);
+    const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown';
+    lines.push(`Client:           ${userAgent}`);
+
+    let tz = 'unknown';
+    let offsetStr = '';
+    try {
+      tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const offsetMin = -new Date().getTimezoneOffset();
+      const sign = offsetMin >= 0 ? '+' : '-';
+      const absMin = Math.abs(offsetMin);
+      const h = String(Math.floor(absMin / 60)).padStart(2, '0');
+      const m = String(absMin % 60).padStart(2, '0');
+      offsetStr = ` (UTC${sign}${h}:${m})`;
+    } catch {
+      // ignore
+    }
+    lines.push(`Client timezone:  ${tz}${offsetStr}`);
+    const pathname = typeof location !== 'undefined' ? location.pathname : '';
+    lines.push(`Page:             ${pathname}`);
+    lines.push('');
+
+    if (!run) {
+      lines.push('No run detail received yet.');
+      lines.push('');
+    } else {
+      // --- RUN ---
+      lines.push('--- RUN ---');
+      const stageStr = this.runStage === 'terminal' ? 'terminal' : (this.runStage === 'answering' ? '1' : this.runStage === 'assessing' ? '2' : '3');
+      lines.push(`Run ID: ${run.id}, Suite: ${run.suiteName} (${run.benchmarkSuiteId ?? 'n/a'}), Status: ${this.formatStatus(run.status)}, Stage: ${stageStr}, Started by: ${run.startedByUserName || 'unknown'}`);
+      lines.push(`Started (raw):    ${run.startedAtUtc}`);
+      const startedParsed = run.startedAtUtc ? parseServerUtcDate(run.startedAtUtc).toISOString() : 'n/a';
+      lines.push(`Started (parsed): ${startedParsed}`);
+      lines.push(`Completed:        ${run.completedAtUtc ?? 'n/a'}`);
+      lines.push(`Elapsed:          ${this.runElapsedLabel}`);
+      lines.push('');
+
+      // --- MODELS ---
+      lines.push('--- MODELS ---');
+      lines.push(`Tested:   ${run.testedModelDisplayNameUsed} (${run.testedModelProviderUsed} / ${run.testedModelIdUsed})`);
+      lines.push(`          thinking: ${run.testedModelThinkingLevelUsed ?? 'default'}, reasoning: ${run.testedModelReasoningModeUsed ?? 'default'}, service tier: ${this.formatServiceTier(run.testedModelServiceTierUsed)}, max output tokens: ${run.testedModelMaxOutputTokensUsed ?? 'default'}, parallel mode: ${run.testedModelParallelExecutionModeUsed}`);
+      lines.push(`Assessor: ${run.assessorModelDisplayNameUsed} (${run.assessorModelProviderUsed} / ${run.assessorModelIdUsed}), thinking: ${run.assessorModelThinkingLevelUsed ?? 'default'}, reasoning: ${run.assessorModelReasoningModeUsed ?? 'default'}, available=${run.assessorAvailable}`);
+      lines.push('');
+
+      // --- SCORING ---
+      lines.push('--- SCORING ---');
+      lines.push(`Profile: ${run.scoringProfileName ?? 'n/a'} (${run.scoringProfileId ?? 'n/a'}), scoring method version: ${run.scoringMethodVersion}, max parallel questions: ${run.maxParallelQuestionsUsed}`);
+      lines.push('');
+
+      // --- PROGRESS ---
+      lines.push('--- PROGRESS ---');
+      lines.push(`Answered ${this.runAnsweredCount} of ${this.runTotalQuestionCount}, scored ${this.runScoredCount} of ${this.runTotalQuestionCount}, failed ${this.runFailedAnswerCount}`);
+      if (this.runProgressQuestions.length > 0 && this.runProgressQuestionsSuiteId != null) {
+        lines.push(`Suite questions loaded: ${this.runProgressQuestions.length} for suite ${this.runProgressQuestionsSuiteId}`);
+      } else {
+        lines.push('Suite questions loaded: not loaded — list degraded to answers only');
+      }
+      lines.push('');
+
+      // --- TOKENS ---
+      lines.push('--- TOKENS ---');
+      lines.push(`input: ${run.totalInputTokens}, output: ${run.totalOutputTokens}, cache read: ${run.totalCacheReadTokens}, cache creation: ${run.totalCacheCreationTokens}`);
+      lines.push(`total duration: ${this.formatDuration(run.totalDurationMs)}, total answer duration: ${this.formatDuration(run.totalAnswerDurationMs)}`);
+      lines.push('');
+
+      // --- SCORES --- (only when terminal)
+      if (this.runIsTerminal) {
+        lines.push('--- SCORES ---');
+        lines.push(`final: ${run.finalScore ?? 'n/a'}, computed: ${run.computedScore ?? 'n/a'}, quality index: ${run.qualityIndex ?? 'n/a'}, speed index: ${run.speedIndex ?? 'n/a'}`);
+        lines.push('');
+      }
+
+      // --- FLAGS ---
+      lines.push('--- FLAGS ---');
+      const purposePresent = !!run.purposeStatementUsed;
+      lines.push(`difficultyFallbackUsed=${run.difficultyFallbackUsed}, speedMeasurementDegraded=${run.speedMeasurementDegraded}, assessmentParseFailed=${run.assessmentParseFailed}, sameProviderAcknowledged=${run.sameProviderAcknowledged ?? false}, purposeStatement present=${purposePresent}`);
+      lines.push('');
+    }
+
+    // --- POLLING ---
+    lines.push('--- POLLING ---');
+    const runPollStr = this.pollInterval ? `active every ${AdminBenchmarkComponent.RUN_POLL_INTERVAL_MS} ms` : 'stopped';
+    lines.push(`Run poll: ${runPollStr}`);
+    const tickerStr = this.runElapsedInterval ? `active every ${AdminBenchmarkComponent.RUN_ELAPSED_TICK_MS} ms` : 'stopped';
+    lines.push(`Elapsed ticker: ${tickerStr}`);
+    if (this.lastRunPollAtUtc) {
+      const pollAgoSec = Math.max(0, Math.floor((Date.now() - new Date(this.lastRunPollAtUtc).getTime()) / 1000));
+      lines.push(`Last poll: ${this.lastRunPollAtUtc} (${pollAgoSec}s ago)`);
+    }
+    if (this.lastRunPollError) {
+      lines.push(`Last poll error: ${this.lastRunPollError}`);
+    }
+    lines.push(`Document hidden: ${typeof document !== 'undefined' ? document.hidden : false}`);
+    lines.push('');
+
+    // --- ERRORS ---
+    lines.push('--- ERRORS ---');
+    let hasError = false;
+    if (run?.errorMessage) {
+      lines.push(`Run error: ${run.errorMessage}`);
+      hasError = true;
+    }
+    if (this.runQuestionsLoadError) {
+      lines.push(`Questions fetch error: ${this.runQuestionsLoadError}`);
+      hasError = true;
+    }
+    if (!hasError) {
+      lines.push('none');
+    }
+    lines.push('');
+
+    // --- QUESTIONS ---
+    if (run && this.runProgressRows.length > 0) {
+      lines.push('--- QUESTIONS ---');
+      for (const row of this.runProgressRows) {
+        const ans = run.answers.find(a => a.orderIndex === row.orderIndex);
+        if (!ans) {
+          lines.push(`[Q${row.orderIndex}] status=Pending`);
+          continue;
+        }
+        const parts = [
+          `status=${this.formatAnswerStatus(ans.status)}`,
+          `assessment=${this.formatAssessmentStatus(ans.assessmentStatus)}`,
+          `duration=${ans.durationMs}ms`
+        ];
+        if (ans.timeToFirstTokenMs != null) parts.push(`ttft=${ans.timeToFirstTokenMs}ms`);
+        if (ans.inputTokens != null) parts.push(`in=${ans.inputTokens}`);
+        if (ans.outputTokens != null) parts.push(`out=${ans.outputTokens}`);
+        if (ans.cacheReadInputTokens != null) parts.push(`cacheR=${ans.cacheReadInputTokens}`);
+        if (ans.cacheCreationInputTokens != null) parts.push(`cacheC=${ans.cacheCreationInputTokens}`);
+        if (ans.actualServiceTierUsed) parts.push(`tier=${ans.actualServiceTierUsed}`);
+        if (ans.httpStatusCode != null) parts.push(`http=${ans.httpStatusCode}`);
+        if (ans.score != null) parts.push(`score=${ans.score}`);
+        lines.push(`[Q${row.orderIndex}] ${parts.join(' ')}`);
+        if (ans.errorMessage) {
+          lines.push(`     error: ${ans.errorMessage}`);
+        }
+        if (ans.assessmentError) {
+          lines.push(`     assessment error: ${ans.assessmentError}`);
+        }
+        if (ans.assessedByModelDisplayNameUsed || ans.assessedAtUtc) {
+          const assessor = `${ans.assessedByModelDisplayNameUsed || 'unknown'} (${ans.assessedByModelProviderUsed || 'unknown'} / ${ans.assessedByModelIdUsed || 'unknown'})`;
+          lines.push(`     assessed by: ${assessor} at ${ans.assessedAtUtc ?? 'unknown'}`);
+        }
+      }
+    }
+
+    return lines.join('\n');
+  }
+
+  get runDiagnosticsCopyStatus(): string {
+    if (this.copiedRunDiagnostics) return 'Diagnostics copied to clipboard';
+    return this.runDiagnosticsCopyFailed ? 'Could not copy the diagnostics to the clipboard.' : '';
+  }
+
+  runDiagnosticsCopyFailed = false;
+
+  async copyRunDiagnostics(): Promise<void> {
+    const text = this.runDiagnosticsText;
+    if (!text) { return; }
+    try {
+      await navigator.clipboard.writeText(text);
+      this.runDiagnosticsCopyFailed = false;
+      this.copiedRunDiagnostics = true;
+      if (this.copiedRunDiagnosticsTimer) { clearTimeout(this.copiedRunDiagnosticsTimer); }
+      this.copiedRunDiagnosticsTimer = setTimeout(() => {
+        this.copiedRunDiagnostics = false;
+        this.copiedRunDiagnosticsTimer = null;
+        this.cdr.detectChanges();
+      }, 2000);
+    } catch {
+      this.copiedRunDiagnostics = false;
+      this.runDiagnosticsCopyFailed = true;
+      this.runErrorMessage = 'Could not copy the benchmark run diagnostics to the clipboard.';
+    }
+  }
+
+  openRunProgressDialog(): void {
+    this.isRunProgressDialogOpen = true;
+    this.runDiagnosticsCopyFailed = false;
+
+    if (this.overseerBuildVersion === null) {
+      this.systemService.getVersion().subscribe({
+        next: (version) => {
+          this.overseerBuildVersion = version;
+        },
+        error: (err) => {
+          console.warn('Failed to get Overseer build version', err);
+          this.overseerBuildVersion = 'unknown';
+        }
+      });
+    }
+
+    if (this.runIsRunning) {
+      this.startRunElapsedTicker();
+    }
+
+    // Resolved here and not in the poll handler: the suite's questions are static for the
+    // life of a run, so one fetch per dialog open is one more than strictly necessary.
+    const suiteId = this.activeRunDetail?.benchmarkSuiteId ?? this.selectedSuiteId;
+    if (suiteId != null && this.runProgressQuestionsSuiteId !== suiteId) {
+      this.loadRunProgressQuestions(suiteId);
+    }
+
+    this.runProgressDialog?.nativeElement.showModal();
+    this.cdr.detectChanges();
+    this.runProgressHeading?.nativeElement.focus();
+  }
+
+  closeRunProgressDialog(): void {
+    this.isRunProgressDialogOpen = false;
+    this.stopRunElapsedTicker();
+    this.runProgressDialog?.nativeElement.close();
+    this.cdr.detectChanges();
+  }
+
+  private loadRunProgressQuestions(suiteId: number): void {
+    // Claimed before the request so a second open while it is in flight does not refire it.
+    this.runProgressQuestionsSuiteId = suiteId;
+    this.benchmarkService.getQuestions(suiteId).subscribe({
+      next: (data) => {
+        this.runQuestionsLoadError = null;
+        this.runProgressQuestions = data;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        // The dialog degrades to the answers alone rather than failing to open.
+        this.runProgressQuestionsSuiteId = null;
+        const msg = typeof err?.error === 'string' ? err.error : (err?.error?.message || err?.message || 'Failed to load suite questions');
+        this.runQuestionsLoadError = msg;
+        console.error('Failed to load suite questions for run progress', err);
+      }
+    });
+  }
+
+  /**
+   * Reattaches the banner to a run already executing when the admin page loads. The dialog
+   * stays closed — opening a modal unbidden would steal focus from whatever the admin was
+   * doing. The operator reopens it from the banner.
+   */
+  checkActiveRun(): void {
+    this.benchmarkService.getActiveRun().subscribe({
+      next: (res) => {
+        if (res && res.runId != null) {
+          this.activeRunId = res.runId;
+          this.startPolling(res.runId);
+          this.cdr.detectChanges();
+        }
+      },
+      error: (err) => console.error('Failed to check active benchmark run', err)
+    });
+  }
+
+  /** Terminal-state action: hand the operator over to the existing full run detail dialog. */
+  viewActiveRunDetail(): void {
+    const runId = this.activeRunDetail?.id ?? this.activeRunId;
+    if (runId == null) return;
+    this.closeRunProgressDialog();
+    this.viewRunDetail(runId);
+  }
+
+  /** Re-runs the failed questions without leaving the dialog, so the retry stays watchable. */
+  rerunFailedFromProgress(): void {
+    const runId = this.activeRunDetail?.id ?? this.activeRunId;
+    if (runId == null) return;
+    this.runErrorMessage = null;
+    this.benchmarkService.rerunFailedQuestions(runId).subscribe({
+      next: () => {
+        this.activeRunId = runId;
+        this.startPolling(runId);
+        this.loadHistory();
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.runErrorMessage = err?.error || 'Failed to re-run failed questions.';
+        this.cdr.detectChanges();
       }
     });
   }
@@ -1618,6 +2156,22 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       return `${mins}m ${secs}s`;
     }
     return `${(ms / 1000).toFixed(1)}s`;
+  }
+
+  formatElapsed(ms: number): string {
+    if (!ms || ms < 0) return '0s';
+    const totalSecs = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSecs / 3600);
+    const mins = Math.floor((totalSecs % 3600) / 60);
+    const secs = totalSecs % 60;
+    const pad = (n: number) => (n < 10 ? '0' + n : '' + n);
+    if (hours > 0) {
+      return `${hours}h ${pad(mins)}m ${pad(secs)}s`;
+    }
+    if (mins > 0) {
+      return `${mins}m ${pad(secs)}s`;
+    }
+    return `${secs}s`;
   }
 
   formatServiceTier(tier: string | null | undefined): string {

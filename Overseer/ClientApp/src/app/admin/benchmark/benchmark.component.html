@@ -46,7 +46,7 @@
   @if (activeSubTab === 'run') {
     <div class="benchmark-tab-content" role="tabpanel" id="bm-panel-run" aria-labelledby="bm-tab-run" tabindex="0">
       <!-- Active Run Banner -->
-      @if (activeRunDetail && formatStatus(activeRunDetail.status) === 'Running') {
+      @if (activeRunDetail && formatStatus(activeRunDetail.status) === 'Running' && !isRunProgressDialogOpen) {
         <div class="active-run-banner">
           <div class="banner-header">
             <div class="pulse-indicator" aria-hidden="true"></div>
@@ -57,6 +57,9 @@
           </div>
           <div class="banner-progress" role="status">
             <span>Answered: {{ activeRunDetail.answers.length }} of {{ activeRunDetail.totalQuestionCount }}</span>
+            <button type="button" class="btn-gh" (click)="openRunProgressDialog()">
+              Show Progress
+            </button>
             <button type="button" class="btn-gh btn-gh-delete" (click)="cancelActiveRun()">
               <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
               Cancel Run
@@ -1415,23 +1418,23 @@
           {{ difficultyJob?.suiteName }} — {{ difficultyJob?.assessorDisplayName }}
         </h4>
 
-        <div class="difficulty-progress-block">
+        <div class="job-progress-block">
           <label class="progress-label" for="difficultyProgressBar">Assessment progress</label>
           @if (difficultyJob && difficultyJob.totalCount > 0) {
-            <progress id="difficultyProgressBar" class="difficulty-progress"
+            <progress id="difficultyProgressBar" class="job-progress"
                       [value]="difficultyProgressValue" [max]="difficultyProgressMax"></progress>
           } @else {
-            <progress id="difficultyProgressBar" class="difficulty-progress"></progress>
+            <progress id="difficultyProgressBar" class="job-progress"></progress>
           }
           <p class="progress-status" role="status" aria-live="polite">{{ difficultyProgressLabel() }}</p>
         </div>
 
-        <ul class="difficulty-item-list">
+        <ul class="job-item-list">
           @for (item of difficultyJob?.items; track item.questionId) {
-            <li class="difficulty-item-row">
-              <span class="difficulty-item-index">Q{{ item.orderIndex }}</span>
-              <span class="difficulty-item-excerpt" [title]="item.questionTextExcerpt">{{ item.questionTextExcerpt }}</span>
-              <span class="difficulty-status-chip" [class]="'status-' + item.status.toLowerCase()">
+            <li class="job-item-row">
+              <span class="job-item-index">Q{{ item.orderIndex }}</span>
+              <span class="job-item-excerpt" [title]="item.questionTextExcerpt">{{ item.questionTextExcerpt }}</span>
+              <span class="job-status-chip" [class]="'status-' + item.status.toLowerCase()">
                 @if (item.status === 'Rated' && item.difficulty != null) {
                   Rated {{ item.difficulty }}
                 } @else {
@@ -1446,7 +1449,7 @@
           <div class="alert alert-danger mt-15" role="alert">
             {{ failedDifficultyItems.length }} question(s) failed difficulty assessment.
           </div>
-          <details class="difficulty-diagnostics mt-10">
+          <details class="job-diagnostics mt-10">
             <summary>Diagnostics</summary>
             <div class="diagnostics-toolbar">
               <button type="button" class="action-btn"
@@ -1475,7 +1478,7 @@
                 {{ copiedDiagnostics ? 'Diagnostics copied to clipboard' : '' }}
               </p>
             </div>
-            <pre tabindex="0">{{ difficultyDiagnosticsText }}</pre>
+            <pre tabindex="0"><code>{{ difficultyDiagnosticsText }}</code></pre>
           </details>
         }
       }
@@ -1636,6 +1639,185 @@
         @else if (retryScope === 'assessments') { Retry Assessments }
         @else { Retry }
       </button>
+    </div>
+  </div>
+</dialog>
+
+<!-- BENCHMARK RUN PROGRESS DIALOG -->
+<dialog #runProgressDialog class="gh-dialog benchmark-run-progress-dialog"
+        aria-labelledby="runProgressDialogTitle"
+        (cancel)="closeRunProgressDialog()">
+  <div class="dialog-content flex-col">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 id="runProgressDialogTitle">Benchmark Run #{{ activeRunDetail?.id ?? activeRunId }}</h3>
+        <p class="dialog-subtitle">
+          {{ activeRunDetail?.suiteName }} | Model: {{ activeRunDetail?.testedModelDisplayNameUsed }}
+          | Evaluator: {{ activeRunDetail?.assessorModelDisplayNameUsed }}
+          | Profile: {{ activeRunDetail?.scoringProfileName || 'Default' }}
+        </p>
+      </div>
+      <button type="button" class="btn-icon-action" aria-label="Close benchmark run progress" (click)="closeRunProgressDialog()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="dialog-body">
+      <h4 #runProgressHeading tabindex="-1" class="progress-heading">
+        @if (activeRunDetail) {
+          {{ activeRunDetail.suiteName }} — {{ activeRunDetail.testedModelDisplayNameUsed }}
+        } @else {
+          Starting benchmark run…
+        }
+      </h4>
+
+      <!-- Stage rail: the run's three sequential phases, not one loop. -->
+      <ol class="run-stage-rail" aria-label="Run stages">
+        <li class="run-stage" [class.is-current]="runStage === 'answering'"
+            [class.is-done]="runStage === 'assessing' || runStage === 'finalizing'"
+            [attr.aria-current]="runStage === 'answering' ? 'step' : null">
+          <span class="run-stage-index" aria-hidden="true">1</span>
+          <span class="run-stage-name">Collecting answers</span>
+        </li>
+        <li class="run-stage" [class.is-current]="runStage === 'assessing'"
+            [class.is-done]="runStage === 'finalizing'"
+            [attr.aria-current]="runStage === 'assessing' ? 'step' : null">
+          <span class="run-stage-index" aria-hidden="true">2</span>
+          <span class="run-stage-name">Assessing answers</span>
+        </li>
+        <li class="run-stage" [class.is-current]="runStage === 'finalizing'"
+            [attr.aria-current]="runStage === 'finalizing' ? 'step' : null">
+          <span class="run-stage-index" aria-hidden="true">3</span>
+          <span class="run-stage-name">Synthesis and scoring</span>
+        </li>
+      </ol>
+
+      <div class="job-progress-block">
+        <label class="progress-label" for="runAnswersProgressBar">Answers</label>
+        @if (runTotalQuestionCount > 0) {
+          <progress id="runAnswersProgressBar" class="job-progress"
+                    [value]="runAnsweredCount" [max]="runTotalQuestionCount"></progress>
+        } @else {
+          <progress id="runAnswersProgressBar" class="job-progress"></progress>
+        }
+      </div>
+
+      <div class="job-progress-block">
+        <label class="progress-label" for="runAssessmentsProgressBar">Assessments</label>
+        @if (runTotalQuestionCount > 0) {
+          <progress id="runAssessmentsProgressBar" class="job-progress"
+                    [value]="runScoredCount" [max]="runTotalQuestionCount"></progress>
+        } @else {
+          <progress id="runAssessmentsProgressBar" class="job-progress"></progress>
+        }
+        <!-- The dialog's only polling live region: one announcement per stage change. -->
+        <p class="progress-status" role="status" aria-live="polite">{{ runStageLabel }}</p>
+      </div>
+
+      <dl class="run-stat-strip">
+        <div class="run-stat">
+          <dt>Elapsed</dt>
+          <dd>{{ runElapsedLabel }}</dd>
+        </div>
+        <div class="run-stat">
+          <dt>Avg. answer</dt>
+          <dd>{{ runAverageAnswerDurationLabel }}</dd>
+        </div>
+        <div class="run-stat">
+          <dt>Input tokens</dt>
+          <dd>{{ activeRunDetail?.totalInputTokens ?? 0 }}</dd>
+        </div>
+        <div class="run-stat">
+          <dt>Output tokens</dt>
+          <dd>{{ activeRunDetail?.totalOutputTokens ?? 0 }}</dd>
+        </div>
+        <div class="run-stat">
+          <dt>Cache read</dt>
+          <dd>{{ activeRunDetail?.totalCacheReadTokens ?? 0 }}</dd>
+        </div>
+        <div class="run-stat">
+          <dt>Cache creation</dt>
+          <dd>{{ activeRunDetail?.totalCacheCreationTokens ?? 0 }}</dd>
+        </div>
+      </dl>
+
+      <ul class="job-item-list run-question-list">
+        @for (row of runProgressRows; track row.orderIndex) {
+          <li class="job-item-row">
+            <span class="job-item-index">Q{{ row.orderIndex }}</span>
+            <span class="job-item-excerpt">{{ row.questionText }}</span>
+            <span class="job-status-chip" [class]="runRowChipClass(row)">{{ runRowChipLabel(row) }}</span>
+          </li>
+        }
+      </ul>
+
+      @if (runFailedAnswerCount > 0 || (runIsTerminal && activeRunDetail?.errorMessage)) {
+        <div class="alert alert-danger mt-15" role="alert">
+          @if (runFailedAnswerCount > 0) {
+            {{ runFailedAnswerCount }} question(s) failed during this run.
+          }
+          @if (activeRunDetail?.errorMessage) {
+            {{ activeRunDetail?.errorMessage }}
+          }
+        </div>
+      }
+
+      <details class="job-diagnostics mt-15">
+        <summary>
+          Diagnostics
+          @if (runFailedAnswerCount > 0) {
+            <span class="job-diagnostics-count">{{ runFailedAnswerCount }} failed</span>
+          }
+        </summary>
+        <div class="diagnostics-toolbar">
+          <button type="button" class="action-btn"
+                  aria-label="Copy benchmark run diagnostics"
+                  interestfor="tip-copy-run-diagnostics"
+                  style="anchor-name: --tip-copy-run-diagnostics"
+                  (click)="copyRunDiagnostics()">
+            @if (copiedRunDiagnostics) {
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                   viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+            } @else {
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                   viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            }
+          </button>
+          <div popover="hint" class="gh-tooltip" id="tip-copy-run-diagnostics"
+               style="position-anchor: --tip-copy-run-diagnostics">Copy diagnostics</div>
+          <p class="diagnostics-copy-status" role="status" aria-live="polite">
+            {{ runDiagnosticsCopyStatus }}
+          </p>
+        </div>
+        <pre tabindex="0"><code>{{ runDiagnosticsText }}</code></pre>
+      </details>
+    </div>
+    <div class="dialog-footer">
+      @if (!runIsTerminal) {
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeRunProgressDialog()">Run in Background</button>
+        <button type="button" class="btn-gh btn-gh-delete" (click)="cancelActiveRun()">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+          Cancel Run
+        </button>
+      } @else {
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeRunProgressDialog()">Close</button>
+        <button type="button" class="btn-gh" (click)="viewActiveRunDetail()">View Full Report</button>
+        @if (runFailedAnswerCount > 0) {
+          <button type="button" class="btn-gh" (click)="rerunFailedFromProgress()">
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
+            Re-run Failed Questions
+          </button>
+        }
+      }
     </div>
   </div>
 </dialog>

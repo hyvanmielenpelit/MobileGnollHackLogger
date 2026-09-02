@@ -1,6 +1,7 @@
 import { Pipe, PipeTransform, ChangeDetectorRef, OnDestroy } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { RelativeTimeTickerService } from '../services/relative-time-ticker.service';
+import { parseServerUtcDate } from '../utils/date.util';
 
 @Pipe({
   name: 'relativeTime',
@@ -43,14 +44,7 @@ export class RelativeTimePipe implements PipeTransform, OnDestroy {
   }
 
   private calculateRelativeTime(value: string | Date): string {
-    let dateStr = value;
-    if (typeof dateStr === 'string' && !dateStr.endsWith('Z') && !dateStr.includes('+') && !dateStr.match(/-\d{2}:\d{2}$/)) {
-      if (dateStr.length > 10 || dateStr.includes('T') || dateStr.includes(' ')) {
-        dateStr += 'Z';
-      }
-    }
-    
-    const date = new Date(dateStr);
+    const date = parseServerUtcDate(value);
     const now = new Date();
     // Use Math.max(0, ...) to clamp future dates (from clock skew) to 0
     const diffInSeconds = Math.max(0, Math.floor((now.getTime() - date.getTime()) / 1000));

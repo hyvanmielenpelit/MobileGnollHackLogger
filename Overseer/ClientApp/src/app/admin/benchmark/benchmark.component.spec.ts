@@ -1,14 +1,16 @@
-import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, tick, discardPeriodicTasks } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { of, throwError } from 'rxjs';
 import { AdminBenchmarkComponent } from './benchmark.component';
 import { AdminBenchmarkService } from '../../services/admin-benchmark.service';
+import { SystemService } from '../../services/system.service';
 
 describe('AdminBenchmarkComponent', () => {
   let component: AdminBenchmarkComponent;
   let fixture: ComponentFixture<AdminBenchmarkComponent>;
   let benchmarkServiceMock: jasmine.SpyObj<AdminBenchmarkService>;
+  let systemServiceMock: jasmine.SpyObj<SystemService>;
 
   beforeEach(async () => {
     benchmarkServiceMock = jasmine.createSpyObj('AdminBenchmarkService', [
@@ -18,7 +20,9 @@ describe('AdminBenchmarkComponent', () => {
       'getScoringProfiles',
       'startRun',
       'getRun',
+      'getActiveRun',
       'cancelRun',
+      'rerunFailedQuestions',
       'deleteRun',
       'createSuite',
       'updateSuite',
@@ -40,6 +44,8 @@ describe('AdminBenchmarkComponent', () => {
     ]);
 
     benchmarkServiceMock.getActiveDifficultyAssessment.and.returnValue(of(null));
+    benchmarkServiceMock.getActiveRun.and.returnValue(of(null));
+    benchmarkServiceMock.getQuestions.and.returnValue(of([]));
     benchmarkServiceMock.getSuiteRunsFootprint.and.returnValue(of({ runCount: 0, totalAnswerCharacters: 0 }));
     benchmarkServiceMock.getSuites.and.returnValue(of([
       { id: 1, name: 'Default Suite', description: 'Test', createdAtUtc: '2026-09-01T00:00:00Z', modifiedAtUtc: null, questionCount: 15, assessedQuestionCount: 15, difficultyFullyAssessed: true }
@@ -64,10 +70,14 @@ describe('AdminBenchmarkComponent', () => {
     ]));
     benchmarkServiceMock.getRuns.and.returnValue(of([]));
 
+    systemServiceMock = jasmine.createSpyObj('SystemService', ['getVersion']);
+    systemServiceMock.getVersion.and.returnValue(of('1.0.29'));
+
     await TestBed.configureTestingModule({
       imports: [AdminBenchmarkComponent],
       providers: [
         { provide: AdminBenchmarkService, useValue: benchmarkServiceMock },
+        { provide: SystemService, useValue: systemServiceMock },
         provideHttpClient(),
         provideHttpClientTesting()
       ]
@@ -1024,6 +1034,478 @@ describe('AdminBenchmarkComponent', () => {
       const progress = fixture.nativeElement.querySelector('.banner-progress');
       expect(progress).toBeTruthy();
       expect(progress.getAttribute('role')).toBe('status');
+    });
+  });
+
+  describe('run progress dialog', () => {
+    /**
+     * A run detail fixture. Defaults describe a run mid-answering; the overrides let each
+     * test move it to a later stage without restating the whole DTO.
+     */
+    function buildRun(overrides: any = {}): any {
+      return {
+        id: 42,
+        benchmarkSuiteId: 1,
+        suiteName: 'Default Suite',
+        testedModelDisplayNameUsed: 'Test Model',
+        testedModelProviderUsed: 'Anthropic',
+        testedModelIdUsed: 'claude-3-5-sonnet',
+        testedModelParallelExecutionModeUsed: 2,
+        assessorModelDisplayNameUsed: 'Test Assessor',
+        assessorModelProviderUsed: 'Anthropic',
+        assessorModelIdUsed: 'claude-3-5-sonnet',
+        startedByUserName: 'admin',
+        status: 'Running',
+        startedAtUtc: '2026-09-02T00:00:00Z',
+        completedAtUtc: null,
+        totalAnswerDurationMs: 0,
+        scoringProfileName: 'Default Intelligence Profile',
+        scoringProfileId: 1,
+        scoringMethodVersion: 2,
+        difficultyFallbackUsed: false,
+        speedMeasurementDegraded: false,
+        maxParallelQuestionsUsed: 1,
+        answeredQuestionCount: 0,
+        totalQuestionCount: 3,
+        assessmentParseFailed: false,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        totalCacheReadTokens: 0,
+        totalCacheCreationTokens: 0,
+        totalDurationMs: 0,
+        errorMessage: null,
+        answers: [],
+        ...overrides
+      };
+    }
+
+    function buildAnswer(orderIndex: number, overrides: any = {}): any {
+      return {
+        id: 100 + orderIndex,
+        benchmarkRunId: 42,
+        orderIndex,
+        questionText: `Answered question ${orderIndex}`,
+        difficulty: 1,
+        answerText: `SECRET ANSWER BODY ${orderIndex}`,
+        thoughtText: `SECRET THOUGHT BODY ${orderIndex}`,
+        reviewComment: `SECRET REVIEW BODY ${orderIndex}`,
+        status: 'Ok',
+        assessmentStatus: 'Scored',
+        durationMs: 1234,
+        timeToFirstTokenMs: 456,
+        inputTokens: 900,
+        outputTokens: 310,
+        ...overrides
+      };
+    }
+
+    it('should open the dialog when a benchmark run starts successfully', () => {
+      component.selectedSuiteId = 1;
+      component.testedConfigId = 1;
+      component.assessorConfigId = 1;
+      fixture.detectChanges();
+
+      const showModal = spyOn(component.runProgressDialog.nativeElement, 'showModal');
+      benchmarkServiceMock.startRun.and.returnValue(of({ runId: 42 }));
+      benchmarkServiceMock.getRun.and.returnValue(of(buildRun()));
+
+      component.startBenchmark();
+
+      expect(showModal).toHaveBeenCalled();
+      expect(component.isRunProgressDialogOpen).toBeTrue();
+      component.closeRunProgressDialog();
+    });
+
+    it('should derive the run stage from the run detail', () => {
+      component.activeRunDetail = buildRun({ answers: [buildAnswer(1)] });
+      expect(component.runStage).toBe('answering');
+
+      component.activeRunDetail = buildRun({
+        answers: [
+          buildAnswer(1),
+          buildAnswer(2, { assessmentStatus: 'Pending' }),
+          buildAnswer(3, { assessmentStatus: 'Assessing' })
+        ]
+      });
+      expect(component.runStage).toBe('assessing');
+
+      component.activeRunDetail = buildRun({
+        answers: [buildAnswer(1), buildAnswer(2), buildAnswer(3)]
+      });
+      expect(component.runStage).toBe('finalizing');
+
+      component.activeRunDetail = buildRun({
+        status: 'Completed',
+        completedAtUtc: '2026-09-02T00:05:00Z',
+        answers: [buildAnswer(1), buildAnswer(2), buildAnswer(3)]
+      });
+      expect(component.runStage).toBe('terminal');
+      expect(component.runIsTerminal).toBeTrue();
+    });
+
+    it('should merge suite questions with answers and mark unanswered questions Pending', () => {
+      component.activeRunDetail = buildRun({ answers: [buildAnswer(2)] });
+      component.runProgressQuestions = [
+        { id: 1, benchmarkSuiteId: 1, orderIndex: 1, questionText: 'First question', difficulty: 1, expectedPoints: null, createdAtUtc: '2026-09-01T00:00:00Z' },
+        { id: 2, benchmarkSuiteId: 1, orderIndex: 2, questionText: 'Second question', difficulty: 1, expectedPoints: null, createdAtUtc: '2026-09-01T00:00:00Z' },
+        { id: 3, benchmarkSuiteId: 1, orderIndex: 3, questionText: 'Third question', difficulty: 1, expectedPoints: null, createdAtUtc: '2026-09-01T00:00:00Z' }
+      ];
+
+      const rows = component.runProgressRows;
+      expect(rows.length).toBe(3);
+      expect(rows.map(r => r.orderIndex)).toEqual([1, 2, 3]);
+      expect(rows[0].status).toBe('Pending');
+      expect(rows[0].questionText).toBe('First question');
+      expect(rows[1].status).toBe('Ok');
+      expect(rows[2].status).toBe('Pending');
+
+      expect(component.runRowChipLabel(rows[0])).toBe('Pending');
+      expect(component.runRowChipClass(rows[0])).toBe('status-pending');
+      expect(component.runRowChipLabel(rows[1])).toBe('Scored');
+      expect(component.runRowChipClass(rows[1])).toBe('status-scored');
+    });
+
+    it('should label an answered but unassessed question Answered rather than guessing Assessing', () => {
+      component.activeRunDetail = buildRun({
+        answers: [buildAnswer(1, { assessmentStatus: 'Pending' })]
+      });
+      const row = component.runProgressRows[0];
+      expect(component.runRowChipLabel(row)).toBe('Answered');
+      expect(component.runRowChipClass(row)).toBe('status-ok');
+    });
+
+    it('should expose exactly one polling live region in the dialog', () => {
+      component.activeRunDetail = buildRun({ answers: [buildAnswer(1)] });
+      component.isRunProgressDialogOpen = true;
+      fixture.detectChanges();
+
+      const dialog = fixture.nativeElement.querySelector('.benchmark-run-progress-dialog') as HTMLElement;
+      expect(dialog).toBeTruthy();
+
+      const liveRegions = Array.from(dialog.querySelectorAll('[role="status"], [role="alert"]'))
+        .filter(el => !el.closest('.job-diagnostics'));
+      expect(liveRegions.length).toBe(1);
+      expect(liveRegions[0].classList.contains('progress-status')).toBeTrue();
+      expect(liveRegions[0].getAttribute('aria-live')).toBe('polite');
+    });
+
+    it('should hide the active run banner while the dialog is open', () => {
+      component.activeSubTab = 'run';
+      component.activeRunDetail = buildRun({ answers: [] });
+      fixture.detectChanges();
+      const bannerShown = () => !!fixture.nativeElement.querySelector('.active-run-banner');
+      expect(bannerShown()).toBeTrue();
+
+      // Driven through the real API: the flag is only ever set by these two methods,
+      // and each refreshes the view itself.
+      spyOn(component.runProgressDialog.nativeElement, 'showModal');
+      component.openRunProgressDialog();
+      expect(component.isRunProgressDialogOpen).toBeTrue();
+      expect(bannerShown()).toBeFalse();
+
+      component.closeRunProgressDialog();
+      expect(bannerShown()).toBeTrue();
+    });
+
+    it('should give every button in the open dialog an accessible name, type, and no title', () => {
+      component.activeRunDetail = buildRun({
+        status: 'CompletedWithErrors',
+        completedAtUtc: '2026-09-02T00:05:00Z',
+        answers: [buildAnswer(1), buildAnswer(2, { status: 'ProviderError', httpStatusCode: 429, errorMessage: 'Rate limited' })]
+      });
+      component.isRunProgressDialogOpen = true;
+      fixture.detectChanges();
+
+      const dialog = fixture.nativeElement.querySelector('.benchmark-run-progress-dialog');
+      const buttons = Array.from(dialog.querySelectorAll('button')) as HTMLButtonElement[];
+      expect(buttons.length).toBeGreaterThan(0);
+
+      for (const btn of buttons) {
+        const name = (btn.textContent || '').trim() || btn.getAttribute('aria-label');
+        expect(name).withContext(btn.outerHTML.slice(0, 120)).toBeTruthy();
+        expect(btn.getAttribute('type')).toBe('button');
+        expect(btn.hasAttribute('title')).toBeFalse();
+      }
+
+      expect(dialog.querySelectorAll('.btn-gh-primary, .btn-gh-danger, .btn-gh-icon').length).toBe(0);
+
+      // The icon-only copy button must still carry its interest-triggered tooltip.
+      const copyButton = dialog.querySelector('button[aria-label="Copy benchmark run diagnostics"]') as HTMLButtonElement;
+      expect(copyButton).toBeTruthy();
+      const tooltipId = copyButton.getAttribute('interestfor')!;
+      expect(tooltipId).toBe('tip-copy-run-diagnostics');
+      const tooltip = dialog.querySelector(`#${tooltipId}`);
+      expect(tooltip).toBeTruthy();
+      expect(tooltip!.getAttribute('popover')).toBe('hint');
+      expect(copyButton.getAttribute('style')).toContain(`anchor-name: --${tooltipId}`);
+      expect(tooltip!.getAttribute('style')).toContain(`position-anchor: --${tooltipId}`);
+    });
+
+    it('should copy the run diagnostics, announce it, and reset after the timeout', fakeAsync(() => {
+      component.activeRunDetail = buildRun({
+        status: 'CompletedWithErrors',
+        completedAtUtc: '2026-09-02T00:05:00Z',
+        answers: [buildAnswer(1), buildAnswer(2, { status: 'ProviderError', httpStatusCode: 429, errorMessage: 'Rate limited' })]
+      });
+      component.isRunProgressDialogOpen = true;
+      fixture.detectChanges();
+
+      const writeTextSpy = spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.resolve());
+      const expectedText = component.runDiagnosticsText;
+      expect(expectedText).toContain('Run ID: 42');
+
+      const copyButton = fixture.nativeElement.querySelector(
+        'button[aria-label="Copy benchmark run diagnostics"]'
+      ) as HTMLButtonElement;
+      expect(copyButton).toBeTruthy();
+
+      copyButton.click();
+      tick();
+      fixture.detectChanges();
+
+      expect(writeTextSpy).toHaveBeenCalledWith(expectedText);
+      expect(component.copiedRunDiagnostics).toBeTrue();
+      expect(component.runDiagnosticsCopyStatus).toBe('Diagnostics copied to clipboard');
+
+      tick(2000);
+      fixture.detectChanges();
+
+      expect(component.copiedRunDiagnostics).toBeFalse();
+      expect(component.runDiagnosticsCopyStatus).toBe('');
+    }));
+
+    it('should surface a run diagnostics clipboard failure inline rather than throwing', fakeAsync(() => {
+      component.activeRunDetail = buildRun({
+        status: 'Failed',
+        completedAtUtc: '2026-09-02T00:05:00Z',
+        answers: [buildAnswer(1, { status: 'Failed', errorMessage: 'boom' })]
+      });
+      component.isRunProgressDialogOpen = true;
+      fixture.detectChanges();
+
+      spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.reject(new Error('denied')));
+
+      const copyButton = fixture.nativeElement.querySelector(
+        'button[aria-label="Copy benchmark run diagnostics"]'
+      ) as HTMLButtonElement;
+      copyButton.click();
+      tick();
+      fixture.detectChanges();
+
+      expect(component.copiedRunDiagnostics).toBeFalse();
+      expect(component.runDiagnosticsCopyStatus).toBe('Could not copy the diagnostics to the clipboard.');
+      expect(component.runErrorMessage).toBe('Could not copy the benchmark run diagnostics to the clipboard.');
+    }));
+
+    it('should not leak answer, thought, or assessor comment text into the diagnostics', () => {
+      component.activeRunDetail = buildRun({
+        answers: [buildAnswer(1), buildAnswer(2, { status: 'ProviderError', httpStatusCode: 429, errorMessage: 'Rate limited' })]
+      });
+
+      const text = component.runDiagnosticsText;
+      expect(text).not.toContain('SECRET ANSWER BODY');
+      expect(text).not.toContain('SECRET THOUGHT BODY');
+      expect(text).not.toContain('SECRET REVIEW BODY');
+      // What it must contain: the failure the operator would report.
+      expect(text).toContain('http=429');
+      expect(text).toContain('error: Rate limited');
+      // Section headers and timezone/timestamp diagnostics
+      expect(text).toContain('--- RUN ---');
+      expect(text).toContain('--- POLLING ---');
+      expect(text).toContain('--- QUESTIONS ---');
+      expect(text).toContain('Started (raw):');
+      expect(text).toContain('Started (parsed):');
+    });
+
+    it('should reattach to a run already in progress without opening the dialog', () => {
+      benchmarkServiceMock.getActiveRun.and.returnValue(of({ runId: 77 }));
+      benchmarkServiceMock.getRun.and.returnValue(of(buildRun({ id: 77 })));
+      const showModal = spyOn(component.runProgressDialog.nativeElement, 'showModal');
+
+      component.checkActiveRun();
+
+      expect(component.activeRunId).toBe(77);
+      expect(benchmarkServiceMock.getRun).toHaveBeenCalledWith(77);
+      expect(component.isRunProgressDialogOpen).toBeFalse();
+      expect(showModal).not.toHaveBeenCalled();
+    });
+
+    it('should do nothing when no run is active', () => {
+      benchmarkServiceMock.getActiveRun.and.returnValue(of(null));
+      benchmarkServiceMock.getRun.calls.reset();
+
+      component.checkActiveRun();
+
+      expect(component.activeRunId).toBeNull();
+      expect(benchmarkServiceMock.getRun).not.toHaveBeenCalled();
+    });
+
+    it('should fetch the suite questions once per dialog open, not per poll tick', () => {
+      component.activeRunDetail = buildRun({ answers: [] });
+      benchmarkServiceMock.getQuestions.calls.reset();
+      benchmarkServiceMock.getQuestions.and.returnValue(of([]));
+      spyOn(component.runProgressDialog.nativeElement, 'showModal');
+
+      component.openRunProgressDialog();
+      component.closeRunProgressDialog();
+      component.openRunProgressDialog();
+
+      expect(benchmarkServiceMock.getQuestions).toHaveBeenCalledTimes(1);
+      expect(benchmarkServiceMock.getQuestions).toHaveBeenCalledWith(1);
+      component.closeRunProgressDialog();
+    });
+
+    it('should render question text as plain text and never as innerHTML', () => {
+      component.activeRunDetail = buildRun({ answers: [] });
+      component.runProgressQuestions = [
+        { id: 1, benchmarkSuiteId: 1, orderIndex: 1, questionText: '<img src=x onerror="alert(1)">', difficulty: 1, expectedPoints: null, createdAtUtc: '2026-09-01T00:00:00Z' }
+      ];
+      component.isRunProgressDialogOpen = true;
+      fixture.detectChanges();
+
+      const excerpt = fixture.nativeElement.querySelector('.run-question-list .job-item-excerpt') as HTMLElement;
+      expect(excerpt).toBeTruthy();
+      expect(excerpt.querySelector('img')).toBeNull();
+      expect(excerpt.textContent).toContain('<img src=x onerror="alert(1)">');
+    });
+
+    it('should compute elapsed time correctly for UTC timestamps without a Z designator', () => {
+      // 5 minutes ago without Z suffix
+      const fiveMinutesAgo = new Date(Date.now() - 300000).toISOString().replace('Z', '');
+      component.activeRunDetail = buildRun({
+        startedAtUtc: fiveMinutesAgo,
+        completedAtUtc: null
+      });
+
+      const label = component.runElapsedLabel;
+      // Should format as ~5m (e.g. 5m 00s or 5m 01s), not inflated by local timezone offset
+      expect(label).toMatch(/^5m 0\ds$/);
+    });
+
+    it('should advance elapsed time at 1 Hz while dialog is open and stop on close', fakeAsync(() => {
+      const now = Date.now();
+      const startTime = new Date(now - 10000).toISOString().replace('Z', '');
+      component.activeRunDetail = buildRun({
+        status: 'Running',
+        startedAtUtc: startTime,
+        completedAtUtc: null
+      });
+
+      spyOn(component.runProgressDialog.nativeElement, 'showModal');
+      spyOn(component.runProgressDialog.nativeElement, 'close');
+
+      component.openRunProgressDialog();
+      expect(component.runElapsedLabel).toBe('10s');
+
+      tick(1000);
+      expect(component.runElapsedLabel).toBe('11s');
+
+      component.closeRunProgressDialog();
+      expect((component as any).runElapsedInterval).toBeNull();
+
+      tick(5000);
+      discardPeriodicTasks();
+    }));
+
+    it('should not start ticker for terminal run and stop ticker when poll reports terminal', fakeAsync(() => {
+      spyOn(component.runProgressDialog.nativeElement, 'showModal');
+      component.activeRunDetail = buildRun({
+        status: 'Completed',
+        startedAtUtc: '2026-09-02T17:00:00Z',
+        completedAtUtc: '2026-09-02T17:05:00Z'
+      });
+      component.openRunProgressDialog();
+      expect((component as any).runElapsedInterval).toBeNull();
+
+      // Now set to running and open
+      component.activeRunDetail = buildRun({
+        status: 'Running',
+        startedAtUtc: '2026-09-02T17:00:00Z',
+        completedAtUtc: null
+      });
+      component.openRunProgressDialog();
+      expect((component as any).runElapsedInterval).not.toBeNull();
+
+      // Poll returns terminal run
+      benchmarkServiceMock.getRun.and.returnValue(of(buildRun({
+        status: 'Completed',
+        startedAtUtc: '2026-09-02T17:00:00Z',
+        completedAtUtc: '2026-09-02T17:05:00Z'
+      })));
+      (component as any).pollRunDetail(42);
+      expect((component as any).runElapsedInterval).toBeNull();
+
+      discardPeriodicTasks();
+    }));
+
+    it('should render diagnostics details unconditionally closed by default and without failure count on healthy run', () => {
+      component.activeRunDetail = buildRun({
+        status: 'Running',
+        answers: [buildAnswer(1)]
+      });
+      component.isRunProgressDialogOpen = true;
+      fixture.detectChanges();
+
+      const details = fixture.nativeElement.querySelector('.job-diagnostics') as HTMLDetailsElement;
+      expect(details).toBeTruthy();
+      expect(details.open).toBeFalse();
+
+      const copyBtn = details.querySelector('button[aria-label="Copy benchmark run diagnostics"]');
+      expect(copyBtn).toBeTruthy();
+
+      const summary = details.querySelector('summary') as HTMLElement;
+      expect(summary.textContent).toContain('Diagnostics');
+      expect(details.querySelector('.job-diagnostics-count')).toBeNull();
+    });
+
+    it('should show failure count in diagnostics summary when answers fail', () => {
+      component.activeRunDetail = buildRun({
+        status: 'Running',
+        answers: [buildAnswer(1, { status: 'Failed' }), buildAnswer(2, { status: 'Failed' })]
+      });
+      component.isRunProgressDialogOpen = true;
+      fixture.detectChanges();
+
+      const details = fixture.nativeElement.querySelector('.job-diagnostics') as HTMLDetailsElement;
+      expect(details).toBeTruthy();
+      const countChip = details.querySelector('.job-diagnostics-count') as HTMLElement;
+      expect(countChip).toBeTruthy();
+      expect(countChip.textContent).toContain('2 failed');
+    });
+
+    it('should record lastRunPollError on failed poll and report it in diagnostics text', () => {
+      benchmarkServiceMock.getRun.and.returnValue(throwError(() => ({
+        status: 500,
+        message: 'Internal Server Error'
+      })));
+
+      (component as any).pollRunDetail(42);
+
+      expect(component.lastRunPollError).toContain('500');
+      expect(component.runDiagnosticsText).toContain('Last poll error:');
+      expect(component.runDiagnosticsText).toContain('500');
+    });
+
+    it('should produce non-empty diagnostics text when activeRunDetail is null', () => {
+      component.activeRunDetail = null;
+      const text = component.runDiagnosticsText;
+      expect(text).toBeTruthy();
+      expect(text).toContain('=== BENCHMARK RUN DIAGNOSTICS ===');
+      expect(text).toContain('No run detail received yet.');
+      expect(text).toContain('--- POLLING ---');
+      expect(text).toContain('--- ERRORS ---');
+    });
+
+    it('should render diagnostics pre containing code child with tabindex 0', () => {
+      component.activeRunDetail = buildRun({ answers: [] });
+      component.isRunProgressDialogOpen = true;
+      fixture.detectChanges();
+
+      const pre = fixture.nativeElement.querySelector('.job-diagnostics pre') as HTMLPreElement;
+      expect(pre).toBeTruthy();
+      expect(pre.getAttribute('tabindex')).toBe('0');
+      const code = pre.querySelector('code');
+      expect(code).toBeTruthy();
     });
   });
 

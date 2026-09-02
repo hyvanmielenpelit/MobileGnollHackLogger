@@ -388,6 +388,14 @@ export class AdminBenchmarkService {
     return this.http.get<BenchmarkRunDetailDto>(`/api/admin/benchmark/runs/${id}`);
   }
 
+  /**
+   * Returns the id of the run currently executing, or null when the server is idle.
+   * A 204 arrives as null, the same shape getActiveDifficultyAssessment() relies on.
+   */
+  getActiveRun(): Observable<{ runId: number } | null> {
+    return this.http.get<{ runId: number } | null>('/api/admin/benchmark/runs/active');
+  }
+
   getRuns(suiteId?: number, take?: number): Observable<BenchmarkRunSummaryDto[]> {
     let params: any = {};
     if (suiteId != null) params.suiteId = suiteId;
