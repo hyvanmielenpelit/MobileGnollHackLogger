@@ -98,12 +98,25 @@ a:hover {
   font-family: "Cinzel", serif;
   font-weight: 600;
   font-size: 15px;
-  padding: 10px 20px;
+  /* The label must clear the plate's end ornaments. Because the background is
+     stretched (background-size: 100% 100%), the ornament scales with the
+     button, and the flat inner panel begins ~8.9% of the width in from each
+     end (measured from the 855x160 source). A fixed padding can only
+     approximate that: 34px is right for the ~340-390px buttons this app
+     actually uses, and harmlessly generous on narrow ones, which centre their
+     label inside the 140px minimum anyway.
+     The exact fix would be a 9-slice `border-image` so the ornaments keep a
+     constant width instead of stretching; that changes every button in the
+     app, so it is deliberately not done here. */
+  padding: 10px 34px;
   cursor: pointer;
   transition: filter 0.2s;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  /* Icon-to-label spacing. Inert for the label-only buttons, required by any
+     button carrying a leading .btn-icon SVG. */
+  gap: 8px;
   min-width: 140px;
   min-height: 44px;
 }
@@ -113,6 +126,24 @@ a:hover {
 .btn-gh:disabled {
   filter: grayscale(100%);
   cursor: not-allowed;
+}
+.btn-gh:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 3px;
+}
+
+/* Compact variant, for a button that stands alone in a tight space.
+   Do NOT reach for this to fit a button into a row: a row that mixes .btn-gh
+   with .btn-gh-small gets two different button heights and two text sizes,
+   which reads as a rendering fault rather than a size choice. Let the row wrap
+   instead. Horizontal padding still has to clear the end ornaments (see
+   .btn-gh above), so it stays generous relative to the smaller type. */
+.btn-gh-small {
+  min-width: 100px;
+  min-height: 36px;
+  font-size: 13px;
+  padding: 6px 22px;
+  white-space: nowrap;
 }
 
 /* Cancel Button */
@@ -156,8 +187,141 @@ a:hover {
 .btn-icon {
   width: 16px;
   height: 16px;
+  flex-shrink: 0;
   /* Visually center the icon with the Cinzel font which has a lower visual baseline */
   transform: translateY(-0.5px);
+}
+
+/* Hides content visually but keeps it in the accessibility tree.
+   :focus-within / :active opt elements out, so focusable content wrapped in
+   this class can still reveal itself. */
+.visually-hidden:where(:not(:focus-within, :active)) {
+  position: absolute !important;
+  clip-path: inset(50%) !important;
+  overflow: hidden !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  white-space: nowrap !important;
+}
+
+/* ==========================================================================
+   Tabs
+   The shared tab widget. Markup contract and keyboard model are specified in
+   the frontend_ui_controls skill; the short version is that .gh-tabs is a
+   role="tablist", each .gh-tab is a role="tab" <button> carrying aria-selected
+   and a roving tabindex, and each panel is a role="tabpanel".
+   ========================================================================== */
+.gh-tabs {
+  display: flex;
+  gap: 20px;
+  border-bottom: 1px solid var(--border-glass);
+  padding-bottom: 0;
+
+  /* Scrollable tabs */
+  overflow-x: auto;
+  scroll-behavior: smooth;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+
+  container-type: scroll-state;
+  position: relative;
+  flex-shrink: 0;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.gh-tab {
+  flex-shrink: 0;
+  scroll-snap-align: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  color: var(--nav-color);
+  border: none;
+  border-bottom: 2px solid transparent;
+  font-family: "Cinzel", serif;
+  font-weight: 600;
+  font-size: 16px;
+  padding: 10px 15px;
+  cursor: pointer;
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+.gh-tab:hover {
+  color: var(--primary-color);
+  text-shadow: 0 0 8px var(--gold-glow);
+}
+/* The active state is driven off the ARIA state, so the two cannot drift apart. */
+.gh-tab[aria-selected="true"] {
+  color: var(--primary-color);
+  border-bottom-color: var(--primary-color);
+  text-shadow: 0 0 8px var(--gold-glow);
+}
+.gh-tab:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: -2px;
+}
+
+/* Secondary (nested) tab row, visually subordinate to the primary row above it. */
+.gh-tabs-secondary {
+  gap: 12px;
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+
+  .gh-tab {
+    font-size: 14px;
+    font-weight: 500;
+    padding: 8px 12px;
+  }
+}
+
+/* ==========================================================================
+   Interest-triggered tooltips
+   Paired with the `interestfor` attribute on the trigger and popover="hint"
+   on the target. Each trigger sets `anchor-name`; each tooltip sets
+   `position-anchor`. Explicit names are MANDATORY: the anchor-positioning
+   polyfill does not support the implicit anchor that `interestfor` creates.
+   ========================================================================== */
+.gh-tooltip {
+  top: calc(anchor(bottom) + 8px);
+  left: anchor(center);
+  transform: translateX(-50%);
+  #{'position-try'}: flip-block;
+  margin: unset;
+  background: rgba(20, 20, 20, 0.95);
+  color: #ddd;
+  border: 1px solid var(--border-glass);
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.85em;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  .gh-tooltip {
+    max-width: calc(100vw - 40px);
+    white-space: normal;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-gh,
+  .gh-tab,
+  .action-btn,
+  .btn-icon-action {
+    transition: none;
+  }
+  .gh-tabs {
+    scroll-behavior: auto;
+  }
 }
 
 /* Common form inputs */
@@ -488,6 +652,11 @@ dialog:not([open]),
     color: var(--primary-color);
     border-color: var(--primary-color);
     box-shadow: 0 0 8px var(--gold-glow);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
   }
 
   &.delete:hover:not(:disabled) {
@@ -897,6 +1066,11 @@ label.checkbox-label,
     background: rgba(212, 175, 55, 0.15);
     border-color: var(--gh-gold);
     color: var(--gh-gold);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
   }
 
   svg {

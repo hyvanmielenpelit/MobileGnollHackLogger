@@ -165,4 +165,113 @@ describe('AdminComponent', () => {
       expect(component.loading).toBeFalse();
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Tab semantics and keyboard navigation for the admin dashboard's main tab
+  // row, and for the nested tab row inside the rate limits dialog.
+  // ---------------------------------------------------------------------------
+  describe('main tab row', () => {
+    const mainTabList = () =>
+      fixture.nativeElement.querySelector('[role="tablist"][aria-label="Admin sections"]');
+    const mainTabs = () =>
+      Array.from(
+        fixture.nativeElement.querySelectorAll('[aria-label="Admin sections"] [role="tab"]')
+      ) as HTMLButtonElement[];
+
+    beforeEach(() => fixture.detectChanges());
+
+    it('should expose the tab row as a labelled tablist with one tab per section', () => {
+      expect(mainTabList()).toBeTruthy();
+      expect(mainTabs().length).toBe(component.tabs.length);
+    });
+
+    it('should mark exactly one tab selected, matching activeTab', () => {
+      const selected = mainTabs().filter(t => t.getAttribute('aria-selected') === 'true');
+      expect(selected.length).toBe(1);
+      expect(selected[0].id).toBe('admin-tab-' + component.activeTab);
+    });
+
+    it('should give exactly one tab tabindex="0" and the rest tabindex="-1"', () => {
+      const all = mainTabs();
+      expect(all.filter(t => t.getAttribute('tabindex') === '0').length).toBe(1);
+      expect(all.filter(t => t.getAttribute('tabindex') === '-1').length).toBe(all.length - 1);
+    });
+
+    it('should give every tab an explicit type="button"', () => {
+      expect(mainTabs().every(t => t.getAttribute('type') === 'button')).toBeTrue();
+    });
+
+    it('should wrap forward from the last tab to the first with ArrowRight', () => {
+      const last = component.tabs.length - 1;
+      component.selectTab(component.tabs[last].id);
+      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowRight' }), last);
+      expect(component.activeTab).toBe(component.tabs[0].id);
+    });
+
+    it('should wrap backward from the first tab to the last with ArrowLeft', () => {
+      component.selectTab(component.tabs[0].id);
+      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowLeft' }), 0);
+      expect(component.activeTab).toBe(component.tabs[component.tabs.length - 1].id);
+    });
+
+    it('should select the first and last tab with Home and End', () => {
+      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'End' }), 0);
+      expect(component.activeTab).toBe(component.tabs[component.tabs.length - 1].id);
+
+      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'Home' }), 6);
+      expect(component.activeTab).toBe(component.tabs[0].id);
+    });
+
+    it('should ignore keys that are not part of the tab keyboard model', () => {
+      component.selectTab('groups');
+      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'x' }), 1);
+      expect(component.activeTab).toBe('groups');
+    });
+
+    it('should move focus to the newly selected tab after a keyboard change', () => {
+      mainTabs()[0].focus();
+      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowRight' }), 0);
+      fixture.detectChanges();
+      expect(document.activeElement)
+        .toBe(fixture.nativeElement.querySelector('#admin-tab-groups'));
+    });
+
+    it('should render a tabpanel labelled by the selected tab', () => {
+      const panel = fixture.nativeElement.querySelector('[role="tabpanel"]');
+      expect(panel).toBeTruthy();
+      expect(panel.id).toBe('admin-panel-' + component.activeTab);
+      expect(panel.getAttribute('aria-labelledby')).toBe('admin-tab-' + component.activeTab);
+      expect(panel.getAttribute('tabindex')).toBe('0');
+    });
+
+    it('should not rely on the removed admin-tab-active class', () => {
+      expect(fixture.nativeElement.querySelectorAll('.admin-tab-active').length).toBe(0);
+    });
+  });
+
+  describe('rate limits dialog tab row', () => {
+    it('should wrap around and move selection with the arrow keys', () => {
+      component.activeRateLimitTab = 'chat';
+
+      component.onRateLimitTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowLeft' }), 0);
+      expect(component.activeRateLimitTab).toBe('title');
+
+      component.onRateLimitTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowRight' }), 1);
+      expect(component.activeRateLimitTab).toBe('chat');
+    });
+
+    it('should select the ends with Home and End', () => {
+      component.onRateLimitTabKeydown(new KeyboardEvent('keydown', { key: 'End' }), 0);
+      expect(component.activeRateLimitTab).toBe('title');
+
+      component.onRateLimitTabKeydown(new KeyboardEvent('keydown', { key: 'Home' }), 1);
+      expect(component.activeRateLimitTab).toBe('chat');
+    });
+
+    it('should ignore unrelated keys', () => {
+      component.activeRateLimitTab = 'title';
+      component.onRateLimitTabKeydown(new KeyboardEvent('keydown', { key: 'Enter' }), 1);
+      expect(component.activeRateLimitTab).toBe('title');
+    });
+  });
 });

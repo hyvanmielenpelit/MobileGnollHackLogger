@@ -9,6 +9,10 @@ import { AdminBenchmarkComponent } from './benchmark/benchmark.component';
 import { Subject, Subscription } from 'rxjs';
 import { debounceTime } from 'rxjs/operators';
 
+/** The admin dashboard's top-level tabs, in display order. */
+export type AdminTabId =
+  'users' | 'groups' | 'configs' | 'database' | 'devtools' | 'telemetry' | 'benchmark';
+
 @Component({
     selector: 'app-admin',
     imports: [CommonModule, FormsModule, RouterModule, AiModelFormComponent, ConfigAnalyticsComponent, AdminBenchmarkComponent],
@@ -19,7 +23,18 @@ import { debounceTime } from 'rxjs/operators';
 export class AdminComponent implements OnInit, OnDestroy {
   private adminService = inject(AdminService);
   
-  activeTab: 'users' | 'groups' | 'configs' | 'database' | 'devtools' | 'telemetry' | 'benchmark' = 'users';
+  activeTab: AdminTabId = 'users';
+
+  /** Tab order, and the source of truth for arrow-key navigation indices. */
+  readonly tabs: { id: AdminTabId; label: string }[] = [
+    { id: 'users',     label: 'Users' },
+    { id: 'groups',    label: 'Groups' },
+    { id: 'configs',   label: 'System Configs' },
+    { id: 'database',  label: 'Database' },
+    { id: 'telemetry', label: 'AI Telemetry' },
+    { id: 'benchmark', label: 'AI Benchmark' },
+    { id: 'devtools',  label: 'Developer Tools' }
+  ];
   loading = false;
   usersLoading = false;
 
@@ -503,6 +518,32 @@ export class AdminComponent implements OnInit, OnDestroy {
   limitContext: 'system' | 'user' | 'group' = 'system';
   limitEntityId: number = 0;
   activeRateLimitTab: 'chat' | 'title' = 'chat';
+
+  /** Tab order for the rate limits dialog's nested tab row. */
+  readonly rateLimitTabs: { id: 'chat' | 'title'; label: string }[] = [
+    { id: 'chat',  label: 'Chat Usage' },
+    { id: 'title', label: 'Title Generation Usage' }
+  ];
+
+  /** Roving-tabindex keyboard support for the rate limits dialog tab row. */
+  onRateLimitTabKeydown(event: KeyboardEvent, index: number): void {
+    const targets: Record<string, number> = {
+      ArrowRight: index + 1,
+      ArrowLeft: index - 1,
+      Home: 0,
+      End: this.rateLimitTabs.length - 1
+    };
+    const requested = targets[event.key];
+    if (requested === undefined) {
+      return;
+    }
+
+    event.preventDefault();
+    const next = (requested + this.rateLimitTabs.length) % this.rateLimitTabs.length;
+    const tab = this.rateLimitTabs[next].id;
+    this.activeRateLimitTab = tab;
+    document.getElementById(`rate-limit-tab-${tab}`)?.focus();
+  }
 
   openRateLimitsDialog(context: 'system' | 'user' | 'group', entity: any) {
     this.limitContext = context;
@@ -1076,7 +1117,7 @@ export class AdminComponent implements OnInit, OnDestroy {
     this.loadTelemetry();
   }
 
-  selectTab(tab: 'users' | 'groups' | 'configs' | 'database' | 'devtools' | 'telemetry' | 'benchmark') {
+  selectTab(tab: AdminTabId) {
     this.activeTab = tab;
     if (tab === 'database') {
       this.loadStorageMetrics();
@@ -1087,6 +1128,33 @@ export class AdminComponent implements OnInit, OnDestroy {
       this.loadTelemetry();
       this.loadGovernorStatus();
     }
+  }
+
+  /**
+   * Roving-tabindex keyboard support required by role="tablist": Left/Right
+   * move between tabs and wrap around, Home/End jump to the ends. Enter and
+   * Space need no handling because each tab is a real <button>.
+   *
+   * Focus follows selection in the same turn, so the tab that just became
+   * tabindex="0" is the one holding focus.
+   */
+  onTabKeydown(event: KeyboardEvent, index: number): void {
+    const targets: Record<string, number> = {
+      ArrowRight: index + 1,
+      ArrowLeft: index - 1,
+      Home: 0,
+      End: this.tabs.length - 1
+    };
+    const requested = targets[event.key];
+    if (requested === undefined) {
+      return;
+    }
+
+    event.preventDefault();
+    const next = (requested + this.tabs.length) % this.tabs.length;
+    const tab = this.tabs[next].id;
+    this.selectTab(tab);
+    document.getElementById(`admin-tab-${tab}`)?.focus();
   }
 
   loadTelemetry(showFeedback = false) {

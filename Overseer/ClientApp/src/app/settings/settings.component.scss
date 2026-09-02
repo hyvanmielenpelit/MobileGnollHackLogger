@@ -212,23 +212,10 @@ label:not(.checkbox-label) { display: block; margin-bottom: 5px; font-weight: bo
 
 
 
+/* Base .gh-tooltip styling now lives in styles.scss. Only the settings-specific
+   anchor binding stays here. */
 .gh-tooltip {
   position-anchor: --btn-info;
-  top: calc(anchor(bottom) + 8px);
-  left: anchor(center);
-  transform: translateX(-50%);
-  #{'position-try'}: flip-block;
-  margin: unset;
-  background: rgba(20, 20, 20, 0.95);
-  color: #ddd;
-  border: 1px solid var(--border-glass);
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 0.85em;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(5px);
-  -webkit-backdrop-filter: blur(5px);
-  white-space: nowrap;
 }
 
 .star-icon-trigger {

@@ -9,38 +9,8 @@
   gap: 20px;
 }
 
-.benchmark-subnav {
-  display: flex;
-  gap: 10px;
-  border-bottom: 1px solid #333;
-  padding-bottom: 10px;
-
-  .subnav-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    background: transparent;
-    border: 1px solid transparent;
-    color: #a0a0a0;
-    padding: 8px 16px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 14px;
-    font-weight: 500;
-    transition: all 0.2s ease;
-
-    &:hover {
-      color: #e0ba6d;
-      background: rgba(224, 186, 109, 0.08);
-    }
-
-    &.active {
-      color: #e0ba6d;
-      background: rgba(224, 186, 109, 0.15);
-      border-color: rgba(224, 186, 109, 0.4);
-    }
-  }
-}
+/* The sub-navigation uses the shared .gh-tabs / .gh-tabs-secondary tab widget
+   from styles.scss. Nothing tab-specific belongs here. */
 
 .benchmark-tab-content {
   display: flex;
@@ -52,8 +22,8 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: rgba(224, 186, 109, 0.1);
-  border: 1px solid rgba(224, 186, 109, 0.4);
+  background: rgba(212, 160, 23, 0.1);
+  border: 1px solid rgba(212, 160, 23, 0.4);
   border-radius: 8px;
   padding: 16px 20px;
 
@@ -64,7 +34,7 @@
 
     h4 {
       margin: 0 0 4px 0;
-      color: #e0ba6d;
+      color: var(--primary-color);
     }
 
     p {
@@ -77,8 +47,8 @@
     width: 14px;
     height: 14px;
     border-radius: 50%;
-    background-color: #e0ba6d;
-    box-shadow: 0 0 0 0 rgba(224, 186, 109, 0.7);
+    background-color: var(--primary-color);
+    box-shadow: 0 0 0 0 rgba(212, 160, 23, 0.7);
     animation: pulse 1.5s infinite cubic-bezier(0.66, 0, 0, 1);
   }
 
@@ -92,7 +62,7 @@
 
 @keyframes pulse {
   to {
-    box-shadow: 0 0 0 12px rgba(224, 186, 109, 0);
+    box-shadow: 0 0 0 12px rgba(212, 160, 23, 0);
   }
 }
 
@@ -159,7 +129,7 @@
   font-size: 14px;
 
   &:focus {
-    border-color: #e0ba6d;
+    border-color: var(--primary-color);
     outline: none;
   }
 }
@@ -188,12 +158,12 @@
   justify-content: flex-start;
 
   &:hover {
-    border-color: #e0ba6d;
+    border-color: var(--primary-color);
     background: #1a1a1a;
   }
 
   &.open {
-    border-color: #e0ba6d;
+    border-color: var(--primary-color);
 
     .chevron {
       transform: rotate(180deg);
@@ -203,7 +173,7 @@
   .chevron {
     margin-left: auto;
     transition: transform 0.2s ease;
-    stroke: #e0ba6d;
+    stroke: var(--primary-color);
     flex-shrink: 0;
   }
 }
@@ -218,7 +188,7 @@
   max-height: 300px;
   overflow-y: auto;
   background: #181818;
-  border: 1px solid #e0ba6d;
+  border: 1px solid var(--primary-color);
   border-radius: 6px;
   padding: 4px 0;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7);
@@ -245,12 +215,12 @@
   transition: background-color 0.15s ease;
 
   &:hover {
-    background-color: rgba(224, 186, 109, 0.15);
+    background-color: rgba(212, 160, 23, 0.15);
   }
 
   &.selected {
-    background-color: rgba(224, 186, 109, 0.25);
-    border-left: 3px solid #e0ba6d;
+    background-color: rgba(212, 160, 23, 0.25);
+    border-left: 3px solid var(--primary-color);
     padding-left: 9px;
   }
 }
@@ -313,96 +283,17 @@
   }
 }
 
-.btn-gh {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 8px 16px;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  border: 1px solid #444;
-  background: #2a2a2a;
-  color: #eee;
-  transition: all 0.2s ease;
-  min-height: 38px;
-  box-sizing: border-box;
-  line-height: 1.2;
-  vertical-align: middle;
+/* Buttons here use the global design system unchanged:
+   .btn-gh (the decorative GnollHack image button) with .btn-gh-cancel,
+   .btn-gh-delete and .btn-gh-small; .action-btn / .action-btn-danger for
+   icon-only row actions; .btn-icon-action for dialog close buttons. All of
+   them live in styles.scss.
 
-  &:hover:not(:disabled) {
-    background: #333;
-    border-color: #666;
-  }
-
-  &:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  &.btn-gh-primary {
-    background: #e0ba6d;
-    border-color: #e0ba6d;
-    color: #161616;
-
-    &:hover:not(:disabled) {
-      background: #ecc87f;
-      border-color: #ecc87f;
-    }
-  }
-
-  &.btn-gh-danger {
-    background: #c62828;
-    border-color: #c62828;
-    color: #fff;
-
-    &:hover:not(:disabled) {
-      background: #d32f2f;
-      border-color: #d32f2f;
-    }
-  }
-
-  &.btn-gh-icon {
-    padding: 6px 8px;
-    background: transparent;
-    color: #aaa;
-    border: 1px solid transparent;
-    min-height: unset;
-
-    &:hover:not(:disabled) {
-      color: #e0ba6d;
-      background: #2a2a2a;
-    }
-
-    &.btn-danger-icon:hover:not(:disabled) {
-      color: #ff5252;
-    }
-  }
-}
-
-.btn-icon-action {
-  background: transparent;
-  color: #aaa;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  width: 36px;
-  height: 36px;
-  display: inline-flex;
-  justify-content: center;
-  align-items: center;
-  cursor: pointer;
-  padding: 6px;
-  transition: all 0.2s ease;
-  flex-shrink: 0;
-
-  &:hover:not(:disabled) {
-    background: rgba(224, 186, 109, 0.12);
-    color: #e0ba6d;
-    border-color: rgba(224, 186, 109, 0.4);
-  }
-}
+   NEVER redefine .btn-gh in this file. Angular's emulated view encapsulation
+   scopes such an override to this component only, so it silently forks the
+   design system: the button keeps working and stops looking like the rest of
+   the application. That is exactly what happened here before, and it is why
+   this comment exists. Extend the global vocabulary in styles.scss instead. */
 
 .suites-grid {
   display: grid;
@@ -457,9 +348,9 @@
   }
 
   .question-count-badge {
-    background: rgba(224, 186, 109, 0.15);
-    color: #e0ba6d;
-    border: 1px solid rgba(224, 186, 109, 0.3);
+    background: rgba(212, 160, 23, 0.15);
+    color: var(--primary-color);
+    border: 1px solid rgba(212, 160, 23, 0.3);
     padding: 2px 8px;
     border-radius: 12px;
     font-size: 12px;
@@ -556,9 +447,9 @@
   text-transform: uppercase;
 
   &.badge-status-running {
-    background: rgba(224, 186, 109, 0.2);
-    color: #e0ba6d;
-    border: 1px solid #e0ba6d;
+    background: rgba(212, 160, 23, 0.2);
+    color: var(--primary-color);
+    border: 1px solid var(--primary-color);
   }
 
   &.badge-status-completed {
@@ -662,9 +553,9 @@
   border-radius: 4px;
   font-size: 11px;
   font-weight: 600;
-  background: rgba(224, 186, 109, 0.15);
-  color: #e0ba6d;
-  border: 1px solid rgba(224, 186, 109, 0.3);
+  background: rgba(212, 160, 23, 0.15);
+  color: var(--primary-color);
+  border: 1px solid rgba(212, 160, 23, 0.3);
 }
 
 .suite-assessment-badge {
@@ -805,7 +696,7 @@
       flex-grow: 1;
       flex-wrap: wrap;
 
-      .q-number { font-weight: 700; color: #e0ba6d; }
+      .q-number { font-weight: 700; color: var(--primary-color); }
       .q-title { font-size: 13px; color: #eee; margin-left: 5px; }
     }
 
@@ -850,11 +741,11 @@
     }
 
     .assessor-comment-box {
-      background: rgba(224, 186, 109, 0.08);
-      border-left: 3px solid #e0ba6d;
+      background: rgba(212, 160, 23, 0.08);
+      border-left: 3px solid var(--primary-color);
       padding: 10px 14px;
       font-size: 13px;
-      color: #e0ba6d;
+      color: var(--primary-color);
     }
 
     .metrics-grid {
@@ -895,11 +786,11 @@
   }
 
   &.drag-over-top {
-    border-top: 2px solid #e0ba6d !important;
+    border-top: 2px solid var(--primary-color) !important;
   }
 
   &.drag-over-bottom {
-    border-bottom: 2px solid #e0ba6d !important;
+    border-bottom: 2px solid var(--primary-color) !important;
   }
 
   .drag-handle {
@@ -914,7 +805,7 @@
     flex-shrink: 0;
 
     &:hover {
-      color: #e0ba6d;
+      color: var(--primary-color);
     }
 
     &:active {
@@ -951,7 +842,7 @@
     .q-order-badge {
       font-weight: 700;
       font-size: 13px;
-      color: #e0ba6d;
+      color: var(--primary-color);
     }
   }
 
@@ -1017,7 +908,7 @@
     flex-direction: column;
     gap: 2px;
     background: rgba(0, 0, 0, 0.4);
-    border-left: 3px solid rgba(224, 186, 109, 0.5);
+    border-left: 3px solid rgba(212, 160, 23, 0.5);
     border-radius: 4px;
     padding: 8px 12px;
     margin-top: 2px;
@@ -1027,7 +918,7 @@
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.5px;
-      color: #e0ba6d;
+      color: var(--primary-color);
     }
   }
 }
@@ -1118,7 +1009,7 @@
     }
 
     .weight-val {
-      color: #e0ba6d;
+      color: var(--primary-color);
       font-weight: 600;
     }
   }
@@ -1178,7 +1069,7 @@
     }
 
     code {
-      color: #e0ba6d;
+      color: var(--primary-color);
       font-size: 12px;
       font-family: monospace;
       white-space: nowrap;
@@ -1266,11 +1157,11 @@
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.08em;
-      color: #e0ba6d;
+      color: var(--primary-color);
       padding: 0 0 6px 0;
       margin-bottom: 14px;
       width: 100%;
-      border-bottom: 1px solid rgba(224, 186, 109, 0.2);
+      border-bottom: 1px solid rgba(212, 160, 23, 0.2);
       float: none;
     }
   }
@@ -1278,7 +1169,7 @@
   .form-help-block {
     background: rgba(255, 255, 255, 0.03);
     border: 1px solid rgba(255, 255, 255, 0.08);
-    border-inline-start: 3px solid #e0ba6d;
+    border-inline-start: 3px solid var(--primary-color);
     border-radius: 4px;
     padding: 10px 14px;
     margin-bottom: 14px;
@@ -1287,7 +1178,7 @@
     color: #bbb;
 
     code {
-      color: #e0ba6d;
+      color: var(--primary-color);
       font-size: 12px;
       font-family: monospace;
       background: rgba(0, 0, 0, 0.3);
@@ -1334,7 +1225,7 @@
     margin-top: 4px;
 
     code {
-      color: #e0ba6d;
+      color: var(--primary-color);
       font-size: 12px;
       font-family: monospace;
     }
@@ -1403,7 +1294,7 @@
 
     h3 {
       margin: 0;
-      color: var(--title-color, #e0ba6d);
+      color: var(--title-color, var(--primary-color));
       font-family: "Cinzel", serif;
       font-size: 1.25rem;
       font-weight: 700;
@@ -1438,6 +1329,19 @@
   bottom: 0;
   z-index: 10;
   flex-shrink: 0;
+
+  /* Matches the global .dialog-actions behaviour. column-reverse keeps the
+     affirmative action first in the DOM, where screen readers and the Enter
+     key expect it, while rendering it at the bottom. */
+  @media (max-width: 500px) {
+    flex-direction: column-reverse;
+    align-items: stretch;
+
+    .btn-gh {
+      width: 100%;
+      min-width: 0;
+    }
+  }
 }
 
 .text-muted { color: #888; }
@@ -1463,7 +1367,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    color: #e0ba6d;
+    color: var(--primary-color);
     font-size: 13px;
     margin-bottom: 6px;
   }

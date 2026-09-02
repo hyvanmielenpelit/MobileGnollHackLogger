@@ -521,7 +521,7 @@ describe('AdminBenchmarkComponent', () => {
     expect(warningEl.textContent).toContain('Difficulty 5/10 Assessed');
     expect(warningEl.textContent).toContain('Every question must have an assessed difficulty');
 
-    const startBtn = fixture.nativeElement.querySelector('.form-actions button.btn-gh-primary');
+    const startBtn = fixture.nativeElement.querySelector('.form-actions button.btn-gh');
     expect(startBtn.disabled).toBeTrue();
   });
 
@@ -581,5 +581,205 @@ describe('AdminBenchmarkComponent', () => {
 
     // Question 2: not assessed
     expect(assessorInfos[1].textContent).toContain('Difficulty not assessed');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Tab semantics and keyboard navigation for the benchmark sub-navigation.
+  // Regression guards for the harmonization that replaced .subnav-btn pill
+  // buttons with the shared .gh-tabs / .gh-tab ARIA tab widget.
+  // ---------------------------------------------------------------------------
+  describe('sub-navigation tab widget', () => {
+    const tabList = () => fixture.nativeElement.querySelector('[role="tablist"]');
+    const tabs = () =>
+      Array.from(fixture.nativeElement.querySelectorAll('[role="tab"]')) as HTMLButtonElement[];
+
+    beforeEach(() => fixture.detectChanges());
+
+    it('should expose the sub-navigation as a labelled tablist', () => {
+      expect(tabList()).toBeTruthy();
+      expect(tabList().getAttribute('aria-label')).toBe('Benchmark sections');
+      expect(tabs().length).toBe(3);
+    });
+
+    it('should mark exactly one tab selected, matching activeSubTab', () => {
+      const selected = tabs().filter(t => t.getAttribute('aria-selected') === 'true');
+      expect(selected.length).toBe(1);
+      expect(selected[0].id).toBe('bm-tab-' + component.activeSubTab);
+    });
+
+    it('should give exactly one tab tabindex="0" and the rest tabindex="-1"', () => {
+      const all = tabs();
+      expect(all.filter(t => t.getAttribute('tabindex') === '0').length).toBe(1);
+      expect(all.filter(t => t.getAttribute('tabindex') === '-1').length).toBe(2);
+    });
+
+    it('should wrap forward from the last tab to the first with ArrowRight', () => {
+      component.activeSubTab = 'suites';
+      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowRight' }), 2);
+      expect(component.activeSubTab).toBe('run');
+    });
+
+    it('should wrap backward from the first tab to the last with ArrowLeft', () => {
+      component.activeSubTab = 'run';
+      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowLeft' }), 0);
+      expect(component.activeSubTab).toBe('suites');
+    });
+
+    it('should select the first and last tab with Home and End', () => {
+      component.activeSubTab = 'history';
+      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'End' }), 1);
+      expect(component.activeSubTab).toBe('suites');
+
+      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'Home' }), 2);
+      expect(component.activeSubTab).toBe('run');
+    });
+
+    it('should ignore keys that are not part of the tab keyboard model', () => {
+      component.activeSubTab = 'history';
+      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'a' }), 1);
+      expect(component.activeSubTab).toBe('history');
+    });
+
+    it('should move focus to the newly selected tab after a keyboard change', () => {
+      tabs()[0].focus();
+      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowRight' }), 0);
+      fixture.detectChanges();
+      expect(document.activeElement).toBe(
+        fixture.nativeElement.querySelector('#bm-tab-history')
+      );
+    });
+
+    it('should render a tabpanel labelled by the selected tab', () => {
+      const panel = fixture.nativeElement.querySelector('[role="tabpanel"]');
+      expect(panel).toBeTruthy();
+      expect(panel.id).toBe('bm-panel-run');
+      expect(panel.getAttribute('aria-labelledby')).toBe('bm-tab-run');
+      expect(panel.getAttribute('tabindex')).toBe('0');
+      expect(fixture.nativeElement.querySelector('#bm-tab-run')).toBeTruthy();
+    });
+
+    it('should load history when the history tab is selected', () => {
+      benchmarkServiceMock.getRuns.calls.reset();
+      component.selectSubTab('history');
+      expect(benchmarkServiceMock.getRuns).toHaveBeenCalled();
+    });
+
+    it('should load suites when the suites tab is selected', () => {
+      benchmarkServiceMock.getSuites.calls.reset();
+      component.selectSubTab('suites');
+      expect(benchmarkServiceMock.getSuites).toHaveBeenCalled();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Button harmonization guards. These assert the shared design-system
+  // vocabulary is used and that no control is left without an accessible name.
+  // ---------------------------------------------------------------------------
+  describe('button harmonization', () => {
+    /** Renders each sub-tab in turn so every button in the view is inspected. */
+    function forEachSubTab(check: (where: string) => void): void {
+      for (const tab of ['run', 'history', 'suites'] as const) {
+        component.activeSubTab = tab;
+        fixture.detectChanges();
+        check(tab);
+      }
+    }
+
+    it('should give every button an accessible name', () => {
+      forEachSubTab(where => {
+        const buttons = Array.from(
+          fixture.nativeElement.querySelectorAll('button')
+        ) as HTMLButtonElement[];
+        expect(buttons.length).toBeGreaterThan(0);
+
+        for (const btn of buttons) {
+          const name = (btn.textContent || '').trim() || btn.getAttribute('aria-label');
+          expect(name)
+            .withContext(`unnamed button in "${where}" tab: ${btn.outerHTML.slice(0, 120)}`)
+            .toBeTruthy();
+        }
+      });
+    });
+
+    it('should give every button an explicit type="button"', () => {
+      forEachSubTab(where => {
+        const untyped = (
+          Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[]
+        ).filter(b => b.getAttribute('type') !== 'button');
+
+        expect(untyped.map(b => b.outerHTML.slice(0, 100)))
+          .withContext(`buttons without type="button" in "${where}" tab`)
+          .toEqual([]);
+      });
+    });
+
+    it('should not use the title attribute on any button', () => {
+      forEachSubTab(where => {
+        const titled = (
+          Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[]
+        ).filter(b => b.hasAttribute('title'));
+
+        expect(titled.map(b => b.getAttribute('title')))
+          .withContext(`buttons still using title in "${where}" tab`)
+          .toEqual([]);
+      });
+    });
+
+    it('should not use the invented btn-gh-primary or btn-gh-danger variants', () => {
+      forEachSubTab(where => {
+        const stale = fixture.nativeElement.querySelectorAll(
+          '.btn-gh-primary, .btn-gh-danger, .btn-gh-icon, .btn-danger-icon, .subnav-btn'
+        );
+        expect(stale.length)
+          .withContext(`stale button classes in "${where}" tab`)
+          .toBe(0);
+      });
+    });
+
+    it('should pair every icon-only action button with an interest-triggered tooltip', () => {
+      component.activeSubTab = 'suites';
+      fixture.detectChanges();
+
+      const triggers = Array.from(
+        fixture.nativeElement.querySelectorAll('button[interestfor]')
+      ) as HTMLButtonElement[];
+      expect(triggers.length).toBeGreaterThan(0);
+
+      for (const trigger of triggers) {
+        const id = trigger.getAttribute('interestfor')!;
+        const tooltip = fixture.nativeElement.querySelector(`#${id}`);
+        expect(tooltip)
+          .withContext(`no tooltip element for interestfor="${id}"`)
+          .toBeTruthy();
+        expect(tooltip.getAttribute('popover')).toBe('hint');
+        // The polyfill cannot use the implicit anchor interestfor establishes,
+        // so both ends must name it explicitly.
+        expect(trigger.getAttribute('style')).toContain(`anchor-name: --${id}`);
+        expect(tooltip.getAttribute('style')).toContain(`position-anchor: --${id}`);
+      }
+    });
+
+    it('should default the confirm dialog to the delete icon and class', () => {
+      expect(component.confirmDialogIcon).toBe('delete');
+      expect(component.confirmDialogButtonClass).toBe('btn-gh btn-gh-delete');
+    });
+
+    it('should announce active run progress in a live region', () => {
+      component.activeSubTab = 'run';
+      component.activeRunDetail = {
+        id: 7,
+        status: 'Running',
+        suiteName: 'Default Suite',
+        testedModelDisplayNameUsed: 'Test Model',
+        assessorModelDisplayNameUsed: 'Test Model',
+        totalQuestionCount: 10,
+        answers: []
+      } as any;
+      fixture.detectChanges();
+
+      const progress = fixture.nativeElement.querySelector('.banner-progress');
+      expect(progress).toBeTruthy();
+      expect(progress.getAttribute('role')).toBe('status');
+    });
   });
 });

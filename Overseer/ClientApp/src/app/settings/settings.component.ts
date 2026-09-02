@@ -9,6 +9,7 @@ import { ChangelogComponent } from '../changelog/changelog.component';
 import { TrashModalComponent } from '../shared/trash-modal/trash-modal.component';
 import { Subject, BehaviorSubject, Subscription, of, timer, firstValueFrom, EMPTY } from 'rxjs';
 import { debounce, tap, switchMap, catchError, filter, timeout } from 'rxjs/operators';
+import { ensureOverlayPolyfills } from '../utils/polyfills.util';
 
 @Component({
     selector: 'app-settings',
@@ -172,17 +173,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
     this.changelogBadgeResetHandler = () => this.checkChangelogBadge();
     window.addEventListener('changelog_badge_reset', this.changelogBadgeResetHandler);
 
-    if (!("popover" in HTMLElement.prototype)) {
-      import("@oddbird/popover-polyfill").catch(err => console.warn('Failed to load popover polyfill', err));
-    }
-    if (!('interestForElement' in HTMLButtonElement.prototype)) {
-      // @ts-ignore
-      import("interestfor").catch(err => console.warn('Failed to load interestfor polyfill', err));
-    }
-    if (!("anchorName" in document.documentElement.style)) {
-      // @ts-ignore
-      import("@oddbird/css-anchor-positioning").catch(err => console.warn('Failed to load anchor positioning polyfill', err));
-    }
+    ensureOverlayPolyfills();
 
     this.systemService.getVersion().subscribe({
       next: (v) => this.appVersion = v,

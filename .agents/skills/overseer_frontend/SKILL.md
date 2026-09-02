@@ -10,16 +10,21 @@ When working on the frontend for the Overseer project within MobileGnollHackLogg
 2. **Component Structure**: Always use separate files for templates (`.html`) and styles (`.scss`). Do not use inline templates or styles in the component TypeScript file.
 3. **No Basic JS Popups**: NEVER use `alert()`, `confirm()`, or `prompt()` JavaScript popups under any circumstances. When these are needed, use inline error messages or a native `<dialog>` for confirmations and inputs, per **Popups and Modals** below.
 4. **Follow modern web platform best practices**: UI/Layout, Scroll/Motion, Performance, Accessibility, and System/APIs. The baseline is in **Modern Web Baseline** below, and it binds in every harness.
+5. **Buttons, icon buttons, and tabs have their own specification**: read
+   [`frontend_ui_controls`](../frontend_ui_controls/SKILL.md) before adding or restyling any
+   of them, including toolbars and dialog footers.
 
 ### Before writing HTML, CSS, or client-side JS
 
-**If your harness provides a `modern-web-guidance` skill, execute it first.** It ships with
-Antigravity (it is Google's) and carries more current and more detailed guidance than this file.
+**If your harness provides a `modern-web-guidance` skill, execute it first** — in *either*
+harness. It carries more current and more detailed guidance than this file. It ships with
+Antigravity (it is Google's), and it is also available in **Claude Code** as a plugin skill
+(`modern-web-guidance:modern-web-guidance`), so check your own skill list rather than
+assuming.
 
-**If it does not — Claude Code does not, and neither does `hyvanmielenpelit/SharedAgentSkills` —
-then the Modern Web Baseline below is the standard, and it is sufficient to proceed.** Do not stall
-waiting for a skill your harness has no way to load, and do not silently skip the requirement
-either: say in chat which of the two applied.
+**If it genuinely is not available, the Modern Web Baseline below is the standard, and it is
+sufficient to proceed.** Do not stall waiting for a skill your harness has no way to load,
+and do not silently skip the requirement either: say in chat which of the two applied.
 
 > [!NOTE]
 > Claude Code's nearest skills are `artifact-design` (design fundamentals for self-contained Claude
@@ -61,13 +66,39 @@ Harness-neutral, and the floor for any Overseer frontend work.
 - **`Overseer/ClientApp/src/styles.scss` is the EXCLUSIVE global styles file** for the Overseer Angular project.
 - **Do NOT modify `site2.scss` or `site2.css`** when working on the Overseer project (those files are strictly for the main ASP.NET MobileGnollHackLogger web pages).
 - If you find duplicate styles across multiple component SCSS files (e.g. `.settings-container` or `.header-row`), move them to `styles.scss` for centralized management.
+- **A style needed by a second component moves to `styles.scss`; it is not copied.** Copying
+  is how `.btn-gh-small` ended up defined in `admin.component.scss` and therefore
+  unavailable to the benchmark view that needed it.
+- **Use the design tokens** — `var(--primary-color)`, `var(--gold-glow)`,
+  `var(--border-glass)`, `var(--nav-color)` — not the literal hex values they hold.
 
 When creating UI elements in the Overseer frontend, adhere to the following standards:
 
-### Buttons
-- Always use the `.btn-gh` class (and variants like `.btn-gh-cancel` and `.btn-gh-delete`) for primary actions to match the GnollHack theme.
-- For small utility buttons (like info icons), create specific CSS classes (e.g., `.btn-info`) in the component's SCSS file, utilizing modern styling (rounded corners, subtle hover glows).
-- Common button styles are managed centrally in `styles.scss`. Avoid duplicating base button styles.
+### Buttons, Icon Buttons, and Tabs
+
+> [!IMPORTANT]
+> **These three are specified in full by the [`frontend_ui_controls`](../frontend_ui_controls/SKILL.md)
+> skill. Read it before adding or restyling any button, icon button, toolbar, or tab row.**
+> The detail is deliberately not duplicated here — a second copy is a second thing to
+> forget to update.
+
+The short version, so you know whether you need it:
+
+- Labelled actions are `.btn-gh`, the decorative GnollHack image button, with
+  `.btn-gh-cancel`, `.btn-gh-delete`, or `.btn-gh-small`. **Those four are the entire
+  vocabulary** — never invent a variant, and never redefine `.btn-gh` in a component
+  stylesheet (view encapsulation makes such an override invisible everywhere but that one
+  component, which is how the AI Benchmark tab silently lost its image buttons).
+- **An icon on a labelled button is decided case by case, never by default.** The test: if
+  you deleted the label, would the glyph still say what the button does? `+ New Profile` and
+  `▷ Start Benchmark` pass. `Done`, `Cancel`, `Save Profile`, and `Scoring Profiles` do not
+  — they stay text-only. Full guidance and the worked tables are in
+  [`frontend_ui_controls`](../frontend_ui_controls/SKILL.md) §3a.
+- Icon-only buttons are `.action-btn` / `.action-btn-danger` in rows and cards, and
+  `.btn-icon-action` for dialog close buttons. Each needs a **distinct** `aria-label` that
+  names its subject, and a tooltip via `interestfor` — never `title`.
+- A control that swaps the content below it is a **tab**, not a button: use the shared
+  `.gh-tabs` / `.gh-tab` widget with its full ARIA and keyboard contract.
 
 ### Popups and Modals
 - **Use the Native `<dialog>` Element**: New popups and modals must use the semantic HTML `<dialog>` element rather than custom `div`-based overlays.
@@ -76,10 +107,16 @@ When creating UI elements in the Overseer frontend, adhere to the following stan
 - DO NOT use `.modal-overlay` wrappers for new popups, as `<dialog>` provides native accessibility, focus management, and top-layer positioning.
 
 ### Tooltips
-- **Always use the Interest-Triggered Tooltip Component**: Instead of using the browser's native `title` attribute for tooltips (which is visually inconsistent and not easily accessible), always implement custom popovers.
-- **Implementation**: Add the `interestfor="tooltip-id"` attribute to the trigger (e.g. the button). Provide a corresponding `<div popover="hint" id="tooltip-id" class="gh-tooltip">...</div>`.
-- **Styling**: Center the tooltip appropriately utilizing `anchor()` functions and standard best practices.
-- **CRITICAL**: Never use the `title` attribute in conjunction with a custom tooltip, as they will conflict and overlap.
+- **Always use an interest-triggered tooltip**: `interestfor="tooltip-id"` on the trigger,
+  with a matching `<div popover="hint" id="tooltip-id" class="gh-tooltip">`. Never the
+  native `title` attribute — it cannot be styled, does not appear on keyboard focus, and is
+  not a valid accessible-name mechanism.
+- **`.gh-tooltip` is global**, in `styles.scss`. Load the polyfills with
+  `ensureOverlayPolyfills()` from `app/utils/polyfills.util.ts`.
+- **Full contract** — anchor naming, why `[attr.style]` rather than `[style.anchor-name]`,
+  which ARIA attributes `interestfor` supplies for you (and must therefore not be set by
+  hand), and the `:popover-open` polyfill caveat — is in
+  [`frontend_ui_controls`](../frontend_ui_controls/SKILL.md) §4.
 
 ### Error Handling & User Prompts
 - **Avoid Basic JS Dialogs**: As stated in the main rules, do NOT use basic JavaScript `alert()`, `prompt()`, or `confirm()` dialogs. They disrupt user flow, unfocus elements, and look outdated.
@@ -87,7 +124,10 @@ When creating UI elements in the Overseer frontend, adhere to the following stan
 
 ### Icons
 - **Use SVGs exclusively**: DO NOT use Unicode emojis (e.g., ✨, 🐛, 🚀) for UI elements or icons. They are notoriously difficult to align correctly, render inconsistently across operating systems, and look unprofessional.
-- Always use precise `<svg>` icons configured with `fill="currentColor"` so they seamlessly match the surrounding text color and align perfectly using Flexbox (`display: flex; align-items: center`).
+- Always use precise `<svg>` icons that inherit the surrounding text colour (`stroke="currentColor"` for the line icons used throughout, `fill="currentColor"` for solid ones) and align via Flexbox (`display: flex; align-items: center`).
+- **Icons inside buttons** have a stricter contract — 16×16, `viewBox="0 0 24 24"`,
+  `class="btn-icon"`, `aria-hidden="true"`, leading the label. See
+  [`frontend_ui_controls`](../frontend_ui_controls/SKILL.md) §3.
 
 ### Checkboxes
 - **Use the `.checkbox-label` Pattern**: Checkboxes should be wrapped inside a `<label class="checkbox-label">` element containing the `<input type="checkbox">` and the descriptive label text.

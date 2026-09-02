@@ -15,26 +15,12 @@
   flex-direction: column;
   overflow: hidden;
 }
+/* Layout, scroll behaviour and tab appearance come from the shared
+   .gh-tabs / .gh-tab classes in styles.scss, which the template applies
+   alongside these. Only the admin-specific scroll-edge indicators below are
+   local. */
 .admin-tabs {
-  display: flex;
-  gap: 20px;
   margin-bottom: 20px;
-  border-bottom: 1px solid var(--border-glass);
-  padding-bottom: 0;
-  
-  /* Scrollable tabs */
-  overflow-x: auto;
-  scroll-behavior: smooth;
-  scroll-snap-type: x mandatory;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-  &::-webkit-scrollbar {
-    display: none;
-  }
-  
-  container-type: scroll-state;
-  position: relative;
-  flex-shrink: 0;
 }
 
 .tab-content {
@@ -69,37 +55,9 @@
 @container scroll-state(scrollable: right) {
   .indicator-right { opacity: 1; }
 }
-.admin-tab {
-  flex-shrink: 0;
-  scroll-snap-align: start;
-  background: transparent;
-  color: #ccc;
-  border: none;
-  border-bottom: 2px solid transparent;
-  font-family: "Cinzel", serif;
-  font-weight: 600;
-  font-size: 16px;
-  padding: 10px 15px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  outline: none;
-}
-.admin-tab:hover {
-  color: var(--primary-color);
-  text-shadow: 0 0 8px var(--gold-glow);
-}
-.admin-tab-active {
-  color: var(--primary-color);
-  border-bottom: 2px solid var(--primary-color);
-  text-shadow: 0 0 8px var(--gold-glow);
-}
-.btn-gh-small {
-  min-width: 100px;
-  min-height: 36px;
-  font-size: 13px;
-  padding: 6px 12px;
-  white-space: nowrap;
-}
+/* .admin-tab styling, its hover state, its active state (driven off
+   aria-selected) and its focus ring all live in .gh-tab in styles.scss.
+   .btn-gh-small moved there too, since the benchmark view needs it as well. */
 
 /* Modern Table Styles */
 .table-responsive {

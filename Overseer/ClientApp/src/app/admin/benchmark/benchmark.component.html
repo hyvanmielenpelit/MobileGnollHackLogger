@@ -1,32 +1,50 @@
 <div class="benchmark-container">
   <!-- Benchmark Sub-Navigation -->
-  <div class="benchmark-subnav">
+  <div class="gh-tabs gh-tabs-secondary" role="tablist" aria-label="Benchmark sections">
     <button
-      class="subnav-btn"
-      [class.active]="activeSubTab === 'run'"
-      (click)="activeSubTab = 'run'">
-      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+      type="button"
+      role="tab"
+      class="gh-tab"
+      id="bm-tab-run"
+      aria-controls="bm-panel-run"
+      [attr.aria-selected]="activeSubTab === 'run'"
+      [attr.tabindex]="activeSubTab === 'run' ? 0 : -1"
+      (keydown)="onTabKeydown($event, 0)"
+      (click)="selectSubTab('run')">
+      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
       Run Benchmark
     </button>
     <button
-      class="subnav-btn"
-      [class.active]="activeSubTab === 'history'"
-      (click)="activeSubTab = 'history'; loadHistory()">
-      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 14 14"></polyline></svg>
+      type="button"
+      role="tab"
+      class="gh-tab"
+      id="bm-tab-history"
+      aria-controls="bm-panel-history"
+      [attr.aria-selected]="activeSubTab === 'history'"
+      [attr.tabindex]="activeSubTab === 'history' ? 0 : -1"
+      (keydown)="onTabKeydown($event, 1)"
+      (click)="selectSubTab('history')">
+      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 14 14"></polyline></svg>
       Run History
     </button>
     <button
-      class="subnav-btn"
-      [class.active]="activeSubTab === 'suites'"
-      (click)="activeSubTab = 'suites'; loadSuites()">
-      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+      type="button"
+      role="tab"
+      class="gh-tab"
+      id="bm-tab-suites"
+      aria-controls="bm-panel-suites"
+      [attr.aria-selected]="activeSubTab === 'suites'"
+      [attr.tabindex]="activeSubTab === 'suites' ? 0 : -1"
+      (keydown)="onTabKeydown($event, 2)"
+      (click)="selectSubTab('suites')">
+      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
       Manage Suites
     </button>
   </div>
 
   <!-- TAB 1: RUN BENCHMARK -->
   @if (activeSubTab === 'run') {
-    <div class="benchmark-tab-content">
+    <div class="benchmark-tab-content" role="tabpanel" id="bm-panel-run" aria-labelledby="bm-tab-run" tabindex="0">
       <!-- Active Run Banner -->
       @if (activeRunDetail && formatStatus(activeRunDetail.status) === 'Running') {
         <div class="active-run-banner">
@@ -37,9 +55,10 @@
               <p class="text-muted">Suite: {{ activeRunDetail.suiteName }} | Model: {{ activeRunDetail.testedModelDisplayNameUsed }} | Evaluator: {{ activeRunDetail.assessorModelDisplayNameUsed }}</p>
             </div>
           </div>
-          <div class="banner-progress">
+          <div class="banner-progress" role="status">
             <span>Answered: {{ activeRunDetail.answers.length }} of {{ activeRunDetail.totalQuestionCount }}</span>
-            <button class="btn-gh btn-gh-danger" (click)="cancelActiveRun()">
+            <button type="button" class="btn-gh btn-gh-delete" (click)="cancelActiveRun()">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
               Cancel Run
             </button>
           </div>
@@ -52,8 +71,7 @@
             <h3>Configure & Execute Benchmark</h3>
             <p class="text-muted mb-20">Select a question suite, scoring profile, target model, and evaluator model.</p>
           </div>
-          <button class="btn-gh" (click)="openManageProfiles()">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+          <button type="button" class="btn-gh" (click)="openManageProfiles()">
             Scoring Profiles
           </button>
         </div>
@@ -213,8 +231,8 @@
         </div>
 
         <div class="form-actions mt-20">
-          <button
-            class="btn-gh btn-gh-primary"
+          <button type="button"
+            class="btn-gh"
             [disabled]="!canStartRun"
             (click)="startBenchmark()">
             @if (startingRun) {
@@ -231,7 +249,7 @@
 
   <!-- TAB 2: RUN HISTORY -->
   @if (activeSubTab === 'history') {
-    <div class="benchmark-tab-content">
+    <div class="benchmark-tab-content" role="tabpanel" id="bm-panel-history" aria-labelledby="bm-tab-history" tabindex="0">
       <div class="history-toolbar mb-20">
         <div class="filter-group">
           <label for="historySuiteFilter">Filter by Suite:</label>
@@ -242,7 +260,7 @@
             }
           </select>
         </div>
-        <button class="btn-gh" (click)="loadHistory()" title="Refresh History">
+        <button type="button" class="btn-gh" (click)="loadHistory()">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
           Refresh
         </button>
@@ -309,15 +327,30 @@
                   <td>{{ formatDuration(run.totalAnswerDurationMs || run.totalDurationMs) }}</td>
                   <td>{{ run.startedAtUtc | date:'yyyy-MM-dd HH:mm' }}</td>
                   <td class="action-cell">
-                    <button class="btn-gh btn-gh-icon" (click)="viewRunDetail(run.id)" title="View Details">
+                    <button type="button" class="action-btn" (click)="viewRunDetail(run.id)"
+                            [attr.aria-label]="'View details for run ' + run.id"
+                            [attr.interestfor]="'tip-view-run-' + run.id"
+                            [attr.style]="'anchor-name: --tip-view-run-' + run.id">
                       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                     </button>
-                    <button class="btn-gh btn-gh-icon" (click)="downloadReport(run.id)" title="Download Markdown Report">
+                    <div popover="hint" class="gh-tooltip" [id]="'tip-view-run-' + run.id"
+                         [attr.style]="'position-anchor: --tip-view-run-' + run.id">View details</div>
+                    <button type="button" class="action-btn" (click)="downloadReport(run.id)"
+                            [attr.aria-label]="'Download Markdown report for run ' + run.id"
+                            [attr.interestfor]="'tip-dl-run-' + run.id"
+                            [attr.style]="'anchor-name: --tip-dl-run-' + run.id">
                       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                     </button>
-                    <button class="btn-gh btn-gh-icon btn-danger-icon" (click)="deleteRun(run.id)" title="Delete Run">
+                    <div popover="hint" class="gh-tooltip" [id]="'tip-dl-run-' + run.id"
+                         [attr.style]="'position-anchor: --tip-dl-run-' + run.id">Download Markdown report</div>
+                    <button type="button" class="action-btn action-btn-danger" (click)="deleteRun(run.id)"
+                            [attr.aria-label]="'Delete run ' + run.id"
+                            [attr.interestfor]="'tip-del-run-' + run.id"
+                            [attr.style]="'anchor-name: --tip-del-run-' + run.id">
                       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                     </button>
+                    <div popover="hint" class="gh-tooltip" [id]="'tip-del-run-' + run.id"
+                         [attr.style]="'position-anchor: --tip-del-run-' + run.id">Delete run</div>
                   </td>
                 </tr>
               }
@@ -330,13 +363,13 @@
 
   <!-- TAB 3: MANAGE SUITES -->
   @if (activeSubTab === 'suites') {
-    <div class="benchmark-tab-content">
+    <div class="benchmark-tab-content" role="tabpanel" id="bm-panel-suites" aria-labelledby="bm-tab-suites" tabindex="0">
       <div class="suites-toolbar mb-20">
-        <button class="btn-gh btn-gh-primary" (click)="openCreateSuite()">
+        <button type="button" class="btn-gh" (click)="openCreateSuite()">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
           Create Suite
         </button>
-        <button class="btn-gh" (click)="importDefaultSuite()">
+        <button type="button" class="btn-gh" (click)="importDefaultSuite()">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
           Import Default Suite
         </button>
@@ -360,15 +393,30 @@
                 </span>
               </div>
               <div class="suite-top-actions">
-                <button class="action-btn" (click)="openEditSuite(suite)" title="Edit Suite">
+                <button type="button" class="action-btn" (click)="openEditSuite(suite)"
+                        [attr.aria-label]="'Edit suite ' + suite.name"
+                        [attr.interestfor]="'tip-edit-suite-' + suite.id"
+                        [attr.style]="'anchor-name: --tip-edit-suite-' + suite.id">
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                 </button>
-                <button class="action-btn" (click)="duplicateSuite(suite.id)" title="Duplicate Suite">
+                <div popover="hint" class="gh-tooltip" [id]="'tip-edit-suite-' + suite.id"
+                     [attr.style]="'position-anchor: --tip-edit-suite-' + suite.id">Edit suite</div>
+                <button type="button" class="action-btn" (click)="duplicateSuite(suite.id)"
+                        [attr.aria-label]="'Duplicate suite ' + suite.name"
+                        [attr.interestfor]="'tip-dup-suite-' + suite.id"
+                        [attr.style]="'anchor-name: --tip-dup-suite-' + suite.id">
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                 </button>
-                <button class="action-btn action-btn-danger" (click)="deleteSuite(suite.id)" title="Delete Suite">
+                <div popover="hint" class="gh-tooltip" [id]="'tip-dup-suite-' + suite.id"
+                     [attr.style]="'position-anchor: --tip-dup-suite-' + suite.id">Duplicate suite</div>
+                <button type="button" class="action-btn action-btn-danger" (click)="deleteSuite(suite.id)"
+                        [attr.aria-label]="'Delete suite ' + suite.name"
+                        [attr.interestfor]="'tip-del-suite-' + suite.id"
+                        [attr.style]="'anchor-name: --tip-del-suite-' + suite.id">
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                 </button>
+                <div popover="hint" class="gh-tooltip" [id]="'tip-del-suite-' + suite.id"
+                     [attr.style]="'position-anchor: --tip-del-suite-' + suite.id">Delete suite</div>
               </div>
             </div>
 
@@ -388,16 +436,15 @@
             </div>
 
             <div class="suite-card-actions">
-              <button class="btn-gh btn-gh-primary" (click)="openManageQuestions(suite)">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+              <button type="button" class="btn-gh" (click)="openManageQuestions(suite)">
                 Manage Questions
               </button>
-              <button class="btn-gh" (click)="openDifficultyAssessorDialog(suite)" [disabled]="ratingDifficulty" title="Auto-rate difficulty for all questions">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polygon points="12 8 8 12 12 16 16 12 12 8"></polygon></svg>
+              <button type="button" class="btn-gh" (click)="openDifficultyAssessorDialog(suite)" [disabled]="ratingDifficulty">
                 {{ ratingDifficulty ? 'Assessing...' : 'Assess Question Difficulty' }}
               </button>
               @if (footprints[suite.id] && footprints[suite.id].runCount > 0) {
-                <button class="btn-gh btn-gh-danger" (click)="openBulkDeleteDialog(suite)" title="Delete all runs for this suite">
+                <button type="button" class="btn-gh btn-gh-delete" (click)="openBulkDeleteDialog(suite)">
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
                   Delete Runs
                 </button>
               }
@@ -422,7 +469,7 @@
             Started: {{ selectedRunDetail.startedAtUtc | date:'yyyy-MM-dd HH:mm:ss' }} UTC
           </p>
         </div>
-        <button type="button" class="btn-icon-action" aria-label="Close dialog" (click)="closeRunDetail()" title="Close">
+        <button type="button" class="btn-icon-action" aria-label="Close run details" (click)="closeRunDetail()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -466,15 +513,17 @@
 
         <!-- Actions Bar -->
         <div class="modal-actions-bar mb-20">
-          <button class="btn-gh" (click)="downloadReport(selectedRunDetail.id)">
+          <button type="button" class="btn-gh" (click)="downloadReport(selectedRunDetail.id)">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             Download Markdown Report
           </button>
-          <button class="btn-gh" (click)="rescoreRun(selectedRunDetail.id)" [disabled]="rescoringRun">
+          <button type="button" class="btn-gh" (click)="rescoreRun(selectedRunDetail.id)" [disabled]="rescoringRun">
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
             {{ rescoringRun ? 'Re-scoring...' : 'Re-score Run' }}
           </button>
           @if (formatStatus(selectedRunDetail.status) === 'CompletedWithErrors' || formatStatus(selectedRunDetail.status) === 'Failed') {
-            <button class="btn-gh btn-gh-primary" (click)="rerunFailed(selectedRunDetail.id)">
+            <button type="button" class="btn-gh" (click)="rerunFailed(selectedRunDetail.id)">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
               Re-run Failed Questions
             </button>
           }
@@ -540,7 +589,8 @@
                   <div class="answer-box mb-15">{{ ans.answerText }}</div>
 
                   @if (ans.thoughtText) {
-                    <button class="btn-link mb-10" (click)="toggleThought(ans.orderIndex)">
+                    <button type="button" class="btn-link mb-10" (click)="toggleThought(ans.orderIndex)">
+                      @if (expandedThoughts.has(ans.orderIndex)) { <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg> } @else { <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg> }
                       {{ expandedThoughts.has(ans.orderIndex) ? 'Hide Model Reasoning' : 'Show Model Reasoning' }}
                     </button>
                     @if (expandedThoughts.has(ans.orderIndex)) {
@@ -563,7 +613,8 @@
                   </div>
 
                   <div class="mt-15 flex-row gap-10">
-                    <button class="btn-gh" (click)="reassessAnswer(selectedRunDetail.id, ans.id)" [disabled]="reassessingAnswerId === ans.id">
+                    <button type="button" class="btn-gh" (click)="reassessAnswer(selectedRunDetail.id, ans.id)" [disabled]="reassessingAnswerId === ans.id">
+                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
                       {{ reassessingAnswerId === ans.id ? 'Re-assessing...' : 'Re-assess Question' }}
                     </button>
                   </div>
@@ -575,7 +626,7 @@
       </div>
 
       <div class="dialog-footer">
-        <button class="btn-gh" (click)="closeRunDetail()">Close</button>
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeRunDetail()">Close</button>
       </div>
     </div>
   }
@@ -589,7 +640,7 @@
         <h3>Scoring Profiles</h3>
         <p class="dialog-subtitle">Configure dimensional weights, BARS conversion levels, speed curves, and concurrency</p>
       </div>
-      <button type="button" class="btn-icon-action" aria-label="Close dialog" (click)="closeManageProfiles()" title="Close">
+      <button type="button" class="btn-icon-action" aria-label="Close scoring profiles" (click)="closeManageProfiles()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
           <line x1="18" y1="6" x2="6" y2="18"></line>
           <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -598,7 +649,7 @@
     </div>
     <div class="dialog-body">
       <div class="toolbar-actions mb-15">
-        <button class="btn-gh btn-gh-primary" (click)="openCreateProfile()">
+        <button type="button" class="btn-gh" (click)="openCreateProfile()">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
           New Profile
         </button>
@@ -616,15 +667,25 @@
               </div>
               <div class="profile-card-actions">
                 @if (!profile.isDefault) {
-                  <button class="btn-gh" (click)="setDefaultProfile(profile.id)">Set Default</button>
+                  <button type="button" class="btn-gh" (click)="setDefaultProfile(profile.id)"><svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> Set Default</button>
                 }
-                <button class="action-btn" (click)="openEditProfile(profile)" title="Edit Profile">
+                <button type="button" class="action-btn" (click)="openEditProfile(profile)"
+                        [attr.aria-label]="'Edit scoring profile ' + profile.name"
+                        [attr.interestfor]="'tip-edit-profile-' + profile.id"
+                        [attr.style]="'anchor-name: --tip-edit-profile-' + profile.id">
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                 </button>
+                <div popover="hint" class="gh-tooltip" [id]="'tip-edit-profile-' + profile.id"
+                     [attr.style]="'position-anchor: --tip-edit-profile-' + profile.id">Edit scoring profile</div>
                 @if (!profile.isDefault) {
-                  <button class="action-btn action-btn-danger" (click)="deleteProfile(profile.id)" title="Delete Profile">
+                  <button type="button" class="action-btn action-btn-danger" (click)="deleteProfile(profile.id)"
+                          [attr.aria-label]="'Delete scoring profile ' + profile.name"
+                          [attr.interestfor]="'tip-del-profile-' + profile.id"
+                          [attr.style]="'anchor-name: --tip-del-profile-' + profile.id">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                   </button>
+                  <div popover="hint" class="gh-tooltip" [id]="'tip-del-profile-' + profile.id"
+                       [attr.style]="'position-anchor: --tip-del-profile-' + profile.id">Delete scoring profile</div>
                 }
               </div>
             </div>
@@ -666,7 +727,7 @@
       </div>
     </div>
     <div class="dialog-footer">
-      <button class="btn-gh" (click)="closeManageProfiles()">Done</button>
+      <button type="button" class="btn-gh btn-gh-cancel" (click)="closeManageProfiles()">Done</button>
     </div>
   </div>
 </dialog>
@@ -678,7 +739,7 @@
       <div class="dialog-title-group">
         <h3>{{ editingProfileId ? 'Edit Scoring Profile' : 'Create Scoring Profile' }}</h3>
       </div>
-      <button type="button" class="btn-icon-action" aria-label="Close dialog" (click)="scoringProfileFormDialog.close()" title="Close">
+      <button type="button" class="btn-icon-action" aria-label="Close scoring profile form" (click)="scoringProfileFormDialog.close()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
           <line x1="18" y1="6" x2="6" y2="18"></line>
           <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -792,8 +853,8 @@
       </fieldset>
     </div>
     <div class="dialog-footer">
-      <button class="btn-gh" (click)="scoringProfileFormDialog.close()">Cancel</button>
-      <button class="btn-gh btn-gh-primary" (click)="saveProfile()">Save Profile</button>
+      <button type="button" class="btn-gh btn-gh-cancel" (click)="scoringProfileFormDialog.close()">Cancel</button>
+      <button type="button" class="btn-gh" (click)="saveProfile()">Save Profile</button>
     </div>
   </div>
 </dialog>
@@ -805,7 +866,7 @@
       <div class="dialog-title-group">
         <h3>{{ editingSuiteId ? 'Edit Benchmark Suite' : 'Create Benchmark Suite' }}</h3>
       </div>
-      <button type="button" class="btn-icon-action" aria-label="Close dialog" (click)="suiteDialog.close()" title="Close">
+      <button type="button" class="btn-icon-action" aria-label="Close suite form" (click)="suiteDialog.close()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
           <line x1="18" y1="6" x2="6" y2="18"></line>
           <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -823,8 +884,8 @@
       </div>
     </div>
     <div class="dialog-footer">
-      <button class="btn-gh" (click)="suiteDialog.close()">Cancel</button>
-      <button class="btn-gh btn-gh-primary" [disabled]="!suiteForm.name.trim()" (click)="saveSuite()">Save Suite</button>
+      <button type="button" class="btn-gh btn-gh-cancel" (click)="suiteDialog.close()">Cancel</button>
+      <button type="button" class="btn-gh" [disabled]="!suiteForm.name.trim()" (click)="saveSuite()">Save Suite</button>
     </div>
   </div>
 </dialog>
@@ -838,7 +899,7 @@
           <h3>Questions: {{ currentSuiteForQuestions.name }}</h3>
           <p class="dialog-subtitle">{{ questions.length }} Questions Total</p>
         </div>
-        <button type="button" class="btn-icon-action" aria-label="Close dialog" (click)="questionsDialog.close()" title="Close">
+        <button type="button" class="btn-icon-action" aria-label="Close questions list" (click)="questionsDialog.close()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -847,12 +908,11 @@
       </div>
       <div class="dialog-body">
         <div class="questions-toolbar mb-15">
-          <button class="btn-gh btn-gh-primary" (click)="openCreateQuestion()">
+          <button type="button" class="btn-gh" (click)="openCreateQuestion()">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             Add Question
           </button>
-          <button class="btn-gh" (click)="openDifficultyAssessorDialog(currentSuiteForQuestions!)" [disabled]="ratingDifficulty">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polygon points="12 8 8 12 12 16 16 12 12 8"></polygon></svg>
+          <button type="button" class="btn-gh" (click)="openDifficultyAssessorDialog(currentSuiteForQuestions!)" [disabled]="ratingDifficulty">
             {{ ratingDifficulty ? 'Assessing...' : 'AI Auto-Rate All Difficulties' }}
           </button>
         </div>
@@ -887,15 +947,30 @@
                   </div>
 
                   <div class="card-actions-group">
-                    <button class="action-btn" (click)="openDifficultyAssessorDialog(currentSuiteForQuestions!, q)" [disabled]="ratingQuestionId === q.id" title="Auto-rate Difficulty with AI">
+                    <button type="button" class="action-btn" (click)="openDifficultyAssessorDialog(currentSuiteForQuestions!, q)" [disabled]="ratingQuestionId === q.id"
+                            [attr.aria-label]="'Auto-rate difficulty for question ' + (q.orderIndex + 1)"
+                            [attr.interestfor]="'tip-rate-q-' + q.id"
+                            [attr.style]="'anchor-name: --tip-rate-q-' + q.id">
                       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="12 8 8 12 12 16 16 12 12 8"></polygon></svg>
                     </button>
-                    <button class="action-btn" (click)="openEditQuestion(q)" title="Edit Question">
+                    <div popover="hint" class="gh-tooltip" [id]="'tip-rate-q-' + q.id"
+                         [attr.style]="'position-anchor: --tip-rate-q-' + q.id">Auto-rate difficulty with AI</div>
+                    <button type="button" class="action-btn" (click)="openEditQuestion(q)"
+                            [attr.aria-label]="'Edit question ' + (q.orderIndex + 1)"
+                            [attr.interestfor]="'tip-edit-q-' + q.id"
+                            [attr.style]="'anchor-name: --tip-edit-q-' + q.id">
                       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                     </button>
-                    <button class="action-btn action-btn-danger" (click)="deleteQuestion(q.id)" title="Delete Question">
+                    <div popover="hint" class="gh-tooltip" [id]="'tip-edit-q-' + q.id"
+                         [attr.style]="'position-anchor: --tip-edit-q-' + q.id">Edit question</div>
+                    <button type="button" class="action-btn action-btn-danger" (click)="deleteQuestion(q.id)"
+                            [attr.aria-label]="'Delete question ' + (q.orderIndex + 1)"
+                            [attr.interestfor]="'tip-del-q-' + q.id"
+                            [attr.style]="'anchor-name: --tip-del-q-' + q.id">
                       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                     </button>
+                    <div popover="hint" class="gh-tooltip" [id]="'tip-del-q-' + q.id"
+                         [attr.style]="'position-anchor: --tip-del-q-' + q.id">Delete question</div>
                   </div>
                 </div>
 
@@ -950,7 +1025,7 @@
       <div class="dialog-title-group">
         <h3>{{ editingQuestionId ? 'Edit Question' : 'Add Question' }}</h3>
       </div>
-      <button type="button" class="btn-icon-action" aria-label="Close dialog" (click)="questionFormDialog.close()" title="Close">
+      <button type="button" class="btn-icon-action" aria-label="Close question form" (click)="questionFormDialog.close()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
           <line x1="18" y1="6" x2="6" y2="18"></line>
           <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -977,8 +1052,8 @@
       </div>
     </div>
     <div class="dialog-footer">
-      <button class="btn-gh" (click)="questionFormDialog.close()">Cancel</button>
-      <button class="btn-gh btn-gh-primary" [disabled]="!questionForm.questionText.trim()" (click)="saveQuestion()">Save Question</button>
+      <button type="button" class="btn-gh btn-gh-cancel" (click)="questionFormDialog.close()">Cancel</button>
+      <button type="button" class="btn-gh" [disabled]="!questionForm.questionText.trim()" (click)="saveQuestion()">Save Question</button>
     </div>
   </div>
 </dialog>
@@ -991,7 +1066,7 @@
         <div class="dialog-title-group">
           <h3>Same-Provider Assessment Warning</h3>
         </div>
-        <button type="button" class="btn-icon-action" aria-label="Close dialog" (click)="closeSameProviderDialog()" title="Close">
+        <button type="button" class="btn-icon-action" aria-label="Close same-provider warning" (click)="closeSameProviderDialog()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -1015,8 +1090,8 @@
         </p>
       </div>
       <div class="dialog-footer">
-        <button class="btn-gh" (click)="closeSameProviderDialog()">Cancel</button>
-        <button class="btn-gh btn-gh-primary" (click)="confirmSameProviderRun()">Acknowledge & Start Run</button>
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeSameProviderDialog()">Cancel</button>
+        <button type="button" class="btn-gh" (click)="confirmSameProviderRun()"><svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Acknowledge & Start Run</button>
       </div>
     </div>
   }
@@ -1030,7 +1105,7 @@
         <div class="dialog-title-group">
           <h3>Delete All Runs: {{ suiteForBulkDelete.name }}</h3>
         </div>
-        <button type="button" class="btn-icon-action" aria-label="Close dialog" (click)="closeBulkDeleteDialog()" title="Close">
+        <button type="button" class="btn-icon-action" aria-label="Close delete all runs" (click)="closeBulkDeleteDialog()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -1050,8 +1125,9 @@
         </p>
       </div>
       <div class="dialog-footer">
-        <button class="btn-gh" (click)="closeBulkDeleteDialog()" [disabled]="deletingSuiteRuns">Cancel</button>
-        <button class="btn-gh btn-gh-danger" (click)="confirmDeleteSuiteRuns()" [disabled]="deletingSuiteRuns">
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeBulkDeleteDialog()" [disabled]="deletingSuiteRuns">Cancel</button>
+        <button type="button" class="btn-gh btn-gh-delete" (click)="confirmDeleteSuiteRuns()" [disabled]="deletingSuiteRuns">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
           {{ deletingSuiteRuns ? 'Deleting...' : 'Delete All Suite Runs' }}
         </button>
       </div>
@@ -1066,7 +1142,7 @@
       <div class="dialog-title-group">
         <h3>{{ confirmDialogTitle || 'Confirm Action' }}</h3>
       </div>
-      <button type="button" class="btn-icon-action" aria-label="Close dialog" (click)="closeConfirmDialog()" title="Close">
+      <button type="button" class="btn-icon-action" aria-label="Close confirmation" (click)="closeConfirmDialog()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
           <line x1="18" y1="6" x2="6" y2="18"></line>
           <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -1080,8 +1156,9 @@
       }
     </div>
     <div class="dialog-footer">
-      <button class="btn-gh" (click)="closeConfirmDialog()">Cancel</button>
-      <button [class]="confirmDialogButtonClass || 'btn-gh btn-gh-danger'" (click)="executeConfirmAction()">
+      <button type="button" class="btn-gh btn-gh-cancel" (click)="closeConfirmDialog()">Cancel</button>
+      <button type="button" [class]="confirmDialogButtonClass || 'btn-gh btn-gh-delete'" (click)="executeConfirmAction()">
+        @if (confirmDialogIcon === 'delete') { <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg> }
         {{ confirmDialogButtonText || 'Delete' }}
       </button>
     </div>
@@ -1095,7 +1172,7 @@
       <div class="dialog-title-group">
         <h3>Assess Question Difficulty</h3>
       </div>
-      <button type="button" class="btn-icon-action" aria-label="Close dialog" (click)="closeDifficultyAssessorDialog()" title="Close">
+      <button type="button" class="btn-icon-action" aria-label="Close difficulty assessor" (click)="closeDifficultyAssessorDialog()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
           <line x1="18" y1="6" x2="6" y2="18"></line>
           <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -1162,8 +1239,8 @@
       </div>
     </div>
     <div class="dialog-footer">
-      <button class="btn-gh" (click)="closeDifficultyAssessorDialog()">Cancel</button>
-      <button class="btn-gh btn-gh-primary"
+      <button type="button" class="btn-gh btn-gh-cancel" (click)="closeDifficultyAssessorDialog()">Cancel</button>
+      <button type="button" class="btn-gh"
               [disabled]="!difficultyAssessorConfigId || ratingDifficulty"
               (click)="confirmDifficultyAssessment()">
         {{ ratingDifficulty ? 'Assessing...' : 'Assess Difficulty' }}

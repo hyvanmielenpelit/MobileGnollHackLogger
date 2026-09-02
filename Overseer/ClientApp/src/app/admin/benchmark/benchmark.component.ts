@@ -22,6 +22,7 @@ import {
 import { SystemAiConfigDto } from '../../services/admin.service';
 
 import { CollapsibleMarkdownComponent } from '../../shared/collapsible-markdown/collapsible-markdown.component';
+import { ensureOverlayPolyfills } from '../../utils/polyfills.util';
 
 @Component({
   selector: 'app-admin-benchmark',
@@ -49,13 +50,23 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   confirmDialogMessage = '';
   confirmDialogDangerNotice = '';
   confirmDialogButtonText = 'Delete';
-  confirmDialogButtonClass = 'btn-gh btn-gh-danger';
+  confirmDialogButtonClass = 'btn-gh btn-gh-delete';
+  /**
+   * Whether the confirm dialog's affirmative button carries a trash icon.
+   * 'none' for a plain confirmation, where the label alone is clearer than a
+   * generic tick — see the frontend_ui_controls skill on when an icon earns
+   * its place.
+   */
+  confirmDialogIcon: 'delete' | 'none' = 'delete';
   private pendingConfirmAction: (() => void) | null = null;
 
   private benchmarkService = inject(AdminBenchmarkService);
   private cdr = inject(ChangeDetectorRef);
 
   activeSubTab: 'run' | 'history' | 'suites' = 'run';
+
+  /** Tab order, and the source of truth for arrow-key navigation indices. */
+  readonly subTabs = ['run', 'history', 'suites'] as const;
 
   // Suites
   suites: BenchmarkSuiteDto[] = [];
@@ -137,10 +148,53 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   questionForm: CreateBenchmarkQuestionRequest = { questionText: '', difficulty: 1, expectedPoints: '' };
 
   ngOnInit() {
+    ensureOverlayPolyfills();
     this.loadSuites();
     this.loadProfiles();
     this.loadHistory();
     this.setDefaultModelSelections();
+  }
+
+  /**
+   * Switches the visible sub-tab and loads whatever that panel needs. The data
+   * loads live here rather than in the template so the tab row carries one
+   * statement per handler.
+   */
+  selectSubTab(tab: 'run' | 'history' | 'suites'): void {
+    this.activeSubTab = tab;
+    if (tab === 'history') {
+      this.loadHistory();
+    }
+    if (tab === 'suites') {
+      this.loadSuites();
+    }
+  }
+
+  /**
+   * Roving-tabindex keyboard support required by role="tablist": Left/Right
+   * move between tabs and wrap around, Home/End jump to the ends. Enter and
+   * Space need no handling because each tab is a real <button>.
+   *
+   * Focus follows selection in the same turn, so the tab that just became
+   * tabindex="0" is the one holding focus.
+   */
+  onTabKeydown(event: KeyboardEvent, index: number): void {
+    const targets: Record<string, number> = {
+      ArrowRight: index + 1,
+      ArrowLeft: index - 1,
+      Home: 0,
+      End: this.subTabs.length - 1
+    };
+    const requested = targets[event.key];
+    if (requested === undefined) {
+      return;
+    }
+
+    event.preventDefault();
+    const next = (requested + this.subTabs.length) % this.subTabs.length;
+    const tab = this.subTabs[next];
+    this.selectSubTab(tab);
+    document.getElementById(`bm-tab-${tab}`)?.focus();
   }
 
   ngOnChanges(changes: SimpleChanges) {
@@ -380,13 +434,15 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     dangerNotice?: string;
     buttonText?: string;
     buttonClass?: string;
+    icon?: 'delete' | 'none';
     action: () => void;
   }) {
     this.confirmDialogTitle = options.title;
     this.confirmDialogMessage = options.message;
     this.confirmDialogDangerNotice = options.dangerNotice || '';
     this.confirmDialogButtonText = options.buttonText || 'Delete';
-    this.confirmDialogButtonClass = options.buttonClass || 'btn-gh btn-gh-danger';
+    this.confirmDialogButtonClass = options.buttonClass || 'btn-gh btn-gh-delete';
+    this.confirmDialogIcon = options.icon || 'delete';
     this.pendingConfirmAction = options.action;
     this.confirmActionDialog?.nativeElement.showModal();
   }
@@ -412,7 +468,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       message: `Are you sure you want to delete ${name}?`,
       dangerNotice: 'This action is permanent and cannot be undone.',
       buttonText: 'Delete Profile',
-      buttonClass: 'btn-gh btn-gh-danger',
+      buttonClass: 'btn-gh btn-gh-delete',
       action: () => {
         this.benchmarkService.deleteScoringProfile(profileId).subscribe({
           next: () => this.loadProfiles(),
@@ -530,7 +586,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       message: `Are you sure you want to delete ${name}?`,
       dangerNotice: 'This action is permanent and will delete the suite and all its questions.',
       buttonText: 'Delete Suite',
-      buttonClass: 'btn-gh btn-gh-danger',
+      buttonClass: 'btn-gh btn-gh-delete',
       action: () => {
         this.benchmarkService.deleteSuite(id).subscribe({
           next: () => this.loadSuites(),
@@ -727,7 +783,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       message: 'Are you sure you want to delete this question?',
       dangerNotice: 'This action is permanent and cannot be undone.',
       buttonText: 'Delete Question',
-      buttonClass: 'btn-gh btn-gh-danger',
+      buttonClass: 'btn-gh btn-gh-delete',
       action: () => {
         this.benchmarkService.deleteQuestion(id).subscribe({
           next: () => {
@@ -1029,7 +1085,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       message: `Are you sure you want to delete benchmark run #${runId}?`,
       dangerNotice: 'This action is permanent and cannot be undone.',
       buttonText: 'Delete Run',
-      buttonClass: 'btn-gh btn-gh-danger',
+      buttonClass: 'btn-gh btn-gh-delete',
       action: () => {
         this.benchmarkService.deleteRun(runId).subscribe({
           next: () => {

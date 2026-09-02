@@ -5,16 +5,21 @@
   </div>
 
   <div class="settings-body">
-    <div class="admin-tabs">
-      <div class="indicator-left"></div>
-      <button class="admin-tab" [class.admin-tab-active]="activeTab === 'users'" (click)="selectTab('users')">Users</button>
-      <button class="admin-tab" [class.admin-tab-active]="activeTab === 'groups'" (click)="selectTab('groups')">Groups</button>
-      <button class="admin-tab" [class.admin-tab-active]="activeTab === 'configs'" (click)="selectTab('configs')">System Configs</button>
-      <button class="admin-tab" [class.admin-tab-active]="activeTab === 'database'" (click)="selectTab('database')">Database</button>
-      <button class="admin-tab" [class.admin-tab-active]="activeTab === 'telemetry'" (click)="selectTab('telemetry')">AI Telemetry</button>
-      <button class="admin-tab" [class.admin-tab-active]="activeTab === 'benchmark'" (click)="selectTab('benchmark')">AI Benchmark</button>
-      <button class="admin-tab" [class.admin-tab-active]="activeTab === 'devtools'" (click)="selectTab('devtools')">Developer Tools</button>
-      <div class="indicator-right"></div>
+    <div class="admin-tabs gh-tabs" role="tablist" aria-label="Admin sections">
+      <div class="indicator-left" aria-hidden="true"></div>
+      @for (tab of tabs; track tab.id; let i = $index) {
+        <button
+          type="button"
+          role="tab"
+          class="admin-tab gh-tab"
+          [id]="'admin-tab-' + tab.id"
+          [attr.aria-controls]="'admin-panel-' + tab.id"
+          [attr.aria-selected]="activeTab === tab.id"
+          [attr.tabindex]="activeTab === tab.id ? 0 : -1"
+          (keydown)="onTabKeydown($event, i)"
+          (click)="selectTab(tab.id)">{{ tab.label }}</button>
+      }
+      <div class="indicator-right" aria-hidden="true"></div>
     </div>
 
     @if (loading) {
@@ -27,7 +32,7 @@
       <div class="tab-content mt-20">
         <!-- USERS TAB -->
         @if (activeTab === 'users') {
-          <div>
+          <div role="tabpanel" id="admin-panel-users" aria-labelledby="admin-tab-users" tabindex="0">
             <div class="tab-header-row">
               <h3 class="m-0">Manage Users</h3>
             </div>
@@ -121,7 +126,7 @@
         }
         <!-- GROUPS TAB -->
         @if (activeTab === 'groups') {
-          <div>
+          <div role="tabpanel" id="admin-panel-groups" aria-labelledby="admin-tab-groups" tabindex="0">
             <div class="tab-header-row">
               <h3 class="m-0">Manage Groups</h3>
               <button class="btn-gh btn-gh-wide" (click)="openCreateGroup()">Create</button>
@@ -164,7 +169,7 @@
         }
         <!-- CONFIGS TAB -->
         @if (activeTab === 'configs') {
-          <div>
+          <div role="tabpanel" id="admin-panel-configs" aria-labelledby="admin-tab-configs" tabindex="0">
             <div class="tab-header-row">
               <h3 class="m-0">System AI Configurations</h3>
               <button class="btn-gh btn-gh-wide" (click)="openCreateConfig()">Create</button>
@@ -267,7 +272,7 @@
         }
         <!-- DATABASE STORAGE & MAINTENANCE TAB -->
         @if (activeTab === 'database') {
-          <div>
+          <div role="tabpanel" id="admin-panel-database" aria-labelledby="admin-tab-database" tabindex="0">
             <div class="tab-header-row">
               <h3 class="m-0">Database Storage & Maintenance</h3>
               <button class="btn-gh btn-secondary" (click)="loadStorageMetrics(true)" [disabled]="storageLoading">
@@ -475,7 +480,7 @@
         }
         <!-- DEV TOOLS TAB -->
         @if (activeTab === 'devtools') {
-          <div>
+          <div role="tabpanel" id="admin-panel-devtools" aria-labelledby="admin-tab-devtools" tabindex="0">
             <div class="tab-header-row">
               <h3 class="m-0">Developer Tools</h3>
             </div>
@@ -513,7 +518,7 @@
 
         <!-- AI TELEMETRY & GOVERNOR TAB -->
         @if (activeTab === 'telemetry') {
-          <div>
+          <div role="tabpanel" id="admin-panel-telemetry" aria-labelledby="admin-tab-telemetry" tabindex="0">
             <div class="tab-header-row d-flex justify-content-between align-items-center mb-15">
               <h3 class="m-0">AI Telemetry & Request Governor</h3>
               <div class="d-flex gap-10 align-items-center">
@@ -730,7 +735,7 @@
 
         <!-- AI BENCHMARK TAB -->
         @if (activeTab === 'benchmark') {
-          <div>
+          <div role="tabpanel" id="admin-panel-benchmark" aria-labelledby="admin-tab-benchmark" tabindex="0">
             <app-admin-benchmark [systemConfigs]="configs"></app-admin-benchmark>
           </div>
         }
@@ -1014,13 +1019,25 @@
     <div class="dialog-content flex-col">
       <h3 style="flex-shrink: 0;">Rate Limits for {{ selectedConfigForLimits.displayName || 'Config' }} ({{ limitContext }})</h3>
       
-      <div class="admin-tabs" style="margin-top: 15px; margin-bottom: 20px; flex-shrink: 0;">
-        <button class="admin-tab" [class.admin-tab-active]="activeRateLimitTab === 'chat'" (click)="activeRateLimitTab = 'chat'">Chat Usage</button>
-        <button class="admin-tab" [class.admin-tab-active]="activeRateLimitTab === 'title'" (click)="activeRateLimitTab = 'title'">Title Generation Usage</button>
+      <div class="admin-tabs gh-tabs" role="tablist" aria-label="Rate limit usage type"
+           style="margin-top: 15px; margin-bottom: 20px; flex-shrink: 0;">
+        @for (tab of rateLimitTabs; track tab.id; let i = $index) {
+          <button
+            type="button"
+            role="tab"
+            class="admin-tab gh-tab"
+            [id]="'rate-limit-tab-' + tab.id"
+            [attr.aria-controls]="'rate-limit-panel-' + tab.id"
+            [attr.aria-selected]="activeRateLimitTab === tab.id"
+            [attr.tabindex]="activeRateLimitTab === tab.id ? 0 : -1"
+            (keydown)="onRateLimitTabKeydown($event, i)"
+            (click)="activeRateLimitTab = tab.id">{{ tab.label }}</button>
+        }
       </div>
 
       <div class="scrollable-content">
         @if (activeRateLimitTab === 'chat') {
+          <div role="tabpanel" id="rate-limit-panel-chat" aria-labelledby="rate-limit-tab-chat" tabindex="0">
           <table class="admin-table modern-table mb-20">
             <thead>
               <tr>
@@ -1065,8 +1082,10 @@
               }
             </tbody>
           </table>
+          </div>
         }
         @if (activeRateLimitTab === 'title') {
+          <div role="tabpanel" id="rate-limit-panel-title" aria-labelledby="rate-limit-tab-title" tabindex="0">
           <table class="admin-table modern-table mb-20">
             <thead>
               <tr>
@@ -1111,6 +1130,7 @@
               }
             </tbody>
           </table>
+          </div>
         }
       </div>
       <div class="dialog-actions mt-auto pt-20">
