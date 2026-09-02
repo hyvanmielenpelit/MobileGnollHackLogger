@@ -1,9 +1,9 @@
 [
   {
-    "prefixes": ["gemini-3.1-pro"],
+    "prefixes": ["gemini-3.1-pro-preview", "gemini-3.1-pro"],
     "displayName": "Gemini 3.1 Pro",
     "releaseDate": "2026-02-19",
-    "thinkingLevels": ["minimal", "low", "medium", "high"],
+    "thinkingLevels": ["low", "medium", "high"],
     "contextWindowSize": 1048576,
     "maxOutputTokens": 65536
   },
@@ -47,7 +47,15 @@
     "prefixes": ["gemini-3.7-flash"],
     "displayName": "Gemini 3.7 Flash",
     "releaseDate": "2026-08-15",
-    "thinkingLevels": ["minimal", "low", "medium", "high"],
+    "thinkingLevels": ["low", "medium", "high"],
+    "contextWindowSize": 1048576,
+    "maxOutputTokens": 65536
+  },
+  {
+    "prefixes": ["gemini-3.8-flash"],
+    "displayName": "Gemini 3.8 Flash",
+    "releaseDate": "2026-09-02",
+    "thinkingLevels": ["low", "medium", "high"],
     "contextWindowSize": 1048576,
     "maxOutputTokens": 65536
   }

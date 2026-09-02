@@ -101,7 +101,15 @@ Antigravity will automatically:
 - Read your `new-models.json` file.
 - Check for duplicates against the existing catalog.
 - Map the required fields (like `contextWindowSize` and `thinkingLevels`).
-- Append the new models to the `GoogleModelCatalog.json` catalog while maintaining the correct sorting.
+- Append the new models to the end of the `GoogleModelCatalog.json` array. Order does not matter:
+  `GetMetadata` resolves a model by longest prefix match, not by position.
+
+> **`thinkingLevels` is per model for Gemini too — it is not a constant.** `minimal` is
+> supported on Gemini 3.5 Flash, 3.5 Flash-Lite and 3.6 Flash, but **not** on 3.7 Flash or
+> 3.8 Flash, where it returns an error. The `/v1beta/models` dump reports only a boolean
+> `thinking` flag, so the levels have to come from the model's page at
+> [ai.google.dev/gemini-api/docs/models](https://ai.google.dev/gemini-api/docs/models) or the
+> per-model table in the [thinking guide](https://ai.google.dev/gemini-api/docs/thinking).
 
 ---
 

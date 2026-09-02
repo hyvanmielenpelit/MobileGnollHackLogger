@@ -63,7 +63,7 @@ provider's API actually accepts.
 | Provider | `thinkingLevels` | `reasoningSummaries` | `reasoningModes` |
 |----------|------------------|----------------------|------------------|
 | Anthropic | `["low", "medium", "high", "xhigh", "max"]` — but **drop `xhigh`** for Claude 4.6 Opus and 4.6 Sonnet, which support `max` without it | `["summarized", "omitted"]` | *(omit)* |
-| Google | `["minimal", "low", "medium", "high"]` | *(omit)* | *(omit)* |
+| Google | Per model — see below; commonly `["low", "medium", "high"]` | *(omit)* | *(omit)* |
 | OpenAI | `["none", "low", "medium", "high", "xhigh", "max"]` | `["auto", "concise", "detailed"]` | `[]`, or `["standard", "pro"]` for pro-capable models |
 
 For Anthropic, `AnthropicProvider` sends the chosen level as `output_config.effort` next to
@@ -77,6 +77,13 @@ legacy fixed-budget path to consider.
 > per-model list is the "Effort levels" table at
 > `https://platform.claude.com/docs/en/build-with-claude/effort` — read it for every new Claude
 > model rather than copying the previous entry's array.
+>
+> **Google is per model too.** `minimal` is accepted by Gemini 3.5 Flash, 3.5 Flash-Lite and
+> 3.6 Flash, but **rejected by 3.7 Flash and 3.8 Flash**, whose documentation states it is not
+> supported and returns an error. Read the levels from
+> `https://ai.google.dev/gemini-api/docs/models/<model-id>` or the per-model table at
+> `https://ai.google.dev/gemini-api/docs/thinking` for every new Gemini model. The
+> `/v1beta/models` dump does not carry them — its `thinking` flag is a boolean.
 
 ### Display name conventions
 
@@ -143,10 +150,11 @@ entry, because `-pro` is not a version suffix. Only numeric suffixes leak.
 | Provider | Source | Maps to |
 |----------|--------|---------|
 | Anthropic | The model's overview page, `https://platform.claude.com/docs/en/models/<model>/overview` — the "Specifications" tables | Model ID, context window, max output, released date |
-| Google | `GET https://generativelanguage.googleapis.com/v1beta/models?key=<API_KEY>` | `name` minus `models/` → `prefixes`; `displayName`; `inputTokenLimit` → `contextWindowSize`; `outputTokenLimit` → `maxOutputTokens` |
+| Google | `GET https://generativelanguage.googleapis.com/v1beta/models?key=<API_KEY>` for the ID and the token limits, **plus the model's own page**, `https://ai.google.dev/gemini-api/docs/models/<model-id>`, for the thinking levels and the launch date | `name` minus `models/` → `prefixes`; `displayName`; `inputTokenLimit` → `contextWindowSize`; `outputTokenLimit` → `maxOutputTokens`; the levels listed on the model page → `thinkingLevels`; a stated launch date → `releaseDate` |
 | OpenAI | The model's page in the OpenAI docs, plus `GET https://api.openai.com/v1/models` for the exact ID | Model ID, context window, max output |
 
-Google's API does not report a release date; use the current UTC date. Anthropic and OpenAI
+Google's API does not report a release date. Prefer a launch date stated on the model's own page
+or model card; fall back to the current UTC date only when none is published. Anthropic and OpenAI
 publish one — use the published date, not today's.
 
 ## Verification
