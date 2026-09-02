@@ -148,7 +148,7 @@ tests, see [`anthropic-model-latency-measurements.md`](anthropic-model-latency-m
 | Anthropic `401 authentication_error` | The Anthropic API key is invalid, revoked, or mistyped. | Issue a new key in the Anthropic Console and update `AI:AnthropicLatency:APIKey`. |
 | Anthropic `404 not_found_error` | The Claude model id does not exist -- most often a date suffix appended to a current id (`claude-sonnet-5-20260630`). | Use the exact id with no date suffix. List available ids with the command in [section 5](#anthropic-claude). |
 | Anthropic `529 overloaded_error` | Anthropic capacity congestion. | An external provider condition, not a bug. Treat it exactly like Gemini 429/503: log a warning and pass. |
-| Anthropic `400 invalid_request_error` naming data retention, on `claude-fable-5` only | Claude Fable 5 is unavailable to organisations configured for zero data retention. | An account configuration fact, not a code defect. Use another model, or change the org retention setting. |
+| Anthropic `400 invalid_request_error` naming data retention, on the `claude-fable-*` models only | Claude Fable 5 is unavailable to organisations configured for zero data retention. `claude-fable-5-1` shares the Fable deployment and is *expected* to inherit the restriction -- this has not been verified against a ZDR-configured organisation. | An account configuration fact, not a code defect. Use another model, or change the org retention setting. |
 
 ---
 

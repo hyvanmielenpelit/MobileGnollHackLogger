@@ -7,11 +7,22 @@ description: Instructions and guidelines for autonomously parsing new Gemini mod
 
 These rules apply when you are tasked with adding new Gemini models to the Overseer project.
 
+> [!NOTE]
+> **This skill is the bulk-import path**: it parses a Google API dump from `new-models.json` and
+> appends many models at once. To add a **single** model by hand, or a model from **Anthropic or
+> OpenAI**, use **`overseer_adding_ai_models`** instead — it documents the full
+> `ModelCatalogEntry` field reference, the per-provider conventions, and the prefix-matching
+> traps in `ModelMetadataService`.
+
 ## Workflow
 
 1.  **Read Inputs**:
-    *   Read the new models from `C:\hmp\plans\new-models.json`.
+    *   Read the new models from the **input file the user names in the prompt** (conventionally called `new-models.json`). If the user pasted the model JSON directly into the prompt instead, use that and skip the file entirely.
+    *   If the user gave neither, **ask for the path — do not guess.** If you fetched the dump from the Google API yourself, write it into your harness's own scratch directory first and read it back from there.
     *   Read the existing catalog from `C:\hmp\MobileGnollHackLogger\Overseer\Services\ModelCatalogs\GoogleModelCatalog.json`.
+
+    > [!IMPORTANT]
+    > **The input file must never live in the `plans` repository (`C:\hmp\plans`) or anywhere inside a project repository.** `plans` is a committed, pushed store for implementation plans and walkthroughs; a transient model dump left there becomes a stray untracked file in a repository agents commit to. Transient files belong in your harness's scratch directory, per the global agent rules. Earlier versions of this skill named a path under `C:\hmp\plans\` — that was wrong and is no longer used.
 
 2.  **Duplicate Checking**:
     *   For each model in `new-models.json`, check if its intended prefix (extracted by removing `"models/"` from its `"name"`) already exists in the `"prefixes"` array of any existing model in `GoogleModelCatalog.json`.
@@ -28,11 +39,11 @@ These rules apply when you are tasked with adding new Gemini models to the Overs
 
 4.  **Insertion & Save**:
     *   Append the newly constructed model objects to the **end** (bottom) of the JSON array in `GoogleModelCatalog.json`.
-    *   Save the updated `GoogleModelCatalog.json`. Do **NOT** modify or delete `C:\hmp\plans\new-models.json`.
+    *   Save the updated `GoogleModelCatalog.json`. Do **NOT** modify or delete the user's input file.
 
 ## Example Mapping
 
-### Source Data (`C:\hmp\plans\new-models.json`)
+### Source Data (the input file, e.g. `new-models.json`)
 ```json
 [
   {
