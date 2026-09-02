@@ -417,7 +417,9 @@ export class ModelsComponent implements OnInit {
         formData.reasoningSummary || undefined,
         formData.serviceTier || undefined,
         formData.maxInputTokens, 
-        formData.maxOutputTokens
+        formData.maxOutputTokens,
+        formData.modelId,
+        formData.provider
       ).subscribe({
         next: () => {
           this.loadModels();

@@ -99,4 +99,59 @@ describe('ModelsComponent', () => {
       expect(mockDialog.close).toHaveBeenCalled();
     });
   });
+
+  describe('onEditSave', () => {
+    let mockEditDialog: any;
+
+    beforeEach(() => {
+      mockEditDialog = {
+        showModal: jasmine.createSpy('showModal'),
+        close: jasmine.createSpy('close')
+      };
+      component.editModelDialog = { nativeElement: mockEditDialog };
+    });
+
+    it('should call updateUserModel with updated modelId and provider', () => {
+      component.editingModel = {
+        id: 10,
+        provider: 'Google',
+        modelId: 'gemini-3.6-flash',
+        displayName: 'Gemini 3.6 Flash'
+      };
+
+      const updateSpy = spyOn(settingsService, 'updateUserModel').and.returnValue(of({}));
+      spyOn(component, 'loadModels');
+
+      component.onEditSave({
+        displayName: 'Gemini 3.7 Flash',
+        displayNameMode: 'model_name',
+        provider: 'Google',
+        modelId: 'gemini-3.7-flash',
+        thinkingLevel: 'high',
+        reasoningMode: null,
+        reasoningSummary: null,
+        serviceTier: null,
+        maxInputTokens: null,
+        maxOutputTokens: null
+      });
+
+      expect(updateSpy).toHaveBeenCalledWith(
+        10,
+        'Gemini 3.7 Flash',
+        'model_name',
+        'high',
+        undefined,
+        undefined,
+        undefined,
+        null,
+        null,
+        'gemini-3.7-flash',
+        'Google'
+      );
+      expect(component.loadModels).toHaveBeenCalled();
+      expect(mockEditDialog.close).toHaveBeenCalled();
+      expect(component.saving).toBeFalse();
+      expect(component.editingModel).toBeNull();
+    });
+  });
 });

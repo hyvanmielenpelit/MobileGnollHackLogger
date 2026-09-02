@@ -354,7 +354,9 @@ public class SettingsController : ControllerBase
             request.ReasoningSummary,
             request.ServiceTier,
             request.MaxInputTokens,
-            request.MaxOutputTokens
+            request.MaxOutputTokens,
+            request.ModelId,
+            request.Provider
         );
         return Ok();
     }
@@ -664,6 +666,8 @@ public class AddUserModelRequest
 
 public class UpdateUserModelRequest
 {
+    public string? ModelId { get; set; }
+    public string? Provider { get; set; }
     public string? DisplayName { get; set; }
     public string? DisplayNameMode { get; set; }
     public string? ThinkingLevel { get; set; }

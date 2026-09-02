@@ -158,8 +158,8 @@ export class SettingsService {
     return this.http.post<{ id: number }>('/api/settings/usermodels', { provider, modelId, displayName, displayNameMode, thinkingLevel, reasoningMode, reasoningSummary, serviceTier, maxInputTokens, maxOutputTokens });
   }
 
-  updateUserModel(id: number, displayName?: string, displayNameMode?: string, thinkingLevel?: string, reasoningMode?: string, reasoningSummary?: string, serviceTier?: string, maxInputTokens?: number | null, maxOutputTokens?: number | null) {
-    return this.http.put(`/api/settings/usermodels/${id}`, { displayName, displayNameMode, thinkingLevel, reasoningMode, reasoningSummary, serviceTier, maxInputTokens, maxOutputTokens });
+  updateUserModel(id: number, displayName?: string, displayNameMode?: string, thinkingLevel?: string, reasoningMode?: string, reasoningSummary?: string, serviceTier?: string, maxInputTokens?: number | null, maxOutputTokens?: number | null, modelId?: string, provider?: string) {
+    return this.http.put(`/api/settings/usermodels/${id}`, { displayName, displayNameMode, thinkingLevel, reasoningMode, reasoningSummary, serviceTier, maxInputTokens, maxOutputTokens, modelId, provider });
   }
 
   deleteUserModel(id: number) {

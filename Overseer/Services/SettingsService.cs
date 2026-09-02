@@ -218,11 +218,13 @@ public class SettingsService
         await _dbContext.SaveChangesAsync();
     }
 
-    public async Task UpdateUserModelAsync(string userId, long modelId, string? displayName, string? displayNameMode, string? thinkingLevel, string? reasoningMode, string? reasoningSummary, string? serviceTier, int? maxInputTokens, int? maxOutputTokens)
+    public async Task UpdateUserModelAsync(string userId, long id, string? displayName, string? displayNameMode, string? thinkingLevel, string? reasoningMode, string? reasoningSummary, string? serviceTier, int? maxInputTokens, int? maxOutputTokens, string? modelId = null, string? provider = null)
     {
-        var model = await _dbContext.UserAiModels.FirstOrDefaultAsync(m => m.Id == modelId && m.AspNetUserId == userId);
+        var model = await _dbContext.UserAiModels.FirstOrDefaultAsync(m => m.Id == id && m.AspNetUserId == userId);
         if (model != null)
         {
+            if (!string.IsNullOrEmpty(modelId)) model.ModelId = modelId;
+            if (!string.IsNullOrEmpty(provider)) model.Provider = provider;
             if (displayName != null) model.DisplayName = displayName;
             if (displayNameMode != null) model.DisplayNameMode = displayNameMode;
             // thinkingLevel can be explicitly null to clear it
