@@ -794,6 +794,12 @@
   font-size: 1.05em;
 }
 
+.storage-provenance {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #a0a0a0;
+}
+
 .status-dot {
   width: 10px;
   height: 10px;
@@ -805,15 +811,35 @@
   &.status-critical { background: #dc3545; box-shadow: 0 0 6px #dc3545; }
 }
 
+.storage-badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .storage-badge {
   padding: 4px 10px;
   border-radius: 12px;
   font-size: 0.85em;
   font-weight: 600;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 
   &.badge-normal { background: rgba(40, 167, 69, 0.2); color: #4cd964; border: 1px solid rgba(40, 167, 69, 0.4); }
   &.badge-warning { background: rgba(255, 193, 7, 0.2); color: #ffc107; border: 1px solid rgba(255, 193, 7, 0.4); }
   &.badge-critical { background: rgba(220, 53, 69, 0.2); color: #ff4d4f; border: 1px solid rgba(220, 53, 69, 0.4); }
+
+  /* Neutral, deliberately subordinate to the status-coloured allocation badge beside it:
+     the capacity ceiling is a fixed property of the instance, not a thing to be alarmed by. */
+  &.badge-capacity {
+    /* 0.08 rather than the card's own 0.04, so the pill reads as a distinct chip
+       against the card surface instead of being defined by its border alone. */
+    background: rgba(255, 255, 255, 0.08);
+    color: #c8c8c8;
+    border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.15));
+    font-weight: 500;
+  }
 }
 
 .storage-progress-container {

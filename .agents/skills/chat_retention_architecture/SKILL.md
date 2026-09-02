@@ -11,7 +11,11 @@ This document specifies the architecture, data structures, state machine, busine
 
 ## 1. Architectural Overview & Context
 
-Overseer shares a Microsoft SQL Server Express database instance with GnollHack game logs and telemetry. SQL Server Express enforces a strict **10 GB (10,240 MB)** physical storage cap per database. 
+Overseer shares a Microsoft SQL Server database instance with GnollHack game logs and telemetry. SQL Server Express enforces a physical per-database storage cap on data files, and **the cap depends on the product version** — 10 GB on 2008 R2 through 2022, 50 GB from 2025 onward, and none at all on Standard, Developer, Enterprise, or Azure SQL.
+
+**Never hard-code the cap.** `DatabaseStorageMetricsService` detects the edition and version at runtime via `SERVERPROPERTY` (cached for one hour), and the pure `SqlServerCapacity` resolver in `Overseer/Models/SqlServerCapacity.cs` maps that onto the ceiling, a `HasEngineSizeLimit` flag, a display label, and a `LimitSource` of `Detected`, `Configured`, or `Fallback`. `DatabaseMaxSizeMbOverride` forces a ceiling when one is needed. The production instance is currently SQL Server 2022 Express, so the effective cap is 10 GB — but that is an observation, not an invariant to code against.
+
+The cap applies to the **sum** of the database's data files (`sys.database_files WHERE type = 0`), excluding the transaction log, FILESTREAM containers, and full-text files.
 
 Because LLM chat sessions accumulate extensive text transcripts, large tool call execution payloads, and disk attachments, Overseer implements a **multi-tiered automated retention strategy** across two storage mediums:
 1. **Relational Database (`ApplicationDbContext`)**: Stores session metadata, messages, token metrics, and tool execution payloads.
@@ -64,8 +68,11 @@ The retention strategy operates according to strict business logic rules configu
 | `SoftDeleteGracePeriodDays` | `30` | Days | Grace period in Trash before soft-deleted sessions are permanently purged. |
 | `PruneToolCallResultsDays` | `30` | Days | Age threshold after which large tool call result payloads (`Result` and `ArgsText`) are nullified. |
 | `MaintenanceRunHourUtc` | `3` | Hour (UTC) | Scheduled daily execution hour (03:00 UTC) for automated maintenance. |
-| `DatabaseWarningThresholdMb` | `7680` (75%) | MB | Database allocation threshold for sending a Warning notification email. |
-| `DatabaseCriticalThresholdMb` | `8704` (85%) | MB | Database allocation threshold for sending a Critical alert email. |
+| `DatabaseMaxSizeMbOverride` | `0` | MB | Forces the capacity ceiling, overriding edition detection. `0` means auto-detect. |
+| `DatabaseWarningThresholdPercent` | `75` | Percent | Share of the resolved limit at which a Warning notification email is sent. |
+| `DatabaseCriticalThresholdPercent` | `85` | Percent | Share of the resolved limit at which a Critical alert email is sent. |
+| `DatabaseWarningThresholdMb` | `0` (disabled) | MB | Optional *absolute* Warning trip point, evaluated in addition to the percentage; the more severe result wins. |
+| `DatabaseCriticalThresholdMb` | `0` (disabled) | MB | Optional absolute Critical trip point, evaluated the same way. |
 | `EnableStorageWarningEmails` | `true` | Boolean | Whether automated threshold alert emails are dispatched. |
 
 ---

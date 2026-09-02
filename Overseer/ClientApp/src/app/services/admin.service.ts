@@ -199,10 +199,18 @@ export interface TableStorageMetric {
 export interface DatabaseStorageMetrics {
   allocatedDataSizeMb: number;
   usedDataSizeMb: number;
-  freeSpaceWithin10GbMb: number;
+  freeSpaceWithinLimitMb: number;
+  /** Ceiling the meter is drawn against, in MB. Zero means no limit applies. */
   maxLimitMb: number;
   usedPercentage: number;
   tableMetrics: TableStorageMetric[];
+  /** True when the database engine itself enforces maxLimitMb. */
+  hasEngineSizeLimit: boolean;
+  limitSource: 'Detected' | 'Configured' | 'Fallback';
+  /** Display name of the instance, e.g. "SQL Server 2022 Express". */
+  serverProductLabel: string;
+  serverEditionName?: string;
+  serverProductVersion?: string;
   activeSessionCount: number;
   softDeletedSessionCount: number;
   inactiveSessionCount: number;

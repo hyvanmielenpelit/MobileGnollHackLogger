@@ -1206,6 +1206,41 @@ export class AdminComponent implements OnInit, OnDestroy {
     });
   }
 
+  /** The resolved capacity ceiling in GB, without a trailing ".0" on the round values. */
+  limitGb(m: DatabaseStorageMetrics): string {
+    const gb = m.maxLimitMb / 1024;
+    return gb.toFixed(Number.isInteger(gb) ? 0 : 1);
+  }
+
+  /**
+   * The capacity badge shown left of the allocation badge. "Budget" rather than "Capacity"
+   * when the ceiling came from the configuration override, since the engine does not
+   * actually enforce it.
+   */
+  capacityBadgeLabel(m: DatabaseStorageMetrics): string {
+    if (m.maxLimitMb <= 0) {
+      return 'No Size Limit';
+    }
+    return this.limitGb(m) + ' GB ' + (m.limitSource === 'Configured' ? 'Budget' : 'Capacity');
+  }
+
+  /** Explains where the ceiling came from, so a stale or guessed limit is visible. */
+  limitSourceLabel(m: DatabaseStorageMetrics): string {
+    switch (m.limitSource) {
+      case 'Configured':
+        return 'set by configuration override';
+      case 'Fallback':
+        return 'not detected — assuming ' + this.limitGb(m) + ' GB';
+      default:
+        return 'auto-detected';
+    }
+  }
+
+  /** Progress bar width, clamped so an over-limit database cannot overflow the container. */
+  meterWidth(m: DatabaseStorageMetrics): number {
+    return Math.min(100, Math.max(0, m.usedPercentage));
+  }
+
   loadStorageMetrics(showFeedback = false) {
     this.storageLoading = true;
     this.adminService.getStorageMetrics().subscribe({

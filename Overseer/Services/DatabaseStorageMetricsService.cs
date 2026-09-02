@@ -23,6 +23,21 @@ public class DatabaseStorageMetricsService
 
     private static DateTime? _lastMaintenanceRunUtc;
 
+    private const string EditionCacheKey = "SqlServerEditionInfo";
+
+    /// <summary>
+    /// How long a successful edition detection is cached. An instance's edition changes
+    /// only across a service restart, so an hour is generous; after an upgrade the panel
+    /// corrects itself within that window, or immediately if Overseer is restarted too.
+    /// </summary>
+    private static readonly TimeSpan EditionCacheDuration = TimeSpan.FromHours(1);
+
+    /// <summary>
+    /// How long a failed detection is cached. Kept short so a transient connection problem
+    /// does not pin the panel to the conservative fallback figure for a full hour.
+    /// </summary>
+    private static readonly TimeSpan EditionFailureCacheDuration = TimeSpan.FromMinutes(5);
+
     public DatabaseStorageMetricsService(
         ApplicationDbContext dbContext,
         IConfiguration configuration,
@@ -37,6 +52,18 @@ public class DatabaseStorageMetricsService
         
         _settings = new ChatRetentionSettings();
         _configuration.GetSection("ChatRetentionSettings").Bind(_settings);
+
+        if (SqlServerCapacity.HasInvalidThresholds(_settings))
+        {
+            _logger.LogWarning(
+                "ChatRetentionSettings storage thresholds are invalid or inverted " +
+                "(Warning {WarningPercent}%, Critical {CriticalPercent}%). Out-of-range values fall back " +
+                "to {DefaultWarning}%/{DefaultCritical}%, and the critical band is held at no lower than the warning band.",
+                _settings.DatabaseWarningThresholdPercent,
+                _settings.DatabaseCriticalThresholdPercent,
+                SqlServerCapacity.DefaultWarningThresholdPercent,
+                SqlServerCapacity.DefaultCriticalThresholdPercent);
+        }
 
         try
         {
@@ -53,11 +80,86 @@ public class DatabaseStorageMetricsService
         _lastMaintenanceRunUtc = DateTime.UtcNow;
     }
 
+    /// <summary>Wrapper so that a cached "detection failed" result is distinguishable from a cache miss.</summary>
+    private sealed record EditionCacheEntry(SqlServerEditionInfo? Info);
+
+    /// <summary>
+    /// Reads the instance's edition and version via SERVERPROPERTY, cached so that the
+    /// metadata query does not run on every metrics refresh. Returns null when detection
+    /// fails, which the capacity resolver reports as a "Fallback" limit rather than
+    /// silently guessing.
+    /// </summary>
+    private async Task<SqlServerEditionInfo?> GetEditionInfoAsync(CancellationToken cancellationToken)
+    {
+        if (_memoryCache.TryGetValue(EditionCacheKey, out EditionCacheEntry? cached) && cached != null)
+        {
+            return cached.Info;
+        }
+
+        SqlServerEditionInfo? info = null;
+
+        try
+        {
+            var conn = _dbContext.Database.GetDbConnection();
+            if (conn.State != ConnectionState.Open)
+            {
+                await conn.OpenAsync(cancellationToken);
+            }
+
+            using var cmd = conn.CreateCommand();
+            // TRY_CAST on ProductMajorVersion: the property is NULL before SQL Server 2014 SP2.
+            // The resolver falls back to parsing ProductVersion, which every version reports.
+            cmd.CommandText = @"
+                SELECT
+                    CAST(SERVERPROPERTY('Edition') AS NVARCHAR(128)) AS Edition,
+                    TRY_CAST(SERVERPROPERTY('EngineEdition') AS INT) AS EngineEdition,
+                    TRY_CAST(SERVERPROPERTY('ProductMajorVersion') AS INT) AS ProductMajorVersion,
+                    CAST(SERVERPROPERTY('ProductVersion') AS NVARCHAR(128)) AS ProductVersion,
+                    CAST(SERVERPROPERTY('ProductLevel') AS NVARCHAR(128)) AS ProductLevel;";
+
+            using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                info = new SqlServerEditionInfo(
+                    ReadNullableString(reader["Edition"]),
+                    ReadNullableInt(reader["EngineEdition"]),
+                    ReadNullableInt(reader["ProductMajorVersion"]),
+                    ReadNullableString(reader["ProductVersion"]),
+                    ReadNullableString(reader["ProductLevel"]));
+
+                _logger.LogInformation(
+                    "Detected SQL Server instance: Edition={Edition}, EngineEdition={EngineEdition}, Version={ProductVersion} ({ProductLevel})",
+                    info.Edition, info.EngineEdition, info.ProductVersion, info.ProductLevel);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to detect SQL Server edition via SERVERPROPERTY; assuming the conservative Express limit");
+            info = null;
+        }
+
+        var cacheOptions = new MemoryCacheEntryOptions()
+            .SetAbsoluteExpiration(info != null ? EditionCacheDuration : EditionFailureCacheDuration)
+            .SetSize(1); // CRITICAL: SizeLimit is configured globally in Program.cs
+
+        _memoryCache.Set(EditionCacheKey, new EditionCacheEntry(info), cacheOptions);
+
+        return info;
+    }
+
+    private static double ReadDouble(object? value)
+        => value == null || value == DBNull.Value ? 0 : Convert.ToDouble(value);
+
+    private static int? ReadNullableInt(object? value)
+        => value == null || value == DBNull.Value ? null : Convert.ToInt32(value);
+
+    private static string? ReadNullableString(object? value)
+        => value == null || value == DBNull.Value ? null : Convert.ToString(value);
+
     public async Task<DatabaseStorageMetricsDto> GetStorageMetricsAsync(CancellationToken cancellationToken = default)
     {
         var dto = new DatabaseStorageMetricsDto
         {
-            MaxLimitMb = 10240,
             LastMaintenanceRunUtc = _lastMaintenanceRunUtc
         };
 
@@ -71,18 +173,21 @@ public class DatabaseStorageMetricsService
             }
 
             using var cmd = conn.CreateCommand();
+            // The Express cap applies to the sum of the database's data files, so this must
+            // aggregate rather than read a single row. type = 0 (ROWS) already excludes the
+            // log, FILESTREAM containers, and full-text files, which the cap does not govern.
             cmd.CommandText = @"
-                SELECT 
-                    CAST(size AS BIGINT) * 8 / 1024.0 AS AllocatedMb,
-                    CAST(FILEPROPERTY(name, 'SpaceUsed') AS BIGINT) * 8 / 1024.0 AS UsedMb
+                SELECT
+                    SUM(CAST(size AS BIGINT)) * 8 / 1024.0 AS AllocatedMb,
+                    SUM(CAST(FILEPROPERTY(name, 'SpaceUsed') AS BIGINT)) * 8 / 1024.0 AS UsedMb
                 FROM sys.database_files
                 WHERE type = 0;";
 
             using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
             if (await reader.ReadAsync(cancellationToken))
             {
-                dto.AllocatedDataSizeMb = Convert.ToDouble(reader["AllocatedMb"]);
-                dto.UsedDataSizeMb = Convert.ToDouble(reader["UsedMb"]);
+                dto.AllocatedDataSizeMb = ReadDouble(reader["AllocatedMb"]);
+                dto.UsedDataSizeMb = ReadDouble(reader["UsedMb"]);
             }
         }
         catch (Exception ex)
@@ -90,21 +195,25 @@ public class DatabaseStorageMetricsService
             _logger.LogError(ex, "Failed to query database file sizes from sys.database_files");
         }
 
-        dto.FreeSpaceWithin10GbMb = Math.Max(0, dto.MaxLimitMb - dto.AllocatedDataSizeMb);
-        dto.UsedPercentage = Math.Round((dto.AllocatedDataSizeMb / dto.MaxLimitMb) * 100.0, 1);
+        // 1b. Resolve the capacity ceiling from the instance edition, or from the override.
+        var editionInfo = await GetEditionInfoAsync(cancellationToken);
+        var capacity = SqlServerCapacity.Resolve(editionInfo, _settings.DatabaseMaxSizeMbOverride);
 
-        if (dto.AllocatedDataSizeMb >= _settings.DatabaseCriticalThresholdMb)
-        {
-            dto.StatusLevel = "Critical";
-        }
-        else if (dto.AllocatedDataSizeMb >= _settings.DatabaseWarningThresholdMb)
-        {
-            dto.StatusLevel = "Warning";
-        }
-        else
-        {
-            dto.StatusLevel = "Normal";
-        }
+        dto.MaxLimitMb = capacity.MaxLimitMb;
+        dto.HasEngineSizeLimit = capacity.HasEngineSizeLimit;
+        dto.LimitSource = capacity.LimitSource;
+        dto.ServerProductLabel = capacity.ProductLabel;
+        dto.ServerEditionName = capacity.EditionName;
+        dto.ServerProductVersion = capacity.ProductVersion;
+
+        dto.FreeSpaceWithinLimitMb = capacity.MaxLimitMb > 0
+            ? Math.Max(0, capacity.MaxLimitMb - dto.AllocatedDataSizeMb)
+            : 0;
+        dto.UsedPercentage = capacity.MaxLimitMb > 0
+            ? Math.Round((dto.AllocatedDataSizeMb / capacity.MaxLimitMb) * 100.0, 1)
+            : 0;
+
+        dto.StatusLevel = SqlServerCapacity.ResolveStatusLevel(dto.AllocatedDataSizeMb, capacity, _settings);
 
         // 2. Query Table Metrics
         try
@@ -232,7 +341,12 @@ public class DatabaseStorageMetricsService
         }
 
         await SendStorageWarningReportEmailAsync(metrics, metrics.StatusLevel, cancellationToken);
-        _memoryCache.Set(cacheKey, true, TimeSpan.FromHours(24));
+
+        var throttleOptions = new MemoryCacheEntryOptions()
+            .SetAbsoluteExpiration(TimeSpan.FromHours(24))
+            .SetSize(1); // CRITICAL: SizeLimit is configured globally in Program.cs
+
+        _memoryCache.Set(cacheKey, true, throttleOptions);
     }
 
     public async Task<bool> SendStorageWarningReportEmailAsync(
@@ -247,17 +361,34 @@ public class DatabaseStorageMetricsService
         }
 
         string toAddress = _configuration["ReportEmailAddress"] ?? "gnollhack@hyvanmielenpelit.fi";
-        string subject = $"[Overseer Storage {alertType.ToUpperInvariant()}] SQL Server Express at {metrics.UsedPercentage}% capacity";
+        string productLabel = string.IsNullOrWhiteSpace(metrics.ServerProductLabel) ? "SQL Server" : metrics.ServerProductLabel;
+        bool hasLimit = metrics.MaxLimitMb > 0;
+
+        string subject = hasLimit
+            ? $"[Overseer Storage {alertType.ToUpperInvariant()}] {productLabel} at {metrics.UsedPercentage}% capacity"
+            : $"[Overseer Storage {alertType.ToUpperInvariant()}] {productLabel} at {metrics.AllocatedDataSizeMb:N0} MB allocated";
 
         var sb = new StringBuilder();
         sb.AppendLine("<html><body style='font-family: Arial, sans-serif; color: #333;'>");
         sb.AppendLine($"<h2 style='color: {(alertType == "Critical" ? "#dc3545" : "#ffc107")};'>Overseer Database Storage {alertType} Report</h2>");
-        sb.AppendLine($"<p>The shared SQL Server Express database has reached <strong>{metrics.AllocatedDataSizeMb:N1} MB ({metrics.UsedPercentage}%)</strong> of the 10,240 MB limit.</p>");
-        
+
+        if (hasLimit)
+        {
+            string limitWord = metrics.HasEngineSizeLimit ? "limit" : "configured budget";
+            sb.AppendLine($"<p>The shared {productLabel} database has reached <strong>{metrics.AllocatedDataSizeMb:N1} MB ({metrics.UsedPercentage}%)</strong> of the {metrics.MaxLimitMb:N0} MB {limitWord}.</p>");
+        }
+        else
+        {
+            sb.AppendLine($"<p>The shared {productLabel} database has reached <strong>{metrics.AllocatedDataSizeMb:N1} MB</strong>. This edition imposes no per-database size limit.</p>");
+        }
+
         sb.AppendLine("<table border='1' cellpadding='6' cellspacing='0' style='border-collapse: collapse; margin-top: 15px;'>");
         sb.AppendLine("<tr style='background: #f2f2f2;'><th>Metric</th><th>Value</th></tr>");
         sb.AppendLine($"<tr><td><strong>Allocated DB Size</strong></td><td>{metrics.AllocatedDataSizeMb:N1} MB</td></tr>");
-        sb.AppendLine($"<tr><td><strong>Free Headroom (<10 GB)</strong></td><td>{metrics.FreeSpaceWithin10GbMb:N1} MB</td></tr>");
+        if (hasLimit)
+        {
+            sb.AppendLine($"<tr><td><strong>Free Headroom (below {metrics.MaxLimitMb / 1024.0:N0} GB)</strong></td><td>{metrics.FreeSpaceWithinLimitMb:N1} MB</td></tr>");
+        }
         sb.AppendLine($"<tr><td><strong>Active Sessions</strong></td><td>{metrics.ActiveSessionCount}</td></tr>");
         sb.AppendLine($"<tr><td><strong>Soft-Deleted in Trash</strong></td><td>{metrics.SoftDeletedSessionCount} (est. ~{metrics.EstimatedReclaimableMb:N1} MB)</td></tr>");
         sb.AppendLine($"<tr><td><strong>Disk Attachments</strong></td><td>{metrics.DiskAttachmentsSizeMb:N1} MB ({metrics.DiskAttachmentsFileCount} files)</td></tr>");

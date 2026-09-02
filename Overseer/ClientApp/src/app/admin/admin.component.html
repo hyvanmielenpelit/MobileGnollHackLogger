@@ -295,29 +295,49 @@
                 <div class="storage-card-header">
                   <div class="storage-title">
                     <span class="status-dot" [ngClass]="'status-' + storageMetrics.statusLevel.toLowerCase()"></span>
-                    <strong>SQL Server 2022 Express Capacity (10 GB Limit)</strong>
+                    <strong>{{ storageMetrics.serverProductLabel }}</strong>
                   </div>
-                  <div class="storage-badge" [ngClass]="'badge-' + storageMetrics.statusLevel.toLowerCase()">
-                    {{ storageMetrics.usedPercentage }}% Allocated
+                  <div class="storage-badges">
+                    <div class="storage-badge badge-capacity">
+                      {{ capacityBadgeLabel(storageMetrics) }}
+                    </div>
+                    @if (storageMetrics.maxLimitMb > 0) {
+                      <div class="storage-badge" [ngClass]="'badge-' + storageMetrics.statusLevel.toLowerCase()">
+                        {{ storageMetrics.usedPercentage }}% Allocated
+                      </div>
+                    }
                   </div>
                 </div>
 
-                <div class="storage-progress-container mt-15">
-                  <div class="storage-progress-bar" 
-                       [style.width.%]="storageMetrics.usedPercentage" 
-                       [ngClass]="'bar-' + storageMetrics.statusLevel.toLowerCase()">
-                  </div>
+                <div class="storage-provenance">
+                  Detected: {{ storageMetrics.serverEditionName || 'unknown edition' }}@if (storageMetrics.serverProductVersion) { · v{{ storageMetrics.serverProductVersion }}} · limit {{ limitSourceLabel(storageMetrics) }}
                 </div>
+
+                @if (storageMetrics.maxLimitMb > 0) {
+                  <div class="storage-progress-container mt-15">
+                    <div class="storage-progress-bar"
+                         [style.width.%]="meterWidth(storageMetrics)"
+                         [ngClass]="'bar-' + storageMetrics.statusLevel.toLowerCase()">
+                    </div>
+                  </div>
+                }
 
                 <div class="storage-stats-grid mt-15">
                   <div class="stat-box">
                     <span class="stat-label">Allocated Data (.mdf)</span>
                     <span class="stat-value">{{ storageMetrics.allocatedDataSizeMb | number:'1.1-1' }} MB <span class="stat-sub">({{ (storageMetrics.allocatedDataSizeMb / 1024) | number:'1.2-2' }} GB)</span></span>
                   </div>
-                  <div class="stat-box stat-box-highlight">
-                    <span class="stat-label">Free Headroom (< 10 GB)</span>
-                    <span class="stat-value text-success">{{ storageMetrics.freeSpaceWithin10GbMb | number:'1.1-1' }} MB <span class="stat-sub">({{ (storageMetrics.freeSpaceWithin10GbMb / 1024) | number:'1.2-2' }} GB)</span></span>
-                  </div>
+                  @if (storageMetrics.maxLimitMb > 0) {
+                    <div class="stat-box stat-box-highlight">
+                      <span class="stat-label">Free Headroom (below {{ limitGb(storageMetrics) }} GB)</span>
+                      <span class="stat-value text-success">{{ storageMetrics.freeSpaceWithinLimitMb | number:'1.1-1' }} MB <span class="stat-sub">({{ (storageMetrics.freeSpaceWithinLimitMb / 1024) | number:'1.2-2' }} GB)</span></span>
+                    </div>
+                  } @else {
+                    <div class="stat-box stat-box-highlight">
+                      <span class="stat-label">Free Headroom</span>
+                      <span class="stat-value text-success">No engine limit</span>
+                    </div>
+                  }
                   <div class="stat-box">
                     <span class="stat-label">Used Pages</span>
                     <span class="stat-value">{{ storageMetrics.usedDataSizeMb | number:'1.1-1' }} MB</span>

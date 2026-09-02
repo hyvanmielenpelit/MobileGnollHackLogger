@@ -8,8 +8,33 @@ public class ChatRetentionSettings
     public int SoftDeleteGracePeriodDays { get; set; } = 30;
     public int PruneToolCallResultsDays { get; set; } = 30;
     public int MaintenanceRunHourUtc { get; set; } = 3;
-    public double DatabaseWarningThresholdMb { get; set; } = 7680;
-    public double DatabaseCriticalThresholdMb { get; set; } = 8704;
+
+    /// <summary>
+    /// Ceiling for the capacity meter, in MB. Zero means auto-detect from the instance
+    /// edition (see <see cref="SqlServerCapacity"/>). Set this to pre-configure a limit
+    /// before the instance is actually upgraded, or to budget Overseer to less than the
+    /// engine allows on an instance shared with other workloads.
+    /// </summary>
+    public double DatabaseMaxSizeMbOverride { get; set; } = 0;
+
+    /// <summary>Percentage of the resolved limit at which a Warning is raised.</summary>
+    public double DatabaseWarningThresholdPercent { get; set; } = SqlServerCapacity.DefaultWarningThresholdPercent;
+
+    /// <summary>Percentage of the resolved limit at which a Critical alert is raised.</summary>
+    public double DatabaseCriticalThresholdPercent { get; set; } = SqlServerCapacity.DefaultCriticalThresholdPercent;
+
+    /// <summary>
+    /// Optional absolute Warning trip point in MB; zero disables it. Evaluated in addition
+    /// to <see cref="DatabaseWarningThresholdPercent"/>, with the more severe result winning.
+    /// </summary>
+    public double DatabaseWarningThresholdMb { get; set; } = 0;
+
+    /// <summary>
+    /// Optional absolute Critical trip point in MB; zero disables it. Evaluated in addition
+    /// to <see cref="DatabaseCriticalThresholdPercent"/>, with the more severe result winning.
+    /// </summary>
+    public double DatabaseCriticalThresholdMb { get; set; } = 0;
+
     public bool EnableStorageWarningEmails { get; set; } = true;
 }
 
@@ -25,11 +50,33 @@ public class DatabaseStorageMetricsDto
 {
     public double AllocatedDataSizeMb { get; set; }
     public double UsedDataSizeMb { get; set; }
-    public double FreeSpaceWithin10GbMb { get; set; }
-    public double MaxLimitMb { get; set; } = 10240;
+    public double FreeSpaceWithinLimitMb { get; set; }
+
+    /// <summary>
+    /// The ceiling the capacity meter is drawn against, in MB. Zero means the edition
+    /// imposes no per-database limit and none was configured; consumers must not divide
+    /// by this without checking.
+    /// </summary>
+    public double MaxLimitMb { get; set; }
     public double UsedPercentage { get; set; }
     public List<TableStorageMetricDto> TableMetrics { get; set; } = new();
-    
+
+    /// <summary>True when the database engine itself enforces the limit above.</summary>
+    public bool HasEngineSizeLimit { get; set; }
+
+    /// <summary>"Detected", "Configured", or "Fallback".</summary>
+    public string LimitSource { get; set; } = "Detected";
+
+    /// <summary>Display name of the instance, e.g. "SQL Server 2022 Express".</summary>
+    public string ServerProductLabel { get; set; } = string.Empty;
+
+    /// <summary>Raw SERVERPROPERTY('Edition'), e.g. "Express Edition (64-bit)".</summary>
+    public string? ServerEditionName { get; set; }
+
+    /// <summary>Raw SERVERPROPERTY('ProductVersion'), e.g. "16.0.4200.1".</summary>
+    public string? ServerProductVersion { get; set; }
+
+
     public int ActiveSessionCount { get; set; }
     public int SoftDeletedSessionCount { get; set; }
     public int InactiveSessionCount { get; set; }

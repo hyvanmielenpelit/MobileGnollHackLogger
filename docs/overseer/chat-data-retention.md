@@ -6,7 +6,21 @@ This document details the architectural specification, data model lifecycle, bus
 
 ## 1. Overview & Operational Context
 
-Overseer shares an operational Microsoft SQL Server Express instance with GnollHack game logs and telemetry. SQL Server Express imposes a physical database limit of **10 GB (10,240 MB)** for data files.
+Overseer shares an operational Microsoft SQL Server instance with GnollHack game logs and telemetry. SQL Server Express imposes a physical per-database limit on data files, and that limit **depends on the product version**.
+
+The limit is **not hard-coded**. `DatabaseStorageMetricsService` detects the instance's edition and version at runtime via `SERVERPROPERTY`, and `SqlServerCapacity` (`Overseer/Models/SqlServerCapacity.cs`) maps the result onto a ceiling:
+
+| Instance | Data-file limit |
+|---|---|
+| SQL Server 2025 Express and later (major version ≥ 17) | **50 GB (51,200 MB)** |
+| SQL Server 2008 R2 – 2022 Express (major version 10.50 – 16) | **10 GB (10,240 MB)** |
+| SQL Server 2008 Express and earlier | 4 GB (4,096 MB) |
+| Standard, Developer, Enterprise, Azure SQL | No engine-imposed per-database limit |
+| Detection failed, or version unavailable | 10 GB assumed, and reported as `Fallback` |
+
+The instance in production at the time of writing is **SQL Server 2022 Express**, so the effective limit is 10 GB. Detection is cached for one hour (five minutes after a failure).
+
+The limit applies to the **sum** of the database's data files (`sys.database_files WHERE type = 0`); the transaction log, FILESTREAM containers, and full-text files are not counted against it.
 
 To prevent runaway database and disk growth while maintaining an optimal user experience, Overseer implements a comprehensive, multi-tiered retention and automated lifecycle management system covering:
 - **Relational Data**: `ChatSession`, `ChatMessage`, `ChatMessageToolCall`, `ChatMessageAttachment`.
@@ -39,8 +53,9 @@ All retention policies are configured under `"ChatRetentionSettings"` in `appset
   "SoftDeleteGracePeriodDays": 30,
   "PruneToolCallResultsDays": 30,
   "MaintenanceRunHourUtc": 3,
-  "DatabaseWarningThresholdMb": 7680,
-  "DatabaseCriticalThresholdMb": 8704,
+  "DatabaseMaxSizeMbOverride": 0,
+  "DatabaseWarningThresholdPercent": 75,
+  "DatabaseCriticalThresholdPercent": 85,
   "EnableStorageWarningEmails": true
 }
 ```
@@ -55,8 +70,25 @@ All retention policies are configured under `"ChatRetentionSettings"` in `appset
 | **Trash Grace Period** | `SoftDeleteGracePeriodDays` | `30` | Soft-deleted sessions remain recoverable in Trash for 30 days. After 30 days, they are permanently purged during daily maintenance. |
 | **Tool Payload Pruning** | `PruneToolCallResultsDays` | `30` | Large JSON payloads in `ChatMessageToolCall.Result` and `ArgsText` older than 30 days are set to `NULL` to reclaim table space. Message history and transcripts remain intact. |
 | **Daily Schedule** | `MaintenanceRunHourUtc` | `3` (03:00 UTC) | Automated maintenance pass runs daily at 03:00 UTC (and 60 seconds after server startup). |
-| **Warning Threshold** | `DatabaseWarningThresholdMb` | `7,680 MB` (75%) | Triggers a Warning email report to `ReportEmailAddress` (throttled to 1 email/24h). |
-| **Critical Threshold** | `DatabaseCriticalThresholdMb` | `8,704 MB` (85%) | Triggers a Critical email report to `ReportEmailAddress` (throttled to 1 email/24h). |
+| **Size Limit Override** | `DatabaseMaxSizeMbOverride` | `0` (auto-detect) | Forces the capacity ceiling in MB, overriding detection. Use it to pre-configure a limit before an upgrade, or to budget Overseer to less than the engine allows on a shared instance. The panel labels an overridden ceiling as a *Budget* rather than a *Limit*. |
+| **Warning Threshold** | `DatabaseWarningThresholdPercent` | `75` (%) | Percentage of the resolved limit that triggers a Warning email report to `ReportEmailAddress` (throttled to 1 email/24h). |
+| **Critical Threshold** | `DatabaseCriticalThresholdPercent` | `85` (%) | Percentage of the resolved limit that triggers a Critical email report (throttled to 1 email/24h). |
+| **Absolute Warning Trip** | `DatabaseWarningThresholdMb` | `0` (disabled) | Optional absolute ceiling in MB, evaluated *in addition* to the percentage. The more severe of the two classifications wins. |
+| **Absolute Critical Trip** | `DatabaseCriticalThresholdMb` | `0` (disabled) | As above, for the Critical level. |
+
+> [!NOTE]
+> The thresholds are percentages so that they stay meaningful when the limit changes. On the
+> current 10 GB instance, 75 % and 85 % are exactly 7,680 MB and 8,704 MB — the absolute values
+> used before this change — so behaviour is unchanged to the megabyte. Out-of-range or inverted
+> percentages fall back to 75/85 and are logged as a warning at startup.
+
+### Upgrading the SQL Server Instance
+
+Upgrading the engine — for example from SQL Server 2022 Express to 2025 Express — requires **no code or configuration change**. Restart Overseer (or wait up to one hour for the detection cache to expire) and confirm the Admin page's **Database** tab now reads *SQL Server 2025 Express Capacity (50 GB Limit)* with the provenance line `limit auto-detected`.
+
+If the panel still reports the old limit, the provenance line names the reason:
+- `limit set by configuration override` — `DatabaseMaxSizeMbOverride` is still set; clear it to `0`.
+- `limit not detected — assuming 10 GB` — the `SERVERPROPERTY` query failed; check the application log for the detection error.
 
 ---
 
