@@ -206,6 +206,11 @@ public class ChatService
 
         int estimatedInputTokens = 0;
 
+        // Context window accounting for the indicator, captured inside the history-building
+        // block below and used again when the assistant message is persisted.
+        int? contextWindowTokens = null;
+        int? contextInputLimitTokens = null;
+
         using (var scope = _scopeFactory.CreateScope())
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -658,6 +663,9 @@ public class ChatService
             var meta = _modelMetadataService.GetMetadata(provider ?? "", model);
             int effectiveInputLimit = maxInputTokens ?? meta.MaxInputTokens;
             if (effectiveInputLimit <= 0) effectiveInputLimit = 100000;
+
+            contextWindowTokens = meta.ContextWindowSize > 0 ? meta.ContextWindowSize : null;
+            contextInputLimitTokens = effectiveInputLimit;
             
             int blockSize = _configuration.GetValue<int>("PromptCacheSettings:TruncationBlockSize", 8);
             messageHistory = TruncateHistoryPrefixStable(messageHistory, systemPrompt, effectiveInputLimit, blockSize);
@@ -794,6 +802,22 @@ public class ChatService
             });
         }
 
+        if (runResult.LastPromptTokens > 0 && contextWindowTokens.HasValue)
+        {
+            yield return new ChatEvent
+            {
+                Type = "context",
+                Data = JsonSerializer.Serialize(new
+                {
+                    promptTokens = runResult.LastPromptTokens,
+                    outputTokens = runResult.LastOutputTokens,
+                    windowTokens = contextWindowTokens.Value,
+                    inputLimitTokens = contextInputLimitTokens,
+                    modelDisplayName = modelDisplayName
+                })
+            };
+        }
+
         string fullResponse = runResult.FinalText ?? "";
         int? timeToFirstTokenMs = runResult.TimeToFirstTokenMs;
         int? totalDurationMs = runResult.TotalDurationMs;
@@ -838,7 +862,11 @@ public class ChatService
                     ToolCalls = streamToolCalls,
                     TimeToFirstTokenMs = timeToFirstTokenMs,
                     TotalDurationMs = totalDurationMs,
-                    TokensUsed = totalPromptTokens + totalOutputTokens
+                    TokensUsed = totalPromptTokens + totalOutputTokens,
+                    ContextPromptTokens = runResult.LastPromptTokens > 0 ? runResult.LastPromptTokens : null,
+                    ContextOutputTokens = runResult.LastPromptTokens > 0 ? runResult.LastOutputTokens : null,
+                    ContextWindowTokens = contextWindowTokens,
+                    ContextInputLimitTokens = contextInputLimitTokens
                 };
                 dbContext.ChatMessage.Add(asstMsg);
                 session.LastMessageUtc = DateTime.UtcNow;

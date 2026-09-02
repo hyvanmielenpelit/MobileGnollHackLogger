@@ -54,4 +54,34 @@ public class ChatMessage
     public int? TimeToFirstTokenMs { get; set; }
 
     public int? TotalDurationMs { get; set; }
+
+    /// <summary>
+    /// Prompt tokens the provider reported for the <b>final</b> model call of this turn — the
+    /// last "usage" report, not the sum across tool iterations. Includes cache reads, which
+    /// still occupy the context window. This is the conversation's context occupancy going into
+    /// the reply. Null for messages saved before this column existed, or when the provider
+    /// reported no usage.
+    /// </summary>
+    public int? ContextPromptTokens { get; set; }
+
+    /// <summary>
+    /// Output tokens the provider reported for the final model call of this turn.
+    /// <c>ContextPromptTokens + ContextOutputTokens</c> is the context occupied once this reply
+    /// is part of the history.
+    /// </summary>
+    public int? ContextOutputTokens { get; set; }
+
+    /// <summary>
+    /// The context window of the model that produced this reply, as recorded in the provider
+    /// model catalog at the time of the reply. Stored per message so that switching models
+    /// mid-session, or a later catalog change, does not retroactively rewrite history.
+    /// </summary>
+    public int? ContextWindowTokens { get; set; }
+
+    /// <summary>
+    /// The input-token ceiling Overseer applied when truncating history for this turn
+    /// (<c>MaxInputTokens</c> override, else <c>ContextWindowTokens - MaxOutputTokens</c>).
+    /// This, not <see cref="ContextWindowTokens"/>, is where history truncation begins.
+    /// </summary>
+    public int? ContextInputLimitTokens { get; set; }
 }

@@ -672,4 +672,79 @@ public class AgentLoopRunnerTests
         Assert.Equal("user", RoleOf(history[0]));
         Assert.DoesNotContain(history, m => RoleOf(m) == "system");
     }
+
+    /// <summary>
+    /// Emits two usage reports in one stream, the way a multi-iteration turn does: each
+    /// iteration re-sends the whole conversation, so the prompt count grows and only the
+    /// last report describes the real context occupancy.
+    /// </summary>
+    private class TwoUsageReportsMockProvider : MockAiProvider
+    {
+        public override async IAsyncEnumerable<ChatEvent> ParseStreamAsync(HttpResponseMessage response, bool showDebugLog, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            yield return new ChatEvent { Type = "chunk", Data = "Answer" };
+            yield return new ChatEvent
+            {
+                Type = "usage",
+                UsageReport = new TokenUsageReport { TotalPromptTokens = 1000, OutputTokens = 100 }
+            };
+            yield return new ChatEvent
+            {
+                Type = "usage",
+                UsageReport = new TokenUsageReport { TotalPromptTokens = 3000, OutputTokens = 200 }
+            };
+            await Task.CompletedTask;
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_UsageReports_AccumulateTotalsButLastReportWinsForContext()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var sp = services.BuildServiceProvider();
+
+        var mockProvider = new TwoUsageReportsMockProvider();
+        var config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+
+        var clientBridge = new NullClientBridge();
+        var handlers = new List<IToolHandler>();
+        var toolRegistry = new ToolRegistry(handlers, clientBridge, NullLogger<ToolRegistry>.Instance);
+        var toolExecutor = new ToolExecutor(handlers, clientBridge, NullLogger<ToolExecutor>.Instance, cache, config);
+
+        var runner = new AgentLoopRunner(
+            new[] { mockProvider },
+            toolRegistry,
+            toolExecutor,
+            new MockHttpClientFactory(),
+            config,
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            new KnowledgeBaseService(NullLogger<KnowledgeBaseService>.Instance, config),
+            new ModelMetadataService(),
+            NullLogger<AgentLoopRunner>.Instance,
+            new SubAgentCatalogService(config, NullLogger<SubAgentCatalogService>.Instance));
+
+        var request = new AgentRunRequest
+        {
+            ProviderName = "MockProvider",
+            ModelId = "mock-model",
+            ApiKey = "test-key",
+            SeedHistory = new List<object> { new { role = "user", content = "Hello" } },
+            AiProvider = mockProvider
+        };
+
+        var result = new AgentRunResult();
+        await foreach (var _ in runner.RunAsync(request, null, result, CancellationToken.None))
+        {
+        }
+
+        // Accumulation is preserved - other consumers (billing, budgets) still depend on it.
+        Assert.Equal(4000, result.TotalPromptTokens);
+        Assert.Equal(300, result.OutputTokens);
+
+        // Context occupancy is last-report-wins, never the sum.
+        Assert.Equal(3000, result.LastPromptTokens);
+        Assert.Equal(200, result.LastOutputTokens);
+    }
 }

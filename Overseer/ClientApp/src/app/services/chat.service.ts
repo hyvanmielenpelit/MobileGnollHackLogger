@@ -65,10 +65,27 @@ export interface ChatMessage {
   serviceTier?: string;
   timeToFirstTokenMs?: number;
   totalDurationMs?: number;
+  contextPromptTokens?: number;
+  contextOutputTokens?: number;
+  contextWindowTokens?: number;
+  contextInputLimitTokens?: number;
+}
+
+/**
+ * Context window occupancy as of the last assistant reply in a session. Sourced from the
+ * provider's own token accounting for the final model call of that turn.
+ */
+export interface ChatContextUsage {
+  usedTokens: number;
+  windowTokens: number;
+  inputLimitTokens?: number;
+  promptTokens: number;
+  outputTokens: number;
+  modelDisplayName?: string;
 }
 
 export interface ChatStreamEvent {
-  type: 'chunk' | 'status' | 'debug' | 'error' | 'sessionId' | 'tool_start' | 'tool_result' | 'tool_error' | 'title_update' | 'thinking_chunk' | 'ttft' | 'duration' | 'final';
+  type: 'chunk' | 'status' | 'debug' | 'error' | 'sessionId' | 'tool_start' | 'tool_result' | 'tool_error' | 'title_update' | 'thinking_chunk' | 'ttft' | 'duration' | 'context' | 'final';
   data: string;
   seqNo?: number;
 }

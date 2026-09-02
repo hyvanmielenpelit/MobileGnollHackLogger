@@ -1,7 +1,7 @@
 import { Component, OnInit, OnDestroy, inject, ChangeDetectorRef, ViewChild, ElementRef, HostListener, NgZone, AfterViewInit, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ChatService, ChatSession, ChatMessage, ChatMessageToolCall } from '../services/chat.service';
+import { ChatService, ChatSession, ChatMessage, ChatMessageToolCall, ChatContextUsage } from '../services/chat.service';
 import { AuthService } from '../services/auth.service';
 import { DebugService } from '../services/debug.service';
 import { Router, ActivatedRoute, RouterModule, NavigationEnd } from '@angular/router';
@@ -12,6 +12,7 @@ import { ChangelogService } from '../services/changelog.service';
 import { ClientBridgeService } from '../services/client-bridge.service';
 import { AdminAlertsComponent } from './admin-alerts.component';
 import { TrashModalComponent } from '../shared/trash-modal/trash-modal.component';
+import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../utils/polyfills.util';
 import * as signalR from '@microsoft/signalr';
 import { firstValueFrom, filter, Subscription, Subject, debounceTime, distinctUntilChanged } from 'rxjs';
 export interface ToolClientRequest {
@@ -310,6 +311,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   pendingAttachments: { file: File | null, base64: string, name: string, type: string }[] = [];
   timeToFirstTokenMs: number | null = null;
   totalDurationMs: number | null = null;
+  /**
+   * Context window occupancy as of the last assistant reply. Session state, not streaming
+   * state: it deliberately survives a 'done' event and only resets on a session change.
+   */
+  contextUsage: ChatContextUsage | null = null;
   
   isGeneratingTitle = false;
   titleStatusText = '';
@@ -330,6 +336,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   spoilerFreeMode = false;
   showParallelBadge = true;
   parallelBadgeEnabled = true;
+  showContextWindowUsage = true;
 
   get shouldRenderParallelBadge(): boolean {
     return this.showParallelBadge && this.parallelBadgeEnabled;
@@ -873,6 +880,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           this.showThoughtsAndTools = Number(settings.showThoughtsAndTools ?? 0);
           this.spoilerFreeMode = settings.spoilerFreeMode === true;
           this.showParallelBadge = settings.showParallelBadge ?? true;
+          this.showContextWindowUsage = settings.showContextWindowUsage ?? true;
           this.parallelBadgeEnabled = settings.parallelBadgeEnabled ?? true;
           this.debugService.log(`[Overseer] showThoughtsAndTools loaded: ${this.showThoughtsAndTools} (type: ${typeof this.showThoughtsAndTools})`);
 
@@ -957,6 +965,9 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   ngOnInit() {
     const tInit0 = performance.now();
     this.perfLog('Init', 'ChatComponent ngOnInit starting');
+    // Feature-detected and code-split: a browser with native popover, interestfor and
+    // anchor positioning downloads nothing. Needed by the context-window tooltip.
+    ensureOverlayPolyfills();
     setTimeout(() => this.preloadAvatarImages(), 2500);
     this.settingsService.showThoughtsAndToolsUpdated.subscribe(val => {
       this.showThoughtsAndTools = val;
@@ -1229,6 +1240,20 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     } else if (evt.type === 'duration') {
       this.totalDurationMs = parseInt(evt.data, 10);
       this.cdr.detectChanges();
+    } else if (evt.type === 'context') {
+      try {
+        const d = JSON.parse(evt.data);
+        this.contextUsage = {
+          promptTokens: d.promptTokens,
+          outputTokens: d.outputTokens ?? 0,
+          usedTokens: d.promptTokens + (d.outputTokens ?? 0),
+          windowTokens: d.windowTokens,
+          inputLimitTokens: d.inputLimitTokens ?? undefined,
+          modelDisplayName: d.modelDisplayName ?? undefined
+        };
+        this.cdr.detectChanges();
+        refreshAnchorPositioning();
+      } catch { }
     } else if (evt.type === 'chunk') {
       this.debugService.log(`[Frontend] chunk received: seqNo=${evt.seqNo} "${evt.data}" streamingMessage.length=${this.streamingMessage.length}`);
       if (this.isThinkingActive) {
@@ -1433,7 +1458,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
             reasoningMode: this.selectedModel?.reasoningMode || this.singleModelInfo?.reasoningMode,
             serviceTier: this.selectedModel?.serviceTier || this.singleModelInfo?.serviceTier,
             timeToFirstTokenMs: this.timeToFirstTokenMs ?? undefined,
-            totalDurationMs: this.totalDurationMs ?? undefined
+            totalDurationMs: this.totalDurationMs ?? undefined,
+            contextPromptTokens: this.contextUsage?.promptTokens,
+            contextOutputTokens: this.contextUsage?.outputTokens,
+            contextWindowTokens: this.contextUsage?.windowTokens,
+            contextInputLimitTokens: this.contextUsage?.inputLimitTokens
           });
           
           this.isStreaming = false;
@@ -1482,6 +1511,75 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.finishDoneTimeout = setTimeout(executeDone, timeUntilLoopEnd + 20);
       }
     }
+  }
+
+  /**
+   * Derives {@link contextUsage} from the newest assistant message that actually carries the
+   * measurement. Scanning backwards past messages without it means a chat whose most recent
+   * reply predates this feature still shows the last measured value rather than nothing.
+   */
+  private recomputeContextUsage(): void {
+    this.contextUsage = null;
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      const m = this.messages[i];
+      if (m.role !== 'assistant') continue;
+      if (m.contextPromptTokens == null || m.contextWindowTokens == null) continue;
+      const out = m.contextOutputTokens ?? 0;
+      this.contextUsage = {
+        promptTokens: m.contextPromptTokens,
+        outputTokens: out,
+        usedTokens: m.contextPromptTokens + out,
+        windowTokens: m.contextWindowTokens,
+        inputLimitTokens: m.contextInputLimitTokens ?? undefined,
+        modelDisplayName: m.modelDisplayName
+      };
+      refreshAnchorPositioning();
+      return;
+    }
+  }
+
+  formatTokenCount(n: number | null | undefined): string {
+    if (n == null) return '';
+    if (n < 1000) return String(n);
+    if (n < 1000000) return this.trimZeros(n / 1000, 1) + 'k';
+    return this.trimZeros(n / 1000000, 2) + 'M';
+  }
+
+  private trimZeros(v: number, digits: number): string {
+    return v.toFixed(digits).replace(/\.?0+$/, '');
+  }
+
+  get contextUsagePercent(): number {
+    if (!this.contextUsage || this.contextUsage.windowTokens <= 0) return 0;
+    const pct = (this.contextUsage.usedTokens / this.contextUsage.windowTokens) * 100;
+    return Math.min(100, Math.max(0, Math.round(pct)));
+  }
+
+  /** Structured tooltip content. One string per rendered line. */
+  get contextUsageTooltipLines(): string[] {
+    const u = this.contextUsage;
+    if (!u) return [];
+    const lines = [
+      `${u.promptTokens.toLocaleString()} prompt + ${u.outputTokens.toLocaleString()} output tokens`,
+      `of a ${u.windowTokens.toLocaleString()}-token context window`
+    ];
+    if (u.inputLimitTokens) {
+      lines.push(`History is truncated above ${u.inputLimitTokens.toLocaleString()} input tokens.`);
+    }
+    if (u.modelDisplayName) {
+      lines.push(`Measured on ${u.modelDisplayName} at the last reply.`);
+    }
+    return lines;
+  }
+
+  /**
+   * Short factual value for the progressbar. The tooltip carries the explanation via
+   * interestfor's implicit aria-describedby, so repeating it here would announce it twice.
+   */
+  get contextUsageValueText(): string {
+    const u = this.contextUsage;
+    if (!u) return '';
+    return `${u.usedTokens.toLocaleString()} of ${u.windowTokens.toLocaleString()} tokens, ${this.contextUsagePercent}%`;
   }
 
   formatTtft(ms: number | null | undefined): string {
@@ -1739,6 +1837,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.titleStatusText = '';
     this.timeToFirstTokenMs = null;
     this.totalDurationMs = null;
+    this.contextUsage = null;
     this.hasOngoingGeneration = false;
     this.isLoadingSession = false;
     this.liveEventBuffer = [];
@@ -1855,6 +1954,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.messages = s.messages || [];
         this.hasOngoingGeneration = s.hasOngoingGeneration === true;
         this.formatMessageToolCalls(this.messages);
+        this.recomputeContextUsage();
 
         // Debug: summarize loaded messages
         const asstMsgs = this.messages.filter(m => m.role === 'assistant');
@@ -1981,6 +2081,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
             this.messages = s.messages || [];
             this.formatMessageToolCalls(this.messages);
             this.clearStreamingState();
+            this.recomputeContextUsage();
             this.resetAvatarState();
             this.autoScrollEnabled = true;
             this.cdr.detectChanges();

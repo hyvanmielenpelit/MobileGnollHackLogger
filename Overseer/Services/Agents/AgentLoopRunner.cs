@@ -275,6 +275,11 @@ public class AgentLoopRunner
                             result.CacheCreationTokens += report.CacheCreationTokens;
                             result.OutputTokens += report.OutputTokens;
                             result.ReasoningTokens += report.ReasoningTokens;
+                            // Last-report-wins: the final iteration's figures are the
+                            // conversation's real context occupancy, unlike the accumulations
+                            // above, which sum every tool iteration of the turn.
+                            result.LastPromptTokens = report.TotalPromptTokens;
+                            result.LastOutputTokens = report.OutputTokens;
                             budget?.AddActualTokens(report);
                         }
                     }

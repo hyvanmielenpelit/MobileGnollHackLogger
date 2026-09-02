@@ -96,6 +96,7 @@ public class SettingsController : ControllerBase
             enableGameActions = settings?.EnableGameActions ?? false,
             showThoughtsAndTools = settings?.ShowThoughtsAndTools ?? 0,
             showParallelBadge = settings?.ShowParallelBadge ?? true,
+            showContextWindowUsage = settings?.ShowContextWindowUsage ?? true,
             parallelBadgeEnabled = _configuration.GetValue<bool>("ParallelExecutionSettings:ShowBadge", true),
             requestTimeout = settings?.RequestTimeout,
             showDebugLog = showDebugLog,
@@ -185,7 +186,7 @@ public class SettingsController : ControllerBase
                 return BadRequest($"RequestTimeout must be between {min} and {max}");
         }
 
-        await _settingsService.SaveSettingsAsync(userId, request.SpoilerFreeMode, request.EnableWebSearch, request.EnableToolUse, request.EnableClientTools, request.EnableGameActions, request.ShowSourceCodeReferences, request.MaxResultLength, request.MaxCallsPerSession, request.MaxToolIterations, request.MaxParallelToolCalls, request.ShowThoughtsAndTools, request.RequestTimeout, request.EnableSubAgents, request.ShowParallelBadge);
+        await _settingsService.SaveSettingsAsync(userId, request.SpoilerFreeMode, request.EnableWebSearch, request.EnableToolUse, request.EnableClientTools, request.EnableGameActions, request.ShowSourceCodeReferences, request.MaxResultLength, request.MaxCallsPerSession, request.MaxToolIterations, request.MaxParallelToolCalls, request.ShowThoughtsAndTools, request.RequestTimeout, request.EnableSubAgents, request.ShowParallelBadge, request.ShowContextWindowUsage);
         
         return Ok();
     }
@@ -636,6 +637,7 @@ public class UpdateSettingsRequest
     public bool? ShowSourceCodeReferences { get; set; }
     public int? ShowThoughtsAndTools { get; set; }
     public bool? ShowParallelBadge { get; set; }
+    public bool? ShowContextWindowUsage { get; set; }
     public int? RequestTimeout { get; set; }
 }
 

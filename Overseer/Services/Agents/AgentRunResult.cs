@@ -20,4 +20,16 @@ public class AgentRunResult
     public int? TotalDurationMs { get; set; }
     public string? TerminationReason { get; set; }
     public string? ActualServiceTier { get; set; }
+
+    /// <summary>
+    /// Prompt tokens from the <b>most recent</b> provider usage report, overwritten each time one
+    /// arrives — unlike <see cref="TotalPromptTokens"/>, which sums them. The last report is the
+    /// final iteration's, and that is the conversation's real context occupancy. Zero when no
+    /// provider usage was reported.
+    /// </summary>
+    public int LastPromptTokens { get; set; }
+
+    /// <summary>Output tokens from the most recent provider usage report. See
+    /// <see cref="LastPromptTokens"/>.</summary>
+    public int LastOutputTokens { get; set; }
 }

@@ -784,3 +784,219 @@ describe('ChatComponent session loading and exclusivity', () => {
 });
 
 
+
+describe('ChatComponent context window indicator', () => {
+  let component: ChatComponent;
+  let fixture: ComponentFixture<ChatComponent>;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ChatComponent],
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting()
+      ]
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(ChatComponent);
+    component = fixture.componentInstance;
+  });
+
+  describe('formatTokenCount', () => {
+    it('should render sub-thousand counts verbatim', () => {
+      expect(component.formatTokenCount(940)).toBe('940');
+      expect(component.formatTokenCount(0)).toBe('0');
+    });
+
+    it('should render thousands with a trimmed single decimal', () => {
+      expect(component.formatTokenCount(204400)).toBe('204.4k');
+      expect(component.formatTokenCount(12000)).toBe('12k');
+    });
+
+    it('should render millions with up to two trimmed decimals', () => {
+      expect(component.formatTokenCount(1000000)).toBe('1M');
+      expect(component.formatTokenCount(1048576)).toBe('1.05M');
+    });
+
+    it('should render nothing for a missing count', () => {
+      expect(component.formatTokenCount(null)).toBe('');
+      expect(component.formatTokenCount(undefined)).toBe('');
+    });
+  });
+
+  describe('contextUsagePercent', () => {
+    it('should be zero when there is no usage', () => {
+      component.contextUsage = null;
+      expect(component.contextUsagePercent).toBe(0);
+    });
+
+    it('should round the ratio to a whole percentage', () => {
+      component.contextUsage = {
+        promptTokens: 200000, outputTokens: 4400,
+        usedTokens: 204400, windowTokens: 1000000
+      };
+      expect(component.contextUsagePercent).toBe(20);
+    });
+
+    it('should clamp to 100 when the used count exceeds the window', () => {
+      // Possible after a mid-chat switch to a model with a smaller window.
+      component.contextUsage = {
+        promptTokens: 300000, outputTokens: 0,
+        usedTokens: 300000, windowTokens: 200000
+      };
+      expect(component.contextUsagePercent).toBe(100);
+    });
+
+    it('should be zero rather than infinite when the window is unknown', () => {
+      component.contextUsage = {
+        promptTokens: 100, outputTokens: 0,
+        usedTokens: 100, windowTokens: 0
+      };
+      expect(component.contextUsagePercent).toBe(0);
+    });
+  });
+
+  describe('recomputeContextUsage', () => {
+    it('should pick the newest assistant message that carries the measurement', () => {
+      component.messages = [
+        {
+          role: 'assistant', content: 'old', timestampUtc: '2026-09-01T10:00:00Z',
+          contextPromptTokens: 1000, contextOutputTokens: 100, contextWindowTokens: 200000
+        },
+        {
+          role: 'assistant', content: 'newer', timestampUtc: '2026-09-01T10:01:00Z',
+          contextPromptTokens: 5000, contextOutputTokens: 250,
+          contextWindowTokens: 200000, contextInputLimitTokens: 190000,
+          modelDisplayName: 'Claude Opus 5'
+        }
+      ];
+
+      (component as any).recomputeContextUsage();
+
+      expect(component.contextUsage).toEqual({
+        promptTokens: 5000,
+        outputTokens: 250,
+        usedTokens: 5250,
+        windowTokens: 200000,
+        inputLimitTokens: 190000,
+        modelDisplayName: 'Claude Opus 5'
+      });
+    });
+
+    it('should skip newer messages that predate the feature and user messages', () => {
+      component.messages = [
+        {
+          role: 'assistant', content: 'measured', timestampUtc: '2026-09-01T10:00:00Z',
+          contextPromptTokens: 5000, contextOutputTokens: 250, contextWindowTokens: 200000
+        },
+        { role: 'assistant', content: 'legacy', timestampUtc: '2026-09-01T10:01:00Z' },
+        { role: 'user', content: 'question', timestampUtc: '2026-09-01T10:02:00Z' }
+      ];
+
+      (component as any).recomputeContextUsage();
+
+      expect(component.contextUsage?.usedTokens).toBe(5250);
+    });
+
+    it('should leave the indicator absent when no message carries the measurement', () => {
+      component.messages = [
+        { role: 'assistant', content: 'legacy', timestampUtc: '2026-09-01T10:00:00Z' }
+      ];
+
+      (component as any).recomputeContextUsage();
+
+      expect(component.contextUsage).toBeNull();
+    });
+  });
+
+  describe('lifecycle', () => {
+    it('should keep contextUsage after a done event, unlike the streaming timings', () => {
+      component.processChatEvent({
+        type: 'context',
+        data: JSON.stringify({
+          promptTokens: 5000, outputTokens: 250,
+          windowTokens: 200000, inputLimitTokens: 190000,
+          modelDisplayName: 'Claude Opus 5'
+        })
+      } as any);
+
+      expect(component.contextUsage?.usedTokens).toBe(5250);
+
+      component.processChatEvent({ type: 'done', data: '' } as any);
+
+      expect(component.contextUsage?.usedTokens).toBe(5250);
+    });
+
+    it('should clear contextUsage when the streaming state is cleared for a session change', () => {
+      component.contextUsage = {
+        promptTokens: 5000, outputTokens: 250,
+        usedTokens: 5250, windowTokens: 200000
+      };
+
+      (component as any).clearStreamingState();
+
+      expect(component.contextUsage).toBeNull();
+    });
+  });
+
+  describe('contextUsageTooltipLines', () => {
+    it('should be empty when there is no usage', () => {
+      component.contextUsage = null;
+      expect(component.contextUsageTooltipLines).toEqual([]);
+    });
+
+    it('should give four lines naming the split, window, threshold, and model', () => {
+      component.contextUsage = {
+        promptTokens: 5000, outputTokens: 250, usedTokens: 5250,
+        windowTokens: 200000, inputLimitTokens: 190000,
+        modelDisplayName: 'Claude Opus 5'
+      };
+
+      const lines = component.contextUsageTooltipLines;
+      expect(lines.length).toBe(4);
+      expect(lines[0]).toContain('prompt');
+      expect(lines[0]).toContain('output tokens');
+      expect(lines[1]).toContain('context window');
+      expect(lines[2]).toContain('truncated above');
+      expect(lines[3]).toContain('Claude Opus 5');
+    });
+
+    it('should omit the threshold and model lines when those are unknown', () => {
+      component.contextUsage = {
+        promptTokens: 5000, outputTokens: 250, usedTokens: 5250,
+        windowTokens: 200000
+      };
+
+      expect(component.contextUsageTooltipLines.length).toBe(2);
+    });
+  });
+
+  describe('contextUsageValueText', () => {
+    it('should be empty when there is no usage', () => {
+      component.contextUsage = null;
+      expect(component.contextUsageValueText).toBe('');
+    });
+
+    it('should state the numbers and the percentage, without the tooltip prose', () => {
+      component.contextUsage = {
+        promptTokens: 200000, outputTokens: 4400,
+        usedTokens: 204400, windowTokens: 1000000,
+        inputLimitTokens: 936000, modelDisplayName: 'Claude Opus 5'
+      };
+
+      const text = component.contextUsageValueText;
+      expect(text).toContain('20%');
+      expect(text).toContain('tokens');
+      // The explanation belongs to the tooltip; announcing it here too would duplicate it.
+      expect(text).not.toContain('truncated above');
+      expect(text).not.toContain('Claude Opus 5');
+    });
+  });
+
+  describe('the display setting', () => {
+    it('should default to showing the indicator', () => {
+      expect(component.showContextWindowUsage).toBeTrue();
+    });
+  });
+});

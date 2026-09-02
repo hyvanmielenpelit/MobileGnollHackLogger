@@ -478,6 +478,40 @@
         }
       </div>
       <div class="input-area-container">
+        <!-- Context window consumption, as of the last assistant reply. Hidden below 992px by CSS. -->
+        @if (contextUsage && showContextWindowUsage) {
+          <div class="context-window-indicator" [class.near-full]="contextUsagePercent >= 90">
+            <div class="cw-text">
+              <span class="cw-label">Context window</span>
+              <button type="button" class="cw-value"
+                      interestfor="cw-usage-tip"
+                      style="anchor-name: --cw-usage-tip">
+                {{ formatTokenCount(contextUsage.usedTokens) }} / {{ formatTokenCount(contextUsage.windowTokens) }} ({{ contextUsagePercent }}%)
+                @if (contextUsagePercent >= 90) { <span class="cw-warning">— nearly full</span> }
+              </button>
+            </div>
+            <div class="cw-track"
+                 role="progressbar"
+                 aria-label="Context window consumed"
+                 [attr.aria-valuenow]="contextUsagePercent"
+                 aria-valuemin="0"
+                 aria-valuemax="100"
+                 [attr.aria-valuetext]="contextUsageValueText">
+              <div class="cw-fill" [style.inline-size.%]="contextUsagePercent"></div>
+            </div>
+          </div>
+          <div popover="hint" id="cw-usage-tip" class="gh-tooltip gh-tooltip-multiline"
+               style="position-anchor: --cw-usage-tip">
+            @for (line of contextUsageTooltipLines; track line; let idx = $index) {
+              <div class="gh-tooltip-line"
+                   [class.cw-tip-subline]="idx === 1"
+                   [class.cw-tip-para]="idx >= 2"
+                   [class.cw-tip-meta]="idx >= 2 && line.startsWith('Measured')">
+                {{ line }}
+              </div>
+            }
+          </div>
+        }
         <!-- Progress Indicator at the top of the prompt box -->
         @if (isStreaming || currentStatusText) {
           <div class="progress-bar">

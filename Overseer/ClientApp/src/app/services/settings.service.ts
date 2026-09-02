@@ -10,6 +10,7 @@ export interface UserAiSettings {
   showSourceCodeReferences?: boolean;
   showParallelBadge?: boolean;
   parallelBadgeEnabled?: boolean;
+  showContextWindowUsage?: boolean;
   maxResultLength?: number | null;
   maxCallsPerSession?: number | null;
   maxToolIterations?: number | null;
@@ -99,7 +100,7 @@ export class SettingsService {
     });
   }
 
-  saveSettings(spoilerFreeMode: boolean, enableWebSearch: boolean, enableToolUse: boolean, enableSubAgents: boolean, enableClientTools: boolean, enableGameActions: boolean, showSourceCodeReferences: boolean, maxResultLength: number | null, maxCallsPerSession: number | null, maxToolIterations: number | null, maxParallelToolCalls: number | null, showThoughtsAndTools: number, requestTimeout: number | null, showParallelBadge?: boolean) {
+  saveSettings(spoilerFreeMode: boolean, enableWebSearch: boolean, enableToolUse: boolean, enableSubAgents: boolean, enableClientTools: boolean, enableGameActions: boolean, showSourceCodeReferences: boolean, maxResultLength: number | null, maxCallsPerSession: number | null, maxToolIterations: number | null, maxParallelToolCalls: number | null, showThoughtsAndTools: number, requestTimeout: number | null, showParallelBadge?: boolean, showContextWindowUsage?: boolean) {
     return this.http.put('/api/settings', {
       spoilerFreeMode,
       enableWebSearch,
@@ -114,7 +115,8 @@ export class SettingsService {
       maxParallelToolCalls,
       showThoughtsAndTools,
       requestTimeout,
-      showParallelBadge
+      showParallelBadge,
+      showContextWindowUsage
     });
   }
 

@@ -45,6 +45,7 @@ describe('SettingsComponent', () => {
         maxParallelToolCalls: 4,
         showParallelBadge: false,
         parallelBadgeEnabled: true,
+        showContextWindowUsage: false,
         requestTimeout: 60
       };
       spyOn(settingsService, 'getSettings').and.returnValue(of(mockSettings));
@@ -57,6 +58,7 @@ describe('SettingsComponent', () => {
       expect(component.showSourceCodeReferences).toBeTrue();
       expect(component.showParallelBadge).toBeFalse();
       expect(component.parallelBadgeEnabled).toBeTrue();
+      expect(component.showContextWindowUsage).toBeFalse();
       expect(component.showThoughtsAndTools).toBe(1);
       expect(component.enableSubAgents).toBeFalse();
       expect(component.enableClientTools).toBeFalse();

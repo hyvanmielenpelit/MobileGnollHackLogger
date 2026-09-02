@@ -52,6 +52,16 @@
         </label>
       </div>
 
+      <div class="margin-y-20">
+        <label class="checkbox-label align-start">
+          <input type="checkbox" [(ngModel)]="showContextWindowUsage" (ngModelChange)="onSettingChange()" name="showContextWindowUsage" class="w-auto m-0" aria-describedby="contextWindowUsageHint" />
+          <span class="d-block">
+            <span>Show Context Window Usage</span>
+            <span id="contextWindowUsageHint" class="form-hint mt-5 d-block">Display how much of the model's context window the current chat occupies, above the prompt box.</span>
+          </span>
+        </label>
+      </div>
+
       @if (parallelBadgeEnabled) {
         <div class="margin-y-20">
           <label class="checkbox-label align-start">

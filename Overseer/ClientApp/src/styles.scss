@@ -288,9 +288,11 @@ a:hover {
    polyfill does not support the implicit anchor that `interestfor` creates.
    ========================================================================== */
 .gh-tooltip {
+  inset: auto;
   top: calc(anchor(bottom) + 8px);
   left: anchor(center);
   transform: translateX(-50%);
+  #{'position-try-fallbacks'}: flip-block;
   #{'position-try'}: flip-block;
   margin: unset;
   background: rgba(20, 20, 20, 0.95);
@@ -303,6 +305,48 @@ a:hover {
   backdrop-filter: blur(5px);
   -webkit-backdrop-filter: blur(5px);
   white-space: nowrap;
+}
+
+/* Modifier applied alongside .gh-tooltip for tooltips whose content is several lines
+   rather than a single phrase. Must stay above the 600px override below, so that
+   override still wins on narrow screens. */
+.gh-tooltip-multiline {
+  white-space: normal;
+  max-inline-size: 280px;
+  text-align: start;
+
+  .gh-tooltip-line + .gh-tooltip-line {
+    margin-block-start: 4px;
+  }
+}
+
+/* Context window usage indicator tooltip */
+#cw-usage-tip {
+  bottom: calc(anchor(top) + 8px);
+  right: anchor(right);
+  top: auto;
+  left: auto;
+  transform: none;
+  max-inline-size: min(360px, calc(100vw - 40px));
+  padding: 10px 14px;
+  line-height: 1.45;
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
+  #{'position-try-fallbacks'}: flip-block;
+
+  .cw-tip-subline {
+    margin-block-start: 2px;
+    color: #bbb;
+  }
+
+  .cw-tip-para {
+    margin-block-start: 8px;
+  }
+
+  .cw-tip-meta {
+    color: #888;
+    font-size: 0.9em;
+  }
 }
 
 @media (max-width: 600px) {

@@ -184,7 +184,11 @@ public class ChatController : ControllerBase
                 m.ThinkingLevelUsed,
                 m.ReasoningModeUsed,
                 m.ServiceTierUsed,
-                m.ActualServiceTierUsed
+                m.ActualServiceTierUsed,
+                m.ContextPromptTokens,
+                m.ContextOutputTokens,
+                m.ContextWindowTokens,
+                m.ContextInputLimitTokens
             })
             .ToListAsync();
         swDb.Stop();
@@ -315,7 +319,11 @@ public class ChatController : ControllerBase
                 ThinkingLevel = thinkingLevel,
                 ReasoningMode = reasoningMode,
                 ServiceTier = serviceTier,
-                ActualServiceTier = actualServiceTier
+                ActualServiceTier = actualServiceTier,
+                m.ContextPromptTokens,
+                m.ContextOutputTokens,
+                m.ContextWindowTokens,
+                m.ContextInputLimitTokens
             };
         }).ToList();
         swAsm.Stop();
@@ -737,6 +745,8 @@ public class ChatController : ControllerBase
                 <p><strong>Service Tier:</strong> {message.ServiceTierUsed ?? "N/A"} (served: {message.ActualServiceTierUsed ?? "not reported"})</p>
                 <p><strong>Time to First Token (ms):</strong> {message.TimeToFirstTokenMs?.ToString() ?? "N/A"}</p>
                 <p><strong>Total Duration (ms):</strong> {message.TotalDurationMs?.ToString() ?? "N/A"}</p>
+                <p><strong>Context Prompt / Output Tokens:</strong> {message.ContextPromptTokens?.ToString() ?? "N/A"} / {message.ContextOutputTokens?.ToString() ?? "N/A"}</p>
+                <p><strong>Context Window / Input Limit:</strong> {message.ContextWindowTokens?.ToString() ?? "N/A"} / {message.ContextInputLimitTokens?.ToString() ?? "N/A"}</p>
             </body>
             </html>
         ";

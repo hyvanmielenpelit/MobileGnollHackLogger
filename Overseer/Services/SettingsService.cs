@@ -23,7 +23,7 @@ public class SettingsService
 
     public static readonly string[] SupportedProviders = new[] { "OpenAI", "Anthropic", "Google" };
 
-    public async Task SaveSettingsAsync(string userId, bool? spoilerFreeMode = null, bool? enableWebSearch = null, bool? enableToolUse = null, bool? enableClientTools = null, bool? enableGameActions = null, bool? showSourceCodeReferences = null, int? maxResultLength = null, int? maxCallsPerSession = null, int? maxToolIterations = null, int? maxParallelToolCalls = null, int? showThoughtsAndTools = null, int? requestTimeout = null, bool? enableSubAgents = null, bool? showParallelBadge = null)
+    public async Task SaveSettingsAsync(string userId, bool? spoilerFreeMode = null, bool? enableWebSearch = null, bool? enableToolUse = null, bool? enableClientTools = null, bool? enableGameActions = null, bool? showSourceCodeReferences = null, int? maxResultLength = null, int? maxCallsPerSession = null, int? maxToolIterations = null, int? maxParallelToolCalls = null, int? showThoughtsAndTools = null, int? requestTimeout = null, bool? enableSubAgents = null, bool? showParallelBadge = null, bool? showContextWindowUsage = null)
     {
         var settings = await _dbContext.UserAiSettings.FindAsync(userId);
         if (settings == null)
@@ -48,6 +48,7 @@ public class SettingsService
         if (showThoughtsAndTools.HasValue) settings.ShowThoughtsAndTools = showThoughtsAndTools.Value;
         if (requestTimeout.HasValue) settings.RequestTimeout = requestTimeout.Value;
         if (showParallelBadge.HasValue) settings.ShowParallelBadge = showParallelBadge.Value;
+        if (showContextWindowUsage.HasValue) settings.ShowContextWindowUsage = showContextWindowUsage.Value;
 
         await _dbContext.SaveChangesAsync();
     }

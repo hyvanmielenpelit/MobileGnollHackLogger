@@ -528,6 +528,61 @@
 
 .input-area-container { border-block-start: 1px solid var(--border-glass); background: rgba(0,0,0,0.3); display: flex; flex-direction: column; }
 
+.context-window-indicator {
+  align-self: flex-end;
+  inline-size: min(320px, 100%);
+  padding: 6px 20px 0;
+  font-size: 11px;
+  color: var(--nav-color);
+
+  .cw-text { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+  .cw-label { opacity: 0.75; }
+  .cw-value {
+    font-family: monospace;
+    white-space: nowrap;
+    cursor: help;
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    font-size: inherit;
+    color: inherit;
+    line-height: inherit;
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 2px;
+      border-radius: 2px;
+    }
+  }
+  .cw-warning { color: var(--color-warning); }
+
+  .cw-track {
+    margin-block-start: 3px;
+    block-size: 3px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.12);
+    overflow: hidden;
+  }
+  .cw-fill {
+    block-size: 100%;
+    background: var(--primary-color);
+    transition: inline-size 0.3s ease;
+  }
+  &.near-full .cw-fill { background: var(--color-error); }
+}
+
+@media (max-width: 480px) {
+  .context-window-indicator {
+    padding-inline: 12px;
+    font-size: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .context-window-indicator .cw-fill { transition: none; }
+}
+
 .progress-bar {
   display: flex;
   align-items: center;
