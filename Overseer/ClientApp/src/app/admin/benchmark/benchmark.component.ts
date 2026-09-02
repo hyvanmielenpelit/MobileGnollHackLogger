@@ -2062,7 +2062,12 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
 
   isAnswerFailed(ans: BenchmarkRunAnswerDto): boolean {
     const s = this.formatAnswerStatus(ans.status);
-    return s === 'ProviderError' || s === 'Failed' || s === 'Skipped';
+    return s === 'ProviderError' || s === 'Failed' || s === 'Skipped' || s === 'EmptyAnswer';
+  }
+
+  isAnswerDegraded(ans: BenchmarkRunAnswerDto): boolean {
+    const s = this.formatAnswerStatus(ans.status);
+    return s === 'EmptyAnswer' || !!ans.toolBudgetExhausted || (ans.answerFlags != null && ans.answerFlags !== 0);
   }
 
   isAssessmentFailed(ans: BenchmarkRunAnswerDto): boolean {
@@ -2103,6 +2108,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     if (status === 2 || status === 'ProviderError') return 'ProviderError';
     if (status === 3 || status === 'Failed') return 'Failed';
     if (status === 4 || status === 'Skipped') return 'Skipped';
+    if (status === 5 || status === 'EmptyAnswer') return 'EmptyAnswer';
     return String(status);
   }
 

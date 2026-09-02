@@ -239,6 +239,13 @@ public class BenchmarkRunAnswerDto
     public string? AssessedByModelProviderUsed { get; set; }
     public string? AssessedByModelIdUsed { get; set; }
     public DateTime? AssessedAtUtc { get; set; }
+    public int? RawQualityScore { get; set; }
+    public int? ModelCallCount { get; set; }
+    public int? ToolCallCount { get; set; }
+    public bool ToolBudgetExhausted { get; set; }
+    public string? TerminationReason { get; set; }
+    public int AnswerFlags { get; set; }
+    public List<string> AnswerFlagNames { get; set; } = new();
 }
 
 public class BenchmarkRunDetailDto
@@ -273,12 +280,17 @@ public class BenchmarkRunDetailDto
     public int? FinalScore { get; set; }
     public int? ComputedScore { get; set; }
     public int? QualityIndex { get; set; }
+    public int? RawQualityIndex { get; set; }
     public int? SpeedIndex { get; set; }
     public long TotalAnswerDurationMs { get; set; }
     public long? ScoringProfileId { get; set; }
     public string? ScoringProfileName { get; set; }
     public string? ScoringProfileSnapshotJson { get; set; }
     public int ScoringMethodVersion { get; set; }
+    public string? HarnessVersion { get; set; }
+    public int? MaxToolCallsPerQuestionUsed { get; set; }
+    public int DegradedAnswerCount { get; set; }
+    public int ToolStarvedAnswerCount { get; set; }
     public bool DifficultyFallbackUsed { get; set; }
     public bool SpeedMeasurementDegraded { get; set; }
     public int MaxParallelQuestionsUsed { get; set; }
@@ -317,11 +329,15 @@ public class BenchmarkRunSummaryDto
     public int? FinalScore { get; set; }
     public int? ComputedScore { get; set; }
     public int? QualityIndex { get; set; }
+    public int? RawQualityIndex { get; set; }
     public int? SpeedIndex { get; set; }
     public long TotalAnswerDurationMs { get; set; }
     public bool SpeedMeasurementDegraded { get; set; }
     public int AnsweredQuestionCount { get; set; }
     public int TotalQuestionCount { get; set; }
+    public int DegradedAnswerCount { get; set; }
+    public int ToolStarvedAnswerCount { get; set; }
+    public string? HarnessVersion { get; set; }
     public long TotalDurationMs { get; set; }
 }
 

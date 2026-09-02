@@ -205,6 +205,13 @@ export interface BenchmarkRunAnswerDto {
   assessedByModelProviderUsed?: string | null;
   assessedByModelIdUsed?: string | null;
   assessedAtUtc?: string | null;
+  rawQualityScore?: number | null;
+  modelCallCount?: number | null;
+  toolCallCount?: number | null;
+  toolBudgetExhausted?: boolean;
+  terminationReason?: string | null;
+  answerFlags?: number;
+  answerFlagNames?: string[];
 }
 
 export interface BenchmarkRunDetailDto {
@@ -238,12 +245,17 @@ export interface BenchmarkRunDetailDto {
   finalScore?: number | null;
   computedScore?: number | null;
   qualityIndex?: number | null;
+  rawQualityIndex?: number | null;
   speedIndex?: number | null;
   totalAnswerDurationMs: number;
   scoringProfileId?: number | null;
   scoringProfileName?: string | null;
   scoringProfileSnapshotJson?: string | null;
   scoringMethodVersion: number;
+  harnessVersion?: string | null;
+  maxToolCallsPerQuestionUsed?: number | null;
+  degradedAnswerCount?: number;
+  toolStarvedAnswerCount?: number;
   difficultyFallbackUsed: boolean;
   speedMeasurementDegraded: boolean;
   maxParallelQuestionsUsed: number;
@@ -281,11 +293,15 @@ export interface BenchmarkRunSummaryDto {
   finalScore?: number | null;
   computedScore?: number | null;
   qualityIndex?: number | null;
+  rawQualityIndex?: number | null;
   speedIndex?: number | null;
   totalAnswerDurationMs: number;
   speedMeasurementDegraded: boolean;
   answeredQuestionCount: number;
   totalQuestionCount: number;
+  degradedAnswerCount?: number;
+  toolStarvedAnswerCount?: number;
+  harnessVersion?: string | null;
   totalDurationMs: number;
 }
 

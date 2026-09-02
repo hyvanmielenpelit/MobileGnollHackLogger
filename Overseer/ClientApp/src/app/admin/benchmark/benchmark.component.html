@@ -323,6 +323,9 @@
                     <span class="status-badge" [class]="'badge-status-' + formatStatus(run.status).toLowerCase()">
                       {{ formatStatus(run.status) }}
                     </span>
+                    @if ((run.degradedAnswerCount ?? 0) > 0) {
+                      <span class="badge-degraded-count" title="Degraded answers count">⚠ {{ run.degradedAnswerCount }}</span>
+                    }
                   </td>
                   <td>
                     @if (run.qualityIndex != null) {
@@ -570,6 +573,14 @@
               {{ selectedRunDetail.qualityIndex != null ? selectedRunDetail.qualityIndex : (selectedRunDetail.finalScore != null ? selectedRunDetail.finalScore : 'N/A') }} / 100
             </span>
           </div>
+          @if (selectedRunDetail.rawQualityIndex != null && selectedRunDetail.rawQualityIndex !== (selectedRunDetail.qualityIndex ?? selectedRunDetail.finalScore)) {
+            <div class="score-card">
+              <span class="score-label">Raw Quality Index</span>
+              <span class="score-subvalue" [class]="getScoreBadgeClass(selectedRunDetail.rawQualityIndex)">
+                {{ selectedRunDetail.rawQualityIndex }} / 100
+              </span>
+            </div>
+          }
           <div class="score-card">
             <span class="score-label">Speed Index</span>
             <span class="score-subvalue" [class]="getScoreBadgeClass(selectedRunDetail.speedIndex)">
@@ -588,6 +599,22 @@
             <span class="score-subvalue">{{ formatDuration(selectedRunDetail.totalAnswerDurationMs || selectedRunDetail.totalDurationMs) }}</span>
           </div>
         </div>
+
+        @if ((selectedRunDetail.degradedAnswerCount ?? 0) > 0 || (selectedRunDetail.toolStarvedAnswerCount ?? 0) > 0) {
+          <div class="alert alert-warning mb-20" role="alert">
+            <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+              <line x1="12" y1="9" x2="12" y2="13"></line>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+            <div class="alert-content">
+              <div class="alert-heading"><strong>Run Integrity Notice</strong></div>
+              <div class="alert-body">
+                This run contains {{ selectedRunDetail.degradedAnswerCount ?? 0 }} degraded answer(s) (empty, harness artifacts, or truncated) and {{ selectedRunDetail.toolStarvedAnswerCount ?? 0 }} tool-starved answer(s).
+              </div>
+            </div>
+          </div>
+        }
 
         @if (hasDivergence(selectedRunDetail.finalScore, selectedRunDetail.qualityIndex ?? selectedRunDetail.computedScore)) {
           <div class="alert alert-warning mb-20" role="alert">
@@ -657,6 +684,14 @@
                   <span class="status-badge" [class]="'badge-status-' + formatAnswerStatus(ans.status).toLowerCase()">
                     {{ formatAnswerStatus(ans.status) }}
                   </span>
+                  @if (ans.toolBudgetExhausted) {
+                    <span class="badge-starved" title="Tool budget exhausted on this question">Budget Hit</span>
+                  }
+                  @if (ans.answerFlagNames && ans.answerFlagNames.length > 0) {
+                    @for (flag of ans.answerFlagNames; track flag) {
+                      <span class="badge-flag" [class]="'badge-flag-' + flag.toLowerCase()">{{ flag }}</span>
+                    }
+                  }
                   @if (formatAssessmentStatus(ans.assessmentStatus) !== 'Scored') {
                     <span class="status-badge" [class]="'badge-status-' + formatAssessmentStatus(ans.assessmentStatus).toLowerCase()">
                       Assessment: {{ formatAssessmentStatus(ans.assessmentStatus) }}
@@ -674,7 +709,12 @@
                     </span>
                   }
                   @if (ans.qualityScore != null) {
-                    <span class="q-score-badge" [class]="getQuestionScoreBadgeClass(ans.qualityScore)">Q: {{ ans.qualityScore }}</span>
+                    <span class="q-score-badge" [class]="getQuestionScoreBadgeClass(ans.qualityScore)">
+                      Q: {{ ans.qualityScore }}
+                      @if (ans.rawQualityScore != null && ans.rawQualityScore !== ans.qualityScore) {
+                        <small class="q-raw-score" title="Raw Quality Score before cap">({{ ans.rawQualityScore }})</small>
+                      }
+                    </span>
                   }
                   @if (ans.speedScore != null) {
                     <span class="q-score-badge badge-speed">S: {{ ans.speedScore }}</span>
@@ -745,6 +785,12 @@
                   <div class="metrics-grid">
                     <div><strong>Duration:</strong> {{ ans.durationMs }} ms (TTFT: {{ ans.timeToFirstTokenMs ?? 'N/A' }} ms)</div>
                     <div><strong>Tokens:</strong> In: {{ ans.inputTokens || 0 }}, Out: {{ ans.outputTokens || 0 }}, Cache: {{ ans.cacheReadInputTokens || 0 }}</div>
+                    @if (ans.modelCallCount != null || ans.toolCallCount != null) {
+                      <div><strong>Calls:</strong> {{ ans.modelCallCount ?? 1 }} model call(s), {{ ans.toolCallCount ?? 0 }} tool call(s)</div>
+                    }
+                    @if (ans.terminationReason) {
+                      <div><strong>Termination:</strong> {{ ans.terminationReason }}</div>
+                    }
                     @if (ans.toolCallSummary) {
                       <div><strong>Tools Called:</strong> <code>{{ ans.toolCallSummary }}</code></div>
                     }

@@ -71,19 +71,23 @@ namespace Overseer.Services.Tools
 
                 // 1. Session Rate Limiting (atomic — tools may run concurrently)
                 bool isSubAgentCall = callContext.AgentDepth > 0;
+                string baseScope = callContext.ToolBudgetScopeId ?? callContext.SessionId.ToString();
                 var rateLimitKey = isSubAgentCall
-                    ? $"tool_calls_session_{callContext.SessionId}_sub"
-                    : $"tool_calls_session_{callContext.SessionId}";
+                    ? $"tool_calls_session_{baseScope}_sub"
+                    : $"tool_calls_session_{baseScope}";
                 int sessionLimit = isSubAgentCall
                     ? Math.Max(callContext.MaxCallsPerSession, _minCallsPerSessionWithSubAgents)
                     : callContext.MaxCallsPerSession;
+                TimeSpan expiry = callContext.ToolBudgetScopeId != null
+                    ? TimeSpan.FromHours(1)
+                    : TimeSpan.FromHours(4);
                 bool allowed;
                 lock (_rateLimitLock)
                 {
                     int count = _cache.GetOrCreate(rateLimitKey, entry =>
                     {
                         entry.Size = 1;
-                        entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(4);
+                        entry.AbsoluteExpirationRelativeToNow = expiry;
                         return 0;
                     });
 
@@ -93,15 +97,20 @@ namespace Overseer.Services.Tools
                         _cache.Set(rateLimitKey, count + 1, new MemoryCacheEntryOptions
                         {
                             Size = 1,
-                            AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(4)
+                            AbsoluteExpirationRelativeToNow = expiry
                         });
                     }
                 }
 
                 if (!allowed)
                 {
-                    _logger.LogWarning("Rate limit exceeded for Session {SessionId}", callContext.SessionId);
-                    return new ToolResult { Success = false, ErrorMessage = "Maximum tool calls per session exceeded." };
+                    _logger.LogWarning("Rate limit exceeded for Session {SessionId} (Scope: {Scope})", callContext.SessionId, baseScope);
+                    return new ToolResult
+                    {
+                        Success = false,
+                        ErrorMessage = "Maximum tool calls per session exceeded.",
+                        BudgetExhausted = true
+                    };
                 }
 
                 // Enhanced Audit Logging

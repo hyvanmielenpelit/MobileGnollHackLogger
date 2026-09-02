@@ -20,6 +20,9 @@ public class AgentRunResult
     public int? TotalDurationMs { get; set; }
     public string? TerminationReason { get; set; }
     public string? ActualServiceTier { get; set; }
+    public bool ToolBudgetExhausted { get; set; }
+    public int ModelCallCount { get; set; }
+    public int ToolCallCount { get; set; }
 
     /// <summary>
     /// Prompt tokens from the <b>most recent</b> provider usage report, overwritten each time one

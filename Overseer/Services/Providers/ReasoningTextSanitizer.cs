@@ -66,11 +66,57 @@ public class ReasoningTextSanitizer
                 }
 
                 int afterMarker = match.Length;
-                // Skip optional whitespace after marker
+                // Skip optional whitespace, control tokens, and bare "json" / "commentary" literals after marker
                 int jsonStart = afterMarker;
-                while (jsonStart < current.Length && char.IsWhiteSpace(current[jsonStart]))
+                bool advanced = true;
+                while (advanced && jsonStart < current.Length)
                 {
-                    jsonStart++;
+                    advanced = false;
+
+                    while (jsonStart < current.Length && char.IsWhiteSpace(current[jsonStart]))
+                    {
+                        jsonStart++;
+                        advanced = true;
+                    }
+
+                    if (jsonStart >= current.Length) break;
+
+                    var ctMatch = ControlTokenRegex.Match(current, jsonStart);
+                    if (ctMatch.Success && ctMatch.Index == jsonStart)
+                    {
+                        jsonStart += ctMatch.Length;
+                        advanced = true;
+                        continue;
+                    }
+
+                    if (jsonStart + 4 <= current.Length &&
+                        string.Equals(current.Substring(jsonStart, 4), "json", StringComparison.Ordinal) &&
+                        (jsonStart + 4 == current.Length || char.IsWhiteSpace(current[jsonStart + 4]) || current[jsonStart + 4] == '<' || current[jsonStart + 4] == '{'))
+                    {
+                        jsonStart += 4;
+                        advanced = true;
+                        continue;
+                    }
+
+                    if (jsonStart + 10 <= current.Length &&
+                        string.Equals(current.Substring(jsonStart, 10), "commentary", StringComparison.Ordinal) &&
+                        (jsonStart + 10 == current.Length || char.IsWhiteSpace(current[jsonStart + 10]) || current[jsonStart + 10] == '<' || current[jsonStart + 10] == '{'))
+                    {
+                        jsonStart += 10;
+                        advanced = true;
+                        continue;
+                    }
+                }
+
+                if (!isFlush && jsonStart < current.Length && current[jsonStart] != '{')
+                {
+                    string remaining = current.Substring(jsonStart);
+                    if (IsPrefixOfControlToken(remaining) ||
+                        ("json".StartsWith(remaining, StringComparison.Ordinal) && remaining.Length < 4) ||
+                        ("commentary".StartsWith(remaining, StringComparison.Ordinal) && remaining.Length < 10))
+                    {
+                        break; // Hold back in buffer to wait for potential control token/literal
+                    }
                 }
 
                 if (jsonStart >= current.Length)

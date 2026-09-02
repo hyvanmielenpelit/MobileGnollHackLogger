@@ -148,4 +148,40 @@ public class BenchmarkAssessmentPromptTests
 
         Assert.Contains("--- BEGIN RUBRIC ---\n" + complexRubric + "\n--- END RUBRIC ---", prompt.Replace("\r\n", "\n"));
     }
+
+    [Fact]
+    public void BuildPerQuestionPrompt_OmitsCandidateTurnDuration_AndIncludesHarnessContextAndCriticalInstructions()
+    {
+        var prompt = BenchmarkAssessmentPrompt.BuildPerQuestionPrompt(
+            suiteName: "Test Suite",
+            orderIndex: 1,
+            questionText: "What is the Gnoll race?",
+            difficulty: BenchmarkDifficulty.Simple,
+            expectedPoints: "Gnolls replaced gnomes.",
+            answerText: "Gnolls are playable.",
+            status: BenchmarkAnswerStatus.Ok,
+            allowedTools: new List<string> { "source_code_search", "source_code_view" },
+            toolCallsCompleted: 2,
+            toolBudgetExhausted: true);
+
+        // Turn duration MUST be omitted from candidate assessment prompt to avoid anchoring
+        Assert.DoesNotContain("candidate turn duration", prompt, System.StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("turn duration:", prompt, System.StringComparison.OrdinalIgnoreCase);
+
+        // Harness context must be present
+        Assert.Contains("Harness Context:", prompt);
+        Assert.Contains("- Available tools: source_code_search, source_code_view", prompt);
+        Assert.Contains("- Completed tool calls: 2", prompt);
+        Assert.Contains("- Tool budget exhausted: Yes", prompt);
+
+        // Critical instructions 6 and 7 must be present
+        Assert.Contains("do not treat harness-imposed tool unavailability as a model failure", prompt);
+        Assert.Contains("If the answer contains obvious harness artifacts", prompt);
+    }
+
+    [Fact]
+    public void ScoringMethodVersion_IsThree()
+    {
+        Assert.Equal(3, BenchmarkAssessmentPrompt.ScoringMethodVersion);
+    }
 }

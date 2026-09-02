@@ -51,6 +51,7 @@ public class BenchmarkRunAnswer
     public int? ReadabilityScore { get; set; }
 
     public int? QualityScore { get; set; }
+    public int? RawQualityScore { get; set; }
     public int? SpeedScore { get; set; }
 
     public int? AssessedDifficulty { get; set; }
@@ -92,4 +93,11 @@ public class BenchmarkRunAnswer
     public int? OutputTokens { get; set; }
     public int? CacheReadInputTokens { get; set; }
     public int? CacheCreationInputTokens { get; set; }
+
+    public int? ModelCallCount { get; set; }
+    public int? ToolCallCount { get; set; }
+    public bool ToolBudgetExhausted { get; set; }
+    [MaxLength(32)]
+    public string? TerminationReason { get; set; }
+    public int AnswerFlags { get; set; }
 }

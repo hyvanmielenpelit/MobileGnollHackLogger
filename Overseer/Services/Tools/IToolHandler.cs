@@ -38,11 +38,13 @@ namespace Overseer.Services.Tools
         public long? ExecutionMs { get; set; }
         public List<MobileGnollHackLogger.Data.ChatMessageToolCall>? NestedToolCalls { get; set; }
         public string? TerminationStatus { get; set; }
+        public bool BudgetExhausted { get; set; }
     }
 
     public class ToolExecutionContext
     {
         public long SessionId { get; set; }
+        public string? ToolBudgetScopeId { get; set; }
         public string UserId { get; set; } = string.Empty;
         public bool SpoilerFreeMode { get; set; }
         public bool IsGameOn { get; set; }
@@ -69,6 +71,7 @@ namespace Overseer.Services.Tools
             return new ToolExecutionContext
             {
                 SessionId = this.SessionId,
+                ToolBudgetScopeId = this.ToolBudgetScopeId,
                 UserId = this.UserId,
                 SpoilerFreeMode = this.SpoilerFreeMode,
                 IsGameOn = this.IsGameOn,

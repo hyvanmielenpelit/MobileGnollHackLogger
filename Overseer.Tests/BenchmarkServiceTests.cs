@@ -567,4 +567,41 @@ public class BenchmarkServiceTests
             Assert.Equal(75, updated.SpeedIndex);
         }
     }
+
+    [Fact]
+    public void BenchmarkAnswer_PersistsDiagnostics_AndStampsHarnessV2()
+    {
+        var run = new BenchmarkRun
+        {
+            Id = 99,
+            HarnessVersion = "2",
+            MaxToolCallsPerQuestionUsed = 25,
+            Answers = new List<BenchmarkRunAnswer>
+            {
+                new BenchmarkRunAnswer
+                {
+                    OrderIndex = 1,
+                    Status = BenchmarkAnswerStatus.Ok,
+                    QualityScore = 25,
+                    RawQualityScore = 95,
+                    ModelCallCount = 3,
+                    ToolCallCount = 25,
+                    ToolBudgetExhausted = true,
+                    TerminationReason = "BudgetExhausted",
+                    AnswerFlags = (int)BenchmarkAnswerFlags.HarnessArtifacts
+                }
+            }
+        };
+
+        Assert.Equal("2", run.HarnessVersion);
+        Assert.Equal(25, run.MaxToolCallsPerQuestionUsed);
+        var ans = run.Answers[0];
+        Assert.Equal(25, ans.QualityScore);
+        Assert.Equal(95, ans.RawQualityScore);
+        Assert.Equal(3, ans.ModelCallCount);
+        Assert.Equal(25, ans.ToolCallCount);
+        Assert.True(ans.ToolBudgetExhausted);
+        Assert.Equal("BudgetExhausted", ans.TerminationReason);
+        Assert.Equal((int)BenchmarkAnswerFlags.HarnessArtifacts, ans.AnswerFlags);
+    }
 }

@@ -31,7 +31,7 @@ public static class BenchmarkScoring
         return table[clampedLevel];
     }
 
-    public static (int Score, bool CapApplied) Quality(
+    public static (int Score, int RawScore, bool CapApplied) Quality(
         int accuracyLevel,
         int completenessLevel,
         int concisenessLevel,
@@ -52,6 +52,7 @@ public static class BenchmarkScoring
                             Math.Pow(r, cfg.WeightReadability);
 
         rawQuality = Math.Clamp(rawQuality, 1.0, 100.0);
+        int rawScore = (int)Math.Round(rawQuality, MidpointRounding.AwayFromZero);
 
         bool capApplied = false;
         if (criticalError)
@@ -64,7 +65,7 @@ public static class BenchmarkScoring
         }
 
         int finalScore = (int)Math.Round(rawQuality, MidpointRounding.AwayFromZero);
-        return (finalScore, capApplied);
+        return (finalScore, rawScore, capApplied);
     }
 
     public static int Speed(long durationMs, BenchmarkScoringConstants? constants = null)

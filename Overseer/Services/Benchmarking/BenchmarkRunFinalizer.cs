@@ -17,8 +17,15 @@ public static class BenchmarkRunFinalizer
 
     public static bool HasUnresolvedWork(BenchmarkRunAnswer answer)
     {
-        return answer.Status is BenchmarkAnswerStatus.ProviderError or BenchmarkAnswerStatus.Failed
+        return answer.Status is BenchmarkAnswerStatus.ProviderError or BenchmarkAnswerStatus.Failed or BenchmarkAnswerStatus.EmptyAnswer
             || answer.AssessmentStatus is BenchmarkAssessmentStatus.Failed or BenchmarkAssessmentStatus.Pending or BenchmarkAssessmentStatus.Assessing;
+    }
+
+    public static bool IsDegraded(BenchmarkRunAnswer answer)
+    {
+        return answer.Status == BenchmarkAnswerStatus.EmptyAnswer
+            || answer.ToolBudgetExhausted
+            || answer.AnswerFlags != 0;
     }
 
     public static BenchmarkRunStatus ComputeStatus(IReadOnlyCollection<BenchmarkRunAnswer> answers)
@@ -28,7 +35,7 @@ public static class BenchmarkRunFinalizer
             return BenchmarkRunStatus.Failed;
         }
 
-        return answers.Any(HasUnresolvedWork)
+        return answers.Any(a => HasUnresolvedWork(a) || IsDegraded(a))
             ? BenchmarkRunStatus.CompletedWithErrors
             : BenchmarkRunStatus.Completed;
     }
@@ -41,6 +48,8 @@ public static class BenchmarkRunFinalizer
         run.TotalCacheCreationTokens = answers.Sum(a => (long)(a.CacheCreationInputTokens ?? 0));
         run.TotalAnswerDurationMs = answers.Sum(a => a.DurationMs);
         run.AnsweredQuestionCount = answers.Count(a => a.Status == BenchmarkAnswerStatus.Ok);
+        run.DegradedAnswerCount = answers.Count(IsDegraded);
+        run.ToolStarvedAnswerCount = answers.Count(a => a.ToolBudgetExhausted);
 
         var scorableItems = answers
             .Where(a => a.Status == BenchmarkAnswerStatus.Ok)

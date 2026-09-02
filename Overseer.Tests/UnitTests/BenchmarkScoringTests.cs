@@ -36,17 +36,20 @@ public class BenchmarkScoringTests
         var config = BenchmarkScoringConstants.Default;
 
         // All level 6 -> 100
-        var (perfectQuality, _) = BenchmarkScoring.Quality(6, 6, 6, 6, false, config);
+        var (perfectQuality, perfectRaw, _) = BenchmarkScoring.Quality(6, 6, 6, 6, false, config);
         Assert.Equal(100, perfectQuality);
+        Assert.Equal(100, perfectRaw);
 
         // All level 0 -> 1
-        var (lowestQuality, _) = BenchmarkScoring.Quality(0, 0, 0, 0, false, config);
+        var (lowestQuality, lowestRaw, _) = BenchmarkScoring.Quality(0, 0, 0, 0, false, config);
         Assert.Equal(1, lowestQuality);
+        Assert.Equal(1, lowestRaw);
 
         // Accuracy=5 (87), Completeness=4 (72), Conciseness=6 (100), Readability=5 (87)
         // 87^0.55 * 72^0.25 * 100^0.10 * 87^0.10 ≈ 83.4 -> 83
-        var (quality, _) = BenchmarkScoring.Quality(5, 4, 6, 5, false, config);
+        var (quality, rawQuality, _) = BenchmarkScoring.Quality(5, 4, 6, 5, false, config);
         Assert.InRange(quality, 80, 86);
+        Assert.Equal(quality, rawQuality);
     }
 
     [Fact]
@@ -54,14 +57,16 @@ public class BenchmarkScoringTests
     {
         var config = BenchmarkScoringConstants.Default;
 
-        // Perfect answers with a critical hallucination/crash
-        var (cappedQuality, capApplied) = BenchmarkScoring.Quality(6, 6, 6, 6, true, config);
+        // Perfect answers with a critical hallucination/crash: Raw is 100, capped at 25
+        var (cappedQuality, rawScore, capApplied) = BenchmarkScoring.Quality(6, 6, 6, 6, true, config);
         Assert.Equal(25, cappedQuality);
+        Assert.Equal(100, rawScore);
         Assert.True(capApplied);
 
         // If raw quality is lower than 25, it stays lower
-        var (lowQualityWithCritical, lowCapApplied) = BenchmarkScoring.Quality(1, 1, 1, 1, true, config);
+        var (lowQualityWithCritical, lowRaw, lowCapApplied) = BenchmarkScoring.Quality(1, 1, 1, 1, true, config);
         Assert.Equal(15, lowQualityWithCritical);
+        Assert.Equal(15, lowRaw);
         Assert.False(lowCapApplied);
     }
 

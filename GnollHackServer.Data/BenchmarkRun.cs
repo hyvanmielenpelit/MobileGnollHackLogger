@@ -25,7 +25,17 @@ public enum BenchmarkAnswerStatus
     Ok = 1,
     ProviderError = 2,
     Failed = 3,
-    Skipped = 4
+    Skipped = 4,
+    EmptyAnswer = 5
+}
+
+[Flags]
+public enum BenchmarkAnswerFlags
+{
+    None = 0,
+    Empty = 1,
+    HarnessArtifacts = 2,
+    Truncated = 4
 }
 
 public class BenchmarkRun
@@ -137,6 +147,15 @@ public class BenchmarkRun
     public int AnsweredQuestionCount { get; set; }
 
     public int TotalQuestionCount { get; set; }
+
+    public int DegradedAnswerCount { get; set; }
+
+    public int ToolStarvedAnswerCount { get; set; }
+
+    public int? MaxToolCallsPerQuestionUsed { get; set; }
+
+    [MaxLength(32)]
+    public string? HarnessVersion { get; set; }
 
     [MaxLength(2048)]
     public string? PurposeStatementUsed { get; set; }

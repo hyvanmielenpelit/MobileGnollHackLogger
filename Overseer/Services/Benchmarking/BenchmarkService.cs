@@ -187,6 +187,7 @@ public class BenchmarkService
             run.ScoringProfileId = profile.Id;
             run.ScoringProfileSnapshotJson = JsonSerializer.Serialize(profile);
             run.ScoringMethodVersion = BenchmarkAssessmentPrompt.ScoringMethodVersion;
+            run.HarnessVersion = _configuration.GetValue<string>("Benchmark:HarnessVersion", "2");
 
             string testedApiKey = _cryptoService.Decrypt(testedConfig.EncryptedApiKey, testedConfig.ApiKeyNonce!, testedConfig.ApiKeyTag!, "SYSTEM_API_KEY");
             string assessorApiKey = _cryptoService.Decrypt(assessorConfig.EncryptedApiKey, assessorConfig.ApiKeyNonce!, assessorConfig.ApiKeyTag!, "SYSTEM_API_KEY");
@@ -201,13 +202,15 @@ public class BenchmarkService
             int maxParallel = profile.MaxParallelQuestions;
             run.MaxParallelQuestionsUsed = maxParallel;
             run.SpeedMeasurementDegraded = maxParallel > 1;
-            await db.SaveChangesAsync(cancellationToken);
 
             var allowedTools = _configuration.GetSection("Benchmark:AllowedTools").Get<List<string>>() ?? _defaultAllowedTools;
             int maxToolIterations = _configuration.GetValue<int>("Benchmark:MaxToolIterations", 8);
             int maxTotalModelCalls = _configuration.GetValue<int>("Benchmark:MaxTotalModelCalls", 12);
             int maxResultLength = _configuration.GetValue<int>("Benchmark:MaxResultLength", 10000);
             int maxCallsPerSession = _configuration.GetValue<int>("Benchmark:MaxCallsPerSession", 50);
+            int maxToolCallsPerQuestion = _configuration.GetValue<int>("Benchmark:MaxToolCallsPerQuestion", 25);
+            run.MaxToolCallsPerQuestionUsed = maxToolCallsPerQuestion;
+            await db.SaveChangesAsync(cancellationToken);
 
             string systemPrompt = _chatService.BuildSystemPrompt(
                 wikiContext: Array.Empty<string>(),
@@ -254,7 +257,7 @@ public class BenchmarkService
                     var ans = await ExecuteSingleQuestionAsync(
                         db, configService, run, question, testedConfig, testedApiKey,
                         systemPrompt, allowedTools, maxToolIterations, maxTotalModelCalls,
-                        maxResultLength, maxCallsPerSession, cancellationToken);
+                        maxResultLength, maxToolCallsPerQuestion, cancellationToken);
 
                     createdAnswers.Add(ans);
 
@@ -283,7 +286,7 @@ public class BenchmarkService
                         var ans = await ExecuteSingleQuestionAsync(
                             qDb, qConfigService, run, question, testedConfig, testedApiKey,
                             systemPrompt, allowedTools, maxToolIterations, maxTotalModelCalls,
-                            maxResultLength, maxCallsPerSession, cancellationToken);
+                            maxResultLength, maxToolCallsPerQuestion, cancellationToken);
 
                         createdAnswers.Add(ans);
 
@@ -515,6 +518,7 @@ public class BenchmarkService
             ToolExecutionContext = new Tools.ToolExecutionContext
             {
                 SessionId = run.Id,
+                ToolBudgetScopeId = $"bench_{run.Id}_q{question.OrderIndex}",
                 UserId = run.StartedByUserId ?? string.Empty,
                 MaxResultLength = maxResultLength,
                 MaxCallsPerSession = maxCallsPerSession,
@@ -526,19 +530,27 @@ public class BenchmarkService
             }
         };
 
+        int perQuestionTimeoutSec = _configuration.GetValue<int>("Benchmark:PerQuestionTimeoutSeconds", 300);
+        using var questionCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        questionCts.CancelAfter(TimeSpan.FromSeconds(perQuestionTimeoutSec));
+
         var runResult = new AgentRunResult();
         var sw = Stopwatch.StartNew();
 
         string? terminalError = null;
         try
         {
-            await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, runResult, cancellationToken))
+            await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, runResult, questionCts.Token))
             {
                 if (evt.Type == "error")
                 {
                     terminalError = evt.Data?.ToString();
                 }
             }
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && questionCts.IsCancellationRequested)
+        {
+            terminalError = $"Per-question timeout exceeded ({perQuestionTimeoutSec} s).";
         }
         catch (Exception ex)
         {
@@ -549,13 +561,40 @@ public class BenchmarkService
         var classification = BenchmarkProviderErrorClassifier.Classify(terminalError);
         var sanitized = BenchmarkAnswerSanitizer.Sanitize(runResult.FinalText);
 
-        var toolNames = runResult.ToolCalls
-            .Select(tc => tc.Name)
-            .Where(n => !string.IsNullOrEmpty(n))
-            .Distinct();
-        string toolSummary = string.Join(", ", toolNames);
+        var succeededCalls = runResult.ToolCalls
+            .Where(tc => tc.Status == "completed" && string.IsNullOrEmpty(tc.Error) && !string.IsNullOrEmpty(tc.Name))
+            .GroupBy(tc => tc.Name!)
+            .Select(g => $"{g.Key}×{g.Count()}")
+            .ToList();
+
+        int blockedCount = runResult.ToolCalls.Count(tc => tc.Error != null && tc.Error.Contains("Maximum tool calls per session exceeded"));
+        string toolSummary = string.Join(", ", succeededCalls);
+        if (blockedCount > 0)
+        {
+            toolSummary = string.IsNullOrEmpty(toolSummary)
+                ? $"None ({blockedCount} blocked by budget)"
+                : $"{toolSummary} ({blockedCount} blocked by budget)";
+        }
 
         int assessedDiff = question.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(question.Difficulty);
+
+        BenchmarkAnswerStatus status;
+        if (classification.IsProviderError)
+        {
+            status = BenchmarkAnswerStatus.ProviderError;
+        }
+        else if (!string.IsNullOrEmpty(terminalError))
+        {
+            status = BenchmarkAnswerStatus.Failed;
+        }
+        else if (sanitized.Flags.HasFlag(BenchmarkAnswerFlags.Empty))
+        {
+            status = BenchmarkAnswerStatus.EmptyAnswer;
+        }
+        else
+        {
+            status = BenchmarkAnswerStatus.Ok;
+        }
 
         var answer = new BenchmarkRunAnswer
         {
@@ -566,7 +605,7 @@ public class BenchmarkService
             AssessedDifficulty = assessedDiff,
             AnswerText = sanitized.AnswerText,
             ThoughtText = sanitized.ThoughtText,
-            Status = classification.IsProviderError ? BenchmarkAnswerStatus.ProviderError : (!string.IsNullOrEmpty(terminalError) ? BenchmarkAnswerStatus.Failed : BenchmarkAnswerStatus.Ok),
+            Status = status,
             AssessmentStatus = BenchmarkAssessmentStatus.Pending,
             ErrorMessage = BenchmarkAssessmentFailure.Truncate(terminalError),
             HttpStatusCode = classification.HttpStatus,
@@ -577,7 +616,12 @@ public class BenchmarkService
             InputTokens = runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : runResult.EstimatedInputTokens,
             OutputTokens = runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens,
             CacheReadInputTokens = runResult.CacheReadTokens,
-            CacheCreationInputTokens = runResult.CacheCreationTokens
+            CacheCreationInputTokens = runResult.CacheCreationTokens,
+            ModelCallCount = runResult.ModelCallCount,
+            ToolCallCount = runResult.ToolCallCount,
+            ToolBudgetExhausted = runResult.ToolBudgetExhausted,
+            TerminationReason = runResult.TerminationReason,
+            AnswerFlags = (int)sanitized.Flags
         };
 
         db.BenchmarkRunAnswers.Add(answer);
@@ -640,6 +684,7 @@ public class BenchmarkService
             ToolExecutionContext = new Tools.ToolExecutionContext
             {
                 SessionId = run.Id,
+                ToolBudgetScopeId = $"bench_{run.Id}_q{answer.OrderIndex}",
                 UserId = run.StartedByUserId ?? string.Empty,
                 MaxResultLength = maxResultLength,
                 MaxCallsPerSession = maxCallsPerSession,
@@ -651,19 +696,27 @@ public class BenchmarkService
             }
         };
 
+        int perQuestionTimeoutSec = _configuration.GetValue<int>("Benchmark:PerQuestionTimeoutSeconds", 300);
+        using var questionCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        questionCts.CancelAfter(TimeSpan.FromSeconds(perQuestionTimeoutSec));
+
         var runResult = new AgentRunResult();
         var sw = Stopwatch.StartNew();
 
         string? terminalError = null;
         try
         {
-            await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, runResult, cancellationToken))
+            await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, runResult, questionCts.Token))
             {
                 if (evt.Type == "error")
                 {
                     terminalError = evt.Data?.ToString();
                 }
             }
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && questionCts.IsCancellationRequested)
+        {
+            terminalError = $"Per-question timeout exceeded ({perQuestionTimeoutSec} s).";
         }
         catch (Exception ex)
         {
@@ -674,15 +727,42 @@ public class BenchmarkService
         var classification = BenchmarkProviderErrorClassifier.Classify(terminalError);
         var sanitized = BenchmarkAnswerSanitizer.Sanitize(runResult.FinalText);
 
-        var toolNames = runResult.ToolCalls
-            .Select(tc => tc.Name)
-            .Where(n => !string.IsNullOrEmpty(n))
-            .Distinct();
-        string toolSummary = string.Join(", ", toolNames);
+        var succeededCalls = runResult.ToolCalls
+            .Where(tc => tc.Status == "completed" && string.IsNullOrEmpty(tc.Error) && !string.IsNullOrEmpty(tc.Name))
+            .GroupBy(tc => tc.Name!)
+            .Select(g => $"{g.Key}×{g.Count()}")
+            .ToList();
+
+        int blockedCount = runResult.ToolCalls.Count(tc => tc.Error != null && tc.Error.Contains("Maximum tool calls per session exceeded"));
+        string toolSummary = string.Join(", ", succeededCalls);
+        if (blockedCount > 0)
+        {
+            toolSummary = string.IsNullOrEmpty(toolSummary)
+                ? $"None ({blockedCount} blocked by budget)"
+                : $"{toolSummary} ({blockedCount} blocked by budget)";
+        }
+
+        BenchmarkAnswerStatus status;
+        if (classification.IsProviderError)
+        {
+            status = BenchmarkAnswerStatus.ProviderError;
+        }
+        else if (!string.IsNullOrEmpty(terminalError))
+        {
+            status = BenchmarkAnswerStatus.Failed;
+        }
+        else if (sanitized.Flags.HasFlag(BenchmarkAnswerFlags.Empty))
+        {
+            status = BenchmarkAnswerStatus.EmptyAnswer;
+        }
+        else
+        {
+            status = BenchmarkAnswerStatus.Ok;
+        }
 
         answer.AnswerText = sanitized.AnswerText;
         answer.ThoughtText = sanitized.ThoughtText;
-        answer.Status = classification.IsProviderError ? BenchmarkAnswerStatus.ProviderError : (!string.IsNullOrEmpty(terminalError) ? BenchmarkAnswerStatus.Failed : BenchmarkAnswerStatus.Ok);
+        answer.Status = status;
         answer.AssessmentStatus = BenchmarkAssessmentStatus.Pending;
         answer.ErrorMessage = BenchmarkAssessmentFailure.Truncate(terminalError);
         answer.HttpStatusCode = classification.HttpStatus;
@@ -694,6 +774,11 @@ public class BenchmarkService
         answer.OutputTokens = runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens;
         answer.CacheReadInputTokens = runResult.CacheReadTokens;
         answer.CacheCreationInputTokens = runResult.CacheCreationTokens;
+        answer.ModelCallCount = runResult.ModelCallCount;
+        answer.ToolCallCount = runResult.ToolCallCount;
+        answer.ToolBudgetExhausted = runResult.ToolBudgetExhausted;
+        answer.TerminationReason = runResult.TerminationReason;
+        answer.AnswerFlags = (int)sanitized.Flags;
 
         await db.SaveChangesAsync(CancellationToken.None);
 
@@ -729,6 +814,7 @@ public class BenchmarkService
         answer.AssessmentStatus = BenchmarkAssessmentStatus.Assessing;
         await db.SaveChangesAsync(CancellationToken.None);
 
+        var allowedTools = _configuration.GetSection("Benchmark:AllowedTools").Get<List<string>>() ?? _defaultAllowedTools;
         string prompt = BenchmarkAssessmentPrompt.BuildPerQuestionPrompt(
             run.SuiteName,
             answer.OrderIndex,
@@ -737,7 +823,9 @@ public class BenchmarkService
             expectedPoints,
             answer.AnswerText,
             answer.Status,
-            answer.DurationMs);
+            allowedTools,
+            answer.ToolCallCount ?? 0,
+            answer.ToolBudgetExhausted);
 
         int assessorMaxTokens = _configuration.GetValue<int>("Benchmark:AssessorMaxOutputTokens", 32000);
 
@@ -829,11 +917,12 @@ public class BenchmarkService
             answer.ConcisenessScore = BenchmarkScoring.Score(res.ConcisenessLevel, constants.LevelScores);
             answer.ReadabilityScore = BenchmarkScoring.Score(res.ReadabilityLevel, constants.LevelScores);
 
-            var (qualityScore, _) = BenchmarkScoring.Quality(
+            var (qualityScore, rawQualityScore, _) = BenchmarkScoring.Quality(
                 res.AccuracyLevel, res.CompletenessLevel, res.ConcisenessLevel, res.ReadabilityLevel,
                 res.CriticalError, constants);
 
             answer.QualityScore = qualityScore;
+            answer.RawQualityScore = rawQualityScore;
             answer.SpeedScore = BenchmarkScoring.Speed(answer.DurationMs, constants);
             answer.Score = qualityScore; // Legacy field backfill
             answer.AssessmentStatus = BenchmarkAssessmentStatus.Scored;
@@ -1535,11 +1624,12 @@ public class BenchmarkService
             a.ConcisenessScore = BenchmarkScoring.Score(a.ConcisenessLevel!.Value, constants.LevelScores);
             a.ReadabilityScore = BenchmarkScoring.Score(a.ReadabilityLevel!.Value, constants.LevelScores);
 
-            var (quality, _) = BenchmarkScoring.Quality(
+            var (quality, rawQuality, _) = BenchmarkScoring.Quality(
                 a.AccuracyLevel.Value, a.CompletenessLevel.Value, a.ConcisenessLevel.Value, a.ReadabilityLevel.Value,
                 a.CriticalError, constants);
 
             a.QualityScore = quality;
+            a.RawQualityScore = rawQuality;
             a.SpeedScore = BenchmarkScoring.Speed(a.DurationMs, constants);
             a.Score = quality;
         }
@@ -1640,6 +1730,7 @@ public class BenchmarkService
             int maxTotalModelCalls = _configuration.GetValue<int>("Benchmark:MaxTotalModelCalls", 12);
             int maxResultLength = _configuration.GetValue<int>("Benchmark:MaxResultLength", 10000);
             int maxCallsPerSession = _configuration.GetValue<int>("Benchmark:MaxCallsPerSession", 50);
+            int maxToolCallsPerQuestion = _configuration.GetValue<int>("Benchmark:MaxToolCallsPerQuestion", 25);
 
             string systemPrompt = _chatService.BuildSystemPrompt(
                 wikiContext: Array.Empty<string>(),
@@ -1662,7 +1753,7 @@ public class BenchmarkService
             await ReExecuteSingleAnswerAsync(
                 db, configService, run, answer, testedConfig, testedApiKey,
                 systemPrompt, allowedTools, maxToolIterations, maxTotalModelCalls,
-                maxResultLength, maxCallsPerSession, cancellationToken);
+                maxResultLength, maxToolCallsPerQuestion, cancellationToken);
 
             await ExecutePerQuestionAssessmentAsync(
                 db, configService, run, answer, expectedPoints,

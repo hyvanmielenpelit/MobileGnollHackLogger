@@ -212,5 +212,51 @@ public class ToolExecutorRateLimitTests
         Assert.Equal(maxCalls, coordSuccesses);
         Assert.Equal(3, coordRateLimited);
     }
+
+    [Fact]
+    public async Task ExecuteAsync_ToolBudgetScopeId_LimitsAndExhaustsScopedBudget()
+    {
+        using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 10000 });
+        var handler = new TestServerToolHandler();
+        var executor = new ToolExecutor(
+            new[] { handler },
+            new NullClientBridge(),
+            NullLogger<ToolExecutor>.Instance,
+            cache,
+            CreateConfiguration());
+
+        const int maxCalls = 3;
+        var contextQ1 = new ToolExecutionContext
+        {
+            SessionId = 500,
+            ToolBudgetScopeId = "bench_run_1_q1",
+            MaxCallsPerSession = maxCalls
+        };
+        var contextQ2 = new ToolExecutionContext
+        {
+            SessionId = 500,
+            ToolBudgetScopeId = "bench_run_1_q2",
+            MaxCallsPerSession = maxCalls
+        };
+
+        // Q1 makes 5 calls
+        var q1Results = new List<ToolResult>();
+        for (int i = 0; i < 5; i++)
+        {
+            q1Results.Add(await executor.ExecuteAsync("test_tool", JsonDocument.Parse("{}").RootElement, contextQ1, CancellationToken.None));
+        }
+
+        // Q1: first 3 succeed, last 2 are rate limited with BudgetExhausted = true
+        Assert.Equal(3, q1Results.Count(r => r.Success));
+        Assert.Equal(2, q1Results.Count(r => !r.Success && r.BudgetExhausted));
+
+        // Q2 is independent even though same SessionId
+        var q2Results = new List<ToolResult>();
+        for (int i = 0; i < 3; i++)
+        {
+            q2Results.Add(await executor.ExecuteAsync("test_tool", JsonDocument.Parse("{}").RootElement, contextQ2, CancellationToken.None));
+        }
+        Assert.All(q2Results, r => Assert.True(r.Success));
+    }
 }
 

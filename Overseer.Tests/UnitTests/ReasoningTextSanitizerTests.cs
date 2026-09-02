@@ -136,4 +136,13 @@ public class ReasoningTextSanitizerTests
         string output = ReasoningTextSanitizer.SanitizeStateless(input);
         Assert.Equal(input, output);
     }
+
+    [Fact]
+    public void ToolRoutingMarker_WithControlTokensAndJsonLiteralBeforePayload_StrippedWhole()
+    {
+        var sanitizer = new ReasoningTextSanitizer();
+        string payload = "to=functions.search<|constrain|>json<|message|>{\"query\":\"vorpal blade\"} and answer text";
+        string output = sanitizer.Push(payload) + sanitizer.Flush();
+        Assert.Equal(" and answer text", output);
+    }
 }

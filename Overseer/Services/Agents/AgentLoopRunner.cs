@@ -441,6 +441,10 @@ public class AgentLoopRunner
                 for (int i = 0; i < outcomes.Count; i++)
                 {
                     var outcome = outcomes[i];
+                    if (outcome.BudgetExhausted)
+                    {
+                        result.ToolBudgetExhausted = true;
+                    }
 
                     bool exemptFromBatchBudget =
                         _toolExecutor.GetEffectiveMaxResultLength(outcome.ToolName, execContext.MaxResultLength)
@@ -529,6 +533,8 @@ public class AgentLoopRunner
             : hitBudgetLimit                          ? "budget_exhausted"
             : hitIterationLimit                       ? "iteration_limit"
             : "completed";
+        result.ModelCallCount = budget?.TotalModelCalls ?? 1;
+        result.ToolCallCount = result.ToolCalls.Count;
 
         var fullResponse = ReasoningTextSanitizer.SanitizeStateless(sbFullResponse.ToString());
         if (wasTruncatedByMaxTokens && !fullResponse.Contains("[Response truncated: output token limit reached.]"))

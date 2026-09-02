@@ -897,12 +897,21 @@ public class AdminBenchmarkController : ControllerBase
             FinalScore = run.FinalScore,
             ComputedScore = run.ComputedScore,
             QualityIndex = run.QualityIndex,
+            RawQualityIndex = BenchmarkScoring.QualityIndex(
+                run.Answers
+                    .Where(a => a.Status == BenchmarkAnswerStatus.Ok && a.QualityScore.HasValue)
+                    .Select(a => (a.RawQualityScore ?? a.QualityScore, a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty)))
+                    .ToList()),
             SpeedIndex = run.SpeedIndex,
             TotalAnswerDurationMs = run.TotalAnswerDurationMs,
             ScoringProfileId = run.ScoringProfileId,
             ScoringProfileName = run.ScoringProfile?.Name,
             ScoringProfileSnapshotJson = run.ScoringProfileSnapshotJson,
             ScoringMethodVersion = run.ScoringMethodVersion,
+            HarnessVersion = run.HarnessVersion,
+            MaxToolCallsPerQuestionUsed = run.MaxToolCallsPerQuestionUsed,
+            DegradedAnswerCount = run.DegradedAnswerCount,
+            ToolStarvedAnswerCount = run.ToolStarvedAnswerCount,
             DifficultyFallbackUsed = run.DifficultyFallbackUsed,
             SpeedMeasurementDegraded = run.SpeedMeasurementDegraded,
             MaxParallelQuestionsUsed = run.MaxParallelQuestionsUsed,
@@ -946,6 +955,7 @@ public class AdminBenchmarkController : ControllerBase
                 ConcisenessScore = a.ConcisenessScore,
                 ReadabilityScore = a.ReadabilityScore,
                 QualityScore = a.QualityScore,
+                RawQualityScore = a.RawQualityScore,
                 SpeedScore = a.SpeedScore,
                 ReviewComment = a.ReviewComment,
                 DurationMs = a.DurationMs,
@@ -956,6 +966,17 @@ public class AdminBenchmarkController : ControllerBase
                 OutputTokens = a.OutputTokens,
                 CacheReadInputTokens = a.CacheReadInputTokens,
                 CacheCreationInputTokens = a.CacheCreationInputTokens,
+                ModelCallCount = a.ModelCallCount,
+                ToolCallCount = a.ToolCallCount,
+                ToolBudgetExhausted = a.ToolBudgetExhausted,
+                TerminationReason = a.TerminationReason,
+                AnswerFlags = a.AnswerFlags,
+                AnswerFlagNames = ((BenchmarkAnswerFlags)a.AnswerFlags != BenchmarkAnswerFlags.None)
+                    ? Enum.GetValues<BenchmarkAnswerFlags>()
+                        .Where(f => f != BenchmarkAnswerFlags.None && ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(f))
+                        .Select(f => f.ToString())
+                        .ToList()
+                    : new List<string>(),
                 AssessedByModelConfigurationId = a.AssessedByModelConfigurationId,
                 AssessedByModelDisplayNameUsed = a.AssessedByModelDisplayNameUsed,
                 AssessedByModelProviderUsed = a.AssessedByModelProviderUsed,
@@ -1023,6 +1044,9 @@ public class AdminBenchmarkController : ControllerBase
                 SpeedMeasurementDegraded = r.SpeedMeasurementDegraded,
                 AnsweredQuestionCount = r.AnsweredQuestionCount,
                 TotalQuestionCount = r.TotalQuestionCount,
+                DegradedAnswerCount = r.DegradedAnswerCount,
+                ToolStarvedAnswerCount = r.ToolStarvedAnswerCount,
+                HarnessVersion = r.HarnessVersion,
                 TotalDurationMs = r.TotalDurationMs
             })
             .ToListAsync();

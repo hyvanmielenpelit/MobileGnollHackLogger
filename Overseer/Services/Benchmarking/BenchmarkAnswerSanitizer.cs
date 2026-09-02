@@ -3,8 +3,28 @@ namespace Overseer.Services.Benchmarking;
 using System;
 using System.Text;
 using System.Text.RegularExpressions;
+using MobileGnollHackLogger.Data;
 
-public record SanitizedAnswer(string AnswerText, string? ThoughtText);
+public record SanitizedAnswer(string AnswerText, string? ThoughtText, BenchmarkAnswerFlags Flags);
+
+public static class HarnessArtifactDetector
+{
+    private static readonly Regex FunctionsToRegex = new(@"to=functions\.", RegexOptions.Compiled);
+    private static readonly Regex ControlTokenRegex = new(@"<\|[a-zA-Z_]{1,32}\|>", RegexOptions.Compiled);
+    private static readonly Regex BareToolJsonLineRegex = new(@"^\s*\{.*""(?:repository|file_filter|function_name)"".*\}\s*$", RegexOptions.Compiled | RegexOptions.Multiline);
+
+    public static bool HasHarnessArtifacts(string? text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return false;
+        }
+
+        return FunctionsToRegex.IsMatch(text)
+            || ControlTokenRegex.IsMatch(text)
+            || BareToolJsonLineRegex.IsMatch(text);
+    }
+}
 
 public static class BenchmarkAnswerSanitizer
 {
@@ -15,7 +35,7 @@ public static class BenchmarkAnswerSanitizer
     {
         if (string.IsNullOrEmpty(text))
         {
-            return new SanitizedAnswer(string.Empty, null);
+            return new SanitizedAnswer(string.Empty, null, BenchmarkAnswerFlags.Empty);
         }
 
         // 1. Extract thought text
@@ -63,6 +83,24 @@ public static class BenchmarkAnswerSanitizer
         }
 
         string answerText = sbAnswer.ToString().Trim();
-        return new SanitizedAnswer(answerText, thoughtText);
+
+        var flags = BenchmarkAnswerFlags.None;
+        if (string.IsNullOrWhiteSpace(answerText))
+        {
+            flags |= BenchmarkAnswerFlags.Empty;
+        }
+
+        if (HarnessArtifactDetector.HasHarnessArtifacts(answerText))
+        {
+            flags |= BenchmarkAnswerFlags.HarnessArtifacts;
+        }
+
+        if ((answerText != null && (answerText.Contains("[Response truncated", StringComparison.OrdinalIgnoreCase) || answerText.Contains("[Answer truncated", StringComparison.OrdinalIgnoreCase))) ||
+            (text != null && (text.Contains("[Response truncated", StringComparison.OrdinalIgnoreCase) || text.Contains("[Answer truncated", StringComparison.OrdinalIgnoreCase))))
+        {
+            flags |= BenchmarkAnswerFlags.Truncated;
+        }
+
+        return new SanitizedAnswer(answerText, thoughtText, flags);
     }
 }

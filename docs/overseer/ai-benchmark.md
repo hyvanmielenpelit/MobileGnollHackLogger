@@ -52,9 +52,34 @@ Levels are scored on a 7-point scale mapped non-linearly to 100 points:
 | **5** | `87` | Comprehensive and insightful; accurate C macro/logic understanding. |
 | **6** | `100` | Flawless, authoritative, concise, and perfectly formatted. |
 
+### Speed Scoring Profiles
+Response speed is graded relative to a target latency and decay factor using:
+$$\text{Speed} = \text{clamp}\left(100 - k \cdot \log_2\left(\frac{\text{DurationMs}}{\text{TargetMs}}\right), 1, 100\right)$$
+
+Overseer supports configuring scoring profiles to accommodate different agent architectures:
+1. **Standard Intelligence Index** (Default / Interactive Agent Profile):
+   - **Target Latency (`SpeedTargetMs`):** 5,000 ms (5 s)
+   - **Decay Factor (`SpeedDecayK`):** 25.0
+   - **Max Parallel Questions:** 1 (Sequential, strict timing)
+   - **Intended Use:** Standard conversational models and interactive agents where rapid turn completion is desired. A 5-second response yields 100 points, decaying to 75 at 10s, 50 at 20s, and 25 at 40s.
+2. **Reasoning Agent Profile** (Deep Thinker Profile):
+   - **Target Latency (`SpeedTargetMs`):** 30,000 ms (30 s)
+   - **Decay Factor (`SpeedDecayK`):** 15.0
+   - **Max Parallel Questions:** 1 (Sequential)
+   - **Intended Use:** Heavy thinking models (e.g., Claude 3.7 Sonnet with extended thinking, OpenAI o-series) performing multi-step tool iterations, multi-file inspection, and extended reasoning traces. A 30-second response yields 100 points, decaying smoothly to 85 at 60s and 70 at 120s. Administrators can create this profile in the Scoring Profiles UI or API.
+
+### Harness Version 2 & Scoring Method Version 3 Updates
+With Harness Version 2 and Scoring Method Version 3:
+- **Per-Question Tool Budget**: Candidate models have a dedicated tool execution budget of **25 calls per question** (configured via `Benchmark:MaxToolCallsPerQuestion`, default: 25). The budget scope is uniquely keyed per question (`bench_{runId}_q{orderIndex}`) with a 1-hour cache expiration. Once exhausted, subsequent tool calls in that question are rejected with an explanatory error (`BudgetExhausted = true`), preventing runaway loops while allowing the model to summarize its findings.
+- **Unbiased Assessor Prompts**: Turn duration has been completely removed from per-question assessor prompts (`BuildPerQuestionPrompt`) to eliminate evaluator bias against thorough reasoning models.
+- **Harness Context Block**: Assessors receive a structured `Harness Context` detailing available tools, completed tool call count, and whether the tool budget was exhausted.
+- **Harness Artifact & Tool Unavailability Guidance**: Assessor instructions explicitly direct the evaluator not to dock scores when harness-imposed tool unavailability prevents information retrieval, and to treat raw tool call JSON, control tokens, and repetition as transport artifacts rather than model authoring flaws.
+- **Degradation Detection & Run Integrity**: Identifies degraded answers (`EmptyAnswer = 5`, or flags for harness artifacts, truncation, or tool starvation). Answers marked as `EmptyAnswer` are excluded from score indices. Runs containing any degraded or tool-starved answers are marked with status `CompletedWithErrors`.
+- **Raw Quality Index & Assessed Difficulty Bucketing**: Markdown reports display both the canonical difficulty-weighted Intelligence Index and the Raw Quality Index (showing critical error cap impact). The Difficulty Breakdown buckets results by `AssessedDifficulty` (Simple: 1–33, Intermediate: 34–66, Advanced: 67–100) alongside authored band distributions and non-monotonicity notices. All floating-point numbers format strictly under `CultureInfo.InvariantCulture`.
+
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).
-- **Speed Score**: $\text{Speed} = \text{clamp}(100 - 25 \cdot \log_2(\text{DurationMs} / 5000), 1, 100)$.
+- **Speed Score**: $\text{Speed} = \text{clamp}(100 - k \cdot \log_2(\text{DurationMs} / \text{TargetMs}), 1, 100)$.
 - **Intelligence Index**: $\sum(\text{Difficulty}(q) \cdot \text{Quality}(q)) / \sum(\text{Difficulty}(q))$.
 - **Speed Index**: $\sum(\text{Difficulty}(q) \cdot \text{Speed}(q)) / \sum(\text{Difficulty}(q))$.
 

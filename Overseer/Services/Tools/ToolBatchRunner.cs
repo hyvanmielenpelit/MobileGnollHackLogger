@@ -27,6 +27,7 @@ public sealed class ToolBatchOutcome
     public long ExecutionMs { get; init; }
     public List<MobileGnollHackLogger.Data.ChatMessageToolCall>? NestedToolCalls { get; init; }
     public string? TerminationStatus { get; init; }
+    public bool BudgetExhausted { get; init; }
 }
 
 public static class ToolBatchRunner
@@ -97,7 +98,8 @@ public static class ToolBatchRunner
                             QueueWaitMs = swQueue.ElapsedMilliseconds + (res.QueueWaitMs ?? 0),
                             ExecutionMs = res.ExecutionMs ?? swTool.ElapsedMilliseconds,
                             NestedToolCalls = res.NestedToolCalls,
-                            TerminationStatus = res.TerminationStatus ?? (res.Success ? "completed" : "error")
+                            TerminationStatus = res.TerminationStatus ?? (res.Success ? "completed" : "error"),
+                            BudgetExhausted = res.BudgetExhausted
                         };
                         events.TryWrite(outcome);
                         return outcome;
