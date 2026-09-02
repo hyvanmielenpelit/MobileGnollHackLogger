@@ -608,10 +608,10 @@
         @for (profile of scoringProfiles; track profile.id) {
           <div class="profile-item-card mb-15">
             <div class="profile-card-header">
-              <div class="flex-row align-items-center gap-10">
+              <div class="profile-identity">
                 <h4>{{ profile.name }}</h4>
                 @if (profile.isDefault) {
-                  <span class="default-badge">DEFAULT</span>
+                  <span class="default-badge">Default</span>
                 }
               </div>
               <div class="profile-card-actions">
@@ -628,11 +628,38 @@
                 }
               </div>
             </div>
-            <div class="profile-specs-grid">
-              <div><strong>Weights:</strong> Acc {{ profile.weightAccuracy * 100 }}%, Comp {{ profile.weightCompleteness * 100 }}%, Conc {{ profile.weightConciseness * 100 }}%, Read {{ profile.weightReadability * 100 }}%</div>
-              <div><strong>Speed Target:</strong> {{ profile.speedTargetMs }} ms (decay k = {{ profile.speedDecayK }})</div>
-              <div><strong>Max Parallel:</strong> {{ profile.maxParallelQuestions }} questions</div>
-              <div><strong>Levels:</strong> <code>{{ profile.levelScoresJson }}</code></div>
+
+            <div class="profile-weights">
+              <span class="weight-chip"><span class="weight-dim">Acc</span> <span class="weight-val">{{ (profile.weightAccuracy * 100) | number:'1.0-1' }}%</span></span>
+              <span class="weight-chip"><span class="weight-dim">Comp</span> <span class="weight-val">{{ (profile.weightCompleteness * 100) | number:'1.0-1' }}%</span></span>
+              <span class="weight-chip"><span class="weight-dim">Conc</span> <span class="weight-val">{{ (profile.weightConciseness * 100) | number:'1.0-1' }}%</span></span>
+              <span class="weight-chip"><span class="weight-dim">Read</span> <span class="weight-val">{{ (profile.weightReadability * 100) | number:'1.0-1' }}%</span></span>
+            </div>
+
+            <dl class="profile-spec-grid">
+              <div class="profile-spec">
+                <dt>Speed Target</dt>
+                <dd>{{ profile.speedTargetMs }} ms</dd>
+              </div>
+              <div class="profile-spec">
+                <dt>Speed Decay</dt>
+                <dd>k = {{ profile.speedDecayK }}</dd>
+              </div>
+              <div class="profile-spec">
+                <dt>Critical Ceiling</dt>
+                <dd>{{ profile.criticalErrorCeiling }}</dd>
+              </div>
+              <div class="profile-spec">
+                <dt>Max Parallel</dt>
+                <dd>{{ profile.maxParallelQuestions }}</dd>
+              </div>
+            </dl>
+
+            <div class="profile-spec-levels">
+              <span class="levels-caption">Levels:</span>
+              <div class="levels-code-wrapper">
+                <code>{{ profile.levelScoresJson }}</code>
+              </div>
             </div>
           </div>
         }
@@ -660,70 +687,109 @@
     </div>
     <div class="dialog-body">
       @if (profileValidationErrors.length > 0) {
-        <div class="alert alert-danger mb-15">
+        <div class="alert alert-danger mb-15" role="alert" aria-live="assertive">
+          <h4 class="visually-hidden">Profile could not be saved</h4>
           @for (err of profileValidationErrors; track err) {
             <div>{{ err }}</div>
           }
         </div>
       }
 
-      <div class="form-group mb-15">
-        <label for="profileNameInput">Profile Name</label>
-        <input id="profileNameInput" type="text" class="gh-input" [(ngModel)]="profileForm.name" placeholder="e.g. Speed-Weighted Profile">
-      </div>
+      <fieldset class="form-section">
+        <legend>Identity</legend>
+        <div class="form-group">
+          <label for="profileNameInput">Profile Name</label>
+          <input id="profileNameInput" type="text" class="gh-input" [(ngModel)]="profileForm.name" placeholder="e.g. Speed-Weighted Profile" aria-describedby="profileNameHint">
+          <span id="profileNameHint" class="form-hint">Shown in the scoring profile selector on the benchmark setup form. Names must be unique.</span>
+        </div>
+      </fieldset>
 
-      <div class="form-grid mb-15">
-        <div class="form-group">
-          <label for="weightAcc">Accuracy Weight (0.0 - 1.0)</label>
-          <input id="weightAcc" type="number" step="0.05" class="gh-input" [(ngModel)]="profileForm.weightAccuracy">
+      <fieldset class="form-section">
+        <legend>Dimension weights</legend>
+        <div class="form-help-block">
+          The evaluator rates each answer 0&ndash;6 on four dimensions. Each level is converted to points through the level score table below, then combined into one quality score as a weighted <strong>geometric</strong> mean:
+          <code>Quality = Acc<sup>wAcc</sup> &times; Comp<sup>wComp</sup> &times; Conc<sup>wConc</sup> &times; Read<sup>wRead</sup></code>, clamped to 1&ndash;100.
+          Because the mean is geometric, a near-zero score on any one dimension drags the whole result down &mdash; a weight cannot fully compensate for a collapsed dimension.
+          <strong>The four weights must sum to exactly 1.0</strong>; the profile is rejected on save otherwise.
         </div>
-        <div class="form-group">
-          <label for="weightComp">Completeness Weight</label>
-          <input id="weightComp" type="number" step="0.05" class="gh-input" [(ngModel)]="profileForm.weightCompleteness">
-        </div>
-        <div class="form-group">
-          <label for="weightConc">Conciseness Weight</label>
-          <input id="weightConc" type="number" step="0.05" class="gh-input" [(ngModel)]="profileForm.weightConciseness">
-        </div>
-        <div class="form-group">
-          <label for="weightRead">Readability Weight</label>
-          <input id="weightRead" type="number" step="0.05" class="gh-input" [(ngModel)]="profileForm.weightReadability">
-        </div>
-      </div>
-
-      <div class="form-group mb-15">
-        <label for="levelScoresInput">BARS Level Scores Array (JSON)</label>
-        <input id="levelScoresInput" type="text" class="gh-input" [(ngModel)]="profileForm.levelScoresJson" placeholder="[1, 15, 35, 55, 72, 87, 100]">
-      </div>
-
-      <div class="form-grid mb-15">
-        <div class="form-group">
-          <label for="speedTarget">Speed Target (ms)</label>
-          <input id="speedTarget" type="number" class="gh-input" [(ngModel)]="profileForm.speedTargetMs">
-        </div>
-        <div class="form-group">
-          <label for="speedDecay">Speed Decay (k)</label>
-          <input id="speedDecay" type="number" step="1" class="gh-input" [(ngModel)]="profileForm.speedDecayK">
-        </div>
-        <div class="form-group">
-          <label for="parallelLimit">Max Parallel Questions</label>
-          <input id="parallelLimit" type="number" min="1" max="10" class="gh-input" [(ngModel)]="profileForm.maxParallelQuestions">
-        </div>
-        <div class="form-group">
-          <label for="critCeiling">Critical Error Ceiling</label>
-          <input id="critCeiling" type="number" class="gh-input" [(ngModel)]="profileForm.criticalErrorCeiling">
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label class="gh-switch-wrapper d-flex align-items-center">
-          <div class="gh-switch">
-            <input type="checkbox" id="profileIsDefault" [(ngModel)]="profileForm.isDefault">
-            <span class="gh-slider"></span>
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="weightAcc">Accuracy Weight</label>
+            <input id="weightAcc" type="number" step="0.05" min="0" max="1" class="gh-input" [(ngModel)]="profileForm.weightAccuracy" aria-describedby="weightAccHint">
+            <span id="weightAccHint" class="form-hint">Factual correctness against GnollHack game and source-code facts. Default <code>0.55</code>.</span>
           </div>
-          <span class="ml-10">Set as Default Scoring Profile</span>
-        </label>
-      </div>
+          <div class="form-group">
+            <label for="weightComp">Completeness Weight</label>
+            <input id="weightComp" type="number" step="0.05" min="0" max="1" class="gh-input" [(ngModel)]="profileForm.weightCompleteness" aria-describedby="weightCompHint">
+            <span id="weightCompHint" class="form-hint">Coverage of the question &mdash; conditions, exceptions, and edge cases, not just the headline answer. Default <code>0.25</code>.</span>
+          </div>
+          <div class="form-group">
+            <label for="weightConc">Conciseness Weight</label>
+            <input id="weightConc" type="number" step="0.05" min="0" max="1" class="gh-input" [(ngModel)]="profileForm.weightConciseness" aria-describedby="weightConcHint">
+            <span id="weightConcHint" class="form-hint">Information density: how little padding, repetition, and filler surrounds the answer. Default <code>0.10</code>.</span>
+          </div>
+          <div class="form-group">
+            <label for="weightRead">Readability Weight</label>
+            <input id="weightRead" type="number" step="0.05" min="0" max="1" class="gh-input" [(ngModel)]="profileForm.weightReadability" aria-describedby="weightReadHint">
+            <span id="weightReadHint" class="form-hint">Structure, formatting, and how easily the answer can be scanned. Default <code>0.10</code>.</span>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset class="form-section">
+        <legend>Rating scale</legend>
+        <div class="form-group">
+          <label for="levelScoresInput">BARS Level Scores Array (JSON)</label>
+          <input id="levelScoresInput" type="text" class="gh-input" [(ngModel)]="profileForm.levelScoresJson" placeholder="[1, 15, 35, 55, 72, 87, 100]" aria-describedby="levelScoresHint">
+          <span id="levelScoresHint" class="form-hint">Maps each Behaviorally Anchored Rating Scale level (0&ndash;6) onto a point value used by the quality formula. Exactly <strong>7 integers</strong>, <strong>strictly ascending</strong>, each between <strong>1 and 100</strong>. The default <code>[1, 15, 35, 55, 72, 87, 100]</code> is spaced unevenly on purpose: the gaps are widest through the middle of the scale (20 points per level) and narrowest at the top (13 points), so competent answers separate more sharply than near-perfect ones. Widen the upper gaps to make top-end differences more decisive.</span>
+        </div>
+      </fieldset>
+
+      <fieldset class="form-section">
+        <legend>Speed</legend>
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="speedTarget">Speed Target (ms)</label>
+            <input id="speedTarget" type="number" min="1" class="gh-input" [(ngModel)]="profileForm.speedTargetMs" aria-describedby="speedTargetHint">
+            <span id="speedTargetHint" class="form-hint">The response time that scores a full 100 speed points. Speed is <code>100 - k &times; log2(duration / target)</code>, clamped to 1&ndash;100, so any answer at or faster than the target scores 100 and every doubling beyond it costs <code>k</code> points. Must be greater than 0. Default <code>5000</code>.</span>
+          </div>
+          <div class="form-group">
+            <label for="speedDecay">Speed Decay (k)</label>
+            <input id="speedDecay" type="number" step="1" min="1" class="gh-input" [(ngModel)]="profileForm.speedDecayK" aria-describedby="speedDecayHint">
+            <span id="speedDecayHint" class="form-hint">Speed points lost per doubling of response time past the target. At the default <code>25</code>, a response taking 4&times; the target scores 50 and one taking 8&times; scores 25. Higher values punish slow answers harder; lower values flatten the curve. Must be greater than 0.</span>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset class="form-section">
+        <legend>Execution</legend>
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="parallelLimit">Max Parallel Questions</label>
+            <input id="parallelLimit" type="number" min="1" max="10" class="gh-input" [(ngModel)]="profileForm.maxParallelQuestions" aria-describedby="parallelLimitHint">
+            <span id="parallelLimitHint" class="form-hint">How many of the suite's questions are sent to the target model simultaneously. <code>1</code> gives strict sequential timing. Above <code>1</code> the run finishes sooner in wall-clock time, but each recorded duration includes queueing against the concurrent requests &mdash; the run is flagged as concurrency-degraded and its <strong>Speed Index becomes advisory only</strong>. Minimum <code>1</code>.</span>
+          </div>
+          <div class="form-group">
+            <label for="critCeiling">Critical Error Ceiling</label>
+            <input id="critCeiling" type="number" min="1" max="100" class="gh-input" [(ngModel)]="profileForm.criticalErrorCeiling" aria-describedby="critCeilingHint">
+            <span id="critCeilingHint" class="form-hint">The highest quality score an answer may keep when the evaluator flags a <em>critical error</em> &mdash; a confidently asserted falsehood a player would act on to their direct detriment. Applied as a cap after the weighted score is computed: a flagged answer scoring above this value is reduced to it; one already below is left unchanged. Must be between 1 and 100. Default <code>25</code>.</span>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset class="form-section">
+        <legend>Availability</legend>
+        <div class="form-group">
+          <label class="gh-switch-wrapper d-flex align-items-center">
+            <div class="gh-switch">
+              <input type="checkbox" id="profileIsDefault" [(ngModel)]="profileForm.isDefault" aria-describedby="profileIsDefaultHint">
+              <span class="gh-slider"></span>
+            </div>
+            <span class="ml-10">Set as Default Scoring Profile</span>
+          </label>
+          <span id="profileIsDefaultHint" class="form-hint mt-10">The default profile is preselected on the benchmark setup form. Exactly one profile is the default at any time &mdash; turning this on clears the flag from the profile that currently holds it. The last remaining default cannot be un-set.</span>
+        </div>
+      </fieldset>
     </div>
     <div class="dialog-footer">
       <button class="btn-gh" (click)="scoringProfileFormDialog.close()">Cancel</button>
