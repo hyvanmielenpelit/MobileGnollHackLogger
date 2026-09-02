@@ -29,6 +29,7 @@ describe('AiModelFormComponent', () => {
       description: 'Claude 3.5 Sonnet v2',
       createdAt: 1710000000,
       supportedThinkingLevels: ['low', 'medium', 'high'],
+      defaultThinkingLevel: 'high',
       supportedReasoningModes: [],
       supportedReasoningSummaries: [],
       contextWindowSize: 200000,
@@ -579,6 +580,21 @@ describe('AiModelFormComponent', () => {
       expect(addComponent.pickerThinkingLevelSelect).toBe('low');
       expect(addComponent.maxInputTokens).toBe(100000);
       expect(addComponent.maxOutputTokens).toBe(4096);
+    });
+
+    it('should compute defaultThinkingLevelLabel correctly based on selected model defaultThinkingLevel', () => {
+      component.fetchModels();
+      component.pickerModelSelect = 'claude-3-5-sonnet';
+      component.onPickerModelSelect();
+      expect(component.defaultThinkingLevelLabel).toBe('Default (Adaptive, High)');
+
+      component.pickerModelSelect = 'gpt-4o';
+      component.onPickerModelSelect();
+      expect(component.defaultThinkingLevelLabel).toBe('Default');
+
+      component.pickerModelSelect = 'custom';
+      component.onPickerModelSelect();
+      expect(component.defaultThinkingLevelLabel).toBe('Default');
     });
   });
 });

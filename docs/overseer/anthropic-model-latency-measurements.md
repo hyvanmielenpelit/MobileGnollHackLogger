@@ -100,6 +100,8 @@ comparison mean anything. `display` matters for the same reason: under `"omitted
 thinking blocks still stream but carry empty text, which moves when the first content-bearing
 delta arrives and so distorts TTFT.
 
+*(Note: As of 2026-09-02, the "set effort explicitly" half of this caveat is enforced directly in Overseer's `AnthropicProvider` code; the `display` half is not, so `display` still defaults per-model when no reasoning summary is chosen.)*
+
 ### What the three timestamps mean
 
 | Metric | Definition |

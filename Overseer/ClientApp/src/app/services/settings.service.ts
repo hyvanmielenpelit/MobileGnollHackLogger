@@ -44,6 +44,7 @@ export interface ApiModelDto {
   isRecommended?: boolean;
   recommendationRank?: number;
   recommendedThinkingLevel?: string;
+  defaultThinkingLevel?: string;
 }
 
 export interface UserAiModel {

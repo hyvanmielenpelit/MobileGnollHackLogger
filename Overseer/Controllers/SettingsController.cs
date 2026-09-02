@@ -508,7 +508,18 @@ public class SettingsController : ControllerBase
                                 }
                             }
                             
-                            models.Add(new ApiModelDto { Id = name, DisplayName = meta.DisplayName, CreatedAt = created, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels, SupportedReasoningModes = meta.SupportedReasoningModes, SupportedReasoningSummaries = meta.SupportedReasoningSummaries, ContextWindowSize = meta.ContextWindowSize, MaxInputTokens = meta.MaxInputTokens, MaxOutputTokens = meta.MaxOutputTokens });
+                            var apiModelDto = new ApiModelDto { Id = name, DisplayName = meta.DisplayName, CreatedAt = created, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels, SupportedReasoningModes = meta.SupportedReasoningModes, SupportedReasoningSummaries = meta.SupportedReasoningSummaries, ContextWindowSize = meta.ContextWindowSize, MaxInputTokens = meta.MaxInputTokens, MaxOutputTokens = meta.MaxOutputTokens };
+
+                            var anthropicDefaultEffort = _configuration.GetValue<string>("AnthropicSettings:ExplicitDefaultEffort") ?? "high";
+                            // Left null when disabled: behaviour then reverts to the model's own API default, which
+                            // differs per model and is exactly the case the UI must not claim to know.
+                            if (!string.IsNullOrEmpty(anthropicDefaultEffort)
+                                && !string.Equals(anthropicDefaultEffort, "none", StringComparison.OrdinalIgnoreCase))
+                            {
+                                apiModelDto.DefaultThinkingLevel = anthropicDefaultEffort;
+                            }
+
+                            models.Add(apiModelDto);
                         }
                     }
                 }
@@ -599,6 +610,13 @@ public class ApiModelDto
     public bool IsRecommended { get; set; }
     public int RecommendationRank { get; set; }
     public string? RecommendedThinkingLevel { get; set; }
+
+    /// <summary>
+    /// The effort level the provider will actually receive when the user selects "Default".
+    /// Null when the effective behaviour is not knowable (non-Anthropic providers, or the
+    /// kill switch is engaged) — the client then shows a plain "Default".
+    /// </summary>
+    public string? DefaultThinkingLevel { get; set; }
 }
 
 public class UpdateSettingsRequest

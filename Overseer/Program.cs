@@ -87,6 +87,15 @@ builder.Services.AddHttpClient("SentryTunnel", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(15);
 });
+builder.Services.AddHttpClient("AiProvider", client =>
+{
+    // Adaptive thinking makes both time-to-first-token and total stream duration longer,
+    // and HttpClient.Timeout bounds the whole streamed response, not just the headers.
+    // The framework default of 100s is too tight for high-effort agentic turns, and a
+    // timeout here is a hard user-visible failure with no retry (AgentLoopRunner).
+    client.Timeout = TimeSpan.FromSeconds(
+        builder.Configuration.GetValue<int>("AiRateLimitSettings:RequestTimeoutSeconds", 600));
+});
 builder.Services.AddSingleton<WikiService>();
 builder.Services.AddSingleton<NetHackWikiService>();
 builder.Services.AddSingleton<SourceCodeService>();

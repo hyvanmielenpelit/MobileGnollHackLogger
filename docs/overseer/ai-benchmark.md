@@ -161,3 +161,10 @@ Compliance review must be revisited if:
 2. Benchmark completions are used for automated ingestion, distillation, or downstream model tuning.
 3. Daily run volumes or suite question sizes are increased by orders of magnitude.
 4. AI providers update commercial use or evaluation terms.
+
+---
+
+## 6. Thinking Level Configuration & Output Limits
+
+- **Pin Explicit Thinking Levels**: Benchmark and assessor System AI Configurations should pin an explicit **Thinking Level** (e.g. `high`, `medium`, or `none`). Leaving it on `Default` makes a run's reasoning behavior depend on the model and on `AnthropicSettings:ExplicitDefaultEffort`, which can compromise run-to-run comparability over time.
+- **Assessor Token Limits (`AssessorMaxOutputTokens`)**: Evaluator and assessor completions share their `max_tokens` budget with internal reasoning/thinking output. The default fallback limit (`Benchmark:AssessorMaxOutputTokens`) is set to `32000` to prevent assessor evaluation JSON completions from being prematurely truncated when thinking is enabled. Individual assessor configurations can override this fallback using their per-configuration `MaxOutputTokens` setting.

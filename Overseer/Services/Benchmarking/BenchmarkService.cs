@@ -745,7 +745,7 @@ public class BenchmarkService
             answer.Status,
             answer.DurationMs);
 
-        int assessorMaxTokens = _configuration.GetValue<int>("Benchmark:AssessorMaxOutputTokens", 4096);
+        int assessorMaxTokens = _configuration.GetValue<int>("Benchmark:AssessorMaxOutputTokens", 32000);
 
         var runRequest = new AgentRunRequest
         {
@@ -896,7 +896,7 @@ public class BenchmarkService
 
         string synthesisPrompt = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt(run.SuiteName, summaries);
 
-        int assessorMaxTokens = _configuration.GetValue<int>("Benchmark:AssessorMaxOutputTokens", 8192);
+        int assessorMaxTokens = _configuration.GetValue<int>("Benchmark:AssessorMaxOutputTokens", 32000);
 
         var runRequest = new AgentRunRequest
         {

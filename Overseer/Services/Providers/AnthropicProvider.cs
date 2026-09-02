@@ -121,7 +121,14 @@ public class AnthropicProvider : IAiProvider
             req["system"] = systemContent;
         }
 
-        if (!string.IsNullOrEmpty(thinkingLevel))
+        // Anthropic is the only provider where omitting `thinking` is ambiguous: it runs adaptive
+        // thinking on the 5-series but no thinking at all on Opus 4.6/4.7/4.8 and Sonnet 4.6. Google
+        // and OpenAI omit-when-empty by design; do not "harmonise" this back to that pattern.
+        string effectiveEffort = !string.IsNullOrEmpty(thinkingLevel)
+            ? thinkingLevel
+            : _configuration.GetValue<string>("AnthropicSettings:ExplicitDefaultEffort") ?? "high";
+
+        if (!string.IsNullOrEmpty(effectiveEffort) && !string.Equals(effectiveEffort, "none", StringComparison.OrdinalIgnoreCase))
         {
             if (!string.IsNullOrEmpty(reasoningSummary) && reasoningSummary != "default")
             {
@@ -131,7 +138,7 @@ public class AnthropicProvider : IAiProvider
             {
                 req["thinking"] = new { type = "adaptive" };
             }
-            req["output_config"] = new { effort = thinkingLevel };
+            req["output_config"] = new { effort = effectiveEffort };
         }
 
         if (!string.IsNullOrEmpty(serviceTier) && !string.Equals(serviceTier, "none", StringComparison.OrdinalIgnoreCase))

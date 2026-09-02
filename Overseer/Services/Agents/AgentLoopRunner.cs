@@ -87,7 +87,7 @@ public class AgentLoopRunner
             effectiveMaxOutputTokens = Math.Min(effectiveMaxOutputTokens.Value, runMetadata.MaxOutputTokens);
         }
 
-        var httpClient = _httpClientFactory.CreateClient();
+        var httpClient = _httpClientFactory.CreateClient("AiProvider");
         long? apiCallStartTime = null;
         int? timeToFirstTokenMs = null;
         int toolIterations = 0;

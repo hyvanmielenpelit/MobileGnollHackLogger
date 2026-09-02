@@ -619,6 +619,12 @@ export class AiModelFormComponent implements OnInit {
     }
   }
 
+  /** Label for the "Default" option: states what Default will actually do, when that is knowable. */
+  get defaultThinkingLevelLabel(): string {
+    const lvl = this.selectedModelObj?.defaultThinkingLevel;
+    return lvl ? `Default (Adaptive, ${this.formatThinkingLevel(lvl)})` : 'Default';
+  }
+
   formatThinkingLevel(level: string): string {
     if (!level) return 'Default';
     return level.charAt(0).toUpperCase() + level.slice(1);

@@ -55,10 +55,11 @@ When working on AI integration within the Overseer project (e.g., `ChatService.c
      - **`claude-opus-4-6` ignores output-format instructions** far more than its siblings (it
        returned markdown-bolded answers on 20 of 24 calls despite being told to reply with the bare value).
    > [!IMPORTANT]
-   > **`thinking` and `display` defaults differ per model, and this silently corrupts comparisons.**
-   > Omitting `thinking` runs **adaptive** on Fable 5, Opus 5, and Sonnet 5, but runs **no thinking at
+   > **`thinking` and `display` defaults differ per model at the API level, and this silently corrupts direct comparisons.**
+   > At the raw Anthropic API level, omitting `thinking` runs **adaptive** on Fable 5, Opus 5, and Sonnet 5, but runs **no thinking at
    > all** on Opus 4.8, 4.7, 4.6, and Sonnet 4.6. `display` defaults to `omitted` everywhere except
-   > Opus 4.6 and Sonnet 4.6, where it is `summarized`. Always set both explicitly when comparing
-   > models or measuring latency.
+   > Opus 4.6 and Sonnet 4.6, where it is `summarized`.
+   >
+   > **Application guarantee**: Within Overseer, `AnthropicProvider` always sends `thinking: {type:"adaptive"}` and an explicit effort (controlled by `AnthropicSettings:ExplicitDefaultEffort`, defaulting to `high`) even when Thinking Level is left on `Default`. However, `display` is still omitted when no reasoning summary is chosen, so the underlying `display` difference remains in effect for reasoning summaries. Always set both explicitly when making raw API comparisons or measuring latency.
    > **The latency figures expire** - they are a 12-minute snapshot. The structural findings above
    > are the durable part.
