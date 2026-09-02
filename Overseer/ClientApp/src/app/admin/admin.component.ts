@@ -6,6 +6,11 @@ import { AdminService, UserDto, GroupDto, SystemAiConfigDto, UserSystemAiConfigD
 import { AiModelFormComponent, AiModelFormResult } from '../shared/ai-model-form/ai-model-form.component';
 import { ConfigAnalyticsComponent } from './config-analytics/config-analytics.component';
 import { AdminBenchmarkComponent } from './benchmark/benchmark.component';
+import { ConfigFilterComponent } from './config-filter/config-filter.component';
+import {
+  ConfigFilter, createEmptyFilter, isFilterActive, matchesFilter, ROLE_OPTIONS
+} from './config-filter/config-filter.model';
+import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../utils/polyfills.util';
 import { Subject, Subscription } from 'rxjs';
 import { debounceTime } from 'rxjs/operators';
 
@@ -15,7 +20,7 @@ export type AdminTabId =
 
 @Component({
     selector: 'app-admin',
-    imports: [CommonModule, FormsModule, RouterModule, AiModelFormComponent, ConfigAnalyticsComponent, AdminBenchmarkComponent],
+    imports: [CommonModule, FormsModule, RouterModule, AiModelFormComponent, ConfigAnalyticsComponent, AdminBenchmarkComponent, ConfigFilterComponent],
     templateUrl: './admin.component.html',
     changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './admin.component.scss'
@@ -60,6 +65,70 @@ export class AdminComponent implements OnInit, OnDestroy {
   users: UserDto[] = [];
   groups: GroupDto[] = [];
   configs: SystemAiConfigDto[] = [];
+  configFilter: ConfigFilter = createEmptyFilter();
+  visibleConfigs: SystemAiConfigDto[] = [];
+
+  get isConfigFilterActive(): boolean {
+    return isFilterActive(this.configFilter);
+  }
+
+  applyConfigFilters(): void {
+    this.visibleConfigs = this.configs.filter(c => matchesFilter(c, this.configFilter));
+  }
+
+  onConfigFilterChange(next: ConfigFilter): void {
+    this.configFilter = next;
+    this.applyConfigFilters();
+    this.persistConfigFilter();
+  }
+
+  clearConfigFilters(): void {
+    this.onConfigFilterChange(createEmptyFilter());
+  }
+
+  private static readonly FILTER_STORAGE_KEY = 'overseer_admin_config_filters';
+
+  persistConfigFilter(): void {
+    try {
+      localStorage.setItem(
+        AdminComponent.FILTER_STORAGE_KEY, JSON.stringify(this.configFilter));
+    } catch {
+      // Storage can throw in private-browsing modes. A filter that fails to persist
+      // is not worth surfacing to the user.
+    }
+  }
+
+  restoreConfigFilter(): void {
+    let parsed: unknown;
+    try {
+      const stored = localStorage.getItem(AdminComponent.FILTER_STORAGE_KEY);
+      if (!stored) { return; }
+      parsed = JSON.parse(stored);
+    } catch {
+      return;                                   // leaves the field's createEmptyFilter()
+    }
+
+    // Whitelist every field. Anything unrecognised is dropped rather than trusted:
+    // an unknown role bit or provider produces a chip with no label and a list the
+    // user cannot get back from.
+    const raw = parsed as Partial<ConfigFilter> | null;
+    if (!raw || typeof raw !== 'object') { return; }
+
+    const knownRoles = ROLE_OPTIONS.map(o => o.bit);
+    const next = createEmptyFilter();
+
+    if (Array.isArray(raw.roles)) {
+      next.roles = raw.roles.filter(
+        (r): r is number => typeof r === 'number' && knownRoles.includes(r));
+    }
+    if (Array.isArray(raw.providers)) {
+      next.providers = raw.providers.filter(
+        (p): p is string => typeof p === 'string' && this.adminProviders.includes(p));
+    }
+    next.roleMatchMode = raw.roleMatchMode === 'all' ? 'all' : 'any';
+
+    this.configFilter = next;
+  }
   
   get assignableConfigs(): SystemAiConfigDto[] {
     return this.configs.filter(c => !c.isSystemWide);
@@ -207,6 +276,8 @@ export class AdminComponent implements OnInit, OnDestroy {
   processingConfigs: number[] = [];
 
   ngOnInit() {
+    ensureOverlayPolyfills();
+    this.restoreConfigFilter();
     this.todayDate = this.formatLocalDate(new Date());
 
     this.filterSub = this.filterSubject.pipe(
@@ -326,6 +397,7 @@ export class AdminComponent implements OnInit, OnDestroy {
             this.adminService.getSystemConfigs().subscribe({
               next: (c) => {
                 this.configs = c;
+                this.applyConfigFilters();
                 this.loading = false;
               },
               error: () => {
@@ -505,6 +577,7 @@ export class AdminComponent implements OnInit, OnDestroy {
         this.adminService.deleteSystemConfig(config.id).subscribe({
           next: () => {
             this.configs = this.configs.filter(c => c.id !== config.id);
+            this.applyConfigFilters();
           },
           error: () => {}
         });
@@ -605,6 +678,7 @@ export class AdminComponent implements OnInit, OnDestroy {
           const idx = this.configs.findIndex(c => c.id === this.limitEntityId);
           if (idx !== -1) {
             this.configs[idx] = { ...this.configs[idx], ...payload } as any;
+            this.applyConfigFilters();
           }
         }
         
@@ -1018,40 +1092,40 @@ export class AdminComponent implements OnInit, OnDestroy {
     }
   }
 
-  onConfigDrop(event: DragEvent, dropIndex: number) {
+  onConfigDrop(event: DragEvent, dropIndex: number): void {
     event.preventDefault();
     const targetItem = (event.target as HTMLElement).closest('.model-item');
+    targetItem?.classList.remove('drag-over-top', 'drag-over-bottom');
+    if (!event.dataTransfer) { return; }
+
+    const raw = event.dataTransfer.getData('text/plain');
+    if (raw === '') { return; }
+    const dragIndex = parseInt(raw, 10);
+    if (Number.isNaN(dragIndex) || dragIndex === dropIndex) { return; }
+
+    const dragged = this.visibleConfigs[dragIndex];
+    const target  = this.visibleConfigs[dropIndex];
+    if (!dragged || !target) { return; }
+
+    // Drop below the target's midpoint means "after"; above means "before".
+    let after = false;
     if (targetItem) {
-      targetItem.classList.remove('drag-over-top', 'drag-over-bottom');
+      const rect = targetItem.getBoundingClientRect();
+      after = event.clientY >= rect.top + rect.height / 2;
     }
-    
-    if (event.dataTransfer) {
-      const dragIndexStr = event.dataTransfer.getData('text/plain');
-      if (dragIndexStr !== undefined && dragIndexStr !== '') {
-        const dragIndex = parseInt(dragIndexStr, 10);
-        if (dragIndex !== dropIndex) {
-          const item = this.configs[dragIndex];
-          this.configs.splice(dragIndex, 1);
-          
-          let insertIndex = dropIndex;
-          if (targetItem) {
-             const rect = targetItem.getBoundingClientRect();
-             const midY = rect.top + rect.height / 2;
-             if (event.clientY >= midY) {
-               insertIndex++;
-             }
-             if (dragIndex < dropIndex && event.clientY < midY) {
-                // Adjustment if dragging downwards but dropping on top half
-             } else if (dragIndex < dropIndex) {
-               insertIndex--;
-             }
-          }
-          
-          this.configs.splice(insertIndex, 0, item);
-          this.saveConfigOrder();
-        }
-      }
-    }
+
+    const from = this.configs.indexOf(dragged);
+    if (from === -1) { return; }
+    this.configs.splice(from, 1);
+
+    // Recompute the target's position AFTER the removal, or the index is off by one
+    // whenever the dragged config sat before the target.
+    const targetPos = this.configs.indexOf(target);
+    if (targetPos === -1) { this.configs.splice(from, 0, dragged); return; }
+    this.configs.splice(after ? targetPos + 1 : targetPos, 0, dragged);
+
+    this.applyConfigFilters();
+    this.saveConfigOrder();
   }
 
   saveConfigOrder() {
@@ -1119,7 +1193,9 @@ export class AdminComponent implements OnInit, OnDestroy {
 
   selectTab(tab: AdminTabId) {
     this.activeTab = tab;
-    if (tab === 'database') {
+    if (tab === 'configs') {
+      setTimeout(() => refreshAnchorPositioning(), 0);
+    } else if (tab === 'database') {
       this.loadStorageMetrics();
     } else if (tab === 'telemetry') {
       if (!this.telemetryStartDate && !this.telemetryEndDate) {

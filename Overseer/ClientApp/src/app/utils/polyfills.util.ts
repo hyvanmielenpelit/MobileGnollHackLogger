@@ -1,4 +1,5 @@
 let loaded = false;
+let anchorPolyfill: (() => Promise<unknown>) | null = null;
 
 /**
  * Conditionally loads the popover, interest-invoker, and anchor-positioning
@@ -24,8 +25,23 @@ export function ensureOverlayPolyfills(): void {
       .catch(err => console.warn('Failed to load interestfor polyfill', err));
   }
   if (!('anchorName' in document.documentElement.style)) {
-    // @ts-ignore - package ships no type declarations
-    import('@oddbird/css-anchor-positioning')
+    import('@oddbird/css-anchor-positioning/fn')
+      .then(mod => {
+        anchorPolyfill = mod.default;
+        return anchorPolyfill();
+      })
       .catch(err => console.warn('Failed to load anchor positioning polyfill', err));
   }
+}
+
+/**
+ * Re-runs the anchor-positioning polyfill after anchors or targets have been added
+ * to the DOM. The polyfill does not observe DOM mutations, so a control rendered
+ * behind an @if — an admin tab panel, for instance — is invisible to its first scan.
+ *
+ * A no-op where the browser supports anchor positioning natively, and safe to call
+ * before the polyfill has finished loading.
+ */
+export function refreshAnchorPositioning(): void {
+  anchorPolyfill?.().catch(err => console.warn('Anchor positioning refresh failed', err));
 }

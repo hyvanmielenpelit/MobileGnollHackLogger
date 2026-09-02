@@ -216,7 +216,6 @@
   top: 0;
   z-index: 10;
   display: flex;
-  justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
   gap: 15px;
@@ -230,9 +229,22 @@
   
   h3 {
     margin: 0;
+    margin-inline-end: auto;
     line-height: 1.2;
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
   }
+
+  @media (max-width: 600px) {
+    h3 {
+      width: 100%;
+    }
+  }
+}
+
+.results-count {
+  font-size: 0.85rem;
+  color: #8b949e;
+  margin: 0 0 15px 0;
 }
 
 .btn-gh-wide {

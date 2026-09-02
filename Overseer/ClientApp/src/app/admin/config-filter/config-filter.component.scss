@@ -1,0 +1,218 @@
+:host {
+  display: contents;
+}
+
+.config-filter-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.config-filter-panel {
+  position: absolute;
+  position-anchor: --config-filter-trigger;
+  inset: auto;
+  top: calc(anchor(bottom) + 8px);
+  right: anchor(right);
+  margin: 0;
+  min-width: 450px;
+  max-width: min(500px, calc(100vw - 32px));
+
+  /* Polyfill-independent containment: even if position fallbacks never fire,
+     the panel cannot run off the bottom of the viewport. */
+  max-height: min(70svh, 520px);
+  overflow-y: auto;
+
+  #{'position-try-fallbacks'}: flip-block, flip-inline;
+
+  /* glassmorphism matching .gh-dialog */
+  background: rgba(20, 20, 20, 0.95);
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  color: white;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  padding: 16px;
+  z-index: 1000;
+}
+
+/* MANDATORY: the polyfill cannot define :popover-open and applies a class instead.
+   A browser that does not understand :popover-open discards the whole rule, so the
+   two must be combined with :is(). */
+.config-filter-panel:is(:popover-open, .\:popover-open) {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.facet {
+  border: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  legend {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--title-color, #e0ba6d);
+    margin-bottom: 4px;
+    padding: 0;
+  }
+}
+
+.match-mode {
+  border: none;
+  padding: 4px 0 0 12px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+
+  &[disabled] {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+}
+
+.checkbox-row,
+.radio-row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.filter-count-badge {
+  position: absolute;
+  top: 0px;
+  right: 0px;
+  background: var(--primary-color);
+  color: black;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  min-height: 28px;
+}
+
+.panel-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08);
+  color: #f0f6fc;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.35);
+  }
+
+  .chip-x {
+    display: inline-block;
+    flex-shrink: 0;
+    opacity: 0.7;
+    transition: opacity 0.15s ease;
+  }
+
+  &:hover .chip-x {
+    opacity: 1;
+  }
+}
+
+.filter-chip-static {
+  cursor: default;
+  background: transparent;
+  border: 1px dashed rgba(255, 255, 255, 0.25);
+  color: #8b949e;
+  font-style: italic;
+
+  &:hover {
+    background: transparent;
+    border-color: rgba(255, 255, 255, 0.25);
+  }
+}
+
+@media (max-width: 600px) {
+  .config-filter-panel {
+    /* !important is required, not stylistic: the anchor-positioning polyfill writes its
+       computed insets as inline styles, and a normal author declaration loses to those.
+       An author !important declaration beats a normal inline one, so this wins. */
+    position: fixed !important;
+    inset: auto 0 0 0 !important;
+    top: auto !important;
+    left: 0 !important;
+    max-width: none !important;
+    width: 100%;
+    max-height: 80svh;
+    overflow-y: auto;
+    border-radius: 16px 16px 0 0;
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+
+  .checkbox-label {
+    min-height: 44px;
+  }
+
+  .filter-chips {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    overscroll-behavior-x: contain;
+    padding-bottom: 4px;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @media (max-width: 600px) {
+    .config-filter-panel:is(:popover-open, .\:popover-open) {
+      animation: slide-up 0.2s ease-out;
+    }
+
+    @keyframes slide-up {
+      from {
+        transform: translateY(100%);
+      }
+      to {
+        transform: translateY(0);
+      }
+    }
+  }
+}

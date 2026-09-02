@@ -5,6 +5,7 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { of, throwError } from 'rxjs';
 import { AdminComponent } from './admin.component';
 import { AdminService, UsersResponse, GroupDto, SystemAiConfigDto } from '../services/admin.service';
+import { createEmptyFilter } from './config-filter/config-filter.model';
 
 describe('AdminComponent', () => {
   let component: AdminComponent;
@@ -272,6 +273,163 @@ describe('AdminComponent', () => {
       component.activeRateLimitTab = 'title';
       component.onRateLimitTabKeydown(new KeyboardEvent('keydown', { key: 'Enter' }), 1);
       expect(component.activeRateLimitTab).toBe('title');
+    });
+  });
+
+  describe('System AI Configurations Filtering and Reordering', () => {
+    const createMockConfig = (id: number, displayName: string, provider: string, modelRole: number): SystemAiConfigDto => ({
+      id,
+      displayName,
+      provider,
+      modelId: displayName.toLowerCase().replace(/\s+/g, '-'),
+      thinkingLevel: null,
+      reasoningMode: null,
+      reasoningSummary: null,
+      serviceTier: null,
+      maxInputTokens: null,
+      maxOutputTokens: null,
+      orderIndex: id,
+      isEnabled: true,
+      hasApiKey: true,
+      isSystemWide: false,
+      maxDailyChatRequests: null,
+      maxMonthlyChatRequests: null,
+      maxTotalChatRequests: null,
+      dailyChatRequestsCount: 0,
+      monthlyChatRequestsCount: 0,
+      totalChatRequestsCount: 0,
+      maxDailyTitleRequests: null,
+      maxMonthlyTitleRequests: null,
+      maxTotalTitleRequests: null,
+      dailyTitleRequestsCount: 0,
+      monthlyTitleRequestsCount: 0,
+      totalTitleRequestsCount: 0,
+      maxDailyChatTokens: null,
+      maxMonthlyChatTokens: null,
+      maxTotalChatTokens: null,
+      dailyChatTokensCount: 0,
+      monthlyChatTokensCount: 0,
+      totalChatTokensCount: 0,
+      maxDailyTitleTokens: null,
+      maxMonthlyTitleTokens: null,
+      maxTotalTitleTokens: null,
+      dailyTitleTokensCount: 0,
+      monthlyTitleTokensCount: 0,
+      totalTitleTokensCount: 0,
+      modelRole,
+      parallelExecutionMode: 0,
+      note: null
+    });
+
+    it('visibleConfigs equals configs with an empty filter', () => {
+      const configs = [
+        createMockConfig(1, 'Config 1', 'OpenAI', 1),
+        createMockConfig(2, 'Config 2', 'Google', 2)
+      ];
+      component.configs = configs;
+      component.configFilter = createEmptyFilter();
+      component.applyConfigFilters();
+      expect(component.visibleConfigs).toEqual(configs);
+    });
+
+    it('visibleConfigs narrows correctly when configFilter is set and applyConfigFilters runs', () => {
+      const configs = [
+        createMockConfig(1, 'Config 1', 'OpenAI', 1),
+        createMockConfig(2, 'Config 2', 'Google', 2),
+        createMockConfig(3, 'Config 3', 'Anthropic', 1)
+      ];
+      component.configs = configs;
+      component.configFilter = { roles: [1], roleMatchMode: 'any', providers: ['OpenAI'] };
+      component.applyConfigFilters();
+      expect(component.visibleConfigs.length).toBe(1);
+      expect(component.visibleConfigs[0].id).toBe(1);
+    });
+
+    it('dragging inside a filtered view reorders the right configs in the full array', () => {
+      spyOn(adminService, 'reorderSystemConfigs').and.returnValue(of(true as any));
+      // 5 configs: A (Chat), B (Title), C (Chat), D (Title), E (Chat)
+      const c1 = createMockConfig(1, 'A', 'OpenAI', 1);
+      const c2 = createMockConfig(2, 'B', 'Google', 2);
+      const c3 = createMockConfig(3, 'C', 'OpenAI', 1);
+      const c4 = createMockConfig(4, 'D', 'Anthropic', 2);
+      const c5 = createMockConfig(5, 'E', 'OpenAI', 1);
+
+      component.configs = [c1, c2, c3, c4, c5];
+      // Filter to Chat (role 1) -> visibleConfigs are [c1, c3, c5]
+      component.configFilter = { roles: [1], roleMatchMode: 'any', providers: [] };
+      component.applyConfigFilters();
+      expect(component.visibleConfigs.map(c => c.id)).toEqual([1, 3, 5]);
+
+      // Drop visible index 2 (c5) onto visible index 0 (c1) (before midpoint, after = false)
+      const dropEvent = {
+        preventDefault: () => {},
+        clientY: 10,
+        target: {
+          closest: () => ({
+            classList: { remove: () => {} },
+            getBoundingClientRect: () => ({ top: 0, height: 40 })
+          })
+        },
+        dataTransfer: {
+          getData: () => '2'
+        }
+      } as any;
+
+      component.onConfigDrop(dropEvent, 0);
+
+      // c5 should now be before c1 in the global configs array: [c5, c1, c2, c3, c4]
+      expect(component.configs.map(c => c.id)).toEqual([5, 1, 2, 3, 4]);
+      expect(adminService.reorderSystemConfigs).toHaveBeenCalledWith([5, 1, 2, 3, 4]);
+    });
+
+    it('renders result count with role="status" and aria-live="polite", absent when configs is empty', () => {
+      fixture.detectChanges();
+      component.activeTab = 'configs';
+      component.configs = [];
+      component.visibleConfigs = [];
+      fixture.detectChanges();
+
+      let resultCount = fixture.nativeElement.querySelector('.results-count');
+      expect(resultCount).toBeNull();
+
+      component.configs = [createMockConfig(1, 'Config 1', 'OpenAI', 1)];
+      component.visibleConfigs = [...component.configs];
+      fixture.detectChanges();
+
+      resultCount = fixture.nativeElement.querySelector('.results-count');
+      expect(resultCount).toBeTruthy();
+      expect(resultCount.getAttribute('role')).toBe('status');
+      expect(resultCount.getAttribute('aria-live')).toBe('polite');
+      expect(resultCount.textContent).toContain('1 configurations');
+    });
+
+    it('renders filtered empty state only when configs.length > 0 && visibleConfigs.length === 0', () => {
+      fixture.detectChanges();
+      component.activeTab = 'configs';
+      component.configs = [createMockConfig(1, 'Config 1', 'OpenAI', 1)];
+      component.visibleConfigs = [];
+      fixture.detectChanges();
+
+      const emptyMsg = fixture.nativeElement.querySelector('.empty-state-msg');
+      expect(emptyMsg).toBeTruthy();
+      expect(emptyMsg.textContent).toContain('No configurations match the current filters.');
+      expect(emptyMsg.querySelector('button')).toBeTruthy();
+    });
+
+    it('restoreConfigFilter rejects malformed localStorage data and falls back to clean empty filter', () => {
+      const storageKey = 'overseer_admin_config_filters';
+      localStorage.setItem(storageKey, JSON.stringify({
+        roles: ['banana'],
+        providers: [{}],
+        roleMatchMode: 'xyzzy'
+      }));
+
+      component.restoreConfigFilter();
+      expect(component.configFilter.roles).toEqual([]);
+      expect(component.configFilter.providers).toEqual([]);
+      expect(component.configFilter.roleMatchMode).toBe('any');
+
+      localStorage.removeItem(storageKey);
     });
   });
 });

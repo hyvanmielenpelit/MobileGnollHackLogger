@@ -170,6 +170,7 @@ To find specific popups, look in the corresponding component's `.html` template:
   - `#manageGroupsDialog`: Manage Groups
   - `#createGroupDialog`: Create Group
   - `#configDialog`: Config
+  - `#config-filter-panel`: Config Filter (`popover="auto"`, anchored to `#config-filter-trigger`)
   - `#confirmDialog`: Confirm
   - `#manageUserConfigsDialog`: Manage User Configs
   - `#manageGroupConfigsDialog`: Manage Group Configs

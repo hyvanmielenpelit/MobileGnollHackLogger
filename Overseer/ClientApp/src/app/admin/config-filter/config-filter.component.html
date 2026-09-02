@@ -1,0 +1,90 @@
+@if (activeCount > 0) {
+  <div class="filter-chips" role="group" aria-label="Active filters">
+    @for (chip of chips; track chip.kind + ':' + chip.value) {
+      <button type="button" class="filter-chip" [ngClass]="chip.cssClass"
+              [attr.aria-label]="'Remove filter: ' + (chip.kind === 'role' ? 'Role ' : 'Provider ') + chip.label"
+              (click)="removeChip(chip)">
+        <span>{{ chip.label }}</span>
+        <svg class="chip-x" width="12" height="12" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round"
+             aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line>
+             <line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </button>
+    }
+    @if (filter.roles.length > 1) {
+      <span class="filter-chip filter-chip-static">
+        {{ filter.roleMatchMode === 'all' ? 'All roles' : 'Any role' }}
+      </span>
+    }
+  </div>
+}
+
+<button type="button"
+        class="btn-icon-action config-filter-trigger"
+        id="config-filter-trigger"
+        popovertarget="config-filter-panel"
+        [attr.aria-expanded]="panelOpen"
+        [attr.aria-label]="triggerAccessibleName"
+        style="anchor-name: --config-filter-trigger; position: relative;">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+       stroke="currentColor" stroke-width="2" stroke-linecap="round"
+       stroke-linejoin="round" aria-hidden="true">
+    <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+  </svg>
+  @if (activeCount > 0) {
+    <span class="filter-count-badge">{{ activeCount }}</span>
+  }
+</button>
+
+<div id="config-filter-panel" popover="auto" class="config-filter-panel"
+     (toggle)="onPanelToggle($event)"
+     style="position-anchor: --config-filter-trigger">
+
+  <fieldset class="facet">
+    <legend>Model Role</legend>
+
+    <div class="checkbox-row">
+      @for (opt of roleOptions; track opt.bit) {
+        <label class="checkbox-label">
+          <input type="checkbox" [checked]="hasRole(opt.bit)" (change)="toggleRole(opt.bit)">
+          {{ opt.label }}
+        </label>
+      }
+    </div>
+
+    <fieldset class="match-mode" [disabled]="filter.roles.length < 2">
+      <legend class="visually-hidden">How to combine the selected model roles</legend>
+      <div class="radio-row">
+        <label class="checkbox-label">
+          <input type="radio" name="roleMatchMode" value="any"
+                 [checked]="filter.roleMatchMode === 'any'" (change)="setRoleMatchMode('any')">
+          Any of these
+        </label>
+        <label class="checkbox-label">
+          <input type="radio" name="roleMatchMode" value="all"
+                 [checked]="filter.roleMatchMode === 'all'" (change)="setRoleMatchMode('all')">
+          All of these
+        </label>
+      </div>
+    </fieldset>
+  </fieldset>
+
+  <fieldset class="facet">
+    <legend>Provider</legend>
+    <div class="checkbox-row">
+      @for (name of providers; track name) {
+        <label class="checkbox-label">
+          <input type="checkbox" [checked]="hasProvider(name)" (change)="toggleProvider(name)">
+          {{ name }}
+        </label>
+      }
+    </div>
+  </fieldset>
+
+  <div class="panel-actions">
+    <button type="button" class="btn-gh" [disabled]="activeCount === 0"
+            (click)="clearAll()">Clear All Filters</button>
+    <button type="button" class="btn-gh btn-gh-cancel"
+            popovertarget="config-filter-panel" popovertargetaction="hide">Done</button>
+  </div>
+</div>

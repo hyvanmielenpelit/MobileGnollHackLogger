@@ -108,7 +108,7 @@ a:hover {
      The exact fix would be a 9-slice `border-image` so the ornaments keep a
      constant width instead of stretching; that changes every button in the
      app, so it is deliberately not done here. */
-  padding: 10px 34px;
+  padding: 14px 34px;
   cursor: pointer;
   transition: filter 0.2s;
   display: inline-flex;

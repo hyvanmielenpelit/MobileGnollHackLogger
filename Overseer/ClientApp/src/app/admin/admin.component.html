@@ -172,16 +172,33 @@
           <div role="tabpanel" id="admin-panel-configs" aria-labelledby="admin-tab-configs" tabindex="0">
             <div class="tab-header-row">
               <h3 class="m-0">System AI Configurations</h3>
+              <app-config-filter [filter]="configFilter"
+                                 [providers]="adminProviders"
+                                 (filterChange)="onConfigFilterChange($event)"></app-config-filter>
               <button class="btn-gh btn-gh-wide" (click)="openCreateConfig()">Create</button>
             </div>
+            @if (configs.length > 0) {
+              <p class="results-count" role="status" aria-live="polite">
+                @if (isConfigFilterActive) {
+                  Showing {{ visibleConfigs.length }} of {{ configs.length }} configurations
+                } @else {
+                  {{ configs.length }} configurations
+                }
+              </p>
+            }
             @if (configs.length === 0) {
               <div class="text-muted italic mt-20 empty-state-msg">
                 No system configurations
               </div>
+            } @else if (visibleConfigs.length === 0) {
+              <div class="text-muted italic mt-20 empty-state-msg">
+                No configurations match the current filters.
+                <button type="button" class="btn-gh" (click)="clearConfigFilters()">Clear All Filters</button>
+              </div>
             }
-            @if (configs.length > 0) {
+            @if (visibleConfigs.length > 0) {
               <div class="models-list">
-                @for (config of configs; track config; let i = $index) {
+                @for (config of visibleConfigs; track config.id; let i = $index) {
                   <div 
                     class="model-item"
                     draggable="true"
@@ -190,9 +207,14 @@
                     (dragover)="onConfigDragOver($event)"
                     (dragleave)="onConfigDragLeave($event)"
                     (drop)="onConfigDrop($event, i)">
-                    <div class="drag-handle" title="Drag to reorder">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+                    <div class="drag-handle"
+                         [attr.aria-label]="'Drag to reorder ' + (config.displayName || config.modelId)"
+                         [attr.interestfor]="'tip-drag-config-' + config.id"
+                         [attr.style]="'anchor-name: --tip-drag-config-' + config.id">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
                     </div>
+                    <div popover="hint" class="gh-tooltip" [id]="'tip-drag-config-' + config.id"
+                         [attr.style]="'position-anchor: --tip-drag-config-' + config.id">Drag to reorder</div>
                     <div class="model-info">
                       <div class="model-title">
                         <h3>{{ config.displayName || config.modelId }}</h3>
