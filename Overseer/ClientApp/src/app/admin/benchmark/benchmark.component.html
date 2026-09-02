@@ -500,6 +500,15 @@
       </div>
 
       <div class="dialog-body">
+        @if (isRunBusy()) {
+          <div class="retry-progress-strip mb-20" role="status">
+            <span>Retry in progress on this run…</span>
+            <button type="button" class="btn-gh btn-gh-delete" (click)="cancelRunById(selectedRunDetail.id)">
+              Cancel
+            </button>
+          </div>
+        }
+
         <!-- Scores Summary Header -->
         <div class="score-summary-bar">
           <div class="score-card main-score">
@@ -549,12 +558,24 @@
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             Download Markdown Report
           </button>
-          <button type="button" class="btn-gh" (click)="rescoreRun(selectedRunDetail.id)" [disabled]="rescoringRun">
+          <button type="button" class="btn-gh" (click)="rescoreRun(selectedRunDetail.id)" [disabled]="rescoringRun || isRunBusy()">
             <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
             {{ rescoringRun ? 'Re-scoring...' : 'Re-score Run' }}
           </button>
+          @if (selectedRunDetail.answers.length > 0) {
+            <button type="button" class="btn-gh" (click)="openRetryDialog('synthesis', selectedRunDetail.id)" [disabled]="isRunBusy()">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
+              {{ runningSynthesis ? 'Synthesizing...' : 'Re-run Final Synthesis' }}
+            </button>
+          }
+          @if (hasUnscoredAssessments()) {
+            <button type="button" class="btn-gh" (click)="openRetryDialog('assessments', selectedRunDetail.id)" [disabled]="isRunBusy()">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
+              {{ retryingAssessments ? 'Retrying...' : 'Retry Failed Assessments' }}
+            </button>
+          }
           @if (formatStatus(selectedRunDetail.status) === 'CompletedWithErrors' || formatStatus(selectedRunDetail.status) === 'Failed') {
-            <button type="button" class="btn-gh" (click)="rerunFailed(selectedRunDetail.id)">
+            <button type="button" class="btn-gh" (click)="rerunFailed(selectedRunDetail.id)" [disabled]="isRunBusy()">
               <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
               Re-run Failed Questions
             </button>
@@ -583,12 +604,22 @@
                   <span class="status-badge" [class]="'badge-status-' + formatAnswerStatus(ans.status).toLowerCase()">
                     {{ formatAnswerStatus(ans.status) }}
                   </span>
+                  @if (formatAssessmentStatus(ans.assessmentStatus) !== 'Scored') {
+                    <span class="status-badge" [class]="'badge-status-' + formatAssessmentStatus(ans.assessmentStatus).toLowerCase()">
+                      Assessment: {{ formatAssessmentStatus(ans.assessmentStatus) }}
+                    </span>
+                  }
                   @if (ans.criticalError) {
                     <span class="critical-badge" title="Critical error cap applied (Quality capped at 25)">CRITICAL ERROR</span>
                   }
                   <span class="q-title">{{ ans.questionText }}</span>
                 </div>
                 <div class="header-right">
+                  @if (wasAssessedByOther(ans)) {
+                    <span class="assessor-tag" [title]="(ans.assessedByModelProviderUsed || '') + '/' + (ans.assessedByModelIdUsed || '')">
+                      Assessed by {{ ans.assessedByModelDisplayNameUsed }}
+                    </span>
+                  }
                   @if (ans.qualityScore != null) {
                     <span class="q-score-badge" [class]="getQuestionScoreBadgeClass(ans.qualityScore)">Q: {{ ans.qualityScore }}</span>
                   }
@@ -611,6 +642,20 @@
                       <div class="alert-content">
                         <div class="alert-heading"><strong>Provider Outage/Error (HTTP {{ ans.httpStatusCode }})</strong></div>
                         <div class="alert-body">{{ ans.errorMessage }}</div>
+                      </div>
+                    </div>
+                  }
+
+                  @if (isAssessmentFailed(ans) && ans.assessmentError) {
+                    <div class="alert alert-warning mb-15" role="alert">
+                      <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                      </svg>
+                      <div class="alert-content">
+                        <div class="alert-heading"><strong>Assessment Failed</strong></div>
+                        <div class="alert-body">{{ ans.assessmentError }}</div>
                       </div>
                     </div>
                   }
@@ -650,12 +695,19 @@
                     @if (ans.toolCallSummary) {
                       <div><strong>Tools Called:</strong> <code>{{ ans.toolCallSummary }}</code></div>
                     }
+                    @if (ans.assessedByModelDisplayNameUsed) {
+                      <div><strong>Assessed by:</strong> {{ ans.assessedByModelDisplayNameUsed }} ({{ ans.assessedByModelProviderUsed }}/{{ ans.assessedByModelIdUsed }})@if (ans.assessedAtUtc) { at {{ ans.assessedAtUtc | date:'yyyy-MM-dd HH:mm:ss' }} UTC}</div>
+                    }
                   </div>
 
                   <div class="mt-15 flex-row gap-10">
-                    <button type="button" class="btn-gh" (click)="reassessAnswer(selectedRunDetail.id, ans.id)" [disabled]="reassessingAnswerId === ans.id">
+                    <button type="button" class="btn-gh" (click)="openRetryDialog('question', selectedRunDetail.id, ans)" [disabled]="isRunBusy() || rerunningAnswerId === ans.id">
+                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                      {{ rerunningAnswerId === ans.id ? 'Re-running...' : 'Re-run Question' }}
+                    </button>
+                    <button type="button" class="btn-gh" (click)="openRetryDialog('assessment', selectedRunDetail.id, ans)" [disabled]="isRunBusy() || reassessingAnswerId === ans.id">
                       <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-                      {{ reassessingAnswerId === ans.id ? 'Re-assessing...' : 'Re-assess Question' }}
+                      {{ reassessingAnswerId === ans.id ? 'Re-assessing...' : (isAssessmentFailed(ans) ? 'Retry Assessment' : 'Re-assess Question') }}
                     </button>
                   </div>
                 </div>
@@ -1301,6 +1353,134 @@
               [disabled]="!difficultyAssessorConfigId || ratingDifficulty"
               (click)="confirmDifficultyAssessment()">
         {{ ratingDifficulty ? 'Assessing...' : 'Assess Difficulty' }}
+      </button>
+    </div>
+  </div>
+</dialog>
+
+<!-- RETRY / RE-ASSESS DIALOG -->
+<dialog #retryDialog class="gh-dialog benchmark-form-dialog retry-dialog" (cancel)="closeRetryDialog()">
+  <div class="dialog-content flex-col">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3>
+          @if (retryScope === 'assessment') { Re-assess Question }
+          @else if (retryScope === 'question') { Re-run Question }
+          @else if (retryScope === 'synthesis') { Re-run Final Synthesis }
+          @else if (retryScope === 'assessments') { Retry Failed Assessments }
+        </h3>
+      </div>
+      <button type="button" class="btn-icon-action" aria-label="Close retry dialog" (click)="closeRetryDialog()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="dialog-body">
+      <p class="text-muted mb-15">
+        @if (retryScope === 'assessment') {
+          Re-assessing Q{{ retryAnswer?.orderIndex }}: {{ retryAnswer?.questionText }}.
+        } @else if (retryScope === 'question') {
+          Re-running the model and re-assessing Q{{ retryAnswer?.orderIndex }}: {{ retryAnswer?.questionText }}. The previous answer will be overwritten.
+        } @else if (retryScope === 'synthesis') {
+          Regenerating the holistic assessor report and score across all {{ selectedRunDetail?.answers?.length }} questions.
+        } @else if (retryScope === 'assessments') {
+          Retrying all questions whose assessment is failed or incomplete.
+        }
+      </p>
+
+      @if (!retryOriginalAssessorAvailable) {
+        <div class="alert alert-warning mb-15" role="alert">
+          <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+            <line x1="12" y1="9" x2="12" y2="13"></line>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+          <div class="alert-content">
+            <div class="alert-heading"><strong>Original Assessor Unavailable</strong></div>
+            <div class="alert-body">
+              The assessor originally used for this run ({{ selectedRunDetail?.assessorModelDisplayNameUsed }}) is no longer available or enabled. Select a replacement assessor below.
+            </div>
+          </div>
+        </div>
+      } @else if (retryAssessorDiffersFromRun) {
+        <div class="alert alert-warning mb-15" role="alert">
+          <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+            <line x1="12" y1="9" x2="12" y2="13"></line>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+          <div class="alert-content">
+            <div class="alert-heading"><strong>Assessor Differs From Run</strong></div>
+            <div class="alert-body">
+              The selected assessor differs from the run's configured assessor ({{ selectedRunDetail?.assessorModelDisplayNameUsed }}). This question's individual assessment will record the chosen assessor as provenance.
+            </div>
+          </div>
+        </div>
+      }
+
+      <div class="form-group mb-15">
+        <label>Assessor Model</label>
+        <div class="custom-model-selector retry-assessor-model-selector">
+          <button type="button" class="selector-trigger" (click)="toggleRetryAssessorDropdown($event)" [class.open]="isRetryAssessorDropdownOpen">
+            <span class="model-name" [class.text-muted]="!selectedRetryAssessorModel">{{ selectedRetryAssessorModel?.displayName || selectedRetryAssessorModel?.modelId || 'Select Model' }}</span>
+            @if (selectedRetryAssessorModel?.thinkingLevel) {
+              <span class="thinking-badge">{{ formatThinkingLevel(selectedRetryAssessorModel?.thinkingLevel) }}</span>
+            }
+            @if (showReasoningBadge(selectedRetryAssessorModel?.reasoningMode)) {
+              <span class="reasoning-badge">{{ selectedRetryAssessorModel?.reasoningMode }}</span>
+            }
+            @if (selectedRetryAssessorModel?.provider) {
+              <span class="provider-badge">{{ selectedRetryAssessorModel?.provider }}</span>
+            }
+            @if (selectedRetryAssessorModel?.parallelExecutionMode === 0) {
+              <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
+            }
+            @if (selectedRetryAssessorModel?.parallelExecutionMode === 1) {
+              <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
+            }
+            <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </button>
+          @if (isRetryAssessorDropdownOpen) {
+            <div class="selector-dropdown">
+              @if (benchmarkCapableConfigs.length === 0) {
+                <div class="empty-dropdown-hint">No system AI configs with the Benchmark role are enabled. Enable the Benchmark role in System Configs.</div>
+              }
+              @for (model of benchmarkCapableConfigs; track model.id) {
+                <div class="model-option" (click)="selectRetryAssessorModel(model)" [class.selected]="retryAssessorConfigId === model.id">
+                  <span class="model-name">{{ model.displayName || model.modelId }}</span>
+                  @if (model.thinkingLevel) {
+                    <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
+                  }
+                  @if (showReasoningBadge(model.reasoningMode)) {
+                    <span class="reasoning-badge">{{ model.reasoningMode }}</span>
+                  }
+                  <span class="provider-badge">{{ model.provider }}</span>
+                  @if (model.parallelExecutionMode === 0) {
+                    <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
+                  }
+                  @if (model.parallelExecutionMode === 1) {
+                    <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
+                  }
+                </div>
+              }
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+    <div class="dialog-footer">
+      <button type="button" class="btn-gh btn-gh-cancel" (click)="closeRetryDialog()">Cancel</button>
+      <button type="button" class="btn-gh"
+              aria-label="Confirm retry action"
+              [disabled]="!retryAssessorConfigId"
+              (click)="confirmRetry()">
+        @if (retryScope === 'assessment') { Re-assess }
+        @else if (retryScope === 'question') { Re-run Question }
+        @else if (retryScope === 'synthesis') { Re-run Synthesis }
+        @else if (retryScope === 'assessments') { Retry Assessments }
+        @else { Retry }
       </button>
     </div>
   </div>

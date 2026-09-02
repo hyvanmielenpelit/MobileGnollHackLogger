@@ -165,6 +165,12 @@ namespace MobileGnollHackLogger.Data
             modelBuilder.Entity<BenchmarkRunAnswer>()
                 .HasIndex(a => new { a.BenchmarkRunId, a.OrderIndex });
 
+            modelBuilder.Entity<BenchmarkRunAnswer>()
+                .HasOne(a => a.AssessedByModelConfiguration)
+                .WithMany()
+                .HasForeignKey(a => a.AssessedByModelConfigurationId)
+                .OnDelete(DeleteBehavior.ClientSetNull);
+
             modelBuilder.Entity<Bones>()
                 .Property(b => b.Created)
                 .HasDefaultValueSql("getutcdate()");

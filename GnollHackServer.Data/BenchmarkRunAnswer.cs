@@ -60,6 +60,23 @@ public class BenchmarkRunAnswer
     [MaxLength(2048)]
     public string? AssessmentError { get; set; }
 
+    // Assessor snapshot for THIS answer's score. Populated on every per-question
+    // assessment; it differs from BenchmarkRun.Assessor*Used only when a manual retry
+    // was run with a different assessor because the original was unavailable.
+    public long? AssessedByModelConfigurationId { get; set; }
+    public SystemAiApiConfiguration? AssessedByModelConfiguration { get; set; }
+
+    [MaxLength(256)]
+    public string? AssessedByModelDisplayNameUsed { get; set; }
+
+    [MaxLength(64)]
+    public string? AssessedByModelProviderUsed { get; set; }
+
+    [MaxLength(128)]
+    public string? AssessedByModelIdUsed { get; set; }
+
+    public DateTime? AssessedAtUtc { get; set; }
+
     public string? ReviewComment { get; set; }
 
     public long DurationMs { get; set; }

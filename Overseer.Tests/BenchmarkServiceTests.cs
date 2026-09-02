@@ -2,7 +2,14 @@ namespace Overseer.Tests;
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using MobileGnollHackLogger.Data;
+using Overseer.Services;
 using Overseer.Services.Benchmarking;
 using Xunit;
 
@@ -256,5 +263,306 @@ public class BenchmarkServiceTests
         Assert.Equal(expectChat, hasChat);
         Assert.Equal(expectTitle, hasTitle);
         Assert.Equal(expectBenchmark, hasBenchmark);
+    }
+
+    // --- 8. Benchmark Assessment Failure Tests ---
+
+    [Fact]
+    public void BenchmarkAssessmentFailure_Describe_FormatsCorrectly()
+    {
+        var info1 = BenchmarkAssessmentFailure.Describe("504 Gateway Timeout", null);
+        Assert.Contains("Assessor provider error (HTTP 504): 504 Gateway Timeout", info1.Message);
+        Assert.Equal(504, info1.HttpStatus);
+        Assert.True(info1.IsProviderError);
+
+        var info2 = BenchmarkAssessmentFailure.Describe(null, "Missing closing brace");
+        Assert.Contains("Assessor response could not be parsed: Missing closing brace", info2.Message);
+        Assert.Null(info2.HttpStatus);
+        Assert.False(info2.IsProviderError);
+
+        var info3 = BenchmarkAssessmentFailure.Describe("429 Rate Limit", "Invalid JSON");
+        Assert.Contains("Assessor provider error (HTTP 429): 429 Rate Limit", info3.Message);
+        Assert.Equal(429, info3.HttpStatus);
+        Assert.True(info3.IsProviderError);
+
+        var info4 = BenchmarkAssessmentFailure.Describe(null, null);
+        Assert.Contains("Assessor response could not be parsed", info4.Message);
+    }
+
+    [Fact]
+    public void BenchmarkAssessmentFailure_Truncate_TruncatesToMax2048()
+    {
+        string shortStr = "Simple short error";
+        Assert.Equal(shortStr, BenchmarkAssessmentFailure.Truncate(shortStr));
+
+        string longStr = new string('A', 3000);
+        string truncated = BenchmarkAssessmentFailure.Truncate(longStr)!;
+        Assert.Equal(2048, truncated.Length);
+        Assert.EndsWith("…", truncated);
+    }
+
+    // --- 9. Benchmark Run Finalizer Tests ---
+
+    [Fact]
+    public void BenchmarkRunFinalizer_ComputeStatus_ReturnsCorrectStatus()
+    {
+        var answersAllOk = new List<BenchmarkRunAnswer>
+        {
+            new() { Status = BenchmarkAnswerStatus.Ok, AssessmentStatus = BenchmarkAssessmentStatus.Scored }
+        };
+        Assert.False(BenchmarkRunFinalizer.HasUnresolvedWork(answersAllOk[0]));
+        Assert.Equal(BenchmarkRunStatus.Completed, BenchmarkRunFinalizer.ComputeStatus(answersAllOk));
+
+        var answersWithError = new List<BenchmarkRunAnswer>
+        {
+            new() { Status = BenchmarkAnswerStatus.ProviderError, AssessmentStatus = BenchmarkAssessmentStatus.Scored }
+        };
+        Assert.True(BenchmarkRunFinalizer.HasUnresolvedWork(answersWithError[0]));
+        Assert.Equal(BenchmarkRunStatus.CompletedWithErrors, BenchmarkRunFinalizer.ComputeStatus(answersWithError));
+
+        var answersWithFailedAssessment = new List<BenchmarkRunAnswer>
+        {
+            new() { Status = BenchmarkAnswerStatus.Ok, AssessmentStatus = BenchmarkAssessmentStatus.Failed }
+        };
+        Assert.True(BenchmarkRunFinalizer.HasUnresolvedWork(answersWithFailedAssessment[0]));
+        Assert.Equal(BenchmarkRunStatus.CompletedWithErrors, BenchmarkRunFinalizer.ComputeStatus(answersWithFailedAssessment));
+
+        var answersInProgress = new List<BenchmarkRunAnswer>
+        {
+            new() { Status = BenchmarkAnswerStatus.Ok, AssessmentStatus = BenchmarkAssessmentStatus.Pending }
+        };
+        Assert.True(BenchmarkRunFinalizer.HasUnresolvedWork(answersInProgress[0]));
+        Assert.Equal(BenchmarkRunStatus.CompletedWithErrors, BenchmarkRunFinalizer.ComputeStatus(answersInProgress));
+    }
+
+    [Fact]
+    public void BenchmarkRunFinalizer_Apply_RecalculatesMetricsAndCompletedTime()
+    {
+        var run = new BenchmarkRun
+        {
+            Id = 1,
+            Status = BenchmarkRunStatus.Running,
+            Answers = new List<BenchmarkRunAnswer>
+            {
+                new()
+                {
+                    OrderIndex = 1,
+                    QuestionText = "Q1",
+                    AnswerText = "A1",
+                    Status = BenchmarkAnswerStatus.Ok,
+                    AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+                    QualityScore = 90,
+                    SpeedScore = 80,
+                    DurationMs = 2000,
+                    InputTokens = 100,
+                    OutputTokens = 50,
+                    CacheReadInputTokens = 20,
+                    CacheCreationInputTokens = 10
+                },
+                new()
+                {
+                    OrderIndex = 2,
+                    QuestionText = "Q2",
+                    AnswerText = "A2",
+                    Status = BenchmarkAnswerStatus.Ok,
+                    AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+                    QualityScore = 70,
+                    SpeedScore = 60,
+                    DurationMs = 3000,
+                    InputTokens = 200,
+                    OutputTokens = 100,
+                    CacheReadInputTokens = 40,
+                    CacheCreationInputTokens = 20
+                }
+            }
+        };
+
+        BenchmarkRunFinalizer.Apply(run, run.Answers);
+
+        Assert.Equal(BenchmarkRunStatus.Completed, run.Status);
+        Assert.NotNull(run.CompletedAtUtc);
+        Assert.Equal(2, run.AnsweredQuestionCount);
+        Assert.Equal(5000, run.TotalAnswerDurationMs);
+        Assert.Equal(300, run.TotalInputTokens);
+        Assert.Equal(150, run.TotalOutputTokens);
+        Assert.Equal(60, run.TotalCacheReadTokens);
+        Assert.Equal(30, run.TotalCacheCreationTokens);
+        Assert.Equal(80, run.QualityIndex);
+        Assert.Equal(70, run.SpeedIndex);
+    }
+
+    // --- 10. Benchmark Report Builder Assessor Provenance Tests ---
+
+    [Fact]
+    public void BenchmarkReportBuilder_AssessedBy_IncludesCalloutWhenOverridden()
+    {
+        var run = new BenchmarkRun
+        {
+            Id = 1,
+            SuiteName = "Test Suite",
+            TestedModelDisplayNameUsed = "Tested Model",
+            TestedModelProviderUsed = "Anthropic",
+            TestedModelIdUsed = "claude-3-5-sonnet",
+            AssessorModelConfigurationId = 10,
+            AssessorModelDisplayNameUsed = "Original Assessor",
+            AssessorModelProviderUsed = "Anthropic",
+            AssessorModelIdUsed = "claude-3-5-sonnet",
+            Status = BenchmarkRunStatus.Completed,
+            Answers = new List<BenchmarkRunAnswer>
+            {
+                new()
+                {
+                    OrderIndex = 1,
+                    QuestionText = "Question 1",
+                    AnswerText = "Answer 1",
+                    Status = BenchmarkAnswerStatus.Ok,
+                    AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+                    QualityScore = 80,
+                    AssessedByModelConfigurationId = 20, // Differs!
+                    AssessedByModelDisplayNameUsed = "Override Assessor",
+                    AssessedByModelProviderUsed = "Anthropic",
+                    AssessedByModelIdUsed = "claude-3-opus",
+                    AssessedAtUtc = new DateTime(2026, 9, 2, 12, 0, 0, DateTimeKind.Utc)
+                },
+                new()
+                {
+                    OrderIndex = 2,
+                    QuestionText = "Question 2",
+                    AnswerText = "Answer 2",
+                    Status = BenchmarkAnswerStatus.Ok,
+                    AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+                    QualityScore = 80,
+                    AssessedByModelConfigurationId = 10, // Matches run assessor!
+                    AssessedByModelDisplayNameUsed = "Original Assessor",
+                    AssessedByModelProviderUsed = "Anthropic",
+                    AssessedByModelIdUsed = "claude-3-5-sonnet"
+                }
+            }
+        };
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(run, "1.0.29");
+
+        Assert.Contains("Assessed by:** Override Assessor (Anthropic, claude-3-opus) — differs from this run's assessor", report);
+        // Question 2 should not have "differs from this run's assessor" callout
+        Assert.DoesNotContain("Original Assessor (Anthropic, claude-3-5-sonnet) — differs from this run's assessor", report);
+    }
+
+    // --- 11. Benchmark Service Orphaned Run Cleanup Tests ---
+
+    [Fact]
+    public async Task BenchmarkService_CleanupOrphanedRunsAsync_WithoutAnswers_MarksFailed()
+    {
+        var dbOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+        await using (var db = new ApplicationDbContext(dbOptions))
+        {
+            var run = new BenchmarkRun
+            {
+                Id = 1,
+                SuiteName = "Test Suite",
+                TestedModelDisplayNameUsed = "Model A",
+                TestedModelProviderUsed = "Provider A",
+                TestedModelIdUsed = "model-a",
+                AssessorModelDisplayNameUsed = "Model B",
+                AssessorModelProviderUsed = "Provider B",
+                AssessorModelIdUsed = "model-b",
+                Status = BenchmarkRunStatus.Running,
+                StartedAtUtc = DateTime.UtcNow.AddHours(-1)
+            };
+            db.BenchmarkRuns.Add(run);
+            await db.SaveChangesAsync();
+        }
+
+        var services = new ServiceCollection();
+        services.AddScoped(_ => new ApplicationDbContext(dbOptions));
+        var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+
+        var benchmarkService = new BenchmarkService(
+            scopeFactory,
+            null!,
+            null!,
+            null!,
+            new BenchmarkRunManager(),
+            null!,
+            new ConfigurationBuilder().Build(),
+            NullLogger<BenchmarkService>.Instance);
+
+        await benchmarkService.CleanupOrphanedRunsAsync();
+
+        await using (var verifyDb = new ApplicationDbContext(dbOptions))
+        {
+            var updated = await verifyDb.BenchmarkRuns.FindAsync(1L);
+            Assert.NotNull(updated);
+            Assert.Equal(BenchmarkRunStatus.Failed, updated.Status);
+            Assert.NotNull(updated.CompletedAtUtc);
+            Assert.Equal("Run interrupted by application restart.", updated.ErrorMessage);
+        }
+    }
+
+    [Fact]
+    public async Task BenchmarkService_CleanupOrphanedRunsAsync_WithAnswers_FinalizesRun()
+    {
+        var dbOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+        await using (var db = new ApplicationDbContext(dbOptions))
+        {
+            var run = new BenchmarkRun
+            {
+                Id = 2,
+                SuiteName = "Test Suite",
+                TestedModelDisplayNameUsed = "Model A",
+                TestedModelProviderUsed = "Provider A",
+                TestedModelIdUsed = "model-a",
+                AssessorModelDisplayNameUsed = "Model B",
+                AssessorModelProviderUsed = "Provider B",
+                AssessorModelIdUsed = "model-b",
+                Status = BenchmarkRunStatus.Running,
+                StartedAtUtc = DateTime.UtcNow.AddHours(-1),
+                Answers = new List<BenchmarkRunAnswer>
+                {
+                    new()
+                    {
+                        OrderIndex = 1,
+                        QuestionText = "Q1",
+                        AnswerText = "A1",
+                        Status = BenchmarkAnswerStatus.Ok,
+                        AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+                        QualityScore = 85,
+                        SpeedScore = 75,
+                        DurationMs = 2000
+                    }
+                }
+            };
+            db.BenchmarkRuns.Add(run);
+            await db.SaveChangesAsync();
+        }
+
+        var services = new ServiceCollection();
+        services.AddScoped(_ => new ApplicationDbContext(dbOptions));
+        var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+
+        var benchmarkService = new BenchmarkService(
+            scopeFactory,
+            null!,
+            null!,
+            null!,
+            new BenchmarkRunManager(),
+            null!,
+            new ConfigurationBuilder().Build(),
+            NullLogger<BenchmarkService>.Instance);
+
+        await benchmarkService.CleanupOrphanedRunsAsync();
+
+        await using (var verifyDb = new ApplicationDbContext(dbOptions))
+        {
+            var updated = await verifyDb.BenchmarkRuns.Include(r => r.Answers).FirstOrDefaultAsync(r => r.Id == 2L);
+            Assert.NotNull(updated);
+            Assert.Equal(BenchmarkRunStatus.Completed, updated.Status);
+            Assert.NotNull(updated.CompletedAtUtc);
+            Assert.Equal(85, updated.QualityIndex);
+            Assert.Equal(75, updated.SpeedIndex);
+        }
     }
 }

@@ -485,6 +485,26 @@
     background: rgba(255, 152, 0, 0.15);
     color: #ffb74d;
   }
+
+  &.badge-status-pending {
+    background: rgba(158, 158, 158, 0.15);
+    color: #bdbdbd;
+  }
+
+  &.badge-status-assessing {
+    background: rgba(33, 150, 243, 0.15);
+    color: #64b5f6;
+  }
+
+  &.badge-status-scored {
+    background: rgba(76, 175, 80, 0.15);
+    color: #81c784;
+  }
+
+  &.badge-status-skipped {
+    background: rgba(158, 158, 158, 0.2);
+    color: #bdbdbd;
+  }
 }
 
 .score-badge {
@@ -613,6 +633,29 @@
   &.badge-score-mid { background: rgba(255, 152, 0, 0.2); color: #ffb74d; }
   &.badge-score-low { background: rgba(244, 67, 54, 0.2); color: #e57373; }
   &.badge-speed { background: rgba(33, 150, 243, 0.2); color: #64b5f6; }
+}
+
+.assessor-tag {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #ccc;
+  white-space: nowrap;
+}
+
+.retry-progress-strip {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  background: rgba(212, 160, 23, 0.12);
+  border: 1px solid rgba(212, 160, 23, 0.35);
+  border-radius: 6px;
+  font-weight: 500;
+  color: #e0e0e0;
 }
 
 .score-summary-bar {
@@ -1240,7 +1283,8 @@
   }
 }
 
-.gh-dialog.difficulty-assessor-dialog {
+.gh-dialog.difficulty-assessor-dialog,
+.gh-dialog.retry-dialog {
   overflow: visible;
 
   .dialog-content {

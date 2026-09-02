@@ -104,6 +104,11 @@ public class ReassessAnswerRequest
     public long? AssessorModelConfigurationId { get; set; }
 }
 
+public class BenchmarkRetryRequest
+{
+    public long? AssessorModelConfigurationId { get; set; }
+}
+
 public class BenchmarkScoringProfileDto
 {
     public long Id { get; set; }
@@ -188,6 +193,11 @@ public class BenchmarkRunAnswerDto
     public int? OutputTokens { get; set; }
     public int? CacheReadInputTokens { get; set; }
     public int? CacheCreationInputTokens { get; set; }
+    public long? AssessedByModelConfigurationId { get; set; }
+    public string? AssessedByModelDisplayNameUsed { get; set; }
+    public string? AssessedByModelProviderUsed { get; set; }
+    public string? AssessedByModelIdUsed { get; set; }
+    public DateTime? AssessedAtUtc { get; set; }
 }
 
 public class BenchmarkRunDetailDto
@@ -212,6 +222,7 @@ public class BenchmarkRunDetailDto
     public string AssessorModelIdUsed { get; set; } = string.Empty;
     public string? AssessorModelThinkingLevelUsed { get; set; }
     public string? AssessorModelReasoningModeUsed { get; set; }
+    public bool AssessorAvailable { get; set; }
 
     public string? StartedByUserId { get; set; }
     public string? StartedByUserName { get; set; }

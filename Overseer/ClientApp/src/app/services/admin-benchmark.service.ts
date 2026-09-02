@@ -163,6 +163,11 @@ export interface BenchmarkRunAnswerDto {
   outputTokens?: number | null;
   cacheReadInputTokens?: number | null;
   cacheCreationInputTokens?: number | null;
+  assessedByModelConfigurationId?: number | null;
+  assessedByModelDisplayNameUsed?: string | null;
+  assessedByModelProviderUsed?: string | null;
+  assessedByModelIdUsed?: string | null;
+  assessedAtUtc?: string | null;
 }
 
 export interface BenchmarkRunDetailDto {
@@ -186,6 +191,7 @@ export interface BenchmarkRunDetailDto {
   assessorModelIdUsed: string;
   assessorModelThinkingLevelUsed?: string | null;
   assessorModelReasoningModeUsed?: string | null;
+  assessorAvailable?: boolean;
 
   startedByUserId?: string | null;
   startedByUserName?: string | null;
@@ -348,8 +354,20 @@ export class AdminBenchmarkService {
     return this.http.post<void>(`/api/admin/benchmark/runs/${runId}/rescore`, { scoringProfileId });
   }
 
-  reassessAnswer(runId: number, answerId: number, assessorModelConfigurationId?: number | null): Observable<void> {
-    return this.http.post<void>(`/api/admin/benchmark/runs/${runId}/answers/${answerId}/reassess`, { assessorModelConfigurationId });
+  reassessAnswer(runId: number, answerId: number, assessorModelConfigurationId?: number | null): Observable<{ runId: number }> {
+    return this.http.post<{ runId: number }>(`/api/admin/benchmark/runs/${runId}/answers/${answerId}/reassess`, { assessorModelConfigurationId });
+  }
+
+  rerunAnswer(runId: number, answerId: number, assessorModelConfigurationId?: number | null): Observable<{ runId: number }> {
+    return this.http.post<{ runId: number }>(`/api/admin/benchmark/runs/${runId}/answers/${answerId}/rerun`, { assessorModelConfigurationId });
+  }
+
+  rerunFinalSynthesis(runId: number, assessorModelConfigurationId?: number | null): Observable<{ runId: number }> {
+    return this.http.post<{ runId: number }>(`/api/admin/benchmark/runs/${runId}/rerun-synthesis`, { assessorModelConfigurationId });
+  }
+
+  retryFailedAssessments(runId: number, assessorModelConfigurationId?: number | null): Observable<{ runId: number }> {
+    return this.http.post<{ runId: number }>(`/api/admin/benchmark/runs/${runId}/retry-failed-assessments`, { assessorModelConfigurationId });
   }
 
   cancelRun(id: number): Observable<{ success: boolean }> {

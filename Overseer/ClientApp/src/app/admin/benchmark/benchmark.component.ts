@@ -7,6 +7,7 @@ import {
   BenchmarkQuestionDto,
   BenchmarkRunSummaryDto,
   BenchmarkRunDetailDto,
+  BenchmarkRunAnswerDto,
   BenchmarkScoringProfileDto,
   CreateBenchmarkSuiteRequest,
   UpdateBenchmarkSuiteRequest,
@@ -44,6 +45,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   @ViewChild('bulkDeleteDialog') bulkDeleteDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('confirmActionDialog') confirmActionDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('difficultyAssessorDialog') difficultyAssessorDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('retryDialog') retryDialog!: ElementRef<HTMLDialogElement>;
 
   // Confirm Action Dialog State
   confirmDialogTitle = '';
@@ -123,7 +125,18 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   expandedQuestions = new Set<number>();
   expandedThoughts = new Set<number>();
   rescoringRun = false;
+  detailPollInterval: any = null;
   reassessingAnswerId: number | null = null;
+  rerunningAnswerId: number | null = null;
+  runningSynthesis = false;
+  retryingAssessments = false;
+
+  // Retry Dialog
+  retryScope: 'assessment' | 'question' | 'synthesis' | 'assessments' | null = null;
+  retryRunId: number | null = null;
+  retryAnswer: BenchmarkRunAnswerDto | null = null;
+  retryAssessorConfigId: number | null = null;
+  isRetryAssessorDropdownOpen = false;
 
   // Suite Dialogs
   editingSuiteId: number | null = null;
@@ -205,6 +218,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
 
   ngOnDestroy() {
     this.stopPolling();
+    this.stopDetailPolling();
   }
 
   @HostListener('document:click', ['$event'])
@@ -218,6 +232,9 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     }
     if (this.isDifficultyAssessorDropdownOpen && !target.closest('.difficulty-assessor-model-selector')) {
       this.isDifficultyAssessorDropdownOpen = false;
+    }
+    if (this.isRetryAssessorDropdownOpen && !target.closest('.retry-assessor-model-selector')) {
+      this.isRetryAssessorDropdownOpen = false;
     }
   }
 
@@ -237,12 +254,25 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     return this.benchmarkCapableConfigs.find(c => c.id === this.difficultyAssessorConfigId);
   }
 
+  get selectedRetryAssessorModel(): SystemAiConfigDto | undefined {
+    return this.benchmarkCapableConfigs.find(c => c.id === this.retryAssessorConfigId);
+  }
+
+  get retryOriginalAssessorAvailable(): boolean {
+    return this.selectedRunDetail?.assessorAvailable === true;
+  }
+
+  get retryAssessorDiffersFromRun(): boolean {
+    return this.retryAssessorConfigId !== this.selectedRunDetail?.assessorModelConfigurationId;
+  }
+
   toggleTestedModelDropdown(event: Event) {
     event.stopPropagation();
     this.isTestedModelDropdownOpen = !this.isTestedModelDropdownOpen;
     if (this.isTestedModelDropdownOpen) {
       this.isAssessorModelDropdownOpen = false;
       this.isDifficultyAssessorDropdownOpen = false;
+      this.isRetryAssessorDropdownOpen = false;
     }
   }
 
@@ -252,6 +282,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     if (this.isAssessorModelDropdownOpen) {
       this.isTestedModelDropdownOpen = false;
       this.isDifficultyAssessorDropdownOpen = false;
+      this.isRetryAssessorDropdownOpen = false;
     }
   }
 
@@ -261,6 +292,17 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     if (this.isDifficultyAssessorDropdownOpen) {
       this.isTestedModelDropdownOpen = false;
       this.isAssessorModelDropdownOpen = false;
+      this.isRetryAssessorDropdownOpen = false;
+    }
+  }
+
+  toggleRetryAssessorDropdown(event: Event) {
+    event.stopPropagation();
+    this.isRetryAssessorDropdownOpen = !this.isRetryAssessorDropdownOpen;
+    if (this.isRetryAssessorDropdownOpen) {
+      this.isTestedModelDropdownOpen = false;
+      this.isAssessorModelDropdownOpen = false;
+      this.isDifficultyAssessorDropdownOpen = false;
     }
   }
 
@@ -277,6 +319,11 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   selectDifficultyAssessorModel(config: SystemAiConfigDto) {
     this.difficultyAssessorConfigId = config.id;
     this.isDifficultyAssessorDropdownOpen = false;
+  }
+
+  selectRetryAssessorModel(config: SystemAiConfigDto) {
+    this.retryAssessorConfigId = config.id;
+    this.isRetryAssessorDropdownOpen = false;
   }
 
   formatThinkingLevel(level: string | null | undefined): string {
@@ -1026,8 +1073,153 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   closeRunDetail() {
+    this.stopDetailPolling();
     this.selectedRunDetail = null;
     this.runDetailDialog?.nativeElement.close();
+  }
+
+  startDetailPolling(runId: number) {
+    this.stopDetailPolling();
+    this.detailPollInterval = setInterval(() => {
+      this.refreshRunDetail(runId);
+    }, 2000);
+  }
+
+  stopDetailPolling() {
+    if (this.detailPollInterval) {
+      clearInterval(this.detailPollInterval);
+      this.detailPollInterval = null;
+    }
+  }
+
+  refreshRunDetail(runId: number) {
+    this.benchmarkService.getRun(runId).subscribe({
+      next: (data) => {
+        this.selectedRunDetail = data;
+        const statusStr = this.formatStatus(data.status);
+        if (statusStr !== 'Running') {
+          this.stopDetailPolling();
+          this.reassessingAnswerId = null;
+          this.rerunningAnswerId = null;
+          this.runningSynthesis = false;
+          this.retryingAssessments = false;
+          this.loadHistory();
+        }
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        console.error('Failed to refresh run details', err);
+        this.stopDetailPolling();
+        this.reassessingAnswerId = null;
+        this.rerunningAnswerId = null;
+        this.runningSynthesis = false;
+        this.retryingAssessments = false;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  cancelRunById(runId: number) {
+    this.benchmarkService.cancelRun(runId).subscribe({
+      next: () => {
+        this.refreshRunDetail(runId);
+      },
+      error: (err) => {
+        console.error('Failed to cancel run', err);
+        this.refreshRunDetail(runId);
+      }
+    });
+  }
+
+  openRetryDialog(scope: 'assessment' | 'question' | 'synthesis' | 'assessments', runId: number, answer?: BenchmarkRunAnswerDto) {
+    this.retryScope = scope;
+    this.retryRunId = runId;
+    this.retryAnswer = answer ?? null;
+    this.retryAssessorConfigId = this.resolveRetryAssessor();
+    this.isRetryAssessorDropdownOpen = false;
+    this.retryDialog?.nativeElement.showModal();
+    this.cdr.detectChanges();
+  }
+
+  closeRetryDialog() {
+    this.retryScope = null;
+    this.retryRunId = null;
+    this.retryAnswer = null;
+    this.retryAssessorConfigId = null;
+    this.isRetryAssessorDropdownOpen = false;
+    this.retryDialog?.nativeElement.close();
+    this.cdr.detectChanges();
+  }
+
+  private resolveRetryAssessor(): number | null {
+    const runAssessorId = this.selectedRunDetail?.assessorModelConfigurationId;
+    if (runAssessorId != null && this.benchmarkCapableConfigs.some(c => c.id === runAssessorId)) {
+      return runAssessorId;
+    }
+    return this.benchmarkCapableConfigs[0]?.id ?? null;
+  }
+
+  confirmRetry() {
+    if (!this.retryRunId || !this.retryScope) return;
+
+    const runId = this.retryRunId;
+    const scope = this.retryScope;
+    const assessorId = this.retryAssessorConfigId;
+    const answer = this.retryAnswer;
+
+    this.closeRetryDialog();
+
+    if (scope === 'assessment') {
+      if (!answer) return;
+      this.reassessingAnswerId = answer.id;
+      this.benchmarkService.reassessAnswer(runId, answer.id, assessorId).subscribe({
+        next: () => {
+          this.startDetailPolling(runId);
+        },
+        error: (err) => {
+          this.reassessingAnswerId = null;
+          alert(err?.error || 'Failed to start reassessment.');
+          this.cdr.detectChanges();
+        }
+      });
+    } else if (scope === 'question') {
+      if (!answer) return;
+      this.rerunningAnswerId = answer.id;
+      this.benchmarkService.rerunAnswer(runId, answer.id, assessorId).subscribe({
+        next: () => {
+          this.startDetailPolling(runId);
+        },
+        error: (err) => {
+          this.rerunningAnswerId = null;
+          alert(err?.error || 'Failed to start rerun.');
+          this.cdr.detectChanges();
+        }
+      });
+    } else if (scope === 'synthesis') {
+      this.runningSynthesis = true;
+      this.benchmarkService.rerunFinalSynthesis(runId, assessorId).subscribe({
+        next: () => {
+          this.startDetailPolling(runId);
+        },
+        error: (err) => {
+          this.runningSynthesis = false;
+          alert(err?.error || 'Failed to start final synthesis.');
+          this.cdr.detectChanges();
+        }
+      });
+    } else if (scope === 'assessments') {
+      this.retryingAssessments = true;
+      this.benchmarkService.retryFailedAssessments(runId, assessorId).subscribe({
+        next: () => {
+          this.startDetailPolling(runId);
+        },
+        error: (err) => {
+          this.retryingAssessments = false;
+          alert(err?.error || 'Failed to retry failed assessments.');
+          this.cdr.detectChanges();
+        }
+      });
+    }
   }
 
   rescoreRun(runId: number) {
@@ -1117,6 +1309,35 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     }
   }
 
+  // --- Predicates ---
+
+  isAnswerFailed(ans: BenchmarkRunAnswerDto): boolean {
+    const s = this.formatAnswerStatus(ans.status);
+    return s === 'ProviderError' || s === 'Failed' || s === 'Skipped';
+  }
+
+  isAssessmentFailed(ans: BenchmarkRunAnswerDto): boolean {
+    return this.formatAssessmentStatus(ans.assessmentStatus) === 'Failed';
+  }
+
+  isAssessmentIncomplete(ans: BenchmarkRunAnswerDto): boolean {
+    const s = this.formatAssessmentStatus(ans.assessmentStatus);
+    return s === 'Pending' || s === 'Assessing';
+  }
+
+  hasUnscoredAssessments(): boolean {
+    return (this.selectedRunDetail?.answers ?? []).some(ans => this.isAssessmentFailed(ans) || this.isAssessmentIncomplete(ans));
+  }
+
+  isRunBusy(): boolean {
+    return this.formatStatus(this.selectedRunDetail?.status ?? '') === 'Running';
+  }
+
+  wasAssessedByOther(ans: BenchmarkRunAnswerDto): boolean {
+    return ans.assessedByModelConfigurationId != null &&
+      ans.assessedByModelConfigurationId !== this.selectedRunDetail?.assessorModelConfigurationId;
+  }
+
   // --- Formatting Helpers ---
 
   formatStatus(status: string | number): string {
@@ -1132,15 +1353,15 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     if (status === 1 || status === 'Ok') return 'Ok';
     if (status === 2 || status === 'ProviderError') return 'ProviderError';
     if (status === 3 || status === 'Failed') return 'Failed';
+    if (status === 4 || status === 'Skipped') return 'Skipped';
     return String(status);
   }
 
   formatAssessmentStatus(status: string | number | undefined): string {
-    if (status === 0 || status === 'Pending') return 'Pending';
-    if (status === 1 || status === 'Evaluating') return 'Evaluating';
-    if (status === 2 || status === 'Scored') return 'Scored';
-    if (status === 3 || status === 'Failed') return 'Failed';
-    if (status === 4 || status === 'Skipped') return 'Skipped';
+    if (status === 1 || status === 'Pending') return 'Pending';
+    if (status === 2 || status === 'Assessing') return 'Assessing';
+    if (status === 3 || status === 'Scored') return 'Scored';
+    if (status === 4 || status === 'Failed') return 'Failed';
     return status != null ? String(status) : 'Scored';
   }
 

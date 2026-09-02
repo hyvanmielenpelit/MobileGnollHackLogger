@@ -257,6 +257,15 @@ app.MapFallbackToFile("index.html");
 // Synchronously resolve ToolRegistry to validate SubAgentCatalog and tool definitions on startup
 _ = app.Services.GetRequiredService<Overseer.Services.Tools.ToolRegistry>();
 
+// Restore benchmark runs left mid-flight by a previous process.
+using (var benchmarkCleanupScope = app.Services.CreateScope())
+{
+    var benchmarkService = benchmarkCleanupScope.ServiceProvider
+        .GetRequiredService<Overseer.Services.Benchmarking.BenchmarkService>();
+    try { await benchmarkService.CleanupOrphanedRunsAsync(); }
+    catch (Exception ex) { app.Logger.LogWarning(ex, "Benchmark orphaned-run cleanup failed."); }
+}
+
 app.Run();
 
 public partial class Program { }

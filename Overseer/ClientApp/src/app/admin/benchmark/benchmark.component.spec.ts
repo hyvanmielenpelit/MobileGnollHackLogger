@@ -29,7 +29,12 @@ describe('AdminBenchmarkComponent', () => {
       'deleteSuiteRuns',
       'reorderQuestions',
       'rateSuiteDifficulty',
-      'rateQuestionDifficulty'
+      'rateQuestionDifficulty',
+      'reassessAnswer',
+      'rerunAnswer',
+      'rerunFinalSynthesis',
+      'retryFailedAssessments',
+      'rescoreRun'
     ]);
 
     benchmarkServiceMock.getSuiteRunsFootprint.and.returnValue(of({ runCount: 0, totalAnswerCharacters: 0 }));
@@ -780,6 +785,80 @@ describe('AdminBenchmarkComponent', () => {
       const progress = fixture.nativeElement.querySelector('.banner-progress');
       expect(progress).toBeTruthy();
       expect(progress.getAttribute('role')).toBe('status');
+    });
+  });
+
+  describe('retry actions', () => {
+    beforeEach(() => {
+      component.selectedRunDetail = {
+        id: 42,
+        suiteName: 'Test Suite',
+        testedModelConfigurationId: 1,
+        assessorModelConfigurationId: 1,
+        assessorAvailable: true,
+        status: 'CompletedWithErrors',
+        answers: [
+          { id: 101, orderIndex: 1, questionText: 'Q1', status: 'Ok', assessmentStatus: 'Scored' },
+          { id: 102, orderIndex: 2, questionText: 'Q2', status: 'ProviderError', assessmentStatus: 'Failed', assessmentError: 'Timeout' }
+        ]
+      } as any;
+      fixture.detectChanges();
+    });
+
+    it('should correctly open retry dialog with resolved assessor', () => {
+      const answer = component.selectedRunDetail!.answers[1];
+      component.openRetryDialog('question', 42, answer);
+
+      expect(component.retryScope).toBe('question');
+      expect(component.retryRunId).toBe(42);
+      expect(component.retryAnswer).toBe(answer);
+      expect(component.retryAssessorConfigId).toBe(1);
+    });
+
+    it('should trigger rerunAnswer on confirmRetry when scope is question', () => {
+      benchmarkServiceMock.rerunAnswer.and.returnValue(of({ runId: 42 }));
+      benchmarkServiceMock.getRun.and.returnValue(of(component.selectedRunDetail!));
+
+      const answer = component.selectedRunDetail!.answers[1];
+      component.openRetryDialog('question', 42, answer);
+      component.confirmRetry();
+
+      expect(benchmarkServiceMock.rerunAnswer).toHaveBeenCalledWith(42, 102, 1);
+      expect(component.rerunningAnswerId).toBe(102);
+    });
+
+    it('should trigger reassessAnswer on confirmRetry when scope is assessment', () => {
+      benchmarkServiceMock.reassessAnswer.and.returnValue(of({ runId: 42 }));
+      benchmarkServiceMock.getRun.and.returnValue(of(component.selectedRunDetail!));
+
+      const answer = component.selectedRunDetail!.answers[1];
+      component.openRetryDialog('assessment', 42, answer);
+      component.confirmRetry();
+
+      expect(benchmarkServiceMock.reassessAnswer).toHaveBeenCalledWith(42, 102, 1);
+      expect(component.reassessingAnswerId).toBe(102);
+    });
+
+    it('should trigger rerunFinalSynthesis on confirmRetry when scope is synthesis', () => {
+      benchmarkServiceMock.rerunFinalSynthesis.and.returnValue(of({ runId: 42 }));
+      benchmarkServiceMock.getRun.and.returnValue(of(component.selectedRunDetail!));
+
+      component.openRetryDialog('synthesis', 42);
+      component.confirmRetry();
+
+      expect(benchmarkServiceMock.rerunFinalSynthesis).toHaveBeenCalledWith(42, 1);
+      expect(component.runningSynthesis).toBeTrue();
+    });
+
+    it('should trigger retryFailedAssessments on confirmRetry when scope is assessments', () => {
+      benchmarkServiceMock.retryFailedAssessments.and.returnValue(of({ runId: 42 }));
+      benchmarkServiceMock.getRun.and.returnValue(of(component.selectedRunDetail!));
+
+      component.openRetryDialog('assessments', 42);
+      component.confirmRetry();
+
+      expect(benchmarkServiceMock.retryFailedAssessments).toHaveBeenCalledWith(42, 1);
+      expect(component.retryingAssessments).toBeTrue();
     });
   });
 });

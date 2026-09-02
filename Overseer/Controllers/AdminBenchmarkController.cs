@@ -752,6 +752,11 @@ public class AdminBenchmarkController : ControllerBase
 
         if (run == null) return NotFound();
 
+        bool assessorAvailable = run.AssessorModelConfigurationId.HasValue &&
+            await _dbContext.SystemAiApiConfigurations.AnyAsync(c =>
+                c.Id == run.AssessorModelConfigurationId.Value &&
+                c.IsEnabled && c.EncryptedApiKey != null && (c.ModelRole & 4) == 4);
+
         var dto = new BenchmarkRunDetailDto
         {
             Id = run.Id,
@@ -774,6 +779,7 @@ public class AdminBenchmarkController : ControllerBase
             AssessorModelIdUsed = run.AssessorModelIdUsed,
             AssessorModelThinkingLevelUsed = run.AssessorModelThinkingLevelUsed,
             AssessorModelReasoningModeUsed = run.AssessorModelReasoningModeUsed,
+            AssessorAvailable = assessorAvailable,
 
             StartedByUserId = run.StartedByUserId,
             StartedByUserName = run.StartedByUser?.UserName,
@@ -841,7 +847,12 @@ public class AdminBenchmarkController : ControllerBase
                 InputTokens = a.InputTokens,
                 OutputTokens = a.OutputTokens,
                 CacheReadInputTokens = a.CacheReadInputTokens,
-                CacheCreationInputTokens = a.CacheCreationInputTokens
+                CacheCreationInputTokens = a.CacheCreationInputTokens,
+                AssessedByModelConfigurationId = a.AssessedByModelConfigurationId,
+                AssessedByModelDisplayNameUsed = a.AssessedByModelDisplayNameUsed,
+                AssessedByModelProviderUsed = a.AssessedByModelProviderUsed,
+                AssessedByModelIdUsed = a.AssessedByModelIdUsed,
+                AssessedAtUtc = a.AssessedAtUtc
             }).ToList()
         };
 
@@ -906,21 +917,209 @@ public class AdminBenchmarkController : ControllerBase
         return Ok();
     }
 
+    private async Task<(bool Success, string? Error)> ValidateAssessorConfigurationAsync(long? assessorConfigId)
+    {
+        if (!assessorConfigId.HasValue)
+        {
+            return (false, "No assessor model configuration specified.");
+        }
+        var config = await _dbContext.SystemAiApiConfigurations.FindAsync(assessorConfigId.Value);
+        if (config == null)
+        {
+            return (false, "The assessor configuration was not found.");
+        }
+        if (!config.IsEnabled)
+        {
+            return (false, "The assessor configuration is disabled.");
+        }
+        if (string.IsNullOrWhiteSpace(config.EncryptedApiKey))
+        {
+            return (false, "The assessor configuration has no API key.");
+        }
+        if ((config.ModelRole & 4) != 4)
+        {
+            return (false, "The assessor configuration does not have the Benchmark role.");
+        }
+        return (true, null);
+    }
+
     [HttpPost("runs/{id}/answers/{answerId}/reassess")]
     public async Task<IActionResult> ReassessAnswer(long id, long answerId, [FromBody] ReassessAnswerRequest? request)
     {
+        if (_runManager.CurrentRunId.HasValue)
+        {
+            return Conflict("A benchmark run is already in progress.");
+        }
+
         var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync();
         if (!canSpend)
         {
             return StatusCode(StatusCodes.Status429TooManyRequests, denialReason);
         }
 
-        var (success, error) = await _benchmarkService.ReassessQuestionAsync(answerId, request?.AssessorModelConfigurationId);
-        if (!success)
+        var run = await _dbContext.BenchmarkRuns
+            .Include(r => r.Answers)
+            .FirstOrDefaultAsync(r => r.Id == id);
+        if (run == null) return NotFound();
+
+        var answer = run.Answers.FirstOrDefault(a => a.Id == answerId);
+        if (answer == null) return NotFound();
+
+        long? targetAssessorId = request?.AssessorModelConfigurationId ?? run.AssessorModelConfigurationId;
+        var (assessorValid, assessorError) = await ValidateAssessorConfigurationAsync(targetAssessorId);
+        if (!assessorValid)
         {
-            return BadRequest(error);
+            return BadRequest(assessorError);
         }
-        return Ok();
+
+        var cts = new CancellationTokenSource();
+        if (!_runManager.TryStart(run.Id, cts, out _))
+        {
+            return Conflict("A benchmark run is already in progress.");
+        }
+
+        _ = Task.Run(() => _benchmarkService.ReassessSingleQuestionAsync(answerId, request?.AssessorModelConfigurationId, cts.Token));
+        return Accepted(new { runId = id });
+    }
+
+    [HttpPost("runs/{id}/answers/{answerId}/rerun")]
+    public async Task<IActionResult> RerunAnswer(long id, long answerId, [FromBody] BenchmarkRetryRequest? request)
+    {
+        if (_runManager.CurrentRunId.HasValue)
+        {
+            return Conflict("A benchmark run is already in progress.");
+        }
+
+        var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync();
+        if (!canSpend)
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests, denialReason);
+        }
+
+        var run = await _dbContext.BenchmarkRuns
+            .Include(r => r.Answers)
+            .FirstOrDefaultAsync(r => r.Id == id);
+        if (run == null) return NotFound();
+
+        var answer = run.Answers.FirstOrDefault(a => a.Id == answerId);
+        if (answer == null) return NotFound();
+
+        if (string.IsNullOrWhiteSpace(answer.QuestionText))
+        {
+            return BadRequest("Question text is empty.");
+        }
+
+        if (!run.TestedModelConfigurationId.HasValue)
+        {
+            return BadRequest("Run has no tested model configuration.");
+        }
+        var testedConfig = await _dbContext.SystemAiApiConfigurations.FindAsync(run.TestedModelConfigurationId.Value);
+        if (testedConfig == null)
+        {
+            return BadRequest("The tested model configuration was not found.");
+        }
+        if (string.IsNullOrWhiteSpace(testedConfig.EncryptedApiKey))
+        {
+            return BadRequest("The tested model configuration has no API key.");
+        }
+
+        long? targetAssessorId = request?.AssessorModelConfigurationId ?? run.AssessorModelConfigurationId;
+        var (assessorValid, assessorError) = await ValidateAssessorConfigurationAsync(targetAssessorId);
+        if (!assessorValid)
+        {
+            return BadRequest(assessorError);
+        }
+
+        var cts = new CancellationTokenSource();
+        if (!_runManager.TryStart(run.Id, cts, out _))
+        {
+            return Conflict("A benchmark run is already in progress.");
+        }
+
+        _ = Task.Run(() => _benchmarkService.RerunSingleQuestionAsync(answerId, request?.AssessorModelConfigurationId, cts.Token));
+        return Accepted(new { runId = id });
+    }
+
+    [HttpPost("runs/{id}/rerun-synthesis")]
+    public async Task<IActionResult> RerunSynthesis(long id, [FromBody] BenchmarkRetryRequest? request)
+    {
+        if (_runManager.CurrentRunId.HasValue)
+        {
+            return Conflict("A benchmark run is already in progress.");
+        }
+
+        var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync();
+        if (!canSpend)
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests, denialReason);
+        }
+
+        var run = await _dbContext.BenchmarkRuns
+            .Include(r => r.Answers)
+            .FirstOrDefaultAsync(r => r.Id == id);
+        if (run == null) return NotFound();
+
+        if (run.Answers.Count == 0)
+        {
+            return BadRequest("This run has no answers to synthesize.");
+        }
+
+        long? targetAssessorId = request?.AssessorModelConfigurationId ?? run.AssessorModelConfigurationId;
+        var (assessorValid, assessorError) = await ValidateAssessorConfigurationAsync(targetAssessorId);
+        if (!assessorValid)
+        {
+            return BadRequest(assessorError);
+        }
+
+        var cts = new CancellationTokenSource();
+        if (!_runManager.TryStart(run.Id, cts, out _))
+        {
+            return Conflict("A benchmark run is already in progress.");
+        }
+
+        _ = Task.Run(() => _benchmarkService.RerunFinalSynthesisAsync(id, request?.AssessorModelConfigurationId, cts.Token));
+        return Accepted(new { runId = id });
+    }
+
+    [HttpPost("runs/{id}/retry-failed-assessments")]
+    public async Task<IActionResult> RetryFailedAssessments(long id, [FromBody] BenchmarkRetryRequest? request)
+    {
+        if (_runManager.CurrentRunId.HasValue)
+        {
+            return Conflict("A benchmark run is already in progress.");
+        }
+
+        var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync();
+        if (!canSpend)
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests, denialReason);
+        }
+
+        var run = await _dbContext.BenchmarkRuns
+            .Include(r => r.Answers)
+            .FirstOrDefaultAsync(r => r.Id == id);
+        if (run == null) return NotFound();
+
+        if (!run.Answers.Any(a => a.AssessmentStatus != BenchmarkAssessmentStatus.Scored))
+        {
+            return BadRequest("This run has no unscored assessments to retry.");
+        }
+
+        long? targetAssessorId = request?.AssessorModelConfigurationId ?? run.AssessorModelConfigurationId;
+        var (assessorValid, assessorError) = await ValidateAssessorConfigurationAsync(targetAssessorId);
+        if (!assessorValid)
+        {
+            return BadRequest(assessorError);
+        }
+
+        var cts = new CancellationTokenSource();
+        if (!_runManager.TryStart(run.Id, cts, out _))
+        {
+            return Conflict("A benchmark run is already in progress.");
+        }
+
+        _ = Task.Run(() => _benchmarkService.RetryFailedAssessmentsAsync(id, request?.AssessorModelConfigurationId, cts.Token));
+        return Accepted(new { runId = id });
     }
 
     [HttpPost("runs/{id}/cancel")]

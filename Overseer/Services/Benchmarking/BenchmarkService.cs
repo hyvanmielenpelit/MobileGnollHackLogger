@@ -63,22 +63,72 @@ public class BenchmarkService
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
-        var staleCutoff = DateTime.UtcNow.AddMinutes(-30);
         var orphanedRuns = await db.BenchmarkRuns
-            .Where(r => r.Status == BenchmarkRunStatus.Running && r.StartedAtUtc < staleCutoff)
+            .Include(r => r.Answers)
+            .Where(r => r.Status == BenchmarkRunStatus.Running)
             .ToListAsync();
 
         if (orphanedRuns.Count > 0)
         {
             foreach (var run in orphanedRuns)
             {
-                run.Status = BenchmarkRunStatus.Failed;
+                if (run.Answers.Count == 0)
+                {
+                    run.Status = BenchmarkRunStatus.Failed;
+                }
+                else
+                {
+                    BenchmarkRunFinalizer.Apply(run, run.Answers);
+                }
                 run.ErrorMessage = "Run interrupted by application restart.";
                 run.CompletedAtUtc = DateTime.UtcNow;
             }
             await db.SaveChangesAsync();
             _logger.LogInformation("Cleaned up {Count} orphaned benchmark runs.", orphanedRuns.Count);
         }
+    }
+
+    private async Task<(SystemAiApiConfiguration? Config, string? ApiKey, string? Error)> ResolveAssessorAsync(
+        ApplicationDbContext db, BenchmarkRun run, long? overrideConfigId, CancellationToken ct)
+    {
+        SystemAiApiConfiguration? config;
+        if (overrideConfigId.HasValue)
+        {
+            config = await db.SystemAiApiConfigurations.FirstOrDefaultAsync(c => c.Id == overrideConfigId.Value, ct);
+            if (config == null)
+            {
+                return (null, null, "The specified assessor configuration was not found.");
+            }
+        }
+        else
+        {
+            config = run.AssessorModelConfiguration ??
+                (run.AssessorModelConfigurationId.HasValue
+                    ? await db.SystemAiApiConfigurations.FirstOrDefaultAsync(c => c.Id == run.AssessorModelConfigurationId.Value, ct)
+                    : null);
+            if (config == null)
+            {
+                return (null, null, "Run assessor configuration was not found.");
+            }
+        }
+
+        if (!config.IsEnabled)
+        {
+            return (null, null, "The assessor configuration is disabled.");
+        }
+
+        if (string.IsNullOrWhiteSpace(config.EncryptedApiKey))
+        {
+            return (null, null, "The assessor configuration has no API key.");
+        }
+
+        if ((config.ModelRole & 4) != 4)
+        {
+            return (null, null, "The assessor configuration does not have the Benchmark role.");
+        }
+
+        string apiKey = _cryptoService.Decrypt(config.EncryptedApiKey, config.ApiKeyNonce!, config.ApiKeyTag!, "SYSTEM_API_KEY");
+        return (config, apiKey, null);
     }
 
     public async Task RunAsync(long runId, CancellationToken cancellationToken)
@@ -275,39 +325,9 @@ public class BenchmarkService
             // Finalize Run totals & status
             runStopwatch.Stop();
             run.TotalDurationMs = runStopwatch.ElapsedMilliseconds;
-            run.CompletedAtUtc = DateTime.UtcNow;
 
-            var allAnswers = await db.BenchmarkRunAnswers.Where(a => a.BenchmarkRunId == runId).ToListAsync(cancellationToken);
-            run.TotalInputTokens = allAnswers.Sum(a => (long)(a.InputTokens ?? 0));
-            run.TotalOutputTokens = allAnswers.Sum(a => (long)(a.OutputTokens ?? 0));
-            run.TotalCacheReadTokens = allAnswers.Sum(a => (long)(a.CacheReadInputTokens ?? 0));
-            run.TotalCacheCreationTokens = allAnswers.Sum(a => (long)(a.CacheCreationInputTokens ?? 0));
-            run.TotalAnswerDurationMs = allAnswers.Sum(a => a.DurationMs);
-            run.AnsweredQuestionCount = allAnswers.Count(a => a.Status == BenchmarkAnswerStatus.Ok);
-
-            // Calculate Indices
-            var scorableItems = allAnswers
-                .Where(a => a.Status == BenchmarkAnswerStatus.Ok)
-                .Select(a => (a.QualityScore, a.AssessedDifficulty ?? GetFallbackDifficulty(a.Difficulty)))
-                .ToList();
-
-            var speedItems = allAnswers
-                .Where(a => a.Status == BenchmarkAnswerStatus.Ok)
-                .Select(a => (a.SpeedScore, a.AssessedDifficulty ?? GetFallbackDifficulty(a.Difficulty)))
-                .ToList();
-
-            run.QualityIndex = BenchmarkScoring.QualityIndex(scorableItems);
-            run.SpeedIndex = BenchmarkScoring.SpeedIndex(speedItems);
-
-            if (allAnswers.Any(a => a.Status == BenchmarkAnswerStatus.ProviderError || a.Status == BenchmarkAnswerStatus.Failed))
-            {
-                run.Status = BenchmarkRunStatus.CompletedWithErrors;
-            }
-            else
-            {
-                run.Status = BenchmarkRunStatus.Completed;
-            }
-
+            var allAnswers = await db.BenchmarkRunAnswers.Where(a => a.BenchmarkRunId == run.Id).ToListAsync(CancellationToken.None);
+            BenchmarkRunFinalizer.Apply(run, allAnswers);
             await db.SaveChangesAsync(CancellationToken.None);
         }
         catch (OperationCanceledException)
@@ -331,7 +351,7 @@ public class BenchmarkService
             if (run != null)
             {
                 run.Status = BenchmarkRunStatus.Failed;
-                run.ErrorMessage = ex.Message;
+                run.ErrorMessage = BenchmarkAssessmentFailure.Truncate(ex.Message);
                 run.CompletedAtUtc = DateTime.UtcNow;
                 await db.SaveChangesAsync();
             }
@@ -445,37 +465,8 @@ public class BenchmarkService
             // Re-run synthesis over all answers
             await ExecuteFinalSynthesisAsync(db, configService, run, assessorConfig, assessorApiKey, scoringConstants, cancellationToken);
 
-            var allAnswers = await db.BenchmarkRunAnswers.Where(a => a.BenchmarkRunId == runId).ToListAsync(cancellationToken);
-            run.TotalInputTokens = allAnswers.Sum(a => (long)(a.InputTokens ?? 0));
-            run.TotalOutputTokens = allAnswers.Sum(a => (long)(a.OutputTokens ?? 0));
-            run.TotalCacheReadTokens = allAnswers.Sum(a => (long)(a.CacheReadInputTokens ?? 0));
-            run.TotalCacheCreationTokens = allAnswers.Sum(a => (long)(a.CacheCreationInputTokens ?? 0));
-            run.TotalAnswerDurationMs = allAnswers.Sum(a => a.DurationMs);
-            run.AnsweredQuestionCount = allAnswers.Count(a => a.Status == BenchmarkAnswerStatus.Ok);
-            run.CompletedAtUtc = DateTime.UtcNow;
-
-            var scorableItems = allAnswers
-                .Where(a => a.Status == BenchmarkAnswerStatus.Ok)
-                .Select(a => (a.QualityScore, a.AssessedDifficulty ?? GetFallbackDifficulty(a.Difficulty)))
-                .ToList();
-
-            var speedItems = allAnswers
-                .Where(a => a.Status == BenchmarkAnswerStatus.Ok)
-                .Select(a => (a.SpeedScore, a.AssessedDifficulty ?? GetFallbackDifficulty(a.Difficulty)))
-                .ToList();
-
-            run.QualityIndex = BenchmarkScoring.QualityIndex(scorableItems);
-            run.SpeedIndex = BenchmarkScoring.SpeedIndex(speedItems);
-
-            if (allAnswers.Any(a => a.Status == BenchmarkAnswerStatus.ProviderError || a.Status == BenchmarkAnswerStatus.Failed))
-            {
-                run.Status = BenchmarkRunStatus.CompletedWithErrors;
-            }
-            else
-            {
-                run.Status = BenchmarkRunStatus.Completed;
-            }
-
+            var allAnswers = await db.BenchmarkRunAnswers.Where(a => a.BenchmarkRunId == run.Id).ToListAsync(CancellationToken.None);
+            BenchmarkRunFinalizer.Apply(run, allAnswers);
             await db.SaveChangesAsync(CancellationToken.None);
         }
         finally
@@ -561,7 +552,7 @@ public class BenchmarkService
             .Distinct();
         string toolSummary = string.Join(", ", toolNames);
 
-        int assessedDiff = question.AssessedDifficulty ?? GetFallbackDifficulty(question.Difficulty);
+        int assessedDiff = question.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(question.Difficulty);
 
         var answer = new BenchmarkRunAnswer
         {
@@ -574,7 +565,7 @@ public class BenchmarkService
             ThoughtText = sanitized.ThoughtText,
             Status = classification.IsProviderError ? BenchmarkAnswerStatus.ProviderError : (!string.IsNullOrEmpty(terminalError) ? BenchmarkAnswerStatus.Failed : BenchmarkAnswerStatus.Ok),
             AssessmentStatus = BenchmarkAssessmentStatus.Pending,
-            ErrorMessage = terminalError,
+            ErrorMessage = BenchmarkAssessmentFailure.Truncate(terminalError),
             HttpStatusCode = classification.HttpStatus,
             DurationMs = runResult.TotalDurationMs ?? sw.ElapsedMilliseconds,
             TimeToFirstTokenMs = runResult.TimeToFirstTokenMs,
@@ -690,7 +681,7 @@ public class BenchmarkService
         answer.ThoughtText = sanitized.ThoughtText;
         answer.Status = classification.IsProviderError ? BenchmarkAnswerStatus.ProviderError : (!string.IsNullOrEmpty(terminalError) ? BenchmarkAnswerStatus.Failed : BenchmarkAnswerStatus.Ok);
         answer.AssessmentStatus = BenchmarkAssessmentStatus.Pending;
-        answer.ErrorMessage = terminalError;
+        answer.ErrorMessage = BenchmarkAssessmentFailure.Truncate(terminalError);
         answer.HttpStatusCode = classification.HttpStatus;
         answer.DurationMs = runResult.TotalDurationMs ?? sw.ElapsedMilliseconds;
         answer.TimeToFirstTokenMs = runResult.TimeToFirstTokenMs;
@@ -780,24 +771,47 @@ public class BenchmarkService
 
         var runResult = new AgentRunResult();
         var sw = Stopwatch.StartNew();
-        await foreach (var _ in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, runResult, cancellationToken)) { }
+        string? terminalError = null;
+        try
+        {
+            await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, runResult, cancellationToken))
+            {
+                if (evt.Type == "error") terminalError = evt.Data?.ToString();
+            }
+        }
+        catch (OperationCanceledException) { throw; }   // cancellation must still cancel the run
+        catch (Exception ex) { terminalError = ex.Message; }
         sw.Stop();
 
-        var parseResult = BenchmarkAssessmentParser.ParsePerQuestion(runResult.FinalText);
+        var parseResult = string.IsNullOrWhiteSpace(terminalError)
+            ? BenchmarkAssessmentParser.ParsePerQuestion(runResult.FinalText)
+            : new PerQuestionAssessmentParseResult { Success = false, ErrorMessage = terminalError };
 
-        if (!parseResult.Success)
+        if (string.IsNullOrWhiteSpace(terminalError) && !parseResult.Success)
         {
             _logger.LogWarning("Assessor per-question output failed JSON parsing. Retrying once...");
             runRequest.SeedHistory.Add(new { role = "assistant", content = runResult.FinalText ?? string.Empty });
             runRequest.SeedHistory.Add(new { role = "user", content = $"Your previous response was not valid JSON or could not be parsed: {parseResult.ErrorMessage}. Please output ONLY the raw JSON object according to the schema without any markdown wrapping or extra text." });
 
             var retryResult = new AgentRunResult();
-            await foreach (var _ in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, retryResult, cancellationToken)) { }
-            parseResult = BenchmarkAssessmentParser.ParsePerQuestion(retryResult.FinalText);
+            try
+            {
+                await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, retryResult, cancellationToken))
+                {
+                    if (evt.Type == "error") terminalError = evt.Data?.ToString();
+                }
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex) { terminalError = ex.Message; }
+
+            if (string.IsNullOrWhiteSpace(terminalError))
+            {
+                parseResult = BenchmarkAssessmentParser.ParsePerQuestion(retryResult.FinalText);
+            }
             if (retryResult.TotalPromptTokens > 0) runResult = retryResult;
         }
 
-        if (parseResult.Success && parseResult.Result != null)
+        if (string.IsNullOrWhiteSpace(terminalError) && parseResult.Success && parseResult.Result != null)
         {
             var res = parseResult.Result;
             answer.AccuracyLevel = res.AccuracyLevel;
@@ -824,9 +838,18 @@ public class BenchmarkService
         }
         else
         {
+            var failure = BenchmarkAssessmentFailure.Describe(terminalError, parseResult.ErrorMessage);
             answer.AssessmentStatus = BenchmarkAssessmentStatus.Failed;
-            answer.AssessmentError = parseResult.ErrorMessage;
+            answer.AssessmentError = failure.Message;
+            _logger.LogWarning("Benchmark run {RunId} answer {OrderIndex} assessment failed: {Error}",
+                run.Id, answer.OrderIndex, failure.Message);
         }
+
+        answer.AssessedByModelConfigurationId = assessorConfig.Id;
+        answer.AssessedByModelDisplayNameUsed = assessorConfig.DisplayName;
+        answer.AssessedByModelProviderUsed = assessorConfig.Provider;
+        answer.AssessedByModelIdUsed = assessorConfig.ModelId;
+        answer.AssessedAtUtc = DateTime.UtcNow;
 
         await db.SaveChangesAsync(CancellationToken.None);
 
@@ -873,7 +896,7 @@ public class BenchmarkService
             QualityScore = a.QualityScore,
             SpeedScore = a.SpeedScore,
             DurationMs = a.DurationMs,
-            AssessedDifficulty = a.AssessedDifficulty ?? GetFallbackDifficulty(a.Difficulty),
+            AssessedDifficulty = a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty),
             CriticalError = a.CriticalError,
             ReviewComment = a.ReviewComment,
             Status = a.Status
@@ -1268,12 +1291,12 @@ public class BenchmarkService
 
         var scorableItems = run.Answers
             .Where(a => a.Status == BenchmarkAnswerStatus.Ok && a.QualityScore.HasValue)
-            .Select(a => (a.QualityScore, a.AssessedDifficulty ?? GetFallbackDifficulty(a.Difficulty)))
+            .Select(a => (a.QualityScore, a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty)))
             .ToList();
 
         var speedItems = run.Answers
             .Where(a => a.Status == BenchmarkAnswerStatus.Ok && a.SpeedScore.HasValue)
-            .Select(a => (a.SpeedScore, a.AssessedDifficulty ?? GetFallbackDifficulty(a.Difficulty)))
+            .Select(a => (a.SpeedScore, a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty)))
             .ToList();
 
         run.QualityIndex = BenchmarkScoring.QualityIndex(scorableItems);
@@ -1284,7 +1307,137 @@ public class BenchmarkService
         return (true, null);
     }
 
-    public async Task<(bool Success, string? ErrorMessage)> ReassessQuestionAsync(
+    public async Task RerunSingleQuestionAsync(
+        long answerId,
+        long? assessorConfigId = null,
+        CancellationToken cancellationToken = default)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var configService = scope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
+
+        var answer = await db.BenchmarkRunAnswers
+            .Include(a => a.BenchmarkRun).ThenInclude(r => r.TestedModelConfiguration)
+            .Include(a => a.BenchmarkRun).ThenInclude(r => r.AssessorModelConfiguration)
+            .Include(a => a.BenchmarkRun).ThenInclude(r => r.BenchmarkSuite).ThenInclude(s => s!.Questions)
+            .FirstOrDefaultAsync(a => a.Id == answerId, cancellationToken);
+
+        if (answer == null)
+        {
+            _logger.LogWarning("Answer {AnswerId} not found for rerun.", answerId);
+            return;
+        }
+
+        var run = answer.BenchmarkRun;
+        try
+        {
+            var testedConfig = run.TestedModelConfiguration;
+            if (testedConfig == null || string.IsNullOrWhiteSpace(testedConfig.EncryptedApiKey))
+            {
+                answer.AssessmentError = BenchmarkAssessmentFailure.Truncate("Tested model configuration missing or has no API key.");
+                await db.SaveChangesAsync(CancellationToken.None);
+                return;
+            }
+
+            var (assessorConfig, assessorApiKey, assessorError) = await ResolveAssessorAsync(db, run, assessorConfigId, cancellationToken);
+            if (assessorConfig == null || assessorApiKey == null)
+            {
+                answer.AssessmentError = BenchmarkAssessmentFailure.Truncate(assessorError);
+                await db.SaveChangesAsync(CancellationToken.None);
+                return;
+            }
+
+            string testedApiKey = _cryptoService.Decrypt(testedConfig.EncryptedApiKey, testedConfig.ApiKeyNonce!, testedConfig.ApiKeyTag!, "SYSTEM_API_KEY");
+
+            run.Status = BenchmarkRunStatus.Running;
+            run.CompletedAtUtc = null;
+            await db.SaveChangesAsync(cancellationToken);
+
+            answer.AccuracyLevel = null;
+            answer.CompletenessLevel = null;
+            answer.ConcisenessLevel = null;
+            answer.ReadabilityLevel = null;
+            answer.AccuracyScore = null;
+            answer.CompletenessScore = null;
+            answer.ConcisenessScore = null;
+            answer.ReadabilityScore = null;
+            answer.QualityScore = null;
+            answer.SpeedScore = null;
+            answer.Score = null;
+            answer.CriticalError = false;
+            answer.ReviewComment = null;
+            answer.AssessmentError = null;
+            answer.AssessedByModelConfigurationId = null;
+            answer.AssessedByModelDisplayNameUsed = null;
+            answer.AssessedByModelProviderUsed = null;
+            answer.AssessedByModelIdUsed = null;
+            answer.AssessedAtUtc = null;
+            answer.AssessmentStatus = BenchmarkAssessmentStatus.Pending;
+            await db.SaveChangesAsync(cancellationToken);
+
+            var profile = run.ScoringProfileId.HasValue
+                ? await _scoringProfileService.GetProfileByIdAsync(run.ScoringProfileId.Value) ?? await _scoringProfileService.GetDefaultProfileAsync()
+                : await _scoringProfileService.GetDefaultProfileAsync();
+            var scoringConstants = _scoringProfileService.ToConstants(profile);
+
+            var allowedTools = _configuration.GetSection("Benchmark:AllowedTools").Get<List<string>>() ?? _defaultAllowedTools;
+            int maxToolIterations = _configuration.GetValue<int>("Benchmark:MaxToolIterations", 8);
+            int maxTotalModelCalls = _configuration.GetValue<int>("Benchmark:MaxTotalModelCalls", 12);
+            int maxResultLength = _configuration.GetValue<int>("Benchmark:MaxResultLength", 10000);
+            int maxCallsPerSession = _configuration.GetValue<int>("Benchmark:MaxCallsPerSession", 50);
+
+            string systemPrompt = _chatService.BuildSystemPrompt(
+                wikiContext: Array.Empty<string>(),
+                spoilerFreeMode: false,
+                verboseMode: false,
+                isGameOn: false,
+                developerMode: false,
+                overseerMode: 0,
+                hasGameSnapshot: false,
+                hasMessageHistory: false,
+                clientSettings: null,
+                enableToolUse: true,
+                enableWebSearch: false,
+                allowSourceCodeReferences: true,
+                enableSubAgents: false,
+                parallelMode: testedConfig.ParallelExecutionMode);
+
+            string? expectedPoints = run.BenchmarkSuite?.Questions.FirstOrDefault(q => q.OrderIndex == answer.OrderIndex)?.ExpectedPoints;
+
+            await ReExecuteSingleAnswerAsync(
+                db, configService, run, answer, testedConfig, testedApiKey,
+                systemPrompt, allowedTools, maxToolIterations, maxTotalModelCalls,
+                maxResultLength, maxCallsPerSession, cancellationToken);
+
+            await ExecutePerQuestionAssessmentAsync(
+                db, configService, run, answer, expectedPoints,
+                assessorConfig, assessorApiKey, scoringConstants, cancellationToken);
+
+            var allAnswers = await db.BenchmarkRunAnswers
+                .Where(a => a.BenchmarkRunId == run.Id)
+                .ToListAsync(CancellationToken.None);
+            BenchmarkRunFinalizer.Apply(run, allAnswers);
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
+        catch (OperationCanceledException)
+        {
+            run.Status = BenchmarkRunStatus.Canceled;
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Rerun failed for answer {AnswerId}.", answerId);
+            run.Status = BenchmarkRunStatus.CompletedWithErrors;
+            run.ErrorMessage = BenchmarkAssessmentFailure.Truncate(ex.Message);
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
+        finally
+        {
+            _runManager.Complete(run.Id);
+        }
+    }
+
+    public async Task ReassessSingleQuestionAsync(
         long answerId,
         long? assessorConfigId = null,
         CancellationToken cancellationToken = default)
@@ -1302,64 +1455,219 @@ public class BenchmarkService
 
         if (answer == null)
         {
-            return (false, "Answer not found.");
+            _logger.LogWarning("Answer {AnswerId} not found for reassessment.", answerId);
+            return;
         }
 
         var run = answer.BenchmarkRun;
-        var assessorConfig = assessorConfigId.HasValue
-            ? await db.SystemAiApiConfigurations.FindAsync(assessorConfigId.Value)
-            : run.AssessorModelConfiguration;
-
-        if (assessorConfig == null || string.IsNullOrWhiteSpace(assessorConfig.EncryptedApiKey))
+        try
         {
-            return (false, "Assessor configuration missing or has no API key.");
+            var (assessorConfig, assessorApiKey, error) = await ResolveAssessorAsync(db, run, assessorConfigId, cancellationToken);
+            if (assessorConfig == null || assessorApiKey == null)
+            {
+                answer.AssessmentError = BenchmarkAssessmentFailure.Truncate(error);
+                await db.SaveChangesAsync(CancellationToken.None);
+                return;
+            }
+
+            run.Status = BenchmarkRunStatus.Running;
+            run.CompletedAtUtc = null;
+            await db.SaveChangesAsync(cancellationToken);
+
+            var profile = run.ScoringProfileId.HasValue
+                ? await _scoringProfileService.GetProfileByIdAsync(run.ScoringProfileId.Value) ?? await _scoringProfileService.GetDefaultProfileAsync()
+                : await _scoringProfileService.GetDefaultProfileAsync();
+            var constants = _scoringProfileService.ToConstants(profile);
+
+            string? expectedPoints = null;
+            if (run.BenchmarkSuite != null)
+            {
+                var suiteQ = run.BenchmarkSuite.Questions.FirstOrDefault(q => q.OrderIndex == answer.OrderIndex);
+                expectedPoints = suiteQ?.ExpectedPoints;
+            }
+
+            await ExecutePerQuestionAssessmentAsync(
+                db, configService, run, answer, expectedPoints,
+                assessorConfig, assessorApiKey, constants, cancellationToken);
+
+            var allAnswers = await db.BenchmarkRunAnswers
+                .Where(a => a.BenchmarkRunId == run.Id)
+                .ToListAsync(CancellationToken.None);
+
+            BenchmarkRunFinalizer.Apply(run, allAnswers);
+            await db.SaveChangesAsync(CancellationToken.None);
         }
-
-        string assessorApiKey = _cryptoService.Decrypt(assessorConfig.EncryptedApiKey, assessorConfig.ApiKeyNonce!, assessorConfig.ApiKeyTag!, "SYSTEM_API_KEY");
-
-        var profile = run.ScoringProfileId.HasValue
-            ? await _scoringProfileService.GetProfileByIdAsync(run.ScoringProfileId.Value) ?? await _scoringProfileService.GetDefaultProfileAsync()
-            : await _scoringProfileService.GetDefaultProfileAsync();
-        var constants = _scoringProfileService.ToConstants(profile);
-
-        string? expectedPoints = null;
-        if (run.BenchmarkSuite != null)
+        catch (OperationCanceledException)
         {
-            var suiteQ = run.BenchmarkSuite.Questions.FirstOrDefault(q => q.OrderIndex == answer.OrderIndex);
-            expectedPoints = suiteQ?.ExpectedPoints;
+            run.Status = BenchmarkRunStatus.Canceled;
+            await db.SaveChangesAsync(CancellationToken.None);
         }
-
-        await ExecutePerQuestionAssessmentAsync(
-            db, configService, run, answer, expectedPoints,
-            assessorConfig, assessorApiKey, constants, cancellationToken);
-
-        // Recompute run indices
-        var allAnswers = await db.BenchmarkRunAnswers
-            .Where(a => a.BenchmarkRunId == run.Id)
-            .ToListAsync(cancellationToken);
-
-        var scorableItems = allAnswers
-            .Where(a => a.Status == BenchmarkAnswerStatus.Ok && a.QualityScore.HasValue)
-            .Select(a => (a.QualityScore, a.AssessedDifficulty ?? GetFallbackDifficulty(a.Difficulty)))
-            .ToList();
-
-        var speedItems = allAnswers
-            .Where(a => a.Status == BenchmarkAnswerStatus.Ok && a.SpeedScore.HasValue)
-            .Select(a => (a.SpeedScore, a.AssessedDifficulty ?? GetFallbackDifficulty(a.Difficulty)))
-            .ToList();
-
-        run.QualityIndex = BenchmarkScoring.QualityIndex(scorableItems);
-        run.SpeedIndex = BenchmarkScoring.SpeedIndex(speedItems);
-
-        await db.SaveChangesAsync(CancellationToken.None);
-        return (true, null);
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Reassessment failed for answer {AnswerId}.", answerId);
+            answer.AssessmentError = BenchmarkAssessmentFailure.Truncate(ex.Message);
+            run.Status = BenchmarkRunStatus.CompletedWithErrors;
+            run.ErrorMessage = BenchmarkAssessmentFailure.Truncate(ex.Message);
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
+        finally
+        {
+            _runManager.Complete(run.Id);
+        }
     }
 
-    private static int GetFallbackDifficulty(BenchmarkDifficulty diff) => diff switch
+    public async Task RerunFinalSynthesisAsync(
+        long runId,
+        long? assessorConfigId = null,
+        CancellationToken cancellationToken = default)
     {
-        BenchmarkDifficulty.Simple => 25,
-        BenchmarkDifficulty.Intermediate => 55,
-        BenchmarkDifficulty.Advanced => 85,
-        _ => 50
-    };
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var configService = scope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
+
+        var run = await db.BenchmarkRuns
+            .Include(r => r.Answers)
+            .Include(r => r.AssessorModelConfiguration)
+            .FirstOrDefaultAsync(r => r.Id == runId, cancellationToken);
+
+        if (run == null)
+        {
+            _logger.LogWarning("Run {RunId} not found for final synthesis rerun.", runId);
+            _runManager.Complete(runId);
+            return;
+        }
+
+        try
+        {
+            var (assessorConfig, assessorApiKey, error) = await ResolveAssessorAsync(db, run, assessorConfigId, cancellationToken);
+            if (assessorConfig == null || assessorApiKey == null)
+            {
+                run.ErrorMessage = BenchmarkAssessmentFailure.Truncate(error);
+                await db.SaveChangesAsync(CancellationToken.None);
+                return;
+            }
+
+            run.Status = BenchmarkRunStatus.Running;
+            run.CompletedAtUtc = null;
+            await db.SaveChangesAsync(cancellationToken);
+
+            var profile = run.ScoringProfileId.HasValue
+                ? await _scoringProfileService.GetProfileByIdAsync(run.ScoringProfileId.Value) ?? await _scoringProfileService.GetDefaultProfileAsync()
+                : await _scoringProfileService.GetDefaultProfileAsync();
+            var constants = _scoringProfileService.ToConstants(profile);
+
+            await ExecuteFinalSynthesisAsync(db, configService, run, assessorConfig, assessorApiKey, constants, cancellationToken);
+
+            var allAnswers = await db.BenchmarkRunAnswers
+                .Where(a => a.BenchmarkRunId == run.Id)
+                .ToListAsync(CancellationToken.None);
+            BenchmarkRunFinalizer.Apply(run, allAnswers);
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
+        catch (OperationCanceledException)
+        {
+            run.Status = BenchmarkRunStatus.Canceled;
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Final synthesis rerun failed for run {RunId}.", runId);
+            run.Status = BenchmarkRunStatus.CompletedWithErrors;
+            run.ErrorMessage = BenchmarkAssessmentFailure.Truncate(ex.Message);
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
+        finally
+        {
+            _runManager.Complete(run.Id);
+        }
+    }
+
+    public async Task RetryFailedAssessmentsAsync(
+        long runId,
+        long? assessorConfigId = null,
+        CancellationToken cancellationToken = default)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var configService = scope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
+
+        var run = await db.BenchmarkRuns
+            .Include(r => r.Answers)
+            .Include(r => r.AssessorModelConfiguration)
+            .Include(r => r.BenchmarkSuite)
+            .ThenInclude(s => s!.Questions)
+            .FirstOrDefaultAsync(r => r.Id == runId, cancellationToken);
+
+        if (run == null)
+        {
+            _logger.LogWarning("Run {RunId} not found for retry failed assessments.", runId);
+            _runManager.Complete(runId);
+            return;
+        }
+
+        try
+        {
+            var (assessorConfig, assessorApiKey, error) = await ResolveAssessorAsync(db, run, assessorConfigId, cancellationToken);
+            if (assessorConfig == null || assessorApiKey == null)
+            {
+                run.ErrorMessage = BenchmarkAssessmentFailure.Truncate(error);
+                await db.SaveChangesAsync(CancellationToken.None);
+                return;
+            }
+
+            run.Status = BenchmarkRunStatus.Running;
+            run.CompletedAtUtc = null;
+            await db.SaveChangesAsync(cancellationToken);
+
+            var profile = run.ScoringProfileId.HasValue
+                ? await _scoringProfileService.GetProfileByIdAsync(run.ScoringProfileId.Value) ?? await _scoringProfileService.GetDefaultProfileAsync()
+                : await _scoringProfileService.GetDefaultProfileAsync();
+            var constants = _scoringProfileService.ToConstants(profile);
+
+            var suiteQuestions = (run.BenchmarkSuite?.Questions ?? new List<BenchmarkQuestion>())
+                .ToDictionary(q => q.OrderIndex, q => q.ExpectedPoints);
+
+            var unscoredAnswers = run.Answers
+                .Where(a => a.AssessmentStatus != BenchmarkAssessmentStatus.Scored)
+                .OrderBy(a => a.OrderIndex)
+                .ToList();
+
+            foreach (var answer in unscoredAnswers)
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    run.Status = BenchmarkRunStatus.Canceled;
+                    await db.SaveChangesAsync(CancellationToken.None);
+                    return;
+                }
+
+                string? expectedPoints = suiteQuestions.TryGetValue(answer.OrderIndex, out var ep) ? ep : null;
+                await ExecutePerQuestionAssessmentAsync(
+                    db, configService, run, answer, expectedPoints,
+                    assessorConfig, assessorApiKey, constants, cancellationToken);
+            }
+
+            var allAnswers = await db.BenchmarkRunAnswers
+                .Where(a => a.BenchmarkRunId == run.Id)
+                .ToListAsync(CancellationToken.None);
+            BenchmarkRunFinalizer.Apply(run, allAnswers);
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
+        catch (OperationCanceledException)
+        {
+            run.Status = BenchmarkRunStatus.Canceled;
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Retry failed assessments failed for run {RunId}.", runId);
+            run.Status = BenchmarkRunStatus.CompletedWithErrors;
+            run.ErrorMessage = BenchmarkAssessmentFailure.Truncate(ex.Message);
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
+        finally
+        {
+            _runManager.Complete(run.Id);
+        }
+    }
 }

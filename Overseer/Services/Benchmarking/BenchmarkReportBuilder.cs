@@ -126,7 +126,8 @@ public static class BenchmarkReportBuilder
             }
             sb.AppendLine();
 
-            if (a.QualityScore.HasValue || a.AccuracyLevel.HasValue || !string.IsNullOrWhiteSpace(a.ReviewComment))
+            if (a.QualityScore.HasValue || a.AccuracyLevel.HasValue || !string.IsNullOrWhiteSpace(a.ReviewComment) ||
+                (a.AssessedByModelConfigurationId.HasValue && a.AssessedByModelConfigurationId != run.AssessorModelConfigurationId))
             {
                 sb.AppendLine("> **Evaluation:**");
                 if (a.AccuracyLevel.HasValue)
@@ -138,6 +139,11 @@ public static class BenchmarkReportBuilder
                 if (!string.IsNullOrWhiteSpace(a.ReviewComment))
                 {
                     sb.AppendLine($"> - **Assessor Comment:** {a.ReviewComment}");
+                }
+                if (a.AssessedByModelConfigurationId.HasValue &&
+                    a.AssessedByModelConfigurationId != run.AssessorModelConfigurationId)
+                {
+                    sb.AppendLine($"> - **Assessed by:** {a.AssessedByModelDisplayNameUsed} ({a.AssessedByModelProviderUsed}, {a.AssessedByModelIdUsed}) — differs from this run's assessor");
                 }
                 sb.AppendLine();
             }
