@@ -131,6 +131,22 @@ public class BenchmarkRun
     [MaxLength(128)]
     public string SuiteName { get; set; } = default!;
 
+    [MaxLength(128)]
+    public string? GameSnapshotNameUsed { get; set; }
+
+    [MaxLength(64)]
+    public string? GameSnapshotSha256Used { get; set; }
+
+    public int? GameSnapshotCharCountUsed { get; set; }
+
+    [MaxLength(32)]
+    public string? GameSnapshotCaptureMethodUsed { get; set; }
+
+    /// <summary>Every question in the suite carried a human review stamp when this run started.</summary>
+    public bool SuiteQuestionsReviewed { get; set; }
+
+    public int SuiteReviewedQuestionCountAtStart { get; set; }
+
     // Tested Model Config snapshot
     public long? TestedModelConfigurationId { get; set; }
     public SystemAiApiConfiguration? TestedModelConfiguration { get; set; }

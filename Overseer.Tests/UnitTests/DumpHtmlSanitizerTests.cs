@@ -162,4 +162,31 @@ public class DumpHtmlSanitizerTests
 
         Assert.DoesNotContain("12,7", result);
     }
+
+    [Fact]
+    public void NormalizeFlattenedText_IsIdempotent()
+    {
+        string clientShapedText = "Map:\n   #\u00A0\u00A0\u00A0.\n\n\n\nInventory:   \n1 - an apple   \n";
+        string once = DumpHtmlSanitizer.NormalizeFlattenedText(clientShapedText);
+        string twice = DumpHtmlSanitizer.NormalizeFlattenedText(once);
+
+        Assert.Equal(once, twice);
+        Assert.DoesNotContain('\u00A0', once);
+        Assert.DoesNotContain("   \n", once);
+        Assert.DoesNotContain("\n\n\n", once);
+    }
+
+    [Fact]
+    public void NormalizeFlattenedText_ConvertsNbspToAsciiSpace_AndPreservesColumns()
+    {
+        string rowWithNbsps = "\u00A0\u00A0#\u00A0\u00A0.\u00A0@";
+        string multiline = $"Header\n{rowWithNbsps}\nFooter";
+        string normalized = DumpHtmlSanitizer.NormalizeFlattenedText(multiline);
+
+        Assert.DoesNotContain('\u00A0', normalized);
+        string[] lines = normalized.Split('\n');
+        Assert.Equal(3, lines.Length);
+        Assert.Equal(rowWithNbsps.Length, lines[1].Length);
+        Assert.Equal("  #  . @", lines[1]);
+    }
 }

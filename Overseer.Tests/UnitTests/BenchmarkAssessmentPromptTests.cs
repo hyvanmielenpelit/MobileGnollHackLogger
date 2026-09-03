@@ -203,9 +203,45 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsSeven()
+    public void HarnessVersion_IsEight()
     {
-        Assert.Equal("7", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("8", BenchmarkAssessmentPrompt.HarnessVersion);
+    }
+
+    [Fact]
+    public void PerQuestionPrompt_WithBoard_IncludesGroundTruthSection()
+    {
+        string prompt = BenchmarkAssessmentPrompt.BuildPerQuestionPrompt(
+            "Suite",
+            1,
+            "What is the status of the player?",
+            BenchmarkDifficulty.Simple,
+            "**REQUIRED** - HP 15/15.\n**BOARD FACTS**\n- HP: 15/15",
+            "Player is healthy.",
+            BenchmarkAnswerStatus.Ok,
+            boardName: "Test Board",
+            boardText: "Dlvl:1 $:0 HP:15(15) Pw:10(10) AC:10");
+
+        Assert.Contains("--- GAME CONTEXT BOARD (GROUND TRUTH REFERENCE DATA) ---", prompt);
+        Assert.Contains("Test Board", prompt);
+        Assert.Contains("HP:15(15)", prompt);
+    }
+
+    [Fact]
+    public void PerQuestionPrompt_WithoutBoard_OmitsGroundTruthSection()
+    {
+        string prompt = BenchmarkAssessmentPrompt.BuildPerQuestionPrompt(
+            "Suite",
+            1,
+            "What is the status of the player?",
+            BenchmarkDifficulty.Simple,
+            "**REQUIRED** - keen smell.",
+            "Player has keen smell.",
+            BenchmarkAnswerStatus.Ok,
+            boardName: null,
+            boardText: null);
+
+        Assert.DoesNotContain("--- GAME CONTEXT BOARD (GROUND TRUTH REFERENCE DATA) ---", prompt);
     }
 
     [Fact]

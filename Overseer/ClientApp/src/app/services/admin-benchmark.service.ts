@@ -162,6 +162,11 @@ export interface BenchmarkSuiteDto {
   questionCount: number;
   assessedQuestionCount: number;
   difficultyFullyAssessed: boolean;
+  gameSnapshotId?: number | null;
+  gameSnapshotName?: string | null;
+  gameSnapshotCharCount?: number | null;
+  hasGeneratedQuestions?: boolean;
+  reviewedQuestionCount?: number;
 }
 
 export interface CreateBenchmarkSuiteRequest {
@@ -178,9 +183,15 @@ export interface BenchmarkQuestionDto {
   id: number;
   benchmarkSuiteId: number;
   orderIndex: number;
+  itemRevision?: number;
   questionText: string;
   difficulty: string | number;
   expectedPoints: string | null;
+  isGenerated?: boolean;
+  reviewedAtRevision?: number | null;
+  reviewedAtUtc?: string | null;
+  reviewedByUserId?: string | null;
+  isReviewed?: boolean;
   assessedDifficulty?: number | null;
   assessedDifficultyModel?: string | null;
   assessedDifficultyAtUtc?: string | null;
@@ -194,6 +205,137 @@ export interface BenchmarkQuestionDto {
   assessedDifficultyMaxOutputTokensUsed?: number | null;
   createdAtUtc: string;
   modifiedAtUtc?: string | null;
+}
+
+export interface BenchmarkGameSnapshotDto {
+  id: number;
+  name: string;
+  sanitizedText?: string | null;
+  digestText?: string | null;
+  charCount: number;
+  sha256: string;
+  captureMethod: string;
+  sourceGnollHackVersion?: string | null;
+  notes?: string | null;
+  capturedAtUtc?: string | null;
+  createdAtUtc: string;
+  modifiedAtUtc?: string | null;
+  suiteId?: number | null;
+  suiteName?: string | null;
+}
+
+export interface CaptureBenchmarkSnapshotRequest {
+  sessionId: string;
+  name: string;
+  notes?: string | null;
+  sourceGnollHackVersion?: string | null;
+}
+
+export interface UploadBenchmarkSnapshotRequest {
+  name: string;
+  html: string;
+  notes?: string | null;
+  sourceGnollHackVersion?: string | null;
+}
+
+export interface UpdateBenchmarkGameSnapshotRequest {
+  name?: string | null;
+  notes?: string | null;
+  digestText?: string | null;
+  sourceGnollHackVersion?: string | null;
+}
+
+export interface CaptureBenchmarkSnapshotResponse {
+  board: BenchmarkGameSnapshotDto;
+  suite: BenchmarkSuiteDto;
+}
+
+export interface StartQuestionGenerationRequest {
+  suiteId: number;
+  generatorModelConfigurationId: number;
+  simpleCount: number;
+  intermediateCount: number;
+  advancedCount: number;
+  instructions?: string | null;
+}
+
+export interface QuestionGenerationJobItemDto {
+  difficulty: number;
+  requestedCount: number;
+  generatedCount: number;
+  status: string;
+  errorMessage?: string | null;
+}
+
+export interface QuestionGenerationJobLogEntryDto {
+  timestampUtc: string;
+  message: string;
+  severity: string;
+}
+
+export interface QuestionGenerationJobDto {
+  id: string;
+  suiteId: number;
+  suiteName: string;
+  generatorConfigId: number;
+  generatorDisplayName: string;
+  instructions: string;
+  status: string;
+  startedAtUtc: string;
+  completedAtUtc?: string | null;
+  promptTokens: number;
+  outputTokens: number;
+  items: QuestionGenerationJobItemDto[];
+  log: QuestionGenerationJobLogEntryDto[];
+}
+
+export interface StartRubricCheckRequest {
+  suiteId: number;
+  checkerModelConfigurationId: number;
+  questionIds?: number[] | null;
+}
+
+export interface RubricCheckFindingDto {
+  claim: string;
+  assessment: string;
+  boardQuote?: string | null;
+  reasoning?: string | null;
+}
+
+export interface RubricCheckJobItemDto {
+  questionId: number;
+  orderIndex: number;
+  questionTextExcerpt: string;
+  status: string;
+  verdict?: string | null;
+  findings: RubricCheckFindingDto[];
+  errorMessage?: string | null;
+}
+
+export interface RubricCheckLogEntryDto {
+  timestampUtc: string;
+  message: string;
+  severity: string;
+}
+
+export interface RubricCheckJobDto {
+  id: string;
+  suiteId: number;
+  suiteName: string;
+  scope: string;
+  checkerConfigId: number;
+  checkerDisplayName: string;
+  status: string;
+  startedAtUtc: string;
+  completedAtUtc?: string | null;
+  promptTokens: number;
+  outputTokens: number;
+  items: RubricCheckJobItemDto[];
+  log: RubricCheckLogEntryDto[];
+}
+
+export interface ReviewBenchmarkQuestionRequest {
+  reviewed: boolean;
 }
 
 export interface CreateBenchmarkQuestionRequest {
@@ -901,5 +1043,83 @@ export class AdminBenchmarkService {
 
   deleteSuiteRuns(suiteId: number): Observable<{ deletedCount: number }> {
     return this.http.delete<{ deletedCount: number }>(`/api/admin/benchmark/suites/${suiteId}/runs`);
+  }
+
+  // Game Snapshots
+  captureSnapshot(req: CaptureBenchmarkSnapshotRequest): Observable<CaptureBenchmarkSnapshotResponse> {
+    return this.http.post<CaptureBenchmarkSnapshotResponse>('/api/admin/benchmark/snapshots/capture', req);
+  }
+
+  uploadSnapshot(req: UploadBenchmarkSnapshotRequest): Observable<CaptureBenchmarkSnapshotResponse> {
+    return this.http.post<CaptureBenchmarkSnapshotResponse>('/api/admin/benchmark/snapshots', req);
+  }
+
+  getSnapshots(): Observable<BenchmarkGameSnapshotDto[]> {
+    return this.http.get<BenchmarkGameSnapshotDto[]>('/api/admin/benchmark/snapshots');
+  }
+
+  getSnapshot(id: number, includeText: boolean = false): Observable<BenchmarkGameSnapshotDto> {
+    return this.http.get<BenchmarkGameSnapshotDto>(`/api/admin/benchmark/snapshots/${id}`, {
+      params: { includeText: includeText.toString() }
+    });
+  }
+
+  downloadSnapshotText(id: number): Observable<Blob> {
+    return this.http.get(`/api/admin/benchmark/snapshots/${id}/text`, { responseType: 'blob' });
+  }
+
+  getSnapshotTextUrl(id: number): string {
+    return `/api/admin/benchmark/snapshots/${id}/text`;
+  }
+
+  updateSnapshot(id: number, req: UpdateBenchmarkGameSnapshotRequest): Observable<BenchmarkGameSnapshotDto> {
+    return this.http.put<BenchmarkGameSnapshotDto>(`/api/admin/benchmark/snapshots/${id}`, req);
+  }
+
+  deleteSnapshot(id: number): Observable<void> {
+    return this.http.delete<void>(`/api/admin/benchmark/snapshots/${id}`);
+  }
+
+  // Question Generation
+  startQuestionGeneration(req: StartQuestionGenerationRequest): Observable<{ jobId: string }> {
+    return this.http.post<{ jobId: string }>('/api/admin/benchmark/question-generations', req);
+  }
+
+  getQuestionGeneration(jobId: string): Observable<QuestionGenerationJobDto> {
+    return this.http.get<QuestionGenerationJobDto>(`/api/admin/benchmark/question-generations/${jobId}`);
+  }
+
+  getActiveQuestionGeneration(): Observable<QuestionGenerationJobDto | null> {
+    return this.http.get<QuestionGenerationJobDto | null>('/api/admin/benchmark/question-generations/active');
+  }
+
+  cancelQuestionGeneration(jobId: string): Observable<{ cancelled: boolean }> {
+    return this.http.post<{ cancelled: boolean }>(`/api/admin/benchmark/question-generations/${jobId}/cancel`, {});
+  }
+
+  // Rubric Checks
+  startRubricCheck(req: StartRubricCheckRequest): Observable<{ jobId: string }> {
+    return this.http.post<{ jobId: string }>('/api/admin/benchmark/rubric-checks', req);
+  }
+
+  getRubricCheck(jobId: string): Observable<RubricCheckJobDto> {
+    return this.http.get<RubricCheckJobDto>(`/api/admin/benchmark/rubric-checks/${jobId}`);
+  }
+
+  getActiveRubricCheck(): Observable<RubricCheckJobDto | null> {
+    return this.http.get<RubricCheckJobDto | null>('/api/admin/benchmark/rubric-checks/active');
+  }
+
+  cancelRubricCheck(jobId: string): Observable<{ cancelled: boolean }> {
+    return this.http.post<{ cancelled: boolean }>(`/api/admin/benchmark/rubric-checks/${jobId}/cancel`, {});
+  }
+
+  // Question Review
+  reviewQuestion(id: number, reviewed: boolean): Observable<BenchmarkQuestionDto> {
+    return this.http.post<BenchmarkQuestionDto>(`/api/admin/benchmark/questions/${id}/review`, { reviewed });
+  }
+
+  reviewAllQuestions(suiteId: number): Observable<{ reviewedCount: number, suite: BenchmarkSuiteDto }> {
+    return this.http.post<{ reviewedCount: number, suite: BenchmarkSuiteDto }>(`/api/admin/benchmark/suites/${suiteId}/review-all`, {});
   }
 }

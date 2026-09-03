@@ -25,12 +25,17 @@ import {
   BenchmarkAssessorCalibrationDto,
   BenchmarkLastAssessorDto,
   BenchmarkSecondOpinionMode,
-  BENCHMARK_SECOND_OPINION_MODES
+  BENCHMARK_SECOND_OPINION_MODES,
+  BenchmarkGameSnapshotDto,
+  QuestionGenerationJobDto,
+  QuestionGenerationJobItemDto,
+  QuestionGenerationJobLogEntryDto
 } from '../../services/admin-benchmark.service';
 import { SystemAiConfigDto } from '../../services/admin.service';
 
 import { CollapsibleMarkdownComponent } from '../../shared/collapsible-markdown/collapsible-markdown.component';
-import { SuiteHealthComponent } from './suite-health/suite-health.component';
+import { SuiteHealthComponent, SuiteHealthTab } from './suite-health/suite-health.component';
+import { SnapshotViewerComponent } from '../../shared/snapshot-viewer/snapshot-viewer.component';
 import { ensureOverlayPolyfills } from '../../utils/polyfills.util';
 import { SystemService } from '../../services/system.service';
 import { parseServerUtcDate, elapsedMsBetween } from '../../utils/date.util';
@@ -58,7 +63,7 @@ export interface BenchmarkRunProgressRow {
 @Component({
   selector: 'app-admin-benchmark',
   standalone: true,
-  imports: [CommonModule, FormsModule, CollapsibleMarkdownComponent, SuiteHealthComponent],
+  imports: [CommonModule, FormsModule, CollapsibleMarkdownComponent, SuiteHealthComponent, SnapshotViewerComponent],
   templateUrl: './benchmark.component.html',
   styleUrls: ['./benchmark.component.scss']
 })
@@ -81,6 +86,10 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   @ViewChild('runProgressHeading') runProgressHeading?: ElementRef<HTMLElement>;
   @ViewChild('suiteHealthDialog') suiteHealthDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('suiteHealthHeading') suiteHealthHeading?: ElementRef<HTMLElement>;
+  @ViewChild('snapshotViewer') snapshotViewer?: SnapshotViewerComponent;
+  @ViewChild('generationDialog') generationDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('generationProgressHeading') generationProgressHeading?: ElementRef<HTMLElement>;
+  suiteHealthInitialTab: SuiteHealthTab = 'items';
 
   // Confirm Action Dialog State
   confirmDialogTitle = '';
@@ -471,6 +480,9 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     }
     if (this.isRetryAssessorDropdownOpen && !target.closest('.retry-assessor-model-selector')) {
       this.isRetryAssessorDropdownOpen = false;
+    }
+    if (this.isGenerationModelDropdownOpen && !target.closest('.generation-model-selector')) {
+      this.isGenerationModelDropdownOpen = false;
     }
   }
 
@@ -3035,4 +3047,226 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       !(this.activeRunDetail && this.formatStatus(this.activeRunDetail.status) === 'Running') &&
       !!this.selectedSuite?.difficultyFullyAssessed;
   }
+
+  // --- Question Generation & Board Snapshot State ---
+  generationDialogPhase: 'select' | 'progress' = 'select';
+  isGenerationModelDropdownOpen = false;
+  generationModelConfigId: number | null = null;
+  generationSuiteForJob: BenchmarkSuiteDto | null = null;
+  generationJobStarting = false;
+  generationDialogError: string | null = null;
+  generationJob: QuestionGenerationJobDto | null = null;
+  generationPollInterval: any = null;
+  cancellingGeneration = false;
+  generationSimpleCount = 6;
+  generationIntermediateCount = 6;
+  generationAdvancedCount = 6;
+  generationInstructions = `Write benchmark questions a GnollHack player would actually ask while looking at this exact game state. Each question must be unanswerable without the board — if it could be answered from general GnollHack knowledge alone, it belongs in the knowledge suite, not here. Vary the decision type across questions; do not ask the same thing twice in different words. In each rubric, state only board facts you can point to in the snapshot, and mark anything you infer as an inference.`;
+
+  // --- Game Snapshot & Question Generation & Review Handlers ---
+
+  openSnapshotViewer(snapshotId: number): void {
+    this.snapshotViewer?.open(snapshotId);
+  }
+
+  onSnapshotUpdated(updated: BenchmarkGameSnapshotDto): void {
+    const suite = this.suites.find(s => s.gameSnapshotId === updated.id);
+    if (suite) {
+      suite.gameSnapshotName = updated.name;
+      suite.gameSnapshotCharCount = updated.charCount;
+    }
+    this.cdr.detectChanges();
+  }
+
+  get selectedRunGameSnapshotId(): number | null {
+    if (!this.selectedRunDetail) return null;
+    const suite = this.suites.find(s => s.id === this.selectedRunDetail!.benchmarkSuiteId);
+    return suite?.gameSnapshotId ?? null;
+  }
+
+  openSuiteHealthForRubrics(suite: BenchmarkSuiteDto): void {
+    this.suiteHealthInitialTab = 'board-facts';
+    this.openSuiteHealth(suite);
+  }
+
+  checkSingleQuestionRubric(suite: BenchmarkSuiteDto, question: BenchmarkQuestionDto): void {
+    this.suiteHealthInitialTab = 'board-facts';
+    this.openSuiteHealth(suite);
+  }
+
+  toggleQuestionReview(question: BenchmarkQuestionDto): void {
+    const newReviewedState = !question.isReviewed;
+    this.benchmarkService.reviewQuestion(question.id, newReviewedState).subscribe({
+      next: (updated) => {
+        question.isReviewed = updated.isReviewed;
+        question.reviewedAtRevision = updated.reviewedAtRevision;
+        question.reviewedAtUtc = updated.reviewedAtUtc;
+        question.reviewedByUserId = updated.reviewedByUserId;
+        if (this.currentSuiteForQuestions) {
+          const genQuestions = this.questions.filter(q => q.isGenerated);
+          this.currentSuiteForQuestions.reviewedQuestionCount = genQuestions.filter(q => q.isReviewed).length;
+        }
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  confirmVerifyAll(suite: BenchmarkSuiteDto): void {
+    const unreviewedCount = (suite.questionCount || 0) - (suite.reviewedQuestionCount || 0);
+    this.confirmDialogTitle = 'Verify All Questions';
+    this.confirmDialogMessage = `Attest that you have read and verified all ${unreviewedCount} unreviewed questions in '${suite.name}' against the game board snapshot.`;
+    this.confirmDialogDangerNotice = 'This records a human review attestation in the benchmark audit manifest.';
+    this.confirmDialogButtonText = 'Verify All';
+    this.confirmDialogButtonClass = 'btn-gh btn-gh-primary';
+    this.confirmDialogIcon = 'none';
+    this.pendingConfirmAction = () => {
+      this.benchmarkService.reviewAllQuestions(suite.id).subscribe({
+        next: (res) => {
+          suite.reviewedQuestionCount = res.suite.reviewedQuestionCount;
+          suite.hasGeneratedQuestions = res.suite.hasGeneratedQuestions;
+          if (this.currentSuiteForQuestions?.id === suite.id) {
+            this.loadQuestions(suite.id);
+          }
+          this.cdr.detectChanges();
+        }
+      });
+    };
+    this.confirmActionDialog?.nativeElement.showModal();
+  }
+
+  openGenerationDialog(suite: BenchmarkSuiteDto): void {
+    this.generationSuiteForJob = suite;
+    this.generationDialogPhase = 'select';
+    this.generationDialogError = null;
+    this.generationJob = null;
+    this.isGenerationModelDropdownOpen = false;
+    if (this.assessorConfigId && this.benchmarkCapableConfigs.some(c => c.id === this.assessorConfigId)) {
+      this.generationModelConfigId = this.assessorConfigId;
+    } else {
+      this.generationModelConfigId = this.benchmarkCapableConfigs[0]?.id ?? null;
+    }
+    this.generationDialog?.nativeElement.showModal();
+    this.cdr.detectChanges();
+  }
+
+  closeGenerationDialog(): void {
+    this.generationDialog?.nativeElement.close();
+    this.isGenerationModelDropdownOpen = false;
+    this.stopGenerationPolling();
+    if (this.generationJob?.status === 'Completed' && this.generationSuiteForJob) {
+      this.loadSuites();
+      if (this.currentSuiteForQuestions?.id === this.generationSuiteForJob.id) {
+        this.loadQuestions(this.generationSuiteForJob.id);
+      }
+    }
+  }
+
+  toggleGenerationModelDropdown(event: Event): void {
+    event.stopPropagation();
+    this.isGenerationModelDropdownOpen = !this.isGenerationModelDropdownOpen;
+    this.cdr.detectChanges();
+  }
+
+  selectGenerationModel(config: SystemAiConfigDto): void {
+    this.generationModelConfigId = config.id;
+    this.isGenerationModelDropdownOpen = false;
+    this.cdr.detectChanges();
+  }
+
+  get selectedGenerationModel(): SystemAiConfigDto | undefined {
+    return this.benchmarkCapableConfigs.find(c => c.id === this.generationModelConfigId);
+  }
+
+  get totalGenerationCount(): number {
+    return (this.generationSimpleCount || 0) + (this.generationIntermediateCount || 0) + (this.generationAdvancedCount || 0);
+  }
+
+  confirmGeneration(): void {
+    if (!this.generationSuiteForJob || !this.generationModelConfigId) return;
+    if (this.totalGenerationCount <= 0) {
+      this.generationDialogError = 'Please request at least one question.';
+      return;
+    }
+    this.generationJobStarting = true;
+    this.generationDialogError = null;
+
+    this.benchmarkService.startQuestionGeneration({
+      suiteId: this.generationSuiteForJob.id,
+      generatorModelConfigurationId: this.generationModelConfigId,
+      simpleCount: this.generationSimpleCount,
+      intermediateCount: this.generationIntermediateCount,
+      advancedCount: this.generationAdvancedCount,
+      instructions: this.generationInstructions.trim() || undefined
+    }).subscribe({
+      next: (res) => {
+        this.generationJobStarting = false;
+        this.generationDialogPhase = 'progress';
+        this.startGenerationPolling(res.jobId);
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.generationJobStarting = false;
+        if (err.status === 409 && err.error) {
+          this.generationJob = err.error as QuestionGenerationJobDto;
+          this.generationDialogPhase = 'progress';
+          this.startGenerationPolling(this.generationJob.id);
+        } else {
+          this.generationDialogError = err?.error?.message || err?.error || 'Failed to start question generation.';
+        }
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  startGenerationPolling(jobId: string): void {
+    this.stopGenerationPolling();
+    this.pollGenerationJob(jobId);
+
+    this.generationPollInterval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      this.pollGenerationJob(jobId);
+    }, 2000);
+  }
+
+  stopGenerationPolling(): void {
+    if (this.generationPollInterval) {
+      clearInterval(this.generationPollInterval);
+      this.generationPollInterval = null;
+    }
+  }
+
+  pollGenerationJob(jobId: string): void {
+    this.benchmarkService.getQuestionGeneration(jobId).subscribe({
+      next: (job) => {
+        this.generationJob = job;
+        if (job.status !== 'Running') {
+          this.stopGenerationPolling();
+          this.loadSuites();
+        }
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.generationDialogError = err?.error?.message || err?.error || 'Failed to poll generation job.';
+        this.stopGenerationPolling();
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  cancelGenerationJob(): void {
+    if (!this.generationJob || this.generationJob.status !== 'Running') return;
+    this.cancellingGeneration = true;
+    this.benchmarkService.cancelQuestionGeneration(this.generationJob.id).subscribe({
+      next: () => {
+        this.cancellingGeneration = false;
+        this.stopGenerationPolling();
+        this.pollGenerationJob(this.generationJob!.id);
+      },
+      error: (err) => {
+        this.cancellingGeneration = false;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
 }

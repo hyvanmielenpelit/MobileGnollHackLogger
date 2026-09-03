@@ -751,3 +751,49 @@ Two invariants, to be re-checked whenever the benchmark bands are retuned:
 The 3x factor is empirical, not arbitrary: on the 2026-09-03 run a single Advanced question executed up to **39** tool calls (Q13 and Q18, each 39 of 45), so a session budget has to cover several such questions rather than one. At the old default of 50, the second hard question in a session was refused mid-investigation with "Maximum tool calls per session exceeded."
 
 Both chat values remain user-adjustable in `/settings`; these are the defaults for a user who has never changed them. `MaxResultLength` already agreed at 10,000 on both sides, and chat's `ChatRequestTimeout` (1,800 s) already exceeds the Advanced band's per-question timeout (720 s).
+
+---
+
+## 10. Game Context Board Snapshots & AI-Generated Questions (Harness Version 8)
+
+Harness version 8 introduces **Game Context Board Snapshots** and **AI-Generated Questions Grounded in Live Game State**.
+
+### Game Context Board Snapshots
+A board snapshot (`BenchmarkGameSnapshot`) captures the complete, authentic text dump of a live GnollHack game session board.
+- **Capture Pipeline**:
+  - **Live Game Capture (`client_refresh_snapshot`)**: Captured directly from the running game client over the client bridge via SignalR in the Chat UI. It creates both the snapshot and an empty question suite bound to it in a single transaction.
+  - **File Upload (`file_upload`)**: Captured from an uploaded dump or `.snapshot.txt` file via admin UI.
+  - **Manual Entry (`manual_entry`)**: Author-provided board dumps.
+- **Sanitizer Convergence**: All capture paths pass board text through `BenchmarkSnapshotImporter.NormalizeFlattenedText` before persistence. This normalizes line endings (`\r\n` / `\r` to `\n`), strips trailing whitespace per line, strips terminal backticks/triple backticks, rejects empty text, computes a canonical SHA-256 digest, and enforces the 60,000 character hard cap with an explicit truncation marker (`[SNAPSHOT TRUNCATED at 60000 chars]`).
+- **Provenance Tracking**: Each snapshot records `CaptureMethod`, `SourceSessionId`, `SourceClientBridgeId`, `SourceGnollHackVersion`, `Notes`, `DigestText`, and `CapturedAtUtc`.
+- **Immutability & Safety**: Board text is immutable after creation. Only metadata (`Name`, `SourceGnollHackVersion`, `Notes`, `DigestText`) can be edited. A board snapshot cannot be deleted if any benchmark suites or runs reference it.
+
+### Snapshot Viewer UI
+- **Monospace Rendering**: Preformatted game board snapshot text is **never rendered as Markdown**. Board layouts contain NetHack map symbols (`#`, `|`, `-`, `*`) that Markdown parsers mangle. The text is always displayed inside `<pre class="board-pre">` with `white-space: pre` and horizontal scrolling.
+- **Interactive Tools**: Displays provenance grid, SHA-256 hash copy button, full text copy button, `.snapshot.txt` download button, and metadata editing form.
+- **Truncation Notice**: If the snapshot contains the truncation marker, a prominent alert informs the administrator that tail sections of the dump were omitted at capture limit.
+
+### AI-Generated Benchmark Questions
+Administrators can generate benchmark questions tailored to a specific board snapshot using any benchmark-capable AI configuration.
+- **3 Difficulty Bands**: Questions are generated in 3 separate prompts:
+  - **Simple** (Default: 6 questions, authored difficulty: `Simple`)
+  - **Intermediate** (Default: 6 questions, authored difficulty: `Intermediate`)
+  - **Advanced** (Default: 6 questions, authored difficulty: `Advanced`)
+- **Strict Grounding & Rubric Structure**: Every generated question must be unanswerable without the board. Every generated rubric must contain:
+  1. `**BOARD FACTS**`: Point-by-point factual claims verified against the snapshot text.
+  2. `**REQUIRED**`: Essential points an answer must make to receive credit.
+  3. `**ACCEPTABLE**`: Valid variations, alternative phrasings, or equivalent actions.
+  4. `**UNACCEPTABLE**`: Incorrect assertions, lethal actions, or contradictions of board facts.
+- **Human Review Discipline**:
+  - All AI-generated questions are flagged `IsGenerated = true` and initially `IsReviewed = false`.
+  - Content revisions automatically increment `ItemRevision` via `BenchmarkQuestionAssessment.Clear`, resetting reviewed status if `ReviewedAtRevision != ItemRevision`.
+  - Unreviewed questions display warning badges in the Admin UI.
+  - Benchmark reports display a prominent warning banner whenever a run includes unreviewed generated questions, disclosing the number of unverified items.
+  - A "Verify All" button allows an administrator to attest that all questions have been reviewed against the board snapshot.
+
+### AI Rubric Verification (Board Facts Tab in Suite Health)
+To assist human review, the Suite Health dialog provides a dedicated **Board facts** tab.
+- **Verifiable Quote Discipline**: The checker model evaluates every factual claim in a question's rubric against the game board snapshot. Every claim assessed as `supported` must be accompanied by a verbatim quote from the snapshot text.
+- **Findings & Verdicts**: If any claim is `contradicted` or `not-in-board`, the question verdict is flagged as `unsupported`. The findings table displays the rubric claim, the assessment badge, the exact board evidence quote, and explanatory reasoning.
+- **One-Click Corrections**: Administrators can jump directly from a finding card into the question editor to refine the rubric or verify the question.
+

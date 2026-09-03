@@ -113,6 +113,9 @@
         @if (authService.user$ | async; as user) {
           @if (user.isAdmin) {
             <a routerLink="/admin" queryParamsHandling="preserve">Admin</a>
+            @if (showDebugLog && currentSessionId) {
+              <a href="#" (click)="openCaptureBoardModal($event)" title="Capture benchmark game board from current live game session">Capture Board</a>
+            }
           }
         }
         @if (showDebugLog) {
@@ -157,6 +160,13 @@
           <div class="chat-title-container">
             <span class="chat-title">New Chat</span>
           </div>
+        }
+        @if (authService.user$ | async; as user) {
+          @if (user.isAdmin && showDebugLog && currentSessionId) {
+            <button type="button" class="btn-gh btn-sm" (click)="openCaptureBoardModal()" aria-label="Capture benchmark game board from current live game session" style="margin-left: auto; display: flex; align-items: center; gap: 6px; white-space: nowrap;">
+              <span>🎮</span> Capture Board
+            </button>
+          }
         }
       </div>
       <div class="messages" #messagesContainer (wheel)="onUserInteraction()" (touchstart)="onUserInteraction()" (scroll)="onScroll()" [class.hide-thoughts]="showThoughtsAndTools === 0 || showThoughtsAndTools === 1">
@@ -835,6 +845,75 @@
   <div class="dialog-actions">
     <button class="btn-gh btn-gh-cancel" (click)="closeLogoutConfirm()">Cancel</button>
     <button class="btn-gh btn-gh-delete" (click)="executeLogout()">Log Out</button>
+  </div>
+</dialog>
+
+<dialog #captureBoardDialog class="gh-dialog capture-board-dialog" (cancel)="closeCaptureBoardModal()">
+  <div class="gh-dialog-header">
+    <h3>🎮 Capture Benchmark Board</h3>
+    <button type="button" class="btn-close" (click)="closeCaptureBoardModal()" aria-label="Close">✕</button>
+  </div>
+  <div class="gh-dialog-body">
+    @if (captureBoardResult) {
+      <div class="capture-success-box">
+        <div class="success-icon">✓</div>
+        <h4>Board Captured Successfully!</h4>
+        <div class="capture-details-grid">
+          <div><strong>Board:</strong> {{ captureBoardResult.boardName }}</div>
+          <div><strong>Size:</strong> {{ captureBoardResult.charCount | number }} characters</div>
+          <div><strong>SHA-256:</strong> <code>{{ captureBoardResult.shaPrefix }}…</code></div>
+          <div>
+            <strong>Bound Suite:</strong>
+            <a [routerLink]="['/admin']" [queryParams]="{tab: 'benchmark', subtab: 'suites', suiteId: captureBoardResult.suiteId}" (click)="closeCaptureBoardModal()">
+              {{ captureBoardResult.suiteName }}
+            </a>
+          </div>
+        </div>
+        <p class="success-hint">
+          An empty question suite has been created and bound to this board. You can now generate questions for it in Benchmark Admin.
+        </p>
+      </div>
+    } @else {
+      <p class="dialog-description">
+        Capture the current live game context board over the client bridge. This creates a new board snapshot and an empty benchmark suite bound to it.
+      </p>
+
+      @if (captureBoardError) {
+        <div class="alert alert-danger">{{ captureBoardError }}</div>
+      }
+
+      <div class="form-group">
+        <label for="captureBoardName">Board Name *</label>
+        <input id="captureBoardName" type="text" class="gh-input" [(ngModel)]="captureBoardName" placeholder="e.g. emergency_low_hp" [disabled]="isCapturingBoard" required />
+      </div>
+
+      <div class="form-group">
+        <label for="captureBoardVersion">GnollHack Version (optional)</label>
+        <input id="captureBoardVersion" type="text" class="gh-input" [(ngModel)]="captureBoardVersion" placeholder="e.g. GnollHack 0.8.6" [disabled]="isCapturingBoard" />
+      </div>
+
+      <div class="form-group">
+        <label for="captureBoardNotes">Notes (optional)</label>
+        <textarea id="captureBoardNotes" class="gh-input" [(ngModel)]="captureBoardNotes" rows="3" placeholder="Context facts: HP/maxHP, dungeon level, key items, adjacent monsters..." [disabled]="isCapturingBoard"></textarea>
+      </div>
+
+      @if (isCapturingBoard) {
+        <div class="capturing-progress">
+          <div class="spinner"></div>
+          <span>Requesting snapshot from game client via SignalR (up to 45s)...</span>
+        </div>
+      }
+    }
+  </div>
+  <div class="gh-dialog-footer">
+    @if (captureBoardResult) {
+      <button type="button" class="btn-gh" (click)="closeCaptureBoardModal()">Done</button>
+    } @else {
+      <button type="button" class="btn-gh btn-gh-cancel" (click)="closeCaptureBoardModal()" [disabled]="isCapturingBoard">Cancel</button>
+      <button type="button" class="btn-gh" (click)="submitCaptureBoard()" [disabled]="isCapturingBoard || !captureBoardName.trim()">
+        {{ isCapturingBoard ? 'Capturing...' : 'Capture Board' }}
+      </button>
+    }
   </div>
 </dialog>
 

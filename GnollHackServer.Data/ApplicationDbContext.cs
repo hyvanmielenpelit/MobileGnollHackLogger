@@ -38,6 +38,7 @@ namespace MobileGnollHackLogger.Data
         public DbSet<BenchmarkRunAnswer> BenchmarkRunAnswers { get; set; } = null!;
         public DbSet<BenchmarkScoringProfile> BenchmarkScoringProfiles { get; set; } = null!;
         public DbSet<BenchmarkAssessorCalibration> BenchmarkAssessorCalibrations { get; set; } = null!;
+        public DbSet<BenchmarkGameSnapshot> BenchmarkGameSnapshots { get; set; } = null!;
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
@@ -104,9 +105,24 @@ namespace MobileGnollHackLogger.Data
             modelBuilder.Entity<ChatMessageToolCall>()
                 .HasIndex(tc => new { tc.ChatMessageId, tc.SortOrder });
 
+            modelBuilder.Entity<BenchmarkGameSnapshot>()
+                .HasIndex(s => s.Name)
+                .IsUnique();
+
             modelBuilder.Entity<BenchmarkSuite>()
                 .HasIndex(s => s.Name)
                 .IsUnique();
+
+            modelBuilder.Entity<BenchmarkSuite>()
+                .HasOne(s => s.GameSnapshot)
+                .WithMany()
+                .HasForeignKey(s => s.GameSnapshotId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            modelBuilder.Entity<BenchmarkSuite>()
+                .HasIndex(s => s.GameSnapshotId)
+                .IsUnique()
+                .HasFilter("[GameSnapshotId] IS NOT NULL");
 
             modelBuilder.Entity<BenchmarkQuestion>()
                 .HasOne(q => q.BenchmarkSuite)

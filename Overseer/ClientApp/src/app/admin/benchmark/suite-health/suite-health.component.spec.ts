@@ -64,7 +64,7 @@ describe('SuiteHealthComponent', () => {
 
   beforeEach(async () => {
     serviceMock = jasmine.createSpyObj('AdminBenchmarkService', [
-      'getItemAnalysis', 'getRubricGaps', 'validateCitations', 'analyzeCoverage'
+      'getItemAnalysis', 'getRubricGaps', 'validateCitations', 'analyzeCoverage', 'startRubricCheck', 'getRubricCheck', 'getActiveRubricCheck', 'cancelRubricCheck'
     ]);
     serviceMock.getItemAnalysis.and.returnValue(of(buildAnalysis()));
     serviceMock.getRubricGaps.and.returnValue(of({ suiteId: 5, runCount: 0, claimCount: 0, clusters: [] }));
@@ -411,9 +411,9 @@ describe('SuiteHealthComponent', () => {
     expect(component.activeTab).toBe('gaps');
 
     component.onTabKeydown(new KeyboardEvent('keydown', { key: 'End' }), 1);
-    expect(component.activeTab).toBe('coverage');
+    expect(component.activeTab).toBe('board-facts');
 
-    component.onTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowRight' }), 3);
+    component.onTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowRight' }), 4);
     expect(component.activeTab).toBe('items');
   });
 
@@ -421,7 +421,7 @@ describe('SuiteHealthComponent', () => {
     open();
 
     const tabs: HTMLElement[] = Array.from(fixture.nativeElement.querySelectorAll('[role="tab"]'));
-    expect(tabs.length).toBe(4);
+    expect(tabs.length).toBe(5);
     expect(tabs[0].getAttribute('aria-selected')).toBe('true');
     expect(tabs[0].getAttribute('tabindex')).toBe('0');
     expect(tabs[1].getAttribute('aria-selected')).toBe('false');
@@ -430,5 +430,72 @@ describe('SuiteHealthComponent', () => {
 
     const list = fixture.nativeElement.querySelector('[role="tablist"]') as HTMLElement;
     expect(list.getAttribute('aria-label')).toBe('Suite health sections');
+  });
+
+  describe('Board facts tab', () => {
+    it('should show unbound notice when suite has no gameSnapshotId', () => {
+      open();
+      component.gameSnapshotId = null;
+      component.selectTab('board-facts');
+      fixture.detectChanges();
+
+      const alert = fixture.nativeElement.querySelector('#sh-panel-board-facts .alert');
+      expect(alert).toBeTruthy();
+      expect(alert.textContent).toContain('No Game Context Board Bound');
+    });
+
+    it('should show board name and controls when suite has gameSnapshotId', () => {
+      open();
+      component.gameSnapshotId = 12;
+      component.gameSnapshotName = 'emergency_low_hp';
+      component.benchmarkCapableConfigs = [buildConfig({ id: 42 })];
+      component.selectTab('board-facts');
+      fixture.detectChanges();
+
+      const controls = fixture.nativeElement.querySelector('.rubric-check-controls');
+      expect(controls).toBeTruthy();
+      expect(fixture.nativeElement.textContent).toContain('emergency_low_hp');
+    });
+
+    it('should start rubric check and poll for status', () => {
+      open();
+      component.gameSnapshotId = 12;
+      component.benchmarkCapableConfigs = [buildConfig({ id: 42 })];
+      component.rubricCheckerConfigId = 42;
+      serviceMock.startRubricCheck.and.returnValue(of({ jobId: 'rubric-job-1' }));
+      serviceMock.getRubricCheck.and.returnValue(of({
+        id: 'rubric-job-1',
+        suiteId: 5,
+        suiteName: 'Test Suite',
+        status: 'Completed',
+        scope: 'AllQuestions',
+        checkerConfigId: 42,
+        checkerDisplayName: 'Test Checker',
+        checkerProvider: 'Test Provider',
+        checkerModelId: 'test-model',
+        promptTokens: 100,
+        outputTokens: 50,
+        createdAtUtc: new Date().toISOString(),
+        items: [{
+          questionId: 1,
+          orderIndex: 1,
+          questionTextExcerpt: 'Sample question',
+          status: 'Completed',
+          verdict: 'supported',
+          findings: []
+        }],
+        log: []
+      } as any));
+
+      component.selectTab('board-facts');
+      component.startRubricCheck();
+      expect(serviceMock.startRubricCheck).toHaveBeenCalledWith({
+        suiteId: 5,
+        checkerModelConfigurationId: 42,
+        questionIds: null
+      });
+      expect(serviceMock.getRubricCheck).toHaveBeenCalledWith('rubric-job-1');
+      expect(component.rubricCheckJob?.status).toBe('Completed');
+    });
   });
 });

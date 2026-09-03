@@ -1,4 +1,4 @@
-﻿namespace Overseer.Models;
+namespace Overseer.Models;
 
 using System;
 using System.Collections.Generic;
@@ -14,6 +14,11 @@ public class BenchmarkSuiteDto
     public int QuestionCount { get; set; }
     public int AssessedQuestionCount { get; set; }
     public bool DifficultyFullyAssessed { get; set; }
+    public long? GameSnapshotId { get; set; }
+    public string? GameSnapshotName { get; set; }
+    public int? GameSnapshotCharCount { get; set; }
+    public bool HasGeneratedQuestions { get; set; }
+    public int ReviewedQuestionCount { get; set; }
 }
 
 public class CreateBenchmarkSuiteRequest
@@ -33,9 +38,15 @@ public class BenchmarkQuestionDto
     public long Id { get; set; }
     public long BenchmarkSuiteId { get; set; }
     public int OrderIndex { get; set; }
+    public int ItemRevision { get; set; } = 1;
     public string QuestionText { get; set; } = string.Empty;
     public BenchmarkDifficulty Difficulty { get; set; }
     public string? ExpectedPoints { get; set; }
+    public bool IsGenerated { get; set; }
+    public int? ReviewedAtRevision { get; set; }
+    public DateTime? ReviewedAtUtc { get; set; }
+    public string? ReviewedByUserId { get; set; }
+    public bool IsReviewed { get; set; }
     public int? AssessedDifficulty { get; set; }
     public string? AssessedDifficultyModel { get; set; }
     public DateTime? AssessedDifficultyAtUtc { get; set; }
@@ -796,5 +807,164 @@ public class BenchmarkRunSummaryDto
     public int ToolStarvedAnswerCount { get; set; }
     public string? HarnessVersion { get; set; }
     public long TotalDurationMs { get; set; }
+}
+
+// --- Benchmark Game Snapshot Models ---
+
+public class BenchmarkGameSnapshotDto
+{
+    public long Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string? SanitizedText { get; set; }
+    public string? DigestText { get; set; }
+    public int CharCount { get; set; }
+    public string Sha256 { get; set; } = string.Empty;
+    public string CaptureMethod { get; set; } = string.Empty;
+    public string? SourceGnollHackVersion { get; set; }
+    public string? Notes { get; set; }
+    public DateTime? CapturedAtUtc { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime ModifiedAtUtc { get; set; }
+    public long? SuiteId { get; set; }
+    public string? SuiteName { get; set; }
+}
+
+public class CaptureBenchmarkSnapshotRequest
+{
+    public long SessionId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string? Notes { get; set; }
+    public string? SourceGnollHackVersion { get; set; }
+}
+
+public class UploadBenchmarkSnapshotRequest
+{
+    public string Name { get; set; } = string.Empty;
+    public string Html { get; set; } = string.Empty;
+    public string? Notes { get; set; }
+    public string? SourceGnollHackVersion { get; set; }
+}
+
+public class UpdateBenchmarkGameSnapshotRequest
+{
+    public string? Name { get; set; }
+    public string? Notes { get; set; }
+    public string? DigestText { get; set; }
+    public string? SourceGnollHackVersion { get; set; }
+}
+
+public class CaptureBenchmarkSnapshotResponse
+{
+    public BenchmarkGameSnapshotDto Board { get; set; } = default!;
+    public BenchmarkSuiteDto Suite { get; set; } = default!;
+}
+
+// --- Question Generation Job Models ---
+
+public class StartQuestionGenerationRequest
+{
+    public long SuiteId { get; set; }
+    public long GeneratorModelConfigurationId { get; set; }
+    public string? Instructions { get; set; }
+    public int SimpleCount { get; set; }
+    public int IntermediateCount { get; set; }
+    public int AdvancedCount { get; set; }
+}
+
+public class QuestionGenerationJobItemDto
+{
+    public int Difficulty { get; set; }
+    public string DifficultyName { get; set; } = string.Empty;
+    public int RequestedCount { get; set; }
+    public int GeneratedCount { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public string? ErrorMessage { get; set; }
+}
+
+public class QuestionGenerationJobLogEntryDto
+{
+    public DateTime TimestampUtc { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public string Severity { get; set; } = "info";
+    public string? RawExcerpt { get; set; }
+}
+
+public class QuestionGenerationJobDto
+{
+    public string Id { get; set; } = string.Empty;
+    public long SuiteId { get; set; }
+    public string SuiteName { get; set; } = string.Empty;
+    public long GeneratorConfigId { get; set; }
+    public string GeneratorDisplayName { get; set; } = string.Empty;
+    public string? StartedByUserId { get; set; }
+    public DateTime StartedAtUtc { get; set; }
+    public DateTime? CompletedAtUtc { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public int TotalModelCalls { get; set; }
+    public int PromptTokens { get; set; }
+    public int OutputTokens { get; set; }
+    public List<QuestionGenerationJobItemDto> Items { get; set; } = new();
+    public List<QuestionGenerationJobLogEntryDto> Log { get; set; } = new();
+}
+
+// --- Rubric Verification Job Models ---
+
+public class StartRubricCheckRequest
+{
+    public long SuiteId { get; set; }
+    public List<long>? QuestionIds { get; set; }
+    public long CheckerModelConfigurationId { get; set; }
+}
+
+public class RubricCheckFindingDto
+{
+    public string Claim { get; set; } = string.Empty;
+    public string Assessment { get; set; } = string.Empty;
+    public string? BoardQuote { get; set; }
+}
+
+public class RubricCheckJobItemDto
+{
+    public long QuestionId { get; set; }
+    public int OrderIndex { get; set; }
+    public string QuestionTextExcerpt { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public string? Verdict { get; set; }
+    public List<RubricCheckFindingDto> Findings { get; set; } = new();
+    public string? ErrorMessage { get; set; }
+}
+
+public class RubricCheckJobLogEntryDto
+{
+    public DateTime TimestampUtc { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public string Severity { get; set; } = "info";
+    public string? RawExcerpt { get; set; }
+}
+
+public class RubricCheckJobDto
+{
+    public string Id { get; set; } = string.Empty;
+    public long SuiteId { get; set; }
+    public string SuiteName { get; set; } = string.Empty;
+    public string Scope { get; set; } = "suite";
+    public long CheckerConfigId { get; set; }
+    public string CheckerDisplayName { get; set; } = string.Empty;
+    public string? StartedByUserId { get; set; }
+    public DateTime StartedAtUtc { get; set; }
+    public DateTime? CompletedAtUtc { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public int TotalModelCalls { get; set; }
+    public int PromptTokens { get; set; }
+    public int OutputTokens { get; set; }
+    public List<RubricCheckJobItemDto> Items { get; set; } = new();
+    public List<RubricCheckJobLogEntryDto> Log { get; set; } = new();
+}
+
+// --- Question Review Request ---
+
+public class ReviewBenchmarkQuestionRequest
+{
+    public bool? Reviewed { get; set; }
 }
 

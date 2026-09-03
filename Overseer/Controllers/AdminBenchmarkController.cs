@@ -1,4 +1,4 @@
-﻿namespace Overseer.Controllers;
+namespace Overseer.Controllers;
 
 using System;
 using System.Collections.Generic;
@@ -16,6 +16,7 @@ using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services.Benchmarking;
+using Overseer.Services.Tools;
 using Microsoft.Extensions.DependencyInjection;
 
 [Route("api/admin/benchmark")]
@@ -32,6 +33,12 @@ public class AdminBenchmarkController : ControllerBase
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly Services.SourceCodeService _sourceCodeService;
     private readonly Services.NetHackWikiService _wikiService;
+    private readonly IClientToolBridge _clientToolBridge;
+    private readonly BenchmarkSnapshotImporter _snapshotImporter;
+    private readonly BenchmarkGenerationJobManager _generationJobManager;
+    private readonly BenchmarkGenerationService _generationService;
+    private readonly BenchmarkRubricCheckJobManager _rubricCheckJobManager;
+    private readonly BenchmarkRubricCheckService _rubricCheckService;
 
     public AdminBenchmarkController(
         ApplicationDbContext dbContext,
@@ -42,7 +49,13 @@ public class AdminBenchmarkController : ControllerBase
         BenchmarkComplianceGuard complianceGuard,
         IServiceScopeFactory scopeFactory,
         Services.SourceCodeService sourceCodeService,
-        Services.NetHackWikiService wikiService)
+        Services.NetHackWikiService wikiService,
+        IClientToolBridge clientToolBridge,
+        BenchmarkSnapshotImporter snapshotImporter,
+        BenchmarkGenerationJobManager generationJobManager,
+        BenchmarkGenerationService generationService,
+        BenchmarkRubricCheckJobManager rubricCheckJobManager,
+        BenchmarkRubricCheckService rubricCheckService)
     {
         _dbContext = dbContext;
         _benchmarkService = benchmarkService;
@@ -53,6 +66,12 @@ public class AdminBenchmarkController : ControllerBase
         _scopeFactory = scopeFactory;
         _sourceCodeService = sourceCodeService;
         _wikiService = wikiService;
+        _clientToolBridge = clientToolBridge;
+        _snapshotImporter = snapshotImporter;
+        _generationJobManager = generationJobManager;
+        _generationService = generationService;
+        _rubricCheckJobManager = rubricCheckJobManager;
+        _rubricCheckService = rubricCheckService;
     }
 
     private static BenchmarkSuiteDto ToSuiteDto(BenchmarkSuite s) => new()
@@ -64,7 +83,12 @@ public class AdminBenchmarkController : ControllerBase
         ModifiedAtUtc = s.ModifiedAtUtc,
         QuestionCount = s.Questions.Count,
         AssessedQuestionCount = s.Questions.Count(q => q.AssessedDifficulty != null),
-        DifficultyFullyAssessed = s.Questions.Count > 0 && s.Questions.Count(q => q.AssessedDifficulty != null) == s.Questions.Count
+        DifficultyFullyAssessed = s.Questions.Count > 0 && s.Questions.Count(q => q.AssessedDifficulty != null) == s.Questions.Count,
+        GameSnapshotId = s.GameSnapshotId,
+        GameSnapshotName = s.GameSnapshot?.Name,
+        GameSnapshotCharCount = s.GameSnapshot?.CharCount,
+        HasGeneratedQuestions = s.HasGeneratedQuestions,
+        ReviewedQuestionCount = s.Questions.Count(q => !q.IsGenerated || (q.ReviewedAtRevision != null && q.ReviewedAtRevision == q.ItemRevision))
     };
 
     private static BenchmarkQuestionDto ToQuestionDto(BenchmarkQuestion q) => new()
@@ -72,9 +96,15 @@ public class AdminBenchmarkController : ControllerBase
         Id = q.Id,
         BenchmarkSuiteId = q.BenchmarkSuiteId,
         OrderIndex = q.OrderIndex,
+        ItemRevision = q.ItemRevision,
         QuestionText = q.QuestionText,
         Difficulty = q.Difficulty,
         ExpectedPoints = q.ExpectedPoints,
+        IsGenerated = q.IsGenerated,
+        ReviewedAtRevision = q.ReviewedAtRevision,
+        ReviewedAtUtc = q.ReviewedAtUtc,
+        ReviewedByUserId = q.ReviewedByUserId,
+        IsReviewed = !q.IsGenerated || (q.ReviewedAtRevision != null && q.ReviewedAtRevision == q.ItemRevision),
         AssessedDifficulty = q.AssessedDifficulty,
         AssessedDifficultyModel = q.AssessedDifficultyModel,
         AssessedDifficultyAtUtc = q.AssessedDifficultyAtUtc,
@@ -89,6 +119,44 @@ public class AdminBenchmarkController : ControllerBase
         CreatedAtUtc = q.CreatedAtUtc,
         ModifiedAtUtc = q.ModifiedAtUtc
     };
+
+    private static BenchmarkGameSnapshotDto ToSnapshotDto(BenchmarkGameSnapshot s, long? suiteId = null, string? suiteName = null) => new()
+    {
+        Id = s.Id,
+        Name = s.Name,
+        SanitizedText = s.SanitizedText,
+        DigestText = s.DigestText,
+        CharCount = s.CharCount,
+        Sha256 = s.Sha256,
+        CaptureMethod = s.CaptureMethod,
+        SourceGnollHackVersion = s.SourceGnollHackVersion,
+        Notes = s.Notes,
+        CapturedAtUtc = s.CapturedAtUtc,
+        CreatedAtUtc = s.CreatedAtUtc,
+        ModifiedAtUtc = s.ModifiedAtUtc,
+        SuiteId = suiteId,
+        SuiteName = suiteName
+    };
+
+    private IActionResult? CheckConflictingBenchmarkJob(long suiteId, string requestingJobName)
+    {
+        var diffJob = _difficultyJobManager.Current;
+        if (diffJob != null && diffJob.Status == BenchmarkDifficultyJobStatus.Running && diffJob.SuiteId == suiteId)
+        {
+            return Conflict(new { error = $"Cannot start {requestingJobName}: Difficulty assessment job '{diffJob.Id}' is currently running on this suite." });
+        }
+        var genJob = _generationJobManager.Current;
+        if (genJob != null && genJob.Status == BenchmarkGenerationJobStatus.Running && genJob.SuiteId == suiteId)
+        {
+            return Conflict(new { error = $"Cannot start {requestingJobName}: Question generation job '{genJob.Id}' is currently running on this suite." });
+        }
+        var rubJob = _rubricCheckJobManager.Current;
+        if (rubJob != null && rubJob.Status == BenchmarkRubricCheckJobStatus.Running && rubJob.SuiteId == suiteId)
+        {
+            return Conflict(new { error = $"Cannot start {requestingJobName}: Rubric verification job '{rubJob.Id}' is currently running on this suite." });
+        }
+        return null;
+    }
 
     // --- Scoring Profiles CRUD ---
 
@@ -266,6 +334,9 @@ public class AdminBenchmarkController : ControllerBase
             return BadRequest("Benchmark suite not found.");
         }
 
+        var conflict = CheckConflictingBenchmarkJob(suite.Id, "difficulty assessment");
+        if (conflict != null) return conflict;
+
         List<BenchmarkQuestion> targetQuestions;
         string scopeType = "suite";
 
@@ -400,6 +471,7 @@ public class AdminBenchmarkController : ControllerBase
 
         var suites = await _dbContext.BenchmarkSuites
             .Include(s => s.Questions)
+            .Include(s => s.GameSnapshot)
             .OrderBy(s => s.Name)
             .Select(s => ToSuiteDto(s))
             .ToListAsync();
@@ -430,17 +502,7 @@ public class AdminBenchmarkController : ControllerBase
         _dbContext.BenchmarkSuites.Add(suite);
         await _dbContext.SaveChangesAsync();
 
-        return Ok(new BenchmarkSuiteDto
-        {
-            Id = suite.Id,
-            Name = suite.Name,
-            Description = suite.Description,
-            CreatedAtUtc = suite.CreatedAtUtc,
-            ModifiedAtUtc = suite.ModifiedAtUtc,
-            QuestionCount = 0,
-            AssessedQuestionCount = 0,
-            DifficultyFullyAssessed = false
-        });
+        return Ok(ToSuiteDto(suite));
     }
 
     [HttpPut("suites/{id}")]
@@ -1043,6 +1105,493 @@ public class AdminBenchmarkController : ControllerBase
 
         await _dbContext.SaveChangesAsync();
         return Ok();
+    }
+
+    // --- Question Review API ---
+
+    [HttpPost("questions/{id}/review")]
+    public async Task<IActionResult> ReviewQuestion(long id, [FromBody] ReviewBenchmarkQuestionRequest? request, CancellationToken ct)
+    {
+        var question = await _dbContext.BenchmarkQuestions.FirstOrDefaultAsync(q => q.Id == id, ct);
+        if (question == null) return NotFound();
+
+        bool markReviewed = request?.Reviewed ?? true;
+        if (markReviewed)
+        {
+            question.ReviewedAtRevision = question.ItemRevision;
+            question.ReviewedAtUtc = DateTime.UtcNow;
+            question.ReviewedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        }
+        else
+        {
+            question.ReviewedAtRevision = null;
+            question.ReviewedAtUtc = null;
+            question.ReviewedByUserId = null;
+        }
+
+        question.ModifiedAtUtc = DateTime.UtcNow;
+        await _dbContext.SaveChangesAsync(ct);
+
+        return Ok(ToQuestionDto(question));
+    }
+
+    [HttpPost("suites/{id}/review-all")]
+    public async Task<IActionResult> ReviewAllQuestions(long id, CancellationToken ct)
+    {
+        var suite = await _dbContext.BenchmarkSuites
+            .Include(s => s.Questions)
+            .Include(s => s.GameSnapshot)
+            .FirstOrDefaultAsync(s => s.Id == id, ct);
+        if (suite == null) return NotFound();
+
+        string userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+        int count = 0;
+        foreach (var q in suite.Questions.Where(q => q.IsGenerated && (q.ReviewedAtRevision == null || q.ReviewedAtRevision != q.ItemRevision)))
+        {
+            q.ReviewedAtRevision = q.ItemRevision;
+            q.ReviewedAtUtc = DateTime.UtcNow;
+            q.ReviewedByUserId = userId;
+            q.ModifiedAtUtc = DateTime.UtcNow;
+            count++;
+        }
+
+        await _dbContext.SaveChangesAsync(ct);
+        return Ok(new { reviewedCount = count, suite = ToSuiteDto(suite) });
+    }
+
+    // --- Benchmark Game Snapshots API ---
+
+    [HttpPost("snapshots/capture")]
+    public async Task<IActionResult> CaptureSnapshot([FromBody] CaptureBenchmarkSnapshotRequest request, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.Name))
+        {
+            return BadRequest(new { error = "Board name is required." });
+        }
+
+        var session = await _dbContext.ChatSession.FirstOrDefaultAsync(s => s.Id == request.SessionId, ct);
+        if (session == null)
+        {
+            return NotFound(new { error = "Session not found." });
+        }
+
+        string userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+        if (session.AspNetUserId != userId)
+        {
+            return Forbid();
+        }
+
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        linkedCts.CancelAfter(TimeSpan.FromSeconds(45));
+
+        var emptyParams = JsonDocument.Parse("{}").RootElement;
+        var toolResult = await _clientToolBridge.SendToolRequestAsync(session.Id, "refresh_snapshot", emptyParams, linkedCts.Token);
+        if (!toolResult.Success)
+        {
+            string msg = toolResult.ErrorMessage ?? toolResult.Content ?? "Client tool request failed.";
+            return Conflict(new { error = msg });
+        }
+
+        string snapshotText = toolResult.Content ?? string.Empty;
+        if (snapshotText.Length > 60200)
+        {
+            snapshotText = snapshotText.Substring(0, 60200);
+        }
+
+        var meta = new BoardMetadata(
+            request.Name.Trim(),
+            request.Notes?.Trim(),
+            request.SourceGnollHackVersion?.Trim(),
+            DateTime.UtcNow);
+
+        try
+        {
+            var (board, suite) = await _snapshotImporter.FromClientTextAsync(snapshotText, meta, ct);
+            return Ok(new CaptureBenchmarkSnapshotResponse
+            {
+                Board = ToSnapshotDto(board, suite.Id, suite.Name),
+                Suite = ToSuiteDto(suite)
+            });
+        }
+        catch (DuplicateBoardNameException ex)
+        {
+            return Conflict(new { error = ex.Message, existingBoardId = ex.ExistingBoardId });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    [HttpPost("snapshots")]
+    public async Task<IActionResult> UploadSnapshot([FromBody] UploadBenchmarkSnapshotRequest request, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.Name))
+        {
+            return BadRequest(new { error = "Board name is required." });
+        }
+        if (string.IsNullOrWhiteSpace(request.Html))
+        {
+            return BadRequest(new { error = "HTML content is required." });
+        }
+
+        var meta = new BoardMetadata(
+            request.Name.Trim(),
+            request.Notes?.Trim(),
+            request.SourceGnollHackVersion?.Trim(),
+            DateTime.UtcNow);
+
+        try
+        {
+            var (board, suite) = await _snapshotImporter.FromRawHtmlAsync(request.Html, meta, ct);
+            return Ok(new CaptureBenchmarkSnapshotResponse
+            {
+                Board = ToSnapshotDto(board, suite.Id, suite.Name),
+                Suite = ToSuiteDto(suite)
+            });
+        }
+        catch (DuplicateBoardNameException ex)
+        {
+            return Conflict(new { error = ex.Message, existingBoardId = ex.ExistingBoardId });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    [HttpGet("snapshots")]
+    public async Task<IActionResult> GetSnapshots(CancellationToken ct)
+    {
+        var boards = await _dbContext.BenchmarkGameSnapshots
+            .OrderByDescending(s => s.CreatedAtUtc)
+            .Select(s => new BenchmarkGameSnapshotDto
+            {
+                Id = s.Id,
+                Name = s.Name,
+                DigestText = s.DigestText,
+                CharCount = s.CharCount,
+                Sha256 = s.Sha256,
+                CaptureMethod = s.CaptureMethod,
+                SourceGnollHackVersion = s.SourceGnollHackVersion,
+                Notes = s.Notes,
+                CapturedAtUtc = s.CapturedAtUtc,
+                CreatedAtUtc = s.CreatedAtUtc,
+                ModifiedAtUtc = s.ModifiedAtUtc
+            })
+            .ToListAsync(ct);
+
+        var suiteMap = await _dbContext.BenchmarkSuites
+            .Where(s => s.GameSnapshotId != null)
+            .Select(s => new { s.GameSnapshotId, s.Id, s.Name })
+            .ToDictionaryAsync(s => s.GameSnapshotId!.Value, s => new { s.Id, s.Name }, ct);
+
+        foreach (var b in boards)
+        {
+            if (suiteMap.TryGetValue(b.Id, out var sw))
+            {
+                b.SuiteId = sw.Id;
+                b.SuiteName = sw.Name;
+            }
+        }
+
+        return Ok(boards);
+    }
+
+    [HttpGet("snapshots/{id}")]
+    public async Task<IActionResult> GetSnapshot(long id, [FromQuery] bool includeText = false, CancellationToken ct = default)
+    {
+        var board = await _dbContext.BenchmarkGameSnapshots.FirstOrDefaultAsync(s => s.Id == id, ct);
+        if (board == null) return NotFound();
+
+        var suite = await _dbContext.BenchmarkSuites.FirstOrDefaultAsync(s => s.GameSnapshotId == id, ct);
+        var dto = ToSnapshotDto(board, suite?.Id, suite?.Name);
+        if (!includeText)
+        {
+            dto.SanitizedText = null;
+        }
+        return Ok(dto);
+    }
+
+    [HttpGet("snapshots/{id}/text")]
+    public async Task<IActionResult> DownloadSnapshotText(long id, CancellationToken ct)
+    {
+        var board = await _dbContext.BenchmarkGameSnapshots.FirstOrDefaultAsync(s => s.Id == id, ct);
+        if (board == null) return NotFound();
+
+        string safeName = string.Join("_", board.Name.Split(Path.GetInvalidFileNameChars()));
+        return File(
+            System.Text.Encoding.UTF8.GetBytes(board.SanitizedText),
+            "text/plain; charset=utf-8",
+            $"{safeName}.snapshot.txt");
+    }
+
+    [HttpPut("snapshots/{id}")]
+    public async Task<IActionResult> UpdateSnapshot(long id, [FromBody] UpdateBenchmarkGameSnapshotRequest request, CancellationToken ct)
+    {
+        var board = await _dbContext.BenchmarkGameSnapshots.FirstOrDefaultAsync(s => s.Id == id, ct);
+        if (board == null) return NotFound();
+
+        if (!string.IsNullOrWhiteSpace(request.Name) && request.Name.Trim() != board.Name)
+        {
+            string newName = request.Name.Trim();
+            bool nameExists = await _dbContext.BenchmarkGameSnapshots.AnyAsync(s => s.Name == newName && s.Id != id, ct);
+            if (nameExists)
+            {
+                return Conflict(new { error = $"A benchmark snapshot named '{newName}' already exists." });
+            }
+            board.Name = newName;
+        }
+
+        if (request.Notes != null)
+        {
+            board.Notes = request.Notes.Trim();
+        }
+
+        if (request.DigestText != null)
+        {
+            board.DigestText = request.DigestText.Trim().Length > 2000
+                ? request.DigestText.Trim()[..2000]
+                : request.DigestText.Trim();
+        }
+
+        if (request.SourceGnollHackVersion != null)
+        {
+            board.SourceGnollHackVersion = request.SourceGnollHackVersion.Trim();
+        }
+
+        board.ModifiedAtUtc = DateTime.UtcNow;
+        await _dbContext.SaveChangesAsync(ct);
+
+        var suite = await _dbContext.BenchmarkSuites.FirstOrDefaultAsync(s => s.GameSnapshotId == id, ct);
+        return Ok(ToSnapshotDto(board, suite?.Id, suite?.Name));
+    }
+
+    [HttpDelete("snapshots/{id}")]
+    public async Task<IActionResult> DeleteSnapshot(long id, CancellationToken ct)
+    {
+        var board = await _dbContext.BenchmarkGameSnapshots.FirstOrDefaultAsync(s => s.Id == id, ct);
+        if (board == null) return NotFound();
+
+        var suite = await _dbContext.BenchmarkSuites.FirstOrDefaultAsync(s => s.GameSnapshotId == id, ct);
+        if (suite != null)
+        {
+            suite.GameSnapshotId = null;
+            suite.ModifiedAtUtc = DateTime.UtcNow;
+        }
+
+        _dbContext.BenchmarkGameSnapshots.Remove(board);
+        await _dbContext.SaveChangesAsync(ct);
+
+        return NoContent();
+    }
+
+    // --- Question Generation Jobs API ---
+
+    [HttpPost("question-generations")]
+    public async Task<IActionResult> StartQuestionGeneration([FromBody] StartQuestionGenerationRequest request, CancellationToken ct)
+    {
+        if (request.SimpleCount <= 0 && request.IntermediateCount <= 0 && request.AdvancedCount <= 0)
+        {
+            return BadRequest(new { error = "At least one question band must have count greater than zero." });
+        }
+
+        var suite = await _dbContext.BenchmarkSuites
+            .Include(s => s.GameSnapshot)
+            .FirstOrDefaultAsync(s => s.Id == request.SuiteId, ct);
+        if (suite == null) return NotFound(new { error = "Suite not found." });
+        if (suite.GameSnapshot == null)
+        {
+            return BadRequest(new { error = "The suite does not have a game board bound to it. Question generation requires a game board." });
+        }
+
+        var conflict = CheckConflictingBenchmarkJob(suite.Id, "question generation");
+        if (conflict != null) return conflict;
+
+        int totalToGenerate = request.SimpleCount + request.IntermediateCount + request.AdvancedCount;
+        var (canAdd, complianceMsg) = await _complianceGuard.CanAddQuestionsAsync(suite.Id, totalToGenerate);
+        if (!canAdd)
+        {
+            return BadRequest(new { error = complianceMsg });
+        }
+
+        var generatorConfig = await _dbContext.SystemAiApiConfigurations.FindAsync(new object[] { request.GeneratorModelConfigurationId }, ct);
+        if (generatorConfig == null || !generatorConfig.IsEnabled)
+        {
+            return BadRequest(new { error = "Generator model configuration not found or disabled." });
+        }
+        if (string.IsNullOrWhiteSpace(generatorConfig.EncryptedApiKey))
+        {
+            return BadRequest(new { error = "Generator model configuration has no API key." });
+        }
+
+        string startedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+        var cts = new CancellationTokenSource();
+
+        var job = new BenchmarkGenerationJob
+        {
+            SuiteId = suite.Id,
+            SuiteName = suite.Name,
+            GeneratorConfigId = generatorConfig.Id,
+            GeneratorDisplayName = generatorConfig.DisplayName,
+            Instructions = request.Instructions?.Trim() ?? string.Empty,
+            StartedByUserId = string.IsNullOrEmpty(startedByUserId) ? null : startedByUserId,
+            Cts = cts,
+            Items = new List<BenchmarkGenerationJobItem>
+            {
+                new() { Difficulty = BenchmarkDifficulty.Simple, RequestedCount = request.SimpleCount, Status = request.SimpleCount > 0 ? BenchmarkGenerationItemStatus.Pending : BenchmarkGenerationItemStatus.Skipped },
+                new() { Difficulty = BenchmarkDifficulty.Intermediate, RequestedCount = request.IntermediateCount, Status = request.IntermediateCount > 0 ? BenchmarkGenerationItemStatus.Pending : BenchmarkGenerationItemStatus.Skipped },
+                new() { Difficulty = BenchmarkDifficulty.Advanced, RequestedCount = request.AdvancedCount, Status = request.AdvancedCount > 0 ? BenchmarkGenerationItemStatus.Pending : BenchmarkGenerationItemStatus.Skipped }
+            }
+        };
+
+        if (!_generationJobManager.TryStart(job, out var existingJob))
+        {
+            return StatusCode(StatusCodes.Status409Conflict, existingJob?.ToDto());
+        }
+
+        _ = Task.Run(async () =>
+        {
+            await _generationService.RunGenerationAsync(job.Id, cts.Token);
+        });
+
+        return Accepted(new { jobId = job.Id });
+    }
+
+    [HttpGet("question-generations/{jobId}")]
+    public IActionResult GetQuestionGeneration(string jobId)
+    {
+        var job = _generationJobManager.TryGet(jobId);
+        if (job == null) return NotFound();
+        return Ok(job.ToDto());
+    }
+
+    [HttpGet("question-generations/active")]
+    public IActionResult GetActiveQuestionGeneration()
+    {
+        var current = _generationJobManager.Current;
+        if (current == null || current.Status != BenchmarkGenerationJobStatus.Running)
+        {
+            return NoContent();
+        }
+        return Ok(current.ToDto());
+    }
+
+    [HttpPost("question-generations/{jobId}/cancel")]
+    public IActionResult CancelQuestionGeneration(string jobId)
+    {
+        var job = _generationJobManager.TryGet(jobId);
+        if (job == null) return NotFound();
+        bool cancelled = _generationJobManager.TryCancel(jobId);
+        return Ok(new { cancelled });
+    }
+
+    // --- Rubric Verification Jobs API ---
+
+    [HttpPost("rubric-checks")]
+    public async Task<IActionResult> StartRubricCheck([FromBody] StartRubricCheckRequest request, CancellationToken ct)
+    {
+        var suite = await _dbContext.BenchmarkSuites
+            .Include(s => s.GameSnapshot)
+            .Include(s => s.Questions)
+            .FirstOrDefaultAsync(s => s.Id == request.SuiteId, ct);
+        if (suite == null) return NotFound(new { error = "Suite not found." });
+        if (suite.GameSnapshot == null)
+        {
+            return BadRequest(new { error = "The suite does not have a game board bound to it. Rubric verification requires a game board." });
+        }
+
+        var conflict = CheckConflictingBenchmarkJob(suite.Id, "rubric verification");
+        if (conflict != null) return conflict;
+
+        var checkerConfig = await _dbContext.SystemAiApiConfigurations.FindAsync(new object[] { request.CheckerModelConfigurationId }, ct);
+        if (checkerConfig == null || !checkerConfig.IsEnabled)
+        {
+            return BadRequest(new { error = "Checker model configuration not found or disabled." });
+        }
+        if (string.IsNullOrWhiteSpace(checkerConfig.EncryptedApiKey))
+        {
+            return BadRequest(new { error = "Checker model configuration has no API key." });
+        }
+
+        List<BenchmarkQuestion> targetQuestions;
+        string scopeType = "suite";
+        if (request.QuestionIds != null && request.QuestionIds.Count > 0)
+        {
+            scopeType = "questions";
+            var idSet = new HashSet<long>(request.QuestionIds);
+            targetQuestions = suite.Questions.Where(q => idSet.Contains(q.Id)).OrderBy(q => q.OrderIndex).ToList();
+        }
+        else
+        {
+            targetQuestions = suite.Questions.OrderBy(q => q.OrderIndex).ToList();
+        }
+
+        if (targetQuestions.Count == 0)
+        {
+            return BadRequest(new { error = "No questions found to check." });
+        }
+
+        string startedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+        var cts = new CancellationTokenSource();
+
+        var job = new BenchmarkRubricCheckJob
+        {
+            SuiteId = suite.Id,
+            SuiteName = suite.Name,
+            Scope = scopeType,
+            CheckerConfigId = checkerConfig.Id,
+            CheckerDisplayName = checkerConfig.DisplayName,
+            StartedByUserId = string.IsNullOrEmpty(startedByUserId) ? null : startedByUserId,
+            Cts = cts,
+            Items = targetQuestions.Select(q => new BenchmarkRubricCheckJobItem
+            {
+                QuestionId = q.Id,
+                OrderIndex = q.OrderIndex,
+                QuestionTextExcerpt = q.QuestionText.Length <= 160 ? q.QuestionText : q.QuestionText.Substring(0, 160) + "...",
+                Status = BenchmarkRubricCheckItemStatus.Pending
+            }).ToList()
+        };
+
+        if (!_rubricCheckJobManager.TryStart(job, out var existingJob))
+        {
+            return StatusCode(StatusCodes.Status409Conflict, existingJob?.ToDto());
+        }
+
+        _ = Task.Run(async () =>
+        {
+            await _rubricCheckService.RunRubricCheckAsync(job.Id, cts.Token);
+        });
+
+        return Accepted(new { jobId = job.Id });
+    }
+
+    [HttpGet("rubric-checks/{jobId}")]
+    public IActionResult GetRubricCheck(string jobId)
+    {
+        var job = _rubricCheckJobManager.TryGet(jobId);
+        if (job == null) return NotFound();
+        return Ok(job.ToDto());
+    }
+
+    [HttpGet("rubric-checks/active")]
+    public IActionResult GetActiveRubricCheck()
+    {
+        var current = _rubricCheckJobManager.Current;
+        if (current == null || current.Status != BenchmarkRubricCheckJobStatus.Running)
+        {
+            return NoContent();
+        }
+        return Ok(current.ToDto());
+    }
+
+    [HttpPost("rubric-checks/{jobId}/cancel")]
+    public IActionResult CancelRubricCheck(string jobId)
+    {
+        var job = _rubricCheckJobManager.TryGet(jobId);
+        if (job == null) return NotFound();
+        bool cancelled = _rubricCheckJobManager.TryCancel(jobId);
+        return Ok(new { cancelled });
     }
 
     // --- Runs API ---

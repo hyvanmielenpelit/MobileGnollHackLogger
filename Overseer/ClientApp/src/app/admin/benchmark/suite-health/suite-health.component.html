@@ -39,6 +39,14 @@
               (click)="selectTab('coverage')">
         Coverage
       </button>
+      <button type="button" role="tab" class="gh-tab" id="sh-tab-board-facts"
+              aria-controls="sh-panel-board-facts"
+              [attr.aria-selected]="activeTab === 'board-facts'"
+              [attr.tabindex]="activeTab === 'board-facts' ? 0 : -1"
+              (keydown)="onTabKeydown($event, 4)"
+              (click)="selectTab('board-facts')">
+        Board facts
+      </button>
     </div>
 
     @if (canRefreshActiveTab) {
@@ -460,6 +468,161 @@
         </table>
       } @else if (coverage && !coverage.errorMessage) {
         <p class="text-muted">The analysis reported no coverage gaps.</p>
+      }
+    </div>
+  }
+
+  <!-- BOARD FACTS -->
+  @if (activeTab === 'board-facts') {
+    <div id="sh-panel-board-facts" class="sh-panel" role="tabpanel" aria-labelledby="sh-tab-board-facts" tabindex="0">
+      @if (!gameSnapshotId) {
+        <div class="alert alert-info" role="note">
+          <div class="alert-content">
+            <div class="alert-title">No Game Context Board Bound</div>
+            <div class="alert-body">
+              This suite is not bound to a game context board. Rubric fact verification checks the factual claims
+              in question rubrics against an actual game board snapshot, so it is available only for board-backed suites.
+            </div>
+          </div>
+        </div>
+      } @else {
+        <div class="rubric-check-controls">
+          <div class="form-group">
+            <label id="rubricCheckerModelLabel">Rubric checker model</label>
+            <div class="custom-model-selector rubric-checker-selector">
+              <button type="button" id="rubricCheckerModelTrigger" class="selector-trigger"
+                      (click)="toggleRubricCheckerDropdown($event)"
+                      [class.open]="isRubricCheckerDropdownOpen"
+                      [attr.aria-expanded]="isRubricCheckerDropdownOpen"
+                      aria-haspopup="listbox"
+                      aria-labelledby="rubricCheckerModelLabel rubricCheckerModelTrigger">
+                <span class="model-name" [class.text-muted]="!selectedRubricChecker">{{ selectedRubricChecker?.displayName || selectedRubricChecker?.modelId || 'Select Model' }}</span>
+                @if (selectedRubricChecker?.thinkingLevel) {
+                  <span class="thinking-badge">{{ formatThinkingLevel(selectedRubricChecker?.thinkingLevel) }}</span>
+                }
+                @if (showReasoningBadge(selectedRubricChecker?.reasoningMode)) {
+                  <span class="reasoning-badge">{{ selectedRubricChecker?.reasoningMode }}</span>
+                }
+                @if (selectedRubricChecker?.provider) {
+                  <span class="provider-badge">{{ selectedRubricChecker?.provider }}</span>
+                }
+                <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </button>
+              @if (isRubricCheckerDropdownOpen) {
+                <div class="selector-dropdown" role="listbox" aria-labelledby="rubricCheckerModelLabel">
+                  @if (benchmarkCapableConfigs.length === 0) {
+                    <div class="empty-dropdown-hint">No system AI configs with the Benchmark role are enabled.</div>
+                  }
+                  @for (model of benchmarkCapableConfigs; track model.id) {
+                    <div class="model-option" role="option" tabindex="0"
+                         [attr.aria-selected]="rubricCheckerConfigId === model.id"
+                         [class.selected]="rubricCheckerConfigId === model.id"
+                         (click)="selectRubricChecker(model)">
+                      <span class="model-name">{{ model.displayName || model.modelId }}</span>
+                      @if (model.thinkingLevel) {
+                        <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
+                      }
+                      <span class="provider-badge">{{ model.provider }}</span>
+                    </div>
+                  }
+                </div>
+              }
+            </div>
+            <span class="form-hint">
+              Board: <strong>{{ gameSnapshotName || 'Bound Board' }}</strong>. The checker verifies factual claims in each question's rubric against this board.
+            </span>
+          </div>
+          <div class="rubric-check-actions">
+            @if (runningRubricCheck) {
+              <button type="button" class="btn-gh btn-gh-cancel" (click)="cancelRubricCheck()" [disabled]="cancellingRubricCheck">
+                {{ cancellingRubricCheck ? 'Cancelling...' : 'Cancel Check' }}
+              </button>
+            } @else {
+              <button type="button" class="btn-gh" (click)="startRubricCheck()" [disabled]="rubricCheckerConfigId == null">
+                Check Rubrics with AI
+              </button>
+            }
+          </div>
+        </div>
+
+        @if (rubricCheckError) {
+          <div class="alert alert-warning" role="alert">
+            <div class="alert-content"><div class="alert-body">{{ rubricCheckError }}</div></div>
+          </div>
+        }
+
+        @if (runningRubricCheck && rubricCheckJob) {
+          <div class="rubric-check-progress">
+            <div class="progress-bar-container">
+              <div class="spinner"></div>
+              <span>Checking rubrics... ({{ rubricCheckJob.items.length }} questions)</span>
+            </div>
+          </div>
+        }
+
+        @if (rubricCheckJob && rubricCheckJob.items.length > 0) {
+          <div class="rubric-check-results">
+            <div class="results-header">
+              <span class="results-summary">
+                Status: <strong>{{ rubricCheckJob.status }}</strong>
+                ({{ rubricCheckJob.promptTokens }} prompt / {{ rubricCheckJob.outputTokens }} output tokens)
+              </span>
+            </div>
+
+            <div class="findings-list">
+              @for (item of rubricCheckJob.items; track item.questionId) {
+                <div class="finding-item-card" [class.unsupported]="item.verdict === 'unsupported'">
+                  <div class="finding-item-header">
+                    <span class="question-title">#{{ item.orderIndex }}: {{ item.questionTextExcerpt }}</span>
+                    <div class="header-badges">
+                      <span class="badge" [class.badge-success]="item.verdict === 'supported'" [class.badge-danger]="item.verdict === 'unsupported'">
+                        {{ item.verdict === 'supported' ? '✓ Supported' : '⚠️ Unsupported' }}
+                      </span>
+                      <button type="button" class="btn-gh btn-sm" (click)="editQuestion(item.questionId)" aria-label="Open question editor">
+                        ✏️ Edit
+                      </button>
+                    </div>
+                  </div>
+
+                  @if (item.errorMessage) {
+                    <div class="finding-error">{{ item.errorMessage }}</div>
+                  }
+
+                  @if (item.findings && item.findings.length > 0) {
+                    <div class="claims-table-wrapper">
+                      <table class="gh-table sh-table claims-table">
+                        <thead>
+                          <tr>
+                            <th>Rubric Claim</th>
+                            <th>Assessment</th>
+                            <th>Board Evidence</th>
+                            <th>Reasoning</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          @for (f of item.findings; track f.claim) {
+                            <tr [class.claim-contradicted]="f.assessment === 'contradicted' || f.assessment === 'not-in-board'">
+                              <td class="claim-text"><code>{{ f.claim }}</code></td>
+                              <td>
+                                <span class="badge" [class.badge-success]="f.assessment === 'supported'" [class.badge-danger]="f.assessment === 'contradicted'" [class.badge-warning]="f.assessment === 'not-in-board'">
+                                  {{ f.assessment }}
+                                </span>
+                              </td>
+                              <td class="board-quote">{{ f.boardQuote || '—' }}</td>
+                              <td class="reasoning-text">{{ f.reasoning || '—' }}</td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
+                    </div>
+                  } @else if (item.status === 'Completed') {
+                    <div class="no-findings-hint text-muted">All board facts in this rubric are supported by the game snapshot.</div>
+                  }
+                </div>
+              }
+            </div>
+          </div>
+        }
       }
     </div>
   }

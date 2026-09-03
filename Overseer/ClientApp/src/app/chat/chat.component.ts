@@ -12,6 +12,7 @@ import { ChangelogService } from '../services/changelog.service';
 import { ClientBridgeService } from '../services/client-bridge.service';
 import { AdminAlertsComponent } from './admin-alerts.component';
 import { TrashModalComponent } from '../shared/trash-modal/trash-modal.component';
+import { AdminBenchmarkService } from '../services/admin-benchmark.service';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../utils/polyfills.util';
 import * as signalR from '@microsoft/signalr';
 import { firstValueFrom, filter, Subscription, Subject, debounceTime, distinctUntilChanged } from 'rxjs';
@@ -217,6 +218,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   private animationFrameId: number | null = null;
   
   @ViewChild('sidebar') sidebarEl!: ElementRef<HTMLElement>;
+  @ViewChild('captureBoardDialog') captureBoardDialog?: ElementRef<HTMLDialogElement>;
   ngZone = inject(NgZone);
   authService = inject(AuthService);
   debugService = inject(DebugService);
@@ -224,6 +226,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   route = inject(ActivatedRoute);
   cdr = inject(ChangeDetectorRef);
   clientBridge = inject(ClientBridgeService);
+  adminBenchmarkService = inject(AdminBenchmarkService);
   
   readonly CLIENT_TOOL_TIMEOUT_MS = 14000;
   pendingRequests = new Map<string, ReturnType<typeof setTimeout>>();
@@ -687,6 +690,73 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   reportSuccessIndex: number | null = null;
   reportError = '';
   showDebugLog = localStorage.getItem('showDebugLog') === 'true';
+
+  showCaptureBoardModal = false;
+  captureBoardName = '';
+  captureBoardNotes = '';
+  captureBoardVersion = '';
+  isCapturingBoard = false;
+  captureBoardError: string | null = null;
+  captureBoardResult: { boardName: string; charCount: number; shaPrefix: string; suiteName: string; suiteId: number } | null = null;
+
+  openCaptureBoardModal(event?: Event) {
+    if (event) {
+      event.preventDefault();
+    }
+    this.captureBoardError = null;
+    this.captureBoardResult = null;
+    const now = new Date().toISOString().substring(0, 10);
+    this.captureBoardName = `Board ${now}`;
+    this.captureBoardNotes = '';
+    this.captureBoardVersion = '';
+    this.showCaptureBoardModal = true;
+    this.cdr.detectChanges();
+    if (this.captureBoardDialog?.nativeElement) {
+      ensureOverlayPolyfills();
+      this.captureBoardDialog.nativeElement.showModal();
+    }
+  }
+
+  closeCaptureBoardModal() {
+    this.captureBoardDialog?.nativeElement?.close();
+    this.showCaptureBoardModal = false;
+    this.captureBoardError = null;
+    this.cdr.detectChanges();
+  }
+
+  submitCaptureBoard() {
+    if (!this.currentSessionId || !this.captureBoardName.trim()) {
+      return;
+    }
+    this.isCapturingBoard = true;
+    this.captureBoardError = null;
+    this.captureBoardResult = null;
+    this.cdr.detectChanges();
+
+    this.adminBenchmarkService.captureSnapshot({
+      sessionId: this.currentSessionId.toString(),
+      name: this.captureBoardName.trim(),
+      notes: this.captureBoardNotes.trim() || undefined,
+      sourceGnollHackVersion: this.captureBoardVersion.trim() || undefined
+    }).subscribe({
+      next: (res) => {
+        this.isCapturingBoard = false;
+        this.captureBoardResult = {
+          boardName: res.board.name,
+          charCount: res.board.charCount,
+          shaPrefix: res.board.sha256 ? res.board.sha256.substring(0, 8) : '',
+          suiteName: res.suite.name,
+          suiteId: res.suite.id
+        };
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.isCapturingBoard = false;
+        this.captureBoardError = err?.error?.message || (typeof err?.error === 'string' ? err.error : null) || 'Failed to capture benchmark board.';
+        this.cdr.detectChanges();
+      }
+    });
+  }
 
   currentStatusText = '';
   showSpinner = false;

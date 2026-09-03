@@ -570,6 +570,22 @@
               <div class="suite-title-group">
                 <h4>{{ suite.name }}</h4>
                 <span class="question-count-badge">{{ suite.questionCount }} Questions</span>
+                @if (suite.gameSnapshotName) {
+                  <button type="button" class="badge-board" (click)="openSnapshotViewer(suite.gameSnapshotId!)" aria-label="View Game Board Snapshot">
+                    🎮 {{ suite.gameSnapshotName }} ({{ suite.gameSnapshotCharCount | number }} chars)
+                  </button>
+                }
+                @if (suite.hasGeneratedQuestions) {
+                  @if (suite.reviewedQuestionCount === suite.questionCount) {
+                    <span class="badge badge-success" title="All generated questions have been verified by a human reviewer">
+                      ✓ Reviewed
+                    </span>
+                  } @else {
+                    <span class="badge badge-warning" title="Generated questions must be verified by a human reviewer">
+                      ⚠️ Needs review ({{ suite.reviewedQuestionCount || 0 }} of {{ suite.questionCount }})
+                    </span>
+                  }
+                }
                 <span class="suite-assessment-badge" [class]="'assess-' + difficultyProgressClass(suite)"
                       [title]="'Only suites with every question assessed can be run.'">
                   @if (suite.difficultyFullyAssessed) {
@@ -627,6 +643,24 @@
               <button type="button" class="btn-gh" (click)="openManageQuestions(suite)">
                 Manage Questions
               </button>
+              @if (suite.gameSnapshotId) {
+                <button type="button" class="btn-gh" (click)="openSnapshotViewer(suite.gameSnapshotId)">
+                  🎮 View Board
+                </button>
+                <button type="button" class="btn-gh" (click)="openGenerationDialog(suite)">
+                  ✨ Generate Questions
+                </button>
+              }
+              @if (suite.hasGeneratedQuestions) {
+                <button type="button" class="btn-gh" (click)="openSuiteHealthForRubrics(suite)">
+                  🔍 Check Rubrics
+                </button>
+                @if ((suite.reviewedQuestionCount || 0) < suite.questionCount) {
+                  <button type="button" class="btn-gh" (click)="confirmVerifyAll(suite)" aria-label="Attest that all questions have been reviewed">
+                    ✓ Verify All
+                  </button>
+                }
+              }
               <button type="button" class="btn-gh" (click)="openDifficultyAssessorDialog(suite)">
                 Assess Question Difficulty
               </button>
@@ -695,6 +729,10 @@
           [suiteId]="suiteHealthSuite.id"
           [suiteName]="suiteHealthSuite.name"
           [benchmarkCapableConfigs]="benchmarkCapableConfigs"
+          [gameSnapshotId]="suiteHealthSuite.gameSnapshotId"
+          [gameSnapshotName]="suiteHealthSuite.gameSnapshotName"
+          [hasGeneratedQuestions]="suiteHealthSuite.hasGeneratedQuestions"
+          [initialTab]="suiteHealthInitialTab"
           (editQuestionRequested)="onSuiteHealthEditQuestion(suiteHealthSuite, $event)">
         </app-benchmark-suite-health>
       </div>
@@ -911,6 +949,11 @@
 
         <!-- Actions Bar -->
         <div class="modal-actions-bar mb-20">
+          @if (selectedRunGameSnapshotId) {
+            <button type="button" class="btn-gh" (click)="openSnapshotViewer(selectedRunGameSnapshotId)">
+              <span style="margin-right: 4px;">🎮</span> View Game Board
+            </button>
+          }
           <button type="button" class="btn-gh" (click)="downloadReport(selectedRunDetail.id)">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             Download Markdown Report
@@ -1754,6 +1797,12 @@
                 <div class="question-meta-row">
                   <div class="meta-badges">
                     <span class="q-order-badge">#{{ q.orderIndex }}</span>
+                    @if (q.isGenerated) {
+                      <span class="badge-ai" title="AI-Generated Question">AI</span>
+                    }
+                    @if (q.itemRevision) {
+                      <span class="badge-revision" title="Revision {{ q.itemRevision }}">r{{ q.itemRevision }}</span>
+                    }
                     <span class="difficulty-badge" [class]="'diff-' + formatDifficulty(q.difficulty).toLowerCase()">
                       {{ formatDifficulty(q.difficulty) }}
                     </span>
@@ -1762,9 +1811,24 @@
                         AI Diff: {{ q.assessedDifficulty }}
                       </span>
                     }
+                    @if (q.isGenerated) {
+                      <button type="button" class="btn-review-toggle" [class.reviewed]="q.isReviewed" (click)="toggleQuestionReview(q)" [title]="q.isReviewed ? 'Human-verified. Click to unverify.' : 'Click to verify that you have reviewed this question and rubric.'">
+                        {{ q.isReviewed ? '✓ Verified' : 'Verify' }}
+                      </button>
+                    }
                   </div>
 
                   <div class="card-actions-group">
+                    @if (currentSuiteForQuestions.gameSnapshotId) {
+                      <button type="button" class="action-btn" (click)="checkSingleQuestionRubric(currentSuiteForQuestions, q)"
+                              [attr.aria-label]="'Check rubric for question ' + (q.orderIndex + 1) + ' against board'"
+                              [attr.interestfor]="'tip-rubric-q-' + q.id"
+                              [attr.style]="'anchor-name: --tip-rubric-q-' + q.id">
+                        <span style="font-size: 14px;">🔍</span>
+                      </button>
+                      <div popover="hint" class="gh-tooltip" [id]="'tip-rubric-q-' + q.id"
+                           [attr.style]="'position-anchor: --tip-rubric-q-' + q.id">Check rubric against board with AI</div>
+                    }
                     <button type="button" class="action-btn" (click)="openDifficultyAssessorDialog(currentSuiteForQuestions!, q)"
                             [attr.aria-label]="'Auto-rate difficulty for question ' + (q.orderIndex + 1)"
                             [attr.interestfor]="'tip-rate-q-' + q.id"
@@ -2523,5 +2587,185 @@
         }
       }
     </div>
+  </div>
+</dialog>
+
+<!-- SNAPSHOT VIEWER COMPONENT -->
+<app-snapshot-viewer #snapshotViewer (snapshotUpdated)="onSnapshotUpdated($event)"></app-snapshot-viewer>
+
+<!-- QUESTION GENERATION DIALOG -->
+<dialog #generationDialog class="gh-dialog benchmark-form-dialog generation-dialog"
+        aria-labelledby="generationDialogTitle"
+        (cancel)="closeGenerationDialog()">
+  <div class="dialog-content flex-col">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 id="generationDialogTitle">
+          @if (generationDialogPhase === 'select') { Generate Benchmark Questions from Board }
+          @else { Generating Benchmark Questions }
+        </h3>
+        @if (generationSuiteForJob) {
+          <p class="dialog-subtitle">
+            Suite: {{ generationSuiteForJob.name }}
+            @if (generationSuiteForJob.gameSnapshotName) {
+              (Board: {{ generationSuiteForJob.gameSnapshotName }})
+            }
+          </p>
+        }
+      </div>
+      <button type="button" class="btn-icon-action" aria-label="Close question generator" (click)="closeGenerationDialog()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+
+    @if (generationDialogPhase === 'select') {
+      <div class="dialog-body">
+        @if (generationDialogError) {
+          <div class="alert alert-warning mb-15" role="alert">
+            <div class="alert-content"><div class="alert-body">{{ generationDialogError }}</div></div>
+          </div>
+        }
+
+        <div class="form-group mb-15">
+          <label id="generationModelLabel">Generator Model *</label>
+          <div class="custom-model-selector generation-model-selector">
+            <button type="button" id="generationModelTrigger" class="selector-trigger"
+                    (click)="toggleGenerationModelDropdown($event)"
+                    [class.open]="isGenerationModelDropdownOpen"
+                    [attr.aria-expanded]="isGenerationModelDropdownOpen"
+                    aria-haspopup="listbox"
+                    aria-labelledby="generationModelLabel generationModelTrigger">
+              <span class="model-name" [class.text-muted]="!selectedGenerationModel">
+                {{ selectedGenerationModel?.displayName || selectedGenerationModel?.modelId || 'Select Model' }}
+              </span>
+              @if (selectedGenerationModel?.thinkingLevel) {
+                <span class="thinking-badge">{{ formatThinkingLevel(selectedGenerationModel?.thinkingLevel) }}</span>
+              }
+              @if (showReasoningBadge(selectedGenerationModel?.reasoningMode)) {
+                <span class="reasoning-badge">{{ selectedGenerationModel?.reasoningMode }}</span>
+              }
+              @if (selectedGenerationModel?.provider) {
+                <span class="provider-badge">{{ selectedGenerationModel?.provider }}</span>
+              }
+              <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </button>
+
+            @if (isGenerationModelDropdownOpen) {
+              <div class="selector-dropdown" role="listbox" aria-labelledby="generationModelLabel">
+                @if (benchmarkCapableConfigs.length === 0) {
+                  <div class="empty-dropdown-hint">No system AI configs with the Benchmark role are enabled.</div>
+                }
+                @for (model of benchmarkCapableConfigs; track model.id) {
+                  <div class="model-option" role="option" tabindex="0"
+                       [attr.aria-selected]="generationModelConfigId === model.id"
+                       [class.selected]="generationModelConfigId === model.id"
+                       (click)="selectGenerationModel(model)">
+                    <span class="model-name">{{ model.displayName || model.modelId }}</span>
+                    @if (model.thinkingLevel) {
+                      <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
+                    }
+                    <span class="provider-badge">{{ model.provider }}</span>
+                  </div>
+                }
+              </div>
+            }
+          </div>
+          <span class="form-hint">A strong reasoning model is recommended for authoring accurate rubrics grounded in the game board.</span>
+        </div>
+
+        <div class="form-group mb-15">
+          <label>Question Counts per Difficulty Band</label>
+          <div class="counts-row">
+            <div class="count-item">
+              <label for="countSimple">Simple</label>
+              <input id="countSimple" type="number" class="gh-input" min="0" max="25" [(ngModel)]="generationSimpleCount" />
+            </div>
+            <div class="count-item">
+              <label for="countInter">Intermediate</label>
+              <input id="countInter" type="number" class="gh-input" min="0" max="25" [(ngModel)]="generationIntermediateCount" />
+            </div>
+            <div class="count-item">
+              <label for="countAdv">Advanced</label>
+              <input id="countAdv" type="number" class="gh-input" min="0" max="25" [(ngModel)]="generationAdvancedCount" />
+            </div>
+          </div>
+          <span class="form-hint">Total: {{ totalGenerationCount }} questions to generate (default 6 / 6 / 6 = 18).</span>
+        </div>
+
+        <div class="form-group mb-15">
+          <label for="genInstructions">Authoring Instructions</label>
+          <textarea id="genInstructions" class="gh-input" [(ngModel)]="generationInstructions" rows="4"></textarea>
+          <span class="form-hint">Steers what decisions or aspects to probe. The rubric structure requirements (BOARD FACTS, REQUIRED, etc.) are enforced by the harness.</span>
+        </div>
+      </div>
+
+      <div class="dialog-footer">
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeGenerationDialog()">Cancel</button>
+        <button type="button" class="btn-gh" (click)="confirmGeneration()"
+                [disabled]="generationJobStarting || !generationModelConfigId || totalGenerationCount <= 0">
+          {{ generationJobStarting ? 'Starting...' : 'Start Generation' }}
+        </button>
+      </div>
+    } @else {
+      <!-- Progress Phase -->
+      <div class="dialog-body">
+        <div class="generation-progress-header mb-15">
+          <div>
+            <strong>Status:</strong> {{ generationJob?.status || 'Starting...' }}
+            @if (generationJob) {
+              ({{ generationJob.promptTokens }} prompt / {{ generationJob.outputTokens }} output tokens)
+            }
+          </div>
+        </div>
+
+        @if (generationJob && generationJob.items.length > 0) {
+          <div class="generation-items-list mb-15">
+            @for (item of generationJob.items; track item.difficulty) {
+              <div class="generation-item-row">
+                <span class="band-name">
+                  {{ item.difficulty === 1 ? 'Simple' : (item.difficulty === 2 ? 'Intermediate' : 'Advanced') }}
+                </span>
+                <span class="band-counts">{{ item.generatedCount }} / {{ item.requestedCount }} generated</span>
+                <span class="badge" [class.badge-success]="item.status === 'Completed'" [class.badge-warning]="item.status === 'Running'" [class.badge-danger]="item.status === 'Failed'">
+                  {{ item.status }}
+                </span>
+                @if (item.errorMessage) {
+                  <span class="band-error">{{ item.errorMessage }}</span>
+                }
+              </div>
+            }
+          </div>
+        }
+
+        @if (generationJob && generationJob.log.length > 0) {
+          <div class="generation-log-box">
+            <label>Job Log</label>
+            <div class="log-entries">
+              @for (entry of generationJob.log; track entry.timestampUtc + entry.message) {
+                <div class="log-entry" [class]="'severity-' + entry.severity">
+                  <span class="log-time">{{ entry.timestampUtc | date:'HH:mm:ss' }}</span>
+                  <span class="log-msg">{{ entry.message }}</span>
+                </div>
+              }
+            </div>
+          </div>
+        }
+      </div>
+
+      <div class="dialog-footer">
+        @if (generationJob?.status === 'Running') {
+          <button type="button" class="btn-gh btn-gh-cancel" (click)="cancelGenerationJob()" [disabled]="cancellingGeneration">
+            {{ cancellingGeneration ? 'Cancelling...' : 'Cancel Generation' }}
+          </button>
+        } @else {
+          <button type="button" class="btn-gh" (click)="closeGenerationDialog()">
+            Done
+          </button>
+        }
+      </div>
+    }
   </div>
 </dialog>

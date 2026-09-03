@@ -2146,3 +2146,120 @@
   .calibration-table { font-size: 12px; }
   .calibration-error { color: #fbbf24; }
 }
+
+.badge-board {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+
+  &:hover {
+    background: rgba(59, 130, 246, 0.3);
+    color: #93c5fd;
+  }
+}
+
+.badge-ai {
+  background: rgba(168, 85, 247, 0.2);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.4);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.badge-revision {
+  background: rgba(100, 116, 139, 0.2);
+  color: #94a3b8;
+  border: 1px solid rgba(100, 116, 139, 0.3);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 11px;
+}
+
+.btn-review-toggle {
+  background: transparent;
+  border: 1px solid #475569;
+  color: #94a3b8;
+  border-radius: 4px;
+  font-size: 11px;
+  padding: 1px 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &.reviewed {
+    background: rgba(34, 197, 94, 0.15);
+    border-color: #22c55e;
+    color: #4ade80;
+  }
+
+  &:hover {
+    border-color: #94a3b8;
+  }
+}
+
+.generation-dialog {
+  max-width: 680px;
+  width: 90vw;
+
+  .counts-row {
+    display: flex;
+    gap: 12px;
+
+    .count-item {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+
+      label { font-size: 12px; color: #94a3b8; }
+      input { text-align: center; }
+    }
+  }
+
+  .generation-item-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+    margin-bottom: 6px;
+    font-size: 13px;
+
+    .band-name { font-weight: 600; width: 100px; }
+    .band-counts { color: #94a3b8; flex: 1; }
+    .band-error { color: #f87171; font-size: 12px; }
+  }
+
+  .generation-log-box {
+    margin-top: 12px;
+
+    label { font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 6px; display: block; }
+
+    .log-entries {
+      max-height: 180px;
+      overflow-y: auto;
+      background: #090d16;
+      border: 1px solid #1e293b;
+      border-radius: 4px;
+      padding: 8px;
+      font-family: monospace;
+      font-size: 11px;
+
+      .log-entry {
+        margin-bottom: 2px;
+        .log-time { color: #64748b; margin-right: 8px; }
+        &.severity-Warning { color: #fbbf24; }
+        &.severity-Error { color: #f87171; }
+      }
+    }
+  }
+}

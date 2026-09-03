@@ -13,6 +13,12 @@ public class BenchmarkSuite
 
     public string? Description { get; set; }
 
+    public long? GameSnapshotId { get; set; }
+    public BenchmarkGameSnapshot? GameSnapshot { get; set; }
+
+    /// <summary>True when any question in this suite came from the generator rather than a human.</summary>
+    public bool HasGeneratedQuestions { get; set; }
+
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 
     public DateTime ModifiedAtUtc { get; set; } = DateTime.UtcNow;

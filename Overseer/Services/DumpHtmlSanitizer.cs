@@ -68,6 +68,21 @@ public static class DumpHtmlSanitizer
     private static readonly Regex BlankLineRunRegex = new(
         @"(\r?\n){3,}", RegexOptions.Compiled);
 
+    /// <summary>
+    /// Final normalization applied to text that is already flattened — either by
+    /// Sanitize() here, or by the client's SanitizeDumpHtml() before a
+    /// refresh_snapshot round trip. Idempotent: running it twice changes nothing.
+    /// </summary>
+    public static string NormalizeFlattenedText(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+
+        text = TrailingSpaceRegex.Replace(text, "$1");
+        text = BlankLineRunRegex.Replace(text, "\n\n");
+        text = text.Replace('\u00A0', ' ');
+        return text.Trim();
+    }
+
     public static string Sanitize(string? html)
     {
         if (string.IsNullOrWhiteSpace(html)) return string.Empty;
@@ -78,8 +93,6 @@ public static class DumpHtmlSanitizer
         text = BlockOpenRegex.Replace(text, "");
         text = RemainingTagRegex.Replace(text, "");
         text = HorizontalRunRegex.Replace(text, " ");
-        text = TrailingSpaceRegex.Replace(text, "$1");
-        text = BlankLineRunRegex.Replace(text, "\n\n");
 
         /* 7. Decode entities LAST. During step 5, ""&nbsp;"" is still literal text and
               therefore survives any collapse pattern; only here does it become
@@ -89,9 +102,9 @@ public static class DumpHtmlSanitizer
 
         /* 8. Server-only: normalize U+00A0 back to ASCII space now that all
               collapsing has finished. One U+00A0 becomes exactly one space, so
-              column counts are unchanged; plain spaces cost fewer tokens. */
-        text = text.Replace('\u00A0', ' ');
-
-        return text.Trim();
+              column counts are unchanged; plain spaces cost fewer tokens.
+              Extracted to NormalizeFlattenedText so client-sanitized text (Path B)
+              shares the same final normalization as raw-HTML-sanitized text (Path A). */
+        return NormalizeFlattenedText(text);
     }
 }

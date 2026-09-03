@@ -257,7 +257,7 @@ public class BenchmarkComplianceGuardTests
         // which these tests do not exercise — same reason the two nulls above are safe.
         var controller = new AdminBenchmarkController(
             db, benchmarkService, scoringProfileService, runManager, difficultyJobManager, guard, scopeFactory,
-            null!, null!)
+            null!, null!, null!, null!, null!, null!, null!, null!)
         {
             ControllerContext = new ControllerContext
             {

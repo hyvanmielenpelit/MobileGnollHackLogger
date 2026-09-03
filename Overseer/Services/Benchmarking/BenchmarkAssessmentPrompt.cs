@@ -85,7 +85,7 @@ public static class BenchmarkAssessmentPrompt
     ///     run re-grades a stored run with an alternative assessor, non-destructively, so an
     ///     assessor change can be measured before it is made.
     /// </summary>
-    public const string HarnessVersion = "7";
+    public const string HarnessVersion = "8";
 
     public static string BuildPerQuestionPrompt(
         string suiteName,
@@ -99,7 +99,9 @@ public static class BenchmarkAssessmentPrompt
         int toolCallsCompleted = 0,
         bool toolBudgetExhausted = false,
         int scrubbedArtifactCount = 0,
-        int? toolCallBudget = null)
+        int? toolCallBudget = null,
+        string? boardName = null,
+        string? boardText = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine("You are an expert game knowledge and reasoning assessor for GnollHack (a roguelike game derived from NetHack 3.6.2).");
@@ -191,6 +193,19 @@ public static class BenchmarkAssessmentPrompt
         sb.AppendLine("--- QUESTION AND CANDIDATE ANSWER ---");
         sb.AppendLine($"Question #{orderIndex} [Authored Band: {difficulty}]");
         sb.AppendLine($"Question: {questionText}");
+        if (!string.IsNullOrWhiteSpace(boardText))
+        {
+            sb.AppendLine("--- GAME CONTEXT BOARD (GROUND TRUTH REFERENCE DATA) ---");
+            if (!string.IsNullOrWhiteSpace(boardName))
+            {
+                sb.AppendLine($"Board Name: {boardName}");
+            }
+            sb.AppendLine("The candidate was provided with the following game state snapshot board. This board represents the absolute ground truth of the in-game situation. Any claims made by the candidate about the game state, inventory, dungeon, monsters, or attributes MUST be evaluated against this board.");
+            sb.AppendLine();
+            sb.AppendLine(boardText);
+            sb.AppendLine("--- END GAME CONTEXT BOARD ---");
+            sb.AppendLine();
+        }
         if (!string.IsNullOrWhiteSpace(expectedPoints))
         {
             sb.AppendLine("Assessment Rubric / Reference Points:");
@@ -258,7 +273,9 @@ public static class BenchmarkAssessmentPrompt
         int toolCallsCompleted = 0,
         bool toolBudgetExhausted = false,
         int scrubbedArtifactCount = 0,
-        int? toolCallBudget = null)
+        int? toolCallBudget = null,
+        string? boardName = null,
+        string? boardText = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine(BuildPerQuestionPrompt(
@@ -273,7 +290,9 @@ public static class BenchmarkAssessmentPrompt
             toolCallsCompleted,
             toolBudgetExhausted,
             scrubbedArtifactCount,
-            toolCallBudget));
+            toolCallBudget,
+            boardName,
+            boardText));
         sb.AppendLine();
         sb.AppendLine("--- SECOND OPINION ---");
         sb.AppendLine("Another assessor has already graded this answer, and its verdict was severe enough that the harness asked for an independent second reading. Grade the answer yourself against the rubric above.");

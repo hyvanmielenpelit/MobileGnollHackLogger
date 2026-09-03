@@ -1,4 +1,4 @@
-import { Component, EventEmitter, HostListener, Input, OnChanges, OnInit, Output, SimpleChanges, ChangeDetectorRef, inject } from '@angular/core';
+import { Component, EventEmitter, HostListener, Input, OnChanges, OnInit, OnDestroy, Output, SimpleChanges, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
@@ -8,11 +8,14 @@ import {
   BenchmarkItemStatisticsDto,
   BenchmarkRubricGapReportDto,
   BenchmarkCitationReportDto,
-  BenchmarkCoverageReportDto
+  BenchmarkCoverageReportDto,
+  RubricCheckJobDto,
+  RubricCheckJobItemDto,
+  RubricCheckFindingDto
 } from '../../../services/admin-benchmark.service';
 import { SystemAiConfigDto } from '../../../services/admin.service';
 
-export type SuiteHealthTab = 'items' | 'gaps' | 'citations' | 'coverage';
+export type SuiteHealthTab = 'items' | 'gaps' | 'citations' | 'coverage' | 'board-facts';
 
 /**
  * Suite health: what the stored runs say about the *suite* rather than about the models.
@@ -35,7 +38,7 @@ export type SuiteHealthTab = 'items' | 'gaps' | 'citations' | 'coverage';
   templateUrl: './suite-health.component.html',
   styleUrls: ['./suite-health.component.scss']
 })
-export class SuiteHealthComponent implements OnInit, OnChanges {
+export class SuiteHealthComponent implements OnInit, OnChanges, OnDestroy {
   private benchmarkService = inject(AdminBenchmarkService);
   private cdr = inject(ChangeDetectorRef);
 
@@ -47,6 +50,19 @@ export class SuiteHealthComponent implements OnInit, OnChanges {
 
   /** The host opens the question editor; this component never writes anything itself. */
   @Output() editQuestionRequested = new EventEmitter<number>();
+  @Input() gameSnapshotId?: number | null;
+  @Input() gameSnapshotName?: string | null;
+  @Input() hasGeneratedQuestions?: boolean;
+  @Input() initialTab?: SuiteHealthTab;
+  @Output() verifyQuestionRequested = new EventEmitter<number>();
+
+  rubricCheckJob: RubricCheckJobDto | null = null;
+  runningRubricCheck = false;
+  rubricCheckError: string | null = null;
+  rubricCheckerConfigId: number | null = null;
+  isRubricCheckerDropdownOpen = false;
+  cancellingRubricCheck = false;
+  private rubricCheckPollInterval: any = null;
 
   activeTab: SuiteHealthTab = 'items';
 
@@ -70,13 +86,17 @@ export class SuiteHealthComponent implements OnInit, OnChanges {
   /** Open state of the Coverage analysis-model dropdown. */
   isCoverageModelDropdownOpen = false;
 
-  private readonly tabOrder: SuiteHealthTab[] = ['items', 'gaps', 'citations', 'coverage'];
+  private readonly tabOrder: SuiteHealthTab[] = ['items', 'gaps', 'citations', 'coverage', 'board-facts'];
 
   ngOnInit(): void {
-    // The flag and verdict explanations are interestfor + popover="hint" tooltips rather than
-    // title attributes, which are unstyleable and never appear on keyboard focus. This
-    // feature-detects and lazily imports, so a supporting browser downloads nothing.
     ensureOverlayPolyfills();
+    if (this.initialTab) {
+      this.activeTab = this.initialTab;
+    }
+  }
+
+  ngOnDestroy(): void {
+    this.stopRubricCheckPolling();
   }
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -87,6 +107,12 @@ export class SuiteHealthComponent implements OnInit, OnChanges {
     }
     if (changes['benchmarkCapableConfigs'] && this.coverageModelConfigId == null) {
       this.coverageModelConfigId = this.benchmarkCapableConfigs[0]?.id ?? null;
+    }
+    if (changes['benchmarkCapableConfigs'] && this.rubricCheckerConfigId == null) {
+      this.rubricCheckerConfigId = this.benchmarkCapableConfigs[0]?.id ?? null;
+    }
+    if (changes['initialTab'] && this.initialTab) {
+      this.activeTab = this.initialTab;
     }
   }
 
@@ -100,6 +126,11 @@ export class SuiteHealthComponent implements OnInit, OnChanges {
     this.citationsError = null;
     this.coverageError = null;
     this.isCoverageModelDropdownOpen = false;
+    this.rubricCheckJob = null;
+    this.runningRubricCheck = false;
+    this.rubricCheckError = null;
+    this.isRubricCheckerDropdownOpen = false;
+    this.stopRubricCheckPolling();
   }
 
   /**
@@ -112,6 +143,10 @@ export class SuiteHealthComponent implements OnInit, OnChanges {
     const target = event.target as HTMLElement;
     if (this.isCoverageModelDropdownOpen && !target.closest('.coverage-model-selector')) {
       this.isCoverageModelDropdownOpen = false;
+      this.cdr.detectChanges();
+    }
+    if (this.isRubricCheckerDropdownOpen && !target.closest('.rubric-checker-selector')) {
+      this.isRubricCheckerDropdownOpen = false;
       this.cdr.detectChanges();
     }
   }
@@ -371,5 +406,99 @@ export class SuiteHealthComponent implements OnInit, OnChanges {
 
   get selectedCoverageModel(): SystemAiConfigDto | undefined {
     return this.benchmarkCapableConfigs.find(c => c.id === this.coverageModelConfigId);
+  }
+
+  toggleRubricCheckerDropdown(event: Event): void {
+    event.stopPropagation();
+    this.isRubricCheckerDropdownOpen = !this.isRubricCheckerDropdownOpen;
+    this.cdr.detectChanges();
+  }
+
+  selectRubricChecker(config: SystemAiConfigDto): void {
+    this.rubricCheckerConfigId = config.id;
+    this.isRubricCheckerDropdownOpen = false;
+    this.cdr.detectChanges();
+  }
+
+  get selectedRubricChecker(): SystemAiConfigDto | undefined {
+    return this.benchmarkCapableConfigs.find(c => c.id === this.rubricCheckerConfigId);
+  }
+
+  startRubricCheck(questionIds?: number[]): void {
+    if (this.suiteId == null || this.rubricCheckerConfigId == null) return;
+    this.runningRubricCheck = true;
+    this.rubricCheckError = null;
+
+    this.benchmarkService.startRubricCheck({
+      suiteId: this.suiteId,
+      checkerModelConfigurationId: this.rubricCheckerConfigId,
+      questionIds: questionIds && questionIds.length > 0 ? questionIds : null
+    }).subscribe({
+      next: (res) => {
+        this.startRubricCheckPolling(res.jobId);
+      },
+      error: (err) => {
+        this.runningRubricCheck = false;
+        this.rubricCheckError = err?.error?.message || err?.error || 'Failed to start rubric check.';
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  startRubricCheckPolling(jobId: string): void {
+    this.stopRubricCheckPolling();
+    this.pollRubricCheck(jobId);
+
+    this.rubricCheckPollInterval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      this.pollRubricCheck(jobId);
+    }, 2000);
+  }
+
+  stopRubricCheckPolling(): void {
+    if (this.rubricCheckPollInterval) {
+      clearInterval(this.rubricCheckPollInterval);
+      this.rubricCheckPollInterval = null;
+    }
+  }
+
+  pollRubricCheck(jobId: string): void {
+    this.benchmarkService.getRubricCheck(jobId).subscribe({
+      next: (job) => {
+        this.rubricCheckJob = job;
+        if (job.status !== 'Running') {
+          this.runningRubricCheck = false;
+          this.stopRubricCheckPolling();
+        }
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.rubricCheckError = err?.error?.message || err?.error || 'Failed to poll rubric check job.';
+        this.runningRubricCheck = false;
+        this.stopRubricCheckPolling();
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  cancelRubricCheck(): void {
+    if (!this.rubricCheckJob || this.rubricCheckJob.status !== 'Running') return;
+    this.cancellingRubricCheck = true;
+    this.benchmarkService.cancelRubricCheck(this.rubricCheckJob.id).subscribe({
+      next: () => {
+        this.cancellingRubricCheck = false;
+        this.runningRubricCheck = false;
+        this.stopRubricCheckPolling();
+        this.pollRubricCheck(this.rubricCheckJob!.id);
+      },
+      error: (err) => {
+        this.cancellingRubricCheck = false;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  onVerifyQuestion(questionId: number): void {
+    this.verifyQuestionRequested.emit(questionId);
   }
 }

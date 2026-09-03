@@ -16,11 +16,19 @@ public class BenchmarkDifficultyQuestionItem
 
 public static class BenchmarkDifficultyPrompt
 {
-    public static string BuildPrompt(string suiteName, IReadOnlyList<BenchmarkDifficultyQuestionItem> questions)
+    public static string BuildPrompt(
+        string suiteName,
+        IReadOnlyList<BenchmarkDifficultyQuestionItem> questions,
+        string? boardName = null,
+        string? boardDigest = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine("You are an expert game mechanics analyst and evaluator for GnollHack (a complex roguelike game derived from NetHack 3.6.2).");
         sb.AppendLine($"Suite: {suiteName}");
+        if (!string.IsNullOrWhiteSpace(boardName))
+        {
+            sb.AppendLine($"Game Board: {boardName}");
+        }
         sb.AppendLine();
         sb.AppendLine("TASK: Rate the intrinsic difficulty of each question on a 1-100 scale.");
         sb.AppendLine();
@@ -30,12 +38,25 @@ public static class BenchmarkDifficultyPrompt
         sb.AppendLine($"- {BenchmarkDifficultyBands.AdvancedMin} to {BenchmarkDifficultyBands.MaxDifficulty} (Advanced): Obscure interactions, deep C source code mechanics, complex damage/probability formulas, rare artifact quirks, subtle patch-specific GnollHack changes, multi-layered strategic edge cases.");
         sb.AppendLine();
         sb.AppendLine("CRITICAL INSTRUCTIONS:");
-        sb.AppendLine("1. Evaluate ONLY the question text and rubric reference points. The author's own difficulty band is deliberately withheld so your rating is independent of it.");
+        sb.AppendLine("1. Evaluate the question text, the rubric reference points, and the game context board (if present). A question answerable only by reading and reasoning over live game state is NOT Simple merely because its question text is brief. The author's own difficulty band is deliberately withheld so your rating is independent of it.");
         sb.AppendLine("2. Assign an integer difficulty between 1 and 100 to each question.");
         sb.AppendLine("3. Provide a brief 1-sentence rationale for each difficulty score.");
         sb.AppendLine("4. The 'id' value MUST be copied verbatim from the 'ID:' field of the question it rates. Do not renumber.");
         sb.AppendLine("5. Respond with the JSON object and nothing else — no prose, no explanation, no Markdown code fences.");
         sb.AppendLine();
+
+        if (!string.IsNullOrWhiteSpace(boardDigest))
+        {
+            sb.AppendLine("--- GAME CONTEXT BOARD (DIGEST) ---");
+            if (!string.IsNullOrWhiteSpace(boardName))
+            {
+                sb.AppendLine($"Board Name: {boardName}");
+            }
+            sb.AppendLine(boardDigest);
+            sb.AppendLine("--- END GAME CONTEXT BOARD ---");
+            sb.AppendLine();
+        }
+
         sb.AppendLine("--- QUESTIONS TO RATE ---");
         sb.AppendLine();
 
@@ -71,7 +92,12 @@ public static class BenchmarkDifficultyPrompt
         return sb.ToString();
     }
 
-    public static string BuildRepairPrompt(string suiteName, IReadOnlyList<BenchmarkDifficultyQuestionItem> questions, string? previousResponseExcerpt)
+    public static string BuildRepairPrompt(
+        string suiteName,
+        IReadOnlyList<BenchmarkDifficultyQuestionItem> questions,
+        string? previousResponseExcerpt,
+        string? boardName = null,
+        string? boardDigest = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine("RETRY REQUEST: Your previous response could not be parsed into valid question difficulty ratings.");
@@ -92,7 +118,7 @@ public static class BenchmarkDifficultyPrompt
         sb.AppendLine("Please correct your output. You MUST respond with ONLY a valid JSON object matching the required schema below.");
         sb.AppendLine("Ensure all question IDs match the exact database IDs listed below without renumbering.");
         sb.AppendLine();
-        sb.Append(BuildPrompt(suiteName, questions));
+        sb.Append(BuildPrompt(suiteName, questions, boardName, boardDigest));
 
         return sb.ToString();
     }

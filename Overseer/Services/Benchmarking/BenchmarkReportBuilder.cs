@@ -268,17 +268,33 @@ public static class BenchmarkReportBuilder
         // 1. Introduction
         sb.AppendLine("# GnollHack Overseer AI Intelligence Benchmark Report");
         sb.AppendLine();
-        sb.AppendLine($"This report contains the automated domain knowledge, reasoning, and efficiency benchmark results for suite **{run.SuiteName}**, evaluated against model **{run.TestedModelDisplayNameUsed}** ({run.TestedModelProviderUsed} / {run.TestedModelIdUsed}).");
+        string suiteDisplay = !string.IsNullOrEmpty(run.GameSnapshotNameUsed)
+            ? $"suite **{run.SuiteName}** (Board: **{run.GameSnapshotNameUsed}**)"
+            : $"suite **{run.SuiteName}**";
+        sb.AppendLine($"This report contains the automated domain knowledge, reasoning, and efficiency benchmark results for {suiteDisplay}, evaluated against model **{run.TestedModelDisplayNameUsed}** ({run.TestedModelProviderUsed} / {run.TestedModelIdUsed}).");
         sb.AppendLine($"Run conducted on {Stamp(run.StartedAtUtc)} UTC" + (!string.IsNullOrEmpty(run.StartedByUser?.UserName) ? $" by {run.StartedByUser.UserName}." : "."));
         sb.AppendLine();
         sb.AppendLine("> *Note:* This benchmark evaluates domain-specific roguelike intelligence, codebase comprehension, and tool usage within the GnollHack Overseer harness. Scoring uses Behaviorally Anchored Rating Scales (BARS), weighted geometric aggregation, and logarithmic speed decay.");
         sb.AppendLine();
+
+        if (!run.SuiteQuestionsReviewed)
+        {
+            sb.AppendLine("> ⚠️ **Unreviewed questions**: This run contains AI-generated questions that were not verified before the run. Scores may reflect rubric defects.");
+            sb.AppendLine();
+        }
 
         // 2. Run Manifest
         sb.AppendLine("## 1. Run Manifest");
         sb.AppendLine();
         sb.AppendLine($"- **Overseer Version:** {overseerVersion ?? "1.0.0"}");
         sb.AppendLine($"- **Suite Name:** {run.SuiteName}");
+        if (!string.IsNullOrEmpty(run.GameSnapshotNameUsed))
+        {
+            string shaPrefix = run.GameSnapshotSha256Used?.Length >= 12
+                ? run.GameSnapshotSha256Used[..12]
+                : (run.GameSnapshotSha256Used ?? "n/a");
+            sb.AppendLine($"- **Game Snapshot:** {run.GameSnapshotNameUsed} ({run.GameSnapshotCaptureMethodUsed}, {run.GameSnapshotCharCountUsed} chars, SHA-256 {shaPrefix})");
+        }
         sb.AppendLine($"- **Total Questions:** {run.TotalQuestionCount}");
         sb.AppendLine($"- **Answered Questions:** {run.AnsweredQuestionCount} of {run.TotalQuestionCount}");
         sb.AppendLine($"- **Run Status:** {run.Status}");

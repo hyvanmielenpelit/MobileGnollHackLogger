@@ -146,6 +146,8 @@ public class BenchmarkService
             var run = await db.BenchmarkRuns
                 .Include(r => r.BenchmarkSuite)
                 .ThenInclude(s => s!.Questions)
+                .Include(r => r.BenchmarkSuite)
+                .ThenInclude(s => s!.GameSnapshot)
                 .Include(r => r.TestedModelConfiguration)
                 .Include(r => r.AssessorModelConfiguration)
                 .FirstOrDefaultAsync(r => r.Id == runId, cancellationToken);
@@ -217,6 +219,19 @@ public class BenchmarkService
             run.MaxParallelQuestionsUsed = maxParallel;
             run.SpeedMeasurementDegraded = maxParallel > 1;
 
+            var board = run.BenchmarkSuite?.GameSnapshot;
+            if (board != null)
+            {
+                run.GameSnapshotNameUsed = board.Name;
+                run.GameSnapshotSha256Used = board.Sha256;
+                run.GameSnapshotCharCountUsed = board.CharCount;
+                run.GameSnapshotCaptureMethodUsed = board.CaptureMethod;
+            }
+
+            int reviewedCount = questions.Count(q => !q.IsGenerated || (q.ReviewedAtRevision != null && q.ReviewedAtRevision == q.ItemRevision));
+            run.SuiteReviewedQuestionCountAtStart = reviewedCount;
+            run.SuiteQuestionsReviewed = questions.Count > 0 && !questions.Any(q => q.IsGenerated && (q.ReviewedAtRevision == null || q.ReviewedAtRevision != q.ItemRevision));
+
             var allowedTools = _configuration.GetSection("Benchmark:AllowedTools").Get<List<string>>() ?? _defaultAllowedTools;
             int maxResultLength = _configuration.GetValue<int>("Benchmark:MaxResultLength", 10000);
             int maxCallsPerSession = _configuration.GetValue<int>("Benchmark:MaxCallsPerSession", 50);
@@ -229,6 +244,7 @@ public class BenchmarkService
             run.MaxToolCallsPerQuestionUsed = maxToolCallsPerQuestion;
             await db.SaveChangesAsync(cancellationToken);
 
+            bool suiteHasBoard = run.BenchmarkSuite?.GameSnapshot != null;
             string systemPrompt = _chatService.BuildSystemPrompt(
                 wikiContext: Array.Empty<string>(),
                 spoilerFreeMode: false,
@@ -236,7 +252,7 @@ public class BenchmarkService
                 isGameOn: false,
                 developerMode: false,
                 overseerMode: 0,
-                hasGameSnapshot: false,
+                hasGameSnapshot: suiteHasBoard,
                 hasMessageHistory: false,
                 clientSettings: null,
                 enableToolUse: true,
@@ -405,6 +421,8 @@ public class BenchmarkService
                 .Include(r => r.AssessorModelConfiguration)
                 .Include(r => r.BenchmarkSuite)
                 .ThenInclude(s => s!.Questions)
+                .Include(r => r.BenchmarkSuite)
+                .ThenInclude(s => s!.GameSnapshot)
                 .FirstOrDefaultAsync(r => r.Id == runId, cancellationToken);
 
             if (run == null)
@@ -449,6 +467,7 @@ public class BenchmarkService
             int maxResultLength = _configuration.GetValue<int>("Benchmark:MaxResultLength", 10000);
             int maxCallsPerSession = _configuration.GetValue<int>("Benchmark:MaxCallsPerSession", 50);
 
+            bool suiteHasBoard = run.BenchmarkSuite?.GameSnapshot != null;
             string systemPrompt = _chatService.BuildSystemPrompt(
                 wikiContext: Array.Empty<string>(),
                 spoilerFreeMode: false,
@@ -456,7 +475,7 @@ public class BenchmarkService
                 isGameOn: false,
                 developerMode: false,
                 overseerMode: 0,
-                hasGameSnapshot: false,
+                hasGameSnapshot: suiteHasBoard,
                 hasMessageHistory: false,
                 clientSettings: null,
                 enableToolUse: true,
@@ -620,6 +639,22 @@ public class BenchmarkService
         _ => 600
     };
 
+    private static List<object> BuildCandidateSeedHistory(BenchmarkRun run, string questionText)
+    {
+        var seed = new List<object>();
+        var board = run.BenchmarkSuite?.GameSnapshot;
+        if (board != null)
+        {
+            seed.Add(new
+            {
+                role = "system",
+                content = ChatService.GameSnapshotPrefix + "\n" + board.SanitizedText
+            });
+        }
+        seed.Add(new { role = "user", content = questionText });
+        return seed;
+    }
+
     private async Task<BenchmarkRunAnswer> ExecuteSingleQuestionAsync(
         ApplicationDbContext db,
         SystemAiConfigService configService,
@@ -669,10 +704,7 @@ public class BenchmarkService
                 MaxCallsPerSession = toolCallBudget,
                 ShowDebugLog = false
             },
-            SeedHistory = new List<object>
-            {
-                new { role = "user", content = question.QuestionText }
-            }
+            SeedHistory = BuildCandidateSeedHistory(run, question.QuestionText)
         };
 
         int perQuestionTimeoutSec = ResolveQuestionTimeoutSeconds(question.Difficulty, question.AssessedDifficulty);
@@ -858,10 +890,7 @@ public class BenchmarkService
                 MaxCallsPerSession = toolCallBudget,
                 ShowDebugLog = false
             },
-            SeedHistory = new List<object>
-            {
-                new { role = "user", content = answer.QuestionText }
-            }
+            SeedHistory = BuildCandidateSeedHistory(run, answer.QuestionText)
         };
 
         int perQuestionTimeoutSec = ResolveQuestionTimeoutSeconds(answer.Difficulty, answer.AssessedDifficulty);
@@ -1007,7 +1036,9 @@ public class BenchmarkService
             answer.ToolCallCount ?? 0,
             answer.ToolBudgetExhausted,
             answer.ScrubbedArtifactCount,
-            answer.ToolCallBudgetUsed);
+            answer.ToolCallBudgetUsed,
+            boardName: run.BenchmarkSuite?.GameSnapshot?.Name,
+            boardText: run.BenchmarkSuite?.GameSnapshot?.SanitizedText);
 
         int assessorMaxTokens = _configuration.GetValue<int>("Benchmark:AssessorMaxOutputTokens", 32000);
 
@@ -1683,7 +1714,9 @@ public class BenchmarkService
             answer.ToolCallCount ?? 0,
             answer.ToolBudgetExhausted,
             answer.ScrubbedArtifactCount,
-            answer.ToolCallBudgetUsed);
+            answer.ToolCallBudgetUsed,
+            boardName: run.BenchmarkSuite?.GameSnapshot?.Name,
+            boardText: run.BenchmarkSuite?.GameSnapshot?.SanitizedText);
 
         int assessorMaxTokens = _configuration.GetValue<int>("Benchmark:AssessorMaxOutputTokens", 32000);
 
@@ -2093,7 +2126,9 @@ public class BenchmarkService
             answer.ToolCallCount ?? 0,
             answer.ToolBudgetExhausted,
             answer.ScrubbedArtifactCount,
-            answer.ToolCallBudgetUsed);
+            answer.ToolCallBudgetUsed,
+            boardName: run.BenchmarkSuite?.GameSnapshot?.Name,
+            boardText: run.BenchmarkSuite?.GameSnapshot?.SanitizedText);
 
         int assessorMaxTokens = _configuration.GetValue<int>("Benchmark:AssessorMaxOutputTokens", 32000);
 
@@ -2381,6 +2416,7 @@ public class BenchmarkService
 
         var suite = await db.BenchmarkSuites
             .Include(s => s.Questions)
+            .Include(s => s.GameSnapshot)
             .FirstOrDefaultAsync(s => s.Id == job.SuiteId, cancellationToken);
 
         if (suite == null)
@@ -2464,7 +2500,7 @@ public class BenchmarkService
 
             try
             {
-                string prompt = BenchmarkDifficultyPrompt.BuildPrompt(suite.Name, currentBatch);
+                string prompt = BenchmarkDifficultyPrompt.BuildPrompt(suite.Name, currentBatch, suite.GameSnapshot?.Name, suite.GameSnapshot?.DigestText);
                 int maxOutput = assessorConfig.MaxOutputTokens ?? Math.Clamp(1024 + 768 * currentBatch.Count, 4096, 32768);
 
                 var (runResult, sw, terminalError) = await ExecuteAssessorCallAsync(assessorConfig, assessorApiKey, prompt, maxOutput, cancellationToken);
@@ -2540,7 +2576,7 @@ public class BenchmarkService
                         GetExcerpt(runResult.FinalText, 1000));
                     job.AddLog($"Parse attempt 1 failed for batch of {currentBatch.Count} questions. Retrying with repair prompt...", "warning", rawExcerpt);
 
-                    string repairPrompt = BenchmarkDifficultyPrompt.BuildRepairPrompt(suite.Name, currentBatch, rawExcerpt);
+                    string repairPrompt = BenchmarkDifficultyPrompt.BuildRepairPrompt(suite.Name, currentBatch, rawExcerpt, suite.GameSnapshot?.Name, suite.GameSnapshot?.DigestText);
                     var (repairResult, repairSw, repairTerminalError) = await ExecuteAssessorCallAsync(assessorConfig, assessorApiKey, repairPrompt, maxOutput, cancellationToken);
                     await RecordJobUsageAsync(job, configService, assessorConfig, repairResult, repairSw, rawResponseExcerptLength);
 
@@ -2934,6 +2970,7 @@ public class BenchmarkService
             .Include(a => a.BenchmarkRun).ThenInclude(r => r.TestedModelConfiguration)
             .Include(a => a.BenchmarkRun).ThenInclude(r => r.AssessorModelConfiguration)
             .Include(a => a.BenchmarkRun).ThenInclude(r => r.BenchmarkSuite).ThenInclude(s => s!.Questions)
+            .Include(a => a.BenchmarkRun).ThenInclude(r => r.BenchmarkSuite).ThenInclude(s => s!.GameSnapshot)
             .FirstOrDefaultAsync(a => a.Id == answerId, cancellationToken);
 
         if (answer == null)
@@ -2999,6 +3036,7 @@ public class BenchmarkService
             int maxCallsPerSession = _configuration.GetValue<int>("Benchmark:MaxCallsPerSession", 50);
             int maxToolCallsPerQuestion = ResolveToolCallBudget(BenchmarkDifficulty.Advanced, null);
 
+            bool suiteHasBoard = run.BenchmarkSuite?.GameSnapshot != null;
             string systemPrompt = _chatService.BuildSystemPrompt(
                 wikiContext: Array.Empty<string>(),
                 spoilerFreeMode: false,
@@ -3006,7 +3044,7 @@ public class BenchmarkService
                 isGameOn: false,
                 developerMode: false,
                 overseerMode: 0,
-                hasGameSnapshot: false,
+                hasGameSnapshot: suiteHasBoard,
                 hasMessageHistory: false,
                 clientSettings: null,
                 enableToolUse: true,

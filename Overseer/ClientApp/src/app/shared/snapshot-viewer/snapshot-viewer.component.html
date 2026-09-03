@@ -1,0 +1,125 @@
+<dialog #viewerDialog class="gh-dialog benchmark-snapshot-viewer-dialog" (cancel)="close()">
+  <div class="gh-dialog-header">
+    <div class="header-title">
+      <h3>
+        <span class="board-icon">🎮</span>
+        {{ snapshot?.name || 'Game Context Board' }}
+      </h3>
+      @if (snapshot?.suiteName) {
+        <span class="bound-suite-pill">Suite: {{ snapshot?.suiteName }}</span>
+      }
+    </div>
+    <button type="button" class="btn-close" (click)="close()" aria-label="Close dialog">✕</button>
+  </div>
+
+  <div class="gh-dialog-body">
+    @if (loading) {
+      <div class="snapshot-loading">
+        <div class="spinner"></div>
+        <span>Loading snapshot board...</span>
+      </div>
+    } @else if (error) {
+      <div class="snapshot-alert snapshot-alert-danger">
+        <strong>Error:</strong> {{ error }}
+      </div>
+    } @else if (snapshot) {
+      <!-- Edit metadata form -->
+      @if (isEditing) {
+        <div class="snapshot-edit-panel">
+          <h4>Edit Board Metadata</h4>
+          @if (editError) {
+            <div class="snapshot-alert snapshot-alert-danger">{{ editError }}</div>
+          }
+          <div class="form-group">
+            <label for="editBoardName">Board Name *</label>
+            <input id="editBoardName" type="text" class="gh-input" [(ngModel)]="editName" required />
+          </div>
+          <div class="form-group">
+            <label for="editBoardVersion">GnollHack Version</label>
+            <input id="editBoardVersion" type="text" class="gh-input" [(ngModel)]="editGnollHackVersion" placeholder="e.g. GnollHack 0.8.6" />
+          </div>
+          <div class="form-group">
+            <label for="editBoardNotes">Notes</label>
+            <textarea id="editBoardNotes" class="gh-input" [(ngModel)]="editNotes" rows="3" placeholder="Context facts: HP, level, key items, adjacent monsters"></textarea>
+          </div>
+          <div class="form-group">
+            <label for="editBoardDigest">Board Digest (summary for difficulty assessor, max 2000 chars)</label>
+            <textarea id="editBoardDigest" class="gh-input" [(ngModel)]="editDigestText" rows="3" maxlength="2000"></textarea>
+          </div>
+          <div class="edit-actions">
+            <button type="button" class="btn-gh btn-gh-cancel" (click)="cancelEdit()" [disabled]="savingEdit">Cancel</button>
+            <button type="button" class="btn-gh" (click)="saveEdit()" [disabled]="savingEdit">
+              {{ savingEdit ? 'Saving...' : 'Save Changes' }}
+            </button>
+          </div>
+        </div>
+      } @else {
+        <!-- Provenance and Metadata Header -->
+        <div class="provenance-grid">
+          <div class="meta-item">
+            <span class="meta-label">Capture Method:</span>
+            <span class="meta-value">{{ snapshot.captureMethod }}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Character Count:</span>
+            <span class="meta-value">{{ snapshot.charCount | number }} chars</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Captured At:</span>
+            <span class="meta-value">{{ snapshot.capturedAtUtc ? (snapshot.capturedAtUtc | date:'medium') : (snapshot.createdAtUtc | date:'medium') }}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">GnollHack Version:</span>
+            <span class="meta-value">{{ snapshot.sourceGnollHackVersion || 'Unknown' }}</span>
+          </div>
+          <div class="meta-item meta-full-width">
+            <span class="meta-label">SHA-256:</span>
+            <code class="sha-box">{{ snapshot.sha256 }}</code>
+            <button type="button" class="btn-copy-sha" (click)="copySha()" aria-label="Copy SHA-256">
+              {{ copiedSha ? '✓ Copied' : 'Copy' }}
+            </button>
+          </div>
+          @if (snapshot.notes) {
+            <div class="meta-item meta-full-width notes-box">
+              <span class="meta-label">Notes:</span>
+              <span class="notes-content">{{ snapshot.notes }}</span>
+            </div>
+          }
+          @if (snapshot.digestText) {
+            <div class="meta-item meta-full-width digest-box">
+              <span class="meta-label">Digest (Assessor Summary):</span>
+              <span class="digest-content">{{ snapshot.digestText }}</span>
+            </div>
+          }
+        </div>
+
+        @if (hasTruncationMarker) {
+          <div class="snapshot-alert snapshot-alert-warning">
+            ⚠️ <strong>Notice:</strong> This game board was truncated at capture limit. Tail sections of the dump are omitted.
+          </div>
+        }
+
+        <!-- Board Text Viewer (Monospace, Never Markdown) -->
+        <div class="board-text-wrapper">
+          <div class="board-text-toolbar">
+            <span class="toolbar-title">Sanitized Snapshot Text</span>
+            <div class="toolbar-actions">
+              <button type="button" class="btn-gh" (click)="startEdit()">✏️ Edit Metadata</button>
+              <button type="button" class="btn-gh" (click)="copyText()">
+                {{ copied ? '✓ Copied!' : '📋 Copy Text' }}
+              </button>
+              <button type="button" class="btn-gh" (click)="downloadText()">⬇️ Download .snapshot.txt</button>
+            </div>
+          </div>
+          <div class="board-text-scroll">
+            <pre class="board-pre">{{ snapshot.sanitizedText }}</pre>
+          </div>
+        </div>
+      }
+    }
+  </div>
+
+  <div class="gh-dialog-footer">
+    <button type="button" class="btn-gh btn-gh-cancel" (click)="close()">Close</button>
+  </div>
+</dialog>
