@@ -25,7 +25,10 @@ public class BenchmarkPerQuestionVerdictSummary
 
 public static class BenchmarkAssessmentPrompt
 {
-    public const int ScoringMethodVersion = 3;
+    // v4: answers are scrubbed of transport artifacts before grading, speed is scored on
+    // model-attributable time against a difficulty-normalised target, and the Speed Index is an
+    // equal-weight mean. Scores are not comparable with v3.
+    public const int ScoringMethodVersion = 4;
 
     public static string BuildPerQuestionPrompt(
         string suiteName,
@@ -37,7 +40,9 @@ public static class BenchmarkAssessmentPrompt
         BenchmarkAnswerStatus status,
         IReadOnlyList<string>? allowedTools = null,
         int toolCallsCompleted = 0,
-        bool toolBudgetExhausted = false)
+        bool toolBudgetExhausted = false,
+        int scrubbedArtifactCount = 0,
+        int? toolCallBudget = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine("You are an expert game knowledge and reasoning assessor for GnollHack (a roguelike game derived from NetHack 3.6.2).");
@@ -51,7 +56,12 @@ public static class BenchmarkAssessmentPrompt
         sb.AppendLine("4. Grade each dimension independently using the 0-6 Behaviorally Anchored Rating Scale (BARS) defined below.");
         sb.AppendLine("5. Output ONLY a valid JSON object matching the exact schema specified at the end. Do not include introductory or concluding conversational prose.");
         sb.AppendLine("6. If the answer states it could not retrieve information because tool access was unavailable, note this in your comment. Grade the factual claims it did make; do not treat harness-imposed tool unavailability as a model failure.");
-        sb.AppendLine("7. If the answer contains obvious harness artifacts (raw tool-call JSON, control tokens, duplicated reasoning fragments), ignore them when grading conciseness and readability and say so in your comment. They are transport defects, not authored text.");
+        // Previously this asked the assessor to notice artifacts and ignore them. That put an
+        // unverifiable judgement call in the assessor's hands and it was applied inconsistently:
+        // on the 2026-09-03 run, four answers with the same defect scored 94-99 while one scored
+        // 70. The harness now removes them, so the assessor grades authored text only and needs
+        // no instruction about them.
+        sb.AppendLine("7. The answer below has already had provider transport artifacts (leaked tool-call payloads, control tokens, reasoning narration) removed by the harness. Grade exactly what you are given; do not speculate about removed content or deduct for it.");
         sb.AppendLine();
         sb.AppendLine("--- SCORING DIMENSIONS (BARS 0-6) ---");
         sb.AppendLine();
@@ -111,7 +121,9 @@ public static class BenchmarkAssessmentPrompt
         string toolsList = (allowedTools != null && allowedTools.Count > 0) ? string.Join(", ", allowedTools) : "None";
         sb.AppendLine($"- Available tools: {toolsList}");
         sb.AppendLine($"- Completed tool calls: {toolCallsCompleted}");
+        sb.AppendLine($"- Tool call budget for this question: {(toolCallBudget.HasValue ? toolCallBudget.Value.ToString() : "Not recorded")}");
         sb.AppendLine($"- Tool budget exhausted: {(toolBudgetExhausted ? "Yes" : "No")}");
+        sb.AppendLine($"- Transport artifacts removed by the harness before grading: {scrubbedArtifactCount} block(s)");
         sb.AppendLine();
 
         if (status == BenchmarkAnswerStatus.ProviderError)

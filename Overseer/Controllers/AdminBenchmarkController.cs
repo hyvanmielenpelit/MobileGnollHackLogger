@@ -102,6 +102,7 @@ public class AdminBenchmarkController : ControllerBase
             CriticalErrorCeiling = p.CriticalErrorCeiling,
             SpeedTargetMs = p.SpeedTargetMs,
             SpeedDecayK = p.SpeedDecayK,
+            SpeedDifficultyScaling = p.SpeedDifficultyScaling,
             MaxParallelQuestions = p.MaxParallelQuestions,
             CreatedAtUtc = p.CreatedAtUtc,
             ModifiedAtUtc = p.ModifiedAtUtc
@@ -125,6 +126,7 @@ public class AdminBenchmarkController : ControllerBase
             CriticalErrorCeiling = request.CriticalErrorCeiling,
             SpeedTargetMs = request.SpeedTargetMs,
             SpeedDecayK = request.SpeedDecayK,
+            SpeedDifficultyScaling = request.SpeedDifficultyScaling,
             MaxParallelQuestions = request.MaxParallelQuestions
         };
 
@@ -147,6 +149,7 @@ public class AdminBenchmarkController : ControllerBase
             CriticalErrorCeiling = created.CriticalErrorCeiling,
             SpeedTargetMs = created.SpeedTargetMs,
             SpeedDecayK = created.SpeedDecayK,
+            SpeedDifficultyScaling = created.SpeedDifficultyScaling,
             MaxParallelQuestions = created.MaxParallelQuestions,
             CreatedAtUtc = created.CreatedAtUtc,
             ModifiedAtUtc = created.ModifiedAtUtc
@@ -169,6 +172,7 @@ public class AdminBenchmarkController : ControllerBase
             CriticalErrorCeiling = request.CriticalErrorCeiling,
             SpeedTargetMs = request.SpeedTargetMs,
             SpeedDecayK = request.SpeedDecayK,
+            SpeedDifficultyScaling = request.SpeedDifficultyScaling,
             MaxParallelQuestions = request.MaxParallelQuestions
         };
 
@@ -191,6 +195,7 @@ public class AdminBenchmarkController : ControllerBase
             CriticalErrorCeiling = updated.CriticalErrorCeiling,
             SpeedTargetMs = updated.SpeedTargetMs,
             SpeedDecayK = updated.SpeedDecayK,
+            SpeedDifficultyScaling = updated.SpeedDifficultyScaling,
             MaxParallelQuestions = updated.MaxParallelQuestions,
             CreatedAtUtc = updated.CreatedAtUtc,
             ModifiedAtUtc = updated.ModifiedAtUtc
@@ -912,6 +917,10 @@ public class AdminBenchmarkController : ControllerBase
             MaxToolCallsPerQuestionUsed = run.MaxToolCallsPerQuestionUsed,
             DegradedAnswerCount = run.DegradedAnswerCount,
             ToolStarvedAnswerCount = run.ToolStarvedAnswerCount,
+            TransportDefectAnswerCount = run.TransportDefectAnswerCount,
+            AdvisoryFlagAnswerCount = run.AdvisoryFlagAnswerCount,
+            ScrubbedArtifactAnswerCount = run.ScrubbedArtifactAnswerCount,
+            ToolOverheadMs = run.ToolOverheadMs,
             DifficultyFallbackUsed = run.DifficultyFallbackUsed,
             SpeedMeasurementDegraded = run.SpeedMeasurementDegraded,
             MaxParallelQuestionsUsed = run.MaxParallelQuestionsUsed,
@@ -969,6 +978,11 @@ public class AdminBenchmarkController : ControllerBase
                 ModelCallCount = a.ModelCallCount,
                 ToolCallCount = a.ToolCallCount,
                 ToolBudgetExhausted = a.ToolBudgetExhausted,
+                ToolCallBudgetUsed = a.ToolCallBudgetUsed,
+                ToolTimeMs = a.ToolTimeMs,
+                ModelTimeMs = a.ModelTimeMs,
+                ScrubbedArtifactText = a.ScrubbedArtifactText,
+                ScrubbedArtifactCount = a.ScrubbedArtifactCount,
                 TerminationReason = a.TerminationReason,
                 AnswerFlags = a.AnswerFlags,
                 AnswerFlagNames = ((BenchmarkAnswerFlags)a.AnswerFlags != BenchmarkAnswerFlags.None)

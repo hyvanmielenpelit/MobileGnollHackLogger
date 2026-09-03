@@ -163,6 +163,7 @@ public class BenchmarkScoringProfileDto
     public int CriticalErrorCeiling { get; set; }
     public int SpeedTargetMs { get; set; }
     public double SpeedDecayK { get; set; }
+    public double SpeedDifficultyScaling { get; set; }
     public int MaxParallelQuestions { get; set; }
     public DateTime CreatedAtUtc { get; set; }
     public DateTime ModifiedAtUtc { get; set; }
@@ -178,8 +179,9 @@ public class CreateBenchmarkScoringProfileRequest
     public double WeightReadability { get; set; } = 0.10;
     public string LevelScoresJson { get; set; } = "[1, 15, 35, 55, 72, 87, 100]";
     public int CriticalErrorCeiling { get; set; } = 25;
-    public int SpeedTargetMs { get; set; } = 5000;
-    public double SpeedDecayK { get; set; } = 25.0;
+    public int SpeedTargetMs { get; set; } = 15000;
+    public double SpeedDecayK { get; set; } = 20.0;
+    public double SpeedDifficultyScaling { get; set; } = 1.0;
     public int MaxParallelQuestions { get; set; } = 1;
 }
 
@@ -195,6 +197,7 @@ public class UpdateBenchmarkScoringProfileRequest
     public int CriticalErrorCeiling { get; set; }
     public int SpeedTargetMs { get; set; }
     public double SpeedDecayK { get; set; }
+    public double SpeedDifficultyScaling { get; set; }
     public int MaxParallelQuestions { get; set; }
 }
 
@@ -243,6 +246,21 @@ public class BenchmarkRunAnswerDto
     public int? ModelCallCount { get; set; }
     public int? ToolCallCount { get; set; }
     public bool ToolBudgetExhausted { get; set; }
+
+    /// <summary>The per-band budget that actually applied to this question.</summary>
+    public int? ToolCallBudgetUsed { get; set; }
+
+    /// <summary>Wall-clock time spent in tool batches during this turn.</summary>
+    public long? ToolTimeMs { get; set; }
+
+    /// <summary>Turn duration with tool I/O removed. This is what speed is scored on.</summary>
+    public long ModelTimeMs { get; set; }
+
+    /// <summary>Transport artifacts removed before grading, retained verbatim for audit.</summary>
+    public string? ScrubbedArtifactText { get; set; }
+
+    public int ScrubbedArtifactCount { get; set; }
+
     public string? TerminationReason { get; set; }
     public int AnswerFlags { get; set; }
     public List<string> AnswerFlagNames { get; set; } = new();
@@ -291,6 +309,24 @@ public class BenchmarkRunDetailDto
     public int? MaxToolCallsPerQuestionUsed { get; set; }
     public int DegradedAnswerCount { get; set; }
     public int ToolStarvedAnswerCount { get; set; }
+
+    /// <summary>
+    /// Answers compromised by a transport or provider defect. Disjoint from
+    /// <see cref="ToolStarvedAnswerCount"/>: together with the clean count these partition the
+    /// run, so the three always sum to the question count.
+    /// </summary>
+    public int TransportDefectAnswerCount { get; set; }
+
+    /// <summary>
+    /// Answers carrying an advisory flag. Overlaps the counts above and must never be summed
+    /// with them.
+    /// </summary>
+    public int AdvisoryFlagAnswerCount { get; set; }
+
+    public int ScrubbedArtifactAnswerCount { get; set; }
+
+    public long? ToolOverheadMs { get; set; }
+
     public bool DifficultyFallbackUsed { get; set; }
     public bool SpeedMeasurementDegraded { get; set; }
     public int MaxParallelQuestionsUsed { get; set; }

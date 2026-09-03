@@ -95,6 +95,21 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   /** Tab order, and the source of truth for arrow-key navigation indices. */
   readonly subTabs = ['run', 'history', 'suites'] as const;
 
+  /**
+   * BenchmarkAnswerFlags bits that mean the graded text was corrupted in transport:
+   * Empty = 1, HarnessArtifacts = 2, Truncated = 4.
+   */
+  private static readonly TRANSPORT_DEFECT_FLAGS = 1 | 2 | 4;
+
+  /**
+   * BenchmarkAnswerFlags bits that are advisory only and must never be presented as a
+   * failure: ReasoningBleed = 8, RepeatedFragments = 16.
+   */
+  private static readonly ADVISORY_FLAGS = 8 | 16;
+
+  /** The same advisory members by name, as they arrive in answerFlagNames. */
+  private static readonly ADVISORY_FLAG_NAMES: readonly string[] = ['ReasoningBleed', 'RepeatedFragments'];
+
   // Suites
   suites: BenchmarkSuiteDto[] = [];
   selectedSuiteId: number | null = null;
@@ -114,8 +129,9 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     weightReadability: 0.10,
     levelScoresJson: '[1, 15, 35, 55, 72, 87, 100]',
     criticalErrorCeiling: 25,
-    speedTargetMs: 5000,
-    speedDecayK: 25.0,
+    speedTargetMs: 15000,
+    speedDecayK: 20.0,
+    speedDifficultyScaling: 1.0,
     maxParallelQuestions: 1
   };
   profileValidationErrors: string[] = [];
@@ -174,6 +190,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   loadingDetail = false;
   expandedQuestions = new Set<number>();
   expandedThoughts = new Set<number>();
+  expandedArtifacts = new Set<number>();
   rescoringRun = false;
   detailPollInterval: any = null;
   reassessingAnswerId: number | null = null;
@@ -554,8 +571,9 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       weightReadability: 0.10,
       levelScoresJson: '[1, 15, 35, 55, 72, 87, 100]',
       criticalErrorCeiling: 25,
-      speedTargetMs: 5000,
-      speedDecayK: 25.0,
+      speedTargetMs: 15000,
+      speedDecayK: 20.0,
+      speedDifficultyScaling: 1.0,
       maxParallelQuestions: 1
     };
     this.scoringProfileFormDialog?.nativeElement.showModal();
@@ -575,6 +593,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       criticalErrorCeiling: profile.criticalErrorCeiling,
       speedTargetMs: profile.speedTargetMs,
       speedDecayK: profile.speedDecayK,
+      speedDifficultyScaling: profile.speedDifficultyScaling,
       maxParallelQuestions: profile.maxParallelQuestions
     };
     this.scoringProfileFormDialog?.nativeElement.showModal();
@@ -584,6 +603,15 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     this.profileValidationErrors = [];
     if (!this.profileForm.name.trim()) {
       this.profileValidationErrors.push('Profile name is required.');
+      return;
+    }
+
+    // Mirrors the server-side range in BenchmarkScoringProfileService.ValidateProfile, so a
+    // plainly out-of-range value is reported without a round trip. The server remains the
+    // authority; everything else on this form is validated there only.
+    const scaling = this.profileForm.speedDifficultyScaling;
+    if (scaling == null || !isFinite(scaling) || scaling < 0 || scaling > 5) {
+      this.profileValidationErrors.push('Speed difficulty scaling must be between 0.0 and 5.0.');
       return;
     }
 
@@ -1362,7 +1390,9 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
         return `Stage 3 of 3 — Synthesis and scoring. All ${total} answers assessed.`;
       default: {
         const status = this.formatStatus(run.status);
-        const label = status === 'CompletedWithErrors' ? 'Completed with errors' : status;
+        const label = status === 'CompletedWithErrors'
+          ? 'Completed with errors'
+          : (status === 'CompletedWithLimits' ? 'Completed with limits' : status);
         const failed = this.runFailedAnswerCount;
         return failed > 0
           ? `${label}. Answered ${this.runAnsweredCount} of ${total}, ${failed} failed.`
@@ -1799,6 +1829,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     this.selectedRunDetail = null;
     this.expandedQuestions.clear();
     this.expandedThoughts.clear();
+    this.expandedArtifacts.clear();
     this.runDetailDialog?.nativeElement.showModal();
 
     this.benchmarkService.getRun(runId).subscribe({
@@ -2058,6 +2089,14 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     }
   }
 
+  toggleArtifact(orderIndex: number) {
+    if (this.expandedArtifacts.has(orderIndex)) {
+      this.expandedArtifacts.delete(orderIndex);
+    } else {
+      this.expandedArtifacts.add(orderIndex);
+    }
+  }
+
   // --- Predicates ---
 
   isAnswerFailed(ans: BenchmarkRunAnswerDto): boolean {
@@ -2065,9 +2104,39 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     return s === 'ProviderError' || s === 'Failed' || s === 'Skipped' || s === 'EmptyAnswer';
   }
 
-  isAnswerDegraded(ans: BenchmarkRunAnswerDto): boolean {
+  /**
+   * A transport or provider defect: the answer text that reached the assessor is not what
+   * the model meant to produce, so the run's validity is compromised. This is the only
+   * category that should read as a failure.
+   */
+  hasTransportDefect(ans: BenchmarkRunAnswerDto): boolean {
     const s = this.formatAnswerStatus(ans.status);
-    return s === 'EmptyAnswer' || !!ans.toolBudgetExhausted || (ans.answerFlags != null && ans.answerFlags !== 0);
+    if (s === 'EmptyAnswer') return true;
+    const flags = ans.answerFlags ?? 0;
+    return (flags & AdminBenchmarkComponent.TRANSPORT_DEFECT_FLAGS) !== 0;
+  }
+
+  /**
+   * An operator-configured cap working as designed. The answer is valid; the cap may simply
+   * need raising, so this must never be presented as a defect.
+   */
+  hasHarnessLimit(ans: BenchmarkRunAnswerDto): boolean {
+    return !!ans.toolBudgetExhausted;
+  }
+
+  /**
+   * Advisory only: reasoning bleed and repeated fragments describe what the harness noticed
+   * and cleaned up, not a broken answer. Advisory flags may overlap the two categories above
+   * and never remove an answer from the clean count.
+   */
+  hasAdvisoryFlag(ans: BenchmarkRunAnswerDto): boolean {
+    const flags = ans.answerFlags ?? 0;
+    return (flags & AdminBenchmarkComponent.ADVISORY_FLAGS) !== 0;
+  }
+
+  /** Whether one entry of answerFlagNames is an advisory flag rather than a defect. */
+  isAdvisoryFlagName(flag: string): boolean {
+    return AdminBenchmarkComponent.ADVISORY_FLAG_NAMES.includes(flag);
   }
 
   isAssessmentFailed(ans: BenchmarkRunAnswerDto): boolean {
@@ -2100,6 +2169,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     if (status === 3 || status === 'CompletedWithErrors') return 'CompletedWithErrors';
     if (status === 4 || status === 'Failed') return 'Failed';
     if (status === 5 || status === 'Canceled') return 'Canceled';
+    if (status === 6 || status === 'CompletedWithLimits') return 'CompletedWithLimits';
     return String(status);
   }
 

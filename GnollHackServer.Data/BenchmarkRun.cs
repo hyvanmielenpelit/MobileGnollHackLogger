@@ -17,7 +17,11 @@ public enum BenchmarkRunStatus
     Completed = 2,
     CompletedWithErrors = 3,
     Failed = 4,
-    Canceled = 5
+    Canceled = 5,
+    // The run is valid; it only hit an operator-configured harness cap (currently the
+    // per-question tool call budget). Distinct from CompletedWithErrors, which means a
+    // transport or provider defect compromised answer validity.
+    CompletedWithLimits = 6
 }
 
 public enum BenchmarkAnswerStatus
@@ -33,9 +37,29 @@ public enum BenchmarkAnswerStatus
 public enum BenchmarkAnswerFlags
 {
     None = 0,
+
+    // Transport defects. These compromise answer validity and drive the run status.
     Empty = 1,
     HarnessArtifacts = 2,
-    Truncated = 4
+    Truncated = 4,
+
+    // Advisory flags. Reported, but they never change the run status and never remove an
+    // answer from the Clean count: the affected text is removed before grading, so the
+    // graded answer is unaffected. See BenchmarkRunFinalizer.HasAdvisoryFlag.
+    ReasoningBleed = 8,
+    RepeatedFragments = 16
+}
+
+/// <summary>
+/// Classification of a single answer for run integrity accounting. Every answer falls into
+/// exactly one bucket, so Clean + TransportDefect + HarnessLimit always equals the question
+/// count. Advisory flags are tracked separately and may overlap any bucket.
+/// </summary>
+public enum BenchmarkAnswerIntegrity
+{
+    Clean = 0,
+    TransportDefect = 1,
+    HarnessLimit = 2
 }
 
 public class BenchmarkRun
@@ -151,6 +175,21 @@ public class BenchmarkRun
     public int DegradedAnswerCount { get; set; }
 
     public int ToolStarvedAnswerCount { get; set; }
+
+    // Answers whose validity is compromised by a transport or provider defect
+    // (empty, harness artifacts, truncated). Disjoint from ToolStarvedAnswerCount.
+    public int TransportDefectAnswerCount { get; set; }
+
+    // Answers carrying an advisory flag (reasoning bleed, repeated fragments). May overlap
+    // both counts above, so it is reported separately and never summed with them.
+    public int AdvisoryFlagAnswerCount { get; set; }
+
+    // Answers from which the harness removed at least one transport artifact block.
+    public int ScrubbedArtifactAnswerCount { get; set; }
+
+    // Total wall-clock time spent executing tool batches across the run. Subtracting this
+    // from TotalAnswerDurationMs gives the model-attributable time that speed is scored on.
+    public long? ToolOverheadMs { get; set; }
 
     public int? MaxToolCallsPerQuestionUsed { get; set; }
 

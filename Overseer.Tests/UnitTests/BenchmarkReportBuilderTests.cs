@@ -121,18 +121,25 @@ public class BenchmarkReportBuilderTests
 
         // Run Integrity block
         Assert.Contains("### Run Integrity", report);
-        Assert.Contains("**Degraded Answers:** 1", report);
-        Assert.Contains("**Tool-Starved Answers:** 1", report);
+        // The integrity partition replaces the old "Degraded" total, whose breakdown omitted
+        // tool-budget exhaustion and therefore did not add up.
+        Assert.Contains("**Transport Defects:** 1", report);
+        Assert.Contains("**Harness Limits:**", report);
+        Assert.Contains("Clean + transport defects + harness limits =", report);
+        Assert.Contains("**Advisory Flags:**", report);
 
         // Latency percentiles
         Assert.Contains("Turn Duration Percentiles", report);
         Assert.Contains("Median (P50)", report);
 
         // Raw Quality Index
+        // Raw Quality Index is printed only when a critical-error cap actually moved it; this
+        // fixture has one, so it must appear.
         Assert.Contains("Raw Quality Index", report);
 
         // Question detail
         Assert.Contains("**Tool Budget:** Exhausted", report);
+        Assert.Contains("configured limit, not an error", report);
         Assert.Contains("**Integrity Flags:** HarnessArtifacts", report);
         Assert.Contains("Quality Score:** 25 / 100 (raw: 95)", report);
     }
@@ -157,7 +164,7 @@ public class BenchmarkReportBuilderTests
                 {
                     OrderIndex = 1,
                     Difficulty = BenchmarkDifficulty.Simple,
-                    AssessedDifficulty = 20, // Simple (1-33)
+                    AssessedDifficulty = 20, // Simple (1-35)
                     QualityScore = 90,
                     SpeedScore = 90,
                     DurationMs = 1000,
@@ -169,7 +176,7 @@ public class BenchmarkReportBuilderTests
                 {
                     OrderIndex = 2,
                     Difficulty = BenchmarkDifficulty.Intermediate,
-                    AssessedDifficulty = 50, // Intermediate (34-66)
+                    AssessedDifficulty = 50, // Intermediate (36-70)
                     QualityScore = 80,
                     SpeedScore = 80,
                     DurationMs = 2000,
@@ -181,7 +188,7 @@ public class BenchmarkReportBuilderTests
                 {
                     OrderIndex = 3,
                     Difficulty = BenchmarkDifficulty.Advanced,
-                    AssessedDifficulty = 85, // Advanced (67-100)
+                    AssessedDifficulty = 85, // Advanced (71-100)
                     QualityScore = 70,
                     SpeedScore = 70,
                     DurationMs = 3000,
@@ -194,9 +201,9 @@ public class BenchmarkReportBuilderTests
 
         var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
 
-        Assert.Contains("Simple (1–33)", report);
-        Assert.Contains("Intermediate (34–66)", report);
-        Assert.Contains("Advanced (67–100)", report);
+        Assert.Contains("Simple (1–35)", report);
+        Assert.Contains("Intermediate (36–70)", report);
+        Assert.Contains("Advanced (71–100)", report);
         Assert.Contains("Authored Band Distribution", report);
     }
 }

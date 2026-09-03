@@ -73,7 +73,9 @@ public class BenchmarkScoringTests
     [Fact]
     public void Speed_CalculatesLogarithmicDecayCorrectly()
     {
-        var config = BenchmarkScoringConstants.Default;
+        // Pinned to explicit constants rather than the profile defaults, so recalibrating the
+        // defaults cannot silently change what this test proves about the curve's shape.
+        var config = new BenchmarkScoringConstants { SpeedTargetMs = 5000, SpeedDecayK = 25.0 };
 
         // <= target (5000 ms) -> 100
         Assert.Equal(100, BenchmarkScoring.Speed(0, config));
@@ -94,6 +96,16 @@ public class BenchmarkScoringTests
 
         // Very long duration clamped to 1
         Assert.Equal(1, BenchmarkScoring.Speed(300000, config));
+    }
+
+    [Fact]
+    public void DefaultSpeedConstants_AreTheRecalibratedValues()
+    {
+        var cfg = BenchmarkScoringConstants.Default;
+
+        Assert.Equal(15000, cfg.SpeedTargetMs);
+        Assert.Equal(20.0, cfg.SpeedDecayK);
+        Assert.Equal(1.0, cfg.SpeedDifficultyScaling);
     }
 
     [Fact]
@@ -134,16 +146,97 @@ public class BenchmarkScoringTests
     }
 
     [Fact]
-    public void SpeedIndex_WeightsByDifficulty()
+    public void SpeedIndex_IsEqualWeightMean()
     {
-        var items = new List<(int? SpeedScore, int Difficulty)>
-        {
-            (100, 50),
-            (50, 50)
-        };
+        int? index = BenchmarkScoring.SpeedIndex(new int?[] { 100, 50 });
 
-        int? index = BenchmarkScoring.SpeedIndex(items);
         Assert.NotNull(index);
         Assert.Equal(75, index.Value);
+    }
+
+    [Fact]
+    public void SpeedIndex_IsNotPulledDownByHardQuestions()
+    {
+        // Difficulty enters through the per-question target, not the aggregate weight. Under the
+        // old difficulty-weighted index, the slow hard question dominated and the index came out
+        // near it rather than midway.
+        int? equalWeight = BenchmarkScoring.SpeedIndex(new int?[] { 95, 45 });
+        int? oldWeighted = BenchmarkScoring.DifficultyWeightedSpeedIndex(
+            new List<(int? SpeedScore, int? Difficulty)> { (95, 20), (45, 95) });
+
+        Assert.Equal(70, equalWeight!.Value);
+        Assert.True(oldWeighted!.Value < equalWeight.Value,
+            "the difficulty-weighted index should sit below the equal-weight one here");
+    }
+
+    [Fact]
+    public void SpeedIndex_ReturnsNullWhenNothingScored()
+    {
+        Assert.Null(BenchmarkScoring.SpeedIndex(new int?[] { null, null }));
+        Assert.Null(BenchmarkScoring.SpeedIndex(System.Array.Empty<int?>()));
+    }
+
+    // --- Recalibrated speed model (Phase B3) ---
+
+    [Fact]
+    public void EffectiveSpeedTarget_ScalesWithDifficulty()
+    {
+        var cfg = BenchmarkScoringConstants.Default;
+
+        // 15000 * (1 + 1.0 * d/100)
+        Assert.Equal(15150.0, BenchmarkScoring.EffectiveSpeedTargetMs(1, cfg), 1);
+        Assert.Equal(18750.0, BenchmarkScoring.EffectiveSpeedTargetMs(25, cfg), 1);
+        Assert.Equal(26250.0, BenchmarkScoring.EffectiveSpeedTargetMs(75, cfg), 1);
+        Assert.Equal(30000.0, BenchmarkScoring.EffectiveSpeedTargetMs(100, cfg), 1);
+    }
+
+    [Fact]
+    public void Speed_UnderDifficultyScaledTarget_ScoresFull()
+    {
+        // A hard question is allowed more time before it starts losing points.
+        Assert.Equal(100, BenchmarkScoring.Speed(26000, 75));
+        Assert.True(BenchmarkScoring.Speed(26000, 25) < 100);
+    }
+
+    [Fact]
+    public void Speed_ProducesAUsableSpreadOnTheReferenceRun()
+    {
+        // Model-attributable times from the 2026-09-03 GPT-5.6 Luna run (turn duration less an
+        // estimate of its tool overhead). Under the previous 5000 ms / k=25 constants, the last
+        // three of these all scored exactly 1 and were indistinguishable.
+        int q1 = BenchmarkScoring.Speed(20000, 25);
+        int q8 = BenchmarkScoring.Speed(38000, 54);
+        int q2 = BenchmarkScoring.Speed(63000, 28);
+        int q13 = BenchmarkScoring.Speed(131000, 75);
+        int q15 = BenchmarkScoring.Speed(168000, 90);
+
+        foreach (int score in new[] { q1, q8, q2, q13, q15 })
+        {
+            Assert.InRange(score, 2, 100);
+        }
+
+        // Strictly ordered: no ties, and a real spread across the range.
+        Assert.True(q1 > q8 && q8 > q2 && q2 > q13 && q13 > q15,
+            $"expected a strict ordering, got {q1}, {q8}, {q2}, {q13}, {q15}");
+        Assert.True(q1 - q15 >= 30, $"expected a spread of at least 30 points, got {q1 - q15}");
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(25)]
+    [InlineData(50)]
+    [InlineData(70)]
+    [InlineData(100)]
+    public void Speed_FloorIsUnreachableWithinThePerQuestionTimeout(int difficulty)
+    {
+        // Invariant 1 of the calibration: an answer that did not time out must always receive a
+        // distinguishing score. Violating this is what made the old constants useless — they
+        // floored at ~78 s against a 300 s timeout.
+        const long timeoutMs = 300_000;
+
+        int score = BenchmarkScoring.Speed(timeoutMs, difficulty);
+
+        Assert.True(score > 1,
+            $"difficulty {difficulty} floored at the timeout ({score}); the metric would saturate");
     }
 }

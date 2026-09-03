@@ -24,13 +24,13 @@ public static class BenchmarkDifficultyPrompt
         sb.AppendLine();
         sb.AppendLine("TASK: Rate the intrinsic difficulty of each question on a 1-100 scale.");
         sb.AppendLine();
-        sb.AppendLine("GUIDELINES FOR DIFFICULTY RATING (1-100):");
-        sb.AppendLine("- 1 to 35 (Simple): Basic game facts, foundational items/roles/monsters, introductory mechanics, widely known NetHack lore.");
-        sb.AppendLine("- 36 to 70 (Intermediate): Multi-step tactical interactions, non-trivial mechanics (spell failure, intrinsics, resistances, standard dungeon branch rules), intermediate combat/identification logic.");
-        sb.AppendLine("- 71 to 100 (Advanced): Obscure interactions, deep C source code mechanics, complex damage/probability formulas, rare artifact quirks, subtle patch-specific GnollHack changes, multi-layered strategic edge cases.");
+        sb.AppendLine($"GUIDELINES FOR DIFFICULTY RATING ({BenchmarkDifficultyBands.MinDifficulty}-{BenchmarkDifficultyBands.MaxDifficulty}):");
+        sb.AppendLine($"- {BenchmarkDifficultyBands.SimpleMin} to {BenchmarkDifficultyBands.SimpleMax} (Simple): Basic game facts, foundational items/roles/monsters, introductory mechanics, widely known NetHack lore.");
+        sb.AppendLine($"- {BenchmarkDifficultyBands.IntermediateMin} to {BenchmarkDifficultyBands.IntermediateMax} (Intermediate): Multi-step tactical interactions, non-trivial mechanics (spell failure, intrinsics, resistances, standard dungeon branch rules), intermediate combat/identification logic.");
+        sb.AppendLine($"- {BenchmarkDifficultyBands.AdvancedMin} to {BenchmarkDifficultyBands.MaxDifficulty} (Advanced): Obscure interactions, deep C source code mechanics, complex damage/probability formulas, rare artifact quirks, subtle patch-specific GnollHack changes, multi-layered strategic edge cases.");
         sb.AppendLine();
         sb.AppendLine("CRITICAL INSTRUCTIONS:");
-        sb.AppendLine("1. Evaluate ONLY the question text, author difficulty band, and rubric reference points.");
+        sb.AppendLine("1. Evaluate ONLY the question text and rubric reference points. The author's own difficulty band is deliberately withheld so your rating is independent of it.");
         sb.AppendLine("2. Assign an integer difficulty between 1 and 100 to each question.");
         sb.AppendLine("3. Provide a brief 1-sentence rationale for each difficulty score.");
         sb.AppendLine("4. The 'id' value MUST be copied verbatim from the 'ID:' field of the question it rates. Do not renumber.");
@@ -42,7 +42,8 @@ public static class BenchmarkDifficultyPrompt
         foreach (var q in questions)
         {
             sb.AppendLine($"### Question {q.OrderIndex} (ID: {q.Id})");
-            sb.AppendLine($"Author Band: {q.AuthorBand}");
+            // The author band is intentionally not disclosed: showing it anchored the rating on
+            // the very judgement the assessor is asked to make independently.
             sb.AppendLine($"Question Text: {q.QuestionText}");
             if (!string.IsNullOrWhiteSpace(q.ExpectedPoints))
             {

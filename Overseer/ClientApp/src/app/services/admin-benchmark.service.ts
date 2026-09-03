@@ -14,6 +14,7 @@ export interface BenchmarkScoringProfileDto {
   criticalErrorCeiling: number;
   speedTargetMs: number;
   speedDecayK: number;
+  speedDifficultyScaling: number;
   maxParallelQuestions: number;
   createdAtUtc: string;
   modifiedAtUtc: string;
@@ -30,6 +31,7 @@ export interface CreateBenchmarkScoringProfileRequest {
   criticalErrorCeiling: number;
   speedTargetMs: number;
   speedDecayK: number;
+  speedDifficultyScaling: number;
   maxParallelQuestions: number;
 }
 
@@ -44,6 +46,7 @@ export interface UpdateBenchmarkScoringProfileRequest {
   criticalErrorCeiling: number;
   speedTargetMs: number;
   speedDecayK: number;
+  speedDifficultyScaling: number;
   maxParallelQuestions: number;
 }
 
@@ -209,6 +212,15 @@ export interface BenchmarkRunAnswerDto {
   modelCallCount?: number | null;
   toolCallCount?: number | null;
   toolBudgetExhausted?: boolean;
+  /** The per-band tool call budget that actually applied to this question. */
+  toolCallBudgetUsed?: number | null;
+  /** Wall-clock time spent in tool batches during this turn. */
+  toolTimeMs?: number | null;
+  /** Turn duration with tool I/O removed. This is what speed is scored on. */
+  modelTimeMs: number;
+  /** Transport artifacts removed before grading, retained verbatim for audit. */
+  scrubbedArtifactText?: string | null;
+  scrubbedArtifactCount: number;
   terminationReason?: string | null;
   answerFlags?: number;
   answerFlagNames?: string[];
@@ -256,6 +268,19 @@ export interface BenchmarkRunDetailDto {
   maxToolCallsPerQuestionUsed?: number | null;
   degradedAnswerCount?: number;
   toolStarvedAnswerCount?: number;
+  /**
+   * Answers compromised by a transport or provider defect. Disjoint from
+   * toolStarvedAnswerCount: together with the clean count these partition the run, so the
+   * three always sum to the question count.
+   */
+  transportDefectAnswerCount: number;
+  /**
+   * Answers carrying an advisory flag. Overlaps the counts above and must never be summed
+   * with them.
+   */
+  advisoryFlagAnswerCount: number;
+  scrubbedArtifactAnswerCount: number;
+  toolOverheadMs?: number | null;
   difficultyFallbackUsed: boolean;
   speedMeasurementDegraded: boolean;
   maxParallelQuestionsUsed: number;

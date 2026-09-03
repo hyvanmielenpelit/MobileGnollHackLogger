@@ -18,6 +18,8 @@ describe('AdminBenchmarkComponent', () => {
       'getRuns',
       'getQuestions',
       'getScoringProfiles',
+      'createScoringProfile',
+      'updateScoringProfile',
       'startRun',
       'getRun',
       'getActiveRun',
@@ -61,8 +63,9 @@ describe('AdminBenchmarkComponent', () => {
         weightReadability: 0.10,
         levelScoresJson: '[1, 15, 35, 55, 72, 87, 100]',
         criticalErrorCeiling: 25,
-        speedTargetMs: 5000,
-        speedDecayK: 25.0,
+        speedTargetMs: 15000,
+        speedDecayK: 20.0,
+        speedDifficultyScaling: 1.0,
         maxParallelQuestions: 1,
         createdAtUtc: '2026-09-01T00:00:00Z',
         modifiedAtUtc: '2026-09-01T00:00:00Z'
@@ -312,6 +315,9 @@ describe('AdminBenchmarkComponent', () => {
       scoringProfileName: 'Default',
       scoringProfileSnapshotJson: null,
       scoringMethodVersion: 1,
+      transportDefectAnswerCount: 0,
+      advisoryFlagAnswerCount: 0,
+      scrubbedArtifactAnswerCount: 0,
       difficultyFallbackUsed: false,
       speedMeasurementDegraded: false,
       maxParallelQuestionsUsed: 1,
@@ -357,6 +363,8 @@ describe('AdminBenchmarkComponent', () => {
           speedScore: 92,
           reviewComment: 'Assessor comment with <span class="badge">tag</span>',
           durationMs: 3000,
+          modelTimeMs: 3000,
+          scrubbedArtifactCount: 0,
           timeToFirstTokenMs: 200,
           actualServiceTierUsed: null,
           toolCallSummary: null,
@@ -1580,6 +1588,256 @@ describe('AdminBenchmarkComponent', () => {
 
       expect(benchmarkServiceMock.retryFailedAssessments).toHaveBeenCalledWith(42, 1);
       expect(component.retryingAssessments).toBeTrue();
+    });
+  });
+
+  describe('run integrity accounting', () => {
+    /**
+     * A finished run detail with no integrity problems. Each test raises exactly the counters
+     * it is about, so a clause appearing in the banner can only have come from that counter.
+     */
+    function buildCompletedRun(overrides: any = {}): any {
+      return {
+        id: 55,
+        benchmarkSuiteId: 1,
+        suiteName: 'Default Suite',
+        testedModelDisplayNameUsed: 'Test Model',
+        testedModelProviderUsed: 'OpenAI',
+        testedModelIdUsed: 'gpt-5.6-luna',
+        testedModelParallelExecutionModeUsed: 0,
+        assessorModelDisplayNameUsed: 'Test Assessor',
+        assessorModelProviderUsed: 'Google',
+        assessorModelIdUsed: 'gemini-3.7-flash',
+        startedByUserName: 'admin',
+        status: 'Completed',
+        startedAtUtc: '2026-09-03T06:52:00Z',
+        completedAtUtc: '2026-09-03T07:10:00Z',
+        totalAnswerDurationMs: 900000,
+        scoringProfileName: 'Standard Intelligence Index (Default)',
+        scoringProfileId: 1,
+        scoringMethodVersion: 4,
+        harnessVersion: '3',
+        degradedAnswerCount: 0,
+        toolStarvedAnswerCount: 0,
+        transportDefectAnswerCount: 0,
+        advisoryFlagAnswerCount: 0,
+        scrubbedArtifactAnswerCount: 0,
+        toolOverheadMs: 0,
+        difficultyFallbackUsed: false,
+        speedMeasurementDegraded: false,
+        maxParallelQuestionsUsed: 1,
+        answeredQuestionCount: 18,
+        totalQuestionCount: 18,
+        assessmentParseFailed: false,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        totalCacheReadTokens: 0,
+        totalCacheCreationTokens: 0,
+        totalDurationMs: 900000,
+        errorMessage: null,
+        answers: [],
+        ...overrides
+      };
+    }
+
+    function buildScoredAnswer(orderIndex: number, overrides: any = {}): any {
+      return {
+        id: 200 + orderIndex,
+        benchmarkRunId: 55,
+        orderIndex,
+        questionText: `Question ${orderIndex}`,
+        difficulty: 2,
+        assessedDifficulty: 50,
+        answerText: `Answer ${orderIndex}`,
+        status: 'Ok',
+        assessmentStatus: 'Scored',
+        durationMs: 48800,
+        modelTimeMs: 48800,
+        toolCallCount: 4,
+        scrubbedArtifactCount: 0,
+        answerFlags: 0,
+        answerFlagNames: [],
+        ...overrides
+      };
+    }
+
+    function integrityNoticeText(): string {
+      const notices: HTMLElement[] = Array.from(fixture.nativeElement.querySelectorAll('.alert-heading'));
+      const heading = notices.find(n => (n.textContent || '').includes('Run Integrity Notice'));
+      if (!heading) return '';
+      return (heading.parentElement?.querySelector('.alert-body') as HTMLElement)?.textContent ?? '';
+    }
+
+    it('should describe transport defects, harness limits, and advisory flags as separate causes', () => {
+      component.selectedRunDetail = buildCompletedRun({
+        transportDefectAnswerCount: 4,
+        toolStarvedAnswerCount: 3,
+        advisoryFlagAnswerCount: 6
+      });
+      fixture.detectChanges();
+
+      const text = integrityNoticeText().replace(/\s+/g, ' ').trim();
+      expect(text).toContain('4 answer(s) show transport defects (empty, harness artifacts, or truncated).');
+      expect(text).toContain('3 answer(s) hit a configured harness limit (tool budget).');
+      expect(text).toContain('6 answer(s) carry advisory flags.');
+      // The wording this replaced described tool-starved answers as one of "empty, harness
+      // artifacts, or truncated", which they are not.
+      expect(text).not.toContain('degraded answer(s)');
+      expect(text).not.toContain('tool-starved');
+    });
+
+    it('should render only the harness limit clause when a configured cap was the only cause', () => {
+      component.selectedRunDetail = buildCompletedRun({ toolStarvedAnswerCount: 3 });
+      fixture.detectChanges();
+
+      const text = integrityNoticeText().replace(/\s+/g, ' ').trim();
+      expect(text).toContain('3 answer(s) hit a configured harness limit (tool budget).');
+      expect(text).not.toContain('transport defects');
+      expect(text).not.toContain('advisory flags');
+    });
+
+    it('should render no integrity notice when every cause is zero', () => {
+      component.selectedRunDetail = buildCompletedRun();
+      fixture.detectChanges();
+
+      expect(integrityNoticeText()).toBe('');
+    });
+
+    it('should treat empty answers and the Empty, HarnessArtifacts and Truncated bits as transport defects', () => {
+      expect(component.hasTransportDefect(buildScoredAnswer(1, { status: 'EmptyAnswer' }))).toBeTrue();
+      expect(component.hasTransportDefect(buildScoredAnswer(1, { status: 5 }))).toBeTrue();
+      expect(component.hasTransportDefect(buildScoredAnswer(1, { answerFlags: 1 }))).toBeTrue();
+      expect(component.hasTransportDefect(buildScoredAnswer(1, { answerFlags: 2 }))).toBeTrue();
+      expect(component.hasTransportDefect(buildScoredAnswer(1, { answerFlags: 4 }))).toBeTrue();
+      expect(component.hasTransportDefect(buildScoredAnswer(1, { answerFlags: 6 }))).toBeTrue();
+    });
+
+    it('should treat a tool budget cap as a harness limit and never as a transport defect', () => {
+      const capped = buildScoredAnswer(1, { toolBudgetExhausted: true, toolCallCount: 25, toolCallBudgetUsed: 25 });
+
+      expect(component.hasHarnessLimit(capped)).toBeTrue();
+      expect(component.hasTransportDefect(capped)).toBeFalse();
+      expect(component.hasAdvisoryFlag(capped)).toBeFalse();
+      expect(component.hasHarnessLimit(buildScoredAnswer(1))).toBeFalse();
+    });
+
+    it('should count an answer carrying only advisory flags as clean', () => {
+      const bleed = buildScoredAnswer(1, { answerFlags: 8, answerFlagNames: ['ReasoningBleed'] });
+      const repeated = buildScoredAnswer(2, { answerFlags: 16, answerFlagNames: ['RepeatedFragments'] });
+      const both = buildScoredAnswer(3, { answerFlags: 24, answerFlagNames: ['ReasoningBleed', 'RepeatedFragments'] });
+
+      for (const answer of [bleed, repeated, both]) {
+        expect(component.hasAdvisoryFlag(answer)).toBeTrue();
+        expect(component.hasTransportDefect(answer)).toBeFalse();
+        expect(component.hasHarnessLimit(answer)).toBeFalse();
+      }
+
+      // Advisory flags may overlap a defect without masking it.
+      const overlapping = buildScoredAnswer(4, { answerFlags: 2 | 8 });
+      expect(component.hasTransportDefect(overlapping)).toBeTrue();
+      expect(component.hasAdvisoryFlag(overlapping)).toBeTrue();
+
+      const clean = buildScoredAnswer(5);
+      expect(component.hasAdvisoryFlag(clean)).toBeFalse();
+      expect(component.hasTransportDefect(clean)).toBeFalse();
+    });
+
+    it('should name only the advisory flags as advisory', () => {
+      expect(component.isAdvisoryFlagName('ReasoningBleed')).toBeTrue();
+      expect(component.isAdvisoryFlagName('RepeatedFragments')).toBeTrue();
+      expect(component.isAdvisoryFlagName('HarnessArtifacts')).toBeFalse();
+      expect(component.isAdvisoryFlagName('Truncated')).toBeFalse();
+      expect(component.isAdvisoryFlagName('Empty')).toBeFalse();
+    });
+
+    it('should format CompletedWithLimits from both the numeric and the string status', () => {
+      expect(component.formatStatus(6)).toBe('CompletedWithLimits');
+      expect(component.formatStatus('CompletedWithLimits')).toBe('CompletedWithLimits');
+    });
+
+    it('should mute advisory flag badges and show the effective tool budget and scrubbed count', () => {
+      component.selectedRunDetail = buildCompletedRun({
+        answers: [
+          buildScoredAnswer(1, {
+            toolBudgetExhausted: true,
+            toolCallCount: 25,
+            toolCallBudgetUsed: 25,
+            scrubbedArtifactCount: 2,
+            answerFlags: 2 | 8,
+            answerFlagNames: ['HarnessArtifacts', 'ReasoningBleed']
+          })
+        ]
+      });
+      fixture.detectChanges();
+
+      const starved = fixture.nativeElement.querySelector('.badge-starved') as HTMLElement;
+      expect(starved).toBeTruthy();
+      expect(starved.textContent!.replace(/\s+/g, ' ').trim()).toBe('Budget Hit (25/25)');
+
+      const scrubbed = fixture.nativeElement.querySelector('.badge-scrubbed') as HTMLElement;
+      expect(scrubbed).toBeTruthy();
+      expect(scrubbed.getAttribute('title')).toContain('2 transport artifact block(s)');
+
+      const defectBadge = fixture.nativeElement.querySelector('.badge-flag-harnessartifacts') as HTMLElement;
+      expect(defectBadge).toBeTruthy();
+      expect(defectBadge.classList).not.toContain('badge-flag-advisory');
+
+      const advisoryBadge = fixture.nativeElement.querySelector('.badge-flag-reasoningbleed') as HTMLElement;
+      expect(advisoryBadge).toBeTruthy();
+      expect(advisoryBadge.classList).toContain('badge-flag-advisory');
+    });
+
+    it('should toggle the removed transport artifacts block per answer', () => {
+      expect(component.expandedArtifacts.has(1)).toBeFalse();
+
+      component.toggleArtifact(1);
+      expect(component.expandedArtifacts.has(1)).toBeTrue();
+      expect(component.expandedArtifacts.has(2)).toBeFalse();
+
+      component.toggleArtifact(1);
+      expect(component.expandedArtifacts.has(1)).toBeFalse();
+    });
+
+    it('should reveal the scrubbed artifact text as plain text only once expanded', () => {
+      component.selectedRunDetail = buildCompletedRun({
+        answers: [
+          buildScoredAnswer(1, {
+            scrubbedArtifactCount: 1,
+            scrubbedArtifactText: 'to=multi_tool_use.parallel <em>{"tool_uses":[]}</em>'
+          })
+        ]
+      });
+      component.expandedQuestions.add(1);
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('.artifact-box')).toBeNull();
+      const toggle = fixture.nativeElement.querySelector('.question-card-body .btn-link') as HTMLButtonElement;
+      expect(toggle).toBeTruthy();
+      expect(toggle.getAttribute('aria-expanded')).toBe('false');
+      expect(toggle.getAttribute('aria-controls')).toBe('bm-artifact-1');
+
+      toggle.click();
+      fixture.detectChanges();
+
+      const box = fixture.nativeElement.querySelector('.artifact-box') as HTMLElement;
+      expect(box).toBeTruthy();
+      expect(box.id).toBe('bm-artifact-1');
+      expect(box.querySelector('em')).toBeNull();
+      expect(box.textContent).toContain('to=multi_tool_use.parallel');
+      expect(box.textContent).toContain('<em>{"tool_uses":[]}</em>');
+      expect((fixture.nativeElement.querySelector('.question-card-body .btn-link') as HTMLButtonElement)
+        .getAttribute('aria-expanded')).toBe('true');
+    });
+
+    it('should reject a speed difficulty scaling outside 0.0 to 5.0 before calling the server', () => {
+      component.editingProfileId = null;
+      component.profileForm = { ...component.profileForm, name: 'Scaled Profile', speedDifficultyScaling: 5.5 };
+
+      component.saveProfile();
+
+      expect(component.profileValidationErrors)
+        .toContain('Speed difficulty scaling must be between 0.0 and 5.0.');
+      expect(benchmarkServiceMock.createScoringProfile).not.toHaveBeenCalled();
     });
   });
 });

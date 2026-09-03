@@ -2,6 +2,7 @@ namespace Overseer.Tests.UnitTests;
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using MobileGnollHackLogger.Data;
 using Overseer.Services.Benchmarking;
 using Xunit;
@@ -99,7 +100,7 @@ public class BenchmarkRunFinalizerTests
     }
 
     [Fact]
-    public void Finalizer_WithToolBudgetExhausted_CountsToolStarvedAndSetsCompletedWithErrors()
+    public void Finalizer_WithToolBudgetExhausted_CountsToolStarvedAndSetsCompletedWithLimits()
     {
         var run = new BenchmarkRun
         {
@@ -124,10 +125,13 @@ public class BenchmarkRunFinalizerTests
 
         BenchmarkRunFinalizer.Apply(run, run.Answers);
 
-        Assert.Equal(BenchmarkRunStatus.CompletedWithErrors, run.Status);
+        // Reaching a configured cap is not an error: the answer is valid and the cap may simply
+        // need raising. Reporting it as CompletedWithErrors made a healthy run look broken.
+        Assert.Equal(BenchmarkRunStatus.CompletedWithLimits, run.Status);
         Assert.Equal(1, run.AnsweredQuestionCount);
         Assert.Equal(1, run.DegradedAnswerCount);
         Assert.Equal(1, run.ToolStarvedAnswerCount);
+        Assert.Equal(0, run.TransportDefectAnswerCount);
     }
 
     [Fact]
@@ -160,5 +164,110 @@ public class BenchmarkRunFinalizerTests
         Assert.Equal(1, run.AnsweredQuestionCount);
         Assert.Equal(1, run.DegradedAnswerCount);
         Assert.Equal(0, run.ToolStarvedAnswerCount);
+    }
+    // --- Integrity partition (Phase C1) ---
+
+    private static BenchmarkRunAnswer MakeAnswer(
+        int orderIndex,
+        BenchmarkAnswerFlags flags = BenchmarkAnswerFlags.None,
+        bool budgetExhausted = false,
+        BenchmarkAnswerStatus status = BenchmarkAnswerStatus.Ok)
+    {
+        return new BenchmarkRunAnswer
+        {
+            OrderIndex = orderIndex,
+            Status = status,
+            AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+            QualityScore = 80,
+            SpeedScore = 70,
+            DurationMs = 20000,
+            Difficulty = BenchmarkDifficulty.Intermediate,
+            AssessedDifficulty = 50,
+            AnswerFlags = (int)flags,
+            ToolBudgetExhausted = budgetExhausted
+        };
+    }
+
+    [Fact]
+    public void AdvisoryFlags_DoNotAffectRunStatusOrCleanCount()
+    {
+        // ReasoningBleed and RepeatedFragments describe text that was removed before grading,
+        // so the graded answer is unaffected and the run is not degraded by them.
+        var answers = new List<BenchmarkRunAnswer>
+        {
+            MakeAnswer(1, BenchmarkAnswerFlags.ReasoningBleed),
+            MakeAnswer(2, BenchmarkAnswerFlags.RepeatedFragments)
+        };
+
+        Assert.Equal(BenchmarkRunStatus.Completed, BenchmarkRunFinalizer.ComputeStatus(answers));
+        Assert.All(answers, a => Assert.Equal(BenchmarkAnswerIntegrity.Clean, BenchmarkRunFinalizer.Classify(a)));
+        Assert.All(answers, a => Assert.True(BenchmarkRunFinalizer.HasAdvisoryFlag(a)));
+        Assert.All(answers, a => Assert.False(BenchmarkRunFinalizer.HasTransportDefect(a)));
+    }
+
+    [Fact]
+    public void TransportDefect_TakesPrecedenceOverHarnessLimit()
+    {
+        var answer = MakeAnswer(1, BenchmarkAnswerFlags.HarnessArtifacts, budgetExhausted: true);
+
+        Assert.Equal(BenchmarkAnswerIntegrity.TransportDefect, BenchmarkRunFinalizer.Classify(answer));
+        Assert.Equal(BenchmarkRunStatus.CompletedWithErrors,
+            BenchmarkRunFinalizer.ComputeStatus(new List<BenchmarkRunAnswer> { answer }));
+    }
+
+    [Fact]
+    public void IntegrityBuckets_PartitionEveryAnswerExactlyOnce()
+    {
+        // The invariant the old report violated: clean + transport defects + harness limits must
+        // equal the question count, whatever combination of causes is present.
+        var answers = new List<BenchmarkRunAnswer>
+        {
+            MakeAnswer(1),
+            MakeAnswer(2, BenchmarkAnswerFlags.HarnessArtifacts),
+            MakeAnswer(3, BenchmarkAnswerFlags.Truncated),
+            MakeAnswer(4, budgetExhausted: true),
+            MakeAnswer(5, BenchmarkAnswerFlags.ReasoningBleed),
+            MakeAnswer(6, BenchmarkAnswerFlags.ReasoningBleed, budgetExhausted: true),
+            MakeAnswer(7, BenchmarkAnswerFlags.HarnessArtifacts, budgetExhausted: true),
+            MakeAnswer(8, status: BenchmarkAnswerStatus.EmptyAnswer)
+        };
+
+        int clean = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.Clean);
+        int defects = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.TransportDefect);
+        int limits = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.HarnessLimit);
+
+        Assert.Equal(answers.Count, clean + defects + limits);
+        Assert.Equal(2, clean);    // 1 and 5 (advisory only)
+        Assert.Equal(4, defects);  // 2, 3, 7, 8
+        Assert.Equal(2, limits);   // 4 and 6
+    }
+
+    [Fact]
+    public void Finalizer_SumsToolTimeIntoRunOverhead()
+    {
+        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 2 };
+        var a1 = MakeAnswer(1);
+        var a2 = MakeAnswer(2);
+        a1.ToolTimeMs = 4000;
+        a2.ToolTimeMs = 6000;
+        run.Answers = new List<BenchmarkRunAnswer> { a1, a2 };
+
+        BenchmarkRunFinalizer.Apply(run, run.Answers);
+
+        Assert.Equal(10000, run.ToolOverheadMs);
+        Assert.Equal(16000, a1.ModelTimeMs);
+    }
+
+    [Fact]
+    public void Finalizer_LeavesToolOverheadNullWhenNotRecorded()
+    {
+        // Runs predating harness version 3 have no tool timings; the report must be able to say
+        // so rather than reporting zero overhead, which would be a false claim.
+        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 1 };
+        run.Answers = new List<BenchmarkRunAnswer> { MakeAnswer(1) };
+
+        BenchmarkRunFinalizer.Apply(run, run.Answers);
+
+        Assert.Null(run.ToolOverheadMs);
     }
 }

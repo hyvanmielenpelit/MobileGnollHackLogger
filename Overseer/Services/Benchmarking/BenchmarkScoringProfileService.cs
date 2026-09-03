@@ -152,6 +152,7 @@ public class BenchmarkScoringProfileService
         existing.CriticalErrorCeiling = profile.CriticalErrorCeiling;
         existing.SpeedTargetMs = profile.SpeedTargetMs;
         existing.SpeedDecayK = profile.SpeedDecayK;
+        existing.SpeedDifficultyScaling = profile.SpeedDifficultyScaling;
         existing.MaxParallelQuestions = profile.MaxParallelQuestions;
         existing.ModifiedAtUtc = DateTime.UtcNow;
 
@@ -273,6 +274,11 @@ public class BenchmarkScoringProfileService
             errors.Add("SpeedDecayK must be greater than 0.");
         }
 
+        if (profile.SpeedDifficultyScaling < 0.0 || profile.SpeedDifficultyScaling > 5.0)
+        {
+            errors.Add("SpeedDifficultyScaling must be between 0.0 and 5.0.");
+        }
+
         if (profile.MaxParallelQuestions < 1)
         {
             errors.Add("MaxParallelQuestions must be at least 1.");
@@ -302,7 +308,8 @@ public class BenchmarkScoringProfileService
             LevelScores = ParseLevelScores(profile.LevelScoresJson),
             CriticalErrorCeiling = profile.CriticalErrorCeiling,
             SpeedTargetMs = profile.SpeedTargetMs,
-            SpeedDecayK = profile.SpeedDecayK
+            SpeedDecayK = profile.SpeedDecayK,
+            SpeedDifficultyScaling = profile.SpeedDifficultyScaling
         };
     }
 
@@ -329,8 +336,13 @@ public class BenchmarkScoringProfileService
             WeightReadability = 0.10,
             LevelScoresJson = "[1, 15, 35, 55, 72, 87, 100]",
             CriticalErrorCeiling = 25,
-            SpeedTargetMs = 5000,
-            SpeedDecayK = 25.0,
+            // Recalibrated: the old 5000 ms / k=25 pair drove the speed score to its floor at
+            // roughly 78 s, tying together every slower answer on an agentic run. See
+            // BenchmarkScoringConstants for the two invariants these satisfy. Existing databases
+            // are updated by the AddBenchmarkIntegrityAndTiming migration.
+            SpeedTargetMs = 15000,
+            SpeedDecayK = 20.0,
+            SpeedDifficultyScaling = 1.0,
             MaxParallelQuestions = 1,
             CreatedAtUtc = DateTime.UtcNow,
             ModifiedAtUtc = DateTime.UtcNow

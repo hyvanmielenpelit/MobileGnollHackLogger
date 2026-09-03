@@ -348,6 +348,25 @@ public class AgentLoopRunner
                 }
             }
 
+            if (!hasToolsToRun)
+            {
+                // The model attempted a tool call but emitted it as assistant *text* instead of
+                // as a structured call, so the provider never parsed it and this iteration looks
+                // tool-free. The narration leading up to that attempt is analysis-channel
+                // content and must not be graded or displayed as answer prose.
+                //
+                // The split matters: narration, the leaked call, and the real answer all arrive
+                // in this one iteration, so only the run up to the last leaked artifact is
+                // wrapped. Wrapping the whole visible run would move the answer into the thought
+                // block and leave the answer empty.
+                var visibleText = thoughtWriter.GetIterationVisibleText(sbFullResponse);
+                if (!string.IsNullOrEmpty(visibleText) &&
+                    ReasoningTextSanitizer.TryFindLastLeakedArtifactEnd(visibleText, out int leakEnd))
+                {
+                    thoughtWriter.WrapLeadingVisibleText(sbFullResponse, leakEnd);
+                }
+            }
+
             if (hasToolsToRun && currentIterationToolCalls.Count > 0)
             {
                 thoughtWriter.WrapPreToolVisibleText(sbFullResponse);
@@ -392,6 +411,12 @@ public class AgentLoopRunner
                 var outcomeChannel = System.Threading.Channels.Channel.CreateUnbounded<ToolBatchOutcome>(
                     new System.Threading.Channels.UnboundedChannelOptions { SingleReader = true });
 
+                // Wall-clock of the whole batch, not the sum of each tool's own timings: tools in
+                // one batch run concurrently, so summing them would charge the model for time it
+                // never spent waiting. This is what lets speed be scored on model-attributable
+                // time rather than on harness I/O.
+                var batchStartTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
+
                 var batchTask = ToolBatchRunner.RunAsync(
                     batchItems,
                     (item, ct) => _toolExecutor.ExecuteAsync(item.ToolName, item.Arguments, execContext, ct, item.ToolCallId),
@@ -433,6 +458,9 @@ public class AgentLoopRunner
                 }
 
                 var outcomes = await batchTask;
+
+                result.ToolTimeMs += (long)System.Diagnostics.Stopwatch
+                    .GetElapsedTime(batchStartTimestamp).TotalMilliseconds;
 
                 int budgetChars = _configuration.GetValue<int>("ToolExecutionLimits:MaxBatchResultLength", 40000);
                 var batchBudget = new ToolBatchResultBudget(Math.Max(budgetChars, execContext.MaxResultLength));

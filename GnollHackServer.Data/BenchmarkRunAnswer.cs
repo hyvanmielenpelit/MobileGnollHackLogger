@@ -2,6 +2,7 @@ namespace MobileGnollHackLogger.Data;
 
 using System;
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 public enum BenchmarkAssessmentStatus
 {
@@ -27,6 +28,13 @@ public class BenchmarkRunAnswer
     public string AnswerText { get; set; } = default!;
 
     public string? ThoughtText { get; set; }
+
+    // Transport artifacts removed from AnswerText before grading (leaked tool-call payloads,
+    // channel literals, reasoning narration). Retained verbatim so that a destructive
+    // transformation stays auditable; shown in the admin UI, never sent to the assessor.
+    public string? ScrubbedArtifactText { get; set; }
+
+    public int ScrubbedArtifactCount { get; set; }
 
     public BenchmarkAnswerStatus Status { get; set; } = BenchmarkAnswerStatus.Ok;
 
@@ -82,6 +90,15 @@ public class BenchmarkRunAnswer
 
     public long DurationMs { get; set; }
 
+    // Wall-clock time spent executing tool batches within this turn. Measured per batch, not
+    // summed per tool, so concurrent tools inside one batch are not counted twice.
+    public long? ToolTimeMs { get; set; }
+
+    // Model-attributable time: the turn duration with harness tool I/O removed. This is what
+    // the speed score is computed from.
+    [NotMapped]
+    public long ModelTimeMs => Math.Max(0L, DurationMs - (ToolTimeMs ?? 0L));
+
     public long? TimeToFirstTokenMs { get; set; }
 
     [MaxLength(64)]
@@ -97,6 +114,11 @@ public class BenchmarkRunAnswer
     public int? ModelCallCount { get; set; }
     public int? ToolCallCount { get; set; }
     public bool ToolBudgetExhausted { get; set; }
+
+    // The per-question tool call budget that actually applied to this answer. The budget is
+    // resolved per difficulty band, so it differs between questions in the same run and cannot
+    // be read off BenchmarkRun.MaxToolCallsPerQuestionUsed.
+    public int? ToolCallBudgetUsed { get; set; }
     [MaxLength(32)]
     public string? TerminationReason { get; set; }
     public int AnswerFlags { get; set; }

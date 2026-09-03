@@ -5,25 +5,25 @@ using System.Text;
 using System.Text.RegularExpressions;
 using MobileGnollHackLogger.Data;
 
-public record SanitizedAnswer(string AnswerText, string? ThoughtText, BenchmarkAnswerFlags Flags);
+public record SanitizedAnswer(
+    string AnswerText,
+    string? ThoughtText,
+    string? ScrubbedArtifactText,
+    int ScrubbedArtifactCount,
+    BenchmarkAnswerFlags Flags);
 
 public static class HarnessArtifactDetector
 {
-    private static readonly Regex FunctionsToRegex = new(@"to=functions\.", RegexOptions.Compiled);
-    private static readonly Regex ControlTokenRegex = new(@"<\|[a-zA-Z_]{1,32}\|>", RegexOptions.Compiled);
-    private static readonly Regex BareToolJsonLineRegex = new(@"^\s*\{.*""(?:repository|file_filter|function_name)"".*\}\s*$", RegexOptions.Compiled | RegexOptions.Multiline);
-
+    /// <summary>
+    /// Delegates to <see cref="BenchmarkArtifactScrubber"/>.
+    ///
+    /// This previously keyed on three narrow regexes: <c>to=functions\.</c>, control tokens, and
+    /// a single-line JSON pattern requiring a `repository`, `file_filter` or `function_name` key.
+    /// That set missed <c>to=multi_tool_use.parallel</c>, multi-line payloads, and narration
+    /// bleed entirely — three of the seven affected answers in the 2026-09-03 run went unflagged.
+    /// </summary>
     public static bool HasHarnessArtifacts(string? text)
-    {
-        if (string.IsNullOrEmpty(text))
-        {
-            return false;
-        }
-
-        return FunctionsToRegex.IsMatch(text)
-            || ControlTokenRegex.IsMatch(text)
-            || BareToolJsonLineRegex.IsMatch(text);
-    }
+        => BenchmarkArtifactScrubber.Default.HasArtifacts(text);
 }
 
 public static class BenchmarkAnswerSanitizer
@@ -31,11 +31,18 @@ public static class BenchmarkAnswerSanitizer
     private static readonly Regex ThoughtDivRegex = new(@"<div\s+class=[""']ai-thought[""']>([\s\S]*?)(?:</div>|$)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex CodeBlockRegex = new(@"(```[\s\S]*?```)", RegexOptions.Compiled);
 
-    public static SanitizedAnswer Sanitize(string? text)
+    private static bool ContainsTruncationMarker(string? value)
+    {
+        return value != null &&
+               (value.Contains("[Response truncated", StringComparison.OrdinalIgnoreCase) ||
+                value.Contains("[Answer truncated", StringComparison.OrdinalIgnoreCase));
+    }
+
+    public static SanitizedAnswer Sanitize(string? text, BenchmarkArtifactScrubber? scrubber = null)
     {
         if (string.IsNullOrEmpty(text))
         {
-            return new SanitizedAnswer(string.Empty, null, BenchmarkAnswerFlags.Empty);
+            return new SanitizedAnswer(string.Empty, null, null, 0, BenchmarkAnswerFlags.Empty);
         }
 
         // 1. Extract thought text
@@ -84,23 +91,29 @@ public static class BenchmarkAnswerSanitizer
 
         string answerText = sbAnswer.ToString().Trim();
 
-        var flags = BenchmarkAnswerFlags.None;
+        // 4. Remove transport artifacts, so what is graded is authored text only. Everything
+        //    removed is returned for storage and display rather than discarded.
+        var scrubResult = (scrubber ?? BenchmarkArtifactScrubber.Default).Scrub(answerText);
+        answerText = scrubResult.AnswerText;
+
+        var flags = scrubResult.Flags;
         if (string.IsNullOrWhiteSpace(answerText))
         {
             flags |= BenchmarkAnswerFlags.Empty;
         }
 
-        if (HarnessArtifactDetector.HasHarnessArtifacts(answerText))
-        {
-            flags |= BenchmarkAnswerFlags.HarnessArtifacts;
-        }
-
-        if ((answerText != null && (answerText.Contains("[Response truncated", StringComparison.OrdinalIgnoreCase) || answerText.Contains("[Answer truncated", StringComparison.OrdinalIgnoreCase))) ||
-            (text != null && (text.Contains("[Response truncated", StringComparison.OrdinalIgnoreCase) || text.Contains("[Answer truncated", StringComparison.OrdinalIgnoreCase))))
+        // Check both the scrubbed answer and the original: a truncation marker can be removed
+        // along with a trailing artifact, and the answer is still truncated either way.
+        if (ContainsTruncationMarker(answerText) || ContainsTruncationMarker(text))
         {
             flags |= BenchmarkAnswerFlags.Truncated;
         }
 
-        return new SanitizedAnswer(answerText, thoughtText, flags);
+        return new SanitizedAnswer(
+            answerText ?? string.Empty,
+            thoughtText,
+            scrubResult.ArtifactText,
+            scrubResult.ArtifactBlockCount,
+            flags);
     }
 }

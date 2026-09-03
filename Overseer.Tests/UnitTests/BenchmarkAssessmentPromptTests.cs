@@ -162,7 +162,9 @@ public class BenchmarkAssessmentPromptTests
             status: BenchmarkAnswerStatus.Ok,
             allowedTools: new List<string> { "source_code_search", "source_code_view" },
             toolCallsCompleted: 2,
-            toolBudgetExhausted: true);
+            toolBudgetExhausted: true,
+            scrubbedArtifactCount: 3,
+            toolCallBudget: 40);
 
         // Turn duration MUST be omitted from candidate assessment prompt to avoid anchoring
         Assert.DoesNotContain("candidate turn duration", prompt, System.StringComparison.OrdinalIgnoreCase);
@@ -173,15 +175,26 @@ public class BenchmarkAssessmentPromptTests
         Assert.Contains("- Available tools: source_code_search, source_code_view", prompt);
         Assert.Contains("- Completed tool calls: 2", prompt);
         Assert.Contains("- Tool budget exhausted: Yes", prompt);
+        Assert.Contains("- Tool call budget for this question: 40", prompt);
+        Assert.Contains("- Transport artifacts removed by the harness before grading: 3 block(s)", prompt);
 
         // Critical instructions 6 and 7 must be present
         Assert.Contains("do not treat harness-imposed tool unavailability as a model failure", prompt);
-        Assert.Contains("If the answer contains obvious harness artifacts", prompt);
+
+        // Instruction 7 now states the artifacts are already gone. Asking the assessor to spot
+        // and ignore them was an unverifiable judgement call, and it was applied
+        // inconsistently: on the 2026-09-03 run four answers with the same defect scored 94-99
+        // while one scored 70.
+        Assert.Contains("already had provider transport artifacts", prompt);
+        Assert.Contains("do not speculate about removed content or deduct for it", prompt);
+        Assert.DoesNotContain("If the answer contains obvious harness artifacts", prompt);
     }
 
     [Fact]
-    public void ScoringMethodVersion_IsThree()
+    public void ScoringMethodVersion_IsFour()
     {
-        Assert.Equal(3, BenchmarkAssessmentPrompt.ScoringMethodVersion);
+        // Bumped with the artifact scrubbing and speed recalibration: v4 scores are not
+        // comparable with v3, and the report prints this so a mixed comparison is visible.
+        Assert.Equal(4, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 }

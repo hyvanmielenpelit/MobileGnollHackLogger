@@ -25,6 +25,14 @@ public class AgentRunResult
     public int ToolCallCount { get; set; }
 
     /// <summary>
+    /// Wall-clock time spent executing tool batches during this turn, summed per batch rather
+    /// than per tool: tools within one batch run concurrently, so summing individual tool
+    /// durations would over-count. Subtracting this from the turn duration gives the
+    /// model-attributable time that the benchmark scores speed on.
+    /// </summary>
+    public long ToolTimeMs { get; set; }
+
+    /// <summary>
     /// Prompt tokens from the <b>most recent</b> provider usage report, overwritten each time one
     /// arrives — unlike <see cref="TotalPromptTokens"/>, which sums them. The last report is the
     /// final iteration's, and that is the conversation's real context occupancy. Zero when no

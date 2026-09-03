@@ -187,7 +187,7 @@ public class BenchmarkService
             run.ScoringProfileId = profile.Id;
             run.ScoringProfileSnapshotJson = JsonSerializer.Serialize(profile);
             run.ScoringMethodVersion = BenchmarkAssessmentPrompt.ScoringMethodVersion;
-            run.HarnessVersion = _configuration.GetValue<string>("Benchmark:HarnessVersion", "2");
+            run.HarnessVersion = _configuration.GetValue<string>("Benchmark:HarnessVersion", "3");
 
             string testedApiKey = _cryptoService.Decrypt(testedConfig.EncryptedApiKey, testedConfig.ApiKeyNonce!, testedConfig.ApiKeyTag!, "SYSTEM_API_KEY");
             string assessorApiKey = _cryptoService.Decrypt(assessorConfig.EncryptedApiKey, assessorConfig.ApiKeyNonce!, assessorConfig.ApiKeyTag!, "SYSTEM_API_KEY");
@@ -208,7 +208,14 @@ public class BenchmarkService
             int maxTotalModelCalls = _configuration.GetValue<int>("Benchmark:MaxTotalModelCalls", 12);
             int maxResultLength = _configuration.GetValue<int>("Benchmark:MaxResultLength", 10000);
             int maxCallsPerSession = _configuration.GetValue<int>("Benchmark:MaxCallsPerSession", 50);
-            int maxToolCallsPerQuestion = _configuration.GetValue<int>("Benchmark:MaxToolCallsPerQuestion", 25);
+            int maxToolCallsPerQuestion = _configuration.GetValue<int>("Benchmark:MaxToolCallsPerQuestion", 0);
+            if (maxToolCallsPerQuestion <= 0)
+            {
+                maxToolCallsPerQuestion = DefaultToolCallBudget(BenchmarkDifficulty.Advanced);
+            }
+            // Budgets are resolved per band inside ExecuteSingleQuestionAsync; this run-level
+            // column records the largest of them. BenchmarkRunAnswer.ToolCallBudgetUsed is the
+            // figure that actually applied to a given question.
             run.MaxToolCallsPerQuestionUsed = maxToolCallsPerQuestion;
             await db.SaveChangesAsync(cancellationToken);
 
@@ -481,6 +488,46 @@ public class BenchmarkService
         }
     }
 
+    /// <summary>
+    /// The per-question tool call budget for a question's difficulty band.
+    ///
+    /// Resolution order: <c>Benchmark:ToolCallBudget:{Band}</c>, then the legacy flat
+    /// <c>Benchmark:MaxToolCallsPerQuestion</c> if it is configured, then the band default.
+    /// The band-specific keys sit under a separate prefix on purpose: a configuration key cannot
+    /// be both a value and a section, so reusing <c>MaxToolCallsPerQuestion</c> for both would
+    /// break whichever was read second.
+    /// </summary>
+    private int ResolveToolCallBudget(BenchmarkDifficulty authoredBand, int? assessedDifficulty)
+    {
+        // Prefer the assessed difficulty: the authored band is the question writer's estimate,
+        // and on the reference run Q2 was authored Simple yet consumed all 25 calls.
+        var band = assessedDifficulty.HasValue
+            ? BenchmarkDifficultyBands.BandOf(assessedDifficulty.Value)
+            : authoredBand;
+
+        int banded = _configuration.GetValue<int>($"Benchmark:ToolCallBudget:{band}", 0);
+        if (banded > 0)
+        {
+            return banded;
+        }
+
+        int flat = _configuration.GetValue<int>("Benchmark:MaxToolCallsPerQuestion", 0);
+        if (flat > 0)
+        {
+            return flat;
+        }
+
+        return DefaultToolCallBudget(band);
+    }
+
+    internal static int DefaultToolCallBudget(BenchmarkDifficulty band) => band switch
+    {
+        BenchmarkDifficulty.Simple => 20,
+        BenchmarkDifficulty.Intermediate => 30,
+        BenchmarkDifficulty.Advanced => 40,
+        _ => 30
+    };
+
     private async Task<BenchmarkRunAnswer> ExecuteSingleQuestionAsync(
         ApplicationDbContext db,
         SystemAiConfigService configService,
@@ -496,6 +543,11 @@ public class BenchmarkService
         int maxCallsPerSession,
         CancellationToken cancellationToken)
     {
+        // The budget is resolved per difficulty band, so it differs between questions in one
+        // run. A flat 25 starved advanced questions - Q15 of the 2026-09-03 run (assessed
+        // difficulty 90) had three calls blocked mid-investigation.
+        int toolCallBudget = ResolveToolCallBudget(question.Difficulty, question.AssessedDifficulty);
+
         var runRequest = new AgentRunRequest
         {
             ProviderName = testedConfig.Provider,
@@ -521,7 +573,7 @@ public class BenchmarkService
                 ToolBudgetScopeId = $"bench_{run.Id}_q{question.OrderIndex}",
                 UserId = run.StartedByUserId ?? string.Empty,
                 MaxResultLength = maxResultLength,
-                MaxCallsPerSession = maxCallsPerSession,
+                MaxCallsPerSession = toolCallBudget,
                 ShowDebugLog = false
             },
             SeedHistory = new List<object>
@@ -620,7 +672,11 @@ public class BenchmarkService
             ModelCallCount = runResult.ModelCallCount,
             ToolCallCount = runResult.ToolCallCount,
             ToolBudgetExhausted = runResult.ToolBudgetExhausted,
+            ToolCallBudgetUsed = toolCallBudget,
+            ToolTimeMs = runResult.ToolTimeMs,
             TerminationReason = runResult.TerminationReason,
+            ScrubbedArtifactText = sanitized.ScrubbedArtifactText,
+            ScrubbedArtifactCount = sanitized.ScrubbedArtifactCount,
             AnswerFlags = (int)sanitized.Flags
         };
 
@@ -662,6 +718,8 @@ public class BenchmarkService
         int maxCallsPerSession,
         CancellationToken cancellationToken)
     {
+        int toolCallBudget = ResolveToolCallBudget(answer.Difficulty, answer.AssessedDifficulty);
+
         var runRequest = new AgentRunRequest
         {
             ProviderName = testedConfig.Provider,
@@ -687,7 +745,7 @@ public class BenchmarkService
                 ToolBudgetScopeId = $"bench_{run.Id}_q{answer.OrderIndex}",
                 UserId = run.StartedByUserId ?? string.Empty,
                 MaxResultLength = maxResultLength,
-                MaxCallsPerSession = maxCallsPerSession,
+                MaxCallsPerSession = toolCallBudget,
                 ShowDebugLog = false
             },
             SeedHistory = new List<object>
@@ -777,7 +835,11 @@ public class BenchmarkService
         answer.ModelCallCount = runResult.ModelCallCount;
         answer.ToolCallCount = runResult.ToolCallCount;
         answer.ToolBudgetExhausted = runResult.ToolBudgetExhausted;
+        answer.ToolCallBudgetUsed = toolCallBudget;
+        answer.ToolTimeMs = runResult.ToolTimeMs;
         answer.TerminationReason = runResult.TerminationReason;
+        answer.ScrubbedArtifactText = sanitized.ScrubbedArtifactText;
+        answer.ScrubbedArtifactCount = sanitized.ScrubbedArtifactCount;
         answer.AnswerFlags = (int)sanitized.Flags;
 
         await db.SaveChangesAsync(CancellationToken.None);
@@ -825,7 +887,9 @@ public class BenchmarkService
             answer.Status,
             allowedTools,
             answer.ToolCallCount ?? 0,
-            answer.ToolBudgetExhausted);
+            answer.ToolBudgetExhausted,
+            answer.ScrubbedArtifactCount,
+            answer.ToolCallBudgetUsed);
 
         int assessorMaxTokens = _configuration.GetValue<int>("Benchmark:AssessorMaxOutputTokens", 32000);
 
@@ -923,7 +987,10 @@ public class BenchmarkService
 
             answer.QualityScore = qualityScore;
             answer.RawQualityScore = rawQualityScore;
-            answer.SpeedScore = BenchmarkScoring.Speed(answer.DurationMs, constants);
+            answer.SpeedScore = BenchmarkScoring.Speed(
+                answer.ModelTimeMs,
+                answer.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(answer.Difficulty),
+                constants);
             answer.Score = qualityScore; // Legacy field backfill
             answer.AssessmentStatus = BenchmarkAssessmentStatus.Scored;
             answer.AssessmentError = null;
@@ -1630,7 +1697,10 @@ public class BenchmarkService
 
             a.QualityScore = quality;
             a.RawQualityScore = rawQuality;
-            a.SpeedScore = BenchmarkScoring.Speed(a.DurationMs, constants);
+            a.SpeedScore = BenchmarkScoring.Speed(
+                a.ModelTimeMs,
+                a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty),
+                constants);
             a.Score = quality;
         }
 
@@ -1639,13 +1709,10 @@ public class BenchmarkService
             .Select(a => (a.QualityScore, a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty)))
             .ToList();
 
-        var speedItems = run.Answers
-            .Where(a => a.Status == BenchmarkAnswerStatus.Ok && a.SpeedScore.HasValue)
-            .Select(a => (a.SpeedScore, a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty)))
-            .ToList();
-
         run.QualityIndex = BenchmarkScoring.QualityIndex(scorableItems);
-        run.SpeedIndex = BenchmarkScoring.SpeedIndex(speedItems);
+        run.SpeedIndex = BenchmarkScoring.SpeedIndex(run.Answers
+            .Where(a => a.Status == BenchmarkAnswerStatus.Ok && a.SpeedScore.HasValue)
+            .Select(a => a.SpeedScore));
 
         await db.SaveChangesAsync();
         _logger.LogInformation("Successfully re-scored benchmark run {RunId} using profile '{ProfileName}'.", runId, profile.Name);
