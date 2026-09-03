@@ -576,6 +576,10 @@
     width: 100%;
     margin-bottom: 0;
   }
+
+  .coverage-model-selector {
+    max-width: 480px;
+  }
 }
 
 // --- Model selector ---
@@ -779,6 +783,10 @@
       font-weight: 500;
       color: var(--text-muted, #94a3b8);
     }
+  }
+
+  .rubric-checker-selector {
+    max-width: 480px;
   }
 
   .rubric-check-actions {
