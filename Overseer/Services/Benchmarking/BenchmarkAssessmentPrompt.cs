@@ -43,8 +43,13 @@ public static class BenchmarkAssessmentPrompt
     ///     transport defects; executed/blocked tool calls reported separately.
     /// v4: per-question assessor usage recorded, and a second-opinion re-assessment pass for
     ///     critical errors and low scores.
+    /// v5: pre-tool visible text is always moved to the thought channel instead of leaking into
+    ///     the graded answer when a reasoning summary follows it; the benchmark scrubber's
+    ///     narration rules widened as a second line of defence; and per-question tool caps moved
+    ///     from four flat keys to four difficulty-banded ones. Both changes alter what a model is
+    ///     graded on, so runs before and after are not strictly comparable.
     /// </summary>
-    public const string HarnessVersion = "4";
+    public const string HarnessVersion = "5";
 
     public static string BuildPerQuestionPrompt(
         string suiteName,

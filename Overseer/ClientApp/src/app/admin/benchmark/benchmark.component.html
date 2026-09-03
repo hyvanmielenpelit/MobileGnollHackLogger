@@ -139,8 +139,8 @@
             </div>
           </div>
 
-          <!-- Row 2: Model Under Test and Assessor Model -->
-          <div class="form-row two-cols">
+          <!-- Row 2: Model Under Test, Assessor Model, and Second Opinion Assessor -->
+          <div class="form-row three-cols">
             <!-- Model Under Test -->
             <div class="form-group">
               <label>Model Under Test</label>
@@ -242,14 +242,12 @@
                 }
               </div>
             </div>
-          </div>
 
-          <!-- Row 3: Second Opinion Assessor.
-               Optional, and off by default: a second opinion spends assessor tokens, and it is
-               only worth having from a *different* model, so there is no automatic fallback to
-               the assessor above. Selected here like every other model, never in configuration:
-               a System AI Config is a database row an administrator manages in this UI. -->
-          <div class="form-row">
+            <!-- Second Opinion Assessor.
+                 Optional, and off by default: a second opinion spends assessor tokens, and it is
+                 only worth having from a *different* model, so there is no automatic fallback to
+                 the assessor above. Selected here like every other model, never in configuration:
+                 a System AI Config is a database row an administrator manages in this UI. -->
             <div class="form-group">
               <label>Second Opinion Assessor (optional)</label>
               <div class="custom-model-selector second-opinion-model-selector">

@@ -10,7 +10,10 @@ public record SanitizedAnswer(
     string? ThoughtText,
     string? ScrubbedArtifactText,
     int ScrubbedArtifactCount,
-    BenchmarkAnswerFlags Flags);
+    BenchmarkAnswerFlags Flags,
+    // Narration blocks the scrubber removed — see BenchmarkScrubResult.NarrationBlockCount.
+    // Surfaced here only; it is not persisted as a column of its own.
+    int NarrationBlockCount = 0);
 
 public static class HarnessArtifactDetector
 {
@@ -114,6 +117,7 @@ public static class BenchmarkAnswerSanitizer
             thoughtText,
             scrubResult.ArtifactText,
             scrubResult.ArtifactBlockCount,
-            flags);
+            flags,
+            scrubResult.NarrationBlockCount);
     }
 }

@@ -23,12 +23,30 @@ public record BenchmarkScoringConstants
 
     // Speed constants are pinned to two invariants rather than to a convention:
     //
-    //  1. The score floor must be unreachable within Benchmark:PerQuestionTimeoutSeconds (300 s)
-    //     at every difficulty, so any answer that did not time out gets a distinguishing score.
+    //  1. The score floor must be unreachable within Benchmark:QuestionTimeoutSeconds:{Band} at
+    //     every difficulty, so any answer that did not time out gets a distinguishing score.
     //     The previous 5000 ms / k=25 pair violated this — it floored at ~78 s, which tied six
     //     of eighteen answers together on the 2026-09-03 run and made the index uninformative.
     //  2. A perfect score stays reserved for a genuinely fast turn, so the metric does not
     //     compress at the top instead of at the bottom.
+    //
+    // Invariant 1 is why the per-question timeout is banded rather than flat. The floor is
+    // reached at ModelTime / Target(q) = 2^(99/20) ≈ 30.91, and Target(q) grows with difficulty,
+    // so the binding case inside a band is its *lowest* difficulty — the smallest target, and
+    // therefore the earliest floor:
+    //
+    //     Band          Lowest diff.  Target(q)   Floor at   Timeout   Margin
+    //     Simple                   1   15,150 ms    ~468 s     420 s    ~48 s
+    //     Intermediate            36   20,400 ms    ~631 s     600 s    ~31 s
+    //     Advanced                71   25,650 ms    ~793 s     720 s    ~73 s
+    //
+    // A flat 720 s — the value an Advanced question needs to spend 45 tool calls over 22 rounds
+    // — would let a Simple question run ~250 s past its own 468 s floor without timing out, so
+    // every Simple answer slower than 468 s would score 1 and be indistinguishable from every
+    // other slow one. That is the exact failure these constants exist to prevent, and it is what
+    // the old 5000 ms / k=25 pair actually did. BenchmarkScoringTests asserts
+    // every margin above, so editing either these constants or the timeout bands without
+    // re-deriving the table fails the build rather than quietly degrading the metric.
     public int SpeedTargetMs { get; init; } = 15000;
     public double SpeedDecayK { get; init; } = 20.0;
 

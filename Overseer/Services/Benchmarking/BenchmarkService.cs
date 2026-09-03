@@ -204,18 +204,14 @@ public class BenchmarkService
             run.SpeedMeasurementDegraded = maxParallel > 1;
 
             var allowedTools = _configuration.GetSection("Benchmark:AllowedTools").Get<List<string>>() ?? _defaultAllowedTools;
-            int maxToolIterations = _configuration.GetValue<int>("Benchmark:MaxToolIterations", 8);
-            int maxTotalModelCalls = _configuration.GetValue<int>("Benchmark:MaxTotalModelCalls", 12);
             int maxResultLength = _configuration.GetValue<int>("Benchmark:MaxResultLength", 10000);
             int maxCallsPerSession = _configuration.GetValue<int>("Benchmark:MaxCallsPerSession", 50);
-            int maxToolCallsPerQuestion = _configuration.GetValue<int>("Benchmark:MaxToolCallsPerQuestion", 0);
-            if (maxToolCallsPerQuestion <= 0)
-            {
-                maxToolCallsPerQuestion = DefaultToolCallBudget(BenchmarkDifficulty.Advanced);
-            }
             // Budgets are resolved per band inside ExecuteSingleQuestionAsync; this run-level
-            // column records the largest of them. BenchmarkRunAnswer.ToolCallBudgetUsed is the
-            // figure that actually applied to a given question.
+            // column records the largest of them, which is the Advanced band's. Resolving it
+            // through ResolveToolCallBudget rather than the band default keeps a configuration
+            // override visible here. BenchmarkRunAnswer.ToolCallBudgetUsed is the figure that
+            // actually applied to a given question.
+            int maxToolCallsPerQuestion = ResolveToolCallBudget(BenchmarkDifficulty.Advanced, null);
             run.MaxToolCallsPerQuestionUsed = maxToolCallsPerQuestion;
             await db.SaveChangesAsync(cancellationToken);
 
@@ -263,7 +259,7 @@ public class BenchmarkService
 
                     var ans = await ExecuteSingleQuestionAsync(
                         db, configService, run, question, testedConfig, testedApiKey,
-                        systemPrompt, allowedTools, maxToolIterations, maxTotalModelCalls,
+                        systemPrompt, allowedTools,
                         maxResultLength, maxToolCallsPerQuestion, cancellationToken);
 
                     createdAnswers.Add(ans);
@@ -292,7 +288,7 @@ public class BenchmarkService
 
                         var ans = await ExecuteSingleQuestionAsync(
                             qDb, qConfigService, run, question, testedConfig, testedApiKey,
-                            systemPrompt, allowedTools, maxToolIterations, maxTotalModelCalls,
+                            systemPrompt, allowedTools,
                             maxResultLength, maxToolCallsPerQuestion, cancellationToken);
 
                         createdAnswers.Add(ans);
@@ -430,8 +426,6 @@ public class BenchmarkService
             var scoringConstants = _scoringProfileService.ToConstants(profile);
 
             var allowedTools = _configuration.GetSection("Benchmark:AllowedTools").Get<List<string>>() ?? _defaultAllowedTools;
-            int maxToolIterations = _configuration.GetValue<int>("Benchmark:MaxToolIterations", 8);
-            int maxTotalModelCalls = _configuration.GetValue<int>("Benchmark:MaxTotalModelCalls", 12);
             int maxResultLength = _configuration.GetValue<int>("Benchmark:MaxResultLength", 10000);
             int maxCallsPerSession = _configuration.GetValue<int>("Benchmark:MaxCallsPerSession", 50);
 
@@ -466,7 +460,7 @@ public class BenchmarkService
 
                 await ReExecuteSingleAnswerAsync(
                     db, configService, run, answer, testedConfig, testedApiKey,
-                    systemPrompt, allowedTools, maxToolIterations, maxTotalModelCalls,
+                    systemPrompt, allowedTools,
                     maxResultLength, maxCallsPerSession, cancellationToken);
 
                 suiteQuestions.TryGetValue(answer.OrderIndex, out var ep);
@@ -489,43 +483,121 @@ public class BenchmarkService
     }
 
     /// <summary>
-    /// The per-question tool call budget for a question's difficulty band.
+    /// The difficulty band whose caps apply to a question.
     ///
-    /// Resolution order: <c>Benchmark:ToolCallBudget:{Band}</c>, then the legacy flat
-    /// <c>Benchmark:MaxToolCallsPerQuestion</c> if it is configured, then the band default.
-    /// The band-specific keys sit under a separate prefix on purpose: a configuration key cannot
-    /// be both a value and a section, so reusing <c>MaxToolCallsPerQuestion</c> for both would
-    /// break whichever was read second.
+    /// Prefer the assessed difficulty: the authored band is the question writer's estimate, and
+    /// on the reference run Q2 was authored Simple yet consumed all 25 calls. All four
+    /// per-question caps resolve through this one helper so a question cannot take its budget
+    /// from one band and its timeout from another — a mismatch nothing downstream could detect.
     /// </summary>
-    private int ResolveToolCallBudget(BenchmarkDifficulty authoredBand, int? assessedDifficulty)
-    {
-        // Prefer the assessed difficulty: the authored band is the question writer's estimate,
-        // and on the reference run Q2 was authored Simple yet consumed all 25 calls.
-        var band = assessedDifficulty.HasValue
+    private static BenchmarkDifficulty BandFor(BenchmarkDifficulty authoredBand, int? assessedDifficulty)
+        => assessedDifficulty.HasValue
             ? BenchmarkDifficultyBands.BandOf(assessedDifficulty.Value)
             : authoredBand;
 
-        int banded = _configuration.GetValue<int>($"Benchmark:ToolCallBudget:{band}", 0);
-        if (banded > 0)
-        {
-            return banded;
-        }
+    /// <summary>
+    /// Reads a banded per-question cap, falling back to the supplied band default.
+    ///
+    /// The banded keys sit under their own section prefix on purpose: a configuration key cannot
+    /// be both a value and a section, so a flat <c>Benchmark:MaxFoo</c> and a banded
+    /// <c>Benchmark:MaxFoo:{Band}</c> cannot coexist — whichever was read second would break.
+    /// The flat keys the four banded sections replaced (<c>MaxToolCallsPerQuestion</c>,
+    /// <c>MaxToolIterations</c>, <c>MaxTotalModelCalls</c>, <c>PerQuestionTimeoutSeconds</c>)
+    /// were removed rather than kept as fallbacks, so there is exactly one place an operator can
+    /// set each cap.
+    /// </summary>
+    private int ResolveBandedCap(string section, BenchmarkDifficulty band, int bandDefault)
+    {
+        int banded = _configuration.GetValue<int>($"Benchmark:{section}:{band}", 0);
+        return banded > 0 ? banded : bandDefault;
+    }
 
-        int flat = _configuration.GetValue<int>("Benchmark:MaxToolCallsPerQuestion", 0);
-        if (flat > 0)
-        {
-            return flat;
-        }
+    /// <summary>
+    /// Total tool calls a question may execute. This is the cap that is meant to bind on a
+    /// saturated question: exhausting it blocks further calls, flags the answer
+    /// <c>ToolBudgetExhausted</c>, and is explained in the run report. The other three caps are
+    /// sized so they do not bind first.
+    /// </summary>
+    private int ResolveToolCallBudget(BenchmarkDifficulty authoredBand, int? assessedDifficulty)
+    {
+        var band = BandFor(authoredBand, assessedDifficulty);
+        return ResolveBandedCap("ToolCallBudget", band, DefaultToolCallBudget(band));
+    }
 
-        return DefaultToolCallBudget(band);
+    /// <summary>
+    /// Sequential tool rounds — one model call plus the batch of tool calls it emitted, then the
+    /// results fed back. This bounds an investigation's *depth*, not its width: a model batching
+    /// three calls per round spends three times the budget per iteration, and the 2026-09-03 run
+    /// batched at roughly that rate when saturated. Sized at about half the tool call budget, so
+    /// a model batching two calls per round can still spend the whole budget.
+    /// </summary>
+    private int ResolveToolIterations(BenchmarkDifficulty authoredBand, int? assessedDifficulty)
+    {
+        var band = BandFor(authoredBand, assessedDifficulty);
+        return ResolveBandedCap("ToolIterations", band, DefaultToolIterations(band));
+    }
+
+    /// <summary>
+    /// Total provider requests for the question. A runaway-loop safety net, not a tuning knob:
+    /// hitting it forces a final response with only a debug line to show for it, so it is sized
+    /// four to six above the iteration cap and must never be the cap that stops a healthy
+    /// question.
+    /// </summary>
+    private int ResolveTotalModelCalls(BenchmarkDifficulty authoredBand, int? assessedDifficulty)
+    {
+        var band = BandFor(authoredBand, assessedDifficulty);
+        return ResolveBandedCap("TotalModelCalls", band, DefaultTotalModelCalls(band));
+    }
+
+    /// <summary>
+    /// The per-question wall-clock timeout.
+    ///
+    /// Banded rather than flat because it is pinned between two constraints. From above, a
+    /// saturated Advanced question spending 45 tool calls over 22 rounds approaches the old flat
+    /// 300 s. From below, <see cref="BenchmarkScoringConstants.SpeedTargetMs"/> and
+    /// <see cref="BenchmarkScoringConstants.SpeedDecayK"/> are pinned to the invariant that the
+    /// speed score floor stays unreachable within this timeout at every difficulty; the binding
+    /// case inside a band is its *lowest* difficulty, which has the smallest speed target and so
+    /// the earliest floor. A flat 720 s would put the Simple band's floor (about 468 s) 300 s
+    /// inside the timeout and flatten the Speed Index — the exact failure those constants exist
+    /// to avoid. <c>BenchmarkScoringTests</c> asserts the margins.
+    /// </summary>
+    private int ResolveQuestionTimeoutSeconds(BenchmarkDifficulty authoredBand, int? assessedDifficulty)
+    {
+        var band = BandFor(authoredBand, assessedDifficulty);
+        return ResolveBandedCap("QuestionTimeoutSeconds", band, DefaultQuestionTimeoutSeconds(band));
     }
 
     internal static int DefaultToolCallBudget(BenchmarkDifficulty band) => band switch
     {
-        BenchmarkDifficulty.Simple => 20,
-        BenchmarkDifficulty.Intermediate => 30,
-        BenchmarkDifficulty.Advanced => 40,
-        _ => 30
+        BenchmarkDifficulty.Simple => 25,
+        BenchmarkDifficulty.Intermediate => 35,
+        BenchmarkDifficulty.Advanced => 45,
+        _ => 35
+    };
+
+    internal static int DefaultToolIterations(BenchmarkDifficulty band) => band switch
+    {
+        BenchmarkDifficulty.Simple => 12,
+        BenchmarkDifficulty.Intermediate => 16,
+        BenchmarkDifficulty.Advanced => 22,
+        _ => 16
+    };
+
+    internal static int DefaultTotalModelCalls(BenchmarkDifficulty band) => band switch
+    {
+        BenchmarkDifficulty.Simple => 16,
+        BenchmarkDifficulty.Intermediate => 22,
+        BenchmarkDifficulty.Advanced => 28,
+        _ => 22
+    };
+
+    internal static int DefaultQuestionTimeoutSeconds(BenchmarkDifficulty band) => band switch
+    {
+        BenchmarkDifficulty.Simple => 420,
+        BenchmarkDifficulty.Intermediate => 600,
+        BenchmarkDifficulty.Advanced => 720,
+        _ => 600
     };
 
     private async Task<BenchmarkRunAnswer> ExecuteSingleQuestionAsync(
@@ -537,16 +609,17 @@ public class BenchmarkService
         string testedApiKey,
         string systemPrompt,
         List<string> allowedTools,
-        int maxToolIterations,
-        int maxTotalModelCalls,
         int maxResultLength,
         int maxCallsPerSession,
         CancellationToken cancellationToken)
     {
-        // The budget is resolved per difficulty band, so it differs between questions in one
-        // run. A flat 25 starved advanced questions - Q15 of the 2026-09-03 run (assessed
-        // difficulty 90) had three calls blocked mid-investigation.
+        // All four caps are resolved per difficulty band, so they differ between questions in
+        // one run. A flat 25 starved advanced questions - Q11, Q16 and Q18 of the 2026-09-03 run
+        // each exhausted it and had further calls blocked mid-investigation, which alone moved
+        // an otherwise clean run to CompletedWithLimits.
         int toolCallBudget = ResolveToolCallBudget(question.Difficulty, question.AssessedDifficulty);
+        int maxToolIterations = ResolveToolIterations(question.Difficulty, question.AssessedDifficulty);
+        int maxTotalModelCalls = ResolveTotalModelCalls(question.Difficulty, question.AssessedDifficulty);
 
         var runRequest = new AgentRunRequest
         {
@@ -582,7 +655,7 @@ public class BenchmarkService
             }
         };
 
-        int perQuestionTimeoutSec = _configuration.GetValue<int>("Benchmark:PerQuestionTimeoutSeconds", 300);
+        int perQuestionTimeoutSec = ResolveQuestionTimeoutSeconds(question.Difficulty, question.AssessedDifficulty);
         using var questionCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         questionCts.CancelAfter(TimeSpan.FromSeconds(perQuestionTimeoutSec));
 
@@ -721,13 +794,13 @@ public class BenchmarkService
         string testedApiKey,
         string systemPrompt,
         List<string> allowedTools,
-        int maxToolIterations,
-        int maxTotalModelCalls,
         int maxResultLength,
         int maxCallsPerSession,
         CancellationToken cancellationToken)
     {
         int toolCallBudget = ResolveToolCallBudget(answer.Difficulty, answer.AssessedDifficulty);
+        int maxToolIterations = ResolveToolIterations(answer.Difficulty, answer.AssessedDifficulty);
+        int maxTotalModelCalls = ResolveTotalModelCalls(answer.Difficulty, answer.AssessedDifficulty);
 
         var runRequest = new AgentRunRequest
         {
@@ -763,7 +836,7 @@ public class BenchmarkService
             }
         };
 
-        int perQuestionTimeoutSec = _configuration.GetValue<int>("Benchmark:PerQuestionTimeoutSeconds", 300);
+        int perQuestionTimeoutSec = ResolveQuestionTimeoutSeconds(answer.Difficulty, answer.AssessedDifficulty);
         using var questionCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         questionCts.CancelAfter(TimeSpan.FromSeconds(perQuestionTimeoutSec));
 
@@ -2058,11 +2131,9 @@ public class BenchmarkService
             var scoringConstants = _scoringProfileService.ToConstants(profile);
 
             var allowedTools = _configuration.GetSection("Benchmark:AllowedTools").Get<List<string>>() ?? _defaultAllowedTools;
-            int maxToolIterations = _configuration.GetValue<int>("Benchmark:MaxToolIterations", 8);
-            int maxTotalModelCalls = _configuration.GetValue<int>("Benchmark:MaxTotalModelCalls", 12);
             int maxResultLength = _configuration.GetValue<int>("Benchmark:MaxResultLength", 10000);
             int maxCallsPerSession = _configuration.GetValue<int>("Benchmark:MaxCallsPerSession", 50);
-            int maxToolCallsPerQuestion = _configuration.GetValue<int>("Benchmark:MaxToolCallsPerQuestion", 25);
+            int maxToolCallsPerQuestion = ResolveToolCallBudget(BenchmarkDifficulty.Advanced, null);
 
             string systemPrompt = _chatService.BuildSystemPrompt(
                 wikiContext: Array.Empty<string>(),
@@ -2084,7 +2155,7 @@ public class BenchmarkService
 
             await ReExecuteSingleAnswerAsync(
                 db, configService, run, answer, testedConfig, testedApiKey,
-                systemPrompt, allowedTools, maxToolIterations, maxTotalModelCalls,
+                systemPrompt, allowedTools,
                 maxResultLength, maxToolCallsPerQuestion, cancellationToken);
 
             await ExecutePerQuestionAssessmentAsync(

@@ -2048,4 +2048,66 @@ describe('AdminBenchmarkComponent', () => {
       expect(benchmarkServiceMock.createScoringProfile).not.toHaveBeenCalled();
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Layout regression guards: the three model selectors share one row, and the
+  // run-model-strip in the progress dialog shares one column edge between rows.
+  // ---------------------------------------------------------------------------
+  describe('model selector row layout', () => {
+    it('should place Model Under Test, Assessor Model, and Second Opinion Assessor in one .form-row.three-cols', () => {
+      component.activeSubTab = 'run';
+      fixture.detectChanges();
+
+      const rows = fixture.nativeElement.querySelectorAll('.form-row.three-cols');
+      expect(rows.length).toBe(1);
+
+      const groups = Array.from(rows[0].querySelectorAll(':scope > .form-group')) as HTMLElement[];
+      expect(groups.length).toBe(3);
+      expect(groups[0].querySelector('label')?.textContent?.trim()).toBe('Model Under Test');
+      expect(groups[1].querySelector('label')?.textContent?.trim()).toBe('Assessor Model (Evaluator)');
+      expect(groups[2].querySelector('label')?.textContent?.trim()).toBe('Second Opinion Assessor (optional)');
+
+      // The explanatory hint travels with the second-opinion selector, not loose in the row.
+      const hint = groups[2].querySelector('.form-hint');
+      expect(hint).toBeTruthy();
+      expect(hint!.textContent).toContain('Re-grades any answer flagged with a critical error');
+    });
+
+    it('should render both dt/dd pairs and keep .run-model-row present in the run-model-strip', () => {
+      component.activeRunDetail = {
+        id: 42,
+        status: 'Running',
+        suiteName: 'Default Suite',
+        testedModelDisplayNameUsed: 'Gemini 3.7 Flash',
+        testedModelProviderUsed: 'Google',
+        testedModelIdUsed: 'gemini-3.7-flash',
+        testedModelParallelExecutionModeUsed: 2,
+        assessorModelDisplayNameUsed: 'GPT-5.6 Luna',
+        assessorModelProviderUsed: 'OpenAI',
+        assessorModelIdUsed: 'gpt-5.6-luna',
+        totalQuestionCount: 10,
+        answers: []
+      } as any;
+      component.isRunProgressDialogOpen = true;
+      fixture.detectChanges();
+
+      const strip = fixture.nativeElement.querySelector('.run-model-strip');
+      expect(strip).toBeTruthy();
+
+      const rows = strip.querySelectorAll('.run-model-row');
+      expect(rows.length).toBe(2);
+
+      const dts = strip.querySelectorAll('dt');
+      const dds = strip.querySelectorAll('dd');
+      expect(dts.length).toBe(2);
+      expect(dds.length).toBe(2);
+      expect(dts[0].textContent?.trim()).toBe('Model under test');
+      expect(dds[0].textContent).toContain('Gemini 3.7 Flash');
+      expect(dts[1].textContent?.trim()).toBe('Evaluator');
+      expect(dds[1].textContent).toContain('GPT-5.6 Luna');
+
+      // The alignment itself comes from the grid CSS (max-content / minmax(0, 1fr)),
+      // which a unit test cannot assert — only that the markup it depends on is present.
+    });
+  });
 });

@@ -209,8 +209,181 @@ public class BenchmarkArtifactScrubberTests
     }
 
     // ---------------------------------------------------------------------------------------
+    // The five ways the single-pass narration rule failed on the 2026-09-03 run. Each of these
+    // reached the assessor with the model's tool-use narration still in the answer, and each
+    // was penalised for conciseness and readability — while the report claimed the text had
+    // been removed before grading.
+    // ---------------------------------------------------------------------------------------
+
+    [Fact]
+    public void ButtedNarrationSentence_IsRemovedLeavingTheAnswerItWasGluedTo()
+    {
+        // No separator at all between the narration and the answer, so no paragraph rule can
+        // see the boundary: the split has to happen between sentences.
+        string raw =
+            "I have the needed behavior; I’m keeping the final answer focused on the three " +
+            "words and their branch restrictions.In GnollHack, runewords are **magical words " +
+            "engraved on the floor**, not properties added to weapons or armor. There are " +
+            "exactly three:\n\n" +
+            "| Runeword | Effect | Branch |\n" +
+            "|---|---|---|\n" +
+            "| ELBERETH | scares most monsters | anywhere except Gehennom |\n";
+
+        var result = Scrubber.Scrub(raw);
+
+        Assert.StartsWith("In GnollHack, runewords are", result.AnswerText);
+        Assert.DoesNotContain("I have the needed behavior", result.AnswerText);
+        Assert.DoesNotContain("keeping the final answer focused", result.AnswerText);
+        Assert.Contains("| ELBERETH |", result.AnswerText);
+
+        Assert.NotNull(result.ArtifactText);
+        Assert.Contains("keeping the final answer focused", result.ArtifactText);
+        Assert.Equal(1, result.NarrationBlockCount);
+        Assert.True(result.Flags.HasFlag(BenchmarkAnswerFlags.ReasoningBleed));
+    }
+
+    [Fact]
+    public void WhitespaceOnlyLineSeparators_StillSplitParagraphs()
+    {
+        // The narration was separated from the answer by lines carrying a single space, so
+        // IndexOf("\n\n") skipped past them and the oversized "first paragraph" swept up the
+        // bullet list below, tripping the Markdown-structure guard.
+        string raw =
+            "I’m verifying whether GnollHack exposes the counter through a command or priest " +
+            "consultation.I’m checking the command text for the prayer-conduct query.   " +
+            "abcedary\n" +
+            " \n \n \n" +
+            "Prayer timeout is a **countdown in game turns**, not a fixed real-time " +
+            "cooldown.\n\n" +
+            "- It decreases by one on each turn that passes.\n" +
+            "- Praying while it is above zero counts as praying too soon.\n";
+
+        var result = Scrubber.Scrub(raw);
+
+        Assert.StartsWith("Prayer timeout is a", result.AnswerText);
+        Assert.DoesNotContain("I’m verifying", result.AnswerText);
+        Assert.DoesNotContain("abcedary", result.AnswerText);
+        Assert.Contains("It decreases by one on each turn", result.AnswerText);
+
+        Assert.NotNull(result.ArtifactText);
+        Assert.Contains("abcedary", result.ArtifactText);
+        Assert.Equal(1, result.NarrationBlockCount);
+        Assert.True(result.Flags.HasFlag(BenchmarkAnswerFlags.ReasoningBleed));
+    }
+
+    [Fact]
+    public void FiveConsecutiveNarrationParagraphs_AreAllRemoved()
+    {
+        // A single pass removed one and left four, which is how narration survived into the
+        // graded answer even where the rule fired.
+        string raw =
+            "I’m checking how spell skills are tracked in the source.\n\n" +
+            "I’m verifying whether each school advances independently.\n\n" +
+            "I need the exact skill enumeration before describing the progression.\n\n" +
+            "I’m narrowing the search to the spell-skill training routine.\n\n" +
+            "I’ve confirmed the twelve schools; I’m pulling the advancement thresholds.\n\n" +
+            "Think of GnollHack spells as **twelve independently trainable magic skills**, " +
+            "rather than one general spellcasting ability.\n\n" +
+            "## The twelve schools\n\n" +
+            "Each school advances on its own, from Unskilled up to Grand Master.\n";
+
+        var result = Scrubber.Scrub(raw);
+
+        Assert.StartsWith("Think of GnollHack spells", result.AnswerText);
+        Assert.DoesNotContain("I’m checking", result.AnswerText);
+        Assert.DoesNotContain("I need the exact", result.AnswerText);
+        Assert.DoesNotContain("I’ve confirmed", result.AnswerText);
+        Assert.Contains("## The twelve schools", result.AnswerText);
+
+        Assert.Equal(5, result.NarrationBlockCount);
+        Assert.NotNull(result.ArtifactText);
+        Assert.Contains("spell-skill training routine", result.ArtifactText);
+        Assert.True(result.Flags.HasFlag(BenchmarkAnswerFlags.ReasoningBleed));
+    }
+
+    [Fact]
+    public void LeadingOrphanBacktick_IsRemovedSoTheNarrationBehindItIsSeen()
+    {
+        // A lone backtick on its own line, then a double-backtick-prefixed narration
+        // paragraph. Neither run is a fence — a fence needs three — so both are transport junk,
+        // and the stray backticks are what previously stopped the narration rule from matching.
+        string raw =
+            "`\n\n" +
+            "``I’m verifying the breath routine’s edge cases in the source before finalizing " +
+            "the tactical warnings.\n\n" +
+            "A red dragon’s breath is a **line attack** reaching up to eight squares, so " +
+            "closing to melee range suppresses it entirely.\n";
+
+        var result = Scrubber.Scrub(raw);
+
+        Assert.StartsWith("A red dragon’s breath", result.AnswerText);
+        Assert.DoesNotContain("I’m verifying", result.AnswerText);
+        Assert.DoesNotContain("``", result.AnswerText);
+
+        Assert.NotNull(result.ArtifactText);
+        Assert.Contains("breath routine", result.ArtifactText);
+        Assert.Contains("`", result.ArtifactText);
+        Assert.Equal(1, result.NarrationBlockCount);
+    }
+
+    [Fact]
+    public void NarrationVerbsTheOriginalListMissed_AreRecognised()
+    {
+        // "I need the ..." matched none of the original openers, and "checking those
+        // definitions" was the only phrase in the paragraph the old verb list could have caught
+        // — attached to an opener form it did not know.
+        string raw =
+            "I need the exact callback signature and payload layout, so I’m checking those " +
+            "definitions rather than inferring them from the layer enum.\n\n" +
+            "The tile callback receives a layer index and a glyph, and is invoked once per " +
+            "visible layer of each map square.";
+
+        var result = Scrubber.Scrub(raw);
+
+        Assert.StartsWith("The tile callback receives", result.AnswerText);
+        Assert.DoesNotContain("I need the exact", result.AnswerText);
+        Assert.Equal(1, result.NarrationBlockCount);
+        Assert.True(result.Flags.HasFlag(BenchmarkAnswerFlags.ReasoningBleed));
+    }
+
+    // ---------------------------------------------------------------------------------------
     // Negative fixtures — authored content that must survive untouched.
     // ---------------------------------------------------------------------------------------
+
+    [Fact]
+    public void AnswerOpeningWithIWillExplain_SurvivesUntouched()
+    {
+        // The widened verb list must not reach an ordinary answer opening. "explain",
+        // "describe" and their kin are deliberately absent from it, and this pins that.
+        string raw =
+            "I will explain how prayer timeout works in GnollHack.\n\n" +
+            "Prayer timeout is a countdown measured in game turns. It is set when your god " +
+            "grants a boon, and it decreases by one on every turn that passes.\n\n" +
+            "- At or below zero, praying is safe.\n" +
+            "- Above zero, praying angers your god.";
+
+        var result = Scrubber.Scrub(raw);
+
+        Assert.Equal(raw, result.AnswerText);
+        Assert.Equal(BenchmarkAnswerFlags.None, result.Flags);
+        Assert.Equal(0, result.NarrationBlockCount);
+        Assert.Null(result.ArtifactText);
+    }
+
+    [Fact]
+    public void NarrationOnlyAnswer_IsNeverEmptiedBySentenceStripping()
+    {
+        // Two run-together narration sentences and nothing else. Dropping both would leave an
+        // empty answer and destroy the evidence of what the model actually produced, so the
+        // sentence rule declines instead.
+        string raw = "I’m verifying the prayer timeout table.I’m checking the alignment record next.";
+
+        var result = Scrubber.Scrub(raw);
+
+        Assert.Equal(raw, result.AnswerText);
+        Assert.Equal(0, result.NarrationBlockCount);
+        Assert.False(result.Flags.HasFlag(BenchmarkAnswerFlags.ReasoningBleed));
+    }
 
     [Fact]
     public void FencedJsonBlock_SurvivesUntouched()

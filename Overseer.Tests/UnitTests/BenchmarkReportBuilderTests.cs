@@ -308,4 +308,310 @@ public class BenchmarkReportBuilderTests
         Assert.Contains("Advanced (71–100)", report);
         Assert.Contains("Authored Band Distribution", report);
     }
+
+    // --- Heading demotion ---------------------------------------------------------------
+    //
+    // Question headings render as "### Question N", so answer headings are demoted to sit
+    // strictly below that: minLevel 4. These call the internal method directly (Overseer.csproj
+    // grants InternalsVisibleTo Overseer.Tests) because the interesting cases are about the
+    // transformation itself, not about locating it inside a full report.
+
+    [Fact]
+    public void DemoteAnswerHeadings_ShiftsEveryHeadingByTheSameAmount()
+    {
+        string answer = "## Top\n\nSome text.\n\n### Sub\n\nMore text.";
+
+        string result = BenchmarkReportBuilder.DemoteAnswerHeadings(answer, minLevel: 4);
+
+        // Shallowest heading is "## Top" (level 2); shift = minLevel(4) - 2 = 2, applied to
+        // every heading, so "### Sub" (level 3) becomes level 5, not level 4.
+        string expected = "#### Top\n\nSome text.\n\n##### Sub\n\nMore text.";
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public void DemoteAnswerHeadings_LeavesTextUnchanged_WhenShallowestHeadingAlreadyAtMinLevel()
+    {
+        string answer = "#### Already Deep Enough\n\nBody text.";
+
+        string result = BenchmarkReportBuilder.DemoteAnswerHeadings(answer, minLevel: 4);
+
+        Assert.Equal(answer, result);
+    }
+
+    [Fact]
+    public void DemoteAnswerHeadings_LeavesTextUnchanged_WhenNoHeadingsPresent()
+    {
+        string answer = "Just a plain paragraph with no headings at all, and a # that is not one because there's no space? Actually just prose.";
+
+        string result = BenchmarkReportBuilder.DemoteAnswerHeadings(answer, minLevel: 4);
+
+        Assert.Equal(answer, result);
+    }
+
+    [Fact]
+    public void DemoteAnswerHeadings_LeavesFencedCodeBlocksAlone_ButDemotesRealHeadingsOutsideThem()
+    {
+        string answer = "## Real Heading\n\n```\n# comment, not a heading\ncode();\n```\n\nMore text.";
+
+        string result = BenchmarkReportBuilder.DemoteAnswerHeadings(answer, minLevel: 4);
+
+        Assert.Contains("#### Real Heading", result);
+        Assert.Contains("# comment, not a heading", result);
+        Assert.DoesNotContain("#### comment, not a heading", result);
+    }
+
+    [Fact]
+    public void BuildMarkdownReport_DemotesAnswerHeadingsUnderQuestionHeading()
+    {
+        var run = new BenchmarkRun
+        {
+            Id = 50,
+            SuiteName = "Heading Suite",
+            TestedModelDisplayNameUsed = "Model X",
+            AssessorModelDisplayNameUsed = "Assessor Y",
+            Status = BenchmarkRunStatus.Completed,
+            StartedAtUtc = DateTime.UtcNow,
+            TotalQuestionCount = 1,
+            Answers = new List<BenchmarkRunAnswer>
+            {
+                new BenchmarkRunAnswer
+                {
+                    OrderIndex = 1,
+                    QuestionText = "What are the spell schools?",
+                    Difficulty = BenchmarkDifficulty.Simple,
+                    AssessedDifficulty = 25,
+                    QualityScore = 90,
+                    SpeedScore = 90,
+                    DurationMs = 1000,
+                    Status = BenchmarkAnswerStatus.Ok,
+                    AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+                    // The 2026-09-03 shape: an answer opening with its own "##" heading, a
+                    // sibling of the report's own "## 3. Questions and Replies".
+                    AnswerText = "## GnollHack's spell schools\n\nThere are several."
+                }
+            }
+        };
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("#### GnollHack's spell schools", report);
+        // "#### X" contains "## X" as a plain substring, so anchor on the marker boundary: the
+        // undemoted two-hash form would appear as a *blank-line-then-##* run; the demoted
+        // four-hash form does not contain that four-character sequence.
+        Assert.DoesNotContain("\n\n## GnollHack", report);
+    }
+
+    // --- Advisory wording ----------------------------------------------------------------
+
+    [Fact]
+    public void BuildMarkdownReport_AdvisorySentence_UsesSimpleFormWhenAllNarrationWasRemoved()
+    {
+        var run = new BenchmarkRun
+        {
+            Id = 51,
+            SuiteName = "Advisory Suite",
+            TestedModelDisplayNameUsed = "Model X",
+            AssessorModelDisplayNameUsed = "Assessor Y",
+            Status = BenchmarkRunStatus.Completed,
+            StartedAtUtc = DateTime.UtcNow,
+            TotalQuestionCount = 1,
+            Answers = new List<BenchmarkRunAnswer>
+            {
+                new BenchmarkRunAnswer
+                {
+                    OrderIndex = 1,
+                    QuestionText = "Q1",
+                    Difficulty = BenchmarkDifficulty.Simple,
+                    Status = BenchmarkAnswerStatus.Ok,
+                    AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+                    AnswerText = "Answer 1",
+                    AnswerFlags = (int)BenchmarkAnswerFlags.ReasoningBleed,
+                    ScrubbedArtifactText = "some narration that was removed"
+                }
+            }
+        };
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("the text they describe was removed before grading", report);
+        Assert.DoesNotContain("Removed before grading in", report);
+    }
+
+    [Fact]
+    public void BuildMarkdownReport_AdvisorySentence_ReportsPartialRemoval_WhenNarrationSurvivedGrading()
+    {
+        var run = new BenchmarkRun
+        {
+            Id = 52,
+            SuiteName = "Advisory Suite",
+            TestedModelDisplayNameUsed = "Model X",
+            AssessorModelDisplayNameUsed = "Assessor Y",
+            Status = BenchmarkRunStatus.Completed,
+            StartedAtUtc = DateTime.UtcNow,
+            TotalQuestionCount = 2,
+            Answers = new List<BenchmarkRunAnswer>
+            {
+                new BenchmarkRunAnswer
+                {
+                    OrderIndex = 1,
+                    QuestionText = "Q1",
+                    Difficulty = BenchmarkDifficulty.Simple,
+                    Status = BenchmarkAnswerStatus.Ok,
+                    AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+                    AnswerText = "Answer 1",
+                    AnswerFlags = (int)BenchmarkAnswerFlags.ReasoningBleed,
+                    ScrubbedArtifactText = "removed narration"
+                },
+                new BenchmarkRunAnswer
+                {
+                    OrderIndex = 2,
+                    QuestionText = "Q2",
+                    Difficulty = BenchmarkDifficulty.Simple,
+                    Status = BenchmarkAnswerStatus.Ok,
+                    AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+                    // Flagged, but nothing was actually stripped from this one — the
+                    // 2026-09-03 shape where the report used to claim removal regardless.
+                    AnswerText = "I'll check the wiki first. Answer 2",
+                    AnswerFlags = (int)BenchmarkAnswerFlags.ReasoningBleed,
+                    ScrubbedArtifactText = null
+                }
+            }
+        };
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("Removed before grading in 1 of 2", report);
+        Assert.Contains("in the remainder the text was detected but remained in the graded answer", report);
+        Assert.Contains("Reasoning narration present in the graded answer (advisory)", report);
+    }
+
+    // --- Scrub counter ---------------------------------------------------------------------
+
+    [Fact]
+    public void BuildMarkdownReport_ScrubCounter_ReportsTransportPayloadsAndNarrationSeparately()
+    {
+        var run = new BenchmarkRun
+        {
+            Id = 53,
+            SuiteName = "Scrub Suite",
+            TestedModelDisplayNameUsed = "Model X",
+            AssessorModelDisplayNameUsed = "Assessor Y",
+            Status = BenchmarkRunStatus.Completed,
+            StartedAtUtc = DateTime.UtcNow,
+            TotalQuestionCount = 2,
+            Answers = new List<BenchmarkRunAnswer>
+            {
+                new BenchmarkRunAnswer
+                {
+                    OrderIndex = 1,
+                    QuestionText = "Q1",
+                    Difficulty = BenchmarkDifficulty.Simple,
+                    Status = BenchmarkAnswerStatus.Ok,
+                    AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+                    AnswerText = "Answer 1",
+                    AnswerFlags = (int)BenchmarkAnswerFlags.HarnessArtifacts,
+                    ScrubbedArtifactCount = 1,
+                    ScrubbedArtifactText = "leaked payload"
+                },
+                new BenchmarkRunAnswer
+                {
+                    OrderIndex = 2,
+                    QuestionText = "Q2",
+                    Difficulty = BenchmarkDifficulty.Simple,
+                    Status = BenchmarkAnswerStatus.Ok,
+                    AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+                    AnswerText = "Answer 2",
+                    AnswerFlags = (int)BenchmarkAnswerFlags.ReasoningBleed,
+                    ScrubbedArtifactCount = 0,
+                    ScrubbedArtifactText = "removed narration"
+                }
+            }
+        };
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("**Answers Scrubbed:** 2 of 2 (transport payloads: 1, reasoning narration: 1)", report);
+    }
+
+    // --- Critical-error headline -------------------------------------------------------------
+
+    [Fact]
+    public void BuildMarkdownReport_ShowsCriticalErrorsHeadline_WhenAnAnswerWasCapped()
+    {
+        var run = new BenchmarkRun
+        {
+            Id = 54,
+            SuiteName = "Critical Error Suite",
+            TestedModelDisplayNameUsed = "Model X",
+            AssessorModelDisplayNameUsed = "Assessor Y",
+            Status = BenchmarkRunStatus.Completed,
+            StartedAtUtc = DateTime.UtcNow,
+            TotalQuestionCount = 2,
+            Answers = new List<BenchmarkRunAnswer>
+            {
+                new BenchmarkRunAnswer
+                {
+                    OrderIndex = 1,
+                    QuestionText = "Q1",
+                    Difficulty = BenchmarkDifficulty.Simple,
+                    Status = BenchmarkAnswerStatus.Ok,
+                    AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+                    AnswerText = "Answer 1",
+                    QualityScore = 25,
+                    RawQualityScore = 95,
+                    CriticalError = true,
+                    CriticalErrorQuote = "This is definitely safe to do."
+                },
+                new BenchmarkRunAnswer
+                {
+                    OrderIndex = 2,
+                    QuestionText = "Q2",
+                    Difficulty = BenchmarkDifficulty.Simple,
+                    Status = BenchmarkAnswerStatus.Ok,
+                    AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+                    AnswerText = "Answer 2",
+                    QualityScore = 90,
+                    CriticalError = false
+                }
+            }
+        };
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("**Critical Errors:** 1 of 2 answered (question(s) 1)", report);
+    }
+
+    [Fact]
+    public void BuildMarkdownReport_OmitsCriticalErrorsHeadline_WhenNoAnswerWasCapped()
+    {
+        var run = new BenchmarkRun
+        {
+            Id = 55,
+            SuiteName = "No Critical Error Suite",
+            TestedModelDisplayNameUsed = "Model X",
+            AssessorModelDisplayNameUsed = "Assessor Y",
+            Status = BenchmarkRunStatus.Completed,
+            StartedAtUtc = DateTime.UtcNow,
+            TotalQuestionCount = 1,
+            Answers = new List<BenchmarkRunAnswer>
+            {
+                new BenchmarkRunAnswer
+                {
+                    OrderIndex = 1,
+                    QuestionText = "Q1",
+                    Difficulty = BenchmarkDifficulty.Simple,
+                    Status = BenchmarkAnswerStatus.Ok,
+                    AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+                    AnswerText = "Answer 1",
+                    QualityScore = 90,
+                    CriticalError = false
+                }
+            }
+        };
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.DoesNotContain("**Critical Errors:**", report);
+    }
 }

@@ -66,8 +66,12 @@ public class ThoughtBoundaryTests
     }
 
     [Fact]
-    public void VisibleTextThenThinking_ThenToolCall_DoesNotEncloseThoughtInsideVisible()
+    public void VisibleTextThenThinking_ThenToolCall_WrapsBothAsSiblingDivs()
     {
+        // This replaces an earlier test that asserted a *single* div here, which codified the
+        // defect rather than a requirement: the visible preamble was silently dropped when the
+        // reasoning summary opened its div, so it was never wrapped and stayed in the response
+        // as answer prose.
         var writer = new ThoughtMarkupWriter();
         var sb = new StringBuilder();
 
@@ -77,9 +81,73 @@ public class ThoughtBoundaryTests
         writer.WrapPreToolVisibleText(sb);
 
         string result = sb.ToString();
-        Assert.Equal(1, CountOccurrences(result, "<div class=\"ai-thought\">"));
-        Assert.Equal(1, CountOccurrences(result, "</div>"));
+        Assert.Equal(2, CountOccurrences(result, "<div class=\"ai-thought\">"));
+        Assert.Equal(2, CountOccurrences(result, "</div>"));
         Assert.DoesNotContain("<div class=\"ai-thought\">\n\n<div", result);
+
+        // The preamble must not survive anywhere outside a thought div.
+        string stripped = StripThoughtsRegex.Replace(result, "").Trim();
+        Assert.DoesNotContain("Opening greeting line", stripped);
+        Assert.DoesNotContain("Thinking part", stripped);
+        Assert.Equal(string.Empty, stripped);
+    }
+
+    [Fact]
+    public void OpenAiEventOrder_VisibleThenReasoningThenTool_LeavesNoAnswerProse()
+    {
+        // The exact GPT-5.x Responses ordering that produced the defect: visible preamble
+        // (response.output_text.delta), reasoning summary
+        // (response.reasoning_summary_text.delta), then the tool call. The preamble is tool-use
+        // narration and must never reach the graded answer.
+        var writer = new ThoughtMarkupWriter();
+        var sb = new StringBuilder();
+
+        writer.ResetIteration();
+        writer.HandleChunk(sb, "I'm verifying whether GnollHack exposes the counter", false);
+        writer.HandleChunk(sb, " through a command or priest consultation.", false);
+        writer.HandleThinkingChunk(sb, "Need to search the source for the prayer timeout field.");
+        writer.WrapPreToolVisibleText(sb);
+
+        writer.ResetIteration();
+        writer.HandleChunk(sb, "Prayer timeout is a countdown in game turns.", false);
+        writer.CloseOpenThoughtDiv(sb);
+
+        string result = sb.ToString();
+        string stripped = StripThoughtsRegex.Replace(result, "").Trim();
+
+        Assert.Equal("Prayer timeout is a countdown in game turns.", stripped);
+        Assert.DoesNotContain("I'm verifying", stripped);
+        Assert.Equal(2, CountOccurrences(result, "<div class=\"ai-thought\">"));
+        Assert.Equal(2, CountOccurrences(result, "</div>"));
+        Assert.DoesNotContain("<div class=\"ai-thought\">\n\n<div", result);
+    }
+
+    [Fact]
+    public void MultipleVisibleRunsInOneIteration_ProduceOneDivEach_NoNesting()
+    {
+        // A provider may interleave the channels more than once in a single iteration. Each
+        // visible run has to become its own sibling div; one div spanning them all would
+        // enclose the reasoning divs sitting between them.
+        var writer = new ThoughtMarkupWriter();
+        var sb = new StringBuilder();
+
+        writer.ResetIteration();
+        writer.HandleChunk(sb, "Visible run one", false);
+        writer.HandleThinkingChunk(sb, "Reasoning one");
+        writer.HandleChunk(sb, "Visible run two", false);
+        writer.HandleThinkingChunk(sb, "Reasoning two");
+        writer.HandleChunk(sb, "Visible run three", false);
+        writer.WrapPreToolVisibleText(sb);
+
+        string result = sb.ToString();
+
+        // Three visible runs plus two reasoning runs.
+        Assert.Equal(5, CountOccurrences(result, "<div class=\"ai-thought\">"));
+        Assert.Equal(5, CountOccurrences(result, "</div>"));
+        Assert.DoesNotContain("<div class=\"ai-thought\">\n\n<div", result);
+
+        string stripped = StripThoughtsRegex.Replace(result, "").Trim();
+        Assert.Equal(string.Empty, stripped);
     }
 
     [Fact]

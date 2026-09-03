@@ -19,6 +19,79 @@ public static class BenchmarkReportBuilder
     private static readonly Regex BlockedCallsRegex =
         new(@"\((\d+)\s+blocked by budget\)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+    // Same fence-splitting pattern as BenchmarkAnswerSanitizer.CodeBlockRegex: a "#" inside a
+    // fenced block is a comment in someone's example, not a heading, and must not be rewritten.
+    private static readonly Regex CodeFenceRegex = new(@"(```[\s\S]*?```)", RegexOptions.Compiled);
+
+    // An ATX heading line: 1-6 "#" markers followed by whitespace or end of line. Group 1 is the
+    // marker run, group 2 is everything after it (including the leading space, if any) so the
+    // replacement can rebuild the line with a different marker length and identical content.
+    private static readonly Regex AtxHeadingLineRegex =
+        new(@"^(#{1,6})(?=\s|$)(.*)$", RegexOptions.Multiline | RegexOptions.Compiled);
+
+    /// <summary>
+    /// Demotes every ATX heading in a model's answer so it nests strictly under the report's own
+    /// question heading. Model answers routinely emit their own top-level headings — on the
+    /// 2026-09-03 run one answer opened with <c>## GnollHack's spell schools</c>, a sibling of
+    /// the report's own <c>## 3. Questions and Replies</c>, and another opened with
+    /// <c>### Available roles</c>, a sibling of the answer's own <c>### Question N</c> heading —
+    /// which corrupts every outline view of the exported Markdown.
+    ///
+    /// Only fenced code blocks are protected; everything else outside a fence is a candidate.
+    /// The shallowest heading level present is found first, and if it is already at or below
+    /// <paramref name="minLevel"/> (i.e. deeper or equal), the text is returned byte-identical —
+    /// this function only ever pushes headings deeper, never shallower.
+    ///
+    /// Setext headings (a line of text followed by a line of <c>===</c> or <c>---</c>) are
+    /// deliberately out of scope: none appear in the corpus, and telling a setext underline apart
+    /// from a Markdown table separator or a horizontal rule is a larger change with more ways to
+    /// be wrong than this fix justifies.
+    /// </summary>
+    internal static string DemoteAnswerHeadings(string answerText, int minLevel)
+    {
+        if (string.IsNullOrEmpty(answerText))
+        {
+            return answerText;
+        }
+
+        var parts = CodeFenceRegex.Split(answerText);
+
+        int shallowest = int.MaxValue;
+        for (int i = 0; i < parts.Length; i += 2) // Even indices are outside fences.
+        {
+            foreach (Match m in AtxHeadingLineRegex.Matches(parts[i]))
+            {
+                int level = m.Groups[1].Value.Length;
+                if (level < shallowest) shallowest = level;
+            }
+        }
+
+        if (shallowest == int.MaxValue || shallowest >= minLevel)
+        {
+            // No heading found, or the shallowest one is already at or beyond minLevel.
+            return answerText;
+        }
+
+        int shift = minLevel - shallowest;
+        var sb = new StringBuilder();
+        for (int i = 0; i < parts.Length; i++)
+        {
+            if (i % 2 == 1) // Inside a fenced code block: never rewritten.
+            {
+                sb.Append(parts[i]);
+                continue;
+            }
+
+            sb.Append(AtxHeadingLineRegex.Replace(parts[i], m =>
+            {
+                int newLevel = Math.Min(6, m.Groups[1].Value.Length + shift);
+                return new string('#', newLevel) + m.Groups[2].Value;
+            }));
+        }
+
+        return sb.ToString();
+    }
+
     /// <summary>
     /// Splits an answer's tool calls into the ones that executed and the ones the budget refused.
     /// <c>ToolCallCount</c> counts attempts, so printing it against the budget produced lines like
@@ -212,6 +285,19 @@ public static class BenchmarkReportBuilder
             sb.AppendLine($"### **Raw Quality Index: {rawQualityIndex.Value} / 100 ({cappedCount} question(s) capped by critical error)**");
         }
         sb.AppendLine($"### **Speed Index: {(run.SpeedIndex.HasValue ? $"{run.SpeedIndex.Value} / 100" : "Not Scored")}**" + (run.SpeedMeasurementDegraded ? " *(Advisory — measured under concurrency)*" : ""));
+        // A critical error caps Quality at 25 (see BenchmarkScoring), which the Raw/Intelligence
+        // Index pair above already shows as a point delta — but that delta is diluted by every
+        // *other* answer's difficulty weight, so a single hallucinated answer can move the index
+        // by as little as one point (see the "How to read these" note under Final Indices). The
+        // headline below gives the reader the actual count instead of asking them to infer it
+        // from a small index shift.
+        var criticalErrorAnswers = answers.Where(a => a.CriticalError).OrderBy(a => a.OrderIndex).ToList();
+        if (criticalErrorAnswers.Count > 0)
+        {
+            int answeredCountForCritical = answers.Count(a => a.Status == BenchmarkAnswerStatus.Ok);
+            string criticalQuestionNumbers = string.Join(", ", criticalErrorAnswers.Select(a => a.OrderIndex));
+            sb.AppendLine($"- **Critical Errors:** {criticalErrorAnswers.Count} of {answeredCountForCritical} answered (question(s) {criticalQuestionNumbers})");
+        }
         sb.AppendLine();
         sb.AppendLine($"- **Holistic Assessor Score:** {(run.FinalScore.HasValue ? $"{run.FinalScore.Value} / 100" : "N/A")}");
         sb.AppendLine($"- **Total Model Answer Duration:** {FormatDuration(run.TotalAnswerDurationMs)} ({Inv(run.TotalAnswerDurationMs, "N0")} ms)");
@@ -298,7 +384,17 @@ public static class BenchmarkReportBuilder
         int recoveredCount = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.Recovered);
         int harnessLimitCount = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.HarnessLimit);
         int advisoryCount = answers.Count(BenchmarkRunFinalizer.HasAdvisoryFlag);
-        int scrubbedCount = answers.Count(a => a.ScrubbedArtifactCount > 0);
+        // NarrationBlockCount isn't persisted (see SanitizedAnswer.NarrationBlockCount), so a
+        // non-empty ScrubbedArtifactText on a ReasoningBleed-flagged answer is the stored signal
+        // that narration was actually removed from *that* answer, rather than merely detected.
+        int bleedRemoved = answers.Count(a =>
+            ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.ReasoningBleed) &&
+            !string.IsNullOrWhiteSpace(a.ScrubbedArtifactText));
+        int scrubbedTransportCount = answers.Count(a => a.ScrubbedArtifactCount > 0);
+        int scrubbedAnyCount = answers.Count(a =>
+            a.ScrubbedArtifactCount > 0 ||
+            (((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.ReasoningBleed) &&
+             !string.IsNullOrWhiteSpace(a.ScrubbedArtifactText)));
         int cleanCount = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.Clean);
         double cleanPct = totalQuestions > 0 ? (cleanCount * 100.0 / totalQuestions) : 0.0;
 
@@ -310,8 +406,14 @@ public static class BenchmarkReportBuilder
         sb.AppendLine($"- **Provider Errors:** {providerErrorCount}");
         sb.AppendLine($"*Clean + transport defects + recovered + harness limits = {cleanCount + transportDefectCount + recoveredCount + harnessLimitCount} of {totalQuestions}.*");
         sb.AppendLine();
-        sb.AppendLine($"- **Advisory Flags:** {advisoryCount} (reasoning bleed: {bleedCount}, repeated fragments: {repeatCount}) — *advisory only; these overlap the categories above, do not affect the run status, and the text they describe was removed before grading.*");
-        sb.AppendLine($"- **Answers Scrubbed of Transport Artifacts:** {scrubbedCount} of {totalQuestions}");
+        // On the 2026-09-03 run the report claimed the removal was unconditional; the streaming
+        // writer's bug (fixed alongside this) meant five graded answers still carried their own
+        // narration. The sentence now says so when it happens instead of asserting it away.
+        string advisoryNote = bleedRemoved == bleedCount
+            ? "— *advisory only; these overlap the categories above, do not affect the run status, and the text they describe was removed before grading.*"
+            : $"— *advisory only; these overlap the categories above and do not affect the run status. Removed before grading in {bleedRemoved} of {bleedCount}; in the remainder the text was detected but remained in the graded answer.*";
+        sb.AppendLine($"- **Advisory Flags:** {advisoryCount} (reasoning bleed: {bleedCount}, repeated fragments: {repeatCount}) {advisoryNote}");
+        sb.AppendLine($"- **Answers Scrubbed:** {scrubbedAnyCount} of {totalQuestions} (transport payloads: {scrubbedTransportCount}, reasoning narration: {bleedRemoved})");
         sb.AppendLine();
 
         if (scoredAnswers.Count > 0)
@@ -506,7 +608,9 @@ public static class BenchmarkReportBuilder
             {
                 sb.AppendLine("**Reply:**");
                 sb.AppendLine();
-                sb.AppendLine(a.AnswerText);
+                // Question headings are "###"; demote anything shallower so a model's own "##"
+                // or "###" heading never lands at or above the report's own outline level.
+                sb.AppendLine(DemoteAnswerHeadings(a.AnswerText, minLevel: 4));
             }
             sb.AppendLine();
 
@@ -635,7 +739,15 @@ public static class BenchmarkReportBuilder
                     flagDescriptions.Add($"Transport artifacts removed before grading ({ia.ScrubbedArtifactCount} block(s)) — recovered, and graded normally; a provider-path defect, not a damaged answer");
                 }
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.Truncated)) flagDescriptions.Add("Answer truncated (output token limit)");
-                if (iaFlags.HasFlag(BenchmarkAnswerFlags.ReasoningBleed)) flagDescriptions.Add("Reasoning narration removed before grading (advisory)");
+                if (iaFlags.HasFlag(BenchmarkAnswerFlags.ReasoningBleed))
+                {
+                    // Same signal as the run-level advisory sentence: a non-empty
+                    // ScrubbedArtifactText means the harness actually removed something from
+                    // *this* answer; an empty one means the flag fired but the text stayed put.
+                    flagDescriptions.Add(!string.IsNullOrWhiteSpace(ia.ScrubbedArtifactText)
+                        ? "Reasoning narration removed before grading (advisory)"
+                        : "Reasoning narration present in the graded answer (advisory)");
+                }
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.RepeatedFragments)) flagDescriptions.Add("Repeated reasoning fragments in the removed narration (advisory)");
                 if (ia.ToolBudgetExhausted)
                 {
@@ -702,6 +814,13 @@ public static class BenchmarkReportBuilder
         sb.AppendLine($"### Holistic Assessor Score: {run.FinalScore?.ToString() ?? "N/A"} / 100");
         sb.AppendLine();
         sb.AppendLine("> **How to read these:** the Intelligence Index is the canonical, reproducible metric and is **quality only** — Speed Index is not folded into it, by design, so a slow model and an inaccurate one are never confused for each other. The Holistic Assessor Score is the assessor's own narrative judgement and is reported for contrast, not used in any aggregate.");
+        sb.AppendLine();
+        // The Intelligence Index weights each question by its assessed difficulty, so a critical
+        // error caps that one question's Quality at 25 but moves the overall index least on the
+        // easiest questions — on the 2026-09-03 run a fully hallucinated answer at assessed
+        // difficulty 25 moved the index by one point. The Critical Errors count under Results
+        // Summary above is the figure to read for this failure mode, not the index delta.
+        sb.AppendLine("> The Intelligence Index weights each question by its assessed difficulty, so a critical error on an easy question moves the index the least of all — a fully hallucinated answer at assessed difficulty 25 can move it by as little as one point. The **Critical Errors** count under Results Summary is the number to read for this failure mode.");
         sb.AppendLine();
         if (run.FinalScore.HasValue && run.QualityIndex.HasValue)
         {

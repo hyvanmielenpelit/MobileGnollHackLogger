@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections.Generic;
+using MobileGnollHackLogger.Data;
 using Overseer.Services.Benchmarking;
 using Xunit;
 
@@ -232,12 +233,71 @@ public class BenchmarkScoringTests
         // Invariant 1 of the calibration: an answer that did not time out must always receive a
         // distinguishing score. Violating this is what made the old constants useless — they
         // floored at ~78 s against a 300 s timeout.
-        const long timeoutMs = 300_000;
+        //
+        // The timeout is banded, so each difficulty is checked against the timeout that actually
+        // applies to it rather than against one flat number.
+        var band = BenchmarkDifficultyBands.BandOf(difficulty);
+        long timeoutMs = BenchmarkService.DefaultQuestionTimeoutSeconds(band) * 1000L;
 
         int score = BenchmarkScoring.Speed(timeoutMs, difficulty);
 
         Assert.True(score > 1,
-            $"difficulty {difficulty} floored at the timeout ({score}); the metric would saturate");
+            $"difficulty {difficulty} floored at its band's timeout ({score}); the metric would saturate");
+    }
+
+    [Theory]
+    [InlineData(BenchmarkDifficulty.Simple, BenchmarkDifficultyBands.MinDifficulty)]
+    [InlineData(BenchmarkDifficulty.Intermediate, BenchmarkDifficultyBands.SimpleMax + 1)]
+    [InlineData(BenchmarkDifficulty.Advanced, BenchmarkDifficultyBands.IntermediateMax + 1)]
+    public void QuestionTimeoutBands_StayBelowTheirOwnSpeedFloor(BenchmarkDifficulty band, int lowestDifficulty)
+    {
+        // The binding case inside a band is its *lowest* difficulty: Target(q) grows with
+        // difficulty, so the smallest target in a band reaches the floor first. Documented in
+        // BenchmarkScoring's calibration comment as ~468 s / ~631 s / ~793 s against timeouts of
+        // 420 s / 600 s / 720 s.
+        //
+        // This test is the reason the timeout is banded rather than raised flat: a flat 720 s,
+        // which an Advanced question needs to spend 45 tool calls over 22 rounds, would put the
+        // Simple band's floor 300 s inside the timeout. It fails on any edit to either the speed
+        // constants or the timeout bands that breaks the coupling, in either direction.
+        var constants = BenchmarkScoringConstants.Default;
+        Assert.Equal(band, BenchmarkDifficultyBands.BandOf(lowestDifficulty));
+
+        // Speed = 100 - k * log2(t / Target) reaches 1 at t = Target * 2^(99/k).
+        double targetMs = BenchmarkScoring.EffectiveSpeedTargetMs(lowestDifficulty, constants);
+        double floorSeconds = targetMs * Math.Pow(2.0, 99.0 / constants.SpeedDecayK) / 1000.0;
+        int timeoutSeconds = BenchmarkService.DefaultQuestionTimeoutSeconds(band);
+
+        Assert.True(floorSeconds > timeoutSeconds,
+            $"{band}: the speed floor at difficulty {lowestDifficulty} is {floorSeconds:F0} s, " +
+            $"inside the band's {timeoutSeconds} s timeout — the Speed Index would flatten");
+    }
+
+    [Theory]
+    [InlineData(BenchmarkDifficulty.Simple)]
+    [InlineData(BenchmarkDifficulty.Intermediate)]
+    [InlineData(BenchmarkDifficulty.Advanced)]
+    public void PerQuestionCapBands_AreOrderedSoTheToolBudgetBindsFirst(BenchmarkDifficulty band)
+    {
+        // Three caps can stop a question, and only one of them explains itself to a reader. The
+        // tool call budget blocks further calls, flags the answer ToolBudgetExhausted, and is
+        // reported; the iteration cap yields a terse "Tool call limit reached"; the model-call
+        // cap is a runaway-loop net that leaves only a debug line. So the budget must be the one
+        // that normally binds.
+        int budget = BenchmarkService.DefaultToolCallBudget(band);
+        int iterations = BenchmarkService.DefaultToolIterations(band);
+        int modelCalls = BenchmarkService.DefaultTotalModelCalls(band);
+
+        // An iteration consumes one model call, plus one more for the forced tool-free final
+        // turn. Anything tighter makes the safety net fire on a healthy question.
+        Assert.True(modelCalls > iterations + 1,
+            $"{band}: {modelCalls} model calls cannot cover {iterations} iterations plus a final turn");
+
+        // At the 2026-09-03 run's saturated batching rate of roughly three calls per round, this
+        // leaves the budget reachable; at two per round it is reachable exactly.
+        Assert.True(iterations >= budget / 3,
+            $"{band}: {iterations} iterations cannot spend a {budget}-call budget, so the " +
+            "iteration cap would bind before the budget it exists to serve");
     }
 
     [Fact]

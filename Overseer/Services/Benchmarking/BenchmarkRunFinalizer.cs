@@ -22,8 +22,14 @@ public static class BenchmarkRunFinalizer
     }
 
     /// <summary>
-    /// Flags that leave an answer unusable. Advisory flags are deliberately absent: the text
-    /// they describe is removed before grading, so the graded answer is unaffected.
+    /// Flags that leave an answer unusable. Advisory flags are deliberately absent: they stay
+    /// out of the run status because the text they describe does not *invalidate* the answer,
+    /// not because its removal before grading is guaranteed. The 2026-09-03 GPT-5.6 Luna run
+    /// showed both: the streaming layer's bug meant five graded answers still carried their own
+    /// narration, and the report wrongly asserted it had been removed. The fix corrected the
+    /// removal and the report's claim about it; this classification did not need to change,
+    /// because narration that survives grading is a conciseness/readability quality problem the
+    /// assessor already scores, not a reason to exclude the answer from the run.
     ///
     /// <see cref="BenchmarkAnswerFlags.HarnessArtifacts"/> is deliberately absent too. Leaked
     /// tool-call payloads are removed by the scrubber and the answer beneath them is graded

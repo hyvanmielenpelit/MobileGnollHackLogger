@@ -12,7 +12,13 @@ public sealed record BenchmarkScrubResult(
     string AnswerText,
     string? ArtifactText,
     int ArtifactBlockCount,
-    BenchmarkAnswerFlags Flags);
+    BenchmarkAnswerFlags Flags,
+    // How many narration blocks this scrub removed — narration paragraphs plus, at most once, a
+    // leading run of narration sentences butted onto the answer. Counted separately from
+    // ArtifactBlockCount, which counts leaked tool-argument payloads: the two say different
+    // things about a run, and a run carrying narration but no payload used to look
+    // artifact-free in the report.
+    int NarrationBlockCount);
 
 /// <summary>
 /// Removes provider transport artifacts from a benchmark answer before it is graded.
@@ -44,6 +50,17 @@ public sealed class BenchmarkArtifactScrubber
     // truncate an entire authored answer.
     private const int MinAnswerTailChars = 200;
 
+    // The same idea one level down, for an answer butted onto narration *inside* one paragraph.
+    // Lower than MinAnswerTailChars because a paragraph's worth of answer is necessarily
+    // shorter than a whole answer: the 2026-09-03 runeword answer opened with 140 characters of
+    // real answer on the narration's own line, while the same run's garbage tail — a lone
+    // "abcedary" token — was eight. Anything between those is judged by the paragraph rule.
+    private const int MinButtedAnswerChars = 80;
+
+    // The narration strip runs until it stops finding narration. Bounded only so that a
+    // pathological answer cannot loop: the reference run needed five passes.
+    private const int MaxNarrationPasses = 10;
+
     private static readonly Regex MarkdownBlockRegex =
         new(@"^\s{0,3}(?:#{1,6}\s|[-*+]\s|\d+\.\s|>\s|\||```)", RegexOptions.Compiled | RegexOptions.Multiline);
 
@@ -55,9 +72,22 @@ public sealed class BenchmarkArtifactScrubber
 
     // Investigation narration: the model announcing tool work it is about to do, or has just
     // done, in the first person. This is analysis-channel content, not an answer to the question.
+    //
+    // The verb list and the three extra opener forms below were all taken from answers the
+    // 2026-09-03 GPT-5.6 run leaked and the original list missed: "I'm keeping the final answer
+    // focused on...", "I have the needed behavior", "I need the exact callback signature".
+    //
+    // "explain", "describe" and the like are deliberately absent: "I will explain how prayer
+    // timeout works" is a perfectly ordinary answer opening, and the negative fixtures pin it.
     private static readonly Regex NarrationSignatureRegex = new(
         @"\b(?:I(?:’|')m|I am|I(?:’|')ll|I will|Let me)\s+(?:also\s+|now\s+|just\s+)?" +
-        @"(?:check|verify|locat|trac|confirm|look|read|search|inspect|examin|resolv|find)",
+        @"(?:check|verify|locat|trac|confirm|look|read|search|inspect|examin|resolv|find" +
+        @"|keep|focus|narrow|pull|open|scan|retriev|fetch|gather|run|query|grep)" +
+        @"|\bI\s+(?:have|need)\s+the\b" +
+        @"|\bI(?:’|')ve\s+(?:got|confirmed)\b" +
+        // Bare gerund openers, anchored at the very start of the text handed in — a paragraph
+        // or a sentence. Unanchored they would match ordinary prose ("...worth checking").
+        @"|\A\s*(?:Searching|Checking|Looking|Tracing|Verifying)\b",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     // "The code shows/confirms ... I'm ..." — narration that opens with a finding rather than an
@@ -89,10 +119,18 @@ public sealed class BenchmarkArtifactScrubber
     {
         if (string.IsNullOrEmpty(text))
         {
-            return new BenchmarkScrubResult(string.Empty, null, 0, BenchmarkAnswerFlags.None);
+            return new BenchmarkScrubResult(string.Empty, null, 0, BenchmarkAnswerFlags.None, 0);
         }
 
         string working = text.Replace("\r\n", "\n");
+
+        // Blank-*looking* lines are made actually blank, because every paragraph rule below
+        // splits on "\n\n". The 2026-09-03 run separated its narration from the answer with
+        // lines containing a single space, so IndexOf("\n\n") skipped straight past them; the
+        // oversized "first paragraph" that resulted then swept up a Markdown bullet list and
+        // tripped the MarkdownBlockRegex guard, leaving the narration in the graded answer.
+        working = WhitespaceOnlyLineRegex.Replace(working, string.Empty);
+
         var flags = BenchmarkAnswerFlags.None;
         var removed = new List<string>();
 
@@ -153,12 +191,40 @@ public sealed class BenchmarkArtifactScrubber
             }
         }
 
-        // Narration prefix with no leaked payload at all (Q2, Q11, Q17 of the reference run).
-        var (narrationStripped, narration) = StripNarrationPrefix(answer);
-        if (narration != null)
+        // A leading run of one or two backticks on its own line with nothing to close it is
+        // transport junk, not Markdown: a fence needs three, and an inline-code span opens with
+        // its content on the same line. One reference-run answer began with a lone backtick and
+        // then a double-backtick-prefixed narration paragraph — and those stray backticks are
+        // exactly what stops the narration rules from recognising the paragraph.
+        answer = StripLeadingOrphanFence(answer, removed, ref flags);
+
+        // Narration prefixes with no leaked payload at all (Q2, Q11, Q17 of the reference run).
+        //
+        // Iterated, not single-pass: the same run emitted five consecutive narration
+        // paragraphs, so one pass left four of them in the graded answer.
+        int narrationBlocks = 0;
+        for (int pass = 0; pass < MaxNarrationPasses; pass++)
         {
+            var (narrationStripped, narration) = StripNarrationPrefix(answer);
+            if (narration == null) break;
+
             answer = narrationStripped;
-            removed.Insert(0, narration);
+            // Inserted at the front, in removal order, so the audit record reads in the order
+            // the model actually produced it rather than back to front.
+            removed.Insert(narrationBlocks, narration);
+            narrationBlocks++;
+            flags |= BenchmarkAnswerFlags.ReasoningBleed;
+        }
+
+        // Narration butted straight onto the answer with no separator at all, which no
+        // paragraph rule can see. This is the last rule to run: it only ever fires on a
+        // paragraph the paragraph rule has already declined to take whole.
+        var (sentenceStripped, sentenceNarration) = StripNarrationSentences(answer);
+        if (sentenceNarration != null)
+        {
+            answer = sentenceStripped;
+            removed.Insert(narrationBlocks, sentenceNarration);
+            narrationBlocks++;
             flags |= BenchmarkAnswerFlags.ReasoningBleed;
         }
 
@@ -178,7 +244,7 @@ public sealed class BenchmarkArtifactScrubber
             flags |= BenchmarkAnswerFlags.RepeatedFragments;
         }
 
-        return new BenchmarkScrubResult(answer.Trim(), artifactText, spans.Count, flags);
+        return new BenchmarkScrubResult(answer.Trim(), artifactText, spans.Count, flags, narrationBlocks);
     }
 
     // --- Residual markers and control tokens -------------------------------------------------
@@ -473,12 +539,187 @@ public sealed class BenchmarkArtifactScrubber
         if (rest.Trim().Length == 0) return (text, null);
         if (MarkdownBlockRegex.IsMatch(first)) return (text, null);
 
-        if (!NarrationSignatureRegex.IsMatch(first) && !NarrationFindingRegex.IsMatch(first))
+        // A finding-then-intention paragraph is analysis end to end — it opens by reporting
+        // what the source said and closes by announcing the next lookup — so it is taken whole.
+        if (NarrationFindingRegex.IsMatch(first))
+        {
+            return (rest, first);
+        }
+
+        if (!NarrationSignatureRegex.IsMatch(first))
         {
             return (text, null);
         }
 
+        // The paragraph opens with narration, but it may also *end* with the real answer butted
+        // straight onto it, with no separator the paragraph rule can see. Taking the paragraph
+        // whole would then take the answer with it, so hand it to StripNarrationSentences
+        // instead, which removes only the leading narration sentences.
+        if (HasSubstantialNonNarrationTail(first)) return (text, null);
+
         return (rest, first);
+    }
+
+    /// <summary>
+    /// Whether a narration paragraph ends in enough non-narration text to be carrying the real
+    /// answer, rather than the garbage tokens ("abcedary", "unerquicklich", "rsat") the
+    /// reference run scattered around its payloads.
+    /// </summary>
+    private static bool HasSubstantialNonNarrationTail(string paragraph)
+    {
+        var starts = FindSentenceStarts(paragraph);
+        int drop = CountLeadingNarrationSentences(paragraph, starts);
+
+        // Nothing leading to keep the rule honest about, or nothing but narration: either way
+        // the paragraph rule may take the paragraph whole.
+        if (drop == 0 || drop >= starts.Count) return false;
+
+        string tail = paragraph.Substring(starts[drop]).Trim();
+        return tail.Length >= MinButtedAnswerChars || MarkdownBlockRegex.IsMatch(tail);
+    }
+
+    /// <summary>
+    /// Removes a leading run of narration *sentences* from the first paragraph.
+    ///
+    /// This is the one case no paragraph rule can reach: the reference run emitted narration
+    /// butted straight against the answer with no separator whatsoever — "…keeping the final
+    /// answer focused on the three words and their branch restrictions.In GnollHack, runewords
+    /// are **magical words engraved on the floor**…".
+    ///
+    /// Guarded in the same spirit as <see cref="IsSubstantialAnswerTail"/>: what survives must
+    /// be plausibly an answer, or further content must follow the paragraph. If the whole
+    /// paragraph would be consumed and nothing follows it, nothing is changed — this rule must
+    /// never be the reason an answer comes back empty.
+    /// </summary>
+    private static (string Answer, string? Narration) StripNarrationSentences(string text)
+    {
+        string working = text.TrimStart('\n', '\r', ' ', '\t');
+        if (working.Length == 0) return (text, null);
+
+        int split = working.IndexOf("\n\n", StringComparison.Ordinal);
+        string first = split < 0 ? working : working.Substring(0, split);
+        string rest = split < 0 ? string.Empty : working.Substring(split + 2);
+
+        if (MarkdownBlockRegex.IsMatch(first)) return (text, null);
+
+        var starts = FindSentenceStarts(first);
+
+        // One sentence is the paragraph rule's business, not this rule's.
+        if (starts.Count < 2) return (text, null);
+
+        int drop = CountLeadingNarrationSentences(first, starts);
+        if (drop == 0) return (text, null);
+
+        string remainder = drop >= starts.Count
+            ? string.Empty
+            : first.Substring(starts[drop]).TrimStart();
+
+        bool followedByContent = rest.Trim().Length > 0;
+        if (!followedByContent && remainder.Length < MinAnswerTailChars)
+        {
+            return (text, null);
+        }
+
+        string narration = first.Substring(0, drop >= starts.Count ? first.Length : starts[drop]);
+
+        string answer;
+        if (remainder.Length == 0)
+        {
+            answer = rest;
+        }
+        else if (rest.Length == 0)
+        {
+            answer = remainder;
+        }
+        else
+        {
+            answer = remainder + "\n\n" + rest;
+        }
+
+        return (answer, narration);
+    }
+
+    private static bool IsNarrationSentence(string sentence)
+    {
+        string trimmed = sentence.Trim();
+        if (trimmed.Length == 0) return false;
+
+        return NarrationSignatureRegex.IsMatch(trimmed);
+    }
+
+    /// <summary>
+    /// Offsets within a paragraph at which each sentence begins.
+    ///
+    /// Offsets rather than the pieces <see cref="Regex.Split(string)"/> would hand back, because
+    /// the answer is reassembled from the original paragraph and
+    /// <see cref="SentenceSplitRegex"/> consumes the whitespace it splits on — concatenating
+    /// pieces would butt two retained sentences together ("…armor.There are exactly three:").
+    /// </summary>
+    private static List<int> FindSentenceStarts(string paragraph)
+    {
+        var starts = new List<int> { 0 };
+
+        foreach (Match m in SentenceSplitRegex.Matches(paragraph))
+        {
+            int at = m.Index + m.Length;
+            if (at > starts[^1] && at < paragraph.Length) starts.Add(at);
+        }
+
+        return starts;
+    }
+
+    private static int CountLeadingNarrationSentences(string paragraph, List<int> starts)
+    {
+        int drop = 0;
+        while (drop < starts.Count)
+        {
+            int start = starts[drop];
+            int end = drop + 1 < starts.Count ? starts[drop + 1] : paragraph.Length;
+            if (!IsNarrationSentence(paragraph.Substring(start, end - start))) break;
+            drop++;
+        }
+
+        return drop;
+    }
+
+    // --- Orphan fences and blank-looking lines -----------------------------------------------
+
+    private static readonly Regex WhitespaceOnlyLineRegex =
+        new(@"^[ \t]+$", RegexOptions.Compiled | RegexOptions.Multiline);
+
+    // One or two backticks alone on the first line. Three or more is a real fence and is left
+    // to FindFenceRegions, which protects everything it opens.
+    private static readonly Regex LeadingOrphanFenceRegex =
+        new(@"\A[ \t]*(`{1,2})[ \t]*(?:\n|\z)", RegexOptions.Compiled);
+
+    /// <summary>
+    /// Removes a leading run of one or two backticks sitting alone on its own line with nothing
+    /// to close it.
+    /// </summary>
+    private static string StripLeadingOrphanFence(string text, List<string> removed, ref BenchmarkAnswerFlags flags)
+    {
+        var m = LeadingOrphanFenceRegex.Match(text);
+        if (!m.Success) return text;
+
+        string rest = text.Substring(m.Length);
+
+        // A blank line follows, so nothing can close the run: an inline-code span may wrap a
+        // single newline but never a blank line. This is the reference-run shape — a lone
+        // backtick, a blank line, then a double-backtick-prefixed narration paragraph, whose
+        // own backticks must not be mistaken for the closer.
+        if (rest.Length > 0 && !rest.StartsWith("\n", StringComparison.Ordinal))
+        {
+            // No blank line: the run could still be a code span wrapping a line break, and only
+            // the remainder of its own paragraph could close it.
+            int paragraphEnd = rest.IndexOf("\n\n", StringComparison.Ordinal);
+            string sameParagraph = paragraphEnd < 0 ? rest : rest.Substring(0, paragraphEnd);
+            if (sameParagraph.Contains(m.Groups[1].Value, StringComparison.Ordinal)) return text;
+        }
+
+        removed.Add(m.Value);
+        flags |= BenchmarkAnswerFlags.HarnessArtifacts;
+
+        return rest;
     }
 
     // --- Repeated fragments ------------------------------------------------------------------

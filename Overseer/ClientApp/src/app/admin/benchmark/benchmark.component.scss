@@ -102,6 +102,15 @@
   }
 }
 
+.form-row.three-cols {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+
+  @media (max-width: 1200px) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  @media (max-width: 800px)  { grid-template-columns: 1fr; }
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -138,6 +147,7 @@
 .custom-model-selector {
   position: relative;
   width: 100%;
+  min-width: 0;
 }
 
 .selector-trigger {
@@ -229,6 +239,17 @@
   font-weight: 500;
   color: #fff;
   white-space: nowrap;
+}
+
+/* In the trigger, the model name shares the row with the thinking/reasoning/provider
+   badges and the chevron. A narrower grid column (see .form-row.three-cols) must not let
+   a long name push those out — truncate the name instead. The dropdown's own .model-name
+   above keeps wrapping off (white-space: nowrap) since the dropdown is free to grow via
+   its own width: max-content; max-width: 480px. */
+.selector-trigger .model-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .provider-badge {
@@ -1642,20 +1663,20 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 6px;
   background: rgba(0, 0, 0, 0.2);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: 12px;
+  row-gap: 8px;
 
+  /* display: contents lets each row's dt/dd land directly in the strip's own grid, so
+     both rows share one column edge instead of each row measuring its own dt width. */
   .run-model-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-    min-inline-size: 0;
+    display: contents;
 
     dt {
       flex: 0 0 auto;
-      min-width: 116px;
+      min-width: 0;
+      align-self: center;
       margin: 0;
       font-size: 12px;
       text-transform: uppercase;
@@ -1675,6 +1696,17 @@
     .model-name {
       white-space: normal;
       overflow-wrap: anywhere;
+    }
+  }
+
+  @media (max-width: 640px) {
+    grid-template-columns: 1fr;
+
+    .run-model-row {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 4px;
     }
   }
 }
