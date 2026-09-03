@@ -683,6 +683,69 @@
           </div>
         }
 
+        <!--
+          Band Agreement. The Difficulty Breakdown buckets by *assessed* difficulty, so its
+          counts can differ from the authored distribution; without naming which questions
+          moved, that difference is unexplainable to a reader.
+        -->
+        @if (bandDisagreements().length > 0) {
+          <div class="band-agreement-section">
+            <h4>Band Agreement</h4>
+            <p class="section-note">
+              {{ bandDisagreements().length }} of {{ selectedRunDetail.answers.length }} question(s)
+              were assessed outside their authored band.
+            </p>
+            <ul class="band-shift-list">
+              @for (ans of bandDisagreements(); track ans.orderIndex) {
+                <li>
+                  <strong>Q{{ ans.orderIndex }}:</strong>
+                  authored {{ formatDifficulty(ans.difficulty) }} &rarr;
+                  assessed {{ assessedBandOf(ans) }} ({{ ans.assessedDifficulty }})
+                </li>
+              }
+            </ul>
+          </div>
+        }
+
+        <!--
+          Tool Usage Profile. Knowing a budget was reached is not actionable on its own; the
+          operator needs to see which tools consumed it before tuning the cap.
+        -->
+        @if (totalToolCalls() > 0) {
+          <div class="tool-usage-section">
+            <h4>Tool Usage Profile</h4>
+            <p class="section-note">
+              {{ totalToolCalls() }} tool call(s) total, {{ meanToolCallsPerQuestion() | number:'1.1-1' }} per question on average.
+            </p>
+            <table class="gh-table tool-usage-table">
+              <caption class="visually-hidden">Successful tool calls per tool across the run</caption>
+              <thead>
+                <tr><th scope="col">Tool</th><th scope="col">Successful calls</th></tr>
+              </thead>
+              <tbody>
+                @for (tool of toolUsageProfile(); track tool.name) {
+                  <tr>
+                    <td><code>{{ tool.name }}</code></td>
+                    <td>{{ tool.count }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+            @if (budgetExhaustedAnswers().length > 0) {
+              <p class="section-note">Questions that reached their tool call budget:</p>
+              <ul class="band-shift-list">
+                @for (ans of budgetExhaustedAnswers(); track ans.orderIndex) {
+                  <li>
+                    <strong>Q{{ ans.orderIndex }}</strong>
+                    ({{ formatDifficulty(ans.difficulty) }}, assessed {{ ans.assessedDifficulty ?? 'Auto' }}):
+                    {{ ans.toolCallCount ?? 0 }} of {{ ans.toolCallBudgetUsed ?? '?' }} calls used
+                  </li>
+                }
+              </ul>
+            }
+          </div>
+        }
+
         <!-- Questions & Answers -->
         <div class="questions-detail-section">
           <h4>Question Breakdown ({{ selectedRunDetail.answers.length }})</h4>
@@ -691,7 +754,12 @@
               <div class="question-card-header" (click)="toggleQuestion(ans.orderIndex)">
                 <div class="header-left">
                   <span class="q-number">Q{{ ans.orderIndex }}</span>
-                  <span class="difficulty-badge" [class]="'diff-' + formatDifficulty(ans.difficulty).toLowerCase()">
+                  <!--
+                    A band shift is surfaced through the tooltip here and listed in full in the
+                    Band Agreement panel above, so the badge itself stays compact.
+                  -->
+                  <span class="difficulty-badge" [class]="'diff-' + formatDifficulty(ans.difficulty).toLowerCase()"
+                        [title]="assessedBandOf(ans) ? 'Authored ' + formatDifficulty(ans.difficulty) + ', assessed ' + assessedBandOf(ans) : 'Authored and assessed band agree'">
                     {{ formatDifficulty(ans.difficulty) }} ({{ ans.assessedDifficulty ?? 'Auto' }})
                   </span>
                   <span class="status-badge" [class]="'badge-status-' + formatAnswerStatus(ans.status).toLowerCase()">

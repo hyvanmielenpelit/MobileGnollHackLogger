@@ -464,15 +464,6 @@
     border: 1px solid #ff9800;
   }
 
-  // A run that only reached an operator-configured cap. Deliberately blue-informational
-  // rather than the amber of badge-status-completedwitherrors: the run is valid, and the
-  // colour is the only thing a reader takes in before the label.
-  &.badge-status-completedwithlimits {
-    background: rgba(33, 150, 243, 0.2);
-    color: #64b5f6;
-    border: 1px solid #2196f3;
-  }
-
   &.badge-status-failed {
     background: rgba(244, 67, 54, 0.2);
     color: #e57373;
@@ -505,6 +496,15 @@
     color: #64b5f6;
   }
 
+  // CompletedWithLimits means the run reached an operator-configured cap and nothing else.
+  // Informational blue rather than the amber of badge-status-completedwitherrors, because the
+  // run is valid and the colour is what a reader takes in before the label.
+  &.badge-status-completedwithlimits {
+    background: rgba(33, 150, 243, 0.2);
+    color: #64b5f6;
+    border: 1px solid #2196f3;
+  }
+
   &.badge-status-scored {
     background: rgba(76, 175, 80, 0.15);
     color: #81c784;
@@ -534,7 +534,10 @@
   text-transform: uppercase;
 }
 
-.badge-flag {
+// .badge-scrubbed shares the flag badge's shape: it reports the same class of harness
+// observation about one answer, and a second size or radius in that row would read as a fault.
+.badge-flag,
+.badge-scrubbed {
   display: inline-block;
   font-size: 11px;
   font-weight: 600;
@@ -543,29 +546,18 @@
   background: rgba(186, 104, 200, 0.15);
   color: #ce93d8;
   border: 1px solid rgba(186, 104, 200, 0.4);
-
-  // Advisory flags (ReasoningBleed, RepeatedFragments) report what the harness noticed and
-  // cleaned up; they are not defects and never change the run status. Muted to grey, with a
-  // dashed border so the distinction survives for a reader who cannot separate the hues.
-  &.badge-flag-advisory {
-    background: rgba(136, 136, 136, 0.08);
-    color: #9a9a9a;
-    border: 1px dashed rgba(136, 136, 136, 0.45);
-    font-weight: 500;
-  }
 }
 
-// A number of transport artifact blocks were removed from this answer before grading. Neutral
-// like the advisory badges: the removal is a harness action to be audited, not a failure.
+// Advisory flags (ReasoningBleed, RepeatedFragments) report what the harness noticed, and
+// .badge-scrubbed reports what it removed. Neither is a defect and neither changes the run
+// status, so both are muted to grey with a dashed border — the dash keeps the distinction from
+// the purple defect flags legible to a reader who cannot separate the two hues.
+.badge-flag.badge-flag-advisory,
 .badge-scrubbed {
-  display: inline-block;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: rgba(33, 150, 243, 0.12);
-  color: #64b5f6;
-  border: 1px solid rgba(33, 150, 243, 0.4);
+  background: rgba(136, 136, 136, 0.08);
+  color: #9a9a9a;
+  border: 1px dashed rgba(136, 136, 136, 0.45);
+  font-weight: 500;
 }
 
 .badge-degraded-count {
@@ -851,35 +843,34 @@
       white-space: pre-wrap;
     }
 
+    // The artifact box is the thought box's sibling in every respect but colour and face, so
+    // the shared geometry is declared once.
+    .thought-box,
+    .artifact-box {
+      border-radius: 4px;
+      padding: 12px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+    }
+
     .thought-box {
       background: #14141c;
       border: 1px solid #2e2e4a;
-      border-radius: 4px;
-      padding: 12px;
       font-size: 12px;
-      line-height: 1.5;
-      white-space: pre-wrap;
       color: #9fa8da;
     }
 
     // The verbatim material the artifact scrubber removed. Monospace because it is mostly
     // leaked JSON payloads and channel literals, and muted because it is audit material
-    // rather than part of the answer. Overflows horizontally in its own box: an unwrapped
-    // payload line must not push the dialog sideways.
+    // rather than part of the answer. overflow-wrap is what keeps an unbroken payload line
+    // from pushing the dialog sideways; pre-wrap alone only breaks at whitespace.
     .artifact-box {
       background: #101010;
       border: 1px dashed #333;
-      border-radius: 4px;
-      padding: 12px;
       font-family: 'Consolas', 'Courier New', monospace;
       font-size: 11px;
-      line-height: 1.5;
-      white-space: pre-wrap;
-      overflow-x: auto;
       overflow-wrap: anywhere;
       color: #8a8a8a;
-      max-height: 320px;
-      overflow-y: auto;
     }
 
     .assessor-comment-box {
@@ -1940,4 +1931,8 @@
   white-space: nowrap !important;
   border: 0 !important;
 }
-
+// Band Agreement and Tool Usage Profile panels. One shared rule, and .gh-table for the
+// table: this file sits against the 30 kB anyComponentStyle budget.
+.section-note,
+.band-shift-list { margin: 0 0 8px; color: #999; font-size: 12px; }
+.band-shift-list { padding-left: 20px; }

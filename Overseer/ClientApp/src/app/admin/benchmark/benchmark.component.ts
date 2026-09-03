@@ -2139,6 +2139,84 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     return AdminBenchmarkComponent.ADVISORY_FLAG_NAMES.includes(flag);
   }
 
+  // --- Difficulty bands ---
+  //
+  // Must stay in step with BenchmarkDifficultyBands on the server. These are the boundaries the
+  // difficulty assessor is told to rate against; the report previously bucketed at 33/66 while
+  // the assessor was told 35/70, so a question rated 35 as Simple was reported as Intermediate.
+  private static readonly BAND_SIMPLE_MAX = 35;
+  private static readonly BAND_INTERMEDIATE_MAX = 70;
+
+  bandOfDifficulty(difficulty: number): string {
+    if (difficulty <= AdminBenchmarkComponent.BAND_SIMPLE_MAX) return 'Simple';
+    if (difficulty <= AdminBenchmarkComponent.BAND_INTERMEDIATE_MAX) return 'Intermediate';
+    return 'Advanced';
+  }
+
+  /**
+   * The assessed band, but only when it disagrees with the authored one. Returns null on
+   * agreement so the template can render the shift and nothing otherwise.
+   */
+  assessedBandOf(ans: BenchmarkRunAnswerDto): string | null {
+    if (ans.assessedDifficulty == null) return null;
+
+    const assessed = this.bandOfDifficulty(ans.assessedDifficulty);
+    return assessed === this.formatDifficulty(ans.difficulty) ? null : assessed;
+  }
+
+  /** Answers whose assessed band differs from the band they were authored in. */
+  bandDisagreements(): BenchmarkRunAnswerDto[] {
+    return (this.selectedRunDetail?.answers ?? []).filter(a => this.assessedBandOf(a) !== null);
+  }
+
+  // --- Tool usage profile ---
+
+  /**
+   * Successful tool calls per tool across the run, aggregated from each answer's
+   * toolCallSummary. The server reports the same tally in the Markdown report; there is no
+   * run-level per-tool field on the DTO, so the client re-derives it from the same source
+   * rather than adding one.
+   *
+   * Summary entries look like `wiki_search×11`. A trailing `(n blocked by budget)` note is
+   * parenthesised and carries no tool name, so it is skipped.
+   */
+  toolUsageProfile(): { name: string; count: number }[] {
+    const counts = new Map<string, number>();
+
+    for (const ans of this.selectedRunDetail?.answers ?? []) {
+      if (!ans.toolCallSummary) continue;
+
+      for (const entry of ans.toolCallSummary.split(',')) {
+        const trimmed = entry.trim();
+        const sep = trimmed.indexOf('×');
+        if (sep <= 0 || trimmed.startsWith('(')) continue;
+
+        const name = trimmed.substring(0, sep).trim();
+        const digits = trimmed.substring(sep + 1).match(/^\d+/);
+        if (!name || !digits) continue;
+
+        counts.set(name, (counts.get(name) ?? 0) + parseInt(digits[0], 10));
+      }
+    }
+
+    return Array.from(counts, ([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  }
+
+  totalToolCalls(): number {
+    return (this.selectedRunDetail?.answers ?? []).reduce((sum, a) => sum + (a.toolCallCount ?? 0), 0);
+  }
+
+  meanToolCallsPerQuestion(): number {
+    const answers = this.selectedRunDetail?.answers ?? [];
+    return answers.length === 0 ? 0 : this.totalToolCalls() / answers.length;
+  }
+
+  /** Answers that reached their tool call budget, for the tool usage panel. */
+  budgetExhaustedAnswers(): BenchmarkRunAnswerDto[] {
+    return (this.selectedRunDetail?.answers ?? []).filter(a => !!a.toolBudgetExhausted);
+  }
+
   isAssessmentFailed(ans: BenchmarkRunAnswerDto): boolean {
     return this.formatAssessmentStatus(ans.assessmentStatus) === 'Failed';
   }
