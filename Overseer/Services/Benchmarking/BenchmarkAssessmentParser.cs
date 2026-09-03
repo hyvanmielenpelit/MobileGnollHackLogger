@@ -40,6 +40,15 @@ public class BenchmarkPerQuestionAssessmentResult
     [JsonPropertyName("completenessEvidence")]
     public string? CompletenessEvidence { get; set; }
 
+    /// <summary>
+    /// Claims the answer asserts that the rubric neither states nor contradicts, and that the
+    /// assessor could not positively refute. Scoring method v6 forbids deducting ACCURACY for
+    /// these; they are recorded so that a claim recurring across unrelated model families can be
+    /// told apart from one a single model invented.
+    /// </summary>
+    [JsonPropertyName("unverifiedClaims")]
+    public List<string> UnverifiedClaims { get; set; } = new();
+
     [JsonPropertyName("comment")]
     public string? Comment { get; set; }
 
@@ -48,6 +57,22 @@ public class BenchmarkPerQuestionAssessmentResult
     /// </summary>
     [JsonIgnore]
     public bool CriticalErrorDemoted { get; set; }
+
+    /// <summary>
+    /// Unverified claims dropped because they could not be found in the graded answer. Not from
+    /// the model; a non-zero value says the assessor is paraphrasing rather than quoting, which
+    /// is worth knowing before trusting the recorded claims.
+    /// </summary>
+    [JsonIgnore]
+    public int UnverifiedClaimsDropped { get; set; }
+
+    /// <summary>
+    /// The assessor's own prose describes a fabrication while <see cref="CriticalError"/> is
+    /// false. Advisory: the parser never promotes a critical error the assessor declined to
+    /// declare. See <see cref="BenchmarkVerdictConsistency"/>.
+    /// </summary>
+    [JsonIgnore]
+    public bool ContestedVerdict { get; set; }
 }
 
 public class PerQuestionAssessmentParseResult
@@ -201,6 +226,33 @@ public static class BenchmarkAssessmentParser
                     : $"{comment} [Harness: critical error not applied — {reason}.]";
             }
 
+            // Unverified claims get the same quote verification a critical error gets, for the
+            // same reason: a claim that cannot be found in the answer is not a claim the answer
+            // made. Dropping it silently would let a paraphrase accumulate across runs and be
+            // read later as cross-model corroboration of a rubric gap that nobody actually
+            // asserted. The graded answer is not always available (re-parsing a stored verdict),
+            // in which case the claims are taken as given.
+            var unverifiedClaims = new List<string>();
+            int unverifiedClaimsDropped = 0;
+            foreach (string claim in GetStringArrayProperty(root, "unverifiedClaims", "unverified_claims"))
+            {
+                if (gradedAnswerText != null && !QuoteAppearsInAnswer(claim, gradedAnswerText))
+                {
+                    unverifiedClaimsDropped++;
+                    continue;
+                }
+
+                unverifiedClaims.Add(claim);
+            }
+
+            // Advisory only. The assessor said "hallucinates" and then declined to set the flag;
+            // the harness records the divergence and routes it to a second reader rather than
+            // overriding a judgement it is not in a position to make.
+            bool contestedVerdict = !criticalError &&
+                (BenchmarkVerdictConsistency.MentionsFabrication(comment) ||
+                 BenchmarkVerdictConsistency.MentionsFabrication(accuracyEvidence) ||
+                 BenchmarkVerdictConsistency.MentionsFabrication(completenessEvidence));
+
             var result = new BenchmarkPerQuestionAssessmentResult
             {
                 AccuracyLevel = Math.Clamp(accuracyLevel, 0, 6),
@@ -211,8 +263,11 @@ public static class BenchmarkAssessmentParser
                 CriticalErrorQuote = criticalErrorQuote,
                 AccuracyEvidence = accuracyEvidence,
                 CompletenessEvidence = completenessEvidence,
+                UnverifiedClaims = unverifiedClaims,
                 Comment = comment,
-                CriticalErrorDemoted = demoted
+                CriticalErrorDemoted = demoted,
+                UnverifiedClaimsDropped = unverifiedClaimsDropped,
+                ContestedVerdict = contestedVerdict
             };
 
             return new PerQuestionAssessmentParseResult
@@ -370,6 +425,51 @@ public static class BenchmarkAssessmentParser
             }
         }
         return null;
+    }
+
+    /// <summary>
+    /// A string array property, tolerating the two shapes models actually return: a JSON array of
+    /// strings, and a bare string where the model had exactly one item and forgot the brackets.
+    /// Non-string array entries are skipped rather than failing the parse — one malformed entry
+    /// must not cost the whole verdict.
+    /// </summary>
+    private static List<string> GetStringArrayProperty(JsonElement element, params string[] propertyNames)
+    {
+        var values = new List<string>();
+
+        foreach (var name in propertyNames)
+        {
+            if (!element.TryGetProperty(name, out var prop)) continue;
+
+            if (prop.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in prop.EnumerateArray())
+                {
+                    if (item.ValueKind != JsonValueKind.String) continue;
+
+                    string? value = item.GetString();
+                    if (!string.IsNullOrWhiteSpace(value))
+                    {
+                        values.Add(value.Trim());
+                    }
+                }
+
+                return values;
+            }
+
+            if (prop.ValueKind == JsonValueKind.String)
+            {
+                string? value = prop.GetString();
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    values.Add(value.Trim());
+                }
+
+                return values;
+            }
+        }
+
+        return values;
     }
 
     /// <summary>

@@ -151,6 +151,8 @@ public class BenchmarkScoringProfileService
         existing.LevelScoresJson = profile.LevelScoresJson;
         existing.CriticalErrorCeiling = profile.CriticalErrorCeiling;
         existing.SecondOpinionQualityThreshold = profile.SecondOpinionQualityThreshold;
+        existing.SecondOpinionMode = profile.SecondOpinionMode;
+        existing.SecondOpinionOutlierDeltaPoints = profile.SecondOpinionOutlierDeltaPoints;
         existing.SpeedTargetMs = profile.SpeedTargetMs;
         existing.SpeedDecayK = profile.SpeedDecayK;
         existing.SpeedDifficultyScaling = profile.SpeedDifficultyScaling;
@@ -272,6 +274,20 @@ public class BenchmarkScoringProfileService
             errors.Add("SecondOpinionQualityThreshold must be between 0 and 100.");
         }
 
+        if (!Enum.IsDefined(typeof(BenchmarkSecondOpinionMode), profile.SecondOpinionMode))
+        {
+            errors.Add("SecondOpinionMode must be Off (0), Flagged (1), FlaggedAndOutliers (2), or All (3).");
+        }
+
+        // Only binding in FlaggedAndOutliers. A zero delta there would select nothing, which
+        // contradicts the mode the operator chose; outside that mode the field is inert, so an
+        // arbitrary stored value must not fail validation.
+        if (profile.SecondOpinionMode == (int)BenchmarkSecondOpinionMode.FlaggedAndOutliers &&
+            (profile.SecondOpinionOutlierDeltaPoints <= 0 || profile.SecondOpinionOutlierDeltaPoints > 100))
+        {
+            errors.Add("SecondOpinionOutlierDeltaPoints must be between 1 and 100 when SecondOpinionMode is FlaggedAndOutliers.");
+        }
+
         if (profile.SpeedTargetMs <= 0)
         {
             errors.Add("SpeedTargetMs must be greater than 0.");
@@ -316,6 +332,10 @@ public class BenchmarkScoringProfileService
             LevelScores = ParseLevelScores(profile.LevelScoresJson),
             CriticalErrorCeiling = profile.CriticalErrorCeiling,
             SecondOpinionQualityThreshold = profile.SecondOpinionQualityThreshold,
+            SecondOpinionMode = Enum.IsDefined(typeof(BenchmarkSecondOpinionMode), profile.SecondOpinionMode)
+                ? (BenchmarkSecondOpinionMode)profile.SecondOpinionMode
+                : BenchmarkSecondOpinionMode.Flagged,
+            SecondOpinionOutlierDeltaPoints = profile.SecondOpinionOutlierDeltaPoints,
             SpeedTargetMs = profile.SpeedTargetMs,
             SpeedDecayK = profile.SpeedDecayK,
             SpeedDifficultyScaling = profile.SpeedDifficultyScaling
@@ -346,6 +366,10 @@ public class BenchmarkScoringProfileService
             LevelScoresJson = "[1, 15, 35, 55, 72, 87, 100]",
             CriticalErrorCeiling = 25,
             SecondOpinionQualityThreshold = 50,
+            // Flagged, not All: a seeded default must reproduce existing behaviour rather than
+            // silently double every future run's assessor spend. The editor recommends All.
+            SecondOpinionMode = (int)BenchmarkSecondOpinionMode.Flagged,
+            SecondOpinionOutlierDeltaPoints = 25,
             // Recalibrated: the old 5000 ms / k=25 pair drove the speed score to its floor at
             // roughly 78 s, tying together every slower answer on an agentic run. See
             // BenchmarkScoringConstants for the two invariants these satisfy. Existing databases

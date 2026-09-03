@@ -191,13 +191,92 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void ScoringMethodVersion_IsFive()
+    public void ScoringMethodVersion_IsSix()
     {
-        // v4 was the artifact scrubbing and speed recalibration. v5 changes what a critical
-        // error is — an omission can no longer be one, and the claim must be quoted — so v5
-        // scores are not comparable with v4, and the report prints this so a mixed comparison
-        // is visible.
-        Assert.Equal(5, BenchmarkAssessmentPrompt.ScoringMethodVersion);
+        // v4 was the artifact scrubbing and speed recalibration. v5 changed what a critical
+        // error is — an omission can no longer be one, and the claim must be quoted. v6 changes
+        // what an *accuracy deduction* is: a claim the rubric neither states nor contradicts is
+        // declared rather than deducted for. Scores are not comparable across any of those
+        // boundaries on the answers they touch, and the report prints the version so a mixed
+        // comparison is visible rather than silent.
+        Assert.Equal(6, BenchmarkAssessmentPrompt.ScoringMethodVersion);
+    }
+
+    [Fact]
+    public void HarnessVersion_IsSeven()
+    {
+        Assert.Equal("7", BenchmarkAssessmentPrompt.HarnessVersion);
+    }
+
+    [Fact]
+    public void PerQuestionPrompt_DeclaresUnverifiedClaimsInsteadOfDeductingForThem()
+    {
+        string prompt = BenchmarkAssessmentPrompt.BuildPerQuestionPrompt(
+            "Suite",
+            1,
+            "What racial traits does a Gnoll get?",
+            BenchmarkDifficulty.Simple,
+            "**REQUIRED** - keen smell; eats bones.",
+            "Gnolls are immune to lycanthropy.",
+            BenchmarkAnswerStatus.Ok);
+
+        // The rule the 2026-09-03 run needed and did not have: Q1 lost 45 points of Accuracy —
+        // the 55%-weight dimension — for a Yeenaghu trait the assessor called "unverified",
+        // which penalised the candidate for knowing more than its rubric.
+        Assert.Contains("is **not** an accuracy deduction", prompt);
+        Assert.Contains("unverifiedClaims", prompt);
+        Assert.Contains("Never write \"unverified\"", prompt);
+    }
+
+    [Fact]
+    public void PerQuestionPrompt_AccuracyLevelThree_NoLongerOffersHallucinationAsAnAnchor()
+    {
+        string prompt = BenchmarkAssessmentPrompt.BuildPerQuestionPrompt(
+            "Suite",
+            1,
+            "Question?",
+            BenchmarkDifficulty.Simple,
+            null,
+            "Answer.",
+            BenchmarkAnswerStatus.Ok);
+
+        // Level 3 was the only anchor that fitted "I could not confirm this", which is how an
+        // unverifiable claim came to cost the same as a verified falsehood. Fabrication stays
+        // covered at levels 0-2 and by CRITICAL ERROR, both of which still say so.
+        Assert.Contains("Level 3: Mostly correct; minor inaccuracies or subtle confusion of edge cases.", prompt);
+        Assert.DoesNotContain("slight hallucinations", prompt);
+        Assert.Contains("Level 0: Completely fabricated", prompt);
+    }
+
+    [Fact]
+    public void SynthesisPrompt_OmitsTurnDuration()
+    {
+        var verdicts = new List<BenchmarkPerQuestionVerdictSummary>
+        {
+            new()
+            {
+                OrderIndex = 1,
+                QuestionText = "Question?",
+                AccuracyLevel = 5,
+                CompletenessLevel = 5,
+                ConcisenessLevel = 5,
+                ReadabilityLevel = 5,
+                QualityScore = 87,
+                SpeedScore = 60,
+                DurationMs = 165068,
+                AssessedDifficulty = 60,
+                ReviewComment = "Good.",
+                Status = BenchmarkAnswerStatus.Ok
+            }
+        };
+
+        string prompt = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt("Suite", verdicts);
+
+        // Turn duration was removed from the per-question prompt in harness version 2 to stop the
+        // assessor penalising deliberation. Leaving it in the prompt that produces the Holistic
+        // Assessor Score reintroduced the same bias one level up.
+        Assert.DoesNotContain("Duration:", prompt);
+        Assert.DoesNotContain("165068", prompt);
     }
 
     [Fact]

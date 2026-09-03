@@ -42,13 +42,20 @@ describe('AdminBenchmarkComponent', () => {
       'rerunAnswer',
       'rerunFinalSynthesis',
       'retryFailedAssessments',
-      'rescoreRun'
+      'rescoreRun',
+      'trialReassessAnswer',
+      'calibrateAssessor',
+      'getCalibrations',
+      'getLastAssessor'
     ]);
 
     benchmarkServiceMock.getActiveDifficultyAssessment.and.returnValue(of(null));
     benchmarkServiceMock.getActiveRun.and.returnValue(of(null));
     benchmarkServiceMock.getQuestions.and.returnValue(of([]));
     benchmarkServiceMock.getSuiteRunsFootprint.and.returnValue(of({ runCount: 0, totalAnswerCharacters: 0 }));
+    benchmarkServiceMock.getCalibrations.and.returnValue(of([]));
+    // A suite with no completed run has no assessor to differ from, which is not an error.
+    benchmarkServiceMock.getLastAssessor.and.returnValue(of({}));
     benchmarkServiceMock.getSuites.and.returnValue(of([
       { id: 1, name: 'Default Suite', description: 'Test', createdAtUtc: '2026-09-01T00:00:00Z', modifiedAtUtc: null, questionCount: 15, assessedQuestionCount: 15, difficultyFullyAssessed: true }
     ]));
@@ -64,6 +71,8 @@ describe('AdminBenchmarkComponent', () => {
         levelScoresJson: '[1, 15, 35, 55, 72, 87, 100]',
         criticalErrorCeiling: 25,
         secondOpinionQualityThreshold: 50,
+        secondOpinionMode: 1,
+        secondOpinionOutlierDeltaPoints: 25,
         speedTargetMs: 15000,
         speedDecayK: 20.0,
         speedDifficultyScaling: 1.0,
@@ -2117,9 +2126,11 @@ describe('AdminBenchmarkComponent', () => {
       expect(groups[2].querySelector('label')?.textContent?.trim()).toBe('Second Opinion Assessor (optional)');
 
       // The explanatory hint travels with the second-opinion selector, not loose in the row.
+      // The trigger list moved to the mode dropdown's own hint when that control was added, so
+      // this one describes what the second assessor is for rather than when it fires.
       const hint = groups[2].querySelector('.form-hint');
       expect(hint).toBeTruthy();
-      expect(hint!.textContent).toContain('Re-grades any answer flagged with a critical error');
+      expect(hint!.textContent).toContain('Produces a second, independent verdict');
     });
 
     it('should render both dt/dd pairs and keep .run-model-row present in the run-model-strip', () => {
@@ -2234,5 +2245,573 @@ describe('AdminBenchmarkComponent', () => {
       selectTestedModelWithThinkingLevel(null);
       expect(component.showProfileFitAdvisory).toBeFalse();
     });
+  });
+  describe('second opinion mode', () => {
+    /**
+     * NgModel treats `disabled` as one of its own inputs and applies it through the form control
+     * in a microtask, so the DOM property is not settled by the end of detectChanges. This must
+     * be called inside fakeAsync, and `tick()` is what makes an assertion about it mean anything:
+     * `whenStable()` never resolves here, because the component holds polling intervals.
+     */
+    function modeSelect(): HTMLSelectElement | null {
+      component.activeSubTab = 'run';
+      fixture.detectChanges();
+      tick();
+      fixture.detectChanges();
+      return fixture.nativeElement.querySelector('#secondOpinionModeSelect') as HTMLSelectElement | null;
+    }
+
+    it('should offer the four modes in coverage order', fakeAsync(() => {
+      const select = modeSelect();
+      expect(select).toBeTruthy();
+
+      const labels = Array.from(select!.querySelectorAll('option')).map(o => (o.textContent || '').trim());
+      expect(labels).toEqual([
+        'Never',
+        'Only flagged answers',
+        'Flagged answers and statistical outliers',
+        'Every answer (double grading)'
+      ]);
+      discardPeriodicTasks();
+    }));
+
+    it('should be disabled, with a reason, until a second opinion assessor is chosen', fakeAsync(() => {
+      component.secondOpinionConfigId = null;
+      const select = modeSelect();
+
+      // The hard gate that silently produced the 2026-09-03 run's zero second verdicts: the
+      // mode is inert without an assessor, so the control says so rather than looking set.
+      expect(select!.disabled).toBeTrue();
+      expect(component.secondOpinionModeHint).toContain('Select a second opinion assessor first');
+      discardPeriodicTasks();
+    }));
+
+    it('should enable and describe the selected mode once an assessor is chosen', fakeAsync(() => {
+      component.secondOpinionConfigId = 1;
+      component.secondOpinionMode = 3;
+      const select = modeSelect();
+
+      expect(select!.disabled).toBeFalse();
+      expect(component.secondOpinionModeHint).toContain('measures grader agreement');
+      discardPeriodicTasks();
+    }));
+
+    it('should default from the selected profile and be overridable for one run', () => {
+      component.scoringProfiles = [{ ...component.scoringProfiles[0], secondOpinionMode: 2 }];
+      component.selectedScoringProfileId = 1;
+      expect(component.secondOpinionMode).toBe(2);
+
+      component.secondOpinionMode = 3;
+      expect(component.secondOpinionMode).toBe(3);
+    });
+
+    it('should send the mode only when an assessor is selected', fakeAsync(() => {
+      component.selectedSuiteId = 1;
+      component.testedConfigId = 1;
+      component.assessorConfigId = 2;
+      component.secondOpinionConfigId = null;
+      benchmarkServiceMock.startRun.and.returnValue(of({ runId: 7 }));
+      benchmarkServiceMock.getRun.and.returnValue(throwError(() => ({ status: 0 })));
+      spyOn(component.runProgressDialog.nativeElement, 'showModal');
+
+      component.startBenchmark();
+      expect(benchmarkServiceMock.startRun.calls.mostRecent().args[0].secondOpinionMode).toBeNull();
+
+      component.secondOpinionConfigId = 3;
+      component.secondOpinionMode = 3;
+      component.startBenchmark();
+      expect(benchmarkServiceMock.startRun.calls.mostRecent().args[0].secondOpinionMode).toBe(3);
+
+      (component as any).stopPolling();
+      discardPeriodicTasks();
+    }));
+
+    it('should enable the profile editor outlier delta for FlaggedAndOutliers only', () => {
+      component.profileForm.secondOpinionMode = 1;
+      expect(component.outlierDeltaEnabled).toBeFalse();
+
+      component.profileForm.secondOpinionMode = 3;
+      expect(component.outlierDeltaEnabled).toBeFalse();
+
+      component.profileForm.secondOpinionMode = 2;
+      expect(component.outlierDeltaEnabled).toBeTrue();
+    });
+
+    it('should reject a non-positive outlier delta under FlaggedAndOutliers', () => {
+      component.editingProfileId = null;
+      component.profileForm = {
+        ...component.profileForm,
+        name: 'Outlier Profile',
+        secondOpinionMode: 2,
+        secondOpinionOutlierDeltaPoints: 0
+      };
+
+      component.saveProfile();
+
+      expect(benchmarkServiceMock.createScoringProfile).not.toHaveBeenCalled();
+      expect(component.profileValidationErrors.join(' ')).toContain('Outlier delta must be between 1 and 100');
+    });
+  });
+
+  describe('assessor advisories', () => {
+    it('should warn when the assessor and the second opinion share a provider', () => {
+      component.systemConfigs = [
+        { id: 1, displayName: 'Gemini Flash', modelId: 'gemini-3.7-flash', provider: 'Google', modelRole: 4, hasApiKey: true, isEnabled: true } as any,
+        { id: 2, displayName: 'Gemini Pro', modelId: 'gemini-3.7-pro', provider: 'Google', modelRole: 4, hasApiKey: true, isEnabled: true } as any,
+        { id: 3, displayName: 'Claude Opus 5', modelId: 'claude-opus-5', provider: 'Anthropic', modelRole: 4, hasApiKey: true, isEnabled: true } as any
+      ];
+      component.assessorConfigId = 1;
+      component.secondOpinionConfigId = 2;
+      expect(component.showAssessorPairingAdvisory).toBeTrue();
+
+      component.secondOpinionConfigId = 3;
+      expect(component.showAssessorPairingAdvisory).toBeFalse();
+    });
+
+    it('should warn when the assessor differs from the suite\'s last completed run', () => {
+      component.assessorConfigId = 5;
+      component.lastAssessor = {
+        runId: 7,
+        assessorModelConfigurationId: 2,
+        assessorModelDisplayNameUsed: 'Gemini 3.7 Flash',
+        assessorModelProviderUsed: 'Google'
+      };
+      expect(component.showAssessorChangeAdvisory).toBeTrue();
+
+      component.assessorConfigId = 2;
+      expect(component.showAssessorChangeAdvisory).toBeFalse();
+    });
+
+    it('should stay silent for a suite with no completed run to compare against', () => {
+      component.assessorConfigId = 5;
+      component.lastAssessor = {};
+      expect(component.showAssessorChangeAdvisory).toBeFalse();
+    });
+  });
+
+  describe('results screen: agreement, weighting and profile fit', () => {
+    function buildFinishedRun(overrides: any = {}): any {
+      return {
+        id: 77,
+        benchmarkSuiteId: 1,
+        suiteName: 'Default Suite',
+        testedModelDisplayNameUsed: 'GPT-5.6 Luna',
+        testedModelProviderUsed: 'OpenAI',
+        testedModelIdUsed: 'gpt-5.6-luna',
+        testedModelThinkingLevelUsed: 'max',
+        testedModelParallelExecutionModeUsed: 0,
+        assessorModelDisplayNameUsed: 'Gemini 3.7 Flash',
+        assessorModelProviderUsed: 'Google',
+        assessorModelIdUsed: 'gemini-3.7-flash',
+        status: 'Completed',
+        startedAtUtc: '2026-09-03T06:52:00Z',
+        completedAtUtc: '2026-09-03T07:28:00Z',
+        qualityIndex: 94,
+        unweightedQualityIndex: 92,
+        speedIndex: 67,
+        totalAnswerDurationMs: 900000,
+        totalDurationMs: 900000,
+        scoringProfileId: 1,
+        scoringProfileName: 'Standard Intelligence Index (Default)',
+        scoringProfileSpeedTargetMs: 15000,
+        scoringMethodVersion: 6,
+        harnessVersion: '7',
+        transportDefectAnswerCount: 0,
+        advisoryFlagAnswerCount: 0,
+        scrubbedArtifactAnswerCount: 0,
+        difficultyFallbackUsed: false,
+        speedMeasurementDegraded: false,
+        maxParallelQuestionsUsed: 1,
+        answeredQuestionCount: 18,
+        totalQuestionCount: 18,
+        assessmentParseFailed: false,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        totalCacheReadTokens: 0,
+        totalCacheCreationTokens: 0,
+        errorMessage: null,
+        answers: [],
+        ...overrides
+      };
+    }
+
+    function scoreCardText(label: string): string {
+      const cards: HTMLElement[] = Array.from(fixture.nativeElement.querySelectorAll('.score-card'));
+      const card = cards.find(c => (c.querySelector('.score-label')?.textContent || '').trim() === label);
+      return (card?.textContent || '').replace(/\s+/g, ' ').trim();
+    }
+
+    it('should show the unweighted mean beside the weighted index, with the weighting delta', () => {
+      component.selectedRunDetail = buildFinishedRun();
+      fixture.detectChanges();
+
+      expect(component.showUnweightedQualityTile).toBeTrue();
+      expect(component.weightingDeltaLabel).toBe('+2');
+      expect(scoreCardText('Unweighted Mean')).toContain('92 / 100');
+      expect(scoreCardText('Unweighted Mean')).toContain('weighting +2');
+    });
+
+    it('should omit the unweighted tile when the two aggregations agree', () => {
+      component.selectedRunDetail = buildFinishedRun({ qualityIndex: 92, unweightedQualityIndex: 92 });
+      fixture.detectChanges();
+
+      expect(component.showUnweightedQualityTile).toBeFalse();
+      expect(scoreCardText('Unweighted Mean')).toBe('');
+    });
+
+    it('should mark the Speed Index advisory for a deliberating candidate on an interactive profile', () => {
+      component.selectedRunDetail = buildFinishedRun();
+      fixture.detectChanges();
+
+      expect(component.showRunProfileFitAdvisory).toBeTrue();
+      expect(scoreCardText('Speed Index')).toContain('*');
+      expect(component.runProfileFitAdvisoryTitle).toContain('thinking level max');
+    });
+
+    it('should not mark it advisory against a profile that is not an interactive one', () => {
+      component.selectedRunDetail = buildFinishedRun({ scoringProfileSpeedTargetMs: 30000 });
+      fixture.detectChanges();
+
+      expect(component.showRunProfileFitAdvisory).toBeFalse();
+    });
+
+    it('should show the agreement tile with its coverage fraction beneath the value', () => {
+      component.selectedRunDetail = buildFinishedRun({
+        secondOpinionModeUsed: 1,
+        secondOpinionGradedAnswerCount: 4,
+        secondOpinionMeanAbsDelta: 4.25,
+        secondOpinionDisagreementCount: 2
+      });
+      fixture.detectChanges();
+
+      // The coverage never travels separately from the figure: 4 of 18 selected by trigger and
+      // 18 of 18 are different measurements, and only the fraction tells them apart.
+      expect(component.agreementCoverageLabel).toBe('4/18');
+      expect(component.agreementIsSelective).toBeTrue();
+      const text = scoreCardText('Assessor Agreement');
+      expect(text).toContain('4.3 pts');
+      expect(text).toContain('4/18');
+      expect(text).toContain('Flagged only');
+    });
+
+    it('should drop the selective caveat when every answer was graded twice', () => {
+      component.selectedRunDetail = buildFinishedRun({
+        secondOpinionModeUsed: 3,
+        secondOpinionGradedAnswerCount: 18,
+        secondOpinionMeanAbsDelta: 3.0
+      });
+      fixture.detectChanges();
+
+      expect(component.agreementCoverageLabel).toBe('18/18');
+      expect(component.agreementIsSelective).toBeFalse();
+      expect(scoreCardText('Assessor Agreement')).toContain('Every answer');
+    });
+
+    it('should hide the agreement tile when nothing was graded twice', () => {
+      component.selectedRunDetail = buildFinishedRun({ secondOpinionGradedAnswerCount: 0 });
+      fixture.detectChanges();
+
+      expect(component.showAgreementTile).toBeFalse();
+      expect(scoreCardText('Assessor Agreement')).toBe('');
+    });
+
+    it('should name the questions on the tool-budget line and report contested and re-assessed answers', () => {
+      component.selectedRunDetail = buildFinishedRun({
+        toolStarvedAnswerCount: 1,
+        contestedVerdictAnswerCount: 2,
+        reassessedAnswerCount: 1,
+        answers: [
+          { id: 1, orderIndex: 10, questionText: 'Q10', difficulty: 1, answerText: 'a', status: 'Ok', assessmentStatus: 'Scored', durationMs: 1, modelTimeMs: 1, scrubbedArtifactCount: 0, answerFlags: 32, answerFlagNames: ['ContestedVerdict'], toolBudgetExhausted: true, qualityScore: 60 },
+          { id: 2, orderIndex: 11, questionText: 'Q11', difficulty: 1, answerText: 'b', status: 'Ok', assessmentStatus: 'Scored', durationMs: 1, modelTimeMs: 1, scrubbedArtifactCount: 0, answerFlags: 32, answerFlagNames: ['ContestedVerdict'], qualityScore: 84, reassessmentCount: 1, previousQualityScore: 60, reassessedByModelDisplayNameUsed: 'Claude Opus 5' }
+        ]
+      });
+      fixture.detectChanges();
+
+      expect(component.toolBudgetQuestionNumbers).toBe('10');
+      expect(component.contestedVerdictQuestionNumbers).toBe('10, 11');
+      expect(component.reassessedQuestionNumbers).toBe('11');
+
+      const notices: HTMLElement[] = Array.from(fixture.nativeElement.querySelectorAll('.alert-heading'));
+      const heading = notices.find(n => (n.textContent || '').includes('Run Integrity Notice'));
+      const body = ((heading?.parentElement?.querySelector('.alert-body') as HTMLElement)?.textContent || '')
+        .replace(/\s+/g, ' ').trim();
+
+      expect(body).toContain('harness limit (tool budget) (question(s) 10)');
+      expect(body).toContain('2 contested verdict(s)');
+      expect(body).toContain('1 answer(s) were re-assessed after the run finished');
+      expect(body).toContain('The Speed Index is advisory for this run');
+    });
+
+    it('should list the assessor\'s unverified claims on the answer that carried them', () => {
+      const answer: any = {
+        id: 1, orderIndex: 1, questionText: 'Q1', difficulty: 1, answerText: 'a',
+        status: 'Ok', assessmentStatus: 'Scored', durationMs: 1, modelTimeMs: 1,
+        scrubbedArtifactCount: 0, answerFlags: 0, answerFlagNames: [], qualityScore: 60,
+        unverifiedClaimCount: 2,
+        unverifiedClaimsJson: '["gnomes gain infravision","orcs gain poison resistance"]'
+      };
+      expect(component.unverifiedClaimsOf(answer).length).toBe(2);
+      // A malformed blob costs the panel, never the screen.
+      expect(component.unverifiedClaimsOf({ ...answer, unverifiedClaimsJson: '{oops' }).length).toBe(0);
+      expect(component.unverifiedClaimTotal).toBe(0);
+
+      component.selectedRunDetail = buildFinishedRun({ answers: [answer] });
+      expect(component.unverifiedClaimTotal).toBe(2);
+    });
+  });
+
+  describe('run diagnostics capture', () => {
+    function buildDiagnosticsRun(overrides: any = {}): any {
+      return {
+        id: 88,
+        benchmarkSuiteId: 1,
+        suiteName: 'Default Suite',
+        testedModelDisplayNameUsed: 'GPT-5.6 Luna',
+        testedModelProviderUsed: 'OpenAI',
+        testedModelIdUsed: 'gpt-5.6-luna',
+        testedModelThinkingLevelUsed: 'max',
+        testedModelParallelExecutionModeUsed: 0,
+        assessorModelDisplayNameUsed: 'Gemini 3.7 Flash',
+        assessorModelProviderUsed: 'Google',
+        assessorModelIdUsed: 'gemini-3.7-flash',
+        secondOpinionAssessorModelConfigurationId: 4,
+        secondOpinionAssessorModelDisplayNameUsed: 'Claude Opus 5',
+        secondOpinionAssessorModelProviderUsed: 'Anthropic',
+        secondOpinionAssessorModelIdUsed: 'claude-opus-5',
+        status: 'Completed',
+        startedAtUtc: '2026-09-03T06:52:00Z',
+        completedAtUtc: '2026-09-03T07:28:00Z',
+        qualityIndex: 94,
+        unweightedQualityIndex: 92,
+        rawQualityIndex: 96,
+        speedIndex: 67,
+        finalScore: 91,
+        computedScore: null,
+        totalAnswerDurationMs: 900000,
+        totalDurationMs: 900000,
+        scoringProfileId: 1,
+        scoringProfileName: 'Standard Intelligence Index (Default)',
+        scoringProfileSpeedTargetMs: 15000,
+        scoringProfileSpeedDecayK: 20,
+        scoringProfileSecondOpinionQualityThreshold: 50,
+        scoringProfileSecondOpinionOutlierDeltaPoints: 25,
+        scoringMethodVersion: 6,
+        harnessVersion: '7',
+        secondOpinionModeUsed: 3,
+        secondOpinionGradedAnswerCount: 2,
+        secondOpinionMeanAbsDelta: 4.25,
+        secondOpinionDisagreementCount: 1,
+        contestedVerdictAnswerCount: 1,
+        reassessedAnswerCount: 1,
+        transportDefectAnswerCount: 0,
+        recoveredAnswerCount: 0,
+        toolStarvedAnswerCount: 1,
+        advisoryFlagAnswerCount: 1,
+        scrubbedArtifactAnswerCount: 0,
+        toolOverheadMs: 1056,
+        difficultyFallbackUsed: false,
+        speedMeasurementDegraded: false,
+        maxParallelQuestionsUsed: 1,
+        answeredQuestionCount: 2,
+        totalQuestionCount: 2,
+        assessmentParseFailed: false,
+        totalInputTokens: 100,
+        totalOutputTokens: 200,
+        totalCacheReadTokens: 0,
+        totalCacheCreationTokens: 0,
+        errorMessage: null,
+        answers: [
+          {
+            id: 1, benchmarkRunId: 88, orderIndex: 1, questionText: 'Q1', answerText: 'a',
+            difficulty: 1, assessedDifficulty: 25, status: 'Ok', assessmentStatus: 'Scored',
+            durationMs: 48800, modelTimeMs: 47744, toolTimeMs: 1056, scrubbedArtifactCount: 0,
+            answerFlags: 32, answerFlagNames: ['ContestedVerdict'],
+            qualityScore: 60, rawQualityScore: 60, speedScore: 29, criticalError: false,
+            accuracyLevel: 3, completenessLevel: 4, concisenessLevel: 5, readabilityLevel: 6,
+            toolCallCount: 34, toolCallBudgetUsed: 35, toolCallSummary: 'wiki_search×34',
+            narrationBlockCount: 3, unverifiedClaimCount: 2,
+            secondOpinionQualityScore: 85, secondOpinionTrigger: 'All', secondOpinionDisagreed: true,
+            reassessmentCount: 1, previousQualityScore: 42,
+            reassessedByModelDisplayNameUsed: 'Claude Opus 5'
+          },
+          {
+            id: 2, benchmarkRunId: 88, orderIndex: 2, questionText: 'Q2', answerText: 'b',
+            difficulty: 3, assessedDifficulty: 85, status: 'Ok', assessmentStatus: 'Scored',
+            durationMs: 20000, modelTimeMs: 20000, scrubbedArtifactCount: 0,
+            answerFlags: 0, answerFlagNames: [], qualityScore: 99, speedScore: 70,
+            criticalError: false, toolCallCount: 25, toolCallBudgetUsed: 25,
+            toolCallSummary: 'wiki_search×25 (3 blocked by budget)', toolBudgetExhausted: true,
+            secondOpinionQualityScore: 97, secondOpinionTrigger: 'All'
+          }
+        ],
+        ...overrides
+      };
+    }
+
+    it('should name all three model roles', () => {
+      component.activeRunDetail = buildDiagnosticsRun();
+      const text = component.runDiagnosticsText;
+
+      expect(text).toContain('Second:   Claude Opus 5 (Anthropic / claude-opus-5)');
+    });
+
+    it('should say so when no second opinion assessor was selected', () => {
+      component.activeRunDetail = buildDiagnosticsRun({
+        secondOpinionAssessorModelConfigurationId: null
+      });
+      expect(component.runDiagnosticsText).toContain('Second:   none selected');
+    });
+
+    it('should record the scoring constants the run was actually scored with', () => {
+      component.activeRunDetail = buildDiagnosticsRun();
+      const text = component.runDiagnosticsText;
+
+      expect(text).toContain('harness version: 7');
+      expect(text).toContain('scoring method version: 6');
+      expect(text).toContain('Speed: target 15000 ms, decay k 20');
+      expect(text).toContain('Second opinion: mode All, threshold 50, outlier delta 25');
+    });
+
+    it('should omit the superseded computed score rather than printing "computed: n/a"', () => {
+      component.activeRunDetail = buildDiagnosticsRun();
+      const text = component.runDiagnosticsText;
+
+      expect(text).not.toContain('computed:');
+      expect(text).toContain('unweighted mean: 92');
+
+      component.activeRunDetail = buildDiagnosticsRun({ computedScore: 88 });
+      expect(component.runDiagnosticsText).toContain('computed (superseded): 88');
+    });
+
+    it('should carry an integrity block with the four-class accounting and the agreement figures', () => {
+      component.activeRunDetail = buildDiagnosticsRun();
+      const text = component.runDiagnosticsText;
+
+      expect(text).toContain('--- INTEGRITY ---');
+      expect(text).toContain('clean: 1, transport defects: 0, recovered: 0, harness limits: 1 (sums to 2)');
+      expect(text).toContain('contested verdicts: 1, re-assessed: 1');
+      expect(text).toContain('unverified claims: 2');
+      expect(text).toContain('4.3 mean abs delta');
+      expect(text).toContain('over 2 of 2 answered, disagreements: 1');
+      // Full coverage, so no conditioning caveat.
+      expect(text).not.toContain('coverage selected by trigger');
+    });
+
+    it('should caveat the agreement rate when coverage was selected by trigger', () => {
+      component.activeRunDetail = buildDiagnosticsRun({ secondOpinionModeUsed: 1 });
+      expect(component.runDiagnosticsText).toContain('coverage selected by trigger');
+    });
+
+    it('should extend each question line with the fields that explain its score', () => {
+      component.activeRunDetail = buildDiagnosticsRun();
+      const text = component.runDiagnosticsText;
+
+      expect(text).toContain('band=Simple');
+      expect(text).toContain('assessedDiff=25');
+      expect(text).toContain('levels=3/4/5/6');
+      expect(text).toContain('critical=false');
+      expect(text).toContain('tools=34/35');
+      expect(text).toContain('narration=3');
+      expect(text).toContain('unverified=2');
+      expect(text).toContain('flags=ContestedVerdict');
+      expect(text).toContain('secondOpinion=85/All disagreed');
+      expect(text).toContain('reassessed=42→60/Claude Opus 5');
+      // Blocked calls come from the tool summary, because toolCallCount counts attempts.
+      expect(text).toContain('tools=25/25 (3 blocked) exhausted');
+    });
+  });
+
+  describe('assessor calibration panel', () => {
+    it('should load calibrations when a run detail opens and clear them on close', () => {
+      benchmarkServiceMock.getRun.and.returnValue(of({
+        id: 99, suiteName: 'Default Suite', status: 'Completed',
+        testedModelDisplayNameUsed: 'M', testedModelProviderUsed: 'OpenAI', testedModelIdUsed: 'm',
+        testedModelParallelExecutionModeUsed: 0,
+        assessorModelDisplayNameUsed: 'A', assessorModelProviderUsed: 'Google', assessorModelIdUsed: 'a',
+        startedAtUtc: '2026-09-03T06:52:00Z', totalAnswerDurationMs: 0, totalDurationMs: 0,
+        scoringMethodVersion: 6, transportDefectAnswerCount: 0, advisoryFlagAnswerCount: 0,
+        scrubbedArtifactAnswerCount: 0, difficultyFallbackUsed: false, speedMeasurementDegraded: false,
+        maxParallelQuestionsUsed: 1, answeredQuestionCount: 0, totalQuestionCount: 0,
+        assessmentParseFailed: false, totalInputTokens: 0, totalOutputTokens: 0,
+        totalCacheReadTokens: 0, totalCacheCreationTokens: 0, answers: []
+      } as any));
+      benchmarkServiceMock.getCalibrations.and.returnValue(of([
+        {
+          id: 1, benchmarkRunId: 99, assessorDisplayNameUsed: 'Claude Opus 5',
+          assessorProviderUsed: 'Anthropic', assessorModelIdUsed: 'claude-opus-5',
+          createdAtUtc: '2026-09-04T08:00:00Z', answerCount: 18, skippedAnswerCount: 0,
+          meanAbsDelta: 5.5, disagreementCount: 2, inputTokens: 1000, outputTokens: 500,
+          durationMs: 42000
+        }
+      ]));
+      spyOn(component.runDetailDialog.nativeElement, 'showModal');
+
+      component.viewRunDetail(99);
+
+      expect(benchmarkServiceMock.getCalibrations).toHaveBeenCalledWith(99);
+      expect(component.calibrations.length).toBe(1);
+
+      component.closeRunDetail();
+      expect(component.calibrations.length).toBe(0);
+    });
+
+    it('should refuse to calibrate without an assessor selected', () => {
+      component.calibrationAssessorConfigId = null;
+      component.runCalibration(99);
+      expect(benchmarkServiceMock.calibrateAssessor).not.toHaveBeenCalled();
+    });
+
+    it('should reload the list after a calibration completes', () => {
+      benchmarkServiceMock.calibrateAssessor.and.returnValue(of({ id: 2 } as any));
+      benchmarkServiceMock.getCalibrations.and.returnValue(of([]));
+      component.calibrationAssessorConfigId = 3;
+
+      component.runCalibration(99);
+
+      expect(benchmarkServiceMock.calibrateAssessor).toHaveBeenCalledWith(99, 3);
+      expect(benchmarkServiceMock.getCalibrations).toHaveBeenCalledWith(99);
+      expect(component.calibrating).toBeFalse();
+    });
+  });
+
+  describe('trial re-assessment', () => {
+    const answer: any = {
+      id: 5, benchmarkRunId: 99, orderIndex: 3, questionText: 'Q3', answerText: 'a',
+      difficulty: 1, status: 'Ok', assessmentStatus: 'Scored', durationMs: 1, modelTimeMs: 1,
+      scrubbedArtifactCount: 0, answerFlags: 0, answerFlagNames: [], qualityScore: 60
+    };
+
+    beforeEach(() => {
+      spyOn(component.retryDialog.nativeElement, 'showModal');
+      spyOn(component.retryDialog.nativeElement, 'close');
+      benchmarkServiceMock.trialReassessAnswer.and.returnValue(of({ runId: 99 }));
+    });
+
+    it('should call the trial endpoint and never the one that replaces the verdict', fakeAsync(() => {
+      component.openRetryDialog('trial', 99, answer);
+      component.retryAssessorConfigId = 4;
+      component.confirmRetry();
+
+      expect(benchmarkServiceMock.trialReassessAnswer).toHaveBeenCalledWith(99, 5, 4, false);
+      expect(benchmarkServiceMock.reassessAnswer).not.toHaveBeenCalled();
+
+      component.stopDetailPolling();
+      discardPeriodicTasks();
+    }));
+
+    it('should ask to replace an automatic second opinion, but not a previous trial', fakeAsync(() => {
+      component.openRetryDialog('trial', 99, { ...answer, secondOpinionQualityScore: 80, secondOpinionTrigger: 'All' });
+      component.retryAssessorConfigId = 4;
+      component.confirmRetry();
+      expect(benchmarkServiceMock.trialReassessAnswer.calls.mostRecent().args[3]).toBeTrue();
+
+      component.openRetryDialog('trial', 99, { ...answer, secondOpinionQualityScore: 80, secondOpinionTrigger: 'Manual' });
+      component.retryAssessorConfigId = 4;
+      component.confirmRetry();
+      expect(benchmarkServiceMock.trialReassessAnswer.calls.mostRecent().args[3]).toBeFalse();
+
+      component.stopDetailPolling();
+      discardPeriodicTasks();
+    }));
   });
 });

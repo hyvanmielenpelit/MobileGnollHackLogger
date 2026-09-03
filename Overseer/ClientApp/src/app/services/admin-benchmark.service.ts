@@ -2,6 +2,49 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
+/**
+ * How the second-opinion assessor is used. Off is equivalent to selecting no second-opinion
+ * assessor at all; All is the only setting that measures grader agreement rather than sampling
+ * it, because under the trigger-based modes the disagreement rate is conditioned on the first
+ * assessor's own uncertainty.
+ */
+export enum BenchmarkSecondOpinionMode {
+  Off = 0,
+  Flagged = 1,
+  FlaggedAndOutliers = 2,
+  All = 3
+}
+
+export interface BenchmarkSecondOpinionModeOption {
+  value: BenchmarkSecondOpinionMode;
+  label: string;
+  hint: string;
+}
+
+/** In coverage order, labelled for what they do rather than for their enum names. */
+export const BENCHMARK_SECOND_OPINION_MODES: readonly BenchmarkSecondOpinionModeOption[] = [
+  {
+    value: BenchmarkSecondOpinionMode.Off,
+    label: 'Never',
+    hint: 'No second verdict is produced.'
+  },
+  {
+    value: BenchmarkSecondOpinionMode.Flagged,
+    label: 'Only flagged answers',
+    hint: 'Critical errors, contested verdicts, unverifiable claims, and scores below the profile threshold.'
+  },
+  {
+    value: BenchmarkSecondOpinionMode.FlaggedAndOutliers,
+    label: 'Flagged answers and statistical outliers',
+    hint: "Adds answers far below the run's own median, found after scoring. Adds a stage to the run."
+  },
+  {
+    value: BenchmarkSecondOpinionMode.All,
+    label: 'Every answer (double grading)',
+    hint: 'Recommended. The only setting that measures grader agreement rather than sampling it.'
+  }
+];
+
 export interface BenchmarkScoringProfileDto {
   id: number;
   name: string;
@@ -14,6 +57,10 @@ export interface BenchmarkScoringProfileDto {
   criticalErrorCeiling: number;
   /** Quality score below which an answer is re-graded, when the run has a second-opinion assessor. 0 disables the score trigger. */
   secondOpinionQualityThreshold: number;
+  /** Off (0), Flagged (1), FlaggedAndOutliers (2) or All (3). */
+  secondOpinionMode: number;
+  /** Quality points below the run's own median at which an answer is re-graded. FlaggedAndOutliers only. */
+  secondOpinionOutlierDeltaPoints: number;
   speedTargetMs: number;
   speedDecayK: number;
   speedDifficultyScaling: number;
@@ -33,6 +80,10 @@ export interface CreateBenchmarkScoringProfileRequest {
   criticalErrorCeiling: number;
   /** Quality score below which an answer is re-graded, when the run has a second-opinion assessor. 0 disables the score trigger. */
   secondOpinionQualityThreshold: number;
+  /** Off (0), Flagged (1), FlaggedAndOutliers (2) or All (3). */
+  secondOpinionMode: number;
+  /** Quality points below the run's own median at which an answer is re-graded. FlaggedAndOutliers only. */
+  secondOpinionOutlierDeltaPoints: number;
   speedTargetMs: number;
   speedDecayK: number;
   speedDifficultyScaling: number;
@@ -50,6 +101,10 @@ export interface UpdateBenchmarkScoringProfileRequest {
   criticalErrorCeiling: number;
   /** Quality score below which an answer is re-graded, when the run has a second-opinion assessor. 0 disables the score trigger. */
   secondOpinionQualityThreshold: number;
+  /** Off (0), Flagged (1), FlaggedAndOutliers (2) or All (3). */
+  secondOpinionMode: number;
+  /** Quality points below the run's own median at which an answer is re-graded. FlaggedAndOutliers only. */
+  secondOpinionOutlierDeltaPoints: number;
   speedTargetMs: number;
   speedDecayK: number;
   speedDifficultyScaling: number;
@@ -162,8 +217,58 @@ export interface StartBenchmarkRunRequest {
    * threshold are re-graded once by this configuration. Null means no second opinion.
    */
   secondOpinionAssessorModelConfigurationId?: number | null;
+  /**
+   * Optional per-run override of the profile's mode. Omitted takes the profile default. Sending
+   * Off (0) is an explicit "no second verdict for this run" and drops the assessor from the run,
+   * because the mode is inert without an assessor and an assessor is inert under Off.
+   */
+  secondOpinionMode?: number | null;
   scoringProfileId?: number | null;
   acknowledgeSameProvider?: boolean;
+}
+
+/**
+ * The assessor of a suite's most recent completed run. The start dialog warns when the selected
+ * assessor differs from it: a suite's runs are comparable to each other only while the grader is
+ * the same one.
+ */
+export interface BenchmarkLastAssessorDto {
+  runId?: number | null;
+  assessorModelConfigurationId?: number | null;
+  assessorModelDisplayNameUsed?: string | null;
+  assessorModelProviderUsed?: string | null;
+  secondOpinionAssessorModelConfigurationId?: number | null;
+  secondOpinionAssessorModelDisplayNameUsed?: string | null;
+  completedAtUtc?: string | null;
+  harnessVersion?: string | null;
+  scoringMethodVersion?: number;
+}
+
+/**
+ * One non-destructive re-grading of a run by an alternative assessor. Admin-only by design: a
+ * calibration is an experiment about graders, not a property of the run, so it never reaches the
+ * Markdown report where a calibration verdict could be mistaken for a result.
+ */
+export interface BenchmarkAssessorCalibrationDto {
+  id: number;
+  benchmarkRunId: number;
+  assessorDisplayNameUsed?: string | null;
+  assessorProviderUsed?: string | null;
+  assessorModelIdUsed?: string | null;
+  assessorThinkingLevelUsed?: string | null;
+  createdAtUtc: string;
+  createdByUserName?: string | null;
+  answerCount: number;
+  skippedAnswerCount: number;
+  /** Mean |calibration - original| quality across graded answers. */
+  meanAbsDelta?: number | null;
+  /** A gap above 15 points, or a split on criticalError — the live run's own definition. */
+  disagreementCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  durationMs: number;
+  verdictsJson?: string | null;
+  errorMessage?: string | null;
 }
 
 export interface SameProviderWarningDto {
@@ -182,6 +287,13 @@ export interface BenchmarkFootprintDto {
 export interface BenchmarkRunAnswerDto {
   id: number;
   benchmarkRunId: number;
+  /**
+   * The suite question this answer was produced for. Null for a historical answer that could not
+   * be matched unambiguously, and null once the question is deleted. Anything merging questions
+   * with answers must prefer this over `orderIndex`, which a suite reorder rewrites.
+   */
+  benchmarkQuestionId?: number | null;
+  itemRevisionUsed?: number | null;
   orderIndex: number;
   questionText: string;
   difficulty: string | number;
@@ -256,6 +368,26 @@ export interface BenchmarkRunAnswerDto {
   secondOpinionByModelDisplayNameUsed?: string | null;
   secondOpinionJson?: string | null;
   secondOpinionDisagreed?: boolean;
+
+  /**
+   * Why this answer was graded twice: CriticalError, ContestedVerdict, UnverifiedClaims,
+   * BelowThreshold, Outlier, All, or Manual for an operator's trial. "Every answer" and "this one
+   * looked wrong" are different facts about the same second verdict.
+   */
+  secondOpinionTrigger?: string | null;
+
+  /**
+   * Claims the assessor could neither confirm nor refute. Null for a run graded before the field
+   * existed: null is "never asked", zero is "asked and found none".
+   */
+  unverifiedClaimCount?: number | null;
+  unverifiedClaimsJson?: string | null;
+
+  /** Re-assessment provenance: a published index can move after publication. */
+  reassessedAtUtc?: string | null;
+  reassessedByModelDisplayNameUsed?: string | null;
+  previousQualityScore?: number | null;
+  reassessmentCount?: number;
 }
 
 export interface BenchmarkRunDetailDto {
@@ -298,11 +430,25 @@ export interface BenchmarkRunDetailDto {
   computedScore?: number | null;
   qualityIndex?: number | null;
   rawQualityIndex?: number | null;
+  /**
+   * The equal-weight mean of the same per-question scores as qualityIndex. Null for runs before
+   * harness version 7. The gap between the two is what difficulty weighting did to the headline.
+   */
+  unweightedQualityIndex?: number | null;
   speedIndex?: number | null;
   totalAnswerDurationMs: number;
   scoringProfileId?: number | null;
   scoringProfileName?: string | null;
   scoringProfileSnapshotJson?: string | null;
+  /**
+   * The constants this run was scored against, read out of the snapshot **server-side**. Never
+   * parse scoringProfileSnapshotJson here: it is a storage format, and a second reader for it in
+   * TypeScript is a second thing to keep in step with the profile shape.
+   */
+  scoringProfileSpeedTargetMs?: number | null;
+  scoringProfileSpeedDecayK?: number | null;
+  scoringProfileSecondOpinionQualityThreshold?: number | null;
+  scoringProfileSecondOpinionOutlierDeltaPoints?: number | null;
   scoringMethodVersion: number;
   harnessVersion?: string | null;
   maxToolCallsPerQuestionUsed?: number | null;
@@ -325,6 +471,23 @@ export interface BenchmarkRunDetailDto {
    */
   advisoryFlagAnswerCount: number;
   scrubbedArtifactAnswerCount: number;
+  /**
+   * Answers whose assessor described a fabrication while leaving criticalError false, and answers
+   * whose verdict was replaced after the run finished. Both advisory; both overlap the counts
+   * above and are never summed with them.
+   */
+  contestedVerdictAnswerCount?: number;
+  reassessedAnswerCount?: number;
+  /** How the second-opinion assessor was used: Off (0), Flagged (1), FlaggedAndOutliers (2), All (3). */
+  secondOpinionModeUsed?: number;
+  /**
+   * Grader agreement, interpretable only together with its coverage: a mean delta over
+   * trigger-selected answers is conditioned on the first assessor's own uncertainty, while the
+   * same figure over every answer is an inter-rater agreement rate.
+   */
+  secondOpinionGradedAnswerCount?: number;
+  secondOpinionMeanAbsDelta?: number | null;
+  secondOpinionDisagreementCount?: number;
   toolOverheadMs?: number | null;
   difficultyFallbackUsed: boolean;
   speedMeasurementDegraded: boolean;
@@ -357,6 +520,144 @@ export interface BenchmarkRunDetailDto {
   inFlightOrderIndexes?: number[];
 
   answers: BenchmarkRunAnswerDto[];
+}
+
+// ---------------------------------------------------------------------------------------------
+// Suite health. Four read-only reports; nothing here writes a question, a rubric, or a
+// difficulty rating, and there is deliberately no endpoint that would.
+// ---------------------------------------------------------------------------------------------
+
+export interface BenchmarkItemStatisticsDto {
+  questionId: number;
+  orderIndex: number;
+  questionText: string;
+  authoredDifficulty: string | number;
+  itemRevision: number;
+
+  /** Sample size and its confounds. Shown together, always. */
+  runCount: number;
+  distinctModelCount: number;
+  distinctAssessorCount: number;
+  distinctScoringMethodVersionCount: number;
+  /** Answers included whose revision was never recorded. */
+  unknownRevisionCount: number;
+
+  meanQuality: number;
+  minQuality: number;
+  maxQuality: number;
+  stdDev: number;
+
+  /**
+   * 100 − meanQuality. Reported only: it is never written back into `assessedDifficulty`, which
+   * weights the Intelligence Index — deriving the weight from the scores it weights is circular.
+   */
+  empiricalDifficulty: number;
+  assessedDifficulty?: number | null;
+  difficultyDelta?: number | null;
+
+  /** Null below four runs, where a top-half/bottom-half split means nothing. */
+  discrimination?: number | null;
+
+  meanToolCalls: number;
+  budgetBoundFraction: number;
+
+  flags: number;
+  flagNames: string[];
+  /** A confound fired: every other figure on the row is a mixture, not a measurement. */
+  confounded: boolean;
+  insufficientData: boolean;
+}
+
+export interface BenchmarkSuiteItemAnalysisDto {
+  suiteId: number;
+  suiteName: string;
+  questionCount: number;
+  runCount: number;
+  distinctModelCount: number;
+  distinctAssessorCount: number;
+  distinctScoringMethodVersionCount: number;
+  linkedAnswerCount: number;
+  unlinkedAnswerCount: number;
+  minRunsForMeasurement: number;
+  minRunsForDiscrimination: number;
+  items: BenchmarkItemStatisticsDto[];
+}
+
+export interface BenchmarkRubricGapClusterDto {
+  questionId: number;
+  questionOrderIndex: number;
+  /** Verbatim, so a human reads what was said rather than a paraphrase of it. */
+  claims: string[];
+  modelFamilies: string[];
+  modelIds: string[];
+  occurrences: number;
+  /** 'LikelyRubricGap' or 'LikelyHallucination'. */
+  verdict: string;
+}
+
+export interface BenchmarkRubricGapReportDto {
+  suiteId: number;
+  runCount: number;
+  claimCount: number;
+  clusters: BenchmarkRubricGapClusterDto[];
+}
+
+export interface BenchmarkCitationDto {
+  /** 'SourceFile', 'Symbol' or 'WikiArticle'. */
+  kind: string;
+  value: string;
+  /** 'Resolved', 'Unresolved' or 'NotValidated' — the last meaning "we did not check". */
+  status: string;
+  /** Parsed and shown, never validated: line numbers drift with every commit. */
+  lineNumber?: number | null;
+}
+
+export interface BenchmarkQuestionCitationsDto {
+  questionId: number;
+  orderIndex: number;
+  citations: BenchmarkCitationDto[];
+  unresolvedCount: number;
+  notValidatedCount: number;
+  hasNoCitations: boolean;
+}
+
+export interface BenchmarkCitationReportDto {
+  suiteId: number;
+  unresolvedCount: number;
+  notValidatedCount: number;
+  /** False while the source index is still building, which makes an unresolved result unreliable. */
+  sourceIndexReady: boolean;
+  questions: BenchmarkQuestionCitationsDto[];
+}
+
+export interface BenchmarkCoverageGapDto {
+  subsystem: string;
+  /** Required. A gap with no location is discarded before it reaches the client. */
+  sourceLocation: string;
+  rationale?: string | null;
+  suggestedBand?: string | null;
+}
+
+/**
+ * A read-only coverage report. Nothing is written into the suite, and no endpoint exists that
+ * would: a generated draft is edited and approved by a human before it becomes a question.
+ */
+export interface BenchmarkCoverageReportDto {
+  suiteId: number;
+  suiteName: string;
+  questionCount: number;
+  analysisModelConfigurationId: number;
+  analysisModelDisplayNameUsed?: string | null;
+  analysisModelProviderUsed?: string | null;
+  analysisModelIdUsed?: string | null;
+  analysisModelThinkingLevelUsed?: string | null;
+  analyzedAtUtc: string;
+  inputTokens: number;
+  outputTokens: number;
+  durationMs: number;
+  gaps: BenchmarkCoverageGapDto[];
+  comment?: string | null;
+  errorMessage?: string | null;
 }
 
 export interface BenchmarkRunSummaryDto {
@@ -506,8 +807,45 @@ export class AdminBenchmarkService {
     return this.http.post<void>(`/api/admin/benchmark/runs/${runId}/rescore`, { scoringProfileId });
   }
 
+  /**
+   * Replaces an answer's verdict and recomputes the run's indices. This changes a published
+   * score, which is why the trial below is a separate call rather than a flag on this one at the
+   * call site.
+   */
   reassessAnswer(runId: number, answerId: number, assessorModelConfigurationId?: number | null): Observable<{ runId: number }> {
     return this.http.post<{ runId: number }>(`/api/admin/benchmark/runs/${runId}/answers/${answerId}/reassess`, { assessorModelConfigurationId });
+  }
+
+  /**
+   * Records a prospective assessor's verdict in the second-opinion slot and changes no score,
+   * level, flag or index. The mode for comparing a candidate assessor against the one in use.
+   *
+   * `replaceExistingSecondOpinion` is required to overwrite an automatic second opinion, which is
+   * run evidence: an experiment must not erase evidence by accident.
+   */
+  trialReassessAnswer(
+    runId: number,
+    answerId: number,
+    assessorModelConfigurationId?: number | null,
+    replaceExistingSecondOpinion = false
+  ): Observable<{ runId: number }> {
+    return this.http.post<{ runId: number }>(
+      `/api/admin/benchmark/runs/${runId}/answers/${answerId}/reassess`,
+      { assessorModelConfigurationId, trial: true, replaceExistingSecondOpinion });
+  }
+
+  /** Grades every answer of a run with another model and records only the agreement statistics. */
+  calibrateAssessor(runId: number, assessorModelConfigurationId: number): Observable<BenchmarkAssessorCalibrationDto> {
+    return this.http.post<BenchmarkAssessorCalibrationDto>(
+      `/api/admin/benchmark/runs/${runId}/calibrate`, { assessorModelConfigurationId });
+  }
+
+  getCalibrations(runId: number): Observable<BenchmarkAssessorCalibrationDto[]> {
+    return this.http.get<BenchmarkAssessorCalibrationDto[]>(`/api/admin/benchmark/runs/${runId}/calibrations`);
+  }
+
+  getLastAssessor(suiteId: number): Observable<BenchmarkLastAssessorDto> {
+    return this.http.get<BenchmarkLastAssessorDto>(`/api/admin/benchmark/suites/${suiteId}/last-assessor`);
   }
 
   rerunAnswer(runId: number, answerId: number, assessorModelConfigurationId?: number | null): Observable<{ runId: number }> {
@@ -536,6 +874,25 @@ export class AdminBenchmarkService {
 
   deleteRun(id: number): Observable<void> {
     return this.http.delete<void>(`/api/admin/benchmark/runs/${id}`);
+  }
+
+  // Suite health. All four are read-only reports; only the coverage analysis calls a model.
+  getItemAnalysis(suiteId: number): Observable<BenchmarkSuiteItemAnalysisDto> {
+    return this.http.get<BenchmarkSuiteItemAnalysisDto>(`/api/admin/benchmark/suites/${suiteId}/item-analysis`);
+  }
+
+  getRubricGaps(suiteId: number): Observable<BenchmarkRubricGapReportDto> {
+    return this.http.get<BenchmarkRubricGapReportDto>(`/api/admin/benchmark/suites/${suiteId}/rubric-gaps`);
+  }
+
+  /** A POST because it walks the whole source index, which is work rather than a lookup. */
+  validateCitations(suiteId: number): Observable<BenchmarkCitationReportDto> {
+    return this.http.post<BenchmarkCitationReportDto>(`/api/admin/benchmark/suites/${suiteId}/validate-citations`, {});
+  }
+
+  analyzeCoverage(suiteId: number, analysisModelConfigurationId: number): Observable<BenchmarkCoverageReportDto> {
+    return this.http.post<BenchmarkCoverageReportDto>(
+      `/api/admin/benchmark/suites/${suiteId}/coverage-analysis`, { analysisModelConfigurationId });
   }
 
   getSuiteRunsFootprint(suiteId: number): Observable<BenchmarkFootprintDto> {

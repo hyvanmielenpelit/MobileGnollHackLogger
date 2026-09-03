@@ -1,0 +1,334 @@
+<div class="suite-health">
+  <div class="gh-tabs gh-tabs-secondary" role="tablist" aria-label="Suite health sections">
+    <button type="button" role="tab" class="gh-tab" id="sh-tab-items"
+            aria-controls="sh-panel-items"
+            [attr.aria-selected]="activeTab === 'items'"
+            [attr.tabindex]="activeTab === 'items' ? 0 : -1"
+            (keydown)="onTabKeydown($event, 0)"
+            (click)="selectTab('items')">
+      Items
+    </button>
+    <button type="button" role="tab" class="gh-tab" id="sh-tab-gaps"
+            aria-controls="sh-panel-gaps"
+            [attr.aria-selected]="activeTab === 'gaps'"
+            [attr.tabindex]="activeTab === 'gaps' ? 0 : -1"
+            (keydown)="onTabKeydown($event, 1)"
+            (click)="selectTab('gaps')">
+      Rubric gaps
+    </button>
+    <button type="button" role="tab" class="gh-tab" id="sh-tab-citations"
+            aria-controls="sh-panel-citations"
+            [attr.aria-selected]="activeTab === 'citations'"
+            [attr.tabindex]="activeTab === 'citations' ? 0 : -1"
+            (keydown)="onTabKeydown($event, 2)"
+            (click)="selectTab('citations')">
+      Citations
+    </button>
+    <button type="button" role="tab" class="gh-tab" id="sh-tab-coverage"
+            aria-controls="sh-panel-coverage"
+            [attr.aria-selected]="activeTab === 'coverage'"
+            [attr.tabindex]="activeTab === 'coverage' ? 0 : -1"
+            (keydown)="onTabKeydown($event, 3)"
+            (click)="selectTab('coverage')">
+      Coverage
+    </button>
+  </div>
+
+  <!-- ITEMS -->
+  @if (activeTab === 'items') {
+    <div id="sh-panel-items" role="tabpanel" aria-labelledby="sh-tab-items">
+      @if (loadingItems) {
+        <p class="text-muted">Loading item analysis...</p>
+      } @else if (itemsError) {
+        <div class="alert alert-warning" role="alert">
+          <div class="alert-content"><div class="alert-body">{{ itemsError }}</div></div>
+        </div>
+      } @else if (itemAnalysis) {
+        <!--
+          The banner comes before the table on purpose. Every figure below is advisory under a
+          small sample or a mixed configuration, and a reader who meets the numbers first has
+          already formed a view by the time the caveat arrives.
+        -->
+        <div class="alert" [class.alert-warning]="itemsAdvisory" [class.alert-info]="!itemsAdvisory" role="note">
+          <div class="alert-content">
+            <div class="alert-heading"><strong>Sample and confounds</strong></div>
+            <div class="alert-body">
+              <div>
+                {{ itemAnalysis.runCount }} stored run(s) across
+                {{ itemAnalysis.distinctModelCount }} model(s),
+                {{ itemAnalysis.distinctAssessorCount }} assessor(s) and
+                {{ itemAnalysis.distinctScoringMethodVersionCount }} scoring method version(s).
+              </div>
+              @if (itemAnalysis.runCount < itemAnalysis.minRunsForMeasurement) {
+                <div>
+                  <strong>Below {{ itemAnalysis.minRunsForMeasurement }} runs, nothing in this table is a measurement.</strong>
+                  Discrimination is suppressed entirely below {{ itemAnalysis.minRunsForDiscrimination }} runs.
+                </div>
+              }
+              @if (assessorMixed) {
+                <div>
+                  <strong>Assessor mix:</strong> these runs were graded by more than one assessor,
+                  so an item's spread mixes candidate ability with grader severity. The two cannot
+                  be separated from here.
+                </div>
+              }
+              @if (scoringMethodMixed) {
+                <div>
+                  <strong>Scoring method mix:</strong> these runs span more than one scoring method
+                  version, which grade accuracy by different rules — method 6 forbids the
+                  unverified-claim deduction method 5 permitted — so their scores are not the same
+                  measurement.
+                </div>
+              }
+              @if (itemAnalysis.unlinkedAnswerCount > 0) {
+                <div>
+                  {{ itemAnalysis.unlinkedAnswerCount }} of
+                  {{ itemAnalysis.linkedAnswerCount + itemAnalysis.unlinkedAnswerCount }} stored
+                  answer(s) could not be tied to a question and are excluded — a historical answer
+                  that could not be matched unambiguously, or one whose question has been deleted.
+                </div>
+              }
+              <div class="text-muted">
+                Empirical difficulty is reported, never applied: the assessed difficulty weights
+                the Intelligence Index, so deriving it from the scores it weights would be
+                circular. Re-rate a question deliberately if the gap is real.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="table-scroll">
+          <table class="gh-table item-analysis-table">
+            <thead>
+              <tr>
+                <th scope="col">Q</th>
+                <th scope="col">Mean</th>
+                <th scope="col">Spread</th>
+                <th scope="col">Assessed</th>
+                <th scope="col">Empirical</th>
+                <th scope="col">Delta</th>
+                <th scope="col">Discrimination</th>
+                <th scope="col">Tool calls</th>
+                <th scope="col">Flags</th>
+                <th scope="col">Sample</th>
+                <th scope="col"></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (item of itemAnalysis.items; track item.questionId) {
+                <tr [class.is-confounded]="item.confounded" [class.is-insufficient]="item.insufficientData">
+                  <td>
+                    <span class="item-order">Q{{ item.orderIndex }}</span>
+                    <span class="item-text" [title]="item.questionText">{{ item.questionText }}</span>
+                  </td>
+                  <td>{{ item.runCount > 0 ? (item.meanQuality | number:'1.1-1') : '—' }}</td>
+                  <td>{{ spreadLabel(item) }}</td>
+                  <td>{{ item.assessedDifficulty ?? '—' }}</td>
+                  <td>{{ item.runCount > 0 ? item.empiricalDifficulty : '—' }}</td>
+                  <td>{{ deltaLabel(item) }}</td>
+                  <td>{{ discriminationLabel(item) }}</td>
+                  <td>{{ item.runCount > 0 ? (item.meanToolCalls | number:'1.1-1') : '—' }}</td>
+                  <td>
+                    @for (flag of item.flagNames; track flag) {
+                      <span class="item-flag" [class]="'flag-' + flag" [title]="flagTitle(flag)">{{ flag }}</span>
+                    }
+                  </td>
+                  <td class="item-sample">{{ sampleLabel(item) }}@if (item.unknownRevisionCount > 0) { <span class="text-muted">, {{ item.unknownRevisionCount }} at an unrecorded revision</span> }</td>
+                  <td>
+                    <button type="button" class="btn-link" (click)="editQuestion(item.questionId)">
+                      Edit question
+                    </button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    </div>
+  }
+
+  <!-- RUBRIC GAPS -->
+  @if (activeTab === 'gaps') {
+    <div id="sh-panel-gaps" role="tabpanel" aria-labelledby="sh-tab-gaps">
+      @if (loadingGaps) {
+        <p class="text-muted">Loading rubric gaps...</p>
+      } @else if (gapsError) {
+        <div class="alert alert-warning" role="alert">
+          <div class="alert-content"><div class="alert-body">{{ gapsError }}</div></div>
+        </div>
+      } @else if (rubricGaps) {
+        <p class="section-note">
+          Claims the assessor could neither confirm nor refute, clustered per question.
+          A cluster raised by <strong>two or more independent model families</strong> is evidence
+          about the rubric; one raised by a single family is a finding about that model and is
+          labelled as such. Nothing here is applied automatically — a human folds a real gap into
+          the rubric.
+        </p>
+        <p class="text-muted">
+          {{ rubricGaps.claimCount }} claim(s) from {{ rubricGaps.runCount }} run(s).
+          @if (rubricGaps.claimCount === 0) {
+            Unverified claims are recorded from harness version 7 onward, so a suite whose runs all
+            predate it has none.
+          }
+        </p>
+
+        @for (cluster of rubricGaps.clusters; track cluster.questionId + '-' + cluster.claims[0]) {
+          <div class="gap-cluster" [class.is-rubric-gap]="cluster.verdict === 'LikelyRubricGap'">
+            <div class="gap-header">
+              <strong>Q{{ cluster.questionOrderIndex }}</strong>
+              <span class="gap-verdict" [title]="verdictTitle(cluster.verdict)">{{ verdictLabel(cluster.verdict) }}</span>
+              <span class="text-muted">
+                {{ cluster.occurrences }} occurrence(s), {{ cluster.modelFamilies.length }} family(ies)
+              </span>
+            </div>
+            <ul class="gap-claims">
+              @for (claim of cluster.claims; track claim) {
+                <li>“{{ claim }}”</li>
+              }
+            </ul>
+            <div class="gap-models text-muted">Raised by: {{ cluster.modelIds.join(', ') }}</div>
+            <button type="button" class="btn-link" (click)="editQuestion(cluster.questionId)">Edit question</button>
+          </div>
+        }
+        @if (rubricGaps.clusters.length === 0) {
+          <p class="text-muted">No unverified claims have been recorded for this suite.</p>
+        }
+      }
+    </div>
+  }
+
+  <!-- CITATIONS -->
+  @if (activeTab === 'citations') {
+    <div id="sh-panel-citations" role="tabpanel" aria-labelledby="sh-tab-citations">
+      <p class="section-note">
+        Resolves the <code>**SOURCE**</code> citations the rubrics carry against the running source
+        and wiki indexes. Line numbers are parsed and shown but never validated: they drift with
+        every commit, and permanent false alarms train an operator to ignore the whole panel.
+      </p>
+      <button type="button" class="btn-gh" (click)="validateCitations()" [disabled]="loadingCitations">
+        {{ loadingCitations ? 'Validating...' : 'Validate citations' }}
+      </button>
+
+      @if (citationsError) {
+        <div class="alert alert-warning mt-10" role="alert">
+          <div class="alert-content"><div class="alert-body">{{ citationsError }}</div></div>
+        </div>
+      }
+
+      @if (citations) {
+        @if (!citations.sourceIndexReady) {
+          <div class="alert alert-warning mt-10" role="note">
+            <div class="alert-content">
+              <div class="alert-body">
+                The source index is still building, so an unresolved source citation below may only
+                mean "not indexed yet". Re-run this once indexing completes.
+              </div>
+            </div>
+          </div>
+        }
+        <p class="text-muted mt-10">
+          {{ citations.unresolvedCount }} unresolved, {{ citations.notValidatedCount }} not validated.
+        </p>
+
+        @for (question of citations.questions; track question.questionId) {
+          @if (!question.hasNoCitations) {
+            <div class="citation-block" [class.has-unresolved]="question.unresolvedCount > 0">
+              <div class="citation-header">
+                <strong>Q{{ question.orderIndex }}</strong>
+                <button type="button" class="btn-link" (click)="editQuestion(question.questionId)">Edit question</button>
+              </div>
+              <ul class="citation-list">
+                @for (citation of question.citations; track citation.kind + citation.value) {
+                  <li [class]="'citation-' + citation.status">
+                    <span class="citation-status">{{ citation.status }}</span>
+                    <span class="citation-kind">{{ citation.kind }}</span>
+                    <code>{{ citation.value }}</code>
+                    @if (citation.lineNumber != null) {
+                      <span class="text-muted">line {{ citation.lineNumber }} (not validated)</span>
+                    }
+                  </li>
+                }
+              </ul>
+            </div>
+          }
+        }
+      }
+    </div>
+  }
+
+  <!-- COVERAGE -->
+  @if (activeTab === 'coverage') {
+    <div id="sh-panel-coverage" role="tabpanel" aria-labelledby="sh-tab-coverage">
+      <p class="section-note">
+        Asks an explicitly selected model which GnollHack subsystems this suite does not test. The
+        prompt carries the suite's <strong>question texts only</strong> — no rubrics, no answers,
+        no scores — so the analysis cannot be shaped by which questions any model happened to do
+        badly on. The result is a <strong>read-only report</strong>: nothing is written into the
+        suite, and a generated draft must be edited and approved by a human before it becomes a
+        question.
+      </p>
+
+      <div class="flex-row gap-10 align-end">
+        <div class="form-group flex-1">
+          <label for="coverageModelSelect">Analysis model</label>
+          <select id="coverageModelSelect" class="gh-input" [(ngModel)]="coverageModelConfigId">
+            @for (model of benchmarkCapableConfigs; track model.id) {
+              <option [ngValue]="model.id">{{ model.displayName || model.modelId }} ({{ model.provider }})</option>
+            }
+          </select>
+          <span class="form-hint">
+            Keep this configuration distinct from the graders': a model that helps author a suite is
+            not a neutral reader of answers against it.
+          </span>
+        </div>
+        <button type="button" class="btn-gh" (click)="analyzeCoverage()"
+                [disabled]="analyzingCoverage || coverageModelConfigId == null">
+          {{ analyzingCoverage ? 'Analyzing...' : 'Analyze coverage' }}
+        </button>
+      </div>
+
+      @if (coverageError) {
+        <div class="alert alert-warning mt-10" role="alert">
+          <div class="alert-content"><div class="alert-body">{{ coverageError }}</div></div>
+        </div>
+      }
+
+      @if (coverage && coverage.gaps.length > 0) {
+        <p class="text-muted mt-10">
+          Analysed by <strong>{{ coverage.analysisModelDisplayNameUsed }}</strong>
+          ({{ coverage.analysisModelProviderUsed }} / {{ coverage.analysisModelIdUsed }})
+          on {{ coverage.analyzedAtUtc | date:'yyyy-MM-dd HH:mm:ss' }} UTC —
+          {{ coverage.inputTokens }} in / {{ coverage.outputTokens }} out.
+        </p>
+        @if (coverage.comment) {
+          <p class="section-note">{{ coverage.comment }}</p>
+        }
+        <div class="table-scroll">
+          <table class="gh-table coverage-table">
+            <thead>
+              <tr>
+                <th scope="col">Subsystem</th>
+                <th scope="col">Source location</th>
+                <th scope="col">Suggested band</th>
+                <th scope="col">Rationale</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (gap of coverage.gaps; track gap.subsystem) {
+                <tr>
+                  <td>{{ gap.subsystem }}</td>
+                  <td><code>{{ gap.sourceLocation }}</code></td>
+                  <td>{{ gap.suggestedBand || '—' }}</td>
+                  <td>{{ gap.rationale }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      } @else if (coverage && !coverage.errorMessage) {
+        <p class="text-muted mt-10">The analysis reported no coverage gaps.</p>
+      }
+    </div>
+  }
+</div>

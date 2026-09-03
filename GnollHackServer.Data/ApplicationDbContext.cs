@@ -37,6 +37,7 @@ namespace MobileGnollHackLogger.Data
         public DbSet<BenchmarkRun> BenchmarkRuns { get; set; } = null!;
         public DbSet<BenchmarkRunAnswer> BenchmarkRunAnswers { get; set; } = null!;
         public DbSet<BenchmarkScoringProfile> BenchmarkScoringProfiles { get; set; } = null!;
+        public DbSet<BenchmarkAssessorCalibration> BenchmarkAssessorCalibrations { get; set; } = null!;
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
@@ -171,11 +172,41 @@ namespace MobileGnollHackLogger.Data
             modelBuilder.Entity<BenchmarkRunAnswer>()
                 .HasIndex(a => new { a.BenchmarkRunId, a.OrderIndex });
 
+            // SetNull, never Cascade: deleting a question from a suite is suite maintenance, and
+            // it must not delete the answers of runs that already happened. A null FK renders as
+            // "question deleted" and drops out of item analysis.
+            modelBuilder.Entity<BenchmarkRunAnswer>()
+                .HasOne(a => a.BenchmarkQuestion)
+                .WithMany()
+                .HasForeignKey(a => a.BenchmarkQuestionId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            // Item analysis reads every answer of one question at one revision.
+            modelBuilder.Entity<BenchmarkRunAnswer>()
+                .HasIndex(a => new { a.BenchmarkQuestionId, a.ItemRevisionUsed });
+
             modelBuilder.Entity<BenchmarkRunAnswer>()
                 .HasOne(a => a.AssessedByModelConfiguration)
                 .WithMany()
                 .HasForeignKey(a => a.AssessedByModelConfigurationId)
                 .OnDelete(DeleteBehavior.ClientSetNull);
+
+            // Cascade with the run: a calibration is a measurement *of* that run's answers and
+            // means nothing without them, unlike the answers themselves, which are the record.
+            modelBuilder.Entity<BenchmarkAssessorCalibration>()
+                .HasOne(c => c.BenchmarkRun)
+                .WithMany()
+                .HasForeignKey(c => c.BenchmarkRunId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<BenchmarkAssessorCalibration>()
+                .HasOne(c => c.AssessorModelConfiguration)
+                .WithMany()
+                .HasForeignKey(c => c.AssessorModelConfigurationId)
+                .OnDelete(DeleteBehavior.ClientSetNull);
+
+            modelBuilder.Entity<BenchmarkAssessorCalibration>()
+                .HasIndex(c => new { c.BenchmarkRunId, c.CreatedAtUtc });
 
             modelBuilder.Entity<Bones>()
                 .Property(b => b.Created)

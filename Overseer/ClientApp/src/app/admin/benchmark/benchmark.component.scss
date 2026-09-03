@@ -2092,3 +2092,31 @@
 .section-note,
 .band-shift-list { margin: 0 0 8px; color: #999; font-size: 12px; }
 .band-shift-list { padding-left: 20px; }
+
+.suite-health-host {
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid #333;
+}
+
+// Harness version 7 additions. Deliberately terse and mostly reusing existing tokens: this
+// file sits against the 30 kB anyComponentStyle budget.
+.score-card .score-note { font-size: 11px; color: #888; }
+.second-opinion-trigger { color: #888; }
+.unverified-claim-list { margin: 4px 0; padding-left: 20px; }
+
+// The trial re-assess is outlined rather than filled, because it is the action that changes
+// nothing: the filled neighbour moves the published index and these two must not look alike.
+.btn-gh-trial {
+  border-style: dashed;
+  font-weight: 500;
+}
+
+.calibration-panel {
+  border-top: 1px solid #333;
+  padding-top: 15px;
+
+  .align-end { align-items: flex-end; }
+  .calibration-table { font-size: 12px; }
+  .calibration-error { color: #fbbf24; }
+}

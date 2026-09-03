@@ -16,7 +16,16 @@ public class BenchmarkPerQuestionVerdictSummary
     public int? ReadabilityLevel { get; set; }
     public int? QualityScore { get; set; }
     public int? SpeedScore { get; set; }
+
+    /// <summary>
+    /// Retained for callers and for the record, but deliberately <b>not</b> printed into the
+    /// synthesis prompt: see <see cref="BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt"/>.
+    /// </summary>
     public long DurationMs { get; set; }
+
+    public string? AccuracyEvidence { get; set; }
+    public string? CompletenessEvidence { get; set; }
+    public int UnverifiedClaimCount { get; set; }
     public int? AssessedDifficulty { get; set; }
     public bool CriticalError { get; set; }
     public string? ReviewComment { get; set; }
@@ -31,7 +40,16 @@ public static class BenchmarkAssessmentPrompt
     // v5: a critical error must be a claim the answer actually asserts, quoted verbatim by the
     // assessor; an omission can no longer trigger the cap. Assessors also cite the rubric point
     // behind each accuracy and completeness deduction. Scores are not comparable with v4.
-    public const int ScoringMethodVersion = 5;
+    // v6: a claim the rubric neither states nor contradicts is no longer an accuracy deduction.
+    // The assessor reports it in unverifiedClaims instead and grades ACCURACY on the claims it
+    // can actually adjudicate. v5 had no rule for such a claim, and the only BARS anchor that
+    // fitted "I could not confirm this" was level 3 ("slight hallucinations"), so on the
+    // 2026-09-03 run Q1 lost 45 points of Accuracy — the 55%-weight dimension — for a trait the
+    // assessor could neither confirm nor refute. That penalised the candidate for knowing more
+    // than its rubric, systematically and in one direction. The level-3 anchor drops the
+    // hallucination wording with it; fabrication stays covered at levels 0-2 and by CRITICAL
+    // ERROR. Scores are not comparable with v5 on any answer containing an out-of-rubric claim.
+    public const int ScoringMethodVersion = 6;
 
     /// <summary>
     /// The harness the run executed under. A constant rather than a configuration key: it exists
@@ -57,8 +75,17 @@ public static class BenchmarkAssessmentPrompt
     ///     narration intact while the report asserted it had been removed, and were docked for
     ///     it. Changes what a model is graded on; runs before and after are not comparable on
     ///     narration-carrying answers. ScoringMethodVersion does not move — no formula changed.
+    /// v7: the assessor must declare a claim it cannot adjudicate instead of deducting for it
+    ///     (see ScoringMethodVersion 6, which moves with this); a verdict whose own prose names a
+    ///     fabrication while its criticalError flag is false is recorded as a contested verdict
+    ///     and routed to a second reader; the second-opinion pass gains four modes, of which
+    ///     "All" grades every answer twice and is the only one that yields an unbiased grader
+    ///     agreement rate; an applied re-assessment records what it overwrote, and a trial
+    ///     re-assessment records a verdict without touching the score at all; and a calibration
+    ///     run re-grades a stored run with an alternative assessor, non-destructively, so an
+    ///     assessor change can be measured before it is made.
     /// </summary>
-    public const string HarnessVersion = "6";
+    public const string HarnessVersion = "7";
 
     public static string BuildPerQuestionPrompt(
         string suiteName,
@@ -92,6 +119,11 @@ public static class BenchmarkAssessmentPrompt
         // 70. The harness now removes them, so the assessor grades authored text only and needs
         // no instruction about them.
         sb.AppendLine("7. The answer below has already had provider transport artifacts (leaked tool-call payloads, control tokens, reasoning narration) removed by the harness. Grade exactly what you are given; do not speculate about removed content or deduct for it.");
+        // Scoring method v6. Without this rule the only BARS anchor that fits "I could not
+        // confirm this" is ACCURACY level 3, so an unverifiable claim cost the same as a verified
+        // falsehood: on the 2026-09-03 run Q1 was docked to 3/6 for a Yeenaghu trait the assessor
+        // called "unverified", which is a deduction for knowing more than the rubric.
+        sb.AppendLine("8. A claim the rubric neither states nor contradicts, and that you cannot positively say is **wrong**, is **not** an accuracy deduction. Report it in `unverifiedClaims` instead — verbatim from the answer — and grade ACCURACY on the claims you can actually adjudicate. \"I could not confirm this\" and \"this is false\" are different findings and the harness records them differently.");
         sb.AppendLine();
         sb.AppendLine("--- SCORING DIMENSIONS (BARS 0-6) ---");
         sb.AppendLine();
@@ -99,7 +131,10 @@ public static class BenchmarkAssessmentPrompt
         sb.AppendLine("- Level 0: Completely fabricated, nonsensical, or fatally inaccurate throughout.");
         sb.AppendLine("- Level 1: Major inaccuracies with isolated correct fragments; predominantly misleading.");
         sb.AppendLine("- Level 2: Substantially incorrect or confounds NetHack/GnollHack differences, but contains some correct core concepts.");
-        sb.AppendLine("- Level 3: Mostly correct; minor inaccuracies, slight hallucinations, or subtle confusion of edge cases.");
+        // "slight hallucinations" was removed in scoring method v6: it was the anchor an assessor
+        // reached for when it could not verify a claim, which is what instruction 8 now forbids.
+        // Fabrication is still covered at levels 0-2 and by CRITICAL ERROR.
+        sb.AppendLine("- Level 3: Mostly correct; minor inaccuracies or subtle confusion of edge cases.");
         sb.AppendLine("- Level 4: Fully accurate; all factual claims align with GnollHack mechanics with no meaningful errors.");
         sb.AppendLine("- Level 5: Highly accurate and precise; demonstrates nuanced understanding of mechanics and interactions.");
         sb.AppendLine("- Level 6: Flawless, authoritative precision matching C core source code implementation details exactly.");
@@ -147,6 +182,11 @@ public static class BenchmarkAssessmentPrompt
         sb.AppendLine("- `accuracyEvidence` / `completenessEvidence`: name the rubric point the answer failed, quoting the rubric where you can.");
         sb.AppendLine("- If a deduction does not come from the rubric, say so explicitly, e.g. 'Not in rubric: from my own knowledge of the GnollHack source'.");
         sb.AppendLine("- Award full levels with a short evidence string such as 'Matches rubric'. Never invent a rubric point that is not present above.");
+        sb.AppendLine("- Never write \"unverified\", \"could not confirm\", or equivalent as the basis of an accuracy deduction. That finding belongs in `unverifiedClaims`.");
+        sb.AppendLine();
+        sb.AppendLine("### 7. UNVERIFIED CLAIMS");
+        sb.AppendLine("`unverifiedClaims` is a list of sentences the answer asserts that the rubric neither states nor contradicts, and that you cannot positively refute. Copy each one **verbatim** from the candidate answer — the harness checks that the text appears there and silently drops a paraphrase, exactly as it does for `criticalErrorQuote`.");
+        sb.AppendLine("These are recorded, not penalised. Across several runs by unrelated models, a claim that keeps recurring is evidence the rubric is incomplete; a claim only one model ever makes is evidence that model invented it. Return an empty list when every claim is adjudicable.");
         sb.AppendLine();
         sb.AppendLine("--- QUESTION AND CANDIDATE ANSWER ---");
         sb.AppendLine($"Question #{orderIndex} [Authored Band: {difficulty}]");
@@ -188,6 +228,7 @@ public static class BenchmarkAssessmentPrompt
   ""readabilityLevel"": 5,
   ""criticalError"": false,
   ""criticalErrorQuote"": null,
+  ""unverifiedClaims"": [""Verbatim sentence from the answer that you could neither confirm nor refute.""],
   ""accuracyEvidence"": ""Rubric point 2: prayer timeout reset amounts. The answer omits 350/175."",
   ""completenessEvidence"": ""Matches rubric."",
   ""comment"": ""Brief 1-3 sentence evaluation explaining the ratings and noting any specific flaws.""
@@ -308,10 +349,29 @@ public static class BenchmarkAssessmentPrompt
             else
             {
                 sb.AppendLine($"Levels: Acc={v.AccuracyLevel}/6, Comp={v.CompletenessLevel}/6, Conc={v.ConcisenessLevel}/6, Read={v.ReadabilityLevel}/6");
-                sb.AppendLine($"Computed Scores: Quality={v.QualityScore ?? 0}/100, Speed={v.SpeedScore ?? 0}/100 (Duration: {v.DurationMs} ms)");
+                // Turn duration is deliberately absent. It was removed from the per-question
+                // prompt in harness version 2 to stop the assessor penalising deliberation, and
+                // leaving it here reintroduced the same bias one level up, in the prompt that
+                // produces the Holistic Assessor Score.
+                sb.AppendLine($"Computed Scores: Quality={v.QualityScore ?? 0}/100, Speed={v.SpeedScore ?? 0}/100");
                 if (v.CriticalError)
                 {
                     sb.AppendLine("CRITICAL ERROR: YES");
+                }
+                // The evidence, not just the prose. A synthesis that can see which rubric point a
+                // deduction rested on distinguishes a rubric failure from the grader's own
+                // opinion; one that sees only the comment cannot.
+                if (!string.IsNullOrWhiteSpace(v.AccuracyEvidence))
+                {
+                    sb.AppendLine($"Accuracy Evidence: {v.AccuracyEvidence}");
+                }
+                if (!string.IsNullOrWhiteSpace(v.CompletenessEvidence))
+                {
+                    sb.AppendLine($"Completeness Evidence: {v.CompletenessEvidence}");
+                }
+                if (v.UnverifiedClaimCount > 0)
+                {
+                    sb.AppendLine($"Unverified claims recorded: {v.UnverifiedClaimCount} (declared, not deducted for)");
                 }
                 sb.AppendLine($"Assessor Comment: {v.ReviewComment}");
             }

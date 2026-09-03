@@ -3,6 +3,8 @@ namespace Overseer.Services.Benchmarking;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
+using MobileGnollHackLogger.Data;
 
 public record BenchmarkScoringConstants
 {
@@ -20,6 +22,19 @@ public record BenchmarkScoringConstants
     /// into the run, so a report can say what threshold produced its second verdicts.
     /// </summary>
     public int SecondOpinionQualityThreshold { get; init; } = 50;
+
+    /// <summary>
+    /// How the second-opinion assessor is used. See <see cref="BenchmarkSecondOpinionMode"/>.
+    /// Inert without a second-opinion assessor configured on the run.
+    /// </summary>
+    public BenchmarkSecondOpinionMode SecondOpinionMode { get; init; } = BenchmarkSecondOpinionMode.Flagged;
+
+    /// <summary>
+    /// Quality points below the run's own median at which an answer is re-graded, in
+    /// <see cref="BenchmarkSecondOpinionMode.FlaggedAndOutliers"/> only. An absolute threshold
+    /// cannot see an outlier in an otherwise strong run; this can.
+    /// </summary>
+    public int SecondOpinionOutlierDeltaPoints { get; init; } = 25;
 
     // Speed constants are pinned to two invariants rather than to a convention:
     //
@@ -63,6 +78,72 @@ public record BenchmarkScoringConstants
 
 public static class BenchmarkScoring
 {
+    /// <summary>
+    /// The constants a run was actually scored with, read back from the profile snapshot the run
+    /// stored at start time. Falls back to the defaults for a run that carries no snapshot, and
+    /// for any field the snapshot omits.
+    ///
+    /// One reader, deliberately: the snapshot is a storage format, and the report, the run-detail
+    /// projection and the admin diagnostics all need the same fields out of it. A second parser
+    /// — in another class here, or in TypeScript on the client — is a second thing that has to be
+    /// kept in step with the profile shape.
+    /// </summary>
+    public static BenchmarkScoringConstants ConstantsFromSnapshot(string? snapshotJson)
+    {
+        var defaults = BenchmarkScoringConstants.Default;
+        if (string.IsNullOrWhiteSpace(snapshotJson))
+        {
+            return defaults;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(snapshotJson);
+            var root = doc.RootElement;
+
+            int target = root.TryGetProperty("SpeedTargetMs", out var t) && t.TryGetInt32(out int tv)
+                ? tv
+                : defaults.SpeedTargetMs;
+            double scaling = root.TryGetProperty("SpeedDifficultyScaling", out var s) && s.TryGetDouble(out double sv)
+                ? sv
+                : defaults.SpeedDifficultyScaling;
+            double decay = root.TryGetProperty("SpeedDecayK", out var k) && k.TryGetDouble(out double kv)
+                ? kv
+                : defaults.SpeedDecayK;
+            int secondOpinion = root.TryGetProperty("SecondOpinionQualityThreshold", out var o) && o.TryGetInt32(out int ov)
+                ? ov
+                : defaults.SecondOpinionQualityThreshold;
+
+            // Serialized from the profile entity, where the mode is an int column.
+            var mode = defaults.SecondOpinionMode;
+            if (root.TryGetProperty("SecondOpinionMode", out var m) && m.TryGetInt32(out int mv) &&
+                Enum.IsDefined(typeof(BenchmarkSecondOpinionMode), mv))
+            {
+                mode = (BenchmarkSecondOpinionMode)mv;
+            }
+
+            int outlierDelta = root.TryGetProperty("SecondOpinionOutlierDeltaPoints", out var d) && d.TryGetInt32(out int dv)
+                ? dv
+                : defaults.SecondOpinionOutlierDeltaPoints;
+
+            return defaults with
+            {
+                SpeedTargetMs = target,
+                SpeedDifficultyScaling = scaling,
+                SpeedDecayK = decay,
+                SecondOpinionQualityThreshold = secondOpinion,
+                SecondOpinionMode = mode,
+                SecondOpinionOutlierDeltaPoints = outlierDelta
+            };
+        }
+        catch (JsonException)
+        {
+            // A malformed snapshot must not take a report or a screen down with it: the defaults
+            // describe the wrong run, but the caller can see the snapshot itself and say so.
+            return defaults;
+        }
+    }
+
     public static int Score(int level, IReadOnlyList<int>? table = null)
     {
         if (table == null || table.Count == 0)
@@ -219,6 +300,40 @@ public static class BenchmarkScoring
             if (speed.HasValue)
             {
                 sum += speed.Value;
+                count++;
+            }
+        }
+
+        if (count == 0)
+        {
+            return null;
+        }
+
+        return (int)Math.Round(sum / count, MidpointRounding.AwayFromZero);
+    }
+
+    /// <summary>
+    /// The equal-weight mean of the per-question quality scores — the plain average the
+    /// difficulty-weighted <see cref="QualityIndex(IEnumerable{ValueTuple{int?, int?}})"/> is not.
+    ///
+    /// Reported beside the index rather than instead of it. Difficulty weighting is a deliberate
+    /// property of the Intelligence Index and is not being second-guessed here; what it needs is
+    /// to be *visible*, because the direction it moves the headline depends on which questions a
+    /// model got wrong. A run whose weak answers are its easy ones reads higher weighted than
+    /// unweighted, which is worth a reader knowing rather than inferring.
+    /// </summary>
+    public static int? UnweightedQualityMean(IEnumerable<int?> qualityScores)
+    {
+        if (qualityScores == null) return null;
+
+        double sum = 0.0;
+        int count = 0;
+
+        foreach (var quality in qualityScores)
+        {
+            if (quality.HasValue)
+            {
+                sum += quality.Value;
                 count++;
             }
         }

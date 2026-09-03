@@ -61,6 +61,12 @@ public class BenchmarkReportBuilderTests
             Assert.DoesNotContain(",0%", report);
             Assert.DoesNotContain(",5%", report);
             Assert.Contains("85 / 100", report);
+
+            // And timestamps must use colons. ":" in a custom format string is the culture's
+            // time separator, which is "." under fi-FI, so an interpolated
+            // "{d:yyyy-MM-dd HH:mm:ss}" silently produced "19.32.00" in every report this
+            // repository's own machines generated.
+            Assert.Matches(@"\*\*Start Time \(UTC\):\*\* \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", report);
         }
         finally
         {
@@ -835,5 +841,324 @@ public class BenchmarkReportBuilderTests
         Assert.Contains("**2 answer(s) would have been re-graded**", report);
         Assert.Contains("critical error: 1", report);
         Assert.Contains("below the profile's threshold of 50: 1", report);
+    }
+
+    /// <summary>
+    /// A harness version 7 run: the second-opinion mode is stamped on the run, and the
+    /// unweighted mean is a stored column rather than something the report has to recompute.
+    /// </summary>
+    private static BenchmarkRun HarnessV7Run(
+        BenchmarkSecondOpinionMode mode,
+        params BenchmarkRunAnswer[] answers)
+    {
+        var run = HarnessV6Run(answers);
+        run.HarnessVersion = "7";
+        run.ScoringMethodVersion = 6;
+        run.SecondOpinionModeUsed = (int)mode;
+        return run;
+    }
+
+    [Fact]
+    public void WeightingTransparency_ReportsHowFarDifficultyWeightingMovedTheIndex()
+    {
+        // Run 7's shape in miniature: the two weakest answers are also the two easiest
+        // questions, so the difficulty-weighted index reads above the plain mean.
+        var run = HarnessV7Run(
+            BenchmarkSecondOpinionMode.Off,
+            ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 60),
+            ScoredAnswer(2, BenchmarkDifficulty.Intermediate, 55, 97),
+            ScoredAnswer(3, BenchmarkDifficulty.Advanced, 85, 99));
+        run.QualityIndex = 94;
+        run.UnweightedQualityIndex = 92;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("**Unweighted Quality Mean:** 92 / 100", report);
+        Assert.Contains("moved the index by **+2** points", report);
+    }
+
+    [Fact]
+    public void WeightingTransparency_IsSilentWhenTheTwoAggregationsAgree()
+    {
+        var run = HarnessV7Run(
+            BenchmarkSecondOpinionMode.Off,
+            ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 90),
+            ScoredAnswer(2, BenchmarkDifficulty.Advanced, 85, 90));
+        run.QualityIndex = 90;
+        run.UnweightedQualityIndex = 90;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.DoesNotContain("**Unweighted Quality Mean:**", report);
+    }
+
+    [Fact]
+    public void BandDispersion_ReportsTheSpreadAndTheWeakestQuestion()
+    {
+        // 88.2 out of 60, 95, 97, 97, 92 is a different finding from 88.2 out of five answers
+        // near 88, and a band average alone cannot tell them apart.
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(
+            BenchmarkSecondOpinionMode.Off,
+            ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 60),
+            ScoredAnswer(2, BenchmarkDifficulty.Simple, 28, 95),
+            ScoredAnswer(3, BenchmarkDifficulty.Simple, 30, 97),
+            ScoredAnswer(4, BenchmarkDifficulty.Simple, 32, 97),
+            ScoredAnswer(5, BenchmarkDifficulty.Simple, 30, 92)));
+
+        Assert.Contains("range 60–97, lowest Q1", report);
+    }
+
+    [Fact]
+    public void BandDispersion_IsOmittedForASingleAnsweredQuestion()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(
+            BenchmarkSecondOpinionMode.Off,
+            ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 60)));
+
+        Assert.DoesNotContain("lowest Q", report);
+    }
+
+    [Fact]
+    public void NonMonotonicNote_NamesTheOneAnswerThatExplainsTheInversion()
+    {
+        // No critical error anywhere, so the capped-band branch cannot fire. Simple averages
+        // 84.7 against Intermediate's 90 purely because of Q1; removing it lifts Simple to 97.
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(
+            BenchmarkSecondOpinionMode.Off,
+            ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 60),
+            ScoredAnswer(2, BenchmarkDifficulty.Simple, 28, 97),
+            ScoredAnswer(3, BenchmarkDifficulty.Simple, 30, 97),
+            ScoredAnswer(4, BenchmarkDifficulty.Intermediate, 55, 90),
+            ScoredAnswer(5, BenchmarkDifficulty.Advanced, 85, 88)));
+
+        Assert.Contains("Removing the **Simple** band's single weakest answer (question 1, 60 / 100)", report);
+        Assert.Contains("restores the ordering", report);
+        Assert.DoesNotContain("This is common on small question sets", report);
+    }
+
+    [Fact]
+    public void AssessorFindings_ListsUnverifiedClaimsAndContestedVerdicts()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 60);
+        q1.UnverifiedClaimCount = 2;
+        q1.UnverifiedClaimsJson = "[\"gnomes gain infravision\",\"orcs gain poison resistance\"]";
+        q1.AnswerFlags = (int)BenchmarkAnswerFlags.ContestedVerdict;
+        var q10 = ScoredAnswer(10, BenchmarkDifficulty.Simple, 30, 60);
+        q10.UnverifiedClaimCount = 1;
+        q10.AnswerFlags = (int)BenchmarkAnswerFlags.ContestedVerdict;
+        var clean = ScoredAnswer(2, BenchmarkDifficulty.Advanced, 85, 99);
+        clean.UnverifiedClaimCount = 0;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(
+            HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1, q10, clean));
+
+        Assert.Contains("### Assessor Findings", report);
+        Assert.Contains("**Unverified Claims:** 3 across 2 answer(s) (Q1, Q10)", report);
+        Assert.Contains("**Contested Verdicts:** 2 (Q1, Q10)", report);
+        // The claims themselves, on the answer that carried them.
+        Assert.Contains("gnomes gain infravision", report);
+    }
+
+    [Fact]
+    public void AssessorFindings_AreOmittedWhenTheAssessorFoundNothing()
+    {
+        var clean = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 97);
+        clean.UnverifiedClaimCount = 0;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(
+            HarnessV7Run(BenchmarkSecondOpinionMode.Off, clean));
+
+        Assert.DoesNotContain("### Assessor Findings", report);
+    }
+
+    [Fact]
+    public void AssessorFindings_SayNotRecorded_ForARunThatWasNeverAsked()
+    {
+        // UnverifiedClaimCount is null, not zero: "the assessor found none" and "the assessor
+        // was never asked" are different facts and the report must not conflate them.
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(
+            HarnessV6Run(ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 97)));
+
+        Assert.Contains("**Unverified Claims:** not recorded", report);
+    }
+
+    [Fact]
+    public void AssessorAgreement_CarriesTheConditioningCaveat_UnderTriggerSelectedCoverage()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 60);
+        q1.SecondOpinionQualityScore = 85;
+        q1.SecondOpinionDisagreed = true;
+        q1.SecondOpinionTrigger = "BelowThreshold";
+        q1.SecondOpinionByModelDisplayNameUsed = "Claude Opus 5";
+
+        var run = HarnessV7Run(
+            BenchmarkSecondOpinionMode.Flagged,
+            q1,
+            ScoredAnswer(2, BenchmarkDifficulty.Advanced, 85, 99));
+        run.SecondOpinionAssessorModelConfigurationId = 4;
+        run.SecondOpinionAssessorModelDisplayNameUsed = "Claude Opus 5";
+        run.SecondOpinionAssessorModelProviderUsed = "Anthropic";
+        run.SecondOpinionGradedAnswerCount = 1;
+        run.SecondOpinionMeanAbsDelta = 25.0;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("### Assessor Agreement", report);
+        Assert.Contains("**Coverage:** 1 of 2 answered questions.", report);
+        Assert.Contains("**Mean absolute difference:** 25.0 points.", report);
+        Assert.Contains("**Disagreements:** 1 of 1 (100.0%) — Q1", report);
+        Assert.Contains("is not an unbiased estimate of grader agreement", report);
+        Assert.Contains("(trigger: score below the profile threshold)", report);
+    }
+
+    [Fact]
+    public void AssessorAgreement_DropsTheCaveat_WhenEveryAnswerWasGradedTwice()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 60);
+        q1.SecondOpinionQualityScore = 62;
+        q1.SecondOpinionTrigger = "All";
+        var q2 = ScoredAnswer(2, BenchmarkDifficulty.Advanced, 85, 99);
+        q2.SecondOpinionQualityScore = 95;
+        q2.SecondOpinionTrigger = "All";
+
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.All, q1, q2);
+        run.SecondOpinionAssessorModelConfigurationId = 4;
+        run.SecondOpinionAssessorModelDisplayNameUsed = "Claude Opus 5";
+        run.SecondOpinionAssessorModelProviderUsed = "Anthropic";
+        run.SecondOpinionGradedAnswerCount = 2;
+        run.SecondOpinionMeanAbsDelta = 3.0;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("**Mode:** All — every answer graded twice.", report);
+        Assert.Contains("**Coverage:** 2 of 2 answered questions.", report);
+        Assert.DoesNotContain("is not an unbiased estimate of grader agreement", report);
+    }
+
+    [Fact]
+    public void BudgetPressure_MarksTheQuestionsThatAlsoScoredBelowTheRunMean()
+    {
+        // Run 7's Q10: one call short of its budget, and the worst answer in its band.
+        var pressured = ScoredAnswer(10, BenchmarkDifficulty.Simple, 30, 60);
+        pressured.ToolCallBudgetUsed = 35;
+        pressured.ToolCallCount = 34;
+        var exhausted = ScoredAnswer(11, BenchmarkDifficulty.Intermediate, 55, 84);
+        exhausted.ToolCallBudgetUsed = 25;
+        exhausted.ToolCallCount = 25;
+        exhausted.ToolBudgetExhausted = true;
+
+        var run = HarnessV7Run(
+            BenchmarkSecondOpinionMode.Off,
+            pressured,
+            exhausted,
+            ScoredAnswer(12, BenchmarkDifficulty.Advanced, 85, 100),
+            ScoredAnswer(13, BenchmarkDifficulty.Advanced, 90, 100));
+        run.UnweightedQualityIndex = 92;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("Q10 34/35 (1 left) **— scored 60, below the run mean of 92**", report);
+        Assert.Contains("**Budget/Quality Correlation:** 2 budget-constrained question(s)", report);
+        Assert.Contains("Q10 (60, budget pressured)", report);
+        Assert.Contains("Q11 (84, budget exhausted)", report);
+        Assert.Contains("Benchmark:ToolCallBudget:{Band}", report);
+    }
+
+    [Fact]
+    public void SynthesisDivergence_ReportsAQuestionTheSynthesisCallsAHallucination()
+    {
+        var q10 = ScoredAnswer(10, BenchmarkDifficulty.Simple, 30, 60);
+        q10.ReviewComment = "Mischaracterizes gemstone armor.";
+
+        var run = HarnessV7Run(
+            BenchmarkSecondOpinionMode.Off,
+            q10,
+            ScoredAnswer(11, BenchmarkDifficulty.Advanced, 85, 99));
+        run.AssessmentText =
+            "The model performed strongly overall.\n" +
+            "Question 10 hallucinates a material that does not exist in the game.\n" +
+            "Question 11 was answered from the source.";
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("### Synthesis Divergence", report);
+        Assert.Contains("**Question 10:** the run synthesis reports a hallucination", report);
+        Assert.DoesNotContain("**Question 11:** the run synthesis", report);
+    }
+
+    [Fact]
+    public void SynthesisDivergence_IsSilentWhenThePerQuestionVerdictAlreadyCapped()
+    {
+        var q10 = ScoredAnswer(10, BenchmarkDifficulty.Simple, 30, 25);
+        q10.CriticalError = true;
+
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q10);
+        run.AssessmentText = "Question 10 hallucinates a material that does not exist.";
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.DoesNotContain("### Synthesis Divergence", report);
+    }
+
+    [Fact]
+    public void Reassessment_RecordsTheScoreItReplacedAndWhoReplacedIt()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 85);
+        q1.ReassessmentCount = 1;
+        q1.PreviousQualityScore = 60;
+        q1.ReassessedAtUtc = new DateTime(2026, 9, 4, 8, 30, 0, DateTimeKind.Utc);
+        q1.ReassessedByModelDisplayNameUsed = "Claude Opus 5";
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(
+            HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1));
+
+        Assert.Contains("**Re-assessed:** 1 time(s), most recently 2026-09-04 08:30:00 UTC by Claude Opus 5", report);
+        Assert.Contains("the first verdict scored 60 / 100 and this one replaced it", report);
+    }
+
+    [Fact]
+    public void AssessorPairing_WarnsWhenBothGradersShareAProvider()
+    {
+        var run = HarnessV7Run(
+            BenchmarkSecondOpinionMode.All,
+            ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 90));
+        run.SecondOpinionAssessorModelConfigurationId = 4;
+        run.SecondOpinionAssessorModelDisplayNameUsed = "Gemini 3.7 Pro";
+        run.SecondOpinionAssessorModelProviderUsed = "Google";
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("**Assessor Pairing:** candidate OpenAI, assessor Google, second opinion Google — 2 distinct provider(s)", report);
+        Assert.Contains("come from the same provider", report);
+    }
+
+    [Fact]
+    public void AssessorPairing_IsQuietWhenAllThreeRolesAreDistinctProviders()
+    {
+        var run = HarnessV7Run(
+            BenchmarkSecondOpinionMode.All,
+            ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 90));
+        run.SecondOpinionAssessorModelConfigurationId = 4;
+        run.SecondOpinionAssessorModelDisplayNameUsed = "Claude Opus 5";
+        run.SecondOpinionAssessorModelProviderUsed = "Anthropic";
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("3 distinct provider(s)", report);
+        Assert.DoesNotContain("come from the same provider", report);
+    }
+
+    [Fact]
+    public void Report_CarriesNoCalibrationData()
+    {
+        // Calibration runs grade a run's answers with a third model to measure that model's
+        // agreement with the run's assessor. They change no score and belong to assessor
+        // selection, not to the run's published record — so nothing about them appears here.
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(
+            BenchmarkSecondOpinionMode.All,
+            ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 90)));
+
+        Assert.DoesNotContain("Calibration", report);
+        Assert.DoesNotContain("calibration", report);
     }
 }

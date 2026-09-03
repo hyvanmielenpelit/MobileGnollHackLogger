@@ -125,8 +125,35 @@ public class StartBenchmarkRunRequest
     /// </summary>
     public long? SecondOpinionAssessorModelConfigurationId { get; set; }
 
+    /// <summary>
+    /// Optional per-run override of the scoring profile's <c>SecondOpinionMode</c>. Null takes
+    /// the profile's default. <c>Off</c> (0) is honoured as an explicit choice: it drops the
+    /// second-opinion assessor from the run, which is what the enum's own documentation says the
+    /// two mean — the mode is inert without an assessor, and an assessor is inert under Off.
+    /// </summary>
+    public int? SecondOpinionMode { get; set; }
+
     public long? ScoringProfileId { get; set; }
     public bool AcknowledgeSameProvider { get; set; }
+}
+
+/// <summary>
+/// The assessor of the most recent completed run of a suite, for the start dialog's
+/// assessor-change advisory. Comparability across a suite's runs rests on the grader being the
+/// same one, so a change of assessor is worth surfacing *before* the run rather than in the
+/// report afterwards.
+/// </summary>
+public class BenchmarkLastAssessorDto
+{
+    public long? RunId { get; set; }
+    public long? AssessorModelConfigurationId { get; set; }
+    public string? AssessorModelDisplayNameUsed { get; set; }
+    public string? AssessorModelProviderUsed { get; set; }
+    public long? SecondOpinionAssessorModelConfigurationId { get; set; }
+    public string? SecondOpinionAssessorModelDisplayNameUsed { get; set; }
+    public DateTime? CompletedAtUtc { get; set; }
+    public string? HarnessVersion { get; set; }
+    public int ScoringMethodVersion { get; set; }
 }
 
 public class SameProviderWarningDto
@@ -152,6 +179,58 @@ public class RescoreRunRequest
 public class ReassessAnswerRequest
 {
     public long? AssessorModelConfigurationId { get; set; }
+
+    /// <summary>
+    /// Record a verdict without applying it. False (the default) replaces the answer's verdict and
+    /// recomputes the run's indices, which is what settling a disputed score needs. True records
+    /// the verdict in the second-opinion slot and changes no score, level, flag or index — the
+    /// mode for comparing a prospective assessor against the one in use.
+    /// </summary>
+    public bool Trial { get; set; }
+
+    /// <summary>
+    /// Required to let a trial overwrite an existing second opinion. Without it such a trial is
+    /// refused: an automatic second opinion is run evidence, and an experiment must not erase
+    /// evidence by accident.
+    /// </summary>
+    public bool ReplaceExistingSecondOpinion { get; set; }
+}
+
+public class CalibrateAssessorRequest
+{
+    public long AssessorModelConfigurationId { get; set; }
+}
+
+/// <summary>
+/// One non-destructive re-grading of a run by an alternative assessor. Deliberately reaches the
+/// admin UI only and never the Markdown report: a calibration is an experiment about graders, not
+/// a property of the run, and printing it beside the run's own figures would invite reading a
+/// calibration verdict as a result.
+/// </summary>
+public class BenchmarkAssessorCalibrationDto
+{
+    public long Id { get; set; }
+    public long BenchmarkRunId { get; set; }
+    public string? AssessorDisplayNameUsed { get; set; }
+    public string? AssessorProviderUsed { get; set; }
+    public string? AssessorModelIdUsed { get; set; }
+    public string? AssessorThinkingLevelUsed { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
+    public string? CreatedByUserName { get; set; }
+    public int AnswerCount { get; set; }
+    public int SkippedAnswerCount { get; set; }
+
+    /// <summary>Mean |calibration - original| quality across graded answers.</summary>
+    public double? MeanAbsDelta { get; set; }
+
+    /// <summary>Same definition as a live run's: a gap above 15 points, or a split on criticalError.</summary>
+    public int DisagreementCount { get; set; }
+
+    public int InputTokens { get; set; }
+    public int OutputTokens { get; set; }
+    public long DurationMs { get; set; }
+    public string? VerdictsJson { get; set; }
+    public string? ErrorMessage { get; set; }
 }
 
 public class BenchmarkRetryRequest
@@ -171,6 +250,13 @@ public class BenchmarkScoringProfileDto
     public string LevelScoresJson { get; set; } = string.Empty;
     public int CriticalErrorCeiling { get; set; }
     public int SecondOpinionQualityThreshold { get; set; }
+
+    /// <summary>Off (0), Flagged (1), FlaggedAndOutliers (2) or All (3).</summary>
+    public int SecondOpinionMode { get; set; }
+
+    /// <summary>Meaningful under FlaggedAndOutliers only; validated &gt; 0 there.</summary>
+    public int SecondOpinionOutlierDeltaPoints { get; set; }
+
     public int SpeedTargetMs { get; set; }
     public double SpeedDecayK { get; set; }
     public double SpeedDifficultyScaling { get; set; }
@@ -190,6 +276,8 @@ public class CreateBenchmarkScoringProfileRequest
     public string LevelScoresJson { get; set; } = "[1, 15, 35, 55, 72, 87, 100]";
     public int CriticalErrorCeiling { get; set; } = 25;
     public int SecondOpinionQualityThreshold { get; set; } = 50;
+    public int SecondOpinionMode { get; set; } = (int)BenchmarkSecondOpinionMode.Flagged;
+    public int SecondOpinionOutlierDeltaPoints { get; set; } = 25;
     public int SpeedTargetMs { get; set; } = 15000;
     public double SpeedDecayK { get; set; } = 20.0;
     public double SpeedDifficultyScaling { get; set; } = 1.0;
@@ -207,6 +295,8 @@ public class UpdateBenchmarkScoringProfileRequest
     public string LevelScoresJson { get; set; } = string.Empty;
     public int CriticalErrorCeiling { get; set; }
     public int SecondOpinionQualityThreshold { get; set; }
+    public int SecondOpinionMode { get; set; }
+    public int SecondOpinionOutlierDeltaPoints { get; set; }
     public int SpeedTargetMs { get; set; }
     public double SpeedDecayK { get; set; }
     public double SpeedDifficultyScaling { get; set; }
@@ -217,6 +307,16 @@ public class BenchmarkRunAnswerDto
 {
     public long Id { get; set; }
     public long BenchmarkRunId { get; set; }
+
+    /// <summary>
+    /// The suite question this answer was produced for. Null for a historical answer that could
+    /// not be matched unambiguously, and null once the question is deleted. Anything merging
+    /// questions with answers must prefer this over <see cref="OrderIndex"/>, which a suite
+    /// reorder rewrites.
+    /// </summary>
+    public long? BenchmarkQuestionId { get; set; }
+    public int? ItemRevisionUsed { get; set; }
+
     public int OrderIndex { get; set; }
     public string QuestionText { get; set; } = string.Empty;
     public BenchmarkDifficulty Difficulty { get; set; }
@@ -294,12 +394,35 @@ public class BenchmarkRunAnswerDto
     /// <summary>The claim the assessor called a critical error, quoted from the answer.</summary>
     public string? CriticalErrorQuote { get; set; }
 
+    /// <summary>
+    /// Claims the assessor could neither confirm nor refute. Null for a run graded before the
+    /// field existed — null is "never asked", zero is "asked and found none".
+    /// </summary>
+    public int? UnverifiedClaimCount { get; set; }
+    public string? UnverifiedClaimsJson { get; set; }
+
     /// <summary>Second-opinion verdict, present only when one was triggered. Advisory.</summary>
     public int? SecondOpinionQualityScore { get; set; }
     public bool? SecondOpinionCriticalError { get; set; }
     public string? SecondOpinionByModelDisplayNameUsed { get; set; }
     public string? SecondOpinionJson { get; set; }
     public bool SecondOpinionDisagreed { get; set; }
+
+    /// <summary>
+    /// Why this answer was graded twice: CriticalError, ContestedVerdict, UnverifiedClaims,
+    /// BelowThreshold, Outlier, All, or Manual for an operator's trial. "Every answer" and "this
+    /// one looked wrong" are different facts about the same second verdict.
+    /// </summary>
+    public string? SecondOpinionTrigger { get; set; }
+
+    /// <summary>
+    /// Re-assessment provenance. A published index can move after publication, and these are how
+    /// the screen says that it did, and what it moved from.
+    /// </summary>
+    public DateTime? ReassessedAtUtc { get; set; }
+    public string? ReassessedByModelDisplayNameUsed { get; set; }
+    public int? PreviousQualityScore { get; set; }
+    public int ReassessmentCount { get; set; }
 }
 
 public class BenchmarkRunDetailDto
@@ -343,11 +466,32 @@ public class BenchmarkRunDetailDto
     public int? ComputedScore { get; set; }
     public int? QualityIndex { get; set; }
     public int? RawQualityIndex { get; set; }
+
+    /// <summary>
+    /// The equal-weight mean of the same per-question scores as <see cref="QualityIndex"/>. Null
+    /// for runs before harness version 7, which never recorded it. Shown only when it differs
+    /// from the weighted index, where the gap is what the weighting did to the headline.
+    /// </summary>
+    public int? UnweightedQualityIndex { get; set; }
+
     public int? SpeedIndex { get; set; }
     public long TotalAnswerDurationMs { get; set; }
     public long? ScoringProfileId { get; set; }
     public string? ScoringProfileName { get; set; }
     public string? ScoringProfileSnapshotJson { get; set; }
+
+    /// <summary>
+    /// The speed constants this run was scored against, read from
+    /// <see cref="ScoringProfileSnapshotJson"/> <b>server-side</b>. The client needs the target
+    /// to mark the Speed Index advisory for a deliberating candidate on an interactive-latency
+    /// profile, and parsing the snapshot in TypeScript would be a second reader of a storage
+    /// format that has to be kept in step with the profile shape.
+    /// </summary>
+    public int? ScoringProfileSpeedTargetMs { get; set; }
+
+    public double? ScoringProfileSpeedDecayK { get; set; }
+    public int? ScoringProfileSecondOpinionQualityThreshold { get; set; }
+    public int? ScoringProfileSecondOpinionOutlierDeltaPoints { get; set; }
     public int ScoringMethodVersion { get; set; }
     public string? HarnessVersion { get; set; }
     public int? MaxToolCallsPerQuestionUsed { get; set; }
@@ -374,6 +518,31 @@ public class BenchmarkRunDetailDto
     public int AdvisoryFlagAnswerCount { get; set; }
 
     public int ScrubbedArtifactAnswerCount { get; set; }
+
+    /// <summary>
+    /// Answers whose assessor described a fabrication while leaving criticalError false, and
+    /// answers whose verdict was replaced after the run finished. Both advisory; both overlap the
+    /// counts above and are never summed with them.
+    /// </summary>
+    public int ContestedVerdictAnswerCount { get; set; }
+    public int ReassessedAnswerCount { get; set; }
+
+    /// <summary>
+    /// How the second-opinion assessor was used on this run: Off (0), Flagged (1),
+    /// FlaggedAndOutliers (2) or All (3), as stamped at run start.
+    /// </summary>
+    public int SecondOpinionModeUsed { get; set; }
+
+    /// <summary>
+    /// Grader agreement, which is only interpretable together with its coverage: a mean delta
+    /// over trigger-selected answers is conditioned on the first assessor's own uncertainty,
+    /// while the same figure over every answer is an inter-rater agreement rate.
+    /// </summary>
+    public int SecondOpinionGradedAnswerCount { get; set; }
+    public double? SecondOpinionMeanAbsDelta { get; set; }
+
+    /// <summary>Answers whose two verdicts disagreed, among those graded twice.</summary>
+    public int SecondOpinionDisagreementCount { get; set; }
 
     public long? ToolOverheadMs { get; set; }
 
@@ -409,6 +578,194 @@ public class BenchmarkRunDetailDto
     public List<int> InFlightOrderIndexes { get; set; } = new();
 
     public List<BenchmarkRunAnswerDto> Answers { get; set; } = new();
+}
+
+// ---------------------------------------------------------------------------------------------
+// Suite health. Every DTO below carries a read-only finding: the panel that shows them has no
+// write action, and no endpoint here writes a question, a rubric, or a difficulty rating.
+// ---------------------------------------------------------------------------------------------
+
+public class BenchmarkItemStatisticsDto
+{
+    public long QuestionId { get; set; }
+    public int OrderIndex { get; set; }
+    public string QuestionText { get; set; } = string.Empty;
+    public BenchmarkDifficulty AuthoredDifficulty { get; set; }
+    public int ItemRevision { get; set; }
+
+    /// <summary>Sample size and its confounds. Shown together, always.</summary>
+    public int RunCount { get; set; }
+    public int DistinctModelCount { get; set; }
+    public int DistinctAssessorCount { get; set; }
+    public int DistinctScoringMethodVersionCount { get; set; }
+
+    /// <summary>Answers included whose revision was never recorded.</summary>
+    public int UnknownRevisionCount { get; set; }
+
+    public double MeanQuality { get; set; }
+    public int MinQuality { get; set; }
+    public int MaxQuality { get; set; }
+    public double StdDev { get; set; }
+
+    /// <summary>
+    /// 100 − MeanQuality. Reported only. It is <b>never</b> written back into
+    /// <c>AssessedDifficulty</c>, which weights the Intelligence Index: deriving the weight from
+    /// the scores it weights is circular.
+    /// </summary>
+    public int EmpiricalDifficulty { get; set; }
+
+    public int? AssessedDifficulty { get; set; }
+    public int? DifficultyDelta { get; set; }
+
+    /// <summary>Null below four runs, where a top-half/bottom-half split means nothing.</summary>
+    public double? Discrimination { get; set; }
+
+    public double MeanToolCalls { get; set; }
+    public double BudgetBoundFraction { get; set; }
+
+    public int Flags { get; set; }
+    public List<string> FlagNames { get; set; } = new();
+
+    /// <summary>A confound fired: every other figure on this row is a mixture, not a measurement.</summary>
+    public bool Confounded { get; set; }
+    public bool InsufficientData { get; set; }
+}
+
+public class BenchmarkSuiteItemAnalysisDto
+{
+    public long SuiteId { get; set; }
+    public string SuiteName { get; set; } = string.Empty;
+    public int QuestionCount { get; set; }
+
+    public int RunCount { get; set; }
+    public int DistinctModelCount { get; set; }
+    public int DistinctAssessorCount { get; set; }
+    public int DistinctScoringMethodVersionCount { get; set; }
+
+    /// <summary>
+    /// Answers excluded because they could not be tied to a question — a historical answer the
+    /// backfill could not match unambiguously, or one whose question was deleted.
+    /// </summary>
+    public int LinkedAnswerCount { get; set; }
+    public int UnlinkedAnswerCount { get; set; }
+
+    /// <summary>Below this many runs, nothing in the table is a measurement.</summary>
+    public int MinRunsForMeasurement { get; set; }
+    public int MinRunsForDiscrimination { get; set; }
+
+    public List<BenchmarkItemStatisticsDto> Items { get; set; } = new();
+}
+
+public class BenchmarkRubricGapClusterDto
+{
+    public long QuestionId { get; set; }
+    public int QuestionOrderIndex { get; set; }
+
+    /// <summary>Verbatim, so a human reads what was said rather than a paraphrase of it.</summary>
+    public List<string> Claims { get; set; } = new();
+
+    public List<string> ModelFamilies { get; set; } = new();
+    public List<string> ModelIds { get; set; } = new();
+    public int Occurrences { get; set; }
+
+    /// <summary>LikelyRubricGap or LikelyHallucination.</summary>
+    public string Verdict { get; set; } = string.Empty;
+}
+
+public class BenchmarkRubricGapReportDto
+{
+    public long SuiteId { get; set; }
+    public int RunCount { get; set; }
+
+    /// <summary>Unverified claims read, before clustering. Zero for a suite with no v7 runs.</summary>
+    public int ClaimCount { get; set; }
+
+    public List<BenchmarkRubricGapClusterDto> Clusters { get; set; } = new();
+}
+
+public class BenchmarkCitationDto
+{
+    /// <summary>SourceFile, Symbol or WikiArticle.</summary>
+    public string Kind { get; set; } = string.Empty;
+
+    public string Value { get; set; } = string.Empty;
+
+    /// <summary>Resolved, Unresolved or NotValidated — the last meaning "we did not check".</summary>
+    public string Status { get; set; } = string.Empty;
+
+    /// <summary>Parsed and shown, never validated: line numbers drift with every commit.</summary>
+    public int? LineNumber { get; set; }
+}
+
+public class BenchmarkQuestionCitationsDto
+{
+    public long QuestionId { get; set; }
+    public int OrderIndex { get; set; }
+    public List<BenchmarkCitationDto> Citations { get; set; } = new();
+    public int UnresolvedCount { get; set; }
+    public int NotValidatedCount { get; set; }
+    public bool HasNoCitations { get; set; }
+}
+
+public class BenchmarkCitationReportDto
+{
+    public long SuiteId { get; set; }
+    public int UnresolvedCount { get; set; }
+    public int NotValidatedCount { get; set; }
+
+    /// <summary>
+    /// False while the source index is still building, which makes an unresolved citation
+    /// unreliable. Stated rather than left to be inferred from a suspiciously bad result.
+    /// </summary>
+    public bool SourceIndexReady { get; set; }
+
+    public List<BenchmarkQuestionCitationsDto> Questions { get; set; } = new();
+}
+
+public class CoverageAnalysisRequest
+{
+    public long AnalysisModelConfigurationId { get; set; }
+}
+
+public class BenchmarkCoverageGapDto
+{
+    public string Subsystem { get; set; } = string.Empty;
+
+    /// <summary>Required. A gap with no location is discarded before it reaches here.</summary>
+    public string SourceLocation { get; set; } = string.Empty;
+
+    public string? Rationale { get; set; }
+    public string? SuggestedBand { get; set; }
+}
+
+/// <summary>
+/// A read-only coverage report. Nothing here is written into the suite, and no endpoint exists
+/// that would write one: a generated draft is edited and approved by a human before it becomes a
+/// question, and a draft rubric without a source location is not usable.
+///
+/// The analysing model is disclosed on the report itself rather than snapshotted onto the suite,
+/// because the report is not persisted either.
+/// </summary>
+public class BenchmarkCoverageReportDto
+{
+    public long SuiteId { get; set; }
+    public string SuiteName { get; set; } = string.Empty;
+    public int QuestionCount { get; set; }
+
+    public long AnalysisModelConfigurationId { get; set; }
+    public string? AnalysisModelDisplayNameUsed { get; set; }
+    public string? AnalysisModelProviderUsed { get; set; }
+    public string? AnalysisModelIdUsed { get; set; }
+    public string? AnalysisModelThinkingLevelUsed { get; set; }
+    public DateTime AnalyzedAtUtc { get; set; }
+
+    public int InputTokens { get; set; }
+    public int OutputTokens { get; set; }
+    public long DurationMs { get; set; }
+
+    public List<BenchmarkCoverageGapDto> Gaps { get; set; } = new();
+    public string? Comment { get; set; }
+    public string? ErrorMessage { get; set; }
 }
 
 public class BenchmarkRunSummaryDto

@@ -41,8 +41,17 @@ public static class BenchmarkRunFinalizer
     private const BenchmarkAnswerFlags TransportDefectFlags =
         BenchmarkAnswerFlags.Empty | BenchmarkAnswerFlags.Truncated;
 
+    /// <summary>
+    /// Advisory, never defect. <see cref="BenchmarkAnswerFlags.ContestedVerdict"/> joins these
+    /// deliberately: the answer is intact and the verdict may well be right — what it is not is
+    /// unambiguous. Adding it to <see cref="TransportDefectFlags"/> would flip every run carrying
+    /// one to <c>CompletedWithErrors</c>, which is precisely the regression harness version 4 was
+    /// written to undo.
+    /// </summary>
     private const BenchmarkAnswerFlags AdvisoryFlags =
-        BenchmarkAnswerFlags.ReasoningBleed | BenchmarkAnswerFlags.RepeatedFragments;
+        BenchmarkAnswerFlags.ReasoningBleed
+        | BenchmarkAnswerFlags.RepeatedFragments
+        | BenchmarkAnswerFlags.ContestedVerdict;
 
     /// <summary>A transport or provider defect corrupted this answer beyond recovery.</summary>
     public static bool HasTransportDefect(BenchmarkRunAnswer answer)
@@ -154,6 +163,27 @@ public static class BenchmarkRunFinalizer
         run.RecoveredAnswerCount = answers.Count(WasRecovered);
         run.AdvisoryFlagAnswerCount = answers.Count(HasAdvisoryFlag);
         run.ScrubbedArtifactAnswerCount = answers.Count(a => a.ScrubbedArtifactCount > 0);
+        run.ContestedVerdictAnswerCount = answers.Count(
+            a => (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.ContestedVerdict) != 0);
+        run.ReassessedAnswerCount = answers.Count(a => a.ReassessmentCount > 0);
+
+        // Grader agreement. Manual verdicts are excluded: those come from a third model an
+        // operator picked by hand for a trial, and this measures the run's own two graders.
+        //
+        // Coverage travels with the figure everywhere it is shown, because the two are not
+        // separable. A mean delta over trigger-selected answers is conditioned on the first
+        // assessor's own uncertainty and says nothing about the instrument; the same number over
+        // every answer is an inter-rater agreement rate. Only the count distinguishes them.
+        var secondOpinions = answers
+            .Where(a => a.SecondOpinionQualityScore.HasValue
+                        && a.QualityScore.HasValue
+                        && !string.Equals(a.SecondOpinionTrigger, "Manual", StringComparison.Ordinal))
+            .ToList();
+
+        run.SecondOpinionGradedAnswerCount = secondOpinions.Count;
+        run.SecondOpinionMeanAbsDelta = secondOpinions.Count > 0
+            ? secondOpinions.Average(a => Math.Abs(a.SecondOpinionQualityScore!.Value - a.QualityScore!.Value))
+            : null;
         run.ToolOverheadMs = answers.Any(a => a.ToolTimeMs.HasValue)
             ? answers.Sum(a => a.ToolTimeMs ?? 0L)
             : null;
@@ -164,6 +194,13 @@ public static class BenchmarkRunFinalizer
             .ToList();
 
         run.QualityIndex = BenchmarkScoring.QualityIndex(scorableItems);
+
+        // The plain mean of the same scores. Not a rival to the index above — a companion to it:
+        // the gap between them is how much difficulty weighting moved the headline, which is
+        // invisible from either number alone. On the 2026-09-03 run they were 94 and 92, because
+        // the two weakest answers were also two of the easiest questions.
+        run.UnweightedQualityIndex = BenchmarkScoring.UnweightedQualityMean(
+            answers.Where(a => a.Status == BenchmarkAnswerStatus.Ok).Select(a => a.QualityScore));
 
         // Equal weight: difficulty already scales each question's own speed target.
         run.SpeedIndex = BenchmarkScoring.SpeedIndex(

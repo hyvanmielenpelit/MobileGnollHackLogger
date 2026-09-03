@@ -149,17 +149,444 @@ Prompted by a review of the 2026-09-03 GPT-5.6 Luna run's report, diagnostics, a
 - **A forgone second opinion is quantified.** When no second opinion assessor was selected, the report states how many answers *would* have been re-graded, split by trigger. The reference run produced two critical errors with no second opinion selected — exactly the trigger the feature exists for — and nothing connected the two facts.
 - **Critical errors are surfaced in the admin UI.** The run-detail Run Integrity Notice now names the critical-error count and the affected question numbers, and fires even when a critical error is a run's only problem. Previously the screen showed five score tiles and the sentence "2 answer(s) carry advisory flags", with the two critical errors visible only by scrolling into the per-question list. The advisory-flag line names its questions too, and the client-side diagnostics capture labels the holistic score `holistic:` rather than `final:`.
 
+### Harness Version 7 Updates
+
+Prompted by the same 2026-09-03 GPT-5.6 Luna run (run 7), after a second reading of its per-question
+verdicts. **`BenchmarkAssessmentPrompt.HarnessVersion` moves to 7 and `ScoringMethodVersion` to 6** —
+this bump *is* a scoring change: an answer containing a claim the assessor cannot adjudicate against the
+rubric no longer loses Accuracy for it. **Runs 1–7 and everything after are not comparable on any answer
+carrying an out-of-rubric claim.**
+
+What run 7 showed, in its own numbers:
+
+- **Q1** scored 60. Its rubric named an explicit critical-error condition ("Invents racial intrinsics …
+  that are not in the list above"), the answer invented two, and `criticalError` still came back `false`
+  — so no cap applied. What *did* apply was an Accuracy deduction whose stated evidence was that the
+  claims could not be verified against the rubric. The rubric was a *partial* list; "not in the rubric"
+  and "false" are different findings, and only one of them is the assessor's to make.
+- **Q10** scored 60 with a verdict reading "hallucinates 'adamantium', mischaracterizes gemstone armor,
+  and omits bronze" — beside `criticalError: false`. The run-level synthesis then made that same
+  hallucination the headline finding of the whole run, contradicting the per-question verdict that
+  actually scored.
+- The report's Intelligence Index read **94** against an unweighted mean of **92**: the two weakest
+  answers were also two of the easiest questions, so difficulty weighting lifted the headline *because*
+  the model failed easy questions. Nothing in the report said so.
+
+The changes:
+
+- **Unverified claims are recorded, not deducted for.** CRITICAL INSTRUCTION 8 tells the assessor that a
+  rubric is a floor rather than an exhaustive fact base: a claim it can neither confirm nor refute goes
+  into a new `unverifiedClaims` array and must not reduce Accuracy. The ACCURACY level-3 anchor no longer
+  reads "slight hallucinations", which invited exactly the conflation. `BenchmarkRunAnswer.UnverifiedClaimCount`
+  and `UnverifiedClaimsJson` persist the result, and each claim is **quote-verified against the graded
+  answer** before it is stored — a claim the assessor paraphrased rather than quoted is dropped, because
+  a claim that cannot be located cannot be reviewed.
+  **`UnverifiedClaimCount` is nullable: null means "the assessor was never asked", zero means "asked and
+  found none".**
+- **Contested verdicts are detected and flagged.** `BenchmarkVerdictConsistency` matches fabrication
+  vocabulary (`hallucinat`, `fabricat`, `invent` — with a negative lookahead for `inventory`, which
+  appears throughout a roguelike benchmark, `non-existent`, `no such`, `made up`) against the assessor's
+  own comment and evidence. A hit alongside `criticalError: false` sets
+  `BenchmarkAnswerFlags.ContestedVerdict` (32). **Nothing about a score changes**: forcing the cap
+  mechanically would be worse than leaving it, because a false 25-point cap costs far more than a missed
+  advisory. The flag joins the *advisory* set in `BenchmarkRunFinalizer` and deliberately **not**
+  `TransportDefectFlags` — putting it there would flip healthy runs to `CompletedWithErrors`, the exact
+  regression harness version 4 was written to undo.
+- **Four second-opinion modes.** `BenchmarkSecondOpinionMode` on the scoring profile, overridable per run
+  from the start dialog, and snapshotted onto the run as `SecondOpinionModeUsed`:
+
+  | Mode | Coverage | Execution stages |
+  |---|---|---|
+  | `Off` (0) | Nothing. Equivalent to selecting no second-opinion assessor | 2 |
+  | `Flagged` (1) | Per-answer triggers only | 2 |
+  | `FlaggedAndOutliers` (2) | Triggers, plus a post-scoring sweep for answers far below the run's own median | **3** |
+  | `All` (3) | Every answer graded twice | 2 |
+
+  `FlaggedAndOutliers` is the **only** mode with a third stage: the sweep needs the run's median, so it
+  cannot run per-answer. It is capped at four sweep re-grades per run.
+- **Four per-answer triggers**, evaluated as a first-match cascade so the counts partition the answers:
+  a critical error; a **contested verdict**; **unverifiable claims alongside a docked accuracy level**
+  (the Q1 shape — either alone is unremarkable, but together they suggest the deduction rested on the
+  thing scoring method 6 forbids deducting for); and a quality score below the profile's threshold.
+  Run 7 produced none of the two that existed at the time, which is why configuring a second-opinion
+  assessor would not by itself have produced a single second verdict.
+- **Grader agreement is measured and always reported with its coverage.**
+  `SecondOpinionGradedAnswerCount` and `SecondOpinionMeanAbsDelta` on the run; a **disagreement** is a
+  gap above **15 quality points** — roughly one BARS level on the dominant dimension — or a split on
+  `criticalError`. The coverage fraction travels with the figure everywhere it appears, because the two
+  are not separable: under the trigger-based modes the disagreement rate is conditioned on the first
+  assessor's own uncertainty and says nothing about the instrument, while the same number over every
+  answer is an inter-rater agreement rate. Only `All` produces the latter. Manual trial verdicts are
+  excluded from the aggregates.
+- **The unweighted quality mean is computed, stored and shown.** `BenchmarkRun.UnweightedQualityIndex`
+  (nullable; null for runs before this version). The report prints it under the Intelligence Index
+  whenever the two differ by a point or more, with the delta the weighting produced, and the admin
+  results screen shows a matching tile. Neither number replaces the other — they answer different
+  questions, and the gap between them is invisible from either alone.
+- **Re-assessment provenance.** An applied re-assess now records `PreviousQualityScore`,
+  `ReassessedAtUtc`, `ReassessedByModelDisplayNameUsed` and increments `ReassessmentCount`; a second
+  re-assess leaves `PreviousQualityScore` at the *original*, so the record always says what the published
+  index was before anyone touched it. `ReassessedAnswerCount` surfaces on the run, and the report says on
+  the answer that moved that a published index has moved since publication.
+- **Trial re-assessment.** `POST .../reassess` accepts `trial: true`, which records a prospective
+  assessor's verdict in the second-opinion slot and **changes no score, level, flag or index** — the run
+  row is left byte-identical, including `Status` and `CompletedAtUtc`, which the non-trial path rewrites.
+  Overwriting an existing *automatic* second opinion requires `replaceExistingSecondOpinion`, because
+  that verdict is run evidence and an experiment must not erase evidence by accident. Trial verdicts are
+  tagged `Manual` and excluded from the agreement aggregates.
+- **Calibration runs.** `BenchmarkAssessorCalibration` records one non-destructive re-grading of a
+  finished run by an alternative assessor: the agreement statistics, the token cost, the duration, and
+  the per-answer verdicts as JSON. **It writes no `BenchmarkRunAnswer` field at all**, and it deliberately
+  never reaches the Markdown report — a calibration is an experiment about *graders*, not a property of
+  the run, and printing it beside the run's own figures would invite reading a calibration verdict as a
+  result. It is how a prospective assessor is compared against the one in use without spending a single
+  candidate call.
+- **The report explains its own aggregation.** Beyond the items above: band dispersion (`range 60–97,
+  lowest Q1`) so a band average cannot hide a single outlier; a second branch of the non-monotonicity
+  note that tests whether removing the depressed band's weakest answer restores the ordering, and names
+  the question when it does; an Assessor Findings block; an Assessor Agreement block carrying the
+  conditioning caveat under every mode but `All`; budget-constrained questions marked where they also
+  scored below the run's own mean, with the configuration key to raise and re-run; a Synthesis Divergence
+  entry where the run-level synthesis names a hallucination the per-question verdict declined to flag;
+  the second-opinion trigger named per answer; and an assessor-pairing disclosure in the Comparability
+  block.
+- **Turn duration leaves the synthesis prompt.** It was removed from the per-question prompt in harness
+  version 2 precisely to stop the assessor penalising deliberation; leaving it in the prompt that
+  produces the Holistic Assessor Score reintroduced the same bias at run level. The synthesis now
+  receives each verdict's accuracy and completeness evidence and its unverified-claim count instead.
+- **Two admin-UI advisories that did not exist.** The results screen marks the Speed Index advisory for a
+  deliberating candidate on an interactive-latency profile — read from the *run's own* profile snapshot,
+  server-side — where previously it marked only the concurrency case, and run 7 showed a bare
+  `SPEED INDEX 67 / 100`. And the start dialog warns when the assessor and the second opinion share a
+  provider, and when the selected assessor differs from the one that graded the suite's last completed
+  run.
+- **The diagnostics capture can now explain a score.** It prints all three model roles, the scoring
+  constants the run was actually scored with, an `--- INTEGRITY ---` block mirroring the report's
+  four-class accounting plus the advisory and agreement figures, and per-question `band`, `assessedDiff`,
+  `levels`, `critical`, `tools`, `narration`, `unverified`, `secondOpinion` and `reassessed` fields.
+  Every one of those was already on the DTO. `computed:` — the superseded `ComputedScore` column that
+  current runs never write — is printed only where a historical run actually has it, instead of reading
+  `n/a` on every capture.
+- **Report timestamps are culture-invariant.** `{run.StartedAtUtc:yyyy-MM-dd HH:mm:ss}` uses the
+  *culture's* time separator for `:`, so on a `fi-FI` machine — which is what these run on — every
+  generated report read `19.32.00`. A report is compared across machines; its timestamps have to look
+  the same on all of them.
+
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).
 - **Model Time**: $\text{ModelTime} = \max(0, \text{DurationMs} - \text{ToolTimeMs})$ — the turn duration with harness tool I/O removed. This, not `DurationMs`, is what speed is scored on.
 - **Speed Target**: $Target(q) = T \cdot (1 + s \cdot \text{Difficulty}(q) / 100)$, where $T$ is `SpeedTargetMs` and $s$ is `SpeedDifficultyScaling`.
 - **Speed Score**: $\text{Speed} = \text{clamp}(100 - k \cdot \log_2(\text{ModelTime} / Target(q)), 1, 100)$, where $k$ is `SpeedDecayK`.
 - **Intelligence Index**: $\sum(\text{Difficulty}(q) \cdot \text{Quality}(q)) / \sum(\text{Difficulty}(q))$.
+- **Unweighted Quality Mean**: the **equal-weight mean** of $\text{Quality}(q)$ over answered questions,
+  stored as `UnweightedQualityIndex` from harness version 7. Not a rival to the Intelligence Index but a
+  companion to it: the difference between the two is how far difficulty weighting moved the headline, and
+  a run whose weak answers are its easy ones reads *higher* weighted than unweighted. Both are reported.
+- **Assessor Agreement**: the mean of $|\text{first}(q) - \text{second}(q)|$ over the answers graded
+  twice, stored as `SecondOpinionMeanAbsDelta` beside `SecondOpinionGradedAnswerCount`. A **disagreement**
+  is a gap above **15** quality points, or a split on `criticalError`. Interpretable only together with
+  its coverage: an unbiased inter-rater rate requires `SecondOpinionMode = All`.
 - **Speed Index**: the **equal-weight mean** of $\text{Speed}(q)$ over answered questions. Difficulty enters through $Target(q)$, not through the weight — weighting here as well would count difficulty twice and drag the index toward the floor by construction. (This line previously claimed a difficulty-weighted mean, which neither the code nor the generated report has ever produced.)
 
 ---
 
-## 3. Data Model & Relationships
+## 3. Assessor Strategy
+
+Cross-model comparison is valid only when every candidate was graded by the **same** assessor —
+otherwise the models are measured with different instruments and the indices are not comparable. The
+benchmark's own recorded purpose is *operational model selection*, which is a cross-family choice, so
+this constraint is binding rather than academic.
+
+### The roster, and why the destination is Anthropic
+
+Stated position as of 2026-09-03:
+
+| Provider | Role today | Planned role |
+|---|---|---|
+| **OpenAI** | Model under test (GPT-5.6 Luna) | Model under test; assessor-eligible only once it is not a candidate |
+| **Google** | Assessor (Gemini 3.7 Flash) — chosen for cost | **Model under test** later; not assessor-eligible then |
+| **Anthropic** | Unused in benchmarking | Not planned as a model under test; used for other tasks such as suite authoring |
+
+Applying the constraint eliminates two of the three:
+
+- **OpenAI** cannot be the permanent assessor: it is a model under test today.
+- **Google** cannot be: it becomes a model under test later, and same-family self-preference bias would
+  land on the grader whose verdict *scores*.
+- **Anthropic** is assessor-eligible in both configurations.
+
+**Anthropic is the destination.** The only open question is *when*.
+
+Gemini grading OpenAI candidates is sound in the meantime — the same-provider gate covers
+candidate-versus-assessor only, this pairing never trips it, and it is an independent provider grading an
+independent candidate. The configuration simply has an expiry date, and that date is **the first Google
+candidate run**.
+
+### The staged migration
+
+**Stage 1 — now, through every remaining OpenAI-candidate run:**
+
+| Role | Provider |
+|---|---|
+| Candidate | OpenAI |
+| Primary assessor (scores) | **Google** — unchanged |
+| Second opinion (advisory) | **Anthropic** |
+| Mode | `All` |
+
+**Stage 2 — from the first Google-candidate run onward:**
+
+| Candidate | Primary assessor | Second opinion |
+|---|---|---|
+| Google | **Anthropic** | OpenAI |
+| OpenAI | **Anthropic** | Google |
+
+Three distinct providers in every row of both stages; the same-provider gate never fires in either.
+
+**What stage 1 buys.** Anthropic grades every answer alongside Gemini, so the stage-2 promotion is from a
+model whose behaviour on this exact suite is already measured — per answer, under the same rubrics, with
+`SecondOpinionMeanAbsDelta` and the disagreement list accumulating run by run. Close agreement makes the
+switch low-risk and lets the older runs be reasoned about; divergence is something to discover before the
+switch rather than after it. A calibration run previews the same comparison against any stored run at the
+cost of one assessor pass and no candidate calls.
+
+**What stage 1 costs, stated plainly.** Gemini 3.7 Flash — the grader that produced the Q1 "unverified"
+deduction and the Q10 "hallucinates 'adamantium'" verdict that harness version 7 exists to fix — keeps
+scoring through stage 1. The exposure is much smaller than run 7's: the prompt fix applies to whichever
+model grades, the new triggers fire on exactly those two shapes, and under `All` mode the second reader
+sees every answer with disagreement surfaced. It is not zero. **A large mean absolute delta on the first
+stage-1 run is grounds to promote Anthropic early rather than wait for the trigger.**
+
+**The staging rationale is the agreement data, not continuity.** An earlier draft argued for keeping
+Gemini partly to preserve comparability with the seven existing Gemini-graded runs. That argument does
+not hold: the `ScoringMethodVersion` bump to 6 already separates runs 1–7 from everything after on any
+answer containing an out-of-rubric claim. Runs 1–7 are becoming a distinct population regardless of who
+grades next, and the item-analysis `ScoringMethodMixed` flag says so.
+
+**Do not hop to a stronger Gemini in the interim.** Assessment is roughly 2% of a run's token cost and,
+at a few seconds per answer against a ~91-second median answer, is fully hidden inside the pipeline — so
+"use the strongest grader available" is sound advice in general. It is not a reason to move from Gemini
+3.7 Flash to a stronger Gemini during stage 1: that breaks comparability now *and* still requires the
+Anthropic switch at the trigger, producing two breaks where the staged plan has one. Apply the
+strongest-grader advice to the model that ends up primary.
+
+### The second opinion is an independent reader, not an adjudicator
+
+| Role | Model choice | Why it does or does not work |
+|---|---|---|
+| **Adjudicator** — meant to be *more right* | A stronger model | **Does not work as designed.** The first verdict stays authoritative for scoring, so the better model's verdict is recorded and then ignored. If you trust a model more, make it the primary assessor |
+| **Independent reader** — meant to detect *fragile verdicts* and measure agreement | Comparable tier, **different provider** | **This is what the feature is for.** Disagreement means two competent, independently-biased readers reached different conclusions |
+
+Stage 1 deliberately places the *stronger* model in the second-opinion slot, which the table warns
+against as a permanent arrangement. That is acceptable here precisely because it is temporary and because
+its purpose is measurement rather than adjudication — observing the prospective primary before promoting
+it. Were it to become permanent, it would be the adjudicator anti-pattern and the switch should happen
+instead.
+
+In stage 2 the second opinion rotates to whichever of OpenAI and Google is not the candidate. The cost of
+rotation, stated plainly: **the agreement metric is comparable only within a candidate-provider family.**
+The Intelligence Index is unaffected, because it comes from the primary assessor, which does not rotate
+once stage 2 begins.
+
+### Grade everything twice
+
+Best practice for rated evaluation — in ML evaluation and in the psychometrics it borrows from — is **two
+independent raters over the whole set, with inter-rater agreement reported**. Selective re-grading is the
+compromise for when that is unaffordable, and it is not unaffordable here.
+
+Full double grading buys three things selective re-grading cannot:
+
+- **An unbiased agreement rate.** Under selective re-grading the disagreement rate is conditioned on the
+  first grader's own uncertainty, so it measures nothing about the instrument. Stage 1's entire value
+  rests on this.
+- **Symmetric coverage of the failure mode that matters most.** A first grader that is *confidently
+  wrong* produces no trigger at all — no critical error, no fabrication vocabulary, no low score. That
+  answer is invisible to every trigger, and it is exactly the one a second reader catches.
+- **Less machinery.** No median, so no post-scoring pass, no third execution stage, no cap.
+
+**Recommendation: `SecondOpinionMode = All`**, with `Flagged` and `FlaggedAndOutliers` held in reserve for
+a large suite where assessor cost becomes binding.
+
+### Two gaps the gating does not close
+
+1. **Nothing checks whether the assessor and the second opinion share a provider.** The same-provider
+   gate covers *candidate versus assessor* only. The start dialog carries an advisory and the report a
+   disclosure. **Advisory, not a block.**
+2. **A suite's assessor changing between runs is advisory too.** The start dialog warns when the selected
+   assessor differs from the most recent completed run of the same suite. It fires on the stage-2
+   promotion, correctly — that is exactly the moment to be told.
+
+### Keep suite authoring separate from grading
+
+Anthropic is used for other benchmark work, including suite authoring. Keep that configuration distinct
+from the grading one: a model that wrote a rubric is not a neutral reader of answers against it, and the
+two roles drifting onto one System AI Configuration would make that impossible to see.
+
+---
+
+## 4. Suite Health and Item Analysis
+
+A benchmark measures models, and after a while it also needs measuring. This section is about the
+second thing: which items no longer discriminate, which carry a difficulty weight that does not
+match how they behave, whether a rubric's own citations still resolve, and where the suite is
+silent about the game.
+
+**Every finding here is read-only.** The Suite Health panel's only outward action is "open this
+question for editing", and there is deliberately no endpoint behind any of these reports that
+writes a question, a rubric, or a difficulty rating.
+
+### Stable item identity, and the reorder bug it fixes
+
+Before harness version 7, a stored answer was tied to its question by `OrderIndex` alone.
+`ReorderQuestions` rewrites `BenchmarkQuestion.OrderIndex` and touches no stored answer, so after
+any reorder every earlier run displayed its answers **against the wrong questions** — silently,
+with no error and no flag. That was a correctness bug in the existing screens, independent of any
+analysis built on top.
+
+- **`BenchmarkRunAnswer.BenchmarkQuestionId`** (nullable FK, `DeleteBehavior.SetNull`) is the
+  stable link. `SetNull` rather than `Cascade` because a run is a historical record: deleting a
+  question from a suite is suite maintenance, not history revision, and a null FK renders as
+  "question deleted".
+- **`BenchmarkQuestion.ItemRevision`** (int, default 1) is bumped at exactly the point that
+  already clears the difficulty snapshot — a change to the question text, its band, or its rubric.
+  An edited question is a **different item**, and its statistics must not straddle the rewrite.
+- **`BenchmarkRunAnswer.ItemRevisionUsed`** records the revision an answer was produced against.
+
+The `AddBenchmarkQuestionIdentity` migration backfills the link where it is unambiguous: the
+answer's run belongs to the suite, and the suite holds exactly one question at that order index
+with that exact text. Everything else is left null, and **everything downstream excludes an
+unlinked answer rather than guessing** — a wrong link would corrupt every figure built on it, and
+unlike a missing one, invisibly. `ItemRevisionUsed` is deliberately *not* backfilled: a historical
+answer was produced against whatever the question said at the time, which is unknowable from the
+migration. Null means "unknown revision", is reported per item as `UnknownRevisionCount`, and is
+included in the statistics — dropping it would empty the table for every suite that already has
+runs, and assuming it matches the current revision would be a claim the data does not support.
+
+Anything that merges questions with answers now prefers the FK and falls back to the order index
+only where there is none.
+
+### Item statistics
+
+`BenchmarkItemAnalysis` — pure computation over stored runs, no AI calls, no writes.
+
+| Statistic | Definition |
+|---|---|
+| `RunCount`, `DistinctModelCount`, `DistinctAssessorCount`, `DistinctScoringMethodVersionCount` | Sample size and its confounds. All four are shown everywhere the statistics are, because a mean over three runs by one model says something quite different from the same mean over twelve runs by four models, and neither is visible from the mean |
+| `MeanQuality`, `MinQuality`, `MaxQuality`, `StdDev` | Over `Ok`, scored answers |
+| `EmpiricalDifficulty` | `100 − MeanQuality` |
+| `AssessedDifficulty`, `DifficultyDelta` | The a priori rating and its gap from the empirical one |
+| `Discrimination` | Mean quality among runs in the top half by Intelligence Index, minus the bottom half. **Suppressed below 4 runs**, where the split is one run against one run |
+| `MeanToolCalls`, `BudgetBoundFraction` | Fraction of runs at or above 90% of the question's tool budget |
+
+Flags, all advisory:
+
+- **`Saturated`** — mean ≥ 97 with a spread ≤ 3. The item carries little information and inflates
+  every index equally.
+- **`Miscalibrated`** — `|DifficultyDelta| ≥ 25`. The weight this item contributes to the
+  Intelligence Index does not match what models actually score on it.
+- **`Unstable`** — spread ≥ 30. Either a genuinely discriminating item or an ambiguous one; a
+  human decides which.
+- **`BudgetBound`** — at least half the runs were at or above 90% of the budget. The cap, not the
+  model, may be setting the score.
+- **`AssessorConfounded`** — more than one assessor graded the item's runs, so its spread mixes
+  candidate ability with grader severity. Fires on suite 5 from the stage-2 assessor promotion
+  onward.
+- **`ScoringMethodMixed`** — more than one scoring method version. A run graded under method 5 and
+  one under method 6 grade accuracy by different rules — method 6 forbids the unverified-claim
+  deduction method 5 permitted — so their scores are not the same measurement. Fires on suite 5 as
+  soon as harness version 7 ships, which is precisely when a reader needs to be told.
+
+When either confound flag fires, **every other statistic on the row is confounded** rather than a
+measurement, and the row is presented that way. Below 4 runs the whole row is marked
+`InsufficientData`; the row is still shown, because seeing it is how an operator learns the suite
+needs more runs.
+
+> **The non-writeback rule.** `EmpiricalDifficulty` is **never** written into
+> `BenchmarkQuestion.AssessedDifficulty` — not automatically, and not by a one-click action,
+> because no such action exists anywhere in the API or the UI. `AssessedDifficulty` weights the
+> Intelligence Index, so deriving it from the scores it weights is circular: a model that does
+> badly on an item would retroactively reduce that item's weight, flattering the very run that
+> produced the number. The delta is *reported* so a human can re-author the question or re-rate it
+> deliberately.
+
+### Rubric gaps from recurring unverified claims
+
+`BenchmarkRubricGapDetector` consumes the `UnverifiedClaimsJson` that harness version 7 records,
+grouped by question **and revision**. No AI calls, no embedding service.
+
+- **Clustering**: lowercase alphanumeric tokens, a short stopword list, Jaccard similarity ≥ 0.6.
+  Deliberately simple and explainable — a human reads every cluster anyway, so the cost of a
+  slightly loose cluster is a moment's reading, while the cost of an opaque similarity model is
+  that nobody can say why two claims were grouped.
+- **Model family**: `provider` plus the first two hyphen-separated segments of the model id, so
+  `gpt-5.6-luna` and `gpt-5.6` are one family and `gpt-5.6` and `gemini-3.7-flash` are two. The
+  provider is part of the key because the verdict rests on the families being *independent*.
+- **Verdict**: a cluster raised by **two or more distinct families** is `LikelyRubricGap` and is
+  surfaced for a human to fold into the rubric. A cluster from one family is `LikelyHallucination`
+  and is **not** presented as a suite issue — it is a finding about that model, already visible on
+  its own run.
+
+This is the defensible form of "let the models under evaluation improve the benchmark". The
+indefensible form — asking a candidate what the answer key should say — lets a model argue its own
+score up. What happens here is narrow: a claim becomes evidence about the *rubric* only when
+independent families raise the same one, and even then it is surfaced rather than applied.
+
+### Rubric source-citation validation
+
+`BenchmarkRubricCitationValidator` parses the `**SOURCE**` convention and resolves what it finds
+against the running indexes. No AI calls.
+
+- **File paths** (`src/o_init.c`, `include/objclass.h`) — resolved through `SourceCodeService`.
+- **Backticked symbols** (`` `MH_GNOLL` ``) — resolved through `FindDefinition`. A backticked span
+  that is prose rather than an identifier is skipped, so it does not become unresolvable noise.
+- **Line numbers are parsed and reported but never validated.** They drift with every commit, and
+  permanent false alarms train an operator to ignore the whole panel.
+- **Wiki titles** — resolved where a title lookup exists; otherwise reported as `NotValidated`,
+  explicitly. "We did not check" and "we checked and it is fine" are different facts, and a panel
+  that conflates them is worse than one that omits the row. The report also states whether the
+  source index had finished building, because an unresolved citation means little if it had not.
+
+### Coverage gap analysis
+
+The **only** AI-using part of this section: an explicit admin action with an explicitly selected
+model, exactly like the existing difficulty-rating action, and gated by the same spend caps.
+
+Guardrails, all requirements rather than guidance:
+
+- The model receives the suite's **question texts only** — no rubrics, no answers, no scores, no
+  item statistics. Withholding the scores is the point: a model shown which questions models did
+  badly on would report gaps that flatter or punish particular runs, and the resulting suite would
+  encode last run's outcome rather than the domain.
+- The result is a **read-only report**. Nothing is written into the suite, and no endpoint exists
+  that would write one.
+- No generated question or rubric may be inserted without human editing and approval.
+- **A gap with no source location is discarded by the parser.** A draft rubric that cannot cite a
+  source is not usable as an answer key.
+- The analysing model is **disclosed on the report** — display name, provider, model id, thinking
+  level, and its token cost — as a difficulty rating discloses its assessor. It is not snapshotted
+  onto the suite, because the report is not persisted either.
+- **Keep the authoring configuration distinct from both graders'.** Under the staged assessor
+  migration Anthropic occupies the second-opinion slot from the next run onward, so an Anthropic
+  authoring configuration must not be the same one used to grade: a model that helped author a
+  suite is not a neutral reader of answers against it.
+
+`MaxQuestionsPerSuite` (50) and the compliance section's growth-cap argument are unaffected,
+because nothing is auto-inserted and the endpoint adds one bounded call per invocation.
+
+### The Suite Health panel
+
+Reached from the suite card in the AI Benchmark tab, with four tabs following the shared
+`.gh-tabs` / `.gh-tab` widget conventions: **Items**, **Rubric gaps**, **Citations** and
+**Coverage**.
+
+Statistical honesty is a UI requirement here, not a nicety. The Items tab's banner comes *before*
+the table and states the suite-level sample size, the assessor mix, the scoring-method mix, how
+many answers were excluded for having no question link, and the non-writeback rule. Every row
+carries its own `n runs / n models / n assessors / n scoring methods`; `Discrimination` reads
+"insufficient data" below 4 runs; a confounded row is marked as such. Every action in the panel is
+"open this question for editing".
+
+---
+
+## 5. Data Model & Relationships
 
 ```
 BenchmarkScoringProfile (1)
@@ -170,11 +597,13 @@ BenchmarkScoringProfile (1)
 BenchmarkSuite (1) ────┴───< (N) BenchmarkQuestion
 ```
 
-- **`BenchmarkScoringProfile`**: Name, `IsDefault`, dimensional weights, `LevelScoresJson`, `CriticalErrorCeiling`, `SpeedTargetMs`, `SpeedDecayK`, `MaxParallelQuestions`.
+- **`BenchmarkScoringProfile`**: Name, `IsDefault`, dimensional weights, `LevelScoresJson`, `CriticalErrorCeiling`, `SpeedTargetMs`, `SpeedDecayK`, `MaxParallelQuestions`, `SecondOpinionQualityThreshold`, `SecondOpinionMode`, `SecondOpinionOutlierDeltaPoints`.
 - **`BenchmarkSuite`**: Unique suite name, description (accepts Markdown, rendered as sanitized HTML), timestamps, and questions.
-- **`BenchmarkQuestion`**: Order index, question text, difficulty tier, `AssessedDifficulty` ($1\text{--}100$), `AssessedDifficultyModel` (display name of assessing model), `AssessedDifficultyAtUtc`, expected rubric points, and assessor configuration snapshot (`AssessedDifficultyModelConfigurationId`, `AssessedDifficultyProviderUsed`, `AssessedDifficultyModelIdUsed`, `AssessedDifficultyThinkingLevelUsed`, `AssessedDifficultyReasoningModeUsed`, `AssessedDifficultyReasoningSummaryUsed`, `AssessedDifficultyServiceTierUsed`, `AssessedDifficultyMaxOutputTokensUsed`).
-- **`BenchmarkRun`**: Tested and assessor snapshot fields, run status, `QualityIndex`, `SpeedIndex`, `TotalAnswerDurationMs`, `ScoringProfileId`, `ScoringProfileSnapshotJson`, `ScoringMethodVersion`, `DifficultyFallbackUsed` (retained for historical runs; not set by new runs), `SpeedMeasurementDegraded`, `MaxParallelQuestionsUsed`, token accounting, and assessment synthesis.
-- **`BenchmarkRunAnswer`**: Order index, question text, sanitized visible answer text, thought text (reasoning), dimensional levels (0–6), dimensional scores, `QualityScore`, `SpeedScore`, `CriticalError`, `AssessedDifficulty`, `AssessmentStatus`, assessor comment, and token/duration metrics.
+- **`BenchmarkQuestion`**: Order index, `ItemRevision` (bumped whenever the question text, band or rubric changes — an edited question is a different item), question text, difficulty tier, `AssessedDifficulty` ($1\text{--}100$), `AssessedDifficultyModel` (display name of assessing model), `AssessedDifficultyAtUtc`, expected rubric points, and assessor configuration snapshot (`AssessedDifficultyModelConfigurationId`, `AssessedDifficultyProviderUsed`, `AssessedDifficultyModelIdUsed`, `AssessedDifficultyThinkingLevelUsed`, `AssessedDifficultyReasoningModeUsed`, `AssessedDifficultyReasoningSummaryUsed`, `AssessedDifficultyServiceTierUsed`, `AssessedDifficultyMaxOutputTokensUsed`).
+- **`BenchmarkRun`**: Tested and assessor snapshot fields, run status, `QualityIndex`, `UnweightedQualityIndex`, `SpeedIndex`, `TotalAnswerDurationMs`, `ScoringProfileId`, `ScoringProfileSnapshotJson`, `ScoringMethodVersion`, `HarnessVersion`, `DifficultyFallbackUsed` (retained for historical runs; not set by new runs), `SpeedMeasurementDegraded`, `MaxParallelQuestionsUsed`, the integrity counts (`TransportDefectAnswerCount`, `RecoveredAnswerCount`, `AdvisoryFlagAnswerCount`, `ContestedVerdictAnswerCount`, `ReassessedAnswerCount`), the second-opinion record (`SecondOpinionModeUsed`, `SecondOpinionGradedAnswerCount`, `SecondOpinionMeanAbsDelta`), token accounting, and assessment synthesis.
+- **`BenchmarkRunAnswer`**: Order index, question text, sanitized visible answer text, thought text (reasoning), dimensional levels (0–6), dimensional scores, `QualityScore`, `SpeedScore`, `CriticalError`, `AssessedDifficulty`, `AssessmentStatus`, assessor comment, token/duration metrics, the assessor's evidence (`AssessmentEvidenceJson`, `CriticalErrorQuote`, `UnverifiedClaimCount`, `UnverifiedClaimsJson`), the second-opinion verdict and its `SecondOpinionTrigger`, and re-assessment provenance (`PreviousQualityScore`, `ReassessedAtUtc`, `ReassessedByModelDisplayNameUsed`, `ReassessmentCount`).
+- **`BenchmarkRunAnswer` item identity**: `BenchmarkQuestionId` (nullable FK, `DeleteBehavior.SetNull`) and `ItemRevisionUsed`. The stable link between an answer and the question it answers; before it existed, `OrderIndex` was the only link and a suite reorder silently re-attached every earlier run's answers to the wrong questions. Null means "unlinked" and is excluded from item analysis rather than guessed at.
+- **`BenchmarkAssessorCalibration`**: One non-destructive re-grading of a run by an alternative assessor — the assessor snapshot, `AnswerCount`, `SkippedAnswerCount`, `MeanAbsDelta`, `DisagreementCount`, token and duration cost, and `VerdictsJson`. Admin-UI only: it never appears in the Markdown report, because a calibration is an experiment about graders rather than a property of the run.
 
 ### Difficulty Assessment Lifecycle
 1. **Explicit Assessor Selection**: Question and suite difficulty ratings are explicit actions where the administrator chooses any benchmark-capable System AI Configuration via a modal selector dialog.
@@ -192,7 +621,7 @@ Rendering policy strictly depends on content author:
 
 ---
 
-## 4. API Endpoints
+## 6. API Endpoints
 
 All benchmark endpoints require the `AdminOnly` authorization policy:
 
@@ -214,6 +643,10 @@ All benchmark endpoints require the `AdminOnly` authorization policy:
 - `DELETE /api/admin/benchmark/suites/{id}`: Delete suite.
 - `POST /api/admin/benchmark/suites/{id}/duplicate`: Clone a suite, its questions, and their assessment snapshots.
 - `POST /api/admin/benchmark/suites/import-default`: Import the default suite (arrives unassessed).
+- `GET /api/admin/benchmark/suites/{id}/item-analysis`: Per-item statistics over the suite's stored runs, with the suite-level sample size, assessor mix and scoring-method mix. Pure arithmetic; no AI calls, no spend gate.
+- `GET /api/admin/benchmark/suites/{id}/rubric-gaps`: Clustered unverified claims with a `LikelyRubricGap` / `LikelyHallucination` verdict per cluster. No AI calls.
+- `POST /api/admin/benchmark/suites/{id}/validate-citations`: Resolves the rubrics' `**SOURCE**` citations against the running source and wiki indexes. A POST rather than a GET because it walks the whole index. No AI calls.
+- `POST /api/admin/benchmark/suites/{id}/coverage-analysis`: Asks an explicitly selected model which subsystems the suite does not test (gated by spend caps). Returns a **read-only report**; nothing is written into the suite, and no endpoint exists that would.
 - `GET /api/admin/benchmark/suites/{id}/questions`: List questions by order index with assessor snapshot properties.
 - `POST /api/admin/benchmark/suites/{id}/questions`: Add a question to a suite.
 - `PUT /api/admin/benchmark/questions/{id}`: Update a question (clears assessment snapshot if content changed).
@@ -226,7 +659,10 @@ All benchmark endpoints require the `AdminOnly` authorization policy:
 - `GET /api/admin/benchmark/runs/{id}`: Full run detail with question answers, compliance purpose statement, and assessment.
 - `GET /api/admin/benchmark/runs/active`: Return `{ runId }` for the run currently executing, or 204 when idle. Lets a client that reloaded mid-run reattach to it; the client then calls `GET .../runs/{id}` for the detail.
 - `POST /api/admin/benchmark/runs/{id}/rescore`: Recompute indices for an existing run against a scoring profile (ungated arithmetic).
-- `POST /api/admin/benchmark/runs/{id}/answers/{answerId}/reassess`: Re-assess a single question's answer (gated by spend caps).
+- `POST /api/admin/benchmark/runs/{id}/answers/{answerId}/reassess`: Re-assess a single question's answer (gated by spend caps). `trial: true` records the verdict in the second-opinion slot and changes **no** score, level, flag or index — including the run's `Status` and `CompletedAtUtc`; overwriting an existing automatic second opinion additionally requires `replaceExistingSecondOpinion: true`.
+- `POST /api/admin/benchmark/runs/{id}/calibrate`: Re-grade every answer of a finished run with another assessor and store the agreement statistics only (gated by spend caps). Writes no `BenchmarkRunAnswer` field.
+- `GET /api/admin/benchmark/runs/{id}/calibrations`: List prior calibrations for a run, newest first.
+- `GET /api/admin/benchmark/suites/{id}/last-assessor`: The assessor of the suite's most recent completed run, for the start dialog's assessor-change advisory. Returns an empty object for a suite with no completed run.
 - `POST /api/admin/benchmark/runs/{id}/cancel`: Cancel an active run.
 - `POST /api/admin/benchmark/runs/{id}/rerun-failed`: Re-run only questions that encountered provider errors (gated by spend caps).
 - `GET /api/admin/benchmark/runs/{id}/report`: Download server-rendered Markdown report with compliance manifest.
@@ -236,7 +672,7 @@ All benchmark endpoints require the `AdminOnly` authorization policy:
 
 ---
 
-## 5. AI Provider Terms Compliance Controls
+## 7. AI Provider Terms Compliance Controls
 
 The AI Intelligence Benchmark subsystem incorporates technical controls and auditable intent records to ensure operations represent internal model evaluation rather than data extraction, distillation, or training dataset harvesting.
 
@@ -280,14 +716,14 @@ Compliance review must be revisited if:
 
 ---
 
-## 6. Thinking Level Configuration & Output Limits
+## 8. Thinking Level Configuration & Output Limits
 
 - **Pin Explicit Thinking Levels**: Benchmark and assessor System AI Configurations should pin an explicit **Thinking Level** (e.g. `high`, `medium`, or `none`). Leaving it on `Default` makes a run's reasoning behavior depend on the model and on `AnthropicSettings:ExplicitDefaultEffort`, which can compromise run-to-run comparability over time.
 - **Assessor Token Limits (`AssessorMaxOutputTokens`)**: Evaluator and assessor completions share their `max_tokens` budget with internal reasoning/thinking output. The default fallback limit (`Benchmark:AssessorMaxOutputTokens`) is set to `32000` to prevent assessor evaluation JSON completions from being prematurely truncated when thinking is enabled. Individual assessor configurations can override this fallback using their per-configuration `MaxOutputTokens` setting.
 
 ---
 
-## 7. Keeping Chat Limits in Step with the Benchmark
+## 9. Keeping Chat Limits in Step with the Benchmark
 
 The benchmark measures what the Overseer chat can do, so the chat's own defaults must not be tighter than the caps the harness grants its hardest questions. They were: before harness version 6 the chat allowed 15 tool iterations against the Advanced band's 22, and 50 tool calls against the Advanced band's 45.
 

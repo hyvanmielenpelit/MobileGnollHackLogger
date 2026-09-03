@@ -21,9 +21,15 @@ public static class BenchmarkQuestionAssessment
         question.AssessedDifficultyMaxOutputTokensUsed = config.MaxOutputTokens;
     }
 
-    /// <summary>Drops the assessment because the question's content changed.</summary>
+    /// <summary>
+    /// Drops the assessment because the question's content changed, and bumps
+    /// <see cref="BenchmarkQuestion.ItemRevision"/> for the same reason: an edited question is a
+    /// different item, and its statistics must not straddle the rewrite. The two travel together
+    /// because they express one fact.
+    /// </summary>
     public static void Clear(BenchmarkQuestion question)
     {
+        question.ItemRevision = question.ItemRevision <= 0 ? 2 : question.ItemRevision + 1;
         question.AssessedDifficulty = null;
         question.AssessedDifficultyModel = null;
         question.AssessedDifficultyAtUtc = null;

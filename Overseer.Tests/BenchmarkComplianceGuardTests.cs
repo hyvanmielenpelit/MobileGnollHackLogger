@@ -253,7 +253,11 @@ public class BenchmarkComplianceGuardTests
             config,
             NullLogger<BenchmarkService>.Instance);
 
-        var controller = new AdminBenchmarkController(db, benchmarkService, scoringProfileService, runManager, difficultyJobManager, guard, scopeFactory)
+        // The source and wiki indexes are only reached by the suite-health citation endpoint,
+        // which these tests do not exercise — same reason the two nulls above are safe.
+        var controller = new AdminBenchmarkController(
+            db, benchmarkService, scoringProfileService, runManager, difficultyJobManager, guard, scopeFactory,
+            null!, null!)
         {
             ControllerContext = new ControllerContext
             {

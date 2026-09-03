@@ -1,0 +1,142 @@
+// Suite Health. Reuses the shared .gh-tabs / .gh-table / .alert tokens, so this file only
+// carries what is specific to the three tables and the gap cards.
+
+.suite-health {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+
+  .section-note {
+    margin: 0;
+    color: #bbb;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .text-muted { color: #888; }
+  .mt-10 { margin-top: 10px; }
+  .flex-row { display: flex; }
+  .gap-10 { gap: 10px; }
+  .align-end { align-items: flex-end; }
+  .flex-1 { flex: 1; }
+}
+
+// Wide tables scroll inside their own container; the panel itself never scrolls sideways.
+.table-scroll {
+  overflow-x: auto;
+}
+
+.item-analysis-table,
+.coverage-table {
+  font-size: 12px;
+
+  td, th { white-space: nowrap; }
+
+  .item-order {
+    font-weight: 700;
+    margin-right: 6px;
+  }
+
+  // The question text is the one column allowed to be long, and it truncates rather than
+  // widening the table past the panel.
+  .item-text {
+    display: inline-block;
+    max-width: 320px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: bottom;
+    color: #bbb;
+  }
+
+  .item-sample {
+    white-space: normal;
+    color: #888;
+  }
+
+  // A confounded row is a mixture rather than a measurement, and an insufficient one is barely
+  // even that. Both are dimmed instead of hidden: seeing the row is how an operator learns the
+  // suite needs more runs.
+  tr.is-confounded { background: rgba(251, 191, 36, 0.06); }
+  tr.is-insufficient { opacity: 0.75; }
+}
+
+.item-flag {
+  display: inline-block;
+  margin-right: 4px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.08);
+  color: #ccc;
+  cursor: help;
+
+  &.flag-AssessorConfounded,
+  &.flag-ScoringMethodMixed {
+    background: rgba(251, 191, 36, 0.18);
+    color: #fbbf24;
+  }
+}
+
+.gap-cluster,
+.citation-block {
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 3px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.2);
+  font-size: 13px;
+
+  // Only a cross-family cluster is evidence about the suite, so only it is marked.
+  &.is-rubric-gap,
+  &.has-unresolved {
+    border-left-color: #fbbf24;
+  }
+}
+
+.gap-header,
+.citation-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.gap-verdict {
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.08);
+  cursor: help;
+}
+
+.gap-claims,
+.citation-list {
+  margin: 4px 0;
+  padding-left: 20px;
+  color: #ddd;
+}
+
+.citation-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.citation-status {
+  min-width: 90px;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.citation-kind {
+  color: #888;
+  font-size: 11px;
+}
+
+.citation-Unresolved .citation-status { color: #fbbf24; }
+.citation-NotValidated .citation-status { color: #888; }
+.citation-Resolved .citation-status { color: #81c784; }

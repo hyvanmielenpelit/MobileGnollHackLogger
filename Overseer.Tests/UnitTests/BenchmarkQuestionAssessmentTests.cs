@@ -104,6 +104,34 @@ public class BenchmarkQuestionAssessmentTests
     }
 
     [Fact]
+    public void Clear_BumpsTheItemRevision_BecauseAnEditedQuestionIsADifferentItem()
+    {
+        // The revision and the difficulty snapshot travel together because they express one
+        // fact: what this question asks has changed. Item analysis groups by revision, so
+        // without the bump an edited question's statistics would straddle the rewrite.
+        var question = new BenchmarkQuestion { ItemRevision = 1, AssessedDifficulty = 40 };
+
+        BenchmarkQuestionAssessment.Clear(question);
+        Assert.Equal(2, question.ItemRevision);
+
+        BenchmarkQuestionAssessment.Clear(question);
+        Assert.Equal(3, question.ItemRevision);
+    }
+
+    [Fact]
+    public void Clear_LandsOnRevisionTwoForARowThatPredatesTheColumn()
+    {
+        // A question whose row was written before ItemRevision existed reads 0 until the
+        // migration's backfill lands. Treating that as "revision 1, now 2" keeps every stored
+        // answer's null revision distinguishable from a real one.
+        var question = new BenchmarkQuestion { ItemRevision = 0 };
+
+        BenchmarkQuestionAssessment.Clear(question);
+
+        Assert.Equal(2, question.ItemRevision);
+    }
+
+    [Fact]
     public void IsAssessed_ReflectsPresenceOfAssessedDifficulty()
     {
         var question = new BenchmarkQuestion();

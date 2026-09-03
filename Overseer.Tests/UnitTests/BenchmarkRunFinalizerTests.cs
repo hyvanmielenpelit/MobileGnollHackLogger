@@ -336,4 +336,92 @@ public class BenchmarkRunFinalizerTests
 
         Assert.Null(run.ToolOverheadMs);
     }
+    [Fact]
+    public void ContestedVerdict_IsAdvisory_NotATransportDefect()
+    {
+        var answer = MakeAnswer(1, BenchmarkAnswerFlags.ContestedVerdict);
+
+        Assert.True(BenchmarkRunFinalizer.HasAdvisoryFlag(answer));
+        Assert.False(BenchmarkRunFinalizer.HasTransportDefect(answer));
+        Assert.Equal(BenchmarkAnswerIntegrity.Clean, BenchmarkRunFinalizer.Classify(answer));
+    }
+
+    [Fact]
+    public void ContestedVerdict_AloneDoesNotDegradeTheRunStatus()
+    {
+        // Grouping it with the defect flags would flip every run carrying one to
+        // CompletedWithErrors - the exact regression harness version 4 was written to undo. The
+        // answer is intact and the verdict may well be right; what it is not is unambiguous.
+        var answers = new[]
+        {
+            MakeAnswer(1, BenchmarkAnswerFlags.ContestedVerdict),
+            MakeAnswer(2)
+        };
+
+        Assert.Equal(BenchmarkRunStatus.Completed, BenchmarkRunFinalizer.ComputeStatus(answers));
+    }
+
+    [Fact]
+    public void Apply_CountsContestedVerdictsAndReassessments_AndTheUnweightedMean()
+    {
+        var a1 = MakeAnswer(1, BenchmarkAnswerFlags.ContestedVerdict);
+        a1.QualityScore = 60;
+        a1.AssessedDifficulty = 25;
+
+        var a2 = MakeAnswer(2);
+        a2.QualityScore = 100;
+        a2.AssessedDifficulty = 90;
+        a2.ReassessmentCount = 1;
+        a2.PreviousQualityScore = 70;
+
+        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 2 };
+        BenchmarkRunFinalizer.Apply(run, new[] { a1, a2 });
+
+        Assert.Equal(1, run.ContestedVerdictAnswerCount);
+        Assert.Equal(1, run.ReassessedAnswerCount);
+
+        // Plain mean 80; difficulty-weighted (25*60 + 90*100) / 115 = 91. The gap is exactly the
+        // effect the two figures exist to expose.
+        Assert.Equal(80, run.UnweightedQualityIndex);
+        Assert.Equal(91, run.QualityIndex);
+    }
+
+    [Fact]
+    public void Apply_ComputesGraderAgreement_AndExcludesManualTrialVerdicts()
+    {
+        // Agreement measures the run's own two graders. A Manual verdict comes from a third
+        // model an operator picked by hand for a trial, and folding it in would contaminate the
+        // figure the assessor decision rests on.
+        var graded = MakeAnswer(1);
+        graded.QualityScore = 90;
+        graded.SecondOpinionQualityScore = 80;
+        graded.SecondOpinionTrigger = "All";
+
+        var alsoGraded = MakeAnswer(2);
+        alsoGraded.QualityScore = 60;
+        alsoGraded.SecondOpinionQualityScore = 78;
+        alsoGraded.SecondOpinionTrigger = "All";
+
+        var trial = MakeAnswer(3);
+        trial.QualityScore = 95;
+        trial.SecondOpinionQualityScore = 20;
+        trial.SecondOpinionTrigger = "Manual";
+
+        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 3 };
+        BenchmarkRunFinalizer.Apply(run, new[] { graded, alsoGraded, trial });
+
+        Assert.Equal(2, run.SecondOpinionGradedAnswerCount);
+        Assert.Equal(14.0, run.SecondOpinionMeanAbsDelta);
+    }
+
+    [Fact]
+    public void Apply_LeavesAgreementNull_WhenNoSecondVerdictWasProduced()
+    {
+        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 1 };
+        BenchmarkRunFinalizer.Apply(run, new[] { MakeAnswer(1) });
+
+        Assert.Equal(0, run.SecondOpinionGradedAnswerCount);
+        Assert.Null(run.SecondOpinionMeanAbsDelta);
+    }
+
 }

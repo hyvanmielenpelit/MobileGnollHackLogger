@@ -21,11 +21,16 @@ import {
   DifficultyAssessmentJobDto,
   DifficultyAssessmentJobItemDto,
   DifficultyAssessmentJobLogEntryDto,
-  BenchmarkFootprintDto
+  BenchmarkFootprintDto,
+  BenchmarkAssessorCalibrationDto,
+  BenchmarkLastAssessorDto,
+  BenchmarkSecondOpinionMode,
+  BENCHMARK_SECOND_OPINION_MODES
 } from '../../services/admin-benchmark.service';
 import { SystemAiConfigDto } from '../../services/admin.service';
 
 import { CollapsibleMarkdownComponent } from '../../shared/collapsible-markdown/collapsible-markdown.component';
+import { SuiteHealthComponent } from './suite-health/suite-health.component';
 import { ensureOverlayPolyfills } from '../../utils/polyfills.util';
 import { SystemService } from '../../services/system.service';
 import { parseServerUtcDate, elapsedMsBetween } from '../../utils/date.util';
@@ -53,7 +58,7 @@ export interface BenchmarkRunProgressRow {
 @Component({
   selector: 'app-admin-benchmark',
   standalone: true,
-  imports: [CommonModule, FormsModule, CollapsibleMarkdownComponent],
+  imports: [CommonModule, FormsModule, CollapsibleMarkdownComponent, SuiteHealthComponent],
   templateUrl: './benchmark.component.html',
   styleUrls: ['./benchmark.component.scss']
 })
@@ -134,6 +139,8 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     levelScoresJson: '[1, 15, 35, 55, 72, 87, 100]',
     criticalErrorCeiling: 25,
     secondOpinionQualityThreshold: 50,
+    secondOpinionMode: BenchmarkSecondOpinionMode.Flagged,
+    secondOpinionOutlierDeltaPoints: 25,
     speedTargetMs: 15000,
     speedDecayK: 20.0,
     speedDifficultyScaling: 1.0,
@@ -151,6 +158,21 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
    * reading, so there is deliberately no fallback to the assessor.
    */
   secondOpinionConfigId: number | null = null;
+
+  /**
+   * Per-run override of the scoring profile's second-opinion mode. Null follows the profile, so
+   * changing the profile changes the shown default until the operator picks something.
+   */
+  private secondOpinionModeOverride: number | null = null;
+
+  readonly secondOpinionModeOptions = BENCHMARK_SECOND_OPINION_MODES;
+
+  /**
+   * The assessor of the suite's most recent completed run, for the assessor-change advisory.
+   * Null until the lookup returns, and carries a null runId for a suite with no completed run.
+   */
+  lastAssessor: BenchmarkLastAssessorDto | null = null;
+
   isTestedModelDropdownOpen = false;
   isAssessorModelDropdownOpen = false;
   isSecondOpinionModelDropdownOpen = false;
@@ -207,16 +229,42 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   rescoringRun = false;
   detailPollInterval: any = null;
   reassessingAnswerId: number | null = null;
+  trialReassessingAnswerId: number | null = null;
   rerunningAnswerId: number | null = null;
+
+  // Calibration panel. A calibration grades a finished run with another model and records only
+  // the agreement statistics — no score, level, flag or index moves — so this is where a
+  // prospective assessor earns its promotion, beside what it cost.
+  calibrations: BenchmarkAssessorCalibrationDto[] = [];
+  loadingCalibrations = false;
+  calibrating = false;
+  calibrationErrorMessage: string | null = null;
+  calibrationAssessorConfigId: number | null = null;
+  isCalibrationAssessorDropdownOpen = false;
   runningSynthesis = false;
   retryingAssessments = false;
 
   // Retry Dialog
-  retryScope: 'assessment' | 'question' | 'synthesis' | 'assessments' | null = null;
+  /**
+   * 'assessment' replaces the verdict and moves the published index; 'trial' records a verdict in
+   * the second-opinion slot and moves nothing. That is the most consequential distinction on this
+   * screen, so the two are separate scopes rather than a flag on one.
+   */
+  retryScope: 'assessment' | 'trial' | 'question' | 'synthesis' | 'assessments' | null = null;
   retryRunId: number | null = null;
   retryAnswer: BenchmarkRunAnswerDto | null = null;
   retryAssessorConfigId: number | null = null;
   isRetryAssessorDropdownOpen = false;
+
+  // Suite Health. One suite's panel is open at a time, keyed by suite id: the reports are
+  // per-suite and none of them is cheap enough to keep loaded for every card at once.
+  suiteHealthSuiteId: number | null = null;
+
+  /**
+   * A question the Suite Health panel asked to edit, opened once the suite's questions have
+   * loaded. Cleared on use, so a later manual open of the same list does not reopen the editor.
+   */
+  private pendingQuestionEditId: number | null = null;
 
   // Suite Dialogs
   editingSuiteId: number | null = null;
@@ -440,6 +488,83 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     return this.benchmarkCapableConfigs.find(c => c.id === this.secondOpinionConfigId);
   }
 
+  /**
+   * The mode that will apply to this run: the operator's override, else the selected profile's
+   * default. Inert without a second-opinion assessor — which is the hard gate that silently
+   * produced the 2026-09-03 run's zero second verdicts, so the control says so rather than
+   * looking configured.
+   */
+  get secondOpinionMode(): number {
+    return this.secondOpinionModeOverride
+      ?? this.selectedScoringProfile?.secondOpinionMode
+      ?? BenchmarkSecondOpinionMode.Flagged;
+  }
+
+  set secondOpinionMode(value: number) {
+    this.secondOpinionModeOverride = Number(value);
+  }
+
+  /** The outlier sweep is the only thing the delta configures, so nothing else enables it. */
+  get outlierDeltaEnabled(): boolean {
+    return this.profileForm.secondOpinionMode === BenchmarkSecondOpinionMode.FlaggedAndOutliers;
+  }
+
+  get secondOpinionModeDisabled(): boolean {
+    return this.secondOpinionConfigId == null;
+  }
+
+  get secondOpinionModeHint(): string {
+    if (this.secondOpinionModeDisabled) {
+      return 'Select a second opinion assessor first — the mode does nothing without one.';
+    }
+    return this.secondOpinionModeOptions.find(o => o.value === this.secondOpinionMode)?.hint ?? '';
+  }
+
+  /**
+   * Both graders from one provider. The second verdict is still worth having, but it is a weaker
+   * check than a cross-provider one: two models from one family share training data and failure
+   * modes, and can agree for reasons that have nothing to do with the answer.
+   */
+  get showAssessorPairingAdvisory(): boolean {
+    const assessor = this.selectedAssessorModel?.provider;
+    const second = this.selectedSecondOpinionModel?.provider;
+    return !!assessor && !!second && assessor.toLowerCase() === second.toLowerCase();
+  }
+
+  /**
+   * The assessor differs from the one that graded this suite's last completed run. A suite's runs
+   * are comparable to each other only while the grader is the same one, so this fires on exactly
+   * the deliberate promotion the staged assessor migration calls for — which is when it should.
+   */
+  get showAssessorChangeAdvisory(): boolean {
+    const previous = this.lastAssessor?.assessorModelConfigurationId;
+    return previous != null && this.assessorConfigId != null && previous !== this.assessorConfigId;
+  }
+
+  onSelectedSuiteChanged(): void {
+    this.loadLastAssessor();
+  }
+
+  loadLastAssessor(): void {
+    const suiteId = this.selectedSuiteId;
+    if (suiteId == null) {
+      this.lastAssessor = null;
+      return;
+    }
+
+    this.benchmarkService.getLastAssessor(suiteId).subscribe({
+      next: (dto) => {
+        this.lastAssessor = dto;
+        this.cdr.detectChanges();
+      },
+      // An advisory that cannot be computed is simply not shown: the run must not be blocked
+      // because a comparison lookup failed.
+      error: () => {
+        this.lastAssessor = null;
+      }
+    });
+  }
+
   get selectedDifficultyAssessorModel(): SystemAiConfigDto | undefined {
     return this.benchmarkCapableConfigs.find(c => c.id === this.difficultyAssessorConfigId);
   }
@@ -612,6 +737,8 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       levelScoresJson: '[1, 15, 35, 55, 72, 87, 100]',
       criticalErrorCeiling: 25,
       secondOpinionQualityThreshold: 50,
+      secondOpinionMode: BenchmarkSecondOpinionMode.Flagged,
+      secondOpinionOutlierDeltaPoints: 25,
       speedTargetMs: 15000,
       speedDecayK: 20.0,
       speedDifficultyScaling: 1.0,
@@ -633,6 +760,8 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       levelScoresJson: profile.levelScoresJson,
       criticalErrorCeiling: profile.criticalErrorCeiling,
       secondOpinionQualityThreshold: profile.secondOpinionQualityThreshold ?? 50,
+      secondOpinionMode: profile.secondOpinionMode ?? BenchmarkSecondOpinionMode.Flagged,
+      secondOpinionOutlierDeltaPoints: profile.secondOpinionOutlierDeltaPoints ?? 25,
       speedTargetMs: profile.speedTargetMs,
       speedDecayK: profile.speedDecayK,
       speedDifficultyScaling: profile.speedDifficultyScaling,
@@ -663,6 +792,16 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     if (threshold == null || threshold < 0 || threshold > 100) {
       this.profileValidationErrors.push('Second opinion threshold must be between 0 and 100.');
       return;
+    }
+
+    // Only meaningful under FlaggedAndOutliers, and a zero there would disable the sweep while
+    // the mode claims to run it. Mirrors BenchmarkScoringProfileService.ValidateProfile.
+    if (this.profileForm.secondOpinionMode === BenchmarkSecondOpinionMode.FlaggedAndOutliers) {
+      const delta = this.profileForm.secondOpinionOutlierDeltaPoints;
+      if (delta == null || delta <= 0 || delta > 100) {
+        this.profileValidationErrors.push('Outlier delta must be between 1 and 100 when the second opinion mode is "Flagged answers and statistical outliers".');
+        return;
+      }
     }
 
     if (this.editingProfileId) {
@@ -767,6 +906,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
         if (this.suites.length > 0 && (!this.selectedSuiteId || !this.suites.some(s => s.id === this.selectedSuiteId))) {
           this.selectedSuiteId = this.suites[0].id;
         }
+        this.loadLastAssessor();
         this.loadAllFootprints();
         this.cdr.detectChanges();
       },
@@ -1106,10 +1246,20 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       next: (data) => {
         this.questions = data;
         this.loadingQuestions = false;
+
+        if (this.pendingQuestionEditId != null) {
+          const question = this.questions.find(q => q.id === this.pendingQuestionEditId);
+          this.pendingQuestionEditId = null;
+          if (question) {
+            this.openEditQuestion(question);
+          }
+        }
+
         this.cdr.detectChanges();
       },
       error: (err) => {
         this.loadingQuestions = false;
+        this.pendingQuestionEditId = null;
         console.error('Failed to load questions', err);
         this.cdr.detectChanges();
       }
@@ -1286,6 +1436,9 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       testedModelConfigurationId: this.testedConfigId,
       assessorModelConfigurationId: this.assessorConfigId,
       secondOpinionAssessorModelConfigurationId: this.secondOpinionConfigId,
+      // Sent only when an assessor is selected: without one the mode is inert, and sending Off
+      // would be indistinguishable from "the operator chose Never".
+      secondOpinionMode: this.secondOpinionConfigId != null ? this.secondOpinionMode : null,
       scoringProfileId: this.selectedScoringProfileId,
       acknowledgeSameProvider: acknowledgeSameProvider
     };
@@ -1492,21 +1645,28 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     const run = this.activeRunDetail;
     if (!run) return [];
 
+    // Keyed both ways, because the question id is the reliable key and not every answer has
+    // one: a suite reorder rewrites order indexes and touches no stored answer, so matching on
+    // the index alone rendered a reordered suite's earlier runs against the wrong questions.
+    const answersByQuestionId = new Map<number, BenchmarkRunAnswerDto>();
     const answersByIndex = new Map<number, BenchmarkRunAnswerDto>();
     for (const a of run.answers) {
       answersByIndex.set(a.orderIndex, a);
+      if (a.benchmarkQuestionId != null) {
+        answersByQuestionId.set(a.benchmarkQuestionId, a);
+      }
     }
 
     const source = this.runProgressQuestions.length > 0
-      ? this.runProgressQuestions.map(q => ({ orderIndex: q.orderIndex, questionText: q.questionText }))
-      : run.answers.map(a => ({ orderIndex: a.orderIndex, questionText: a.questionText }));
+      ? this.runProgressQuestions.map(q => ({ id: q.id, orderIndex: q.orderIndex, questionText: q.questionText }))
+      : run.answers.map(a => ({ id: a.benchmarkQuestionId ?? null, orderIndex: a.orderIndex, questionText: a.questionText }));
 
     const inFlight = new Set<number>(run.inFlightOrderIndexes ?? []);
 
     return [...source]
       .sort((a, b) => a.orderIndex - b.orderIndex)
       .map(q => {
-        const ans = answersByIndex.get(q.orderIndex);
+        const ans = (q.id != null ? answersByQuestionId.get(q.id) : undefined) ?? answersByIndex.get(q.orderIndex);
         if (!ans) {
           return {
             orderIndex: q.orderIndex,
@@ -1622,11 +1782,23 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       lines.push(`Tested:   ${run.testedModelDisplayNameUsed} (${run.testedModelProviderUsed} / ${run.testedModelIdUsed})`);
       lines.push(`          thinking: ${run.testedModelThinkingLevelUsed ?? 'default'}, reasoning: ${run.testedModelReasoningModeUsed ?? 'default'}, service tier: ${this.formatServiceTier(run.testedModelServiceTierUsed)}, max output tokens: ${run.testedModelMaxOutputTokensUsed ?? 'default'}, parallel mode: ${run.testedModelParallelExecutionModeUsed}`);
       lines.push(`Assessor: ${run.assessorModelDisplayNameUsed} (${run.assessorModelProviderUsed} / ${run.assessorModelIdUsed}), thinking: ${run.assessorModelThinkingLevelUsed ?? 'default'}, reasoning: ${run.assessorModelReasoningModeUsed ?? 'default'}, available=${run.assessorAvailable}`);
+      // The third role, named whether or not one was used: "no second opinion" is itself a fact
+      // about how the run was graded, and the capture used to omit it entirely.
+      if (run.secondOpinionAssessorModelConfigurationId != null) {
+        lines.push(`Second:   ${run.secondOpinionAssessorModelDisplayNameUsed} (${run.secondOpinionAssessorModelProviderUsed} / ${run.secondOpinionAssessorModelIdUsed}), thinking: ${run.secondOpinionAssessorModelThinkingLevelUsed ?? 'default'}, reasoning: ${run.secondOpinionAssessorModelReasoningModeUsed ?? 'default'}`);
+      } else {
+        lines.push('Second:   none selected');
+      }
       lines.push('');
 
       // --- SCORING ---
       lines.push('--- SCORING ---');
-      lines.push(`Profile: ${run.scoringProfileName ?? 'n/a'} (${run.scoringProfileId ?? 'n/a'}), scoring method version: ${run.scoringMethodVersion}, max parallel questions: ${run.maxParallelQuestionsUsed}`);
+      lines.push(`Profile: ${run.scoringProfileName ?? 'n/a'} (${run.scoringProfileId ?? 'n/a'}), harness version: ${run.harnessVersion ?? '1 (unversioned legacy)'}, scoring method version: ${run.scoringMethodVersion}, max parallel questions: ${run.maxParallelQuestionsUsed}`);
+      // Read out of the run's own profile snapshot server-side, so this describes the run in
+      // front of it rather than whatever the default profile says today.
+      lines.push(`Speed: target ${run.scoringProfileSpeedTargetMs ?? 'n/a'} ms, decay k ${run.scoringProfileSpeedDecayK ?? 'n/a'}`);
+      lines.push(`Second opinion: mode ${this.diagnosticsModeName(run.secondOpinionModeUsed)}, threshold ${run.scoringProfileSecondOpinionQualityThreshold ?? 'n/a'}, outlier delta ${run.scoringProfileSecondOpinionOutlierDeltaPoints ?? 'n/a'}`);
+      lines.push(`Tool call budget: ${run.maxToolCallsPerQuestionUsed ?? 'per difficulty band'}`);
       lines.push('');
 
       // --- PROGRESS ---
@@ -1652,7 +1824,43 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
         lines.push('--- SCORES ---');
         // `finalScore` is the Holistic Assessor Score, which feeds no aggregate — labelling it
         // "final" read as the canonical result, which is the Intelligence Index (quality index).
-        lines.push(`holistic: ${run.finalScore ?? 'n/a'}, computed: ${run.computedScore ?? 'n/a'}, quality index: ${run.qualityIndex ?? 'n/a'}, speed index: ${run.speedIndex ?? 'n/a'}`);
+        // `computed` is the superseded ComputedScore column, which current runs never write:
+        // printing "computed: n/a" on every capture read as a missing value rather than a
+        // retired one, so it appears only where a historical run actually has it.
+        const scoreParts = [
+          `holistic: ${run.finalScore ?? 'n/a'}`,
+          `quality index: ${run.qualityIndex ?? 'n/a'}`,
+          `unweighted mean: ${run.unweightedQualityIndex ?? 'not recorded'}`,
+          `raw quality index: ${run.rawQualityIndex ?? 'n/a'}`,
+          `speed index: ${run.speedIndex ?? 'n/a'}`
+        ];
+        if (run.computedScore != null) {
+          scoreParts.splice(1, 0, `computed (superseded): ${run.computedScore}`);
+        }
+        lines.push(scoreParts.join(', '));
+        lines.push('');
+
+        // --- INTEGRITY ---
+        //
+        // The report's four-class accounting, which partitions every answer, plus the advisory
+        // counts that overlap it and the agreement figures. Without these the capture could not
+        // say why a run's status was what it was.
+        lines.push('--- INTEGRITY ---');
+        const clean = run.totalQuestionCount
+          - (run.transportDefectAnswerCount ?? 0)
+          - (run.recoveredAnswerCount ?? 0)
+          - (run.toolStarvedAnswerCount ?? 0);
+        lines.push(`clean: ${clean}, transport defects: ${run.transportDefectAnswerCount ?? 0}, recovered: ${run.recoveredAnswerCount ?? 0}, harness limits: ${run.toolStarvedAnswerCount ?? 0} (sums to ${run.totalQuestionCount})`);
+        lines.push(`advisory flags: ${run.advisoryFlagAnswerCount ?? 0}, scrubbed: ${run.scrubbedArtifactAnswerCount ?? 0}, contested verdicts: ${run.contestedVerdictAnswerCount ?? 0}, re-assessed: ${run.reassessedAnswerCount ?? 0}`);
+        // Computed from `run`, not from the run-detail getters: this capture describes the
+        // *active* run, and those getters read whichever run the detail dialog has open.
+        const criticalHere = run.answers.filter(a => a.criticalError).map(a => a.orderIndex);
+        const unverifiedHere = run.answers.reduce((sum, a) => sum + (a.unverifiedClaimCount ?? 0), 0);
+        lines.push(`critical errors: ${criticalHere.length}${criticalHere.length > 0 ? ` (${criticalHere.map(i => 'Q' + i).join(', ')})` : ''}, unverified claims: ${unverifiedHere}`);
+        lines.push(`agreement: ${run.secondOpinionMeanAbsDelta != null ? run.secondOpinionMeanAbsDelta.toFixed(1) + ' mean abs delta' : 'not measured'} over ${run.secondOpinionGradedAnswerCount ?? 0} of ${run.answeredQuestionCount} answered, disagreements: ${run.secondOpinionDisagreementCount ?? 0}`);
+        if ((run.secondOpinionGradedAnswerCount ?? 0) > 0 && run.secondOpinionModeUsed !== 3) {
+          lines.push('  (coverage selected by trigger — conditioned on the first assessor\'s own uncertainty, not an unbiased agreement rate)');
+        }
         lines.push('');
       }
 
@@ -1717,6 +1925,30 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
         if (ans.actualServiceTierUsed) parts.push(`tier=${ans.actualServiceTierUsed}`);
         if (ans.httpStatusCode != null) parts.push(`http=${ans.httpStatusCode}`);
         if (ans.score != null) parts.push(`score=${ans.score}`);
+
+        // Everything below is already on the DTO; the capture simply did not print it, which is
+        // why an old diagnostics file could not reconstruct why any answer scored what it did.
+        parts.push(`band=${this.formatDifficulty(ans.difficulty)}`);
+        if (ans.assessedDifficulty != null) parts.push(`assessedDiff=${ans.assessedDifficulty}`);
+        if (ans.qualityScore != null) parts.push(`quality=${ans.qualityScore}`);
+        if (ans.rawQualityScore != null && ans.rawQualityScore !== ans.qualityScore) parts.push(`rawQuality=${ans.rawQualityScore}`);
+        if (ans.speedScore != null) parts.push(`speed=${ans.speedScore}`);
+        if (ans.accuracyLevel != null) {
+          parts.push(`levels=${ans.accuracyLevel}/${ans.completenessLevel ?? '?'}/${ans.concisenessLevel ?? '?'}/${ans.readabilityLevel ?? '?'}`);
+        }
+        parts.push(`critical=${ans.criticalError === true}`);
+        const budget = ans.toolCallBudgetUsed != null ? ans.toolCallBudgetUsed : 'n/a';
+        const blocked = this.blockedToolCallsOf(ans);
+        parts.push(`tools=${ans.toolCallCount ?? 0}/${budget}${blocked > 0 ? ` (${blocked} blocked)` : ''}${ans.toolBudgetExhausted ? ' exhausted' : ''}`);
+        if (ans.narrationBlockCount != null) parts.push(`narration=${ans.narrationBlockCount}`);
+        if (ans.unverifiedClaimCount != null) parts.push(`unverified=${ans.unverifiedClaimCount}`);
+        if ((ans.answerFlagNames ?? []).length > 0) parts.push(`flags=${(ans.answerFlagNames ?? []).join('|')}`);
+        if (ans.secondOpinionQualityScore != null) {
+          parts.push(`secondOpinion=${ans.secondOpinionQualityScore}/${ans.secondOpinionTrigger ?? 'unknown'}${ans.secondOpinionDisagreed ? ' disagreed' : ''}`);
+        }
+        if ((ans.reassessmentCount ?? 0) > 0) {
+          parts.push(`reassessed=${ans.previousQualityScore ?? '?'}→${ans.qualityScore ?? '?'}/${ans.reassessedByModelDisplayNameUsed ?? 'unknown'}`);
+        }
         lines.push(`[Q${row.orderIndex}] ${parts.join(' ')}`);
         if (ans.errorMessage) {
           lines.push(`     error: ${ans.errorMessage}`);
@@ -1732,6 +1964,28 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     }
 
     return lines.join('\n');
+  }
+
+  /** Mode names for the diagnostics capture, which is read as plain text and not localised. */
+  private diagnosticsModeName(mode: number | null | undefined): string {
+    switch (mode) {
+      case 0: return 'Off';
+      case 1: return 'Flagged';
+      case 2: return 'FlaggedAndOutliers';
+      case 3: return 'All';
+      default: return 'unknown';
+    }
+  }
+
+  /**
+   * Calls the budget refused, parsed from the tool summary the executor writes. `toolCallCount`
+   * counts attempts, so printing it against the budget alone produced lines like "27 of 25".
+   */
+  private blockedToolCallsOf(answer: BenchmarkRunAnswerDto): number {
+    const match = /\((\d+)\s+blocked by budget\)/i.exec(answer.toolCallSummary ?? '');
+    if (!match) return 0;
+    const parsed = Number(match[1]);
+    return Number.isFinite(parsed) ? Math.min(parsed, answer.toolCallCount ?? parsed) : 0;
   }
 
   get runDiagnosticsCopyStatus(): string {
@@ -1888,7 +2142,11 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     this.expandedQuestions.clear();
     this.expandedThoughts.clear();
     this.expandedArtifacts.clear();
+    this.calibrations = [];
+    this.calibrationErrorMessage = null;
+    this.calibrationAssessorConfigId = this.benchmarkCapableConfigs[0]?.id ?? null;
     this.runDetailDialog?.nativeElement.showModal();
+    this.loadCalibrations(runId);
 
     this.benchmarkService.getRun(runId).subscribe({
       next: (data) => {
@@ -1907,6 +2165,9 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   closeRunDetail() {
     this.stopDetailPolling();
     this.selectedRunDetail = null;
+    this.calibrations = [];
+    this.calibrationErrorMessage = null;
+    this.isCalibrationAssessorDropdownOpen = false;
     this.runDetailDialog?.nativeElement.close();
   }
 
@@ -1963,7 +2224,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     });
   }
 
-  openRetryDialog(scope: 'assessment' | 'question' | 'synthesis' | 'assessments', runId: number, answer?: BenchmarkRunAnswerDto) {
+  openRetryDialog(scope: 'assessment' | 'trial' | 'question' | 'synthesis' | 'assessments', runId: number, answer?: BenchmarkRunAnswerDto) {
     this.retryScope = scope;
     this.retryRunId = runId;
     this.retryAnswer = answer ?? null;
@@ -2015,6 +2276,27 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
           this.cdr.detectChanges();
         }
       });
+    } else if (scope === 'trial') {
+      if (!answer) return;
+      this.actionErrorMessage = null;
+      this.trialReassessingAnswerId = answer.id;
+      // Overwriting an existing automatic second opinion is refused server-side unless asked
+      // for: that verdict is run evidence, and an experiment must not erase it by accident. The
+      // operator confirms the replacement here before the call, not after the refusal.
+      const replaceExisting = answer.secondOpinionQualityScore != null &&
+        answer.secondOpinionTrigger !== 'Manual';
+      this.benchmarkService
+        .trialReassessAnswer(runId, answer.id, assessorId, replaceExisting)
+        .subscribe({
+          next: () => {
+            this.startDetailPolling(runId);
+          },
+          error: (err) => {
+            this.trialReassessingAnswerId = null;
+            this.actionErrorMessage = err?.error || 'Failed to start the trial assessment.';
+            this.cdr.detectChanges();
+          }
+        });
     } else if (scope === 'question') {
       if (!answer) return;
       this.actionErrorMessage = null;
@@ -2483,6 +2765,22 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     return this.suites.find(s => s.id === this.selectedSuiteId);
   }
 
+  /** Toggles the Suite Health panel for one suite card. */
+  toggleSuiteHealth(suite: BenchmarkSuiteDto): void {
+    this.suiteHealthSuiteId = this.suiteHealthSuiteId === suite.id ? null : suite.id;
+  }
+
+  /**
+   * The panel's only outward action. It opens the question editor and writes nothing itself —
+   * every finding in that panel is advisory, and a human decides what to change.
+   */
+  onSuiteHealthEditQuestion(suite: BenchmarkSuiteDto, questionId: number): void {
+    // The list loads asynchronously, so the editor cannot be opened here: it is opened by
+    // loadQuestions once the question this id names actually exists in memory.
+    this.pendingQuestionEditId = questionId;
+    this.openManageQuestions(suite);
+  }
+
   get selectedScoringProfile(): BenchmarkScoringProfileDto | undefined {
     return this.scoringProfiles.find(p => p.id === this.selectedScoringProfileId);
   }
@@ -2503,6 +2801,204 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
 
     return AdminBenchmarkComponent.DELIBERATING_THINKING_LEVELS.includes(thinkingLevel.toLowerCase()) &&
       speedTargetMs < AdminBenchmarkComponent.INTERACTIVE_SPEED_TARGET_MAX_MS;
+  }
+
+  // --- Results screen: profile fit, agreement, weighting ---
+
+  /**
+   * The same pairing showProfileFitAdvisory warns about before the run, read off the finished
+   * run's own snapshot rather than today's selected profile. The results screen used to mark the
+   * Speed Index advisory for concurrency only, so a max-thinking candidate on a 15,000 ms
+   * interactive profile showed a bare "SPEED INDEX 67 / 100".
+   */
+  get showRunProfileFitAdvisory(): boolean {
+    const thinkingLevel = this.selectedRunDetail?.testedModelThinkingLevelUsed;
+    const speedTargetMs = this.selectedRunDetail?.scoringProfileSpeedTargetMs;
+    if (!thinkingLevel || speedTargetMs == null) return false;
+
+    return AdminBenchmarkComponent.DELIBERATING_THINKING_LEVELS.includes(thinkingLevel.toLowerCase()) &&
+      speedTargetMs < AdminBenchmarkComponent.INTERACTIVE_SPEED_TARGET_MAX_MS;
+  }
+
+  get runProfileFitAdvisoryTitle(): string {
+    const level = this.selectedRunDetail?.testedModelThinkingLevelUsed ?? 'high';
+    const target = this.selectedRunDetail?.scoringProfileSpeedTargetMs ?? 0;
+    return `Profile targets interactive latency (${target.toLocaleString('en-US')} ms); this run used thinking level ${level} — read the Speed Index as advisory`;
+  }
+
+  /** True while any advisory makes the Speed Index non-comparable, for the shared `*` marker. */
+  get speedIndexIsAdvisory(): boolean {
+    return this.selectedRunDetail?.speedMeasurementDegraded === true || this.showRunProfileFitAdvisory;
+  }
+
+  get showAgreementTile(): boolean {
+    return (this.selectedRunDetail?.secondOpinionGradedAnswerCount ?? 0) > 0;
+  }
+
+  get agreementMeanAbsDeltaLabel(): string {
+    const delta = this.selectedRunDetail?.secondOpinionMeanAbsDelta;
+    return delta == null ? 'N/A' : delta.toFixed(1);
+  }
+
+  /**
+   * Never shown without this fraction beside it. A mean delta over trigger-selected answers is
+   * conditioned on the first assessor's own uncertainty and says nothing about the instrument;
+   * the same number over every answer is an inter-rater agreement rate. Only the coverage tells
+   * a reader which one they are looking at.
+   */
+  get agreementCoverageLabel(): string {
+    const run = this.selectedRunDetail;
+    if (!run) return '';
+    return `${run.secondOpinionGradedAnswerCount ?? 0}/${run.answeredQuestionCount}`;
+  }
+
+  get agreementModeLabel(): string {
+    switch (this.selectedRunDetail?.secondOpinionModeUsed) {
+      case BenchmarkSecondOpinionMode.All: return 'Every answer';
+      case BenchmarkSecondOpinionMode.FlaggedAndOutliers: return 'Flagged and outliers';
+      case BenchmarkSecondOpinionMode.Flagged: return 'Flagged only';
+      default: return 'Manual only';
+    }
+  }
+
+  /** Coverage was selected by trigger, so the disagreement rate is not an instrument figure. */
+  get agreementIsSelective(): boolean {
+    return this.showAgreementTile &&
+      this.selectedRunDetail?.secondOpinionModeUsed !== BenchmarkSecondOpinionMode.All;
+  }
+
+  /**
+   * Shown only where the two aggregations differ, following the Raw Quality Index tile. The gap
+   * is how far difficulty weighting moved the headline: on the 2026-09-03 run it moved it *up*
+   * two points, because the model's two weakest answers were two of its easiest questions.
+   */
+  get showUnweightedQualityTile(): boolean {
+    const run = this.selectedRunDetail;
+    return run?.unweightedQualityIndex != null && run.qualityIndex != null &&
+      run.unweightedQualityIndex !== run.qualityIndex;
+  }
+
+  get weightingDeltaLabel(): string {
+    const run = this.selectedRunDetail;
+    if (run?.unweightedQualityIndex == null || run.qualityIndex == null) return '';
+    const delta = run.qualityIndex - run.unweightedQualityIndex;
+    return `${delta > 0 ? '+' : ''}${delta}`;
+  }
+
+  // --- Integrity notice completeness ---
+
+  get toolBudgetAnswerCount(): number {
+    return (this.selectedRunDetail?.answers ?? []).filter(a => a.toolBudgetExhausted).length;
+  }
+
+  get toolBudgetQuestionNumbers(): string {
+    return (this.selectedRunDetail?.answers ?? [])
+      .filter(a => a.toolBudgetExhausted)
+      .map(a => a.orderIndex)
+      .join(', ');
+  }
+
+  get contestedVerdictAnswerCount(): number {
+    return this.selectedRunDetail?.contestedVerdictAnswerCount ?? 0;
+  }
+
+  get contestedVerdictQuestionNumbers(): string {
+    return (this.selectedRunDetail?.answers ?? [])
+      .filter(a => (a.answerFlagNames ?? []).includes('ContestedVerdict'))
+      .map(a => a.orderIndex)
+      .join(', ');
+  }
+
+  get reassessedAnswerCount(): number {
+    return this.selectedRunDetail?.reassessedAnswerCount ?? 0;
+  }
+
+  get reassessedQuestionNumbers(): string {
+    return (this.selectedRunDetail?.answers ?? [])
+      .filter(a => (a.reassessmentCount ?? 0) > 0)
+      .map(a => a.orderIndex)
+      .join(', ');
+  }
+
+  get unverifiedClaimTotal(): number {
+    return (this.selectedRunDetail?.answers ?? [])
+      .reduce((sum, a) => sum + (a.unverifiedClaimCount ?? 0), 0);
+  }
+
+  /** The claims themselves, for the per-answer panel. Empty on a malformed or absent blob. */
+  unverifiedClaimsOf(answer: BenchmarkRunAnswerDto): string[] {
+    if (!answer.unverifiedClaimsJson) return [];
+    try {
+      const parsed = JSON.parse(answer.unverifiedClaimsJson);
+      return Array.isArray(parsed) ? parsed.filter(c => typeof c === 'string' && c.trim().length > 0) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /** Trigger names as stored, in the words this screen uses for them. */
+  secondOpinionTriggerLabel(trigger: string | null | undefined): string {
+    switch (trigger) {
+      case 'CriticalError': return 'critical error';
+      case 'ContestedVerdict': return 'contested verdict';
+      case 'UnverifiedClaims': return 'unverifiable claims';
+      case 'BelowThreshold': return 'below profile threshold';
+      case 'Outlier': return 'outlier below run median';
+      case 'All': return 'double grading';
+      case 'Manual': return 'manual trial';
+      default: return trigger ?? '';
+    }
+  }
+
+  // --- Calibration ---
+
+  get selectedCalibrationAssessorModel(): SystemAiConfigDto | undefined {
+    return this.benchmarkCapableConfigs.find(c => c.id === this.calibrationAssessorConfigId);
+  }
+
+  toggleCalibrationAssessorDropdown(event: Event) {
+    event.stopPropagation();
+    this.isCalibrationAssessorDropdownOpen = !this.isCalibrationAssessorDropdownOpen;
+  }
+
+  selectCalibrationAssessorModel(config: SystemAiConfigDto) {
+    this.calibrationAssessorConfigId = config.id;
+    this.isCalibrationAssessorDropdownOpen = false;
+  }
+
+  loadCalibrations(runId: number): void {
+    this.loadingCalibrations = true;
+    this.benchmarkService.getCalibrations(runId).subscribe({
+      next: (rows) => {
+        this.calibrations = rows;
+        this.loadingCalibrations = false;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.calibrations = [];
+        this.loadingCalibrations = false;
+        this.calibrationErrorMessage = err?.error || 'Failed to load calibrations.';
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  runCalibration(runId: number): void {
+    if (this.calibrationAssessorConfigId == null || this.calibrating) return;
+
+    this.calibrating = true;
+    this.calibrationErrorMessage = null;
+    this.benchmarkService.calibrateAssessor(runId, this.calibrationAssessorConfigId).subscribe({
+      next: () => {
+        this.calibrating = false;
+        this.loadCalibrations(runId);
+      },
+      error: (err) => {
+        this.calibrating = false;
+        this.calibrationErrorMessage = err?.error || 'Calibration failed.';
+        this.cdr.detectChanges();
+      }
+    });
   }
 
   get canStartRun(): boolean {

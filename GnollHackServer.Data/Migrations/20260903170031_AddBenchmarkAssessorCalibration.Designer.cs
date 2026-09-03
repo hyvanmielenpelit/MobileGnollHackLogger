@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using MobileGnollHackLogger.Data;
 
@@ -11,9 +12,11 @@ using MobileGnollHackLogger.Data;
 namespace GnollHackServer.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260903170031_AddBenchmarkAssessorCalibration")]
+    partial class AddBenchmarkAssessorCalibration
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -377,9 +380,6 @@ namespace GnollHackServer.Data.Migrations
 
                     b.Property<string>("ExpectedPoints")
                         .HasColumnType("nvarchar(max)");
-
-                    b.Property<int>("ItemRevision")
-                        .HasColumnType("int");
 
                     b.Property<DateTime>("ModifiedAtUtc")
                         .HasColumnType("datetime2");
@@ -745,9 +745,6 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<int>("AssessmentStatus")
                         .HasColumnType("int");
 
-                    b.Property<long?>("BenchmarkQuestionId")
-                        .HasColumnType("bigint");
-
                     b.Property<long>("BenchmarkRunId")
                         .HasColumnType("bigint");
 
@@ -790,9 +787,6 @@ namespace GnollHackServer.Data.Migrations
                         .HasColumnType("int");
 
                     b.Property<int?>("InputTokens")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("ItemRevisionUsed")
                         .HasColumnType("int");
 
                     b.Property<int?>("ModelCallCount")
@@ -908,8 +902,6 @@ namespace GnollHackServer.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("AssessedByModelConfigurationId");
-
-                    b.HasIndex("BenchmarkQuestionId", "ItemRevisionUsed");
 
                     b.HasIndex("BenchmarkRunId", "OrderIndex");
 
@@ -2526,11 +2518,6 @@ namespace GnollHackServer.Data.Migrations
                         .WithMany()
                         .HasForeignKey("AssessedByModelConfigurationId");
 
-                    b.HasOne("MobileGnollHackLogger.Data.BenchmarkQuestion", "BenchmarkQuestion")
-                        .WithMany()
-                        .HasForeignKey("BenchmarkQuestionId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("MobileGnollHackLogger.Data.BenchmarkRun", "BenchmarkRun")
                         .WithMany("Answers")
                         .HasForeignKey("BenchmarkRunId")
@@ -2538,8 +2525,6 @@ namespace GnollHackServer.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("AssessedByModelConfiguration");
-
-                    b.Navigation("BenchmarkQuestion");
 
                     b.Navigation("BenchmarkRun");
                 });

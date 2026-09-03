@@ -16,6 +16,18 @@ public static class BenchmarkReportBuilder
         return value.ToString(format, CultureInfo.InvariantCulture);
     }
 
+    /// <summary>
+    /// A UTC timestamp in the report's own fixed shape. Needed because ":" in a custom format
+    /// string is the culture's *time separator* rather than a literal, so an interpolated
+    /// "{d:yyyy-MM-dd HH:mm:ss}" renders "08.30.00" under fi-FI — the culture these machines
+    /// actually run. A report is an artifact that gets compared across machines; its timestamps
+    /// have to look the same on all of them.
+    /// </summary>
+    private static string Stamp(DateTime value)
+    {
+        return value.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+    }
+
     private static readonly Regex BlockedCallsRegex =
         new(@"\((\d+)\s+blocked by budget\)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
@@ -35,44 +47,7 @@ public static class BenchmarkReportBuilder
     /// </summary>
     private static BenchmarkScoringConstants ScoringConstantsOf(BenchmarkRun run)
     {
-        if (string.IsNullOrWhiteSpace(run.ScoringProfileSnapshotJson))
-        {
-            return BenchmarkScoringConstants.Default;
-        }
-
-        try
-        {
-            using var doc = JsonDocument.Parse(run.ScoringProfileSnapshotJson);
-            var root = doc.RootElement;
-            var defaults = BenchmarkScoringConstants.Default;
-
-            int target = root.TryGetProperty("SpeedTargetMs", out var t) && t.TryGetInt32(out int tv)
-                ? tv
-                : defaults.SpeedTargetMs;
-            double scaling = root.TryGetProperty("SpeedDifficultyScaling", out var s) && s.TryGetDouble(out double sv)
-                ? sv
-                : defaults.SpeedDifficultyScaling;
-            double decay = root.TryGetProperty("SpeedDecayK", out var k) && k.TryGetDouble(out double kv)
-                ? kv
-                : defaults.SpeedDecayK;
-            int secondOpinion = root.TryGetProperty("SecondOpinionQualityThreshold", out var o) && o.TryGetInt32(out int ov)
-                ? ov
-                : defaults.SecondOpinionQualityThreshold;
-
-            return defaults with
-            {
-                SpeedTargetMs = target,
-                SpeedDifficultyScaling = scaling,
-                SpeedDecayK = decay,
-                SecondOpinionQualityThreshold = secondOpinion
-            };
-        }
-        catch (JsonException)
-        {
-            // A malformed snapshot must not stop a report from rendering; the figures it
-            // annotates are already stored on the answers.
-            return BenchmarkScoringConstants.Default;
-        }
+        return BenchmarkScoring.ConstantsFromSnapshot(run.ScoringProfileSnapshotJson);
     }
 
     // Same fence-splitting pattern as BenchmarkAnswerSanitizer.CodeBlockRegex: a "#" inside a
@@ -217,6 +192,63 @@ public static class BenchmarkReportBuilder
             : $"{executed} executed, budget {budget}";
     }
 
+    /// <summary>
+    /// The second-opinion mode this run was actually graded under, read from the run's own
+    /// stamped value. An out-of-range value falls back to <c>Flagged</c> rather than to
+    /// <c>Off</c>: <c>Off</c> would claim no second verdict was configured, which is the one
+    /// reading a run carrying second verdicts cannot support.
+    /// </summary>
+    private static BenchmarkSecondOpinionMode ModeOf(BenchmarkRun run)
+    {
+        return Enum.IsDefined(typeof(BenchmarkSecondOpinionMode), run.SecondOpinionModeUsed)
+            ? (BenchmarkSecondOpinionMode)run.SecondOpinionModeUsed
+            : BenchmarkSecondOpinionMode.Flagged;
+    }
+
+    /// <summary>The clause that turns a mode name into a statement about coverage.</summary>
+    private static string ModeGloss(BenchmarkSecondOpinionMode mode) => mode switch
+    {
+        BenchmarkSecondOpinionMode.All => " — every answer graded twice.",
+        BenchmarkSecondOpinionMode.FlaggedAndOutliers => " — flagged answers, plus a post-scoring sweep for outliers.",
+        BenchmarkSecondOpinionMode.Flagged => " — flagged answers only.",
+        _ => " — no second verdict was configured; anything recorded came from a manual re-grade."
+    };
+
+    /// <summary>Trigger names as stored, in the words the report uses for them.</summary>
+    private static string TriggerLabel(string trigger) => trigger switch
+    {
+        "CriticalError" => "critical error",
+        "ContestedVerdict" => "contested verdict",
+        "UnverifiedClaims" => "unverifiable claims",
+        "BelowThreshold" => "score below the profile threshold",
+        "Outlier" => "outlier below the run median",
+        "All" => "double grading, every answer",
+        "Manual" => "manual re-grade",
+        _ => trigger
+    };
+
+    /// <summary>
+    /// The assessor's unverifiable claims. Empty for a run graded before the field existed, and
+    /// empty rather than throwing on a malformed blob: these are commentary, never a score input.
+    /// </summary>
+    private static IReadOnlyList<string> ReadUnverifiedClaims(BenchmarkRunAnswer answer)
+    {
+        if (string.IsNullOrWhiteSpace(answer.UnverifiedClaimsJson))
+        {
+            return Array.Empty<string>();
+        }
+
+        try
+        {
+            var claims = JsonSerializer.Deserialize<List<string>>(answer.UnverifiedClaimsJson);
+            return claims?.Where(c => !string.IsNullOrWhiteSpace(c)).ToList() ?? (IReadOnlyList<string>)Array.Empty<string>();
+        }
+        catch (JsonException)
+        {
+            return Array.Empty<string>();
+        }
+    }
+
     private static long Percentile(IReadOnlyList<long> sorted, double p)
     {
         if (sorted.Count == 0) return 0;
@@ -237,7 +269,7 @@ public static class BenchmarkReportBuilder
         sb.AppendLine("# GnollHack Overseer AI Intelligence Benchmark Report");
         sb.AppendLine();
         sb.AppendLine($"This report contains the automated domain knowledge, reasoning, and efficiency benchmark results for suite **{run.SuiteName}**, evaluated against model **{run.TestedModelDisplayNameUsed}** ({run.TestedModelProviderUsed} / {run.TestedModelIdUsed}).");
-        sb.AppendLine($"Run conducted on {run.StartedAtUtc:yyyy-MM-dd HH:mm:ss} UTC" + (!string.IsNullOrEmpty(run.StartedByUser?.UserName) ? $" by {run.StartedByUser.UserName}." : "."));
+        sb.AppendLine($"Run conducted on {Stamp(run.StartedAtUtc)} UTC" + (!string.IsNullOrEmpty(run.StartedByUser?.UserName) ? $" by {run.StartedByUser.UserName}." : "."));
         sb.AppendLine();
         sb.AppendLine("> *Note:* This benchmark evaluates domain-specific roguelike intelligence, codebase comprehension, and tool usage within the GnollHack Overseer harness. Scoring uses Behaviorally Anchored Rating Scales (BARS), weighted geometric aggregation, and logarithmic speed decay.");
         sb.AppendLine();
@@ -250,8 +282,8 @@ public static class BenchmarkReportBuilder
         sb.AppendLine($"- **Total Questions:** {run.TotalQuestionCount}");
         sb.AppendLine($"- **Answered Questions:** {run.AnsweredQuestionCount} of {run.TotalQuestionCount}");
         sb.AppendLine($"- **Run Status:** {run.Status}");
-        sb.AppendLine($"- **Start Time (UTC):** {run.StartedAtUtc:yyyy-MM-dd HH:mm:ss}");
-        sb.AppendLine($"- **End Time (UTC):** {(run.CompletedAtUtc.HasValue ? run.CompletedAtUtc.Value.ToString("yyyy-MM-dd HH:mm:ss") : "In Progress / Interrupted")}");
+        sb.AppendLine($"- **Start Time (UTC):** {Stamp(run.StartedAtUtc)}");
+        sb.AppendLine($"- **End Time (UTC):** {(run.CompletedAtUtc.HasValue ? Stamp(run.CompletedAtUtc.Value) : "In Progress / Interrupted")}");
         sb.AppendLine($"- **Total Elapsed Wall Time:** {FormatDuration(run.TotalDurationMs)}");
         sb.AppendLine($"- **Total Candidate Answer Time:** {FormatDuration(run.TotalAnswerDurationMs)}");
         // "Question Parallelism", not "Parallel …": the Model Under Test block reports the
@@ -300,6 +332,29 @@ public static class BenchmarkReportBuilder
         };
         sb.AppendLine($"- **Tool Call Budget per Question:** {budgetText}");
         sb.AppendLine($"- **Timing Mode:** {(run.SpeedMeasurementDegraded ? "Concurrent (advisory speed)" : "Sequential (comparable speed)")}");
+
+        // Who graded whom. Three distinct providers is the arrangement with the fewest shared
+        // priors; an assessor and a second opinion drawn from one provider is the arrangement in
+        // which the "independent reader" is least independent, and a reader of the agreement
+        // figures below needs to know which of the two produced them.
+        var pairingProviders = new List<string?> { run.TestedModelProviderUsed, run.AssessorModelProviderUsed };
+        if (run.SecondOpinionAssessorModelConfigurationId.HasValue)
+        {
+            pairingProviders.Add(run.SecondOpinionAssessorModelProviderUsed);
+        }
+        int distinctProviders = pairingProviders
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .Select(p => p!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Count();
+        sb.AppendLine(run.SecondOpinionAssessorModelConfigurationId.HasValue
+            ? $"- **Assessor Pairing:** candidate {run.TestedModelProviderUsed}, assessor {run.AssessorModelProviderUsed}, second opinion {run.SecondOpinionAssessorModelProviderUsed} — {distinctProviders} distinct provider(s)"
+            : $"- **Assessor Pairing:** candidate {run.TestedModelProviderUsed}, assessor {run.AssessorModelProviderUsed} — {distinctProviders} distinct provider(s), no second opinion");
+        if (run.SecondOpinionAssessorModelConfigurationId.HasValue &&
+            string.Equals(run.AssessorModelProviderUsed, run.SecondOpinionAssessorModelProviderUsed, StringComparison.OrdinalIgnoreCase))
+        {
+            sb.AppendLine("  - *The assessor and the second opinion come from the same provider, so the second verdict is a weaker check than a cross-provider one: two models from one family share training data and failure modes, and can agree for reasons that have nothing to do with the answer.*");
+        }
         sb.AppendLine();
 
         sb.AppendLine("### Model Under Test");
@@ -331,7 +386,15 @@ public static class BenchmarkReportBuilder
             sb.AppendLine($"- **Model ID:** {run.SecondOpinionAssessorModelIdUsed}");
             sb.AppendLine($"- **Thinking Level:** {run.SecondOpinionAssessorModelThinkingLevelUsed ?? "Default"}");
             sb.AppendLine($"- **Reasoning Mode:** {run.SecondOpinionAssessorModelReasoningModeUsed ?? "Default"}");
-            sb.AppendLine("- **Trigger:** a critical error, or a quality score below the scoring profile's second-opinion threshold. Advisory: the first verdict is what scored.");
+            var configuredMode = ModeOf(run);
+            sb.AppendLine($"- **Mode:** {configuredMode}{ModeGloss(configuredMode)} Advisory throughout: the first verdict is what scored.");
+            if (configuredMode is BenchmarkSecondOpinionMode.Flagged or BenchmarkSecondOpinionMode.FlaggedAndOutliers)
+            {
+                sb.AppendLine($"- **Triggers:** a critical error; a contested verdict; unverifiable claims alongside a docked accuracy level; a quality score below the profile's threshold of {scoringConstants.SecondOpinionQualityThreshold}" +
+                    (configuredMode == BenchmarkSecondOpinionMode.FlaggedAndOutliers
+                        ? $"; and, after scoring, any answer more than {scoringConstants.SecondOpinionOutlierDeltaPoints} points below the run's median."
+                        : "."));
+            }
         }
         else
         {
@@ -339,19 +402,41 @@ public static class BenchmarkReportBuilder
 
             // What was forgone, stated in the run's own numbers. The 2026-09-03 run produced
             // two critical errors with no second opinion selected — precisely the trigger the
-            // feature exists for — and nothing in the report connected the two facts.
-            int wouldCritical = answers.Count(a => a.CriticalError);
+            // feature exists for — and nothing in the report connected the two facts. It was
+            // also silent about the larger number: double grading would have covered every
+            // answer, and that is the only setting that measures grader agreement instead of
+            // sampling it.
             int threshold = scoringConstants.SecondOpinionQualityThreshold;
-            int wouldThreshold = threshold > 0
-                ? answers.Count(a => !a.CriticalError && a.QualityScore.HasValue && a.QualityScore.Value < threshold)
-                : 0;
-            int wouldTotal = wouldCritical + wouldThreshold;
+
+            // Mirrors the first-match cascade in BenchmarkService.ResolveSecondOpinionTrigger,
+            // so the counts partition the answers rather than double-counting one that satisfies
+            // two triggers.
+            string? WouldTrigger(BenchmarkRunAnswer a)
+            {
+                if (a.CriticalError) return "critical error";
+                if ((((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.ContestedVerdict) != 0) return "contested verdict";
+                if ((a.UnverifiedClaimCount ?? 0) > 0 && (a.AccuracyLevel ?? 6) < 4) return "unverifiable claims";
+                if (threshold > 0 && a.QualityScore.HasValue && a.QualityScore.Value < threshold) return $"below the profile's threshold of {threshold}";
+                return null;
+            }
+
+            var wouldByTrigger = answers
+                .Select(WouldTrigger)
+                .Where(t => t != null)
+                .GroupBy(t => t!, StringComparer.Ordinal)
+                .OrderByDescending(g => g.Count())
+                .ThenBy(g => g.Key, StringComparer.Ordinal)
+                .ToList();
+            int wouldTotal = wouldByTrigger.Sum(g => g.Count());
             if (wouldTotal > 0)
             {
-                string thresholdPart = threshold > 0
-                    ? $"below the profile's threshold of {threshold}: {wouldThreshold}"
-                    : "score trigger disabled";
-                sb.AppendLine($"- **{wouldTotal} answer(s) would have been re-graded** had a second opinion assessor been selected (critical error: {wouldCritical}; {thresholdPart}).");
+                sb.AppendLine($"- **{wouldTotal} answer(s) would have been re-graded** under `Flagged` had a second opinion assessor been selected ({string.Join("; ", wouldByTrigger.Select(g => $"{g.Key}: {g.Count()}"))}).");
+            }
+
+            int answeredForForgone = answers.Count(a => a.Status == BenchmarkAnswerStatus.Ok);
+            if (answeredForForgone > 0)
+            {
+                sb.AppendLine($"- **{answeredForForgone} answer(s) would have been graded twice** under `All` (double grading) — the only mode that measures grader agreement rather than sampling it. `FlaggedAndOutliers` would have added a post-scoring sweep for answers more than {scoringConstants.SecondOpinionOutlierDeltaPoints} points below the run's median.");
             }
         }
         sb.AppendLine();
@@ -374,6 +459,23 @@ public static class BenchmarkReportBuilder
         {
             sb.AppendLine($"### **Raw Quality Index: {rawQualityIndex.Value} / 100 ({cappedCount} question(s) capped by critical error)**");
         }
+
+        // The gap between the difficulty-weighted index and the plain mean of the same scores is
+        // how much the weighting moved the headline, and it is invisible from either number
+        // alone. On the 2026-09-03 run it moved the index *up* by two points, because the
+        // model's two weakest answers were also two of its easiest questions. Computed here for
+        // runs that predate the stored column, so the line works on the whole archive.
+        int? unweightedMean = run.UnweightedQualityIndex
+            ?? BenchmarkScoring.UnweightedQualityMean(scoredAnswers.Select(a => a.QualityScore));
+        if (unweightedMean.HasValue && run.QualityIndex.HasValue &&
+            Math.Abs(run.QualityIndex.Value - unweightedMean.Value) >= 1)
+        {
+            int weightingDelta = run.QualityIndex.Value - unweightedMean.Value;
+            sb.AppendLine();
+            sb.AppendLine($"- **Unweighted Quality Mean:** {unweightedMean.Value} / 100 — difficulty weighting moved the index by **{(weightingDelta > 0 ? "+" : string.Empty)}{Inv(weightingDelta)}** points. The Intelligence Index weights each answer by its assessed difficulty, so a run whose weak answers are its easy ones reads higher than its plain average.");
+            sb.AppendLine();
+        }
+
         sb.AppendLine($"### **Speed Index: {(run.SpeedIndex.HasValue ? $"{run.SpeedIndex.Value} / 100" : "Not Scored")}**" + (run.SpeedMeasurementDegraded ? " *(Advisory — measured under concurrency)*" : ""));
         // A critical error caps Quality at 25 (see BenchmarkScoring), which the Raw/Intelligence
         // Index pair above already shows as a point delta — but that delta is diluted by every
@@ -527,6 +629,79 @@ public static class BenchmarkReportBuilder
         sb.AppendLine($"- **Answers Scrubbed:** {scrubbedAnyCount} of {totalQuestions} (transport payloads: {scrubbedTransportCount}, reasoning narration: {bleedRemoved})");
         sb.AppendLine();
 
+        // Assessor Findings — two advisory signals about the *grading* rather than the answers:
+        // what the assessor could not verify, and where its own prose contradicted its
+        // critical-error flag. Both were invisible on the 2026-09-03 run, whose two worst
+        // answers carried comments describing hallucinations beside criticalError: false.
+        var withClaims = answers
+            .Where(a => (a.UnverifiedClaimCount ?? 0) > 0)
+            .OrderBy(a => a.OrderIndex)
+            .ToList();
+        int unverifiedTotal = withClaims.Sum(a => a.UnverifiedClaimCount!.Value);
+        bool claimsRecorded = answers.Any(a => a.UnverifiedClaimCount.HasValue);
+        var contestedAnswers = answers
+            .Where(a => (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.ContestedVerdict) != 0)
+            .OrderBy(a => a.OrderIndex)
+            .ToList();
+
+        if (!claimsRecorded || unverifiedTotal > 0 || contestedAnswers.Count > 0)
+        {
+            sb.AppendLine("### Assessor Findings");
+            if (!claimsRecorded)
+            {
+                sb.AppendLine($"- **Unverified Claims:** not recorded — this run predates harness version {BenchmarkAssessmentPrompt.HarnessVersion}, which added the field.");
+            }
+            else if (unverifiedTotal > 0)
+            {
+                sb.AppendLine($"- **Unverified Claims:** {unverifiedTotal} across {withClaims.Count} answer(s) ({string.Join(", ", withClaims.Select(a => $"Q{a.OrderIndex}"))}) — *claims the assessor could neither confirm nor refute against the rubric. Advisory: from harness version 7 these do not reduce Accuracy.*");
+            }
+            if (contestedAnswers.Count > 0)
+            {
+                sb.AppendLine($"- **Contested Verdicts:** {contestedAnswers.Count} ({string.Join(", ", contestedAnswers.Select(a => $"Q{a.OrderIndex}"))}) — *the assessor's own comment describes a fabrication while its critical-error flag is false. Advisory; no scoring effect.*");
+            }
+            sb.AppendLine();
+        }
+
+        // Assessor Agreement. The coverage fraction travels with the figure everywhere it is
+        // printed, because the two are not separable: a mean delta over trigger-selected answers
+        // is conditioned on the first assessor's own uncertainty and says nothing about the
+        // instrument, while the same number over every answer is an inter-rater agreement rate.
+        if (run.SecondOpinionGradedAnswerCount > 0)
+        {
+            var agreementMode = ModeOf(run);
+            var graded = answers
+                .Where(a => a.SecondOpinionQualityScore.HasValue && a.QualityScore.HasValue
+                            && !string.Equals(a.SecondOpinionTrigger, "Manual", StringComparison.Ordinal))
+                .OrderBy(a => a.OrderIndex)
+                .ToList();
+            var disagreedAnswers = graded.Where(a => a.SecondOpinionDisagreed).ToList();
+            int answeredForAgreement = answers.Count(a => a.Status == BenchmarkAnswerStatus.Ok);
+            double? meanAbsDelta = run.SecondOpinionMeanAbsDelta
+                ?? (graded.Count > 0
+                    ? graded.Average(a => Math.Abs(a.SecondOpinionQualityScore!.Value - a.QualityScore!.Value))
+                    : null);
+
+            sb.AppendLine("### Assessor Agreement");
+            sb.AppendLine($"- **Mode:** {agreementMode}{ModeGloss(agreementMode)}");
+            sb.AppendLine($"- **Coverage:** {run.SecondOpinionGradedAnswerCount} of {answeredForAgreement} answered questions.");
+            sb.AppendLine(meanAbsDelta.HasValue
+                ? $"- **Mean absolute difference:** {Inv(meanAbsDelta.Value, "F1")} points."
+                : "- **Mean absolute difference:** not recorded.");
+            if (graded.Count > 0)
+            {
+                double disagreementPct = disagreedAnswers.Count * 100.0 / graded.Count;
+                string named = disagreedAnswers.Count > 0
+                    ? " — " + string.Join(", ", disagreedAnswers.Select(a => $"Q{a.OrderIndex}"))
+                    : string.Empty;
+                sb.AppendLine($"- **Disagreements:** {disagreedAnswers.Count} of {graded.Count} ({Inv(disagreementPct, "F1")}%){named}. *A disagreement is a gap above {BenchmarkService.SecondOpinionDisagreementPoints} quality points — roughly one BARS level on the dominant dimension — or a split on criticalError.*");
+            }
+            if (agreementMode != BenchmarkSecondOpinionMode.All)
+            {
+                sb.AppendLine($"- *Coverage: {run.SecondOpinionGradedAnswerCount} of {answeredForAgreement}, selected by trigger. The disagreement rate is conditioned on the first assessor's own uncertainty and is not an unbiased estimate of grader agreement; `SecondOpinionMode = All` measures that.*");
+            }
+            sb.AppendLine();
+        }
+
         if (scoredAnswers.Count > 0)
         {
             sb.AppendLine("### Dimensional Score Averages");
@@ -551,8 +726,16 @@ public static class BenchmarkReportBuilder
         {
             string range = BenchmarkDifficultyBands.RangeLabel(band);
             if (bucket.Count == 0) return $"- **{name} ({range}):** None";
+
+            // A band average alone cannot separate "uniformly mediocre" from "one bad answer":
+            // the 2026-09-03 run's Simple band averaged 88.2 out of 60, 95, 97, 97 and 92. The
+            // spread and the weakest question number say which of the two it was.
+            var weakestInBand = bucket.OrderBy(a => a.QualityScore!.Value).ThenBy(a => a.OrderIndex).First();
+            string dispersion = bucket.Count > 1
+                ? $", range {bucket.Min(a => a.QualityScore!.Value)}–{bucket.Max(a => a.QualityScore!.Value)}, lowest Q{weakestInBand.OrderIndex}"
+                : string.Empty;
             return $"- **{name} ({range}):** {Inv(bucket.Average(a => a.QualityScore!.Value), "F1")} / 100 " +
-                   $"({bucket.Count} answered, avg diff: {Inv(bucket.Average(a => (double)AssessedOf(a)), "F0")})";
+                   $"({bucket.Count} answered, avg diff: {Inv(bucket.Average(a => (double)AssessedOf(a)), "F0")}{dispersion})";
         }
 
         sb.AppendLine("### Difficulty Breakdown");
@@ -614,9 +797,39 @@ public static class BenchmarkReportBuilder
                     else if (allAdvanced) cappedBand = "Advanced";
                 }
 
+                // Second branch: no cap explains it, so test whether the inversion rests on a
+                // single answer. Removing the depressed band's weakest and re-checking the
+                // ordering is the cheapest available discriminator between "this band is hard
+                // for the model" and "one answer went wrong". On the 2026-09-03 run dropping Q1
+                // lifts Simple from 88.2 to 95.3, above Intermediate's 90.0.
+                string? SingleAnswerExplanation()
+                {
+                    var depressed = new List<(string Name, List<BenchmarkRunAnswer> Bucket)>();
+                    if (sAvg < iAvg) depressed.Add(("Simple", simpleAssessed));
+                    if (iAvg < aAvg) depressed.Add(("Intermediate", intermediateAssessed));
+
+                    foreach (var (bandName, bucket) in depressed)
+                    {
+                        if (bucket.Count < 2) continue;
+
+                        var weakest = bucket.OrderBy(x => x.QualityScore!.Value).ThenBy(x => x.OrderIndex).First();
+                        double lifted = bucket.Where(x => !ReferenceEquals(x, weakest)).Average(x => x.QualityScore!.Value);
+
+                        double s2 = ReferenceEquals(bucket, simpleAssessed) ? lifted : sAvg;
+                        double i2 = ReferenceEquals(bucket, intermediateAssessed) ? lifted : iAvg;
+                        if (s2 >= i2 && i2 >= aAvg)
+                        {
+                            return $"Removing the **{bandName}** band's single weakest answer (question {weakest.OrderIndex}, {weakest.QualityScore!.Value} / 100) lifts that band to {Inv(lifted, "F1")} and restores the ordering — read the inversion as one outlier, not a difficulty effect.";
+                        }
+                    }
+
+                    return null;
+                }
+
                 string monotonicityCause = cappedBand.Length > 0
                     ? $"All {cappedAnswers.Count} critical-error cap(s) on this run fell in the **{cappedBand}** band (question(s) {string.Join(", ", cappedAnswers.OrderBy(a => a.OrderIndex).Select(a => a.OrderIndex.ToString()))}), which is what depressed that band's average — read the inversion as a critical-error effect, not a difficulty effect."
-                    : "This is common on small question sets or when the model has specific domain strengths.";
+                    : SingleAnswerExplanation()
+                      ?? "This is common on small question sets or when the model has specific domain strengths.";
 
                 sb.AppendLine($"*Note:* Average quality does not decrease monotonically with assessed difficulty on this run (Simple: {Inv(sAvg, "F1")}, Intermediate: {Inv(iAvg, "F1")}, Advanced: {Inv(aAvg, "F1")}). {monotonicityCause}");
                 sb.AppendLine();
@@ -665,12 +878,38 @@ public static class BenchmarkReportBuilder
                         && a.ToolCallCount.Value >= a.ToolCallBudgetUsed.Value * BudgetPressureFraction)
             .OrderBy(a => a.OrderIndex)
             .ToList();
+        // Whether the cap cost anything is a different question from whether it was reached, and
+        // the report used to answer only the second. On the 2026-09-03 run Q10 stopped one call
+        // short of its budget and scored 60 — the worst answer in its band — and Q11 exhausted
+        // its budget and scored 84, both against a run mean of 92. Marking the ones that scored
+        // below the run's own mean is what turns "a cap was reached" into a testable hypothesis.
+        string BelowMeanMarker(BenchmarkRunAnswer a)
+        {
+            if (!unweightedMean.HasValue || !a.QualityScore.HasValue) return string.Empty;
+            return a.QualityScore.Value < unweightedMean.Value
+                ? $" **— scored {a.QualityScore.Value}, below the run mean of {unweightedMean.Value}**"
+                : string.Empty;
+        }
+
         if (pressured.Count > 0)
         {
             sb.AppendLine($"- **Budget Pressure:** {pressured.Count} question(s) used at least {Inv(BudgetPressureFraction * 100, "F0")}% of the tool call budget without exhausting it — " +
                 string.Join(", ", pressured.Select(a =>
-                    $"Q{a.OrderIndex} {a.ToolCallCount!.Value}/{a.ToolCallBudgetUsed!.Value} ({a.ToolCallBudgetUsed.Value - a.ToolCallCount.Value} left)")) +
+                    $"Q{a.OrderIndex} {a.ToolCallCount!.Value}/{a.ToolCallBudgetUsed!.Value} ({a.ToolCallBudgetUsed.Value - a.ToolCallCount.Value} left){BelowMeanMarker(a)}")) +
                 ". *An answer this close to its cap may have stopped investigating because of the cap rather than because it was finished.*");
+        }
+
+        var budgetConstrainedBelowMean = answers
+            .Where(a => a.ToolBudgetExhausted || pressured.Contains(a))
+            .Where(a => unweightedMean.HasValue && a.QualityScore.HasValue && a.QualityScore.Value < unweightedMean.Value)
+            .OrderBy(a => a.OrderIndex)
+            .ToList();
+        if (budgetConstrainedBelowMean.Count > 0)
+        {
+            sb.AppendLine($"- **Budget/Quality Correlation:** {budgetConstrainedBelowMean.Count} budget-constrained question(s) scored below the run's unweighted mean of {unweightedMean!.Value} — " +
+                string.Join(", ", budgetConstrainedBelowMean.Select(a =>
+                    $"Q{a.OrderIndex} ({a.QualityScore!.Value}, {(a.ToolBudgetExhausted ? "budget exhausted" : "budget pressured")})")) +
+                ". *The cap is a candidate explanation, not a demonstrated one — raise `Benchmark:ToolCallBudget:{Band}` for the affected band and re-run to test it.*");
         }
 
         // Grounding. An Advanced question answered from memory is not necessarily wrong, but it
@@ -706,7 +945,7 @@ public static class BenchmarkReportBuilder
             sb.AppendLine("**Questions that reached their tool call budget:**");
             foreach (var a in starved)
             {
-                sb.AppendLine($"- **Question {a.OrderIndex}** ({a.Difficulty}, assessed {AssessedOf(a)}): {FormatToolBudgetLine(a)}");
+                sb.AppendLine($"- **Question {a.OrderIndex}** ({a.Difficulty}, assessed {AssessedOf(a)}): {FormatToolBudgetLine(a)}{BelowMeanMarker(a)}");
             }
         }
         sb.AppendLine();
@@ -836,6 +1075,16 @@ public static class BenchmarkReportBuilder
                 {
                     sb.AppendLine($"> - **Critical Error Quote:** \"{a.CriticalErrorQuote}\"");
                 }
+                // The claims themselves, not just the count: the run-level Assessor Findings
+                // block says how many there were, and this is the only place a reader can see
+                // what they were and judge whether the rubric should have covered them.
+                var unverifiedClaims = ReadUnverifiedClaims(a);
+                if (unverifiedClaims.Count > 0)
+                {
+                    sb.AppendLine($"> - **Unverified Claims ({unverifiedClaims.Count}):** " +
+                        string.Join("; ", unverifiedClaims.Select(c => $"\"{c}\"")) +
+                        " — *neither confirmed nor refuted against the rubric; not an Accuracy deduction from harness version 7.*");
+                }
                 if (criticalErrorDemoted)
                 {
                     sb.AppendLine("> - **Critical Error:** claimed by the assessor but not applied — the quoted claim could not be found in the graded answer, and an omission is not a critical error.");
@@ -844,12 +1093,27 @@ public static class BenchmarkReportBuilder
                 {
                     string agreement = a.SecondOpinionDisagreed ? "**disagrees**" : "agrees";
                     string secondCritical = a.SecondOpinionCriticalError == true ? "yes" : "no";
-                    sb.AppendLine($"> - **Second Opinion ({a.SecondOpinionByModelDisplayNameUsed}):** {a.SecondOpinionQualityScore.Value} / 100, critical error {secondCritical} — {agreement} with the first verdict. Advisory; the first verdict is what scored.");
+                    // Why this answer was graded twice. "Every answer" and "this one looked
+                    // wrong" are different facts about the same second verdict, and only the
+                    // trigger separates them.
+                    string triggerPart = string.IsNullOrWhiteSpace(a.SecondOpinionTrigger)
+                        ? string.Empty
+                        : $" (trigger: {TriggerLabel(a.SecondOpinionTrigger)})";
+                    sb.AppendLine($"> - **Second Opinion ({a.SecondOpinionByModelDisplayNameUsed}):** {a.SecondOpinionQualityScore.Value} / 100, critical error {secondCritical} — {agreement} with the first verdict{triggerPart}. Advisory; the first verdict is what scored.");
                 }
                 if (a.AssessedByModelConfigurationId.HasValue &&
                     a.AssessedByModelConfigurationId != run.AssessorModelConfigurationId)
                 {
                     sb.AppendLine($"> - **Assessed by:** {a.AssessedByModelDisplayNameUsed} ({a.AssessedByModelProviderUsed}, {a.AssessedByModelIdUsed}) — differs from this run's assessor");
+                }
+                // A published index can move after publication. Where it did, the report says so
+                // on the answer that moved, with the score it replaced.
+                if (a.ReassessmentCount > 0)
+                {
+                    string previous = a.PreviousQualityScore.HasValue
+                        ? $"{a.PreviousQualityScore.Value} / 100"
+                        : "not recorded";
+                    sb.AppendLine($"> - **Re-assessed:** {a.ReassessmentCount} time(s), most recently {(a.ReassessedAtUtc.HasValue ? Stamp(a.ReassessedAtUtc.Value) + " UTC" : "at an unrecorded time")} by {a.ReassessedByModelDisplayNameUsed ?? "an unrecorded model"} — the first verdict scored {previous} and this one replaced it.");
                 }
                 sb.AppendLine();
             }
@@ -952,6 +1216,30 @@ public static class BenchmarkReportBuilder
             }
         }
         sb.AppendLine();
+
+        // Synthesis divergence. The run-level synthesis reads every verdict at once and can name
+        // a hallucination the per-question grader declined to flag — which is what happened on
+        // the 2026-09-03 run, where the synthesis made a fabrication its headline finding while
+        // that question's own verdict returned criticalError: false. The per-question verdict is
+        // what scored, so this is advisory, but the contradiction belongs in the record.
+        var synthesisNamed = BenchmarkVerdictConsistency.QuestionsNamedWithFabrication(
+            run.AssessmentText,
+            answers.Select(a => a.OrderIndex));
+        var synthesisDivergent = synthesisNamed
+            .Select(index => answers.FirstOrDefault(a => a.OrderIndex == index))
+            .Where(a => a != null && !a.CriticalError)
+            .Select(a => a!)
+            .ToList();
+        if (synthesisDivergent.Count > 0)
+        {
+            sb.AppendLine("### Synthesis Divergence");
+            sb.AppendLine();
+            foreach (var d in synthesisDivergent)
+            {
+                sb.AppendLine($"- **Question {d.OrderIndex}:** the run synthesis reports a hallucination that the per-question verdict did not flag as a critical error. Advisory — the per-question verdict is what scored.");
+            }
+            sb.AppendLine();
+        }
 
         // Disputed assessments. A single grader deciding a low score is the least reproducible
         // part of this benchmark, so where a second one was asked and disagreed, the report says

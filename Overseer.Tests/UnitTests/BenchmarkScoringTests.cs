@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using MobileGnollHackLogger.Data;
 using Overseer.Services.Benchmarking;
 using Xunit;
@@ -307,5 +308,68 @@ public class BenchmarkScoringTests
         // and the profile is snapshotted into the run so a report can say what produced its
         // second verdicts.
         Assert.Equal(50, BenchmarkScoringConstants.Default.SecondOpinionQualityThreshold);
+    }
+
+    [Fact]
+    public void SecondOpinionMode_DefaultsToFlagged_NotAll()
+    {
+        // All is the recommended setting, but a default that changed behaviour for every existing
+        // profile the moment the migration ran would double assessor spend without anyone
+        // choosing it. Recommending All is the editor's job; the default's job is continuity.
+        Assert.Equal(BenchmarkSecondOpinionMode.Flagged, BenchmarkScoringConstants.Default.SecondOpinionMode);
+        Assert.Equal(25, BenchmarkScoringConstants.Default.SecondOpinionOutlierDeltaPoints);
+    }
+
+    /// <summary>
+    /// The eighteen quality scores of the 2026-09-03 GPT-5.6 Luna run (run 7), with the assessed
+    /// difficulty each was weighted by. Pinned here because the two indices below are the numbers
+    /// the harness version 7 work was calibrated against, and a change to either aggregation
+    /// should have to restate them rather than quietly move a published result.
+    /// </summary>
+    private static readonly (int Quality, int Difficulty)[] Run7 =
+    {
+        (60, 25), (95, 28), (97, 32), (97, 30), (95, 42), (92, 28),
+        (97, 60), (99, 54), (95, 64), (60, 60), (84, 52), (100, 58),
+        (99, 75), (94, 78), (100, 90), (99, 86), (100, 79), (95, 88)
+    };
+
+    [Fact]
+    public void UnweightedQualityMean_OverRun7_IsNinetyTwo()
+    {
+        int? mean = BenchmarkScoring.UnweightedQualityMean(Run7.Select(x => (int?)x.Quality));
+
+        Assert.Equal(92, mean);
+    }
+
+    [Fact]
+    public void QualityIndex_OverRun7_IsNinetyFour()
+    {
+        int? index = BenchmarkScoring.QualityIndex(
+            Run7.Select(x => ((int?)x.Quality, (int?)x.Difficulty)));
+
+        Assert.Equal(94, index);
+    }
+
+    [Fact]
+    public void DifficultyWeighting_LiftsRun7_BecauseItsWeakestAnswersWereItsEasiestQuestions()
+    {
+        // The gap is the point of reporting both. Run 7's two 60s sat at assessed difficulty 25
+        // and 60, well below the run's mean weight, so weighting raised the headline *because*
+        // the model failed easy questions. That is a legitimate property of a difficulty-weighted
+        // metric and an invisible one from either number alone.
+        int weighted = BenchmarkScoring.QualityIndex(
+            Run7.Select(x => ((int?)x.Quality, (int?)x.Difficulty)))!.Value;
+        int unweighted = BenchmarkScoring.UnweightedQualityMean(
+            Run7.Select(x => (int?)x.Quality))!.Value;
+
+        Assert.Equal(2, weighted - unweighted);
+    }
+
+    [Fact]
+    public void UnweightedQualityMean_IgnoresUnscoredAnswers_AndIsNullWhenNoneScored()
+    {
+        Assert.Equal(50, BenchmarkScoring.UnweightedQualityMean(new int?[] { 40, null, 60, null }));
+        Assert.Null(BenchmarkScoring.UnweightedQualityMean(new int?[] { null, null }));
+        Assert.Null(BenchmarkScoring.UnweightedQualityMean(null!));
     }
 }

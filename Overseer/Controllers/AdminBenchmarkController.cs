@@ -30,6 +30,8 @@ public class AdminBenchmarkController : ControllerBase
     private readonly BenchmarkDifficultyJobManager _difficultyJobManager;
     private readonly BenchmarkComplianceGuard _complianceGuard;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly Services.SourceCodeService _sourceCodeService;
+    private readonly Services.NetHackWikiService _wikiService;
 
     public AdminBenchmarkController(
         ApplicationDbContext dbContext,
@@ -38,7 +40,9 @@ public class AdminBenchmarkController : ControllerBase
         BenchmarkRunManager runManager,
         BenchmarkDifficultyJobManager difficultyJobManager,
         BenchmarkComplianceGuard complianceGuard,
-        IServiceScopeFactory scopeFactory)
+        IServiceScopeFactory scopeFactory,
+        Services.SourceCodeService sourceCodeService,
+        Services.NetHackWikiService wikiService)
     {
         _dbContext = dbContext;
         _benchmarkService = benchmarkService;
@@ -47,6 +51,8 @@ public class AdminBenchmarkController : ControllerBase
         _difficultyJobManager = difficultyJobManager;
         _complianceGuard = complianceGuard;
         _scopeFactory = scopeFactory;
+        _sourceCodeService = sourceCodeService;
+        _wikiService = wikiService;
     }
 
     private static BenchmarkSuiteDto ToSuiteDto(BenchmarkSuite s) => new()
@@ -102,6 +108,8 @@ public class AdminBenchmarkController : ControllerBase
             LevelScoresJson = p.LevelScoresJson,
             CriticalErrorCeiling = p.CriticalErrorCeiling,
             SecondOpinionQualityThreshold = p.SecondOpinionQualityThreshold,
+            SecondOpinionMode = p.SecondOpinionMode,
+            SecondOpinionOutlierDeltaPoints = p.SecondOpinionOutlierDeltaPoints,
             SpeedTargetMs = p.SpeedTargetMs,
             SpeedDecayK = p.SpeedDecayK,
             SpeedDifficultyScaling = p.SpeedDifficultyScaling,
@@ -127,6 +135,8 @@ public class AdminBenchmarkController : ControllerBase
             LevelScoresJson = request.LevelScoresJson,
             CriticalErrorCeiling = request.CriticalErrorCeiling,
             SecondOpinionQualityThreshold = request.SecondOpinionQualityThreshold,
+            SecondOpinionMode = request.SecondOpinionMode,
+            SecondOpinionOutlierDeltaPoints = request.SecondOpinionOutlierDeltaPoints,
             SpeedTargetMs = request.SpeedTargetMs,
             SpeedDecayK = request.SpeedDecayK,
             SpeedDifficultyScaling = request.SpeedDifficultyScaling,
@@ -151,6 +161,8 @@ public class AdminBenchmarkController : ControllerBase
             LevelScoresJson = created.LevelScoresJson,
             CriticalErrorCeiling = created.CriticalErrorCeiling,
             SecondOpinionQualityThreshold = created.SecondOpinionQualityThreshold,
+            SecondOpinionMode = created.SecondOpinionMode,
+            SecondOpinionOutlierDeltaPoints = created.SecondOpinionOutlierDeltaPoints,
             SpeedTargetMs = created.SpeedTargetMs,
             SpeedDecayK = created.SpeedDecayK,
             SpeedDifficultyScaling = created.SpeedDifficultyScaling,
@@ -175,6 +187,8 @@ public class AdminBenchmarkController : ControllerBase
             LevelScoresJson = request.LevelScoresJson,
             CriticalErrorCeiling = request.CriticalErrorCeiling,
             SecondOpinionQualityThreshold = request.SecondOpinionQualityThreshold,
+            SecondOpinionMode = request.SecondOpinionMode,
+            SecondOpinionOutlierDeltaPoints = request.SecondOpinionOutlierDeltaPoints,
             SpeedTargetMs = request.SpeedTargetMs,
             SpeedDecayK = request.SpeedDecayK,
             SpeedDifficultyScaling = request.SpeedDifficultyScaling,
@@ -199,6 +213,8 @@ public class AdminBenchmarkController : ControllerBase
             LevelScoresJson = updated.LevelScoresJson,
             CriticalErrorCeiling = updated.CriticalErrorCeiling,
             SecondOpinionQualityThreshold = updated.SecondOpinionQualityThreshold,
+            SecondOpinionMode = updated.SecondOpinionMode,
+            SecondOpinionOutlierDeltaPoints = updated.SecondOpinionOutlierDeltaPoints,
             SpeedTargetMs = updated.SpeedTargetMs,
             SpeedDecayK = updated.SpeedDecayK,
             SpeedDifficultyScaling = updated.SpeedDifficultyScaling,
@@ -622,6 +638,276 @@ public class AdminBenchmarkController : ControllerBase
 
     // --- Questions CRUD ---
 
+    // --- Suite health ---
+    //
+    // Four read-only reports. None of them writes a question, a rubric, or a difficulty rating,
+    // and there is deliberately no endpoint that would: the panel's only action is "open this
+    // question for editing", and a human decides what to change.
+
+    /// <summary>
+    /// Per-item statistics over the suite's stored runs. Pure arithmetic — no AI calls, no spend
+    /// gate — but every figure is advisory: read the sample size and the two confound counts
+    /// before the numbers.
+    /// </summary>
+    [HttpGet("suites/{suiteId}/item-analysis")]
+    public async Task<IActionResult> GetItemAnalysis(long suiteId)
+    {
+        var suite = await _dbContext.BenchmarkSuites
+            .Include(s => s.Questions)
+            .FirstOrDefaultAsync(s => s.Id == suiteId);
+
+        if (suite == null) return NotFound();
+
+        var runs = await _dbContext.BenchmarkRuns
+            .Where(r => r.BenchmarkSuiteId == suiteId)
+            .Include(r => r.Answers)
+            .AsNoTracking()
+            .ToListAsync();
+
+        var analysis = BenchmarkItemAnalysis.Compute(
+            suite,
+            suite.Questions.OrderBy(q => q.OrderIndex).ToList(),
+            runs);
+
+        return Ok(new BenchmarkSuiteItemAnalysisDto
+        {
+            SuiteId = analysis.SuiteId,
+            SuiteName = analysis.SuiteName,
+            QuestionCount = analysis.QuestionCount,
+            RunCount = analysis.RunCount,
+            DistinctModelCount = analysis.DistinctModelCount,
+            DistinctAssessorCount = analysis.DistinctAssessorCount,
+            DistinctScoringMethodVersionCount = analysis.DistinctScoringMethodVersionCount,
+            LinkedAnswerCount = analysis.LinkedAnswerCount,
+            UnlinkedAnswerCount = analysis.UnlinkedAnswerCount,
+            MinRunsForMeasurement = BenchmarkItemAnalysis.MinRunsForMeasurement,
+            MinRunsForDiscrimination = BenchmarkItemAnalysis.MinRunsForDiscrimination,
+            Items = analysis.Items.Select(i => new BenchmarkItemStatisticsDto
+            {
+                QuestionId = i.QuestionId,
+                OrderIndex = i.OrderIndex,
+                QuestionText = i.QuestionText,
+                AuthoredDifficulty = i.AuthoredDifficulty,
+                ItemRevision = i.ItemRevision,
+                RunCount = i.RunCount,
+                DistinctModelCount = i.DistinctModelCount,
+                DistinctAssessorCount = i.DistinctAssessorCount,
+                DistinctScoringMethodVersionCount = i.DistinctScoringMethodVersionCount,
+                UnknownRevisionCount = i.UnknownRevisionCount,
+                MeanQuality = i.MeanQuality,
+                MinQuality = i.MinQuality,
+                MaxQuality = i.MaxQuality,
+                StdDev = i.StdDev,
+                EmpiricalDifficulty = i.EmpiricalDifficulty,
+                AssessedDifficulty = i.AssessedDifficulty,
+                DifficultyDelta = i.DifficultyDelta,
+                Discrimination = i.Discrimination,
+                MeanToolCalls = i.MeanToolCalls,
+                BudgetBoundFraction = i.BudgetBoundFraction,
+                Flags = (int)i.Flags,
+                FlagNames = i.Flags == BenchmarkItemFlags.None
+                    ? new List<string>()
+                    : Enum.GetValues<BenchmarkItemFlags>()
+                        .Where(f => f != BenchmarkItemFlags.None && i.Flags.HasFlag(f))
+                        .Select(f => f.ToString())
+                        .ToList(),
+                Confounded = i.Confounded,
+                InsufficientData = i.InsufficientData
+            }).ToList()
+        });
+    }
+
+    /// <summary>
+    /// Clusters the unverified claims the suite's runs accumulated, and says which of them are
+    /// evidence about the rubric rather than about one model. No AI calls.
+    /// </summary>
+    [HttpGet("suites/{suiteId}/rubric-gaps")]
+    public async Task<IActionResult> GetRubricGaps(long suiteId)
+    {
+        var suite = await _dbContext.BenchmarkSuites.FindAsync(suiteId);
+        if (suite == null) return NotFound();
+
+        var rows = await _dbContext.BenchmarkRunAnswers
+            .Where(a => a.BenchmarkRun.BenchmarkSuiteId == suiteId
+                        && a.BenchmarkQuestionId != null
+                        && a.UnverifiedClaimsJson != null)
+            .Select(a => new
+            {
+                a.BenchmarkRunId,
+                QuestionId = a.BenchmarkQuestionId!.Value,
+                a.OrderIndex,
+                a.ItemRevisionUsed,
+                a.UnverifiedClaimsJson,
+                Provider = a.BenchmarkRun.TestedModelProviderUsed,
+                ModelId = a.BenchmarkRun.TestedModelIdUsed
+            })
+            .AsNoTracking()
+            .ToListAsync();
+
+        var samples = new List<BenchmarkUnverifiedClaimSample>();
+        foreach (var row in rows)
+        {
+            List<string>? claims;
+            try
+            {
+                claims = JsonSerializer.Deserialize<List<string>>(row.UnverifiedClaimsJson!);
+            }
+            catch (JsonException)
+            {
+                // A malformed blob costs one answer's claims, never the report.
+                continue;
+            }
+
+            foreach (string claim in claims ?? new List<string>())
+            {
+                if (string.IsNullOrWhiteSpace(claim)) continue;
+
+                samples.Add(new BenchmarkUnverifiedClaimSample
+                {
+                    QuestionId = row.QuestionId,
+                    QuestionOrderIndex = row.OrderIndex,
+                    ItemRevisionUsed = row.ItemRevisionUsed,
+                    RunId = row.BenchmarkRunId,
+                    Provider = row.Provider,
+                    ModelId = row.ModelId,
+                    Claim = claim
+                });
+            }
+        }
+
+        var clusters = BenchmarkRubricGapDetector.Detect(samples);
+
+        return Ok(new BenchmarkRubricGapReportDto
+        {
+            SuiteId = suiteId,
+            RunCount = rows.Select(r => r.BenchmarkRunId).Distinct().Count(),
+            ClaimCount = samples.Count,
+            Clusters = clusters.Select(c => new BenchmarkRubricGapClusterDto
+            {
+                QuestionId = c.QuestionId,
+                QuestionOrderIndex = c.QuestionOrderIndex,
+                Claims = c.Claims.ToList(),
+                ModelFamilies = c.ModelFamilies.ToList(),
+                ModelIds = c.ModelIds.ToList(),
+                Occurrences = c.Occurrences,
+                Verdict = c.Verdict.ToString()
+            }).ToList()
+        });
+    }
+
+    /// <summary>
+    /// Resolves the citations the suite's rubrics carry against the running source and wiki
+    /// indexes. No AI calls. A POST rather than a GET because it walks the whole source index,
+    /// which is work rather than a lookup.
+    /// </summary>
+    [HttpPost("suites/{suiteId}/validate-citations")]
+    public async Task<IActionResult> ValidateCitations(long suiteId)
+    {
+        var suite = await _dbContext.BenchmarkSuites
+            .Include(s => s.Questions)
+            .FirstOrDefaultAsync(s => s.Id == suiteId);
+
+        if (suite == null) return NotFound();
+
+        var results = BenchmarkRubricCitationValidator.Validate(
+            suite.Questions,
+            path => _sourceCodeService.ListFiles(path, includeNetCode: false)
+                .Contains(path, StringComparison.OrdinalIgnoreCase),
+            symbol => !_sourceCodeService.FindDefinition(symbol, "any")
+                .StartsWith("No definition found", StringComparison.OrdinalIgnoreCase),
+            title => _wikiService.GetArticle(title) != null);
+
+        return Ok(new BenchmarkCitationReportDto
+        {
+            SuiteId = suiteId,
+            UnresolvedCount = results.Sum(r => r.UnresolvedCount),
+            NotValidatedCount = results.Sum(r => r.NotValidatedCount),
+
+            // An unresolved citation means little while the index is still building, so the
+            // report says which of the two situations the reader is looking at.
+            SourceIndexReady = _sourceCodeService.IsIndexingComplete,
+            Questions = results.Select(r => new BenchmarkQuestionCitationsDto
+            {
+                QuestionId = r.QuestionId,
+                OrderIndex = r.OrderIndex,
+                UnresolvedCount = r.UnresolvedCount,
+                NotValidatedCount = r.NotValidatedCount,
+                HasNoCitations = r.HasNoCitations,
+                Citations = r.Citations.Select(c => new BenchmarkCitationDto
+                {
+                    Kind = c.Kind.ToString(),
+                    Value = c.Value,
+                    Status = c.Status.ToString(),
+                    LineNumber = c.LineNumber
+                }).ToList()
+            }).ToList()
+        });
+    }
+
+    /// <summary>
+    /// Asks an explicitly selected model which GnollHack subsystems the suite does not test.
+    ///
+    /// The only AI-using suite-health action, and gated by the spend caps like every other one.
+    /// It returns a **read-only report**: nothing is written into the suite, and no endpoint
+    /// exists that would write one. The prompt carries question texts only — no rubrics, no
+    /// answers, no scores — so the analysis cannot be shaped by which questions any model
+    /// happened to do badly on.
+    /// </summary>
+    [HttpPost("suites/{suiteId}/coverage-analysis")]
+    public async Task<IActionResult> AnalyzeCoverage(long suiteId, [FromBody] CoverageAnalysisRequest request)
+    {
+        var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync();
+        if (!canSpend)
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests, denialReason);
+        }
+
+        var suite = await _dbContext.BenchmarkSuites
+            .Include(s => s.Questions)
+            .FirstOrDefaultAsync(s => s.Id == suiteId);
+
+        if (suite == null) return NotFound();
+        if (suite.Questions.Count == 0) return BadRequest("Benchmark suite has no questions.");
+
+        var config = await _dbContext.SystemAiApiConfigurations.FindAsync(request.AnalysisModelConfigurationId);
+        if (config == null || !config.IsEnabled || string.IsNullOrWhiteSpace(config.EncryptedApiKey) || (config.ModelRole & 4) != 4)
+        {
+            return BadRequest("The selected analysis model is invalid, disabled, missing an API key, or not configured with the Benchmark role.");
+        }
+
+        var (result, error, inputTokens, outputTokens, durationMs) =
+            await _benchmarkService.RunCoverageAnalysisAsync(suiteId, config.Id, CancellationToken.None);
+
+        return Ok(new BenchmarkCoverageReportDto
+        {
+            SuiteId = suiteId,
+            SuiteName = suite.Name,
+            QuestionCount = suite.Questions.Count,
+
+            // Disclosed on the report, exactly as a difficulty rating discloses its assessor.
+            // Not snapshotted onto the suite, because the report itself is not persisted: keeping
+            // a stale record of who analysed coverage would outlive the analysis it describes.
+            AnalysisModelConfigurationId = config.Id,
+            AnalysisModelDisplayNameUsed = config.DisplayName ?? config.ModelId,
+            AnalysisModelProviderUsed = config.Provider,
+            AnalysisModelIdUsed = config.ModelId,
+            AnalysisModelThinkingLevelUsed = config.ThinkingLevel,
+            AnalyzedAtUtc = DateTime.UtcNow,
+            InputTokens = inputTokens,
+            OutputTokens = outputTokens,
+            DurationMs = durationMs,
+            ErrorMessage = error,
+            Comment = result?.Comment,
+            Gaps = (result?.Gaps ?? new List<BenchmarkCoverageGap>()).Select(g => new BenchmarkCoverageGapDto
+            {
+                Subsystem = g.Subsystem ?? string.Empty,
+                SourceLocation = g.SourceLocation ?? string.Empty,
+                Rationale = g.Rationale,
+                SuggestedBand = g.SuggestedBand
+            }).ToList()
+        });
+    }
+
     [HttpGet("suites/{suiteId}/questions")]
     public async Task<IActionResult> GetQuestions(long suiteId)
     {
@@ -816,6 +1102,24 @@ public class AdminBenchmarkController : ControllerBase
             }
         }
 
+        // The mode that will actually apply, resolved here rather than in the service: only this
+        // method sees the start dialog's override, and only the service sees the profile. An
+        // explicit Off drops the second-opinion assessor from the run, because the enum defines
+        // the two as the same thing — the mode is inert without an assessor, and an assessor is
+        // inert under Off — and because the run column cannot otherwise distinguish "the operator
+        // chose Never" from "nothing was stamped yet", which is what the service's own fallback
+        // reads a zero as.
+        int? requestedMode = request.SecondOpinionMode;
+        if (requestedMode.HasValue && !Enum.IsDefined(typeof(BenchmarkSecondOpinionMode), requestedMode.Value))
+        {
+            return BadRequest("SecondOpinionMode must be Off (0), Flagged (1), FlaggedAndOutliers (2), or All (3).");
+        }
+
+        if (requestedMode == (int)BenchmarkSecondOpinionMode.Off)
+        {
+            secondOpinionConfig = null;
+        }
+
         bool isSameProvider = _complianceGuard.IsSameProvider(testedConfig, assessorConfig);
         if (isSameProvider && !request.AcknowledgeSameProvider)
         {
@@ -860,6 +1164,12 @@ public class AdminBenchmarkController : ControllerBase
             SecondOpinionAssessorModelThinkingLevelUsed = secondOpinionConfig?.ThinkingLevel,
             SecondOpinionAssessorModelReasoningModeUsed = secondOpinionConfig?.ReasoningMode,
 
+            // Left at Off (0) when the operator did not override, so the service stamps the
+            // scoring profile's own default at run start.
+            SecondOpinionModeUsed = secondOpinionConfig != null && requestedMode.HasValue
+                ? requestedMode.Value
+                : (int)BenchmarkSecondOpinionMode.Off,
+
             ScoringProfileId = request.ScoringProfileId,
             StartedByUserId = string.IsNullOrEmpty(userId) ? null : userId,
             Status = BenchmarkRunStatus.Running,
@@ -883,6 +1193,39 @@ public class AdminBenchmarkController : ControllerBase
         return Accepted(new { runId = run.Id });
     }
 
+    /// <summary>
+    /// The assessor of the most recent completed run of a suite. The start dialog warns when the
+    /// selected assessor differs from it, because a suite's runs are only comparable to each
+    /// other while the grader is the same one — and the staged assessor migration is precisely a
+    /// deliberate change of grader, so the warning fires exactly when it should.
+    /// </summary>
+    [HttpGet("suites/{suiteId}/last-assessor")]
+    public async Task<IActionResult> GetLastAssessor(long suiteId)
+    {
+        var last = await _dbContext.BenchmarkRuns
+            .Where(r => r.BenchmarkSuiteId == suiteId
+                        && (r.Status == BenchmarkRunStatus.Completed
+                            || r.Status == BenchmarkRunStatus.CompletedWithLimits
+                            || r.Status == BenchmarkRunStatus.CompletedWithErrors))
+            .OrderByDescending(r => r.CompletedAtUtc ?? r.StartedAtUtc)
+            .Select(r => new BenchmarkLastAssessorDto
+            {
+                RunId = r.Id,
+                AssessorModelConfigurationId = r.AssessorModelConfigurationId,
+                AssessorModelDisplayNameUsed = r.AssessorModelDisplayNameUsed,
+                AssessorModelProviderUsed = r.AssessorModelProviderUsed,
+                SecondOpinionAssessorModelConfigurationId = r.SecondOpinionAssessorModelConfigurationId,
+                SecondOpinionAssessorModelDisplayNameUsed = r.SecondOpinionAssessorModelDisplayNameUsed,
+                CompletedAtUtc = r.CompletedAtUtc,
+                HarnessVersion = r.HarnessVersion,
+                ScoringMethodVersion = r.ScoringMethodVersion
+            })
+            .FirstOrDefaultAsync();
+
+        // A suite with no completed run has no baseline to differ from, which is not an error.
+        return Ok(last ?? new BenchmarkLastAssessorDto());
+    }
+
     [HttpGet("runs/{id}")]
     public async Task<IActionResult> GetRun(long id)
     {
@@ -893,6 +1236,10 @@ public class AdminBenchmarkController : ControllerBase
             .FirstOrDefaultAsync(r => r.Id == id);
 
         if (run == null) return NotFound();
+
+        // The constants this run was scored with, from its own snapshot. One reader for that
+        // storage format lives in BenchmarkScoring; the client gets the fields, not the JSON.
+        var runConstants = BenchmarkScoring.ConstantsFromSnapshot(run.ScoringProfileSnapshotJson);
 
         bool assessorAvailable = run.AssessorModelConfigurationId.HasValue &&
             await _dbContext.SystemAiApiConfigurations.AnyAsync(c =>
@@ -943,11 +1290,16 @@ public class AdminBenchmarkController : ControllerBase
                     .Where(a => a.Status == BenchmarkAnswerStatus.Ok && a.QualityScore.HasValue)
                     .Select(a => (a.RawQualityScore ?? a.QualityScore, a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty)))
                     .ToList()),
+            UnweightedQualityIndex = run.UnweightedQualityIndex,
             SpeedIndex = run.SpeedIndex,
             TotalAnswerDurationMs = run.TotalAnswerDurationMs,
             ScoringProfileId = run.ScoringProfileId,
             ScoringProfileName = run.ScoringProfile?.Name,
             ScoringProfileSnapshotJson = run.ScoringProfileSnapshotJson,
+            ScoringProfileSpeedTargetMs = runConstants.SpeedTargetMs,
+            ScoringProfileSpeedDecayK = runConstants.SpeedDecayK,
+            ScoringProfileSecondOpinionQualityThreshold = runConstants.SecondOpinionQualityThreshold,
+            ScoringProfileSecondOpinionOutlierDeltaPoints = runConstants.SecondOpinionOutlierDeltaPoints,
             ScoringMethodVersion = run.ScoringMethodVersion,
             HarnessVersion = run.HarnessVersion,
             MaxToolCallsPerQuestionUsed = run.MaxToolCallsPerQuestionUsed,
@@ -957,6 +1309,17 @@ public class AdminBenchmarkController : ControllerBase
             RecoveredAnswerCount = run.RecoveredAnswerCount,
             AdvisoryFlagAnswerCount = run.AdvisoryFlagAnswerCount,
             ScrubbedArtifactAnswerCount = run.ScrubbedArtifactAnswerCount,
+            ContestedVerdictAnswerCount = run.ContestedVerdictAnswerCount,
+            ReassessedAnswerCount = run.ReassessedAnswerCount,
+            SecondOpinionModeUsed = run.SecondOpinionModeUsed,
+            SecondOpinionGradedAnswerCount = run.SecondOpinionGradedAnswerCount,
+            SecondOpinionMeanAbsDelta = run.SecondOpinionMeanAbsDelta,
+
+            // Manual verdicts are trials an operator ran by hand against a prospective assessor;
+            // the agreement figures are about the run's own two graders.
+            SecondOpinionDisagreementCount = run.Answers.Count(a =>
+                a.SecondOpinionDisagreed && a.SecondOpinionQualityScore.HasValue &&
+                !string.Equals(a.SecondOpinionTrigger, "Manual", StringComparison.Ordinal)),
             ToolOverheadMs = run.ToolOverheadMs,
             DifficultyFallbackUsed = run.DifficultyFallbackUsed,
             SpeedMeasurementDegraded = run.SpeedMeasurementDegraded,
@@ -985,6 +1348,8 @@ public class AdminBenchmarkController : ControllerBase
             {
                 Id = a.Id,
                 BenchmarkRunId = a.BenchmarkRunId,
+                BenchmarkQuestionId = a.BenchmarkQuestionId,
+                ItemRevisionUsed = a.ItemRevisionUsed,
                 OrderIndex = a.OrderIndex,
                 QuestionText = a.QuestionText,
                 Difficulty = a.Difficulty,
@@ -1045,11 +1410,18 @@ public class AdminBenchmarkController : ControllerBase
                 AssessmentDurationMs = a.AssessmentDurationMs,
                 AssessmentEvidenceJson = a.AssessmentEvidenceJson,
                 CriticalErrorQuote = a.CriticalErrorQuote,
+                UnverifiedClaimCount = a.UnverifiedClaimCount,
+                UnverifiedClaimsJson = a.UnverifiedClaimsJson,
                 SecondOpinionQualityScore = a.SecondOpinionQualityScore,
                 SecondOpinionCriticalError = a.SecondOpinionCriticalError,
                 SecondOpinionByModelDisplayNameUsed = a.SecondOpinionByModelDisplayNameUsed,
                 SecondOpinionJson = a.SecondOpinionJson,
-                SecondOpinionDisagreed = a.SecondOpinionDisagreed
+                SecondOpinionDisagreed = a.SecondOpinionDisagreed,
+                SecondOpinionTrigger = a.SecondOpinionTrigger,
+                ReassessedAtUtc = a.ReassessedAtUtc,
+                ReassessedByModelDisplayNameUsed = a.ReassessedByModelDisplayNameUsed,
+                PreviousQualityScore = a.PreviousQualityScore,
+                ReassessmentCount = a.ReassessmentCount
             }).ToList()
         };
 
@@ -1188,14 +1560,114 @@ public class AdminBenchmarkController : ControllerBase
             return BadRequest(assessorError);
         }
 
+        bool trial = request?.Trial ?? false;
+
+        // An automatic second opinion is run evidence; a manual trial is an experiment, and an
+        // experiment must not erase evidence. Under All mode every answer carries a second
+        // opinion, so a trial there is always a replacement - which is correct, and which this
+        // makes an explicit act rather than a silent one.
+        if (trial &&
+            answer.SecondOpinionQualityScore.HasValue &&
+            !(request?.ReplaceExistingSecondOpinion ?? false))
+        {
+            return Conflict(
+                "This answer already has a second opinion from " +
+                $"{answer.SecondOpinionByModelDisplayNameUsed ?? "another assessor"}. " +
+                "Re-send with replaceExistingSecondOpinion to overwrite it.");
+        }
+
         var cts = new CancellationTokenSource();
         if (!_runManager.TryStart(run.Id, cts, out _))
         {
             return Conflict("A benchmark run is already in progress.");
         }
 
-        _ = Task.Run(() => _benchmarkService.ReassessSingleQuestionAsync(answerId, request?.AssessorModelConfigurationId, cts.Token));
+        _ = Task.Run(() => _benchmarkService.ReassessSingleQuestionAsync(
+            answerId, request?.AssessorModelConfigurationId, trial, cts.Token));
+        return Accepted(new { runId = id, trial });
+    }
+
+    /// <summary>
+    /// Re-grades a completed run's answers with an alternative assessor, non-destructively, and
+    /// records how its verdicts compare with the ones that scored. Makes no candidate calls: it is
+    /// one assessor pass over stored text, which is what makes it affordable enough to decide an
+    /// assessor change from measurement rather than assumption.
+    /// </summary>
+    [HttpPost("runs/{id}/calibrate")]
+    public async Task<IActionResult> CalibrateAssessor(long id, [FromBody] CalibrateAssessorRequest request)
+    {
+        if (_runManager.CurrentRunId.HasValue)
+        {
+            return Conflict("A benchmark run is already in progress.");
+        }
+
+        var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync();
+        if (!canSpend)
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests, denialReason);
+        }
+
+        var run = await _dbContext.BenchmarkRuns.FirstOrDefaultAsync(r => r.Id == id);
+        if (run == null) return NotFound();
+
+        var (assessorValid, assessorError) = await ValidateAssessorConfigurationAsync(request.AssessorModelConfigurationId);
+        if (!assessorValid)
+        {
+            return BadRequest(assessorError);
+        }
+
+        var cts = new CancellationTokenSource();
+        if (!_runManager.TryStart(run.Id, cts, out _))
+        {
+            return Conflict("A benchmark run is already in progress.");
+        }
+
+        string? userName = User?.Identity?.Name;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _benchmarkService.RunAssessorCalibrationAsync(
+                    id, request.AssessorModelConfigurationId, userName, cts.Token);
+            }
+            finally
+            {
+                _runManager.Complete(id);
+            }
+        });
+
         return Accepted(new { runId = id });
+    }
+
+    [HttpGet("runs/{id}/calibrations")]
+    public async Task<IActionResult> GetCalibrations(long id)
+    {
+        var calibrations = await _dbContext.BenchmarkAssessorCalibrations
+            .Where(c => c.BenchmarkRunId == id)
+            .OrderByDescending(c => c.CreatedAtUtc)
+            .Select(c => new BenchmarkAssessorCalibrationDto
+            {
+                Id = c.Id,
+                BenchmarkRunId = c.BenchmarkRunId,
+                AssessorDisplayNameUsed = c.AssessorDisplayNameUsed,
+                AssessorProviderUsed = c.AssessorProviderUsed,
+                AssessorModelIdUsed = c.AssessorModelIdUsed,
+                AssessorThinkingLevelUsed = c.AssessorThinkingLevelUsed,
+                CreatedAtUtc = c.CreatedAtUtc,
+                CreatedByUserName = c.CreatedByUserName,
+                AnswerCount = c.AnswerCount,
+                SkippedAnswerCount = c.SkippedAnswerCount,
+                MeanAbsDelta = c.MeanAbsDelta,
+                DisagreementCount = c.DisagreementCount,
+                InputTokens = c.InputTokens,
+                OutputTokens = c.OutputTokens,
+                DurationMs = c.DurationMs,
+                VerdictsJson = c.VerdictsJson,
+                ErrorMessage = c.ErrorMessage
+            })
+            .ToListAsync();
+
+        return Ok(calibrations);
     }
 
     [HttpPost("runs/{id}/answers/{answerId}/rerun")]

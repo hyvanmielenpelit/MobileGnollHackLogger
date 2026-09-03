@@ -21,6 +21,29 @@ public class BenchmarkRunAnswer
 
     public int OrderIndex { get; set; }
 
+    /// <summary>
+    /// The suite question this answer was produced for. Null for a historical answer the
+    /// backfill could not match unambiguously, and null once the question is deleted —
+    /// <c>DeleteBehavior.SetNull</c>, because a run is a historical record and removing a
+    /// question from a suite is suite maintenance, not history revision.
+    ///
+    /// Before this column existed, an answer was tied to its question by
+    /// <see cref="OrderIndex"/> alone, and reordering a suite's questions rewrote those indexes
+    /// while touching no stored answer — so every earlier run then displayed its answers against
+    /// the wrong questions, silently. Everything downstream treats null as "unlinked" and
+    /// excludes it from statistics rather than guessing: a wrong link would corrupt every figure
+    /// built on it, and unlike a missing one, invisibly.
+    /// </summary>
+    public long? BenchmarkQuestionId { get; set; }
+    public BenchmarkQuestion? BenchmarkQuestion { get; set; }
+
+    /// <summary>
+    /// <see cref="BenchmarkQuestion.ItemRevision"/> as it stood when this answer was produced.
+    /// Null for answers that predate the column; item analysis groups on it, so a null is
+    /// excluded rather than assumed to be revision 1.
+    /// </summary>
+    public int? ItemRevisionUsed { get; set; }
+
     public string QuestionText { get; set; } = default!;
 
     public BenchmarkDifficulty Difficulty { get; set; } = BenchmarkDifficulty.Simple;
@@ -143,6 +166,60 @@ public class BenchmarkRunAnswer
     /// with full information rather than discovering it by reading comments.
     /// </summary>
     public bool SecondOpinionDisagreed { get; set; }
+
+    /// <summary>
+    /// What selected this answer for a second verdict: <c>CriticalError</c>,
+    /// <c>ContestedVerdict</c>, <c>UnverifiedClaims</c>, <c>BelowThreshold</c>, <c>Outlier</c>,
+    /// <c>All</c>, or <c>Manual</c> for an operator's trial re-assessment. The report claimed to
+    /// say what produced its second verdicts and previously could not.
+    ///
+    /// <c>Manual</c> verdicts are excluded from the run's agreement aggregates: those measure the
+    /// run's own two graders, and a third model an operator chose by hand is not part of that
+    /// measurement.
+    /// </summary>
+    [MaxLength(64)]
+    public string? SecondOpinionTrigger { get; set; }
+
+    /// <summary>
+    /// Claims the assessor could neither confirm nor refute against the rubric, verbatim from
+    /// the answer, as a JSON array. Under scoring method v6 these do not reduce Accuracy — the
+    /// assessor declares them instead of deducting for them.
+    ///
+    /// Their value is cross-run: a claim several unrelated model families make independently is
+    /// evidence the rubric is incomplete, while one a single model makes once is evidence that
+    /// model invented it. Neither reading is available from one run.
+    /// </summary>
+    public string? UnverifiedClaimsJson { get; set; }
+
+    /// <summary>
+    /// How many unverified claims were recorded. Nullable because runs before harness version 7
+    /// never recorded any: <b>null means "not recorded", never zero</b>, following the
+    /// <see cref="NarrationBlockCount"/> precedent. Reporting a null as 0 would assert that an
+    /// assessor found none when it was never asked.
+    /// </summary>
+    public int? UnverifiedClaimCount { get; set; }
+
+    /// <summary>
+    /// When this answer's verdict was replaced by the re-assess action, and by which model. A
+    /// trial re-assessment sets neither: it does not replace the verdict.
+    ///
+    /// Without these, a published Intelligence Index could change after publication while the
+    /// run's assessor snapshot still named the model that graded everything — a subsystem that
+    /// snapshots every model it touches had no record of the one case where the grader changed.
+    /// </summary>
+    public DateTime? ReassessedAtUtc { get; set; }
+
+    [MaxLength(256)]
+    public string? ReassessedByModelDisplayNameUsed { get; set; }
+
+    /// <summary>
+    /// The quality score this answer carried before the <b>first</b> re-assessment. A later
+    /// re-assessment increments <see cref="ReassessmentCount"/> and leaves this alone, so the
+    /// original verdict is always recoverable rather than the most recent one it displaced.
+    /// </summary>
+    public int? PreviousQualityScore { get; set; }
+
+    public int ReassessmentCount { get; set; }
 
     public long DurationMs { get; set; }
 

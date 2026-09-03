@@ -18,6 +18,17 @@ public class BenchmarkQuestion
 
     public string? ExpectedPoints { get; set; }
 
+    /// <summary>
+    /// Bumped whenever the question text or its rubric changes. An edited question is a
+    /// *different item*: its statistics must not straddle the rewrite, so every stored answer
+    /// records the revision it was answered against
+    /// (<see cref="BenchmarkRunAnswer.ItemRevisionUsed"/>) and item analysis groups by it.
+    ///
+    /// Incremented at exactly the point that already clears the difficulty snapshot, because
+    /// the two express the same fact: what this question asks has changed.
+    /// </summary>
+    public int ItemRevision { get; set; } = 1;
+
     public int? AssessedDifficulty { get; set; }
 
     [MaxLength(256)]

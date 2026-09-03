@@ -52,7 +52,50 @@ public enum BenchmarkAnswerFlags
     // answer from the Clean count: the affected text is removed before grading, so the
     // graded answer is unaffected. See BenchmarkRunFinalizer.HasAdvisoryFlag.
     ReasoningBleed = 8,
-    RepeatedFragments = 16
+    RepeatedFragments = 16,
+
+    // The assessor's own comment or evidence describes a fabrication ("hallucinates",
+    // "invents", "does not exist") while its criticalError flag is false. Advisory, and
+    // deliberately grouped here rather than with the transport defects: the answer is intact and
+    // the verdict may well be right. What it is not is unambiguous, so it becomes a
+    // second-opinion trigger and a report line for a human. Adding it to the defect flags would
+    // flip healthy runs to CompletedWithErrors, which is the regression harness version 4 exists
+    // to undo. See BenchmarkVerdictConsistency.
+    ContestedVerdict = 32
+}
+
+/// <summary>
+/// How a run uses its second-opinion assessor. The values increase monotonically in coverage and
+/// in assessor cost, and each maps to exactly one execution shape — which is why the outlier
+/// sweep is a mode of its own rather than a numeric toggle inside <see cref="Flagged"/>: the run
+/// progress dialog has to know whether a third stage exists, and that must be a mode comparison
+/// rather than a check on a delta field.
+///
+/// Every value is inert without a second-opinion assessor configured on the run. That hard gate
+/// is why the 2026-09-03 run produced no second verdicts at all.
+/// </summary>
+public enum BenchmarkSecondOpinionMode
+{
+    /// <summary>Never. Equivalent to selecting no second-opinion assessor.</summary>
+    Off = 0,
+
+    /// <summary>Per-answer triggers only. Two execution stages, as today.</summary>
+    Flagged = 1,
+
+    /// <summary>
+    /// The triggers, plus a post-scoring sweep for answers far below the run's own median. The
+    /// sweep needs the median, so it runs after every answer is scored: this is the only mode
+    /// with a third execution stage.
+    /// </summary>
+    FlaggedAndOutliers = 2,
+
+    /// <summary>
+    /// Every answer graded twice. Two stages — the second verdict is produced per-answer exactly
+    /// like the first — and the only mode that yields an *unbiased* grader agreement rate. Under
+    /// the trigger-based modes the disagreement rate is conditioned on the first assessor's own
+    /// uncertainty, so it measures nothing about the instrument.
+    /// </summary>
+    All = 3
 }
 
 /// <summary>
@@ -231,6 +274,38 @@ public class BenchmarkRun
 
     // Answers from which the harness removed at least one transport artifact block.
     public int ScrubbedArtifactAnswerCount { get; set; }
+
+    // Answers whose assessor described a fabrication while leaving criticalError false.
+    // Advisory; overlaps the counts above and is never summed with them.
+    public int ContestedVerdictAnswerCount { get; set; }
+
+    // Answers whose verdict was replaced after the run finished, by the re-assess action.
+    // A published index can move after publication, so the report says when it has.
+    public int ReassessedAnswerCount { get; set; }
+
+    // The equal-weight mean of the per-question quality scores, beside the difficulty-weighted
+    // QualityIndex above. Nullable because runs before harness version 7 never recorded it:
+    // null means "not recorded", not zero.
+    //
+    // Both numbers are needed because they answer different questions and can differ by
+    // several points. On the 2026-09-03 run the weighted index read 94 and the plain mean 92:
+    // the two weakest answers were also the two easiest questions, so difficulty weighting
+    // lifted the headline *because* the model failed easy questions. That is a legitimate
+    // property of a difficulty-weighted metric, and it should be visible rather than implicit.
+    public int? UnweightedQualityIndex { get; set; }
+
+    // How the second-opinion assessor was used, snapshotted from the scoring profile or the
+    // start dialog's per-run override. Stored on the run so a report can always say what
+    // produced its second verdicts, and what coverage the agreement figures rest on.
+    public int SecondOpinionModeUsed { get; set; }
+
+    // Answers that received a second verdict, and the mean |first - second| quality gap across
+    // them. Read together with the mode: a mean delta over 4 of 18 trigger-selected answers is
+    // conditioned on the first assessor's own uncertainty and is not an unbiased estimate of
+    // grader agreement, while the same figure over 18 of 18 is.
+    public int SecondOpinionGradedAnswerCount { get; set; }
+
+    public double? SecondOpinionMeanAbsDelta { get; set; }
 
     // Total wall-clock time spent executing tool batches across the run. Subtracting this
     // from TotalAnswerDurationMs gives the model-attributable time that speed is scored on.
