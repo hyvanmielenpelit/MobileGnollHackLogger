@@ -315,9 +315,116 @@ public class ReasoningTextSanitizerTests
     [Fact]
     public void AuthoredJsonInProse_WithoutMarkerOrToolUses_SurvivesUntouched()
     {
-        // Rule 1b keys on `tool_uses` alone; an authored JSON object in prose is not touched
-        // by this class at all.
+        // An authored JSON object in prose is not at a line start, so the payload rule never
+        // looks at it.
         string input = "The config is {\"enabled\":true,\"level\":3} by default.";
+
+        string output = ReasoningTextSanitizer.SanitizeStateless(input);
+
+        Assert.Equal(input, output);
+    }
+
+    // ------------------------------------------------------------------------------------
+    // Bare leaked payloads from the 2026-09-03 GPT-5.6 Luna run.
+    //
+    // These reached the benchmark — five of eighteen answers — because this class knew only
+    // the `{"tool_uses": …}` form while the benchmark scrubber had already learned to
+    // recognise a tool-argument-shaped object by its keys. The same leak reaches ordinary
+    // chat users, where nothing scrubs anything, which is why the rule now lives in
+    // TransportArtifactRules and both paths apply it.
+    // ------------------------------------------------------------------------------------
+
+    [Fact]
+    public void BareToolPayload_AtLineStart_IsStripped()
+    {
+        string input =
+            "Here is what the code does.\n" +
+            "{\"function_name\":\"get_encounter_monster_count\",\"repository\":\"gnollhack\"}\n\n" +
+            "The encounter count comes from a floating-point level calculation.";
+
+        string output = ReasoningTextSanitizer.SanitizeStateless(input);
+
+        Assert.DoesNotContain("function_name", output);
+        Assert.Contains("Here is what the code does.", output);
+        Assert.Contains("The encounter count comes from a floating-point level calculation.", output);
+    }
+
+    [Fact]
+    public void BareToolPayload_SplitAcrossDeltas_IsStripped()
+    {
+        var sanitizer = new ReasoningTextSanitizer();
+        var sb = new System.Text.StringBuilder();
+
+        // The split points are deliberately hostile: the newline that makes the payload a
+        // line start arrives in one delta and the brace in the next, so the line state has to
+        // survive across deltas.
+        foreach (var delta in new[]
+        {
+            "Answer text.\n",
+            "{\"query\":\"create_monster\",\"file_filter\":\"src\",",
+            "\"max_results\":50,\"repository\":\"gnollhack\"}",
+            "\n\nThe rest of the answer."
+        })
+        {
+            sb.Append(sanitizer.Push(delta));
+        }
+        sb.Append(sanitizer.Flush());
+
+        string output = sb.ToString();
+
+        Assert.DoesNotContain("repository", output);
+        Assert.Equal("Answer text.\n\n\nThe rest of the answer.", output);
+    }
+
+    [Fact]
+    public void FencedToolPayloadLookalike_SurvivesUntouched()
+    {
+        // The one place a model legitimately shows raw tool JSON to a reader. Eating it would
+        // be a worse failure than missing a leak.
+        string input =
+            "The tool takes arguments like this:\n\n" +
+            "```json\n" +
+            "{\"query\":\"create_monster\",\"repository\":\"gnollhack\"}\n" +
+            "```\n\n" +
+            "Pass `repository` to select the codebase.";
+
+        string output = ReasoningTextSanitizer.SanitizeStateless(input);
+
+        Assert.Equal(input, output);
+    }
+
+    [Fact]
+    public void AuthoredJsonAtLineStart_WithNonToolKeys_SurvivesUntouched()
+    {
+        // Line-start position alone must never be enough: this object's keys are nobody's tool
+        // parameters, so it is authored content.
+        string input =
+            "The saved settings look like this:\n" +
+            "{\"enabled\":true,\"level\":3,\"colourScheme\":\"dark\"}\n" +
+            "and are stored per user.";
+
+        string output = ReasoningTextSanitizer.SanitizeStateless(input);
+
+        Assert.Equal(input, output);
+    }
+
+    [Fact]
+    public void AuthoredJsonAtLineStart_IsNotHeldBackWaitingForItsClosingBrace()
+    {
+        // A model writing a long JSON object outside a fence must keep streaming. Once a
+        // top-level key is visible and is not a tool parameter, the payload rule lets go.
+        var sanitizer = new ReasoningTextSanitizer();
+
+        string first = sanitizer.Push("Settings:\n{\"colourScheme\":\"dark\",\"fontSize\":14,");
+
+        Assert.Contains("colourScheme", first);
+    }
+
+    [Fact]
+    public void MidSentenceToolShapedJson_SurvivesUntouched()
+    {
+        // Not at a line start: a reader quoting tool arguments inside a sentence keeps them.
+        string input = "Calling it with {\"query\":\"x\",\"repository\":\"gnollhack\"} returns the file.";
 
         string output = ReasoningTextSanitizer.SanitizeStateless(input);
 

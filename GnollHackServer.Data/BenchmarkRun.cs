@@ -40,8 +40,13 @@ public enum BenchmarkAnswerFlags
 
     // Transport defects. These compromise answer validity and drive the run status.
     Empty = 1,
-    HarnessArtifacts = 2,
     Truncated = 4,
+
+    // A recoverable transport defect: leaked tool-call payloads and routing markers. The
+    // scrubber removes them and the answer beneath is graded normally, so this classifies as
+    // BenchmarkAnswerIntegrity.Recovered and never fails a run on its own. It still points at
+    // a real provider-path bug, which is why it is a flag and not silence.
+    HarnessArtifacts = 2,
 
     // Advisory flags. Reported, but they never change the run status and never remove an
     // answer from the Clean count: the affected text is removed before grading, so the
@@ -52,14 +57,25 @@ public enum BenchmarkAnswerFlags
 
 /// <summary>
 /// Classification of a single answer for run integrity accounting. Every answer falls into
-/// exactly one bucket, so Clean + TransportDefect + HarnessLimit always equals the question
-/// count. Advisory flags are tracked separately and may overlap any bucket.
+/// exactly one bucket, so Clean + TransportDefect + Recovered + HarnessLimit always equals the
+/// question count. Advisory flags are tracked separately and may overlap any bucket.
 /// </summary>
 public enum BenchmarkAnswerIntegrity
 {
     Clean = 0,
+
+    /// <summary>Corrupted beyond recovery: empty, truncated, or a provider error.</summary>
     TransportDefect = 1,
-    HarnessLimit = 2
+
+    /// <summary>An operator-configured cap was reached. The answer is valid.</summary>
+    HarnessLimit = 2,
+
+    /// <summary>
+    /// The provider leaked transport artifacts, the harness removed them, and the answer
+    /// beneath graded normally. Reported, because it is a real provider-path defect; not an
+    /// error, because the result is intact.
+    /// </summary>
+    Recovered = 3
 }
 
 public class BenchmarkRun
@@ -130,6 +146,31 @@ public class BenchmarkRun
 
     public ParallelExecutionMode AssessorModelParallelExecutionModeUsed { get; set; } = ParallelExecutionMode.Enabled;
 
+    // Second Opinion Assessor snapshot.
+    //
+    // Null means this run performs no second-opinion re-grading. There is deliberately no
+    // fallback to the assessor above: asking one model to check its own verdict buys
+    // agreement, not a second reading. Like every other model choice for a run, this one is
+    // made in the start dialog and recorded here — a SystemAiApiConfiguration id is a database
+    // identity and belongs nowhere near a settings file.
+    public long? SecondOpinionAssessorModelConfigurationId { get; set; }
+    public SystemAiApiConfiguration? SecondOpinionAssessorModelConfiguration { get; set; }
+
+    [MaxLength(64)]
+    public string? SecondOpinionAssessorModelProviderUsed { get; set; }
+
+    [MaxLength(128)]
+    public string? SecondOpinionAssessorModelIdUsed { get; set; }
+
+    [MaxLength(256)]
+    public string? SecondOpinionAssessorModelDisplayNameUsed { get; set; }
+
+    [MaxLength(32)]
+    public string? SecondOpinionAssessorModelThinkingLevelUsed { get; set; }
+
+    [MaxLength(32)]
+    public string? SecondOpinionAssessorModelReasoningModeUsed { get; set; }
+
     // Run metadata
     [MaxLength(450)]
     public string? StartedByUserId { get; set; }
@@ -176,9 +217,13 @@ public class BenchmarkRun
 
     public int ToolStarvedAnswerCount { get; set; }
 
-    // Answers whose validity is compromised by a transport or provider defect
-    // (empty, harness artifacts, truncated). Disjoint from ToolStarvedAnswerCount.
+    // Answers whose validity is compromised beyond recovery (empty or truncated).
+    // Disjoint from RecoveredAnswerCount and ToolStarvedAnswerCount.
     public int TransportDefectAnswerCount { get; set; }
+
+    // Answers the harness repaired: leaked transport artifacts were removed and the answer
+    // beneath was graded normally. A provider-path defect worth reporting, not a run failure.
+    public int RecoveredAnswerCount { get; set; }
 
     // Answers carrying an advisory flag (reasoning bleed, repeated fragments). May overlap
     // both counts above, so it is reported separately and never summed with them.
@@ -213,6 +258,13 @@ public class BenchmarkRun
     public long TotalCacheReadTokens { get; set; }
     public long TotalCacheCreationTokens { get; set; }
     public long TotalDurationMs { get; set; }
+
+    // Assessor-side usage, deliberately kept apart from the candidate totals above. Those
+    // measure the model under test and must not absorb the grader's consumption; together the
+    // two are what the run actually cost, which was previously not recorded anywhere.
+    public long TotalAssessmentInputTokens { get; set; }
+    public long TotalAssessmentOutputTokens { get; set; }
+    public long TotalAssessmentDurationMs { get; set; }
 
     public List<BenchmarkRunAnswer> Answers { get; set; } = new();
 }

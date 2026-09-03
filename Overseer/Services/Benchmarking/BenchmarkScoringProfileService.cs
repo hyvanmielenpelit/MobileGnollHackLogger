@@ -1,4 +1,4 @@
-namespace Overseer.Services.Benchmarking;
+﻿namespace Overseer.Services.Benchmarking;
 
 using System;
 using System.Collections.Generic;
@@ -150,6 +150,7 @@ public class BenchmarkScoringProfileService
         existing.WeightReadability = profile.WeightReadability;
         existing.LevelScoresJson = profile.LevelScoresJson;
         existing.CriticalErrorCeiling = profile.CriticalErrorCeiling;
+        existing.SecondOpinionQualityThreshold = profile.SecondOpinionQualityThreshold;
         existing.SpeedTargetMs = profile.SpeedTargetMs;
         existing.SpeedDecayK = profile.SpeedDecayK;
         existing.SpeedDifficultyScaling = profile.SpeedDifficultyScaling;
@@ -264,6 +265,13 @@ public class BenchmarkScoringProfileService
             errors.Add("CriticalErrorCeiling must be between 1 and 100.");
         }
 
+        // 0 is meaningful here, unlike the ceiling above: it disables the score trigger and
+        // leaves second opinions to critical errors alone.
+        if (profile.SecondOpinionQualityThreshold < 0 || profile.SecondOpinionQualityThreshold > 100)
+        {
+            errors.Add("SecondOpinionQualityThreshold must be between 0 and 100.");
+        }
+
         if (profile.SpeedTargetMs <= 0)
         {
             errors.Add("SpeedTargetMs must be greater than 0.");
@@ -307,6 +315,7 @@ public class BenchmarkScoringProfileService
             WeightReadability = profile.WeightReadability,
             LevelScores = ParseLevelScores(profile.LevelScoresJson),
             CriticalErrorCeiling = profile.CriticalErrorCeiling,
+            SecondOpinionQualityThreshold = profile.SecondOpinionQualityThreshold,
             SpeedTargetMs = profile.SpeedTargetMs,
             SpeedDecayK = profile.SpeedDecayK,
             SpeedDifficultyScaling = profile.SpeedDifficultyScaling
@@ -336,6 +345,7 @@ public class BenchmarkScoringProfileService
             WeightReadability = 0.10,
             LevelScoresJson = "[1, 15, 35, 55, 72, 87, 100]",
             CriticalErrorCeiling = 25,
+            SecondOpinionQualityThreshold = 50,
             // Recalibrated: the old 5000 ms / k=25 pair drove the speed score to its floor at
             // roughly 78 s, tying together every slower answer on an agentic run. See
             // BenchmarkScoringConstants for the two invariants these satisfy. Existing databases

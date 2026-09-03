@@ -107,7 +107,8 @@ public class BenchmarkReportBuilderTests
                     CriticalError = true,
                     AnswerText = "Answer 1",
                     ModelCallCount = 5,
-                    ToolCallCount = 25
+                    ToolCallCount = 25,
+                    ToolCallBudgetUsed = 25
                 }
             }
         };
@@ -122,10 +123,12 @@ public class BenchmarkReportBuilderTests
         // Run Integrity block
         Assert.Contains("### Run Integrity", report);
         // The integrity partition replaces the old "Degraded" total, whose breakdown omitted
-        // tool-budget exhaustion and therefore did not add up.
-        Assert.Contains("**Transport Defects:** 1", report);
+        // tool-budget exhaustion and therefore did not add up. A leaked-artifact answer the
+        // scrubber repaired is Recovered, not a transport defect: it graded normally.
+        Assert.Contains("**Transport Defects:** 0", report);
+        Assert.Contains("**Recovered:** 1", report);
         Assert.Contains("**Harness Limits:**", report);
-        Assert.Contains("Clean + transport defects + harness limits =", report);
+        Assert.Contains("Clean + transport defects + recovered + harness limits =", report);
         Assert.Contains("**Advisory Flags:**", report);
 
         // Latency percentiles
@@ -142,6 +145,105 @@ public class BenchmarkReportBuilderTests
         Assert.Contains("configured limit, not an error", report);
         Assert.Contains("**Integrity Flags:** HarnessArtifacts", report);
         Assert.Contains("Quality Score:** 25 / 100 (raw: 95)", report);
+
+        // Tool call arithmetic: attempts over budget produced "27 of 25 calls used", which is
+        // not a sentence that can be true. Executed and blocked are now separate numbers.
+        Assert.Contains("25 executed, budget 25", report);
+        Assert.DoesNotContain(" of 25 calls used", report);
+    }
+
+    [Fact]
+    public void BuildMarkdownReport_SeparatesExecutedAndBlockedToolCalls()
+    {
+        var run = new BenchmarkRun
+        {
+            Id = 43,
+            SuiteName = "Budget Suite",
+            TestedModelDisplayNameUsed = "Model X",
+            AssessorModelDisplayNameUsed = "Assessor Y",
+            Status = BenchmarkRunStatus.CompletedWithLimits,
+            StartedAtUtc = DateTime.UtcNow.AddMinutes(-5),
+            CompletedAtUtc = DateTime.UtcNow,
+            TotalQuestionCount = 1,
+            Answers = new List<BenchmarkRunAnswer>
+            {
+                new BenchmarkRunAnswer
+                {
+                    OrderIndex = 11,
+                    QuestionText = "Question 11",
+                    Difficulty = BenchmarkDifficulty.Intermediate,
+                    AssessedDifficulty = 52,
+                    QualityScore = 84,
+                    SpeedScore = 60,
+                    DurationMs = 104067,
+                    Status = BenchmarkAnswerStatus.Ok,
+                    AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+                    AnswerText = "Answer 11",
+                    // The 2026-09-03 shape: 27 attempts against a budget of 25, two of them
+                    // refused, reported as "27 of 25 calls used".
+                    ToolCallCount = 27,
+                    ToolCallBudgetUsed = 25,
+                    ToolBudgetExhausted = true,
+                    ToolCallSummary = "wiki_search×6, wiki_view×13 (2 blocked by budget)"
+                }
+            }
+        };
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("25 executed, 2 blocked, budget 25", report);
+        Assert.DoesNotContain("27 of 25", report);
+    }
+
+    [Fact]
+    public void BuildMarkdownReport_NamesTheSecondOpinionAssessorOrSaysThereWasNone()
+    {
+        var run = new BenchmarkRun
+        {
+            Id = 45,
+            SuiteName = "Second Opinion Suite",
+            TestedModelDisplayNameUsed = "Model X",
+            AssessorModelDisplayNameUsed = "Assessor Y",
+            Status = BenchmarkRunStatus.Completed,
+            StartedAtUtc = DateTime.UtcNow,
+            Answers = new List<BenchmarkRunAnswer>()
+        };
+
+        // Whether a run had a second opinion is a fact about how it was graded, so the report
+        // says so either way rather than staying silent when none was selected.
+        Assert.Contains("**None selected.**", BenchmarkReportBuilder.BuildMarkdownReport(run));
+
+        run.SecondOpinionAssessorModelConfigurationId = 7;
+        run.SecondOpinionAssessorModelDisplayNameUsed = "Claude Reviewer";
+        run.SecondOpinionAssessorModelProviderUsed = "Anthropic";
+        run.SecondOpinionAssessorModelIdUsed = "claude-reviewer-1";
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("### Second Opinion Assessor", report);
+        Assert.Contains("Claude Reviewer", report);
+        Assert.Contains("Anthropic", report);
+        Assert.DoesNotContain("**None selected.**", report);
+    }
+
+    [Fact]
+    public void BuildMarkdownReport_UsesSuppliedOverseerVersion()
+    {
+        var run = new BenchmarkRun
+        {
+            Id = 44,
+            SuiteName = "Version Suite",
+            TestedModelDisplayNameUsed = "Model X",
+            AssessorModelDisplayNameUsed = "Assessor Y",
+            Status = BenchmarkRunStatus.Completed,
+            StartedAtUtc = DateTime.UtcNow,
+            Answers = new List<BenchmarkRunAnswer>()
+        };
+
+        // Every report ever produced said 1.0.0, because the only caller passed nothing.
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run, "1.0.29");
+
+        Assert.Contains("**Overseer Version:** 1.0.29", report);
     }
 
     [Fact]

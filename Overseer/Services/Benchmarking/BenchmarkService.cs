@@ -187,7 +187,7 @@ public class BenchmarkService
             run.ScoringProfileId = profile.Id;
             run.ScoringProfileSnapshotJson = JsonSerializer.Serialize(profile);
             run.ScoringMethodVersion = BenchmarkAssessmentPrompt.ScoringMethodVersion;
-            run.HarnessVersion = _configuration.GetValue<string>("Benchmark:HarnessVersion", "3");
+            run.HarnessVersion = BenchmarkAssessmentPrompt.HarnessVersion;
 
             string testedApiKey = _cryptoService.Decrypt(testedConfig.EncryptedApiKey, testedConfig.ApiKeyNonce!, testedConfig.ApiKeyTag!, "SYSTEM_API_KEY");
             string assessorApiKey = _cryptoService.Decrypt(assessorConfig.EncryptedApiKey, assessorConfig.ApiKeyNonce!, assessorConfig.ApiKeyTag!, "SYSTEM_API_KEY");
@@ -590,6 +590,11 @@ public class BenchmarkService
         var sw = Stopwatch.StartNew();
 
         string? terminalError = null;
+
+        // The request is about to reach the provider, which is the moment the progress dialog
+        // calls this question "Answering". The mark is cleared in the finally below, so a
+        // throw, a timeout or a cancellation cannot leave the row stuck in that state.
+        _runManager.MarkQuestionInFlight(run.Id, question.OrderIndex);
         try
         {
             await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, runResult, questionCts.Token))
@@ -607,6 +612,10 @@ public class BenchmarkService
         catch (Exception ex)
         {
             terminalError = ex.Message;
+        }
+        finally
+        {
+            _runManager.ClearQuestionInFlight(run.Id, question.OrderIndex);
         }
         sw.Stop();
 
@@ -762,6 +771,9 @@ public class BenchmarkService
         var sw = Stopwatch.StartNew();
 
         string? terminalError = null;
+
+        // Re-runs show the same Answering state as a first run; see ExecuteSingleQuestionAsync.
+        _runManager.MarkQuestionInFlight(run.Id, answer.OrderIndex);
         try
         {
             await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, runResult, questionCts.Token))
@@ -779,6 +791,10 @@ public class BenchmarkService
         catch (Exception ex)
         {
             terminalError = ex.Message;
+        }
+        finally
+        {
+            _runManager.ClearQuestionInFlight(run.Id, answer.OrderIndex);
         }
         sw.Stop();
 
@@ -936,10 +952,16 @@ public class BenchmarkService
         }
         catch (OperationCanceledException) { throw; }   // cancellation must still cancel the run
         catch (Exception ex) { terminalError = ex.Message; }
-        sw.Stop();
 
+        // Accumulated across the retry below, so a run that needed a second attempt reports what
+        // it actually consumed. The stopwatch keeps running for the same reason.
+        int assessmentInputTokens = runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : runResult.EstimatedInputTokens;
+        int assessmentOutputTokens = runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens;
+
+        // The graded text is passed so an unverifiable critical error is demoted rather than
+        // capping the question at 25 on an assertion nobody can check.
         var parseResult = string.IsNullOrWhiteSpace(terminalError)
-            ? BenchmarkAssessmentParser.ParsePerQuestion(runResult.FinalText)
+            ? BenchmarkAssessmentParser.ParsePerQuestion(runResult.FinalText, answer.AnswerText)
             : new PerQuestionAssessmentParseResult { Success = false, ErrorMessage = terminalError };
 
         if (string.IsNullOrWhiteSpace(terminalError) && !parseResult.Success)
@@ -961,10 +983,17 @@ public class BenchmarkService
 
             if (string.IsNullOrWhiteSpace(terminalError))
             {
-                parseResult = BenchmarkAssessmentParser.ParsePerQuestion(retryResult.FinalText);
+                parseResult = BenchmarkAssessmentParser.ParsePerQuestion(retryResult.FinalText, answer.AnswerText);
             }
+            assessmentInputTokens += retryResult.TotalPromptTokens > 0 ? retryResult.TotalPromptTokens : retryResult.EstimatedInputTokens;
+            assessmentOutputTokens += retryResult.OutputTokens > 0 ? retryResult.OutputTokens : retryResult.EstimatedOutputTokens;
             if (retryResult.TotalPromptTokens > 0) runResult = retryResult;
         }
+
+        sw.Stop();
+        answer.AssessmentInputTokens = assessmentInputTokens;
+        answer.AssessmentOutputTokens = assessmentOutputTokens;
+        answer.AssessmentDurationMs = sw.ElapsedMilliseconds;
 
         if (string.IsNullOrWhiteSpace(terminalError) && parseResult.Success && parseResult.Result != null)
         {
@@ -975,6 +1004,15 @@ public class BenchmarkService
             answer.ReadabilityLevel = res.ReadabilityLevel;
             answer.CriticalError = res.CriticalError;
             answer.ReviewComment = res.Comment;
+            answer.CriticalErrorQuote = BenchmarkAssessmentFailure.Truncate(res.CriticalErrorQuote, 2048);
+            answer.AssessmentEvidenceJson = BuildEvidenceJson(res);
+
+            if (res.CriticalErrorDemoted)
+            {
+                _logger.LogInformation(
+                    "Benchmark run {RunId} answer {OrderIndex}: assessor claimed a critical error without a verifiable quote; not applied.",
+                    run.Id, answer.OrderIndex);
+            }
 
             answer.AccuracyScore = BenchmarkScoring.Score(res.AccuracyLevel, constants.LevelScores);
             answer.CompletenessScore = BenchmarkScoring.Score(res.CompletenessLevel, constants.LevelScores);
@@ -1028,7 +1066,234 @@ public class BenchmarkService
         {
             _logger.LogWarning(ex, "Failed to record usage for per-question assessor call.");
         }
+
+        await MaybeRunSecondOpinionAsync(
+            db, configService, run, answer, expectedPoints, constants, cancellationToken);
     }
+
+    /// <summary>
+    /// The assessor's own account of what each deduction rests on. Stored verbatim so a disputed
+    /// score can be argued from the record: whether a deduction came from the authored rubric or
+    /// from the grader's own knowledge is the thing that decides such an argument, and nothing
+    /// recorded it before.
+    /// </summary>
+    private static string? BuildEvidenceJson(BenchmarkPerQuestionAssessmentResult res)
+    {
+        if (string.IsNullOrWhiteSpace(res.AccuracyEvidence) &&
+            string.IsNullOrWhiteSpace(res.CompletenessEvidence) &&
+            string.IsNullOrWhiteSpace(res.CriticalErrorQuote) &&
+            !res.CriticalErrorDemoted)
+        {
+            return null;
+        }
+
+        return JsonSerializer.Serialize(new
+        {
+            accuracy = res.AccuracyEvidence,
+            completeness = res.CompletenessEvidence,
+            criticalErrorQuote = res.CriticalErrorQuote,
+            criticalErrorDemoted = res.CriticalErrorDemoted
+        });
+    }
+
+    /// <summary>
+    /// Re-grades an answer once with a second assessor when the first verdict was severe: a
+    /// critical error, or a quality score below <c>Benchmark:SecondOpinionQualityThreshold</c>
+    /// (0 disables the pass). Both verdicts are kept and disagreement is flagged; the first stays
+    /// authoritative for scoring, because replacing a score with whichever grader spoke last
+    /// would buy agreement rather than accuracy.
+    ///
+    /// A failure here never fails the run: a missing second opinion leaves the first verdict
+    /// exactly as it was.
+    /// </summary>
+    private async Task MaybeRunSecondOpinionAsync(
+        ApplicationDbContext db,
+        SystemAiConfigService configService,
+        BenchmarkRun run,
+        BenchmarkRunAnswer answer,
+        string? expectedPoints,
+        BenchmarkScoringConstants constants,
+        CancellationToken cancellationToken)
+    {
+        if (answer.AssessmentStatus != BenchmarkAssessmentStatus.Scored || !answer.QualityScore.HasValue)
+        {
+            return;
+        }
+
+        // Selected per run in the start dialog, like every other model this harness uses. Absent
+        // means the operator asked for no second opinion; it never falls back to the assessor
+        // above, because a model checking its own verdict buys agreement, not a second reading.
+        if (!run.SecondOpinionAssessorModelConfigurationId.HasValue)
+        {
+            return;
+        }
+
+        int threshold = constants.SecondOpinionQualityThreshold;
+        bool triggered = answer.CriticalError || (threshold > 0 && answer.QualityScore.Value < threshold);
+        if (!triggered)
+        {
+            return;
+        }
+
+        var (secondConfig, secondApiKey, resolveError) = await ResolveAssessorAsync(
+            db, run, run.SecondOpinionAssessorModelConfigurationId.Value, cancellationToken);
+
+        if (secondConfig == null || secondApiKey == null)
+        {
+            // Disabled or key-less since the run started. Skip: the first verdict stands, and
+            // grading with the model that produced it would not be a second opinion.
+            _logger.LogWarning(
+                "Benchmark run {RunId} answer {OrderIndex}: second-opinion assessor {ConfigId} unusable ({Error}). The first verdict stands.",
+                run.Id, answer.OrderIndex, run.SecondOpinionAssessorModelConfigurationId.Value, resolveError);
+            return;
+        }
+
+        var allowedTools = _configuration.GetSection("Benchmark:AllowedTools").Get<List<string>>() ?? _defaultAllowedTools;
+        string prompt = BenchmarkAssessmentPrompt.BuildSecondOpinionPrompt(
+            run.SuiteName,
+            answer.OrderIndex,
+            answer.QuestionText,
+            answer.Difficulty,
+            expectedPoints,
+            answer.AnswerText,
+            answer.Status,
+            answer.QualityScore.Value,
+            answer.CriticalError,
+            answer.ReviewComment,
+            allowedTools,
+            answer.ToolCallCount ?? 0,
+            answer.ToolBudgetExhausted,
+            answer.ScrubbedArtifactCount,
+            answer.ToolCallBudgetUsed);
+
+        int assessorMaxTokens = _configuration.GetValue<int>("Benchmark:AssessorMaxOutputTokens", 32000);
+
+        var runRequest = new AgentRunRequest
+        {
+            ProviderName = secondConfig.Provider,
+            ModelId = secondConfig.ModelId,
+            ApiKey = secondApiKey,
+            ModelDisplayName = secondConfig.DisplayName,
+            SystemPrompt = "You are an objective AI benchmark evaluator. Strictly adhere to the requested JSON response format.",
+            ThinkingLevel = secondConfig.ThinkingLevel,
+            ReasoningMode = secondConfig.ReasoningMode,
+            ReasoningSummary = secondConfig.ReasoningSummary,
+            ServiceTier = secondConfig.ServiceTier,
+            MaxOutputTokens = secondConfig.MaxOutputTokens ?? assessorMaxTokens,
+            MaxToolIterations = 0,
+            EnableToolUse = false,
+            EnableWebSearch = false,
+            EnableSubAgents = false,
+            SystemModelId = secondConfig.Id,
+            PromptCacheKey = $"benchmark:second_opinion:{secondConfig.ModelId}",
+            Budget = new AgentRunBudget { MaxTotalModelCalls = 2 },
+            ToolExecutionContext = new Tools.ToolExecutionContext
+            {
+                SessionId = run.Id,
+                UserId = run.StartedByUserId ?? string.Empty,
+                ShowDebugLog = false
+            },
+            SeedHistory = new List<object>
+            {
+                new { role = "user", content = prompt }
+            }
+        };
+
+        var runResult = new AgentRunResult();
+        var sw = Stopwatch.StartNew();
+        string? terminalError = null;
+        try
+        {
+            await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, runResult, cancellationToken))
+            {
+                if (evt.Type == "error") terminalError = evt.Data?.ToString();
+            }
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex) { terminalError = ex.Message; }
+        sw.Stop();
+
+        // Assessor-side cost either way, so it is recorded even when the verdict is unusable.
+        answer.AssessmentInputTokens = (answer.AssessmentInputTokens ?? 0) +
+            (runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : runResult.EstimatedInputTokens);
+        answer.AssessmentOutputTokens = (answer.AssessmentOutputTokens ?? 0) +
+            (runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens);
+        answer.AssessmentDurationMs = (answer.AssessmentDurationMs ?? 0) + sw.ElapsedMilliseconds;
+
+        var parseResult = string.IsNullOrWhiteSpace(terminalError)
+            ? BenchmarkAssessmentParser.ParsePerQuestion(runResult.FinalText, answer.AnswerText)
+            : new PerQuestionAssessmentParseResult { Success = false, ErrorMessage = terminalError };
+
+        if (!parseResult.Success || parseResult.Result == null)
+        {
+            _logger.LogWarning(
+                "Benchmark run {RunId} answer {OrderIndex}: second opinion unavailable ({Error}). The first verdict stands.",
+                run.Id, answer.OrderIndex, parseResult.ErrorMessage ?? terminalError);
+            await db.SaveChangesAsync(CancellationToken.None);
+            return;
+        }
+
+        var second = parseResult.Result;
+        var (secondQuality, _, _) = BenchmarkScoring.Quality(
+            second.AccuracyLevel, second.CompletenessLevel, second.ConcisenessLevel, second.ReadabilityLevel,
+            second.CriticalError, constants);
+
+        answer.SecondOpinionQualityScore = secondQuality;
+        answer.SecondOpinionCriticalError = second.CriticalError;
+        answer.SecondOpinionByModelDisplayNameUsed = secondConfig.DisplayName ?? secondConfig.ModelId;
+        answer.SecondOpinionJson = JsonSerializer.Serialize(new
+        {
+            assessor = secondConfig.DisplayName ?? secondConfig.ModelId,
+            provider = secondConfig.Provider,
+            modelId = secondConfig.ModelId,
+            assessedAtUtc = DateTime.UtcNow,
+            accuracyLevel = second.AccuracyLevel,
+            completenessLevel = second.CompletenessLevel,
+            concisenessLevel = second.ConcisenessLevel,
+            readabilityLevel = second.ReadabilityLevel,
+            criticalError = second.CriticalError,
+            criticalErrorQuote = second.CriticalErrorQuote,
+            qualityScore = secondQuality,
+            comment = second.Comment,
+            accuracyEvidence = second.AccuracyEvidence,
+            completenessEvidence = second.CompletenessEvidence
+        });
+
+        // 15 points is roughly one BARS level on the dominant dimension: below that the two
+        // graders are saying the same thing in different words.
+        answer.SecondOpinionDisagreed =
+            Math.Abs(secondQuality - answer.QualityScore.Value) > SecondOpinionDisagreementPoints ||
+            second.CriticalError != answer.CriticalError;
+
+        await db.SaveChangesAsync(CancellationToken.None);
+
+        if (answer.SecondOpinionDisagreed)
+        {
+            _logger.LogInformation(
+                "Benchmark run {RunId} answer {OrderIndex}: assessors disagree ({First} vs {Second}, critical {FirstCritical} vs {SecondCritical}).",
+                run.Id, answer.OrderIndex, answer.QualityScore.Value, secondQuality, answer.CriticalError, second.CriticalError);
+        }
+
+        try
+        {
+            await configService.RecordUsageAsync(
+                secondConfig.Id,
+                run.StartedByUserId,
+                runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : runResult.EstimatedInputTokens,
+                runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens,
+                roleContext: 4,
+                cacheReadTokens: runResult.CacheReadTokens,
+                cacheCreationTokens: runResult.CacheCreationTokens,
+                totalDurationMs: (int)sw.ElapsedMilliseconds);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to record usage for second-opinion assessor call.");
+        }
+    }
+
+    /// <summary>Quality-score gap above which two verdicts are treated as disagreeing.</summary>
+    private const int SecondOpinionDisagreementPoints = 15;
 
     private async Task ExecuteFinalSynthesisAsync(
         ApplicationDbContext db,

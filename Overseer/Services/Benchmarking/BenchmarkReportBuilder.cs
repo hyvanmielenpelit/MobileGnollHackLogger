@@ -5,6 +5,8 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using MobileGnollHackLogger.Data;
 
 public static class BenchmarkReportBuilder
@@ -12,6 +14,78 @@ public static class BenchmarkReportBuilder
     private static string Inv(IFormattable value, string? format = null)
     {
         return value.ToString(format, CultureInfo.InvariantCulture);
+    }
+
+    private static readonly Regex BlockedCallsRegex =
+        new(@"\((\d+)\s+blocked by budget\)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// Splits an answer's tool calls into the ones that executed and the ones the budget refused.
+    /// <c>ToolCallCount</c> counts attempts, so printing it against the budget produced lines like
+    /// "27 of 25 calls used" — a sentence that cannot be true. The blocked figure is recorded in
+    /// the tool summary the executor writes.
+    /// </summary>
+    private static (int Executed, int Blocked) ToolCallSplit(BenchmarkRunAnswer answer)
+    {
+        int attempted = answer.ToolCallCount ?? 0;
+        int blocked = 0;
+
+        if (!string.IsNullOrWhiteSpace(answer.ToolCallSummary))
+        {
+            var match = BlockedCallsRegex.Match(answer.ToolCallSummary);
+            if (match.Success && int.TryParse(match.Groups[1].Value, out int parsed))
+            {
+                blocked = parsed;
+            }
+        }
+
+        blocked = Math.Clamp(blocked, 0, attempted);
+        return (attempted - blocked, blocked);
+    }
+
+    /// <summary>
+    /// Reads the assessor's stored evidence. Returns nulls for a run graded before evidence was
+    /// collected, which is every run up to harness version 3.
+    /// </summary>
+    private static (string? Accuracy, string? Completeness, bool CriticalErrorDemoted) ReadEvidence(BenchmarkRunAnswer answer)
+    {
+        if (string.IsNullOrWhiteSpace(answer.AssessmentEvidenceJson))
+        {
+            return (null, null, false);
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(answer.AssessmentEvidenceJson);
+            var root = doc.RootElement;
+
+            string? accuracy = root.TryGetProperty("accuracy", out var acc) && acc.ValueKind == JsonValueKind.String
+                ? acc.GetString() : null;
+            string? completeness = root.TryGetProperty("completeness", out var comp) && comp.ValueKind == JsonValueKind.String
+                ? comp.GetString() : null;
+            bool demoted = root.TryGetProperty("criticalErrorDemoted", out var dem) && dem.ValueKind == JsonValueKind.True;
+
+            return (accuracy, completeness, demoted);
+        }
+        catch (JsonException)
+        {
+            // Evidence is commentary, never a score input: a malformed blob costs a line of the
+            // report and nothing else.
+            return (null, null, false);
+        }
+    }
+
+    /// <summary>"25 executed, 2 blocked, budget 25" — three numbers that mean three things.</summary>
+    private static string FormatToolBudgetLine(BenchmarkRunAnswer answer)
+    {
+        var (executed, blocked) = ToolCallSplit(answer);
+        string budget = answer.ToolCallBudgetUsed.HasValue
+            ? answer.ToolCallBudgetUsed.Value.ToString(CultureInfo.InvariantCulture)
+            : "not recorded";
+
+        return blocked > 0
+            ? $"{executed} executed, {blocked} blocked, budget {budget}"
+            : $"{executed} executed, budget {budget}";
     }
 
     private static long Percentile(IReadOnlyList<long> sorted, double p)
@@ -48,7 +122,10 @@ public static class BenchmarkReportBuilder
         sb.AppendLine($"- **End Time (UTC):** {(run.CompletedAtUtc.HasValue ? run.CompletedAtUtc.Value.ToString("yyyy-MM-dd HH:mm:ss") : "In Progress / Interrupted")}");
         sb.AppendLine($"- **Total Elapsed Wall Time:** {FormatDuration(run.TotalDurationMs)}");
         sb.AppendLine($"- **Total Candidate Answer Time:** {FormatDuration(run.TotalAnswerDurationMs)}");
-        sb.AppendLine($"- **Parallel Questions Setting:** {run.MaxParallelQuestionsUsed}" + (run.SpeedMeasurementDegraded ? " *(Speed metrics advisory due to concurrency)*" : " *(Sequential, strict timing)*"));
+        // "Question Parallelism", not "Parallel …": the Model Under Test block reports the
+        // provider's parallel *tool calls* under a similar name, and one report using the same
+        // word for two mechanisms is how a reader concludes a sequential run ran concurrently.
+        sb.AppendLine($"- **Question Parallelism:** {run.MaxParallelQuestionsUsed} question(s) at a time" + (run.SpeedMeasurementDegraded ? " *(Speed metrics advisory due to concurrency)*" : " *(Sequential, strict timing)*"));
         sb.AppendLine();
 
         // Declared before the comparability block, which reports the per-question
@@ -88,7 +165,7 @@ public static class BenchmarkReportBuilder
         sb.AppendLine($"- **Reasoning Summary:** {run.TestedModelReasoningSummaryUsed ?? "Default"}");
         sb.AppendLine($"- **Requested Service Tier:** {run.TestedModelServiceTierUsed ?? "Default"}");
         sb.AppendLine($"- **Max Output Tokens:** {(run.TestedModelMaxOutputTokensUsed.HasValue ? run.TestedModelMaxOutputTokensUsed.Value.ToString() : "Default")}");
-        sb.AppendLine($"- **Parallel Execution Mode:** {run.TestedModelParallelExecutionModeUsed}");
+        sb.AppendLine($"- **Parallel Tool Calls:** {run.TestedModelParallelExecutionModeUsed} *(provider-side tool batching, unrelated to Question Parallelism)*");
         sb.AppendLine();
         sb.AppendLine("### Assessment Model");
         sb.AppendLine($"- **Display Name:** {run.AssessorModelDisplayNameUsed}");
@@ -96,6 +173,24 @@ public static class BenchmarkReportBuilder
         sb.AppendLine($"- **Model ID:** {run.AssessorModelIdUsed}");
         sb.AppendLine($"- **Thinking Level:** {run.AssessorModelThinkingLevelUsed ?? "Default"}");
         sb.AppendLine($"- **Reasoning Mode:** {run.AssessorModelReasoningModeUsed ?? "Default"}");
+        sb.AppendLine();
+
+        // Named whether or not one was used: "no second opinion" is itself a fact about how the
+        // run was graded, and a reader comparing two runs needs to know which had one.
+        sb.AppendLine("### Second Opinion Assessor");
+        if (run.SecondOpinionAssessorModelConfigurationId.HasValue)
+        {
+            sb.AppendLine($"- **Display Name:** {run.SecondOpinionAssessorModelDisplayNameUsed}");
+            sb.AppendLine($"- **Provider:** {run.SecondOpinionAssessorModelProviderUsed}");
+            sb.AppendLine($"- **Model ID:** {run.SecondOpinionAssessorModelIdUsed}");
+            sb.AppendLine($"- **Thinking Level:** {run.SecondOpinionAssessorModelThinkingLevelUsed ?? "Default"}");
+            sb.AppendLine($"- **Reasoning Mode:** {run.SecondOpinionAssessorModelReasoningModeUsed ?? "Default"}");
+            sb.AppendLine("- **Trigger:** a critical error, or a quality score below the scoring profile's second-opinion threshold. Advisory: the first verdict is what scored.");
+        }
+        else
+        {
+            sb.AppendLine("- **None selected.** No answer in this run was re-graded by a second assessor.");
+        }
         sb.AppendLine();
 
         // 3. Results Summary
@@ -148,11 +243,41 @@ public static class BenchmarkReportBuilder
             sb.AppendLine("- **Tool Overhead:** Not recorded (run predates harness version 3); speed was scored on total turn duration.");
         }
 
+        // Time to first token: the only latency figure a thinking=max configuration does not
+        // dominate, and therefore the one that describes how the model would feel in the chat.
+        var ttfts = okAnswers.Where(a => a.TimeToFirstTokenMs.HasValue)
+            .Select(a => a.TimeToFirstTokenMs!.Value)
+            .OrderBy(d => d)
+            .ToList();
+        if (ttfts.Count > 0)
+        {
+            sb.AppendLine($"- **Time to First Token:** Median (P50) = {Inv(Percentile(ttfts, 0.50), "N0")} ms, P90 = {Inv(Percentile(ttfts, 0.90), "N0")} ms, Max = {Inv(ttfts[^1], "N0")} ms");
+        }
+
         sb.AppendLine($"- **Total Input Tokens:** {Inv(run.TotalInputTokens, "N0")}");
         sb.AppendLine($"- **Total Output Tokens:** {Inv(run.TotalOutputTokens, "N0")}");
         sb.AppendLine($"- **Total Cache Read Tokens:** {Inv(run.TotalCacheReadTokens, "N0")}");
         sb.AppendLine($"- **Total Cache Creation Tokens:** {Inv(run.TotalCacheCreationTokens, "N0")}");
         sb.AppendLine();
+
+        // Harness cost. The token totals above are the candidate's alone; grading an 18-question
+        // suite question by question is not a rounding error, and until this block existed the
+        // run's actual consumption was recorded nowhere.
+        if (run.TotalAssessmentInputTokens > 0 || run.TotalAssessmentOutputTokens > 0 || run.TotalAssessmentDurationMs > 0)
+        {
+            sb.AppendLine("### Harness Cost");
+            sb.AppendLine($"- **Candidate Tokens:** {Inv(run.TotalInputTokens, "N0")} in / {Inv(run.TotalOutputTokens, "N0")} out");
+            sb.AppendLine($"- **Assessor Tokens:** {Inv(run.TotalAssessmentInputTokens, "N0")} in / {Inv(run.TotalAssessmentOutputTokens, "N0")} out");
+            sb.AppendLine($"- **Total Tokens:** {Inv(run.TotalInputTokens + run.TotalAssessmentInputTokens, "N0")} in / {Inv(run.TotalOutputTokens + run.TotalAssessmentOutputTokens, "N0")} out");
+            sb.AppendLine($"- **Assessment Time:** {FormatDuration(run.TotalAssessmentDurationMs)} ({Inv(run.TotalAssessmentDurationMs, "N0")} ms)");
+            sb.AppendLine("*Assessment runs pipelined behind each answer, so assessment time overlaps the candidate's and the two do not sum to the wall time.*");
+            sb.AppendLine();
+        }
+        else
+        {
+            sb.AppendLine("*Assessor token and time accounting was not recorded for this run (it predates harness version 4).*");
+            sb.AppendLine();
+        }
 
         // Run Integrity block.
         //
@@ -169,8 +294,9 @@ public static class BenchmarkReportBuilder
         int repeatCount = answers.Count(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.RepeatedFragments));
         int providerErrorCount = answers.Count(a => a.Status == BenchmarkAnswerStatus.ProviderError);
 
-        int transportDefectCount = answers.Count(BenchmarkRunFinalizer.HasTransportDefect);
-        int harnessLimitCount = answers.Count(a => !BenchmarkRunFinalizer.HasTransportDefect(a) && BenchmarkRunFinalizer.HasHarnessLimit(a));
+        int transportDefectCount = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.TransportDefect);
+        int recoveredCount = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.Recovered);
+        int harnessLimitCount = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.HarnessLimit);
         int advisoryCount = answers.Count(BenchmarkRunFinalizer.HasAdvisoryFlag);
         int scrubbedCount = answers.Count(a => a.ScrubbedArtifactCount > 0);
         int cleanCount = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.Clean);
@@ -178,10 +304,11 @@ public static class BenchmarkReportBuilder
 
         sb.AppendLine("### Run Integrity");
         sb.AppendLine($"- **Clean Answers:** {cleanCount} of {totalQuestions} ({Inv(cleanPct, "F1")}%)");
-        sb.AppendLine($"- **Transport Defects:** {transportDefectCount} (empty: {emptyCount}, harness artifacts: {artifactCount}, truncated: {truncatedCount})");
+        sb.AppendLine($"- **Transport Defects:** {transportDefectCount} (empty: {emptyCount}, truncated: {truncatedCount}) — *unrecoverable; excluded or invalid*");
+        sb.AppendLine($"- **Recovered:** {recoveredCount} (leaked transport artifacts in: {artifactCount}) — *the harness removed the leaked payloads and graded the answer beneath them; a provider-path defect, not a damaged result*");
         sb.AppendLine($"- **Harness Limits:** {harnessLimitCount} (tool budget exhausted: {answers.Count(a => a.ToolBudgetExhausted)})");
         sb.AppendLine($"- **Provider Errors:** {providerErrorCount}");
-        sb.AppendLine($"*Clean + transport defects + harness limits = {cleanCount + transportDefectCount + harnessLimitCount} of {totalQuestions}.*");
+        sb.AppendLine($"*Clean + transport defects + recovered + harness limits = {cleanCount + transportDefectCount + recoveredCount + harnessLimitCount} of {totalQuestions}.*");
         sb.AppendLine();
         sb.AppendLine($"- **Advisory Flags:** {advisoryCount} (reasoning bleed: {bleedCount}, repeated fragments: {repeatCount}) — *advisory only; these overlap the categories above, do not affect the run status, and the text they describe was removed before grading.*");
         sb.AppendLine($"- **Answers Scrubbed of Transport Artifacts:** {scrubbedCount} of {totalQuestions}");
@@ -312,8 +439,7 @@ public static class BenchmarkReportBuilder
             sb.AppendLine("**Questions that reached their tool call budget:**");
             foreach (var a in starved)
             {
-                string cap = a.ToolCallBudgetUsed.HasValue ? a.ToolCallBudgetUsed.Value.ToString() : "unknown";
-                sb.AppendLine($"- **Question {a.OrderIndex}** ({a.Difficulty}, assessed {AssessedOf(a)}): {a.ToolCallCount ?? 0} of {cap} calls used");
+                sb.AppendLine($"- **Question {a.OrderIndex}** ({a.Difficulty}, assessed {AssessedOf(a)}): {FormatToolBudgetLine(a)}");
             }
         }
         sb.AppendLine();
@@ -351,12 +477,11 @@ public static class BenchmarkReportBuilder
             }
             if (a.ToolBudgetExhausted)
             {
-                string cap = a.ToolCallBudgetUsed.HasValue ? $" of {a.ToolCallBudgetUsed.Value}" : string.Empty;
-                sb.AppendLine($"- **Tool Budget:** Exhausted — used {a.ToolCallCount ?? 0}{cap} calls (configured limit, not an error)");
+                sb.AppendLine($"- **Tool Budget:** Exhausted — {FormatToolBudgetLine(a)} (configured limit, not an error)");
             }
             else if (a.ToolCallBudgetUsed.HasValue)
             {
-                sb.AppendLine($"- **Tool Budget:** {a.ToolCallCount ?? 0} of {a.ToolCallBudgetUsed.Value} calls used");
+                sb.AppendLine($"- **Tool Budget:** {FormatToolBudgetLine(a)}");
             }
             if (a.AnswerFlags != 0)
             {
@@ -411,6 +536,33 @@ public static class BenchmarkReportBuilder
                 {
                     sb.AppendLine($"> - **Assessor Comment:** {a.ReviewComment}");
                 }
+
+                // What the deductions rest on. A score argued from the authored rubric and one
+                // argued from the grader's own recall are different claims, and only the record
+                // can tell them apart afterwards.
+                var (accuracyEvidence, completenessEvidence, criticalErrorDemoted) = ReadEvidence(a);
+                if (!string.IsNullOrWhiteSpace(accuracyEvidence))
+                {
+                    sb.AppendLine($"> - **Accuracy Evidence:** {accuracyEvidence}");
+                }
+                if (!string.IsNullOrWhiteSpace(completenessEvidence))
+                {
+                    sb.AppendLine($"> - **Completeness Evidence:** {completenessEvidence}");
+                }
+                if (a.CriticalError && !string.IsNullOrWhiteSpace(a.CriticalErrorQuote))
+                {
+                    sb.AppendLine($"> - **Critical Error Quote:** \"{a.CriticalErrorQuote}\"");
+                }
+                if (criticalErrorDemoted)
+                {
+                    sb.AppendLine("> - **Critical Error:** claimed by the assessor but not applied — the quoted claim could not be found in the graded answer, and an omission is not a critical error.");
+                }
+                if (a.SecondOpinionQualityScore.HasValue)
+                {
+                    string agreement = a.SecondOpinionDisagreed ? "**disagrees**" : "agrees";
+                    string secondCritical = a.SecondOpinionCriticalError == true ? "yes" : "no";
+                    sb.AppendLine($"> - **Second Opinion ({a.SecondOpinionByModelDisplayNameUsed}):** {a.SecondOpinionQualityScore.Value} / 100, critical error {secondCritical} — {agreement} with the first verdict. Advisory; the first verdict is what scored.");
+                }
                 if (a.AssessedByModelConfigurationId.HasValue &&
                     a.AssessedByModelConfigurationId != run.AssessorModelConfigurationId)
                 {
@@ -445,6 +597,8 @@ public static class BenchmarkReportBuilder
         sb.AppendLine("- **Intelligence Index:** $\\Sigma(\\text{Difficulty}(q) \\cdot \\text{Quality}(q)) / \\Sigma(\\text{Difficulty}(q))$ (answered questions only). Quality only: the Speed Index is reported separately by design and is not folded in.");
         sb.AppendLine("- **Speed Index:** equal-weight mean of $Speed(q)$ over answered questions. Difficulty enters through $Target(q)$, not through the weight; weighting here as well would count difficulty twice and pull the index toward the floor.");
         sb.AppendLine();
+        sb.AppendLine($"> **Comparing Speed Indices:** thinking level dominates model time, so a Speed Index is comparable between runs at the same thinking level and misleading across levels. This run used thinking level **{run.TestedModelThinkingLevelUsed ?? "Default"}**.");
+        sb.AppendLine();
         if (run.SpeedMeasurementDegraded)
         {
             sb.AppendLine("> ⚠️ **Concurrency Timing Notice:** This run was executed with concurrency (MaxParallelQuestions > 1). Model turn durations include resource queueing against simultaneous requests. Speed Index is advisory.");
@@ -478,15 +632,14 @@ public static class BenchmarkReportBuilder
                 if (ia.Status == BenchmarkAnswerStatus.Failed) flagDescriptions.Add($"Failed: {ia.ErrorMessage}");
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.HarnessArtifacts))
                 {
-                    flagDescriptions.Add($"Transport artifacts removed before grading ({ia.ScrubbedArtifactCount} block(s))");
+                    flagDescriptions.Add($"Transport artifacts removed before grading ({ia.ScrubbedArtifactCount} block(s)) — recovered, and graded normally; a provider-path defect, not a damaged answer");
                 }
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.Truncated)) flagDescriptions.Add("Answer truncated (output token limit)");
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.ReasoningBleed)) flagDescriptions.Add("Reasoning narration removed before grading (advisory)");
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.RepeatedFragments)) flagDescriptions.Add("Repeated reasoning fragments in the removed narration (advisory)");
                 if (ia.ToolBudgetExhausted)
                 {
-                    string cap = ia.ToolCallBudgetUsed.HasValue ? $" of {ia.ToolCallBudgetUsed.Value}" : string.Empty;
-                    flagDescriptions.Add($"Tool call budget reached ({ia.ToolCallCount ?? 0}{cap} calls) — configured harness limit, not an error");
+                    flagDescriptions.Add($"Tool call budget reached ({FormatToolBudgetLine(ia)}) — configured harness limit, not an error");
                 }
 
                 string desc = string.Join("; ", flagDescriptions);
@@ -497,6 +650,25 @@ public static class BenchmarkReportBuilder
             }
         }
         sb.AppendLine();
+
+        // Disputed assessments. A single grader deciding a low score is the least reproducible
+        // part of this benchmark, so where a second one was asked and disagreed, the report says
+        // so rather than presenting one verdict as settled fact.
+        var disputed = answers.Where(a => a.SecondOpinionDisagreed && a.SecondOpinionQualityScore.HasValue)
+            .OrderBy(a => a.OrderIndex)
+            .ToList();
+        if (disputed.Count > 0)
+        {
+            sb.AppendLine("### Disputed Assessments");
+            sb.AppendLine();
+            sb.AppendLine($"{disputed.Count} answer(s) were re-graded by a second assessor, which reached a materially different verdict. The first verdict is what scored; these are flagged for a human to settle, and re-assessing from the run detail is the way to do it.");
+            sb.AppendLine();
+            foreach (var d in disputed)
+            {
+                sb.AppendLine($"- **Question {d.OrderIndex}:** first {d.QualityScore ?? 0} / 100 (critical error {(d.CriticalError ? "yes" : "no")}, {d.AssessedByModelDisplayNameUsed}) vs second {d.SecondOpinionQualityScore!.Value} / 100 (critical error {(d.SecondOpinionCriticalError == true ? "yes" : "no")}, {d.SecondOpinionByModelDisplayNameUsed})");
+            }
+            sb.AppendLine();
+        }
 
         // 7. Assessment
         sb.AppendLine("## 6. Synthesis Assessment");

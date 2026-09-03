@@ -109,6 +109,71 @@ public class BenchmarkServiceTests
         Assert.True(parseResult.Result.CriticalError);
     }
 
+    [Fact]
+    public void ParsePerQuestion_DemotesCriticalErrorWithNoQuote()
+    {
+        // The 2026-09-03 run capped Q17 at 25 on the assessor's word that the answer "completely
+        // omits the character level 3 requirement" — an omission, and nothing in the record
+        // pointed at a claim the answer had actually made.
+        string json = @"{ ""accuracyLevel"": 2, ""completenessLevel"": 2, ""concisenessLevel"": 4,
+                          ""readabilityLevel"": 5, ""criticalError"": true,
+                          ""comment"": ""Omits the character level 3 requirement."" }";
+
+        var parseResult = BenchmarkAssessmentParser.ParsePerQuestion(json, "The gift chance is one in ten after the first.");
+
+        Assert.True(parseResult.Success);
+        Assert.NotNull(parseResult.Result);
+        Assert.False(parseResult.Result.CriticalError);
+        Assert.True(parseResult.Result.CriticalErrorDemoted);
+        Assert.Contains("critical error not applied", parseResult.Result.Comment);
+    }
+
+    [Fact]
+    public void ParsePerQuestion_DemotesCriticalErrorWhoseQuoteIsNotInTheAnswer()
+    {
+        string json = @"{ ""accuracyLevel"": 2, ""completenessLevel"": 2, ""concisenessLevel"": 4,
+                          ""readabilityLevel"": 5, ""criticalError"": true,
+                          ""criticalErrorQuote"": ""Praying at 1 HP on an unaligned altar is always safe."" }";
+
+        var parseResult = BenchmarkAssessmentParser.ParsePerQuestion(json, "Pray only when your prayer timeout has expired.");
+
+        Assert.NotNull(parseResult.Result);
+        Assert.False(parseResult.Result.CriticalError);
+        Assert.True(parseResult.Result.CriticalErrorDemoted);
+    }
+
+    [Fact]
+    public void ParsePerQuestion_KeepsCriticalErrorWithAVerifiableQuote()
+    {
+        string answer = "The gift check is effectively **guaranteed for your first artifact gift** once all those conditions are met.";
+        string json = @"{ ""accuracyLevel"": 2, ""completenessLevel"": 2, ""concisenessLevel"": 4,
+                          ""readabilityLevel"": 5, ""criticalError"": true,
+                          ""criticalErrorQuote"": ""The gift check is effectively guaranteed for your first artifact gift"",
+                          ""accuracyEvidence"": ""Rubric point 3: the chance is 1 / (10 + 2 * Gifts * Artifacts)."" }";
+
+        var parseResult = BenchmarkAssessmentParser.ParsePerQuestion(json, answer);
+
+        Assert.NotNull(parseResult.Result);
+        // Markdown emphasis in the answer must not defeat the match: the assessor is quoting.
+        Assert.True(parseResult.Result.CriticalError);
+        Assert.False(parseResult.Result.CriticalErrorDemoted);
+        Assert.Contains("Rubric point 3", parseResult.Result.AccuracyEvidence);
+    }
+
+    [Fact]
+    public void ParsePerQuestion_WithoutGradedText_LeavesCriticalErrorAlone()
+    {
+        // Re-scoring an old answer passes no graded text; nothing may be demoted retroactively.
+        string json = @"{ ""accuracyLevel"": 2, ""completenessLevel"": 2, ""concisenessLevel"": 4,
+                          ""readabilityLevel"": 5, ""criticalError"": true }";
+
+        var parseResult = BenchmarkAssessmentParser.ParsePerQuestion(json);
+
+        Assert.NotNull(parseResult.Result);
+        Assert.True(parseResult.Result.CriticalError);
+        Assert.False(parseResult.Result.CriticalErrorDemoted);
+    }
+
     // --- 4. Final Synthesis Parser Tests ---
 
     [Fact]

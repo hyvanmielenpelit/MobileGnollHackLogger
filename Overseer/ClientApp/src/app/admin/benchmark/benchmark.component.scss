@@ -694,6 +694,62 @@
   text-transform: uppercase;
 }
 
+/* Two assessors reached materially different verdicts. Amber, not red: the score stands and
+   the run is valid — this asks a human to look, it does not report a failure. */
+.disputed-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 800;
+  background: rgba(251, 191, 36, 0.2);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.6);
+  text-transform: uppercase;
+}
+
+/* The assessor's stated basis for its deductions, and the second reading of them. */
+.assessment-evidence {
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 3px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.2);
+  font-size: 13px;
+  color: #bbb;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  strong {
+    color: #ddd;
+  }
+}
+
+.second-opinion-box {
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 3px solid rgba(0, 200, 255, 0.5);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.2);
+  font-size: 13px;
+  color: #bbb;
+
+  strong {
+    color: #ddd;
+  }
+
+  &.is-disputed {
+    border-left-color: #fbbf24;
+  }
+
+  .second-opinion-note {
+    margin-top: 4px;
+    font-size: 12px;
+    color: #888;
+  }
+}
+
 .q-score-badge {
   padding: 2px 6px;
   border-radius: 4px;
@@ -1532,6 +1588,15 @@
     border: 1px solid rgba(255, 255, 255, 0.15);
   }
 
+  // The provider request is in flight and no answer row exists yet. A distinct hue from
+  // status-assessing, so the run's two in-progress states are not read as one.
+  &.status-answering {
+    background: rgba(212, 160, 23, 0.15);
+    color: var(--primary-color, #d4a017);
+    border: 1px solid rgba(212, 160, 23, 0.35);
+    animation: pulse-assessing 1.5s infinite ease-in-out;
+  }
+
   &.status-assessing {
     background: rgba(0, 200, 255, 0.15);
     color: #00d4ff;
@@ -1568,8 +1633,66 @@
   }
 }
 
-/* The run's three sequential stages. A single answered/total bar would fill to 100%
-   and then sit motionless through the whole assessment stage, which reads as a hang. */
+/* The two models under one panel, above the stage rail. Layout only: the badges reuse
+   .thinking-badge, .reasoning-badge, .provider-badge and .parallel-badge unchanged, so the
+   dialog and the tab's model selectors describe a configuration the same way. */
+.run-model-strip {
+  margin: 0 0 16px 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  .run-model-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    min-inline-size: 0;
+
+    dt {
+      flex: 0 0 auto;
+      min-width: 116px;
+      margin: 0;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #888;
+    }
+
+    dd {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+      margin: 0;
+      min-inline-size: 0;
+    }
+
+    .model-name {
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+  }
+}
+
+/* Requested service tier. Neutral like .provider-badge: it is configuration, not a
+   capability claim, and must not compete with the thinking and reasoning badges. */
+.tier-badge {
+  font-size: 11px;
+  color: #aaa;
+  background: #252525;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid #383838;
+  white-space: nowrap;
+}
+
+/* The run's two sequential stages. A single answered/total bar would fill to 100% and then
+   sit motionless through the synthesis, which reads as a hang, so both bars stay visible. */
 .run-stage-rail {
   list-style: none;
   display: flex;
@@ -1755,6 +1878,7 @@
      rule is nested inside the banner, so a bare .pulse-indicator here would lose on
      specificity. The bare form is kept for any future use outside the banner. */
   .job-status-chip.status-assessing,
+  .job-status-chip.status-answering,
   .active-run-banner .pulse-indicator,
   .pulse-indicator {
     animation: none;

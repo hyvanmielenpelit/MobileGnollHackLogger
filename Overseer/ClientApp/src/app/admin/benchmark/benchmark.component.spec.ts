@@ -63,6 +63,7 @@ describe('AdminBenchmarkComponent', () => {
         weightReadability: 0.10,
         levelScoresJson: '[1, 15, 35, 55, 72, 87, 100]',
         criticalErrorCeiling: 25,
+        secondOpinionQualityThreshold: 50,
         speedTargetMs: 15000,
         speedDecayK: 20.0,
         speedDifficultyScaling: 1.0,
@@ -1128,6 +1129,8 @@ describe('AdminBenchmarkComponent', () => {
       component.activeRunDetail = buildRun({ answers: [buildAnswer(1)] });
       expect(component.runStage).toBe('answering');
 
+      // Answering and assessing are one stage: the executor assesses each answer immediately
+      // after producing it, inside the same loop, so they never separate in wall-clock terms.
       component.activeRunDetail = buildRun({
         answers: [
           buildAnswer(1),
@@ -1135,7 +1138,7 @@ describe('AdminBenchmarkComponent', () => {
           buildAnswer(3, { assessmentStatus: 'Assessing' })
         ]
       });
-      expect(component.runStage).toBe('assessing');
+      expect(component.runStage).toBe('answering');
 
       component.activeRunDetail = buildRun({
         answers: [buildAnswer(1), buildAnswer(2), buildAnswer(3)]
@@ -1668,22 +1671,82 @@ describe('AdminBenchmarkComponent', () => {
       return (heading.parentElement?.querySelector('.alert-body') as HTMLElement)?.textContent ?? '';
     }
 
-    it('should describe transport defects, harness limits, and advisory flags as separate causes', () => {
+    it('should describe transport defects, recoveries, harness limits, and advisory flags as separate causes', () => {
       component.selectedRunDetail = buildCompletedRun({
         transportDefectAnswerCount: 4,
+        recoveredAnswerCount: 5,
         toolStarvedAnswerCount: 3,
         advisoryFlagAnswerCount: 6
       });
       fixture.detectChanges();
 
       const text = integrityNoticeText().replace(/\s+/g, ' ').trim();
-      expect(text).toContain('4 answer(s) show transport defects (empty, harness artifacts, or truncated).');
+      expect(text).toContain('4 answer(s) were corrupted beyond recovery (empty or truncated).');
+      expect(text).toContain('5 answer(s) were repaired by the harness before grading');
       expect(text).toContain('3 answer(s) hit a configured harness limit (tool budget).');
       expect(text).toContain('6 answer(s) carry advisory flags.');
       // The wording this replaced described tool-starved answers as one of "empty, harness
-      // artifacts, or truncated", which they are not.
+      // artifacts, or truncated", which they are not — and counted a repaired answer as a
+      // defect, which is what made a healthy run read as errored.
       expect(text).not.toContain('degraded answer(s)');
       expect(text).not.toContain('tool-starved');
+      expect(text).not.toContain('empty, harness artifacts, or truncated');
+    });
+
+    it('should report a disputed assessment in the integrity notice and badge the answer', () => {
+      component.selectedRunDetail = buildCompletedRun({
+        answers: [
+          buildScoredAnswer(1, {
+            qualityScore: 25,
+            criticalError: true,
+            secondOpinionQualityScore: 72,
+            secondOpinionCriticalError: false,
+            secondOpinionByModelDisplayNameUsed: 'Second Assessor',
+            secondOpinionDisagreed: true
+          })
+        ]
+      });
+      fixture.detectChanges();
+
+      const text = integrityNoticeText().replace(/\s+/g, ' ').trim();
+      expect(text).toContain('1 answer(s) were re-graded by a second assessor');
+      expect(fixture.nativeElement.querySelector('.disputed-badge')).toBeTruthy();
+    });
+
+    it('should show the assessor evidence and the second opinion as plain text when expanded', () => {
+      component.selectedRunDetail = buildCompletedRun({
+        answers: [
+          buildScoredAnswer(1, {
+            accuracyLevel: 2,
+            completenessLevel: 2,
+            concisenessLevel: 4,
+            readabilityLevel: 5,
+            qualityScore: 42,
+            assessmentEvidenceJson: JSON.stringify({
+              accuracy: 'Rubric point 3: Exceptional/Elite give -4/-8 AC.',
+              completeness: 'Not in rubric: from my own knowledge of the source.',
+              criticalErrorDemoted: false
+            }),
+            secondOpinionQualityScore: 44,
+            secondOpinionCriticalError: false,
+            secondOpinionByModelDisplayNameUsed: 'Second Assessor',
+            secondOpinionDisagreed: false
+          })
+        ]
+      });
+      component.expandedQuestions.add(1);
+      fixture.detectChanges();
+
+      const evidence = fixture.nativeElement.querySelector('.assessment-evidence') as HTMLElement;
+      expect(evidence).toBeTruthy();
+      expect(evidence.textContent).toContain('Rubric point 3');
+      expect(evidence.textContent).toContain('Not in rubric');
+
+      const secondOpinion = fixture.nativeElement.querySelector('.second-opinion-box') as HTMLElement;
+      expect(secondOpinion).toBeTruthy();
+      expect(secondOpinion.textContent).toContain('Second Assessor');
+      expect(secondOpinion.textContent).toContain('agrees with');
+      expect(secondOpinion.classList).not.toContain('is-disputed');
     });
 
     it('should render only the harness limit clause when a configured cap was the only cause', () => {
@@ -1827,6 +1890,151 @@ describe('AdminBenchmarkComponent', () => {
       expect(box.textContent).toContain('<em>{"tool_uses":[]}</em>');
       expect((fixture.nativeElement.querySelector('.question-card-body .btn-link') as HTMLButtonElement)
         .getAttribute('aria-expanded')).toBe('true');
+    });
+
+    it('should offer the second opinion assessor as an optional selector, defaulting to none', () => {
+      fixture.detectChanges();
+
+      const selector = fixture.nativeElement.querySelector('.second-opinion-model-selector') as HTMLElement;
+      expect(selector).toBeTruthy();
+      // A System AI Config is a database row chosen here, never a value in appsettings.json.
+      expect(selector.textContent).toContain('None — no second opinion');
+      expect(component.secondOpinionConfigId).toBeNull();
+    });
+
+    it('should send the second opinion assessor only when one is selected', () => {
+      benchmarkServiceMock.startRun.and.returnValue(of({ runId: 9 }));
+      // Suppress the success path's side effects: polling would leave a live interval behind
+      // and the dialog would need a real <dialog> to open.
+      spyOn<any>(component, 'startPolling');
+      spyOn<any>(component, 'openRunProgressDialog');
+      component.selectedSuiteId = 1;
+      component.testedConfigId = 10;
+      component.assessorConfigId = 11;
+
+      component.startBenchmark();
+      expect(benchmarkServiceMock.startRun.calls.mostRecent().args[0].secondOpinionAssessorModelConfigurationId)
+        .toBeNull();
+
+      component.secondOpinionConfigId = 12;
+      component.startBenchmark();
+      expect(benchmarkServiceMock.startRun.calls.mostRecent().args[0].secondOpinionAssessorModelConfigurationId)
+        .toBe(12);
+    });
+
+    it('should reject a second opinion threshold outside 0 to 100 before calling the server', () => {
+      component.editingProfileId = null;
+      component.profileForm = { ...component.profileForm, name: 'Threshold Profile', secondOpinionQualityThreshold: 140 };
+
+      component.saveProfile();
+
+      expect(component.profileValidationErrors)
+        .toContain('Second opinion threshold must be between 0 and 100.');
+      expect(benchmarkServiceMock.createScoringProfile).not.toHaveBeenCalled();
+    });
+
+    it('should badge both models below the header rather than in it', () => {
+      component.activeRunDetail = buildCompletedRun({
+        status: 'Running',
+        testedModelThinkingLevelUsed: 'max',
+        testedModelServiceTierUsed: 'flex',
+        assessorModelThinkingLevelUsed: 'high'
+      });
+      fixture.detectChanges();
+
+      const strip = fixture.nativeElement.querySelector('.run-model-strip') as HTMLElement;
+      expect(strip).toBeTruthy();
+      expect(strip.textContent).toContain('Test Model');
+      expect(strip.textContent).toContain('Test Assessor');
+      expect(strip.querySelector('.thinking-badge')?.textContent?.trim()).toBe('Max');
+      expect(strip.querySelector('.provider-badge')).toBeTruthy();
+      expect(strip.querySelector('.tier-badge')).toBeTruthy();
+
+      const subtitle = fixture.nativeElement
+        .querySelector('.benchmark-run-progress-dialog .dialog-subtitle') as HTMLElement;
+      expect(subtitle.textContent).toContain('Default Suite');
+      expect(subtitle.textContent).not.toContain('Model:');
+      expect(subtitle.textContent).not.toContain('Evaluator:');
+    });
+
+    it('should render Cancel Run as a text-only button', () => {
+      component.activeRunDetail = buildCompletedRun({ status: 'Running' });
+      fixture.detectChanges();
+
+      const buttons: HTMLButtonElement[] = Array.from(
+        fixture.nativeElement.querySelectorAll('.benchmark-run-progress-dialog .dialog-footer button'));
+      const cancel = buttons.find(b => (b.textContent || '').includes('Cancel Run'));
+
+      expect(cancel).toBeTruthy();
+      expect(cancel!.querySelector('svg')).toBeNull();
+    });
+
+    it('should present the run as two stages, not three', () => {
+      // BenchmarkService assesses each answer immediately after producing it, inside the same
+      // loop, so "collecting" and "assessing" were never separate phases in wall-clock terms.
+      component.activeRunDetail = buildCompletedRun({
+        status: 'Running',
+        totalQuestionCount: 2,
+        answers: [buildScoredAnswer(1), buildScoredAnswer(2)]
+      });
+
+      expect(component.runStage).toBe('finalizing');
+      expect(component.runStageLabel).toContain('Stage 2 of 2 — Synthesis and scoring');
+
+      component.activeRunDetail = buildCompletedRun({
+        status: 'Running',
+        totalQuestionCount: 2,
+        answers: [buildScoredAnswer(1, { assessmentStatus: 'Pending' }), buildScoredAnswer(2)]
+      });
+
+      // An answer still awaiting assessment keeps the run in stage 1: the stage covers both.
+      expect(component.runStage).toBe('answering');
+      expect(component.runStageLabel).toContain('Stage 1 of 2 — Collecting and assessing answers');
+    });
+
+    it('should mark a dispatched question Answering and an undispatched one Pending', () => {
+      component.activeRunDetail = buildCompletedRun({
+        status: 'Running',
+        totalQuestionCount: 3,
+        inFlightOrderIndexes: [2],
+        answers: [buildScoredAnswer(1)]
+      });
+      component.runProgressQuestions = [
+        { orderIndex: 1, questionText: 'Question 1' },
+        { orderIndex: 2, questionText: 'Question 2' },
+        { orderIndex: 3, questionText: 'Question 3' }
+      ] as any;
+
+      const rows = component.runProgressRows;
+
+      expect(rows.length).toBe(3);
+      expect(component.runRowChipLabel(rows[0])).toBe('Scored');
+      // In flight: the request has reached the provider but no answer row exists yet.
+      expect(rows[1].status).toBe('Answering');
+      expect(component.runRowChipLabel(rows[1])).toBe('Answering');
+      expect(component.runRowChipClass(rows[1])).toBe('status-answering');
+      // Not dispatched: Pending keeps its original, narrower meaning.
+      expect(rows[2].status).toBe('Pending');
+      expect(component.runRowChipLabel(rows[2])).toBe('Pending');
+    });
+
+    it('should record in-flight questions and the two-stage number in the diagnostics text', () => {
+      component.activeRunDetail = buildCompletedRun({
+        status: 'Running',
+        totalQuestionCount: 2,
+        inFlightOrderIndexes: [2],
+        answers: [buildScoredAnswer(1)]
+      });
+      component.runProgressQuestions = [
+        { orderIndex: 1, questionText: 'Question 1' },
+        { orderIndex: 2, questionText: 'Question 2' }
+      ] as any;
+
+      const diagnostics = component.runDiagnosticsText;
+
+      expect(diagnostics).toContain('Stage: 1');
+      expect(diagnostics).toContain('In flight: Q2');
+      expect(diagnostics).toContain('[Q2] status=Answering');
     });
 
     it('should reject a speed difficulty scaling outside 0.0 to 5.0 before calling the server', () => {

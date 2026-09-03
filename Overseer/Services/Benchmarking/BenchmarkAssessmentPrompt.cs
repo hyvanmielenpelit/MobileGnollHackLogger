@@ -28,7 +28,23 @@ public static class BenchmarkAssessmentPrompt
     // v4: answers are scrubbed of transport artifacts before grading, speed is scored on
     // model-attributable time against a difficulty-normalised target, and the Speed Index is an
     // equal-weight mean. Scores are not comparable with v3.
-    public const int ScoringMethodVersion = 4;
+    // v5: a critical error must be a claim the answer actually asserts, quoted verbatim by the
+    // assessor; an omission can no longer trigger the cap. Assessors also cite the rubric point
+    // behind each accuracy and completeness deduction. Scores are not comparable with v4.
+    public const int ScoringMethodVersion = 5;
+
+    /// <summary>
+    /// The harness the run executed under. A constant rather than a configuration key: it exists
+    /// to answer "are these two runs comparable?", and a value an operator can edit without
+    /// changing the harness cannot answer that. Bump it whenever execution behaviour changes.
+    ///
+    /// v2: artifact scrubbing before grading, model-attributable timing.
+    /// v3: per-difficulty-band tool call budgets; recovered artifacts classified apart from
+    ///     transport defects; executed/blocked tool calls reported separately.
+    /// v4: per-question assessor usage recorded, and a second-opinion re-assessment pass for
+    ///     critical errors and low scores.
+    /// </summary>
+    public const string HarnessVersion = "4";
 
     public static string BuildPerQuestionPrompt(
         string suiteName,
@@ -105,6 +121,18 @@ public static class BenchmarkAssessmentPrompt
         sb.AppendLine("Definition: A confidently asserted, material falsehood or hallucination that a user/player would act upon to their direct detriment (e.g., fatal in-game action, inverted core mechanics).");
         sb.AppendLine("- Positive Example (criticalError: true): Confidently stating that drinking uncursed water while undead cures lycanthropy instantly, or that praying on an unaligned altar when at 1 HP is always safe.");
         sb.AppendLine("- Negative Example (criticalError: false): Stating an item base price is 120 zm instead of 100 zm, or omitting a minor edge-case interaction with a rare monster.");
+        // A critical error caps quality at 25 regardless of the levels, so it is the single most
+        // consequential judgement in this prompt. It was previously applied for an omission,
+        // which the negative example already excluded, so the rule is now stated as a
+        // requirement the harness verifies rather than as guidance.
+        sb.AppendLine("- **An omission is NEVER a critical error**, however material. Missing information is graded through COMPLETENESS. Only a claim the answer actually makes can be a critical error.");
+        sb.AppendLine("- When criticalError is true you MUST return `criticalErrorQuote`: the offending sentence copied verbatim from the candidate answer. The harness checks that this text appears in the answer and **ignores an unverifiable critical error**, so a missing or paraphrased quote costs the finding.");
+        sb.AppendLine();
+        sb.AppendLine("### 6. EVIDENCE FOR DEDUCTIONS");
+        sb.AppendLine("For accuracy and completeness, state what your deduction rests on:");
+        sb.AppendLine("- `accuracyEvidence` / `completenessEvidence`: name the rubric point the answer failed, quoting the rubric where you can.");
+        sb.AppendLine("- If a deduction does not come from the rubric, say so explicitly, e.g. 'Not in rubric: from my own knowledge of the GnollHack source'.");
+        sb.AppendLine("- Award full levels with a short evidence string such as 'Matches rubric'. Never invent a rubric point that is not present above.");
         sb.AppendLine();
         sb.AppendLine("--- QUESTION AND CANDIDATE ANSWER ---");
         sb.AppendLine($"Question #{orderIndex} [Authored Band: {difficulty}]");
@@ -145,8 +173,67 @@ public static class BenchmarkAssessmentPrompt
   ""concisenessLevel"": 6,
   ""readabilityLevel"": 5,
   ""criticalError"": false,
+  ""criticalErrorQuote"": null,
+  ""accuracyEvidence"": ""Rubric point 2: prayer timeout reset amounts. The answer omits 350/175."",
+  ""completenessEvidence"": ""Matches rubric."",
   ""comment"": ""Brief 1-3 sentence evaluation explaining the ratings and noting any specific flaws.""
 }");
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// The second-opinion prompt: the same rubric, plus the first assessor's verdict, used when
+    /// the first flagged a critical error or scored the answer low. It deliberately does not ask
+    /// the second assessor to defer or to reconcile — an independent verdict is the only thing
+    /// worth having, and the harness compares the two rather than asking a model to agree.
+    /// </summary>
+    public static string BuildSecondOpinionPrompt(
+        string suiteName,
+        int orderIndex,
+        string questionText,
+        BenchmarkDifficulty difficulty,
+        string? expectedPoints,
+        string answerText,
+        BenchmarkAnswerStatus status,
+        int firstQualityScore,
+        bool firstCriticalError,
+        string? firstComment,
+        IReadOnlyList<string>? allowedTools = null,
+        int toolCallsCompleted = 0,
+        bool toolBudgetExhausted = false,
+        int scrubbedArtifactCount = 0,
+        int? toolCallBudget = null)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine(BuildPerQuestionPrompt(
+            suiteName,
+            orderIndex,
+            questionText,
+            difficulty,
+            expectedPoints,
+            answerText,
+            status,
+            allowedTools,
+            toolCallsCompleted,
+            toolBudgetExhausted,
+            scrubbedArtifactCount,
+            toolCallBudget));
+        sb.AppendLine();
+        sb.AppendLine("--- SECOND OPINION ---");
+        sb.AppendLine("Another assessor has already graded this answer, and its verdict was severe enough that the harness asked for an independent second reading. Grade the answer yourself against the rubric above.");
+        sb.AppendLine("Do NOT defer to the first verdict, and do NOT try to split the difference. If you reach the same conclusion, say so; if you do not, grade what you actually find. The harness records both verdicts and flags disagreement for a human.");
+        sb.AppendLine("The first verdict, for reference only:");
+        sb.AppendLine($"- Quality score: {firstQualityScore} / 100");
+        sb.AppendLine($"- Critical error: {(firstCriticalError ? "yes" : "no")}");
+        if (!string.IsNullOrWhiteSpace(firstComment))
+        {
+            sb.AppendLine("- Comment: --- BEGIN FIRST VERDICT COMMENT ---");
+            sb.AppendLine(firstComment);
+            sb.AppendLine("--- END FIRST VERDICT COMMENT ---");
+        }
+        sb.AppendLine();
+        sb.AppendLine("Output the same JSON schema as above and nothing else.");
 
         return sb.ToString();
     }

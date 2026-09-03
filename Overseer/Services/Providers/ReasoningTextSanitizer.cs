@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -16,15 +17,22 @@ public class ReasoningTextSanitizer
     // it is the one place a model legitimately shows raw tool-call JSON to a reader.
     private bool _fenceOpen = false;
 
-    private static readonly Regex ControlTokenRegex = new(@"<\|[a-zA-Z_]{1,32}\|>", RegexOptions.Compiled);
+    // Whether the next character to be scanned begins a line. Tracked across deltas because the
+    // buffer is drained aggressively: by the time a leaked payload's '{' arrives, the newline
+    // before it has usually been emitted already, so the buffer alone cannot answer this.
+    private bool _atLineStart = true;
+
+    private static readonly Regex ControlTokenRegex = TransportArtifactRules.ControlTokenRegex;
 
     // Any namespaced routing marker, not just `to=functions.<name>`. GPT-family models also
     // emit `to=multi_tool_use.parallel` when a parallel tool batch leaks into the text
-    // channel, and pinning the namespace let that form through untouched.
-    private static readonly Regex ToolRoutingMarkerRegex =
-        new(@"to=[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+", RegexOptions.Compiled);
+    // channel, and pinning the namespace let that form through untouched. Shared with the
+    // benchmark scrubber so one definition serves both.
+    private static readonly Regex ToolRoutingMarkerRegex = TransportArtifactRules.ToolRoutingMarkerRegex;
 
-    // A bare tool-batch payload, with or without a preceding routing marker.
+    // A bare tool-batch payload, with or without a preceding routing marker. Kept as a fast
+    // pre-filter; the general case is handled by the line-start payload rule below, which asks
+    // TransportArtifactRules whether a balanced object is shaped like tool arguments.
     private static readonly Regex ToolUsesPayloadRegex =
         new(@"\{\s*""tool_uses""\s*:", RegexOptions.Compiled);
 
@@ -122,7 +130,52 @@ public class ReasoningTextSanitizer
             if (objectEnd + 1 > end) end = objectEnd + 1;
         }
 
+        // Bare payloads with no `tool_uses` key and no routing marker — the form the 2026-09-03
+        // GPT-5.6 Luna run leaked. Same two conditions as everywhere else: the object begins a
+        // line outside every fence, and its keys are shaped like a tool argument list.
+        foreach (int start in LineStartBracePositions(text))
+        {
+            if (fenceState.IsInsideFenceFromStart(text, start)) continue;
+
+            int objectEnd = FindBalancedObjectEnd(text, start, out bool bailout);
+            if (bailout || objectEnd == -1) continue;
+            if (!TransportArtifactRules.IsToolArgumentShaped(text.Substring(start, objectEnd - start + 1))) continue;
+            if (objectEnd + 1 > end) end = objectEnd + 1;
+        }
+
         return end > 0;
+    }
+
+    /// <summary>Positions of a '{' that begins a line, ignoring leading spaces and tabs.</summary>
+    private static IEnumerable<int> LineStartBracePositions(string text)
+    {
+        var positions = new List<int>();
+        bool atLineStart = true;
+
+        for (int i = 0; i < text.Length; i++)
+        {
+            char c = text[i];
+
+            if (c == '\n')
+            {
+                atLineStart = true;
+                continue;
+            }
+
+            if (atLineStart && (c == ' ' || c == '\t' || c == '\r'))
+            {
+                continue;
+            }
+
+            if (atLineStart && c == '{')
+            {
+                positions.Add(i);
+            }
+
+            atLineStart = false;
+        }
+
+        return positions;
     }
 
     private bool IsInsideFenceFromStart(string text, int index)
@@ -134,6 +187,11 @@ public class ReasoningTextSanitizer
     private string ProcessBuffer(bool isFlush)
     {
         var output = new StringBuilder();
+
+        // Text only ever leaves the buffer from the front — every path uses Remove(0, n) or
+        // Clear() — so whatever this call consumed is a prefix of this snapshot, and its last
+        // character is what decides whether the next scan starts at a line start.
+        string entrySnapshot = _buffer.ToString();
 
         while (_buffer.Length > 0)
         {
@@ -292,30 +350,56 @@ public class ReasoningTextSanitizer
                     continue; // Will handle at top of loop
                 }
 
-                // 1b. A bare tool-batch payload with no routing marker in front of it. The
-                // marker is what normally identifies a leak, but the model sometimes emits
-                // only the payload, and `tool_uses` is not a shape authored prose produces.
-                var batchMatch = ToolUsesPayloadRegex.Match(current);
-                if (batchMatch.Success && !IsInsideFence(current, batchMatch.Index))
+                // 1b. A bare leaked tool payload with no routing marker in front of it. The
+                // marker is what normally identifies a leak, but the model sometimes emits only
+                // the payload. This rule used to know one shape, `{"tool_uses": …}`, and that is
+                // why five of eighteen answers on the 2026-09-03 GPT-5.6 Luna run reached the
+                // benchmark still carrying payloads such as
+                // {"function_name":"get_encounter_monster_count","repository":"gnollhack"} — and
+                // reached ordinary chat users, where nothing scrubs anything.
+                //
+                // Two conditions, both required, matching the benchmark scrubber exactly: the
+                // object begins a line outside every fenced code block, and its top-level keys
+                // are shaped like a tool argument list. Position alone would eat an authored
+                // JSON object a writer put on its own line; shape alone would eat a fenced
+                // example, which is the one place a model legitimately shows tool JSON to a
+                // reader.
+                int payloadStart = FindBarePayloadStart(current);
+                var pendingControlToken = ControlTokenRegex.Match(current);
+                bool controlTokenFirst = pendingControlToken.Success && payloadStart >= 0 &&
+                                         pendingControlToken.Index < payloadStart;
+
+                if (payloadStart >= 0 && !controlTokenFirst)
                 {
-                    if (batchMatch.Index > 0)
+                    if (payloadStart > 0)
                     {
-                        EmitVerbatim(output, current, batchMatch.Index);
+                        EmitVerbatim(output, current, payloadStart);
                         continue;
                     }
 
                     int payloadEnd = FindBalancedObjectEnd(current, 0, out bool payloadBailout);
                     if (payloadEnd != -1)
                     {
-                        _buffer.Remove(0, payloadEnd + 1);
+                        if (TransportArtifactRules.IsToolArgumentShaped(current.Substring(0, payloadEnd + 1)))
+                        {
+                            _buffer.Remove(0, payloadEnd + 1);
+                            _atLineStart = false;
+                            continue;
+                        }
+
+                        // Balanced, but not a tool argument list: authored JSON. Release it and
+                        // resume scanning after it.
+                        EmitVerbatim(output, current, payloadEnd + 1);
                         continue;
                     }
 
-                    if (payloadBailout || isFlush)
+                    if (payloadBailout || isFlush || !LooksLikePartialToolPayload(current))
                     {
-                        // Malformed or unterminated: release intact rather than risk eating
-                        // authored text.
+                        // Malformed, unterminated, or decidably authored: release intact rather
+                        // than risk eating authored text — or stalling the stream on a JSON
+                        // object the model is legitimately writing out.
                         output.Append(SanitizeCharactersAndControlTokens(current));
+                        UpdateFenceState(current.AsSpan());
                         _buffer.Clear();
                         break;
                     }
@@ -340,7 +424,13 @@ public class ReasoningTextSanitizer
                         output.Append(SanitizeCharacters(current.Substring(0, r1Match.Index)));
                         UpdateFenceState(current.AsSpan(0, r1Match.Index));
                     }
-                    // Remove up to end of control token
+                    // Remove up to end of control token. A control token is harness noise, not
+                    // content, so it does not itself end a line: whatever follows it is still at
+                    // a line start if the token was.
+                    if (r1Match.Index > 0)
+                    {
+                        _atLineStart = current[r1Match.Index - 1] == '\n';
+                    }
                     _buffer.Remove(0, r1Match.Index + r1Match.Length);
                     continue;
                 }
@@ -370,6 +460,16 @@ public class ReasoningTextSanitizer
             }
         }
 
+        // Backstop for every consumption path, including the ones that clear the buffer wholesale.
+        // Where a path also maintains _atLineStart itself this agrees with it, except when the
+        // last thing consumed was a control token at the very end of a delta: there this says
+        // "not a line start", which can only ever cost a detection, never eat authored text.
+        int consumed = entrySnapshot.Length - _buffer.Length;
+        if (consumed > 0)
+        {
+            _atLineStart = entrySnapshot[consumed - 1] == '\n';
+        }
+
         return output.ToString();
     }
 
@@ -385,7 +485,67 @@ public class ReasoningTextSanitizer
         length = Math.Min(length, current.Length);
         output.Append(SanitizeCharacters(current.Substring(0, length)));
         UpdateFenceState(current.AsSpan(0, length));
+        _atLineStart = current[length - 1] == '\n';
         _buffer.Remove(0, length);
+    }
+
+    /// <summary>
+    /// Whether an unterminated object at the head of the buffer might still turn out to be a
+    /// leaked tool payload. Without this, streaming would stall on every authored JSON object a
+    /// model writes outside a fence, holding it back until a closing brace that is legitimate
+    /// content arrives: once a top-level key is visible and is not a tool parameter name, the
+    /// answer is already no.
+    /// </summary>
+    private static bool LooksLikePartialToolPayload(string partial)
+    {
+        var keys = TransportArtifactRules.TopLevelKeys(partial);
+        if (keys.Count == 0)
+        {
+            // Nothing decidable yet — at most a few characters are being held.
+            return true;
+        }
+
+        return keys.Any(k => TransportArtifactRules.DistinctiveParameterNames.Contains(k) ||
+                             TransportArtifactRules.GenericParameterNames.Contains(k));
+    }
+
+    /// <summary>
+    /// Index of a candidate bare payload's opening brace in <paramref name="current"/>, or -1.
+    /// The brace must begin a line — leading spaces and tabs are allowed, and the very start of
+    /// the response counts — and must sit outside every fenced code block. Whether the object is
+    /// actually a leaked tool payload is decided by its keys once it is balanced, which cannot be
+    /// known until the closing brace has arrived.
+    /// </summary>
+    private int FindBarePayloadStart(string current)
+    {
+        for (int i = 0; i < current.Length; i++)
+        {
+            if (current[i] != '{') continue;
+            if (!IsAtLineStart(current, i)) continue;
+            if (IsInsideFence(current, i)) continue;
+
+            return i;
+        }
+
+        return -1;
+    }
+
+    /// <summary>
+    /// Whether only line-leading whitespace separates <paramref name="index"/> from the start of
+    /// its line. When the scan reaches the head of the buffer, the answer is the line state
+    /// carried over from the text already emitted.
+    /// </summary>
+    private bool IsAtLineStart(string current, int index)
+    {
+        for (int j = index - 1; j >= 0; j--)
+        {
+            char c = current[j];
+            if (c == '\n') return true;
+            if (c == ' ' || c == '\t' || c == '\r') continue;
+            return false;
+        }
+
+        return _atLineStart;
     }
 
     /// <summary>

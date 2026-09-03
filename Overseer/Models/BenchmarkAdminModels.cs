@@ -1,4 +1,4 @@
-namespace Overseer.Models;
+﻿namespace Overseer.Models;
 
 using System;
 using System.Collections.Generic;
@@ -116,6 +116,15 @@ public class StartBenchmarkRunRequest
     public long SuiteId { get; set; }
     public long TestedModelConfigurationId { get; set; }
     public long AssessorModelConfigurationId { get; set; }
+
+    /// <summary>
+    /// Optional. When set, answers the assessor flags with a critical error or scores below the
+    /// profile's threshold are re-graded once by this configuration. Null means no second
+    /// opinion for this run — there is no fallback to the assessor above, because a model
+    /// checking its own verdict produces agreement rather than a second reading.
+    /// </summary>
+    public long? SecondOpinionAssessorModelConfigurationId { get; set; }
+
     public long? ScoringProfileId { get; set; }
     public bool AcknowledgeSameProvider { get; set; }
 }
@@ -161,6 +170,7 @@ public class BenchmarkScoringProfileDto
     public double WeightReadability { get; set; }
     public string LevelScoresJson { get; set; } = string.Empty;
     public int CriticalErrorCeiling { get; set; }
+    public int SecondOpinionQualityThreshold { get; set; }
     public int SpeedTargetMs { get; set; }
     public double SpeedDecayK { get; set; }
     public double SpeedDifficultyScaling { get; set; }
@@ -179,6 +189,7 @@ public class CreateBenchmarkScoringProfileRequest
     public double WeightReadability { get; set; } = 0.10;
     public string LevelScoresJson { get; set; } = "[1, 15, 35, 55, 72, 87, 100]";
     public int CriticalErrorCeiling { get; set; } = 25;
+    public int SecondOpinionQualityThreshold { get; set; } = 50;
     public int SpeedTargetMs { get; set; } = 15000;
     public double SpeedDecayK { get; set; } = 20.0;
     public double SpeedDifficultyScaling { get; set; } = 1.0;
@@ -195,6 +206,7 @@ public class UpdateBenchmarkScoringProfileRequest
     public double WeightReadability { get; set; }
     public string LevelScoresJson { get; set; } = string.Empty;
     public int CriticalErrorCeiling { get; set; }
+    public int SecondOpinionQualityThreshold { get; set; }
     public int SpeedTargetMs { get; set; }
     public double SpeedDecayK { get; set; }
     public double SpeedDifficultyScaling { get; set; }
@@ -264,6 +276,24 @@ public class BenchmarkRunAnswerDto
     public string? TerminationReason { get; set; }
     public int AnswerFlags { get; set; }
     public List<string> AnswerFlagNames { get; set; } = new();
+
+    /// <summary>What the grading call consumed. Never folded into the candidate's tokens.</summary>
+    public int? AssessmentInputTokens { get; set; }
+    public int? AssessmentOutputTokens { get; set; }
+    public long? AssessmentDurationMs { get; set; }
+
+    /// <summary>The assessor's rubric citations, as stored JSON.</summary>
+    public string? AssessmentEvidenceJson { get; set; }
+
+    /// <summary>The claim the assessor called a critical error, quoted from the answer.</summary>
+    public string? CriticalErrorQuote { get; set; }
+
+    /// <summary>Second-opinion verdict, present only when one was triggered. Advisory.</summary>
+    public int? SecondOpinionQualityScore { get; set; }
+    public bool? SecondOpinionCriticalError { get; set; }
+    public string? SecondOpinionByModelDisplayNameUsed { get; set; }
+    public string? SecondOpinionJson { get; set; }
+    public bool SecondOpinionDisagreed { get; set; }
 }
 
 public class BenchmarkRunDetailDto
@@ -289,6 +319,14 @@ public class BenchmarkRunDetailDto
     public string? AssessorModelThinkingLevelUsed { get; set; }
     public string? AssessorModelReasoningModeUsed { get; set; }
     public bool AssessorAvailable { get; set; }
+
+    /// <summary>Null when the run was started without a second-opinion assessor.</summary>
+    public long? SecondOpinionAssessorModelConfigurationId { get; set; }
+    public string? SecondOpinionAssessorModelDisplayNameUsed { get; set; }
+    public string? SecondOpinionAssessorModelProviderUsed { get; set; }
+    public string? SecondOpinionAssessorModelIdUsed { get; set; }
+    public string? SecondOpinionAssessorModelThinkingLevelUsed { get; set; }
+    public string? SecondOpinionAssessorModelReasoningModeUsed { get; set; }
 
     public string? StartedByUserId { get; set; }
     public string? StartedByUserName { get; set; }
@@ -318,6 +356,12 @@ public class BenchmarkRunDetailDto
     public int TransportDefectAnswerCount { get; set; }
 
     /// <summary>
+    /// Answers the harness repaired: leaked transport artifacts removed, the answer beneath
+    /// graded normally. Its own bucket, disjoint from the three others.
+    /// </summary>
+    public int RecoveredAnswerCount { get; set; }
+
+    /// <summary>
     /// Answers carrying an advisory flag. Overlaps the counts above and must never be summed
     /// with them.
     /// </summary>
@@ -342,7 +386,21 @@ public class BenchmarkRunDetailDto
     public long TotalCacheReadTokens { get; set; }
     public long TotalCacheCreationTokens { get; set; }
     public long TotalDurationMs { get; set; }
+
+    /// <summary>Assessor-side usage, kept apart from the candidate totals above.</summary>
+    public long TotalAssessmentInputTokens { get; set; }
+    public long TotalAssessmentOutputTokens { get; set; }
+    public long TotalAssessmentDurationMs { get; set; }
+
     public string? ErrorMessage { get; set; }
+
+    /// <summary>
+    /// Order indexes whose request is in flight to the provider right now. An answer row does
+    /// not exist until the model replies, so this is the only way the client can tell a
+    /// question that is being answered from one that has not been dispatched. Always empty for
+    /// a run that is not the current, still-running one.
+    /// </summary>
+    public List<int> InFlightOrderIndexes { get; set; } = new();
 
     public List<BenchmarkRunAnswerDto> Answers { get; set; } = new();
 }

@@ -135,7 +135,7 @@ public class BenchmarkRunFinalizerTests
     }
 
     [Fact]
-    public void Finalizer_WithAnswerFlags_CountsDegradedAndSetsCompletedWithErrors()
+    public void Finalizer_WithRecoveredArtifacts_SetsCompletedWithLimits()
     {
         var run = new BenchmarkRun
         {
@@ -153,6 +153,7 @@ public class BenchmarkRunFinalizerTests
                     DurationMs = 3000,
                     Difficulty = BenchmarkDifficulty.Intermediate,
                     AssessedDifficulty = 50,
+                    AnswerText = "A graded answer, with the leaked payload already removed.",
                     AnswerFlags = (int)BenchmarkAnswerFlags.HarnessArtifacts
                 }
             }
@@ -160,10 +161,47 @@ public class BenchmarkRunFinalizerTests
 
         BenchmarkRunFinalizer.Apply(run, run.Answers);
 
-        Assert.Equal(BenchmarkRunStatus.CompletedWithErrors, run.Status);
+        // The scrubber repaired this answer and it graded normally, so the run is valid. Calling
+        // it CompletedWithErrors reported a healthy run as broken — on the 2026-09-03 Luna run,
+        // five such answers scored 78 to 99 while the run was labelled errored and its
+        // diagnostics said "ERRORS: none".
+        Assert.Equal(BenchmarkRunStatus.CompletedWithLimits, run.Status);
         Assert.Equal(1, run.AnsweredQuestionCount);
+        Assert.Equal(1, run.RecoveredAnswerCount);
+        Assert.Equal(0, run.TransportDefectAnswerCount);
         Assert.Equal(1, run.DegradedAnswerCount);
         Assert.Equal(0, run.ToolStarvedAnswerCount);
+    }
+
+    [Fact]
+    public void Finalizer_WithEmptyAnswer_StillSetsCompletedWithErrors()
+    {
+        var run = new BenchmarkRun
+        {
+            Id = 2,
+            TotalQuestionCount = 1,
+            Answers = new List<BenchmarkRunAnswer>
+            {
+                new BenchmarkRunAnswer
+                {
+                    OrderIndex = 1,
+                    Status = BenchmarkAnswerStatus.EmptyAnswer,
+                    AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+                    DurationMs = 3000,
+                    Difficulty = BenchmarkDifficulty.Intermediate,
+                    AssessedDifficulty = 50,
+                    AnswerText = string.Empty,
+                    AnswerFlags = (int)(BenchmarkAnswerFlags.HarnessArtifacts | BenchmarkAnswerFlags.Empty)
+                }
+            }
+        };
+
+        BenchmarkRunFinalizer.Apply(run, run.Answers);
+
+        // An answer that did not survive the scrub is a genuine defect, not a recovery.
+        Assert.Equal(BenchmarkRunStatus.CompletedWithErrors, run.Status);
+        Assert.Equal(1, run.TransportDefectAnswerCount);
+        Assert.Equal(0, run.RecoveredAnswerCount);
     }
     // --- Integrity partition (Phase C1) ---
 
@@ -183,6 +221,9 @@ public class BenchmarkRunFinalizerTests
             DurationMs = 20000,
             Difficulty = BenchmarkDifficulty.Intermediate,
             AssessedDifficulty = 50,
+            // Non-empty: an answer with leaked artifacts counts as recovered only when text
+            // survived the scrub, and an empty one is a transport defect instead.
+            AnswerText = "Graded answer text.",
             AnswerFlags = (int)flags,
             ToolBudgetExhausted = budgetExhausted
         };
@@ -208,7 +249,7 @@ public class BenchmarkRunFinalizerTests
     [Fact]
     public void TransportDefect_TakesPrecedenceOverHarnessLimit()
     {
-        var answer = MakeAnswer(1, BenchmarkAnswerFlags.HarnessArtifacts, budgetExhausted: true);
+        var answer = MakeAnswer(1, BenchmarkAnswerFlags.Truncated, budgetExhausted: true);
 
         Assert.Equal(BenchmarkAnswerIntegrity.TransportDefect, BenchmarkRunFinalizer.Classify(answer));
         Assert.Equal(BenchmarkRunStatus.CompletedWithErrors,
@@ -216,10 +257,33 @@ public class BenchmarkRunFinalizerTests
     }
 
     [Fact]
+    public void RecoveredArtifacts_TakePrecedenceOverHarnessLimit_AndDoNotFailTheRun()
+    {
+        var answer = MakeAnswer(1, BenchmarkAnswerFlags.HarnessArtifacts, budgetExhausted: true);
+
+        Assert.Equal(BenchmarkAnswerIntegrity.Recovered, BenchmarkRunFinalizer.Classify(answer));
+        Assert.True(BenchmarkRunFinalizer.WasRecovered(answer));
+        Assert.False(BenchmarkRunFinalizer.HasTransportDefect(answer));
+        Assert.Equal(BenchmarkRunStatus.CompletedWithLimits,
+            BenchmarkRunFinalizer.ComputeStatus(new List<BenchmarkRunAnswer> { answer }));
+    }
+
+    [Fact]
+    public void RecoveredArtifacts_WithNoSurvivingText_AreATransportDefect()
+    {
+        var answer = MakeAnswer(1, BenchmarkAnswerFlags.HarnessArtifacts | BenchmarkAnswerFlags.Empty);
+        answer.AnswerText = string.Empty;
+
+        Assert.Equal(BenchmarkAnswerIntegrity.TransportDefect, BenchmarkRunFinalizer.Classify(answer));
+        Assert.False(BenchmarkRunFinalizer.WasRecovered(answer));
+    }
+
+    [Fact]
     public void IntegrityBuckets_PartitionEveryAnswerExactlyOnce()
     {
-        // The invariant the old report violated: clean + transport defects + harness limits must
-        // equal the question count, whatever combination of causes is present.
+        // The invariant the old report violated: clean + transport defects + recovered +
+        // harness limits must equal the question count, whatever combination of causes is
+        // present.
         var answers = new List<BenchmarkRunAnswer>
         {
             MakeAnswer(1),
@@ -234,12 +298,14 @@ public class BenchmarkRunFinalizerTests
 
         int clean = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.Clean);
         int defects = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.TransportDefect);
+        int recovered = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.Recovered);
         int limits = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.HarnessLimit);
 
-        Assert.Equal(answers.Count, clean + defects + limits);
-        Assert.Equal(2, clean);    // 1 and 5 (advisory only)
-        Assert.Equal(4, defects);  // 2, 3, 7, 8
-        Assert.Equal(2, limits);   // 4 and 6
+        Assert.Equal(answers.Count, clean + defects + recovered + limits);
+        Assert.Equal(2, clean);      // 1 and 5 (advisory only)
+        Assert.Equal(2, defects);    // 3 (truncated) and 8 (empty)
+        Assert.Equal(2, recovered);  // 2 and 7 — repaired and graded
+        Assert.Equal(2, limits);     // 4 and 6
     }
 
     [Fact]

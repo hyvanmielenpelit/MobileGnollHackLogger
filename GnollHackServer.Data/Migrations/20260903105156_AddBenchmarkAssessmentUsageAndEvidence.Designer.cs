@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using MobileGnollHackLogger.Data;
 
@@ -11,9 +12,11 @@ using MobileGnollHackLogger.Data;
 namespace GnollHackServer.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260903105156_AddBenchmarkAssessmentUsageAndEvidence")]
+    partial class AddBenchmarkAssessmentUsageAndEvidence
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -432,29 +435,6 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<int>("ScrubbedArtifactAnswerCount")
                         .HasColumnType("int");
 
-                    b.Property<long?>("SecondOpinionAssessorModelConfigurationId")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("SecondOpinionAssessorModelDisplayNameUsed")
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
-
-                    b.Property<string>("SecondOpinionAssessorModelIdUsed")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("SecondOpinionAssessorModelProviderUsed")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("SecondOpinionAssessorModelReasoningModeUsed")
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
-                    b.Property<string>("SecondOpinionAssessorModelThinkingLevelUsed")
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
                     b.Property<int?>("SpeedIndex")
                         .HasColumnType("int");
 
@@ -562,8 +542,6 @@ namespace GnollHackServer.Data.Migrations
                     b.HasIndex("BenchmarkSuiteId");
 
                     b.HasIndex("ScoringProfileId");
-
-                    b.HasIndex("SecondOpinionAssessorModelConfigurationId");
 
                     b.HasIndex("StartedAtUtc");
 
@@ -807,9 +785,6 @@ namespace GnollHackServer.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
-
-                    b.Property<int>("SecondOpinionQualityThreshold")
-                        .HasColumnType("int");
 
                     b.Property<double>("SpeedDecayK")
                         .HasColumnType("float");
@@ -2332,10 +2307,6 @@ namespace GnollHackServer.Data.Migrations
                         .WithMany()
                         .HasForeignKey("ScoringProfileId");
 
-                    b.HasOne("MobileGnollHackLogger.Data.SystemAiApiConfiguration", "SecondOpinionAssessorModelConfiguration")
-                        .WithMany()
-                        .HasForeignKey("SecondOpinionAssessorModelConfigurationId");
-
                     b.HasOne("MobileGnollHackLogger.Data.ApplicationUser", "StartedByUser")
                         .WithMany()
                         .HasForeignKey("StartedByUserId");
@@ -2349,8 +2320,6 @@ namespace GnollHackServer.Data.Migrations
                     b.Navigation("BenchmarkSuite");
 
                     b.Navigation("ScoringProfile");
-
-                    b.Navigation("SecondOpinionAssessorModelConfiguration");
 
                     b.Navigation("StartedByUser");
 

@@ -191,10 +191,56 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void ScoringMethodVersion_IsFour()
+    public void ScoringMethodVersion_IsFive()
     {
-        // Bumped with the artifact scrubbing and speed recalibration: v4 scores are not
-        // comparable with v3, and the report prints this so a mixed comparison is visible.
-        Assert.Equal(4, BenchmarkAssessmentPrompt.ScoringMethodVersion);
+        // v4 was the artifact scrubbing and speed recalibration. v5 changes what a critical
+        // error is — an omission can no longer be one, and the claim must be quoted — so v5
+        // scores are not comparable with v4, and the report prints this so a mixed comparison
+        // is visible.
+        Assert.Equal(5, BenchmarkAssessmentPrompt.ScoringMethodVersion);
+    }
+
+    [Fact]
+    public void PerQuestionPrompt_ExcludesOmissionsFromCriticalError_AndRequiresAQuote()
+    {
+        string prompt = BenchmarkAssessmentPrompt.BuildPerQuestionPrompt(
+            "Suite",
+            1,
+            "Question?",
+            BenchmarkDifficulty.Advanced,
+            "Rubric point one.",
+            "Answer text.",
+            BenchmarkAnswerStatus.Ok);
+
+        // The 2026-09-03 run capped a question at 25 because the answer "completely omits the
+        // character level 3 requirement" — an omission, which the rubric's own negative example
+        // already excluded.
+        Assert.Contains("An omission is NEVER a critical error", prompt);
+        Assert.Contains("criticalErrorQuote", prompt);
+        Assert.Contains("accuracyEvidence", prompt);
+        Assert.Contains("completenessEvidence", prompt);
+    }
+
+    [Fact]
+    public void SecondOpinionPrompt_CarriesTheFirstVerdictWithoutAskingForAgreement()
+    {
+        string prompt = BenchmarkAssessmentPrompt.BuildSecondOpinionPrompt(
+            "Suite",
+            17,
+            "How do sacrifice gifts work?",
+            BenchmarkDifficulty.Advanced,
+            "Rubric point one.",
+            "Answer text.",
+            BenchmarkAnswerStatus.Ok,
+            firstQualityScore: 25,
+            firstCriticalError: true,
+            firstComment: "Misstates the gift formula.");
+
+        Assert.Contains("SECOND OPINION", prompt);
+        Assert.Contains("Quality score: 25 / 100", prompt);
+        Assert.Contains("Critical error: yes", prompt);
+        Assert.Contains("Do NOT defer to the first verdict", prompt);
+        // The rubric must still be present: a second opinion graded against nothing is noise.
+        Assert.Contains("Rubric point one.", prompt);
     }
 }

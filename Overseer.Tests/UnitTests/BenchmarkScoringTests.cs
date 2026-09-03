@@ -1,4 +1,4 @@
-namespace Overseer.Tests.UnitTests;
+﻿namespace Overseer.Tests.UnitTests;
 
 using System;
 using System.Collections.Generic;
@@ -238,5 +238,14 @@ public class BenchmarkScoringTests
 
         Assert.True(score > 1,
             $"difficulty {difficulty} floored at the timeout ({score}); the metric would saturate");
+    }
+
+    [Fact]
+    public void SecondOpinionQualityThreshold_DefaultsToFifty()
+    {
+        // It is a scoring-profile value, not a configuration key: it changes what a run reports,
+        // and the profile is snapshotted into the run so a report can say what produced its
+        // second verdicts.
+        Assert.Equal(50, BenchmarkScoringConstants.Default.SecondOpinionQualityThreshold);
     }
 }

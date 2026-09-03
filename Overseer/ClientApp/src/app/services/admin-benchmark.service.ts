@@ -12,6 +12,8 @@ export interface BenchmarkScoringProfileDto {
   weightReadability: number;
   levelScoresJson: string;
   criticalErrorCeiling: number;
+  /** Quality score below which an answer is re-graded, when the run has a second-opinion assessor. 0 disables the score trigger. */
+  secondOpinionQualityThreshold: number;
   speedTargetMs: number;
   speedDecayK: number;
   speedDifficultyScaling: number;
@@ -29,6 +31,8 @@ export interface CreateBenchmarkScoringProfileRequest {
   weightReadability: number;
   levelScoresJson: string;
   criticalErrorCeiling: number;
+  /** Quality score below which an answer is re-graded, when the run has a second-opinion assessor. 0 disables the score trigger. */
+  secondOpinionQualityThreshold: number;
   speedTargetMs: number;
   speedDecayK: number;
   speedDifficultyScaling: number;
@@ -44,6 +48,8 @@ export interface UpdateBenchmarkScoringProfileRequest {
   weightReadability: number;
   levelScoresJson: string;
   criticalErrorCeiling: number;
+  /** Quality score below which an answer is re-graded, when the run has a second-opinion assessor. 0 disables the score trigger. */
+  secondOpinionQualityThreshold: number;
   speedTargetMs: number;
   speedDecayK: number;
   speedDifficultyScaling: number;
@@ -151,6 +157,11 @@ export interface StartBenchmarkRunRequest {
   suiteId: number;
   testedModelConfigurationId: number;
   assessorModelConfigurationId: number;
+  /**
+   * Optional. When set, answers flagged with a critical error or scored below the profile's
+   * threshold are re-graded once by this configuration. Null means no second opinion.
+   */
+  secondOpinionAssessorModelConfigurationId?: number | null;
   scoringProfileId?: number | null;
   acknowledgeSameProvider?: boolean;
 }
@@ -224,6 +235,24 @@ export interface BenchmarkRunAnswerDto {
   terminationReason?: string | null;
   answerFlags?: number;
   answerFlagNames?: string[];
+
+  /** What the grading call itself consumed. Never part of the candidate's token counts. */
+  assessmentInputTokens?: number | null;
+  assessmentOutputTokens?: number | null;
+  assessmentDurationMs?: number | null;
+
+  /** The assessor's rubric citations, as stored JSON. */
+  assessmentEvidenceJson?: string | null;
+
+  /** The claim the assessor called a critical error, quoted from the graded answer. */
+  criticalErrorQuote?: string | null;
+
+  /** Second-opinion verdict, present only where one was triggered. Advisory: the first scored. */
+  secondOpinionQualityScore?: number | null;
+  secondOpinionCriticalError?: boolean | null;
+  secondOpinionByModelDisplayNameUsed?: string | null;
+  secondOpinionJson?: string | null;
+  secondOpinionDisagreed?: boolean;
 }
 
 export interface BenchmarkRunDetailDto {
@@ -249,6 +278,14 @@ export interface BenchmarkRunDetailDto {
   assessorModelReasoningModeUsed?: string | null;
   assessorAvailable?: boolean;
 
+  /** Null when the run was started without a second-opinion assessor. */
+  secondOpinionAssessorModelConfigurationId?: number | null;
+  secondOpinionAssessorModelDisplayNameUsed?: string | null;
+  secondOpinionAssessorModelProviderUsed?: string | null;
+  secondOpinionAssessorModelIdUsed?: string | null;
+  secondOpinionAssessorModelThinkingLevelUsed?: string | null;
+  secondOpinionAssessorModelReasoningModeUsed?: string | null;
+
   startedByUserId?: string | null;
   startedByUserName?: string | null;
   status: string | number;
@@ -269,11 +306,16 @@ export interface BenchmarkRunDetailDto {
   degradedAnswerCount?: number;
   toolStarvedAnswerCount?: number;
   /**
-   * Answers compromised by a transport or provider defect. Disjoint from
-   * toolStarvedAnswerCount: together with the clean count these partition the run, so the
-   * three always sum to the question count.
+   * Answers corrupted beyond recovery (empty or truncated). Disjoint from
+   * recoveredAnswerCount and toolStarvedAnswerCount: together with the clean count these
+   * partition the run, so the four always sum to the question count.
    */
   transportDefectAnswerCount: number;
+  /**
+   * Answers the harness repaired: leaked transport artifacts removed, the answer beneath
+   * graded normally. A provider-path defect worth reporting, not a failed answer.
+   */
+  recoveredAnswerCount?: number;
   /**
    * Answers carrying an advisory flag. Overlaps the counts above and must never be summed
    * with them.
@@ -296,7 +338,20 @@ export interface BenchmarkRunDetailDto {
   totalCacheReadTokens: number;
   totalCacheCreationTokens: number;
   totalDurationMs: number;
+
+  /** Assessor-side usage, kept apart from the candidate totals above. */
+  totalAssessmentInputTokens?: number;
+  totalAssessmentOutputTokens?: number;
+  totalAssessmentDurationMs?: number;
+
   errorMessage?: string | null;
+
+  /**
+   * Order indexes whose request is in flight to the provider right now. Answer rows appear
+   * only after the model replies, so this is what separates a question being answered from
+   * one not yet dispatched. Empty for any run that is not currently executing.
+   */
+  inFlightOrderIndexes?: number[];
 
   answers: BenchmarkRunAnswerDto[];
 }

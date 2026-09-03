@@ -24,8 +24,30 @@ public class BenchmarkPerQuestionAssessmentResult
     [JsonPropertyName("criticalError")]
     public bool CriticalError { get; set; }
 
+    /// <summary>
+    /// The claim the assessor calls a critical error, quoted verbatim from the graded answer.
+    /// Required whenever <see cref="CriticalError"/> is true: the cap exists for asserted
+    /// falsehoods, and a quote is what distinguishes one from an omission.
+    /// </summary>
+    [JsonPropertyName("criticalErrorQuote")]
+    public string? CriticalErrorQuote { get; set; }
+
+    /// <summary>The rubric point behind the accuracy deduction, or the assessor's own basis.</summary>
+    [JsonPropertyName("accuracyEvidence")]
+    public string? AccuracyEvidence { get; set; }
+
+    /// <summary>The rubric point behind the completeness deduction, or the assessor's own basis.</summary>
+    [JsonPropertyName("completenessEvidence")]
+    public string? CompletenessEvidence { get; set; }
+
     [JsonPropertyName("comment")]
     public string? Comment { get; set; }
+
+    /// <summary>
+    /// Set when the parser demoted an uncited critical error. Not from the model.
+    /// </summary>
+    [JsonIgnore]
+    public bool CriticalErrorDemoted { get; set; }
 }
 
 public class PerQuestionAssessmentParseResult
@@ -113,7 +135,14 @@ public static class BenchmarkAssessmentParser
         ReadCommentHandling = JsonCommentHandling.Skip
     };
 
-    public static PerQuestionAssessmentParseResult ParsePerQuestion(string? rawText)
+    /// <summary>
+    /// Parses one per-question verdict. Pass <paramref name="gradedAnswerText"/> — the exact text
+    /// the assessor was shown — to have an uncited critical error demoted: the cap takes a
+    /// question to 25 regardless of its levels, and on the 2026-09-03 run it was applied for an
+    /// omission, which the rubric explicitly excludes. A claim that cannot be found in the
+    /// answer is not a claim the answer made.
+    /// </summary>
+    public static PerQuestionAssessmentParseResult ParsePerQuestion(string? rawText, string? gradedAnswerText = null)
     {
         if (string.IsNullOrWhiteSpace(rawText))
         {
@@ -155,6 +184,23 @@ public static class BenchmarkAssessmentParser
                 comment = commentProp.GetString();
             }
 
+            string? criticalErrorQuote = GetStringProperty(root, "criticalErrorQuote", "critical_error_quote");
+            string? accuracyEvidence = GetStringProperty(root, "accuracyEvidence", "accuracy_evidence");
+            string? completenessEvidence = GetStringProperty(root, "completenessEvidence", "completeness_evidence");
+
+            bool demoted = false;
+            if (criticalError && gradedAnswerText != null && !QuoteAppearsInAnswer(criticalErrorQuote, gradedAnswerText))
+            {
+                criticalError = false;
+                demoted = true;
+                string reason = string.IsNullOrWhiteSpace(criticalErrorQuote)
+                    ? "no quote was supplied"
+                    : "the quoted claim does not appear in the graded answer";
+                comment = string.IsNullOrWhiteSpace(comment)
+                    ? $"[Harness: critical error not applied — {reason}.]"
+                    : $"{comment} [Harness: critical error not applied — {reason}.]";
+            }
+
             var result = new BenchmarkPerQuestionAssessmentResult
             {
                 AccuracyLevel = Math.Clamp(accuracyLevel, 0, 6),
@@ -162,7 +208,11 @@ public static class BenchmarkAssessmentParser
                 ConcisenessLevel = Math.Clamp(concisenessLevel, 0, 6),
                 ReadabilityLevel = Math.Clamp(readabilityLevel, 0, 6),
                 CriticalError = criticalError,
-                Comment = comment
+                CriticalErrorQuote = criticalErrorQuote,
+                AccuracyEvidence = accuracyEvidence,
+                CompletenessEvidence = completenessEvidence,
+                Comment = comment,
+                CriticalErrorDemoted = demoted
             };
 
             return new PerQuestionAssessmentParseResult
@@ -304,6 +354,55 @@ public static class BenchmarkAssessmentParser
             }
         }
         return 0;
+    }
+
+    private static string? GetStringProperty(JsonElement element, params string[] propertyNames)
+    {
+        foreach (var name in propertyNames)
+        {
+            if (element.TryGetProperty(name, out var prop) && prop.ValueKind == JsonValueKind.String)
+            {
+                string? value = prop.GetString();
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    return value.Trim();
+                }
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Whether the assessor's quote is genuinely present in the graded answer. Whitespace and
+    /// case are normalised, because a model re-wraps and re-cases when it quotes; a minimum
+    /// length is required, because a two-word "quote" matches any prose and would defeat the
+    /// check it exists to perform.
+    /// </summary>
+    private static bool QuoteAppearsInAnswer(string? quote, string answerText)
+    {
+        if (string.IsNullOrWhiteSpace(quote) || string.IsNullOrWhiteSpace(answerText))
+        {
+            return false;
+        }
+
+        string normalizedQuote = NormalizeForQuoteMatch(quote);
+        if (normalizedQuote.Length < MinimumCriticalErrorQuoteLength)
+        {
+            return false;
+        }
+
+        return NormalizeForQuoteMatch(answerText).Contains(normalizedQuote, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private const int MinimumCriticalErrorQuoteLength = 16;
+
+    private static string NormalizeForQuoteMatch(string text)
+    {
+        // Markdown emphasis is dropped as well: an assessor quoting "**guaranteed**" as
+        // "guaranteed" is quoting the answer, and failing that match would demote a legitimate
+        // critical error, which is the expensive direction of this decision.
+        string collapsed = Regex.Replace(text, @"[*_`>#]", string.Empty);
+        return Regex.Replace(collapsed, @"\s+", " ").Trim();
     }
 
     private static string StripCodeFences(string text)

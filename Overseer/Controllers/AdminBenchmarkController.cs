@@ -1,9 +1,10 @@
-namespace Overseer.Controllers;
+﻿namespace Overseer.Controllers;
 
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
@@ -100,6 +101,7 @@ public class AdminBenchmarkController : ControllerBase
             WeightReadability = p.WeightReadability,
             LevelScoresJson = p.LevelScoresJson,
             CriticalErrorCeiling = p.CriticalErrorCeiling,
+            SecondOpinionQualityThreshold = p.SecondOpinionQualityThreshold,
             SpeedTargetMs = p.SpeedTargetMs,
             SpeedDecayK = p.SpeedDecayK,
             SpeedDifficultyScaling = p.SpeedDifficultyScaling,
@@ -124,6 +126,7 @@ public class AdminBenchmarkController : ControllerBase
             WeightReadability = request.WeightReadability,
             LevelScoresJson = request.LevelScoresJson,
             CriticalErrorCeiling = request.CriticalErrorCeiling,
+            SecondOpinionQualityThreshold = request.SecondOpinionQualityThreshold,
             SpeedTargetMs = request.SpeedTargetMs,
             SpeedDecayK = request.SpeedDecayK,
             SpeedDifficultyScaling = request.SpeedDifficultyScaling,
@@ -147,6 +150,7 @@ public class AdminBenchmarkController : ControllerBase
             WeightReadability = created.WeightReadability,
             LevelScoresJson = created.LevelScoresJson,
             CriticalErrorCeiling = created.CriticalErrorCeiling,
+            SecondOpinionQualityThreshold = created.SecondOpinionQualityThreshold,
             SpeedTargetMs = created.SpeedTargetMs,
             SpeedDecayK = created.SpeedDecayK,
             SpeedDifficultyScaling = created.SpeedDifficultyScaling,
@@ -170,6 +174,7 @@ public class AdminBenchmarkController : ControllerBase
             WeightReadability = request.WeightReadability,
             LevelScoresJson = request.LevelScoresJson,
             CriticalErrorCeiling = request.CriticalErrorCeiling,
+            SecondOpinionQualityThreshold = request.SecondOpinionQualityThreshold,
             SpeedTargetMs = request.SpeedTargetMs,
             SpeedDecayK = request.SpeedDecayK,
             SpeedDifficultyScaling = request.SpeedDifficultyScaling,
@@ -193,6 +198,7 @@ public class AdminBenchmarkController : ControllerBase
             WeightReadability = updated.WeightReadability,
             LevelScoresJson = updated.LevelScoresJson,
             CriticalErrorCeiling = updated.CriticalErrorCeiling,
+            SecondOpinionQualityThreshold = updated.SecondOpinionQualityThreshold,
             SpeedTargetMs = updated.SpeedTargetMs,
             SpeedDecayK = updated.SpeedDecayK,
             SpeedDifficultyScaling = updated.SpeedDifficultyScaling,
@@ -794,6 +800,22 @@ public class AdminBenchmarkController : ControllerBase
         if (assessorConfig == null || string.IsNullOrWhiteSpace(assessorConfig.EncryptedApiKey) || (assessorConfig.ModelRole & 4) != 4)
             return BadRequest("Assessor model configuration is invalid, missing an API key, or not configured with the Benchmark role.");
 
+        // Optional: a second-opinion assessor re-grades severe verdicts. Held to the same bar as
+        // the assessor, and simply absent when the operator did not pick one.
+        SystemAiApiConfiguration? secondOpinionConfig = null;
+        if (request.SecondOpinionAssessorModelConfigurationId.HasValue)
+        {
+            secondOpinionConfig = await _dbContext.SystemAiApiConfigurations
+                .FindAsync(request.SecondOpinionAssessorModelConfigurationId.Value);
+
+            if (secondOpinionConfig == null || !secondOpinionConfig.IsEnabled ||
+                string.IsNullOrWhiteSpace(secondOpinionConfig.EncryptedApiKey) ||
+                (secondOpinionConfig.ModelRole & 4) != 4)
+            {
+                return BadRequest("Second opinion assessor configuration is invalid, disabled, missing an API key, or not configured with the Benchmark role.");
+            }
+        }
+
         bool isSameProvider = _complianceGuard.IsSameProvider(testedConfig, assessorConfig);
         if (isSameProvider && !request.AcknowledgeSameProvider)
         {
@@ -830,6 +852,13 @@ public class AdminBenchmarkController : ControllerBase
             AssessorModelIdUsed = assessorConfig.ModelId,
             AssessorModelThinkingLevelUsed = assessorConfig.ThinkingLevel,
             AssessorModelReasoningModeUsed = assessorConfig.ReasoningMode,
+
+            SecondOpinionAssessorModelConfigurationId = secondOpinionConfig?.Id,
+            SecondOpinionAssessorModelDisplayNameUsed = secondOpinionConfig?.DisplayName,
+            SecondOpinionAssessorModelProviderUsed = secondOpinionConfig?.Provider,
+            SecondOpinionAssessorModelIdUsed = secondOpinionConfig?.ModelId,
+            SecondOpinionAssessorModelThinkingLevelUsed = secondOpinionConfig?.ThinkingLevel,
+            SecondOpinionAssessorModelReasoningModeUsed = secondOpinionConfig?.ReasoningMode,
 
             ScoringProfileId = request.ScoringProfileId,
             StartedByUserId = string.IsNullOrEmpty(userId) ? null : userId,
@@ -894,6 +923,13 @@ public class AdminBenchmarkController : ControllerBase
             AssessorModelReasoningModeUsed = run.AssessorModelReasoningModeUsed,
             AssessorAvailable = assessorAvailable,
 
+            SecondOpinionAssessorModelConfigurationId = run.SecondOpinionAssessorModelConfigurationId,
+            SecondOpinionAssessorModelDisplayNameUsed = run.SecondOpinionAssessorModelDisplayNameUsed,
+            SecondOpinionAssessorModelProviderUsed = run.SecondOpinionAssessorModelProviderUsed,
+            SecondOpinionAssessorModelIdUsed = run.SecondOpinionAssessorModelIdUsed,
+            SecondOpinionAssessorModelThinkingLevelUsed = run.SecondOpinionAssessorModelThinkingLevelUsed,
+            SecondOpinionAssessorModelReasoningModeUsed = run.SecondOpinionAssessorModelReasoningModeUsed,
+
             StartedByUserId = run.StartedByUserId,
             StartedByUserName = run.StartedByUser?.UserName,
             Status = run.Status,
@@ -918,6 +954,7 @@ public class AdminBenchmarkController : ControllerBase
             DegradedAnswerCount = run.DegradedAnswerCount,
             ToolStarvedAnswerCount = run.ToolStarvedAnswerCount,
             TransportDefectAnswerCount = run.TransportDefectAnswerCount,
+            RecoveredAnswerCount = run.RecoveredAnswerCount,
             AdvisoryFlagAnswerCount = run.AdvisoryFlagAnswerCount,
             ScrubbedArtifactAnswerCount = run.ScrubbedArtifactAnswerCount,
             ToolOverheadMs = run.ToolOverheadMs,
@@ -936,7 +973,13 @@ public class AdminBenchmarkController : ControllerBase
             TotalCacheReadTokens = run.TotalCacheReadTokens,
             TotalCacheCreationTokens = run.TotalCacheCreationTokens,
             TotalDurationMs = run.TotalDurationMs,
+            TotalAssessmentInputTokens = run.TotalAssessmentInputTokens,
+            TotalAssessmentOutputTokens = run.TotalAssessmentOutputTokens,
+            TotalAssessmentDurationMs = run.TotalAssessmentDurationMs,
             ErrorMessage = run.ErrorMessage,
+
+            // Empty unless this is the run currently executing in this process.
+            InFlightOrderIndexes = _runManager.GetInFlightQuestions(run.Id).ToList(),
 
             Answers = run.Answers.OrderBy(a => a.OrderIndex).Select(a => new BenchmarkRunAnswerDto
             {
@@ -995,7 +1038,17 @@ public class AdminBenchmarkController : ControllerBase
                 AssessedByModelDisplayNameUsed = a.AssessedByModelDisplayNameUsed,
                 AssessedByModelProviderUsed = a.AssessedByModelProviderUsed,
                 AssessedByModelIdUsed = a.AssessedByModelIdUsed,
-                AssessedAtUtc = a.AssessedAtUtc
+                AssessedAtUtc = a.AssessedAtUtc,
+                AssessmentInputTokens = a.AssessmentInputTokens,
+                AssessmentOutputTokens = a.AssessmentOutputTokens,
+                AssessmentDurationMs = a.AssessmentDurationMs,
+                AssessmentEvidenceJson = a.AssessmentEvidenceJson,
+                CriticalErrorQuote = a.CriticalErrorQuote,
+                SecondOpinionQualityScore = a.SecondOpinionQualityScore,
+                SecondOpinionCriticalError = a.SecondOpinionCriticalError,
+                SecondOpinionByModelDisplayNameUsed = a.SecondOpinionByModelDisplayNameUsed,
+                SecondOpinionJson = a.SecondOpinionJson,
+                SecondOpinionDisagreed = a.SecondOpinionDisagreed
             }).ToList()
         };
 
@@ -1346,7 +1399,9 @@ public class AdminBenchmarkController : ControllerBase
 
         if (run == null) return NotFound();
 
-        string markdown = BenchmarkReportBuilder.BuildMarkdownReport(run);
+        // The report's provenance line is worthless as a hard-coded fallback: every report ever
+        // produced claimed "1.0.0" because this caller never passed a version.
+        string markdown = BenchmarkReportBuilder.BuildMarkdownReport(run, GetOverseerVersion());
         string filename = $"{SanitizeFilename(run.SuiteName)}_{SanitizeFilename(run.TestedModelDisplayNameUsed)}_{run.StartedAtUtc:yyyyMMdd_HHmmss}.md";
 
         return File(Encoding.UTF8.GetBytes(markdown), "text/markdown; charset=utf-8", filename);
@@ -1410,6 +1465,24 @@ public class AdminBenchmarkController : ControllerBase
             await _dbContext.SaveChangesAsync();
         }
         return Ok();
+    }
+
+    /// <summary>
+    /// The running build, formatted as <c>SystemController</c> reports it to the client, so the
+    /// report's version line and the diagnostics' "Overseer build" line always agree.
+    /// </summary>
+    private static string? GetOverseerVersion()
+    {
+        var informational = Assembly.GetEntryAssembly()?
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+            .InformationalVersion;
+
+        if (string.IsNullOrWhiteSpace(informational))
+        {
+            return null;
+        }
+
+        return informational.Split('+')[0];
     }
 
     private static string SanitizeFilename(string name)

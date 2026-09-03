@@ -243,6 +243,59 @@
               </div>
             </div>
           </div>
+
+          <!-- Row 3: Second Opinion Assessor.
+               Optional, and off by default: a second opinion spends assessor tokens, and it is
+               only worth having from a *different* model, so there is no automatic fallback to
+               the assessor above. Selected here like every other model, never in configuration:
+               a System AI Config is a database row an administrator manages in this UI. -->
+          <div class="form-row">
+            <div class="form-group">
+              <label>Second Opinion Assessor (optional)</label>
+              <div class="custom-model-selector second-opinion-model-selector">
+                <button type="button" class="selector-trigger" (click)="toggleSecondOpinionModelDropdown($event)" [class.open]="isSecondOpinionModelDropdownOpen">
+                  <span class="model-name" [class.text-muted]="!selectedSecondOpinionModel">{{ selectedSecondOpinionModel?.displayName || selectedSecondOpinionModel?.modelId || 'None — no second opinion' }}</span>
+                  @if (selectedSecondOpinionModel?.thinkingLevel) {
+                    <span class="thinking-badge">{{ formatThinkingLevel(selectedSecondOpinionModel?.thinkingLevel) }}</span>
+                  }
+                  @if (showReasoningBadge(selectedSecondOpinionModel?.reasoningMode)) {
+                    <span class="reasoning-badge">{{ selectedSecondOpinionModel?.reasoningMode }}</span>
+                  }
+                  @if (selectedSecondOpinionModel?.provider) {
+                    <span class="provider-badge">{{ selectedSecondOpinionModel?.provider }}</span>
+                  }
+                  <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </button>
+                @if (isSecondOpinionModelDropdownOpen) {
+                  <div class="selector-dropdown">
+                    <div class="model-option" (click)="selectSecondOpinionModel(null)" [class.selected]="secondOpinionConfigId === null">
+                      <span class="model-name text-muted">None — no second opinion</span>
+                    </div>
+                    @for (model of benchmarkCapableConfigs; track model.id) {
+                      <div class="model-option" (click)="selectSecondOpinionModel(model)" [class.selected]="secondOpinionConfigId === model.id">
+                        <span class="model-name">{{ model.displayName || model.modelId }}</span>
+                        @if (model.thinkingLevel) {
+                          <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
+                        }
+                        @if (showReasoningBadge(model.reasoningMode)) {
+                          <span class="reasoning-badge">{{ model.reasoningMode }}</span>
+                        }
+                        <span class="provider-badge">{{ model.provider }}</span>
+                      </div>
+                    }
+                  </div>
+                }
+              </div>
+              <span class="form-hint">
+                Re-grades any answer flagged with a critical error, or scored below the scoring
+                profile's second opinion threshold. Both verdicts are kept and a disagreement is
+                flagged for review; the first verdict is what scores.
+                @if (selectedSecondOpinionModel && selectedSecondOpinionModel.id === assessorConfigId) {
+                  <strong>This is the same model as the assessor, which will mostly confirm its own verdict.</strong>
+                }
+              </span>
+            </div>
+          </div>
         </div>
 
         <div class="compliance-purpose-box mt-20">
@@ -600,7 +653,7 @@
           </div>
         </div>
 
-        @if ((selectedRunDetail.transportDefectAnswerCount ?? 0) > 0 || (selectedRunDetail.toolStarvedAnswerCount ?? 0) > 0 || (selectedRunDetail.advisoryFlagAnswerCount ?? 0) > 0) {
+        @if ((selectedRunDetail.transportDefectAnswerCount ?? 0) > 0 || (selectedRunDetail.recoveredAnswerCount ?? 0) > 0 || (selectedRunDetail.toolStarvedAnswerCount ?? 0) > 0 || (selectedRunDetail.advisoryFlagAnswerCount ?? 0) > 0 || disputedAnswerCount > 0) {
           <div class="alert alert-warning mb-20" role="alert">
             <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
@@ -610,19 +663,26 @@
             <div class="alert-content">
               <div class="alert-heading"><strong>Run Integrity Notice</strong></div>
               <!--
-                Three separate causes, deliberately never summed into one "degraded" figure.
-                A configured tool budget is not a transport defect, and an advisory flag is
-                not a failure at all, so each clause is rendered only when it applies.
+                Separate causes, deliberately never summed into one "degraded" figure. A
+                configured tool budget is not a transport defect, a repaired answer is not a
+                damaged one, and an advisory flag is not a failure at all, so each clause is
+                rendered only when it applies.
               -->
               <div class="alert-body">
                 @if ((selectedRunDetail.transportDefectAnswerCount ?? 0) > 0) {
-                  <div>{{ selectedRunDetail.transportDefectAnswerCount }} answer(s) show transport defects (empty, harness artifacts, or truncated).</div>
+                  <div>{{ selectedRunDetail.transportDefectAnswerCount }} answer(s) were corrupted beyond recovery (empty or truncated).</div>
+                }
+                @if ((selectedRunDetail.recoveredAnswerCount ?? 0) > 0) {
+                  <div>{{ selectedRunDetail.recoveredAnswerCount }} answer(s) were repaired by the harness before grading (leaked transport artifacts removed) and graded normally.</div>
                 }
                 @if ((selectedRunDetail.toolStarvedAnswerCount ?? 0) > 0) {
                   <div>{{ selectedRunDetail.toolStarvedAnswerCount }} answer(s) hit a configured harness limit (tool budget).</div>
                 }
                 @if ((selectedRunDetail.advisoryFlagAnswerCount ?? 0) > 0) {
                   <div>{{ selectedRunDetail.advisoryFlagAnswerCount }} answer(s) carry advisory flags.</div>
+                }
+                @if (disputedAnswerCount > 0) {
+                  <div>{{ disputedAnswerCount }} answer(s) were re-graded by a second assessor that reached a materially different verdict. The first verdict is what scored.</div>
                 }
               </div>
             </div>
@@ -792,6 +852,10 @@
                   @if (ans.criticalError) {
                     <span class="critical-badge" title="Critical error cap applied (Quality capped at 25)">CRITICAL ERROR</span>
                   }
+                  @if (ans.secondOpinionDisagreed) {
+                    <span class="disputed-badge"
+                          title="A second assessor reached a materially different verdict. The first verdict is what scored.">DISPUTED</span>
+                  }
                   <span class="q-title">{{ ans.questionText }}</span>
                 </div>
                 <div class="header-right">
@@ -852,6 +916,46 @@
                       <div class="eval-chip"><strong>Completeness:</strong> Level {{ ans.completenessLevel }}/6 ({{ ans.completenessScore }} pts)</div>
                       <div class="eval-chip"><strong>Conciseness:</strong> Level {{ ans.concisenessLevel }}/6 ({{ ans.concisenessScore }} pts)</div>
                       <div class="eval-chip"><strong>Readability:</strong> Level {{ ans.readabilityLevel }}/6 ({{ ans.readabilityScore }} pts)</div>
+                    </div>
+                  }
+
+                  <!--
+                    What the deductions rest on, and what a second assessor made of them. A
+                    score argued from the authored rubric and one argued from the grader's own
+                    recall are different claims; only the record tells them apart later.
+                  -->
+                  @if (answerEvidence(ans); as evidence) {
+                    <div class="assessment-evidence mb-15">
+                      @if (evidence.accuracy) {
+                        <div><strong>Accuracy evidence:</strong> {{ evidence.accuracy }}</div>
+                      }
+                      @if (evidence.completeness) {
+                        <div><strong>Completeness evidence:</strong> {{ evidence.completeness }}</div>
+                      }
+                      @if (ans.criticalError && ans.criticalErrorQuote) {
+                        <div><strong>Critical error quote:</strong> “{{ ans.criticalErrorQuote }}”</div>
+                      }
+                      @if (evidence.criticalErrorDemoted) {
+                        <div>
+                          <strong>Critical error:</strong> claimed by the assessor but not applied — the quoted
+                          claim could not be found in the graded answer, and an omission is not a critical error.
+                        </div>
+                      }
+                    </div>
+                  }
+
+                  @if (ans.secondOpinionQualityScore != null) {
+                    <div class="second-opinion-box mb-15" [class.is-disputed]="ans.secondOpinionDisagreed">
+                      <div>
+                        <strong>Second opinion ({{ ans.secondOpinionByModelDisplayNameUsed }}):</strong>
+                        {{ ans.secondOpinionQualityScore }} / 100, critical error
+                        {{ ans.secondOpinionCriticalError ? 'yes' : 'no' }} —
+                        {{ ans.secondOpinionDisagreed ? 'disagrees with' : 'agrees with' }} the first verdict.
+                      </div>
+                      <div class="second-opinion-note">
+                        Advisory. The first verdict is what scored; re-assess this question if you want the
+                        second reading to replace it.
+                      </div>
                     </div>
                   }
 
@@ -1026,6 +1130,10 @@
                 <dd>{{ profile.criticalErrorCeiling }}</dd>
               </div>
               <div class="profile-spec">
+                <dt>2nd Opinion Below</dt>
+                <dd>{{ profile.secondOpinionQualityThreshold ? profile.secondOpinionQualityThreshold : 'Off' }}</dd>
+              </div>
+              <div class="profile-spec">
                 <dt>Max Parallel</dt>
                 <dd>{{ profile.maxParallelQuestions }}</dd>
               </div>
@@ -1161,6 +1269,11 @@
             <label for="critCeiling">Critical Error Ceiling</label>
             <input id="critCeiling" type="number" min="1" max="100" class="gh-input" [(ngModel)]="profileForm.criticalErrorCeiling" aria-describedby="critCeilingHint">
             <span id="critCeilingHint" class="form-hint">The highest quality score an answer may keep when the evaluator flags a <em>critical error</em> &mdash; a confidently asserted falsehood a player would act on to their direct detriment. Applied as a cap after the weighted score is computed: a flagged answer scoring above this value is reduced to it; one already below is left unchanged. Must be between 1 and 100. Default <code>25</code>.</span>
+          </div>
+          <div class="form-group">
+            <label for="secondOpinionThreshold">Second Opinion Threshold</label>
+            <input id="secondOpinionThreshold" type="number" min="0" max="100" class="gh-input" [(ngModel)]="profileForm.secondOpinionQualityThreshold" aria-describedby="secondOpinionThresholdHint">
+            <span id="secondOpinionThresholdHint" class="form-hint">Quality score below which an answer is re-graded by the run's <strong>second opinion assessor</strong>, if one was selected when the run was started. An answer flagged with a critical error is re-graded whatever its score. Both verdicts are kept and a material disagreement is flagged for review; the first verdict is what scores. <code>0</code> disables the score trigger and leaves second opinions to critical errors alone. Must be between 0 and 100. Default <code>50</code>.</span>
           </div>
         </div>
       </fieldset>
@@ -1826,10 +1939,10 @@
     <div class="dialog-header">
       <div class="dialog-title-group">
         <h3 id="runProgressDialogTitle">Benchmark Run #{{ activeRunDetail?.id ?? activeRunId }}</h3>
+        <!-- Models are not in the header: they carry badges, and a header line cannot show
+             them without wrapping. They live in .run-model-strip at the top of the body. -->
         <p class="dialog-subtitle">
-          {{ activeRunDetail?.suiteName }} | Model: {{ activeRunDetail?.testedModelDisplayNameUsed }}
-          | Evaluator: {{ activeRunDetail?.assessorModelDisplayNameUsed }}
-          | Profile: {{ activeRunDetail?.scoringProfileName || 'Default' }}
+          {{ activeRunDetail?.suiteName }} | Profile: {{ activeRunDetail?.scoringProfileName || 'Default' }}
         </p>
       </div>
       <button type="button" class="btn-icon-action" aria-label="Close benchmark run progress" (click)="closeRunProgressDialog()">
@@ -1842,29 +1955,70 @@
     <div class="dialog-body">
       <h4 #runProgressHeading tabindex="-1" class="progress-heading">
         @if (activeRunDetail) {
-          {{ activeRunDetail.suiteName }} — {{ activeRunDetail.testedModelDisplayNameUsed }}
+          {{ activeRunDetail.suiteName }}
         } @else {
           Starting benchmark run…
         }
       </h4>
 
-      <!-- Stage rail: the run's three sequential phases, not one loop. -->
+      <!-- The two models, badged exactly as the selectors in the tab badge them, so the
+           configuration under test is legible without opening the report. -->
+      @if (activeRunDetail) {
+        <dl class="run-model-strip">
+          <div class="run-model-row">
+            <dt>Model under test</dt>
+            <dd>
+              <span class="model-name">{{ activeRunDetail.testedModelDisplayNameUsed || activeRunDetail.testedModelIdUsed }}</span>
+              @if (activeRunDetail.testedModelThinkingLevelUsed) {
+                <span class="thinking-badge">{{ formatThinkingLevel(activeRunDetail.testedModelThinkingLevelUsed) }}</span>
+              }
+              @if (showReasoningBadge(activeRunDetail.testedModelReasoningModeUsed)) {
+                <span class="reasoning-badge">{{ activeRunDetail.testedModelReasoningModeUsed }}</span>
+              }
+              @if (activeRunDetail.testedModelProviderUsed) {
+                <span class="provider-badge">{{ activeRunDetail.testedModelProviderUsed }}</span>
+              }
+              @if (activeRunDetail.testedModelServiceTierUsed) {
+                <span class="tier-badge" title="Requested service tier">{{ formatServiceTier(activeRunDetail.testedModelServiceTierUsed) }}</span>
+              }
+              @if (activeRunDetail.testedModelParallelExecutionModeUsed === 0) {
+                <span class="parallel-badge badge-sequential" title="Parallel tool calls are disabled for this key">Sequential</span>
+              }
+              @if (activeRunDetail.testedModelParallelExecutionModeUsed === 1) {
+                <span class="parallel-badge badge-on-request" title="Parallel tool calls are on request for this key">On request</span>
+              }
+            </dd>
+          </div>
+          <div class="run-model-row">
+            <dt>Evaluator</dt>
+            <dd>
+              <span class="model-name">{{ activeRunDetail.assessorModelDisplayNameUsed || activeRunDetail.assessorModelIdUsed }}</span>
+              @if (activeRunDetail.assessorModelThinkingLevelUsed) {
+                <span class="thinking-badge">{{ formatThinkingLevel(activeRunDetail.assessorModelThinkingLevelUsed) }}</span>
+              }
+              @if (showReasoningBadge(activeRunDetail.assessorModelReasoningModeUsed)) {
+                <span class="reasoning-badge">{{ activeRunDetail.assessorModelReasoningModeUsed }}</span>
+              }
+              @if (activeRunDetail.assessorModelProviderUsed) {
+                <span class="provider-badge">{{ activeRunDetail.assessorModelProviderUsed }}</span>
+              }
+            </dd>
+          </div>
+        </dl>
+      }
+
+      <!-- Stage rail: two stages, because the executor assesses each answer immediately
+           after producing it, inside the same loop. Only the synthesis is separate. -->
       <ol class="run-stage-rail" aria-label="Run stages">
         <li class="run-stage" [class.is-current]="runStage === 'answering'"
-            [class.is-done]="runStage === 'assessing' || runStage === 'finalizing'"
+            [class.is-done]="runStage === 'finalizing'"
             [attr.aria-current]="runStage === 'answering' ? 'step' : null">
           <span class="run-stage-index" aria-hidden="true">1</span>
-          <span class="run-stage-name">Collecting answers</span>
-        </li>
-        <li class="run-stage" [class.is-current]="runStage === 'assessing'"
-            [class.is-done]="runStage === 'finalizing'"
-            [attr.aria-current]="runStage === 'assessing' ? 'step' : null">
-          <span class="run-stage-index" aria-hidden="true">2</span>
-          <span class="run-stage-name">Assessing answers</span>
+          <span class="run-stage-name">Collecting and assessing answers</span>
         </li>
         <li class="run-stage" [class.is-current]="runStage === 'finalizing'"
             [attr.aria-current]="runStage === 'finalizing' ? 'step' : null">
-          <span class="run-stage-index" aria-hidden="true">3</span>
+          <span class="run-stage-index" aria-hidden="true">2</span>
           <span class="run-stage-name">Synthesis and scoring</span>
         </li>
       </ol>
@@ -1979,10 +2133,7 @@
     <div class="dialog-footer">
       @if (!runIsTerminal) {
         <button type="button" class="btn-gh btn-gh-cancel" (click)="closeRunProgressDialog()">Run in Background</button>
-        <button type="button" class="btn-gh btn-gh-delete" (click)="cancelActiveRun()">
-          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
-          Cancel Run
-        </button>
+        <button type="button" class="btn-gh btn-gh-delete" (click)="cancelActiveRun()">Cancel Run</button>
       } @else {
         <button type="button" class="btn-gh btn-gh-cancel" (click)="closeRunProgressDialog()">Close</button>
         <button type="button" class="btn-gh" (click)="viewActiveRunDetail()">View Full Report</button>

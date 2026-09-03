@@ -13,6 +13,14 @@ public record BenchmarkScoringConstants
     public IReadOnlyList<int> LevelScores { get; init; } = new[] { 1, 15, 35, 55, 72, 87, 100 };
     public int CriticalErrorCeiling { get; init; } = 25;
 
+    /// <summary>
+    /// Quality score below which an answer is re-graded by the run's second-opinion assessor,
+    /// when one was selected in the start dialog. 0 disables the score trigger; a critical
+    /// error triggers a re-grade regardless. Carried on the profile, and therefore snapshotted
+    /// into the run, so a report can say what threshold produced its second verdicts.
+    /// </summary>
+    public int SecondOpinionQualityThreshold { get; init; } = 50;
+
     // Speed constants are pinned to two invariants rather than to a convention:
     //
     //  1. The score floor must be unreachable within Benchmark:PerQuestionTimeoutSeconds (300 s)

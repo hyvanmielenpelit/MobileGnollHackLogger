@@ -88,6 +88,54 @@ public class BenchmarkRunAnswer
 
     public string? ReviewComment { get; set; }
 
+    // --- Assessment provenance and cost -----------------------------------------------------
+
+    // What the grading call itself consumed. Never folded into the candidate's InputTokens /
+    // OutputTokens below: those describe the model under test.
+    public int? AssessmentInputTokens { get; set; }
+    public int? AssessmentOutputTokens { get; set; }
+    public long? AssessmentDurationMs { get; set; }
+
+    /// <summary>
+    /// The assessor's own justification, as JSON: for each of accuracy and completeness, the
+    /// rubric point a deduction rests on, or an explicit statement that it rests on the
+    /// assessor's own knowledge instead. That distinction is the thing a disputed score turns
+    /// on, and before this column nothing recorded it.
+    /// </summary>
+    public string? AssessmentEvidenceJson { get; set; }
+
+    /// <summary>
+    /// The verbatim claim the assessor says is a critical error, quoted from the graded answer.
+    /// A critical error caps quality at 25, so it must point at text the answer actually
+    /// asserts; an unquoted one is demoted by the parser.
+    /// </summary>
+    [MaxLength(2048)]
+    public string? CriticalErrorQuote { get; set; }
+
+    // --- Second opinion ----------------------------------------------------------------------
+
+    /// <summary>
+    /// A second assessor's full verdict as JSON, produced when the first flagged a critical
+    /// error or scored the answer below the configured threshold. Advisory: the first verdict
+    /// stays authoritative for scoring, because silently replacing a score with whichever
+    /// grader spoke last is not an improvement in accuracy, only in agreeableness.
+    /// </summary>
+    public string? SecondOpinionJson { get; set; }
+
+    [MaxLength(256)]
+    public string? SecondOpinionByModelDisplayNameUsed { get; set; }
+
+    public int? SecondOpinionQualityScore { get; set; }
+
+    public bool? SecondOpinionCriticalError { get; set; }
+
+    /// <summary>
+    /// The two verdicts disagree materially — more than 15 quality points apart, or split on
+    /// the critical-error flag. Surfaced in the report and the UI so an operator can re-assess
+    /// with full information rather than discovering it by reading comments.
+    /// </summary>
+    public bool SecondOpinionDisagreed { get; set; }
+
     public long DurationMs { get; set; }
 
     // Wall-clock time spent executing tool batches within this turn. Measured per batch, not

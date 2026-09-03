@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using MobileGnollHackLogger.Data;
+using Overseer.Services.Providers;
 
 public sealed record BenchmarkScrubResult(
     string AnswerText,
@@ -28,33 +29,15 @@ public sealed record BenchmarkScrubResult(
 public sealed class BenchmarkArtifactScrubber
 {
     /// <summary>
-    /// Tool parameter names that authored prose about GnollHack would not plausibly use as JSON
-    /// keys. One of these in a bare object is enough to identify a leaked tool payload.
-    ///
-    /// `function_name` and `recipient_name` are here even though no registered tool declares
-    /// them: models hallucinate parameter names, and the 2026-09-03 run leaked
-    /// {"function_name":"get_encounter_monster_count","repository":"gnollhack"} — a payload no
-    /// schema-derived vocabulary would have matched.
+    /// The shared payload vocabulary, now owned by
+    /// <see cref="Providers.TransportArtifactRules"/> so the live streaming sanitizer recognises
+    /// exactly what this scrubber recognises. Kept as aliases because the run reports and tests
+    /// refer to them by these names.
     /// </summary>
-    public static readonly IReadOnlySet<string> DistinctiveParameterNames = new HashSet<string>(
-        StringComparer.Ordinal)
-    {
-        "repository", "file_filter", "filenames_only", "context_lines", "search_term",
-        "path_filter", "prefix_filter", "namespace_filter", "is_regex", "whole_word",
-        "max_results", "line_count", "start_line", "tool_uses", "function_name",
-        "recipient_name"
-    };
+    public static IReadOnlySet<string> DistinctiveParameterNames => TransportArtifactRules.DistinctiveParameterNames;
 
-    /// <summary>
-    /// Remaining parameter names of the tools the benchmark exposes. These are ordinary English
-    /// words, so one alone proves nothing; two or more with no foreign key does.
-    /// </summary>
-    public static readonly IReadOnlySet<string> GenericParameterNames = new HashSet<string>(
-        StringComparer.Ordinal)
-    {
-        "query", "name", "type", "file", "article", "section", "category", "topic",
-        "symbol", "kind", "parameters"
-    };
+    /// <inheritdoc cref="DistinctiveParameterNames"/>
+    public static IReadOnlySet<string> GenericParameterNames => TransportArtifactRules.GenericParameterNames;
 
     // A payload must clear this before the answer tail is trusted as the real answer. Below it,
     // only the payload spans themselves are removed: a trailing payload must never be allowed to
@@ -64,11 +47,11 @@ public sealed class BenchmarkArtifactScrubber
     private static readonly Regex MarkdownBlockRegex =
         new(@"^\s{0,3}(?:#{1,6}\s|[-*+]\s|\d+\.\s|>\s|\||```)", RegexOptions.Compiled | RegexOptions.Multiline);
 
-    private static readonly Regex ResidualRoutingMarkerRegex =
-        new(@"to=[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+", RegexOptions.Compiled);
+    // Shared with the streaming sanitizer: one definition, so a marker form learned in either
+    // place is known in both.
+    private static readonly Regex ResidualRoutingMarkerRegex = TransportArtifactRules.ToolRoutingMarkerRegex;
 
-    private static readonly Regex ControlTokenRegex =
-        new(@"<\|[a-zA-Z_]{1,32}\|>", RegexOptions.Compiled);
+    private static readonly Regex ControlTokenRegex = TransportArtifactRules.ControlTokenRegex;
 
     // Investigation narration: the model announcing tool work it is about to do, or has just
     // done, in the first person. This is analysis-channel content, not an answer to the question.
@@ -350,79 +333,11 @@ public sealed class BenchmarkArtifactScrubber
     }
 
     /// <summary>
-    /// Whether a balanced JSON object looks like a tool argument list: it carries a distinctive
-    /// parameter name, or it is made up entirely of two or more known parameter names.
+    /// Whether a balanced JSON object looks like a tool argument list. Delegates to the shared
+    /// rule set so the streaming sanitizer applies exactly the same test.
     /// </summary>
-    private static bool IsToolArgumentShaped(string json)
-    {
-        var keys = TopLevelKeys(json);
-        if (keys.Count == 0) return false;
+    private static bool IsToolArgumentShaped(string json) => TransportArtifactRules.IsToolArgumentShaped(json);
 
-        if (keys.Any(DistinctiveParameterNames.Contains))
-        {
-            return true;
-        }
-
-        return keys.Count >= 2 &&
-               keys.All(k => GenericParameterNames.Contains(k) || DistinctiveParameterNames.Contains(k));
-    }
-
-    /// <summary>
-    /// Top-level object keys, found by depth tracking rather than by a JSON parser: a leaked
-    /// payload is frequently malformed, and a parser would reject it and let it through.
-    /// </summary>
-    private static List<string> TopLevelKeys(string json)
-    {
-        var keys = new List<string>();
-        int depth = 0;
-        bool inString = false;
-        bool escaped = false;
-        int stringStart = -1;
-
-        for (int i = 0; i < json.Length; i++)
-        {
-            char c = json[i];
-
-            if (inString)
-            {
-                if (escaped) { escaped = false; continue; }
-                if (c == '\\') { escaped = true; continue; }
-                if (c == '"')
-                {
-                    inString = false;
-                    // A string at depth 1 followed by ':' is a top-level key.
-                    if (depth == 1)
-                    {
-                        int j = i + 1;
-                        while (j < json.Length && char.IsWhiteSpace(json[j])) j++;
-                        if (j < json.Length && json[j] == ':')
-                        {
-                            keys.Add(json.Substring(stringStart + 1, i - stringStart - 1));
-                        }
-                    }
-                }
-                continue;
-            }
-
-            switch (c)
-            {
-                case '"':
-                    inString = true;
-                    stringStart = i;
-                    break;
-                case '{':
-                case '[':
-                    depth++;
-                    break;
-                case '}':
-                case ']':
-                    depth--;
-                    break;
-            }
-        }
-
-        return keys;
-    }
 
     private static int FindBalancedObjectEnd(string text, int start)
     {

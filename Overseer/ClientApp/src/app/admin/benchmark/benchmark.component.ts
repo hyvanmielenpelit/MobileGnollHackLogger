@@ -32,14 +32,18 @@ import { parseServerUtcDate, elapsedMsBetween } from '../../utils/date.util';
 
 /**
  * One row of the run progress list: a suite question merged with its answer, if the run
- * has produced one yet. A question with no answer is genuinely Pending — the executor
- * writes an answer row only after the model replies, so no in-flight state is knowable
- * from the client.
+ * has produced one yet. The executor writes an answer row only after the model replies, so
+ * a question with no answer row is either dispatched or not: `BenchmarkRunDetailDto.
+ * inFlightOrderIndexes` — server-side state kept by `BenchmarkRunManager` — is what tells
+ * the two apart. In flight is 'Answering'; everything else with no answer is 'Pending'.
  */
 export interface BenchmarkRunProgressRow {
   orderIndex: number;
   questionText: string;
-  /** Formatted answer status, or 'Pending' when the run has not answered this question yet. */
+  /**
+   * Formatted answer status, or 'Answering' while the provider request is in flight, or
+   * 'Pending' when the run has not dispatched this question yet.
+   */
   status: string;
   /** Formatted assessment status, or '' when there is no answer yet. */
   assessmentStatus: string;
@@ -129,6 +133,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     weightReadability: 0.10,
     levelScoresJson: '[1, 15, 35, 55, 72, 87, 100]',
     criticalErrorCeiling: 25,
+    secondOpinionQualityThreshold: 50,
     speedTargetMs: 15000,
     speedDecayK: 20.0,
     speedDifficultyScaling: 1.0,
@@ -139,8 +144,16 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   // Run Setup
   testedConfigId: number | null = null;
   assessorConfigId: number | null = null;
+  /**
+   * Optional third model: re-grades answers the assessor flagged with a critical error or
+   * scored below the profile's threshold. Null means no second opinion for this run, which is
+   * the default — it spends tokens, and one model checking its own verdict is not a second
+   * reading, so there is deliberately no fallback to the assessor.
+   */
+  secondOpinionConfigId: number | null = null;
   isTestedModelDropdownOpen = false;
   isAssessorModelDropdownOpen = false;
+  isSecondOpinionModelDropdownOpen = false;
   startingRun = false;
   runErrorMessage: string | null = null;
   sameProviderWarning: SameProviderWarningDto | null = null;
@@ -400,6 +413,9 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     if (this.isAssessorModelDropdownOpen && !target.closest('.assessor-model-selector')) {
       this.isAssessorModelDropdownOpen = false;
     }
+    if (this.isSecondOpinionModelDropdownOpen && !target.closest('.second-opinion-model-selector')) {
+      this.isSecondOpinionModelDropdownOpen = false;
+    }
     if (this.isDifficultyAssessorDropdownOpen && !target.closest('.difficulty-assessor-model-selector')) {
       this.isDifficultyAssessorDropdownOpen = false;
     }
@@ -418,6 +434,10 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
 
   get selectedAssessorModel(): SystemAiConfigDto | undefined {
     return this.benchmarkCapableConfigs.find(c => c.id === this.assessorConfigId);
+  }
+
+  get selectedSecondOpinionModel(): SystemAiConfigDto | undefined {
+    return this.benchmarkCapableConfigs.find(c => c.id === this.secondOpinionConfigId);
   }
 
   get selectedDifficultyAssessorModel(): SystemAiConfigDto | undefined {
@@ -441,6 +461,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     this.isTestedModelDropdownOpen = !this.isTestedModelDropdownOpen;
     if (this.isTestedModelDropdownOpen) {
       this.isAssessorModelDropdownOpen = false;
+      this.isSecondOpinionModelDropdownOpen = false;
       this.isDifficultyAssessorDropdownOpen = false;
       this.isRetryAssessorDropdownOpen = false;
     }
@@ -451,6 +472,18 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     this.isAssessorModelDropdownOpen = !this.isAssessorModelDropdownOpen;
     if (this.isAssessorModelDropdownOpen) {
       this.isTestedModelDropdownOpen = false;
+      this.isSecondOpinionModelDropdownOpen = false;
+      this.isDifficultyAssessorDropdownOpen = false;
+      this.isRetryAssessorDropdownOpen = false;
+    }
+  }
+
+  toggleSecondOpinionModelDropdown(event: Event) {
+    event.stopPropagation();
+    this.isSecondOpinionModelDropdownOpen = !this.isSecondOpinionModelDropdownOpen;
+    if (this.isSecondOpinionModelDropdownOpen) {
+      this.isTestedModelDropdownOpen = false;
+      this.isAssessorModelDropdownOpen = false;
       this.isDifficultyAssessorDropdownOpen = false;
       this.isRetryAssessorDropdownOpen = false;
     }
@@ -462,6 +495,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     if (this.isDifficultyAssessorDropdownOpen) {
       this.isTestedModelDropdownOpen = false;
       this.isAssessorModelDropdownOpen = false;
+      this.isSecondOpinionModelDropdownOpen = false;
       this.isRetryAssessorDropdownOpen = false;
     }
   }
@@ -472,6 +506,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     if (this.isRetryAssessorDropdownOpen) {
       this.isTestedModelDropdownOpen = false;
       this.isAssessorModelDropdownOpen = false;
+      this.isSecondOpinionModelDropdownOpen = false;
       this.isDifficultyAssessorDropdownOpen = false;
     }
   }
@@ -484,6 +519,11 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   selectAssessorModel(config: SystemAiConfigDto) {
     this.assessorConfigId = config.id;
     this.isAssessorModelDropdownOpen = false;
+  }
+
+  selectSecondOpinionModel(config: SystemAiConfigDto | null) {
+    this.secondOpinionConfigId = config?.id ?? null;
+    this.isSecondOpinionModelDropdownOpen = false;
   }
 
   selectDifficultyAssessorModel(config: SystemAiConfigDto) {
@@ -571,6 +611,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       weightReadability: 0.10,
       levelScoresJson: '[1, 15, 35, 55, 72, 87, 100]',
       criticalErrorCeiling: 25,
+      secondOpinionQualityThreshold: 50,
       speedTargetMs: 15000,
       speedDecayK: 20.0,
       speedDifficultyScaling: 1.0,
@@ -591,6 +632,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       weightReadability: profile.weightReadability,
       levelScoresJson: profile.levelScoresJson,
       criticalErrorCeiling: profile.criticalErrorCeiling,
+      secondOpinionQualityThreshold: profile.secondOpinionQualityThreshold ?? 50,
       speedTargetMs: profile.speedTargetMs,
       speedDecayK: profile.speedDecayK,
       speedDifficultyScaling: profile.speedDifficultyScaling,
@@ -612,6 +654,14 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     const scaling = this.profileForm.speedDifficultyScaling;
     if (scaling == null || !isFinite(scaling) || scaling < 0 || scaling > 5) {
       this.profileValidationErrors.push('Speed difficulty scaling must be between 0.0 and 5.0.');
+      return;
+    }
+
+    // 0 is meaningful: it disables the score trigger and leaves second opinions to critical
+    // errors alone. Mirrors BenchmarkScoringProfileService.ValidateProfile.
+    const threshold = this.profileForm.secondOpinionQualityThreshold;
+    if (threshold == null || threshold < 0 || threshold > 100) {
+      this.profileValidationErrors.push('Second opinion threshold must be between 0 and 100.');
       return;
     }
 
@@ -1235,6 +1285,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       suiteId: this.selectedSuiteId,
       testedModelConfigurationId: this.testedConfigId,
       assessorModelConfigurationId: this.assessorConfigId,
+      secondOpinionAssessorModelConfigurationId: this.secondOpinionConfigId,
       scoringProfileId: this.selectedScoringProfileId,
       acknowledgeSameProvider: acknowledgeSameProvider
     };
@@ -1364,16 +1415,17 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   // --- Run Progress Dialog ---
 
   /**
-   * Which of the run's three sequential stages is executing. Derived entirely from the run
-   * detail: the executor answers every question, then assesses every answer, then produces
-   * the holistic synthesis, and each transition is visible in the DTO.
+   * Which of the run's two sequential stages is executing. `BenchmarkService` assesses each
+   * answer immediately after producing it, inside the same loop, in both the sequential and
+   * the parallel branch — so answering and assessing are one stage in wall-clock terms, and
+   * only the holistic synthesis is separate.
    */
-  get runStage(): 'answering' | 'assessing' | 'finalizing' | 'terminal' {
+  get runStage(): 'answering' | 'finalizing' | 'terminal' {
     const run = this.activeRunDetail;
     if (!run) return 'answering';
     if (this.formatStatus(run.status) !== 'Running') return 'terminal';
     if (run.answers.length < run.totalQuestionCount) return 'answering';
-    if (run.answers.some(a => this.isAssessmentIncomplete(a))) return 'assessing';
+    if (run.answers.some(a => this.isAssessmentIncomplete(a))) return 'answering';
     return 'finalizing';
   }
 
@@ -1383,11 +1435,9 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     const total = this.runTotalQuestionCount;
     switch (this.runStage) {
       case 'answering':
-        return `Stage 1 of 3 — Collecting answers. Answered ${this.runAnsweredCount} of ${total}.`;
-      case 'assessing':
-        return `Stage 2 of 3 — Assessing answers. Scored ${this.runScoredCount} of ${total}.`;
+        return `Stage 1 of 2 — Collecting and assessing answers. Answered ${this.runAnsweredCount} of ${total}, scored ${this.runScoredCount} of ${total}.`;
       case 'finalizing':
-        return `Stage 3 of 3 — Synthesis and scoring. All ${total} answers assessed.`;
+        return `Stage 2 of 2 — Synthesis and scoring. All ${total} answers assessed.`;
       default: {
         const status = this.formatStatus(run.status);
         const label = status === 'CompletedWithErrors'
@@ -1451,6 +1501,8 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       ? this.runProgressQuestions.map(q => ({ orderIndex: q.orderIndex, questionText: q.questionText }))
       : run.answers.map(a => ({ orderIndex: a.orderIndex, questionText: a.questionText }));
 
+    const inFlight = new Set<number>(run.inFlightOrderIndexes ?? []);
+
     return [...source]
       .sort((a, b) => a.orderIndex - b.orderIndex)
       .map(q => {
@@ -1459,7 +1511,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
           return {
             orderIndex: q.orderIndex,
             questionText: q.questionText,
-            status: 'Pending',
+            status: inFlight.has(q.orderIndex) ? 'Answering' : 'Pending',
             assessmentStatus: '',
             errorMessage: null
           };
@@ -1480,6 +1532,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
    */
   runRowChipLabel(row: BenchmarkRunProgressRow): string {
     if (row.status === 'Pending') return 'Pending';
+    if (row.status === 'Answering') return 'Answering';
     if (row.status === 'ProviderError') return 'Provider Error';
     if (row.status !== 'Ok') return row.status;
     if (row.assessmentStatus === 'Scored') return 'Scored';
@@ -1490,6 +1543,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
 
   runRowChipClass(row: BenchmarkRunProgressRow): string {
     if (row.status === 'Pending') return 'status-pending';
+    if (row.status === 'Answering') return 'status-answering';
     if (row.status === 'ProviderError') return 'status-providererror';
     if (row.status === 'Failed') return 'status-failed';
     if (row.status === 'Skipped') return 'status-skipped';
@@ -1554,7 +1608,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     } else {
       // --- RUN ---
       lines.push('--- RUN ---');
-      const stageStr = this.runStage === 'terminal' ? 'terminal' : (this.runStage === 'answering' ? '1' : this.runStage === 'assessing' ? '2' : '3');
+      const stageStr = this.runStage === 'terminal' ? 'terminal' : (this.runStage === 'answering' ? '1' : '2');
       lines.push(`Run ID: ${run.id}, Suite: ${run.suiteName} (${run.benchmarkSuiteId ?? 'n/a'}), Status: ${this.formatStatus(run.status)}, Stage: ${stageStr}, Started by: ${run.startedByUserName || 'unknown'}`);
       lines.push(`Started (raw):    ${run.startedAtUtc}`);
       const startedParsed = run.startedAtUtc ? parseServerUtcDate(run.startedAtUtc).toISOString() : 'n/a';
@@ -1578,6 +1632,8 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       // --- PROGRESS ---
       lines.push('--- PROGRESS ---');
       lines.push(`Answered ${this.runAnsweredCount} of ${this.runTotalQuestionCount}, scored ${this.runScoredCount} of ${this.runTotalQuestionCount}, failed ${this.runFailedAnswerCount}`);
+      const inFlight = run.inFlightOrderIndexes ?? [];
+      lines.push(`In flight: ${inFlight.length > 0 ? inFlight.map(i => `Q${i}`).join(', ') : 'none'}`);
       if (this.runProgressQuestions.length > 0 && this.runProgressQuestionsSuiteId != null) {
         lines.push(`Suite questions loaded: ${this.runProgressQuestions.length} for suite ${this.runProgressQuestionsSuiteId}`);
       } else {
@@ -1643,7 +1699,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       for (const row of this.runProgressRows) {
         const ans = run.answers.find(a => a.orderIndex === row.orderIndex);
         if (!ans) {
-          lines.push(`[Q${row.orderIndex}] status=Pending`);
+          lines.push(`[Q${row.orderIndex}] status=${row.status === 'Answering' ? 'Answering' : 'Pending'}`);
           continue;
         }
         const parts = [
@@ -2237,6 +2293,37 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   wasAssessedByOther(ans: BenchmarkRunAnswerDto): boolean {
     return ans.assessedByModelConfigurationId != null &&
       ans.assessedByModelConfigurationId !== this.selectedRunDetail?.assessorModelConfigurationId;
+  }
+
+  /** Answers where a second assessor reached a materially different verdict. */
+  get disputedAnswerCount(): number {
+    return (this.selectedRunDetail?.answers ?? []).filter(a => a.secondOpinionDisagreed).length;
+  }
+
+  /**
+   * The assessor's stored justification. Returns null when there is nothing to show — a run
+   * graded before evidence was collected, or a malformed blob — so the template's `@if` skips
+   * the block entirely. Evidence is commentary and never a score input, so a parse failure
+   * costs a panel and nothing else.
+   */
+  answerEvidence(ans: BenchmarkRunAnswerDto): { accuracy?: string; completeness?: string; criticalErrorDemoted?: boolean } | null {
+    if (!ans.assessmentEvidenceJson) {
+      return ans.criticalError && ans.criticalErrorQuote ? {} : null;
+    }
+
+    try {
+      const parsed = JSON.parse(ans.assessmentEvidenceJson);
+      const evidence = {
+        accuracy: typeof parsed?.accuracy === 'string' ? parsed.accuracy : undefined,
+        completeness: typeof parsed?.completeness === 'string' ? parsed.completeness : undefined,
+        criticalErrorDemoted: parsed?.criticalErrorDemoted === true
+      };
+      const hasAnything = evidence.accuracy || evidence.completeness || evidence.criticalErrorDemoted ||
+        (ans.criticalError && ans.criticalErrorQuote);
+      return hasAnything ? evidence : null;
+    } catch {
+      return null;
+    }
   }
 
   // --- Formatting Helpers ---
