@@ -187,7 +187,7 @@ describe('SuiteHealthComponent', () => {
     }));
 
     const badges: HTMLElement[] = Array.from(fixture.nativeElement.querySelectorAll('.item-flag'));
-    expect(badges.map(b => b.textContent?.trim())).toEqual(['AssessorConfounded', 'ScoringMethodMixed']);
+    expect(badges.map(b => b.textContent?.trim())).toEqual(['Assessor Confounded', 'Scoring Method Mixed']);
     expect(fixture.nativeElement.querySelector('.item-analysis-table tbody tr.is-confounded')).toBeTruthy();
   });
 
@@ -496,6 +496,155 @@ describe('SuiteHealthComponent', () => {
       });
       expect(serviceMock.getRubricCheck).toHaveBeenCalledWith('rubric-job-1');
       expect(component.rubricCheckJob?.status).toBe('Completed');
+    });
+  });
+
+  describe('Item analysis table sorting and accessibility', () => {
+    const multiItemAnalysis = buildAnalysis({
+      questionCount: 3,
+      items: [
+        buildItem({
+          questionId: 1,
+          orderIndex: 1,
+          questionText: 'Question 1',
+          meanQuality: 70,
+          minQuality: 60,
+          maxQuality: 80,
+          runCount: 6,
+          discrimination: 15.0,
+          meanToolCalls: 3,
+          flags: 0,
+          flagNames: []
+        }),
+        buildItem({
+          questionId: 2,
+          orderIndex: 2,
+          questionText: 'Question 2',
+          meanQuality: 90,
+          minQuality: 85,
+          maxQuality: 95,
+          runCount: 10,
+          discrimination: 40.0,
+          meanToolCalls: 8,
+          flags: 3,
+          flagNames: ['AssessorConfounded', 'Unstable', 'Miscalibrated']
+        }),
+        buildItem({
+          questionId: 3,
+          orderIndex: 3,
+          questionText: 'Question 3',
+          meanQuality: 40,
+          minQuality: 40,
+          maxQuality: 40,
+          runCount: 1,
+          discrimination: null,
+          meanToolCalls: 1,
+          flags: 1,
+          flagNames: ['Saturated']
+        })
+      ]
+    });
+
+    it('should sort by orderIndex ascending by default', () => {
+      open(multiItemAnalysis);
+
+      expect(component.sortColumn).toBe('orderIndex');
+      expect(component.sortDirection).toBe('asc');
+      const orderTexts = Array.from(fixture.nativeElement.querySelectorAll('.item-order'))
+        .map((el: any) => el.textContent.trim());
+      expect(orderTexts).toEqual(['Q1', 'Q2', 'Q3']);
+    });
+
+    it('should sort by meanQuality descending on first click, then toggle ascending', () => {
+      open(multiItemAnalysis);
+
+      const meanBtn = fixture.nativeElement.querySelector('.col-mean .sort-header-btn') as HTMLButtonElement;
+      expect(meanBtn).toBeTruthy();
+
+      meanBtn.click();
+      fixture.detectChanges();
+
+      expect(component.sortColumn).toBe('meanQuality');
+      expect(component.sortDirection).toBe('desc');
+      let orderTexts = Array.from(fixture.nativeElement.querySelectorAll('.item-order'))
+        .map((el: any) => el.textContent.trim());
+      expect(orderTexts).toEqual(['Q2', 'Q1', 'Q3']);
+
+      meanBtn.click();
+      fixture.detectChanges();
+
+      expect(component.sortDirection).toBe('asc');
+      orderTexts = Array.from(fixture.nativeElement.querySelectorAll('.item-order'))
+        .map((el: any) => el.textContent.trim());
+      expect(orderTexts).toEqual(['Q3', 'Q1', 'Q2']);
+    });
+
+    it('should sort by flags count descending', () => {
+      open(multiItemAnalysis);
+
+      component.sortBy('flags');
+      fixture.detectChanges();
+
+      expect(component.sortColumn).toBe('flags');
+      expect(component.sortDirection).toBe('desc');
+      const orderTexts = Array.from(fixture.nativeElement.querySelectorAll('.item-order'))
+        .map((el: any) => el.textContent.trim());
+      // Q2 has 3 flags, Q3 has 1 flag, Q1 has 0 flags
+      expect(orderTexts).toEqual(['Q2', 'Q3', 'Q1']);
+    });
+
+    it('should sort by sample count descending', () => {
+      open(multiItemAnalysis);
+
+      component.sortBy('sample');
+      fixture.detectChanges();
+
+      expect(component.sortColumn).toBe('sample');
+      expect(component.sortDirection).toBe('desc');
+      const orderTexts = Array.from(fixture.nativeElement.querySelectorAll('.item-order'))
+        .map((el: any) => el.textContent.trim());
+      // Q2 has 10 runs, Q1 has 6 runs, Q3 has 1 run
+      expect(orderTexts).toEqual(['Q2', 'Q1', 'Q3']);
+    });
+
+    it('should update aria-sort and aria-label attributes on header buttons', () => {
+      open(multiItemAnalysis);
+
+      const qTh = fixture.nativeElement.querySelector('th.col-q') as HTMLElement;
+      expect(qTh.getAttribute('aria-sort')).toBe('ascending');
+
+      const meanTh = fixture.nativeElement.querySelector('th.col-mean') as HTMLElement;
+      expect(meanTh.getAttribute('aria-sort')).toBe('none');
+
+      const meanBtn = meanTh.querySelector('.sort-header-btn') as HTMLButtonElement;
+      expect(meanBtn.getAttribute('aria-label')).toBe('Sort by Mean');
+
+      meanBtn.click();
+      fixture.detectChanges();
+
+      expect(qTh.getAttribute('aria-sort')).toBe('none');
+      expect(meanTh.getAttribute('aria-sort')).toBe('descending');
+      expect(meanBtn.getAttribute('aria-label')).toBe('Sort by Mean ascending');
+    });
+
+    it('should push null discrimination values to the end in both directions', () => {
+      open(multiItemAnalysis);
+
+      // Descending
+      component.sortBy('discrimination');
+      fixture.detectChanges();
+      let orderTexts = Array.from(fixture.nativeElement.querySelectorAll('.item-order'))
+        .map((el: any) => el.textContent.trim());
+      // Q2 (40.0), Q1 (15.0), Q3 (null)
+      expect(orderTexts).toEqual(['Q2', 'Q1', 'Q3']);
+
+      // Ascending
+      component.sortBy('discrimination');
+      fixture.detectChanges();
+      orderTexts = Array.from(fixture.nativeElement.querySelectorAll('.item-order'))
+        .map((el: any) => el.textContent.trim());
+      // Q1 (15.0), Q2 (40.0), Q3 (null)
+      expect(orderTexts).toEqual(['Q1', 'Q2', 'Q3']);
     });
   });
 });

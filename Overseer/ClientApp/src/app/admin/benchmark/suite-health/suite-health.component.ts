@@ -17,6 +17,20 @@ import { SystemAiConfigDto } from '../../../services/admin.service';
 
 export type SuiteHealthTab = 'items' | 'gaps' | 'citations' | 'coverage' | 'board-facts';
 
+export type ItemSortColumn =
+  | 'orderIndex'
+  | 'meanQuality'
+  | 'spread'
+  | 'assessedDifficulty'
+  | 'empiricalDifficulty'
+  | 'difficultyDelta'
+  | 'discrimination'
+  | 'meanToolCalls'
+  | 'flags'
+  | 'sample';
+
+export type SortDirection = 'asc' | 'desc';
+
 /**
  * Suite health: what the stored runs say about the *suite* rather than about the models.
  *
@@ -65,6 +79,9 @@ export class SuiteHealthComponent implements OnInit, OnChanges, OnDestroy {
   private rubricCheckPollInterval: any = null;
 
   activeTab: SuiteHealthTab = 'items';
+
+  sortColumn: ItemSortColumn = 'orderIndex';
+  sortDirection: SortDirection = 'asc';
 
   itemAnalysis: BenchmarkSuiteItemAnalysisDto | null = null;
   loadingItems = false;
@@ -131,6 +148,8 @@ export class SuiteHealthComponent implements OnInit, OnChanges, OnDestroy {
     this.rubricCheckError = null;
     this.isRubricCheckerDropdownOpen = false;
     this.stopRubricCheckPolling();
+    this.sortColumn = 'orderIndex';
+    this.sortDirection = 'asc';
   }
 
   /**
@@ -354,6 +373,101 @@ export class SuiteHealthComponent implements OnInit, OnChanges, OnDestroy {
     return `sh-tip-verdict-${questionId}-${index}`;
   }
 
+  editTipId(item: BenchmarkItemStatisticsDto): string {
+    return `sh-tip-edit-${item.questionId}`;
+  }
+
+  // --- Sorting ---
+
+  sortBy(column: ItemSortColumn): void {
+    if (this.sortColumn === column) {
+      this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+      this.sortColumn = column;
+      this.sortDirection = ['meanQuality', 'spread', 'discrimination', 'meanToolCalls', 'flags', 'sample'].includes(column) ? 'desc' : 'asc';
+    }
+    this.cdr.detectChanges();
+  }
+
+  getAriaSort(column: ItemSortColumn): 'ascending' | 'descending' | 'none' {
+    if (this.sortColumn !== column) return 'none';
+    return this.sortDirection === 'asc' ? 'ascending' : 'descending';
+  }
+
+  getSortAriaLabel(column: ItemSortColumn, label: string): string {
+    if (this.sortColumn !== column) {
+      return `Sort by ${label}`;
+    }
+    return this.sortDirection === 'asc' ? `Sort by ${label} descending` : `Sort by ${label} ascending`;
+  }
+
+  get sortedItems(): BenchmarkItemStatisticsDto[] {
+    if (!this.itemAnalysis?.items) return [];
+    const items = [...this.itemAnalysis.items];
+    const dir = this.sortDirection === 'asc' ? 1 : -1;
+    const col = this.sortColumn;
+
+    return items.sort((a, b) => {
+      let valA: number | null | undefined;
+      let valB: number | null | undefined;
+
+      switch (col) {
+        case 'orderIndex':
+          valA = a.orderIndex;
+          valB = b.orderIndex;
+          break;
+        case 'meanQuality':
+          valA = a.runCount > 0 ? a.meanQuality : null;
+          valB = b.runCount > 0 ? b.meanQuality : null;
+          break;
+        case 'spread':
+          valA = a.runCount > 1 ? (a.maxQuality - a.minQuality) : (a.runCount === 1 ? 0 : null);
+          valB = b.runCount > 1 ? (b.maxQuality - b.minQuality) : (b.runCount === 1 ? 0 : null);
+          break;
+        case 'assessedDifficulty':
+          valA = a.assessedDifficulty ?? null;
+          valB = b.assessedDifficulty ?? null;
+          break;
+        case 'empiricalDifficulty':
+          valA = a.runCount > 0 ? (a.empiricalDifficulty ?? null) : null;
+          valB = b.runCount > 0 ? (b.empiricalDifficulty ?? null) : null;
+          break;
+        case 'difficultyDelta':
+          valA = a.difficultyDelta ?? null;
+          valB = b.difficultyDelta ?? null;
+          break;
+        case 'discrimination':
+          valA = a.discrimination ?? null;
+          valB = b.discrimination ?? null;
+          break;
+        case 'meanToolCalls':
+          valA = a.runCount > 0 ? a.meanToolCalls : null;
+          valB = b.runCount > 0 ? b.meanToolCalls : null;
+          break;
+        case 'flags':
+          valA = a.flagNames ? a.flagNames.length : 0;
+          valB = b.flagNames ? b.flagNames.length : 0;
+          break;
+        case 'sample':
+          valA = a.runCount;
+          valB = b.runCount;
+          break;
+        default:
+          valA = a.orderIndex;
+          valB = b.orderIndex;
+      }
+
+      if (valA == null && valB == null) return a.orderIndex - b.orderIndex;
+      if (valA == null) return 1;
+      if (valB == null) return -1;
+
+      if (valA !== valB) {
+        return (valA < valB ? -1 : 1) * dir;
+      }
+      return a.orderIndex - b.orderIndex;
+    });
+  }
+
   // --- Row rendering ---
 
   discriminationLabel(item: BenchmarkItemStatisticsDto): string {
@@ -380,6 +494,16 @@ export class SuiteHealthComponent implements OnInit, OnChanges, OnDestroy {
   sampleLabel(item: BenchmarkItemStatisticsDto): string {
     return `${item.runCount} run(s) / ${item.distinctModelCount} model(s) / `
       + `${item.distinctAssessorCount} assessor(s) / ${item.distinctScoringMethodVersionCount} scoring method(s)`;
+  }
+
+  formatFlagName(flag: string): string {
+    switch (flag) {
+      case 'AssessorConfounded': return 'Assessor Confounded';
+      case 'ScoringMethodMixed': return 'Scoring Method Mixed';
+      case 'BudgetBound': return 'Budget Bound';
+      default:
+        return flag.replace(/([a-z])([A-Z])/g, '$1 $2');
+    }
   }
 
   flagTitle(flag: string): string {

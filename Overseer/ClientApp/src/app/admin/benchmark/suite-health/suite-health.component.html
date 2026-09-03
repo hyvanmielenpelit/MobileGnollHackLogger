@@ -163,21 +163,91 @@
           </caption>
           <thead>
             <tr>
-              <th scope="col" class="col-q">Q</th>
-              <th scope="col" class="num">Mean</th>
-              <th scope="col" class="num">Spread</th>
-              <th scope="col" class="num">Assessed</th>
-              <th scope="col" class="num">Empirical</th>
-              <th scope="col" class="num">Delta</th>
-              <th scope="col" class="num">Discrimination</th>
-              <th scope="col" class="num">Tool calls</th>
-              <th scope="col">Flags</th>
-              <th scope="col">Sample</th>
-              <th scope="col"><span class="visually-hidden">Actions</span></th>
+              <th scope="col" class="col-q" [attr.aria-sort]="getAriaSort('orderIndex')">
+                <button type="button" class="sort-header-btn sort-btn-start" (click)="sortBy('orderIndex')" [attr.aria-label]="getSortAriaLabel('orderIndex', 'question number')">
+                  <span>Question</span>
+                  <svg class="sort-icon" [class.active]="sortColumn === 'orderIndex'" [class.desc]="sortColumn === 'orderIndex' && sortDirection === 'desc'" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="18 15 12 9 6 15"></polyline>
+                  </svg>
+                </button>
+              </th>
+              <th scope="col" class="col-center col-mean" [attr.aria-sort]="getAriaSort('meanQuality')">
+                <button type="button" class="sort-header-btn" (click)="sortBy('meanQuality')" [attr.aria-label]="getSortAriaLabel('meanQuality', 'Mean')">
+                  <span>Mean</span>
+                  <svg class="sort-icon" [class.active]="sortColumn === 'meanQuality'" [class.desc]="sortColumn === 'meanQuality' && sortDirection === 'desc'" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="18 15 12 9 6 15"></polyline>
+                  </svg>
+                </button>
+              </th>
+              <th scope="col" class="col-center col-spread" [attr.aria-sort]="getAriaSort('spread')">
+                <button type="button" class="sort-header-btn" (click)="sortBy('spread')" [attr.aria-label]="getSortAriaLabel('spread', 'Spread')">
+                  <span>Spread</span>
+                  <svg class="sort-icon" [class.active]="sortColumn === 'spread'" [class.desc]="sortColumn === 'spread' && sortDirection === 'desc'" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="18 15 12 9 6 15"></polyline>
+                  </svg>
+                </button>
+              </th>
+              <th scope="col" class="col-center col-assessed" [attr.aria-sort]="getAriaSort('assessedDifficulty')">
+                <button type="button" class="sort-header-btn" (click)="sortBy('assessedDifficulty')" [attr.aria-label]="getSortAriaLabel('assessedDifficulty', 'Assessed difficulty')">
+                  <span>Assessed</span>
+                  <svg class="sort-icon" [class.active]="sortColumn === 'assessedDifficulty'" [class.desc]="sortColumn === 'assessedDifficulty' && sortDirection === 'desc'" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="18 15 12 9 6 15"></polyline>
+                  </svg>
+                </button>
+              </th>
+              <th scope="col" class="col-center col-empirical" [attr.aria-sort]="getAriaSort('empiricalDifficulty')">
+                <button type="button" class="sort-header-btn" (click)="sortBy('empiricalDifficulty')" [attr.aria-label]="getSortAriaLabel('empiricalDifficulty', 'Empirical difficulty')">
+                  <span>Empirical</span>
+                  <svg class="sort-icon" [class.active]="sortColumn === 'empiricalDifficulty'" [class.desc]="sortColumn === 'empiricalDifficulty' && sortDirection === 'desc'" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="18 15 12 9 6 15"></polyline>
+                  </svg>
+                </button>
+              </th>
+              <th scope="col" class="col-center col-delta" [attr.aria-sort]="getAriaSort('difficultyDelta')">
+                <button type="button" class="sort-header-btn" (click)="sortBy('difficultyDelta')" [attr.aria-label]="getSortAriaLabel('difficultyDelta', 'Delta')">
+                  <span>Delta</span>
+                  <svg class="sort-icon" [class.active]="sortColumn === 'difficultyDelta'" [class.desc]="sortColumn === 'difficultyDelta' && sortDirection === 'desc'" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="18 15 12 9 6 15"></polyline>
+                  </svg>
+                </button>
+              </th>
+              <th scope="col" class="col-center col-discrimination" [attr.aria-sort]="getAriaSort('discrimination')">
+                <button type="button" class="sort-header-btn" (click)="sortBy('discrimination')" [attr.aria-label]="getSortAriaLabel('discrimination', 'Discrimination')">
+                  <span class="th-title" title="Discrimination (item-rest correlation)">Discrim.</span>
+                  <svg class="sort-icon" [class.active]="sortColumn === 'discrimination'" [class.desc]="sortColumn === 'discrimination' && sortDirection === 'desc'" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="18 15 12 9 6 15"></polyline>
+                  </svg>
+                </button>
+              </th>
+              <th scope="col" class="col-center col-tool-calls" [attr.aria-sort]="getAriaSort('meanToolCalls')">
+                <button type="button" class="sort-header-btn" (click)="sortBy('meanToolCalls')" [attr.aria-label]="getSortAriaLabel('meanToolCalls', 'Tool calls')">
+                  <span class="th-title">Tool<br>calls</span>
+                  <svg class="sort-icon" [class.active]="sortColumn === 'meanToolCalls'" [class.desc]="sortColumn === 'meanToolCalls' && sortDirection === 'desc'" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="18 15 12 9 6 15"></polyline>
+                  </svg>
+                </button>
+              </th>
+              <th scope="col" class="col-flags" [attr.aria-sort]="getAriaSort('flags')">
+                <button type="button" class="sort-header-btn sort-btn-start" (click)="sortBy('flags')" [attr.aria-label]="getSortAriaLabel('flags', 'Flags')">
+                  <span>Flags</span>
+                  <svg class="sort-icon" [class.active]="sortColumn === 'flags'" [class.desc]="sortColumn === 'flags' && sortDirection === 'desc'" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="18 15 12 9 6 15"></polyline>
+                  </svg>
+                </button>
+              </th>
+              <th scope="col" class="col-sample" [attr.aria-sort]="getAriaSort('sample')">
+                <button type="button" class="sort-header-btn sort-btn-start" (click)="sortBy('sample')" [attr.aria-label]="getSortAriaLabel('sample', 'Sample')">
+                  <span>Sample</span>
+                  <svg class="sort-icon" [class.active]="sortColumn === 'sample'" [class.desc]="sortColumn === 'sample' && sortDirection === 'desc'" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="18 15 12 9 6 15"></polyline>
+                  </svg>
+                </button>
+              </th>
+              <th scope="col" class="col-actions"><span class="visually-hidden">Actions</span></th>
             </tr>
           </thead>
           <tbody>
-            @for (item of itemAnalysis.items; track item.questionId) {
+            @for (item of sortedItems; track item.questionId) {
               <tr [class.is-confounded]="item.confounded" [class.is-insufficient]="item.insufficientData">
                 <!-- A row header, not a plain cell: it is what makes an eleven-column table
                      navigable by screen reader, and what lets the column stay sticky without
@@ -186,27 +256,61 @@
                   <span class="item-order">Q{{ item.orderIndex }}</span>
                   <span class="item-text">{{ item.questionText }}</span>
                 </th>
-                <td class="num">{{ item.runCount > 0 ? (item.meanQuality | number:'1.1-1') : '—' }}</td>
-                <td class="num">{{ spreadLabel(item) }}</td>
-                <td class="num">{{ item.assessedDifficulty ?? '—' }}</td>
-                <td class="num">{{ item.runCount > 0 ? item.empiricalDifficulty : '—' }}</td>
-                <td class="num">{{ deltaLabel(item) }}</td>
-                <td class="num">{{ discriminationLabel(item) }}</td>
-                <td class="num">{{ item.runCount > 0 ? (item.meanToolCalls | number:'1.1-1') : '—' }}</td>
-                <td class="item-flags">
-                  @for (flag of item.flagNames; track flag) {
-                    <span class="item-flag" [class]="'flag-' + flag"
-                          [attr.interestfor]="flagTipId(item, flag)"
-                          [attr.style]="'anchor-name: --' + flagTipId(item, flag)">{{ flag }}</span>
-                    <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="flagTipId(item, flag)"
-                         [attr.style]="'position-anchor: --' + flagTipId(item, flag)">{{ flagTitle(flag) }}</div>
+                <td class="col-center col-mean">{{ item.runCount > 0 ? (item.meanQuality | number:'1.1-1') : '—' }}</td>
+                <td class="col-center col-spread">{{ spreadLabel(item) }}</td>
+                <td class="col-center col-assessed">{{ item.assessedDifficulty ?? '—' }}</td>
+                <td class="col-center col-empirical">{{ item.runCount > 0 ? item.empiricalDifficulty : '—' }}</td>
+                <td class="col-center col-delta">{{ deltaLabel(item) }}</td>
+                <td class="col-center col-discrimination">{{ discriminationLabel(item) }}</td>
+                <td class="col-center col-tool-calls">{{ item.runCount > 0 ? (item.meanToolCalls | number:'1.1-1') : '—' }}</td>
+                <td class="col-flags">
+                  <div class="item-flags">
+                    @for (flag of item.flagNames; track flag) {
+                      <span class="item-flag" [class]="'flag-' + flag"
+                            [attr.interestfor]="flagTipId(item, flag)"
+                            [attr.style]="'anchor-name: --' + flagTipId(item, flag)">{{ formatFlagName(flag) }}</span>
+                      <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="flagTipId(item, flag)"
+                           [attr.style]="'position-anchor: --' + flagTipId(item, flag)">{{ flagTitle(flag) }}</div>
+                    }
+                    @if (item.flagNames.length === 0) {
+                      <span class="text-muted">—</span>
+                    }
+                  </div>
+                </td>
+                <td class="item-sample col-sample">
+                  <div class="sample-breakdown">
+                    <span class="sample-part sample-runs"><strong class="sample-num">{{ item.runCount }}</strong> run(s)</span>
+                    <span class="sample-sep"> / </span>
+                    <span class="sample-part"><strong class="sample-num">{{ item.distinctModelCount }}</strong> model(s)</span>
+                    <span class="sample-sep"> / </span>
+                    <span class="sample-part"><strong class="sample-num">{{ item.distinctAssessorCount }}</strong> assessor(s)</span>
+                    <span class="sample-sep"> / </span>
+                    <span class="sample-part"><strong class="sample-num">{{ item.distinctScoringMethodVersionCount }}</strong> scoring method(s)</span>
+                  </div>
+                  @if (item.unknownRevisionCount > 0) {
+                    <div class="sample-revision-warning">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path>
+                        <line x1="12" y1="9" x2="12" y2="13"></line>
+                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                      </svg>
+                      <span>{{ item.unknownRevisionCount }} at an unrecorded revision</span>
+                    </div>
                   }
                 </td>
-                <td class="item-sample">{{ sampleLabel(item) }}@if (item.unknownRevisionCount > 0) { <span class="text-muted">, {{ item.unknownRevisionCount }} at an unrecorded revision</span> }</td>
-                <td>
-                  <button type="button" class="btn-link" (click)="editQuestion(item.questionId)">
-                    Edit question
+                <td class="col-actions">
+                  <button type="button" class="action-btn sh-action-edit"
+                          (click)="editQuestion(item.questionId)"
+                          [attr.aria-label]="'Edit question ' + item.orderIndex"
+                          [attr.interestfor]="editTipId(item)"
+                          [attr.style]="'anchor-name: --' + editTipId(item)">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
+                    </svg>
+                    <span class="visually-hidden">Edit question</span>
                   </button>
+                  <div popover="hint" class="gh-tooltip" [id]="editTipId(item)"
+                       [attr.style]="'position-anchor: --' + editTipId(item)">Edit question</div>
                 </td>
               </tr>
             }
