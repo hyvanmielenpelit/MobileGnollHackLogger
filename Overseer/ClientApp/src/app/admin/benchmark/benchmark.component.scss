@@ -1679,9 +1679,10 @@
   }
 }
 
-/* The two models under one panel, above the stage rail. Layout only: the badges reuse
-   .thinking-badge, .reasoning-badge, .provider-badge and .parallel-badge unchanged, so the
-   dialog and the tab's model selectors describe a configuration the same way. */
+/* The models under one panel, above the stage rail. Layout only: the badges reuse
+   .thinking-badge, .reasoning-badge, .provider-badge, .tier-badge, .parallel-badge and
+   .second-opinion-mode-badge unchanged, so the dialog and the tab's model selectors
+   describe a configuration the same way. */
 .run-model-strip {
   margin: 0 0 16px 0;
   padding: 12px 14px;
@@ -1736,9 +1737,11 @@
   }
 }
 
-/* Requested service tier. Neutral like .provider-badge: it is configuration, not a
-   capability claim, and must not compete with the thinking and reasoning badges. */
-.tier-badge {
+/* Requested service tier and second-opinion mode. Neutral like .provider-badge: they are
+   configuration, not capability claims, and must not compete with the thinking and
+   reasoning badges. */
+.tier-badge,
+.second-opinion-mode-badge {
   font-size: 11px;
   color: #aaa;
   background: #252525;

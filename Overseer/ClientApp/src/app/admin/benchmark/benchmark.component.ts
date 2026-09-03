@@ -686,6 +686,18 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     return lower !== 'default' && lower !== 'standard';
   }
 
+  formatSecondOpinionMode(mode: number | null | undefined): string {
+    const resolvedMode = mode ?? this.secondOpinionMode;
+    const option = this.secondOpinionModeOptions.find(o => o.value === resolvedMode);
+    return option && option.value !== BenchmarkSecondOpinionMode.Off ? option.label : '';
+  }
+
+  secondOpinionModeHintOf(mode: number | null | undefined): string {
+    const resolvedMode = mode ?? this.secondOpinionMode;
+    const option = this.secondOpinionModeOptions.find(o => o.value === resolvedMode);
+    return option?.hint ?? '';
+  }
+
   private setDefaultModelSelections() {
     const benchmarkModels = this.benchmarkCapableConfigs;
     if (benchmarkModels.length > 0) {

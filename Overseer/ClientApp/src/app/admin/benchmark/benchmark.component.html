@@ -2403,7 +2403,7 @@
         }
       </h4>
 
-      <!-- The two models, badged exactly as the selectors in the tab badge them, so the
+      <!-- The models, badged exactly as the selectors in the tab badge them, so the
            configuration under test is legible without opening the report. -->
       @if (activeRunDetail) {
         <dl class="run-model-strip">
@@ -2446,6 +2446,26 @@
               }
             </dd>
           </div>
+          @if ((activeRunDetail.secondOpinionAssessorModelDisplayNameUsed || activeRunDetail.secondOpinionAssessorModelIdUsed) && activeRunDetail.secondOpinionModeUsed !== 0) {
+            <div class="run-model-row">
+              <dt>Second opinion assessor</dt>
+              <dd>
+                <span class="model-name">{{ activeRunDetail.secondOpinionAssessorModelDisplayNameUsed || activeRunDetail.secondOpinionAssessorModelIdUsed }}</span>
+                @if (activeRunDetail.secondOpinionAssessorModelThinkingLevelUsed) {
+                  <span class="thinking-badge">{{ formatThinkingLevel(activeRunDetail.secondOpinionAssessorModelThinkingLevelUsed) }}</span>
+                }
+                @if (showReasoningBadge(activeRunDetail.secondOpinionAssessorModelReasoningModeUsed)) {
+                  <span class="reasoning-badge">{{ activeRunDetail.secondOpinionAssessorModelReasoningModeUsed }}</span>
+                }
+                @if (activeRunDetail.secondOpinionAssessorModelProviderUsed) {
+                  <span class="provider-badge">{{ activeRunDetail.secondOpinionAssessorModelProviderUsed }}</span>
+                }
+                @if (formatSecondOpinionMode(activeRunDetail.secondOpinionModeUsed)) {
+                  <span class="second-opinion-mode-badge" [title]="secondOpinionModeHintOf(activeRunDetail.secondOpinionModeUsed)">{{ formatSecondOpinionMode(activeRunDetail.secondOpinionModeUsed) }}</span>
+                }
+              </dd>
+            </div>
+          }
         </dl>
       }
 

@@ -2170,6 +2170,89 @@ describe('AdminBenchmarkComponent', () => {
       // which a unit test cannot assert — only that the markup it depends on is present.
     });
 
+    it('should render second opinion assessor row under Evaluator with selected mode when configured', () => {
+      component.activeRunDetail = {
+        id: 42,
+        status: 'Running',
+        suiteName: 'Default Suite',
+        testedModelDisplayNameUsed: 'Gemini 3.7 Flash',
+        testedModelProviderUsed: 'Google',
+        testedModelIdUsed: 'gemini-3.7-flash',
+        testedModelParallelExecutionModeUsed: 2,
+        assessorModelDisplayNameUsed: 'GPT-5.6 Luna',
+        assessorModelProviderUsed: 'OpenAI',
+        assessorModelIdUsed: 'gpt-5.6-luna',
+        secondOpinionAssessorModelDisplayNameUsed: 'Claude Opus 5',
+        secondOpinionAssessorModelProviderUsed: 'Anthropic',
+        secondOpinionAssessorModelIdUsed: 'claude-opus-5',
+        secondOpinionAssessorModelThinkingLevelUsed: 'high',
+        secondOpinionModeUsed: 1, // Only flagged answers
+        totalQuestionCount: 10,
+        answers: []
+      } as any;
+      component.isRunProgressDialogOpen = true;
+      fixture.detectChanges();
+
+      const strip = fixture.nativeElement.querySelector('.run-model-strip');
+      expect(strip).toBeTruthy();
+
+      const rows = strip.querySelectorAll('.run-model-row');
+      expect(rows.length).toBe(3);
+
+      const dts = strip.querySelectorAll('dt');
+      const dds = strip.querySelectorAll('dd');
+      expect(dts.length).toBe(3);
+      expect(dds.length).toBe(3);
+      expect(dts[0].textContent?.trim()).toBe('Model under test');
+      expect(dts[1].textContent?.trim()).toBe('Evaluator');
+      expect(dts[2].textContent?.trim()).toBe('Second opinion assessor');
+
+      expect(dds[2].textContent).toContain('Claude Opus 5');
+      expect(dds[2].querySelector('.thinking-badge')?.textContent?.trim()).toBe('High');
+      expect(dds[2].querySelector('.provider-badge')?.textContent?.trim()).toBe('Anthropic');
+      const modeBadge = dds[2].querySelector('.second-opinion-mode-badge');
+      expect(modeBadge).toBeTruthy();
+      expect(modeBadge?.textContent?.trim()).toBe('Only flagged answers');
+      expect(modeBadge?.getAttribute('title')).toContain('Critical errors');
+    });
+
+    it('should not render second opinion row if mode is Off (0)', () => {
+      component.activeRunDetail = {
+        id: 42,
+        status: 'Running',
+        suiteName: 'Default Suite',
+        testedModelDisplayNameUsed: 'Gemini 3.7 Flash',
+        testedModelProviderUsed: 'Google',
+        testedModelIdUsed: 'gemini-3.7-flash',
+        assessorModelDisplayNameUsed: 'GPT-5.6 Luna',
+        assessorModelProviderUsed: 'OpenAI',
+        assessorModelIdUsed: 'gpt-5.6-luna',
+        secondOpinionAssessorModelDisplayNameUsed: 'Claude Opus 5',
+        secondOpinionAssessorModelProviderUsed: 'Anthropic',
+        secondOpinionAssessorModelIdUsed: 'claude-opus-5',
+        secondOpinionModeUsed: 0,
+        totalQuestionCount: 10,
+        answers: []
+      } as any;
+      component.isRunProgressDialogOpen = true;
+      fixture.detectChanges();
+
+      const strip = fixture.nativeElement.querySelector('.run-model-strip');
+      expect(strip).toBeTruthy();
+      const rows = strip.querySelectorAll('.run-model-row');
+      expect(rows.length).toBe(2);
+    });
+
+    it('should format second opinion modes and hints correctly', () => {
+      expect(component.formatSecondOpinionMode(0)).toBe('');
+      expect(component.formatSecondOpinionMode(1)).toBe('Only flagged answers');
+      expect(component.formatSecondOpinionMode(2)).toBe('Flagged answers and statistical outliers');
+      expect(component.formatSecondOpinionMode(3)).toBe('Every answer (double grading)');
+
+      expect(component.secondOpinionModeHintOf(1)).toContain('Critical errors');
+      expect(component.secondOpinionModeHintOf(3)).toContain('measures grader agreement');
+    });
+
     it('should explain what the Model Under Test and the Assessor Model each do', () => {
       component.activeSubTab = 'run';
       fixture.detectChanges();
