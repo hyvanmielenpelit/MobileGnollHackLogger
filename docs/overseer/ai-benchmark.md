@@ -63,14 +63,18 @@ Levels are scored on a 7-point scale mapped non-linearly to 100 points:
 
 ### Speed Scoring Profiles
 Response speed is graded relative to a target latency and decay factor using:
-$$\text{Speed} = \text{clamp}\left(100 - k \cdot \log_2\left(\frac{\text{DurationMs}}{\text{TargetMs}}\right), 1, 100\right)$$
+$$\text{Speed} = \text{clamp}\left(100 - k \cdot \log_2\left(\frac{\text{ModelTime}}{Target(q)}\right), 1, 100\right)$$
+
+where $\text{ModelTime}$ is the turn duration with harness tool I/O removed, and $Target(q)$ scales with assessed difficulty. Note it is **not** `DurationMs`: on a tool-heavy question the two differ by the whole tool time.
 
 Overseer supports configuring scoring profiles to accommodate different agent architectures:
 1. **Standard Intelligence Index** (Default / Interactive Agent Profile):
-   - **Target Latency (`SpeedTargetMs`):** 5,000 ms (5 s)
-   - **Decay Factor (`SpeedDecayK`):** 25.0
+   - **Target Latency (`SpeedTargetMs`):** 15,000 ms (15 s)
+   - **Decay Factor (`SpeedDecayK`):** 20.0
    - **Max Parallel Questions:** 1 (Sequential, strict timing)
-   - **Intended Use:** Standard conversational models and interactive agents where rapid turn completion is desired. A 5-second response yields 100 points, decaying to 75 at 10s, 50 at 20s, and 25 at 40s.
+   - **Intended Use:** Standard conversational models and interactive agents where rapid turn completion is desired. At assessed difficulty 0 a 15-second response yields 100 points, decaying to 80 at 30s, 60 at 60s, and 40 at 120s; difficulty raises the target proportionally, so a difficulty-50 question is scored against 22.5 s rather than 15 s.
+
+> These two constants are pinned by the invariants documented on `BenchmarkScoringConstants`, and `BenchmarkScoringTests` fails the build if they are changed without re-deriving the per-band timeout margins. **This section previously documented 5,000 ms and k = 25.0**, which is what the constants were before the floor-versus-timeout analysis; the seeded default has been 15,000 ms and k = 20.0 since, and 15,000 is what reproduces published run scores.
 2. **Reasoning Agent Profile** (Deep Thinker Profile):
    - **Target Latency (`SpeedTargetMs`):** 30,000 ms (30 s)
    - **Decay Factor (`SpeedDecayK`):** 15.0
@@ -79,7 +83,7 @@ Overseer supports configuring scoring profiles to accommodate different agent ar
 
 ### Harness Version 2 & Scoring Method Version 3 Updates
 With Harness Version 2 and Scoring Method Version 3:
-- **Per-Question Tool Budget**: Candidate models have a dedicated tool execution budget of **25 calls per question** (configured via `Benchmark:MaxToolCallsPerQuestion`, default: 25). The budget scope is uniquely keyed per question (`bench_{runId}_q{orderIndex}`) with a 1-hour cache expiration. Once exhausted, subsequent tool calls in that question are rejected with an explanatory error (`BudgetExhausted = true`), preventing runaway loops while allowing the model to summarize its findings.
+- **Per-Question Tool Budget** *(historical — superseded by the four banded caps in Harness Version 5 below; `Benchmark:MaxToolCallsPerQuestion` no longer exists)*: Candidate models have a dedicated tool execution budget of **25 calls per question** (configured via `Benchmark:MaxToolCallsPerQuestion`, default: 25). The budget scope is uniquely keyed per question (`bench_{runId}_q{orderIndex}`) with a 1-hour cache expiration. Once exhausted, subsequent tool calls in that question are rejected with an explanatory error (`BudgetExhausted = true`), preventing runaway loops while allowing the model to summarize its findings.
 - **Unbiased Assessor Prompts**: Turn duration has been completely removed from per-question assessor prompts (`BuildPerQuestionPrompt`) to eliminate evaluator bias against thorough reasoning models.
 - **Harness Context Block**: Assessors receive a structured `Harness Context` detailing available tools, completed tool call count, and whether the tool budget was exhausted.
 - **Harness Artifact & Tool Unavailability Guidance**: Assessor instructions explicitly direct the evaluator not to dock scores when harness-imposed tool unavailability prevents information retrieval, and to treat raw tool call JSON, control tokens, and repetition as transport artifacts rather than model authoring flaws.
@@ -128,11 +132,30 @@ Prompted by a second defect the 2026-09-03 GPT-5.6 Luna run exposed: the report 
 - **The timeout is coupled to the speed floor.** The speed score reaches its floor of 1 point at $\text{ModelTime} / Target(q) = 2^{99/20} \approx 30.91$, where $Target(q) = \text{SpeedTargetMs} \cdot (1 + \text{Difficulty}(q)/100)$. Inside a band, the binding case is always its **lowest** difficulty: a lower difficulty means a smaller $Target(q)$, which means the floor is reached at a smaller `ModelTime` — the floor arrives earliest for the easiest question in the band. At the Simple band's floor difficulty (1) the floor sits at ≈468 s; Intermediate (36) at ≈631 s; Advanced (71) at ≈793 s. Each band's `QuestionTimeoutSeconds` sits below its own floor with 60-70 s of margin, which is why the timeout is banded rather than raised to one flat value: a flat 720 s — the value an Advanced question needs in order to spend 45 tool calls over 22 rounds — would let a Simple question run some 250 s *past* its own 468 s floor without timing out, so every Simple answer slower than 468 s would score 1 and be indistinguishable from every other slow Simple answer. That is exactly the flattening the speed constants were pinned to avoid.
 - **Report changes.** Answer headings are demoted (`BenchmarkReportBuilder.DemoteAnswerHeadings`) so a model's own `##`/`###` heading can never land at or above the report's own outline level; the advisory sentence for reasoning narration now distinguishes narration that was actually removed from narration that was merely detected (using `ScrubbedArtifactText` non-empty as the per-answer signal, since `NarrationBlockCount` is not a persisted column); the scrub counter reports transport payloads and reasoning narration as two separate figures instead of one that hid the narration count entirely; and a **Critical Errors** headline is printed under Results Summary — with the affected question numbers — whenever at least one answer was critical-error capped, omitted entirely when none was.
 
+### Harness Version 6 Updates
+
+Prompted by a review of the 2026-09-03 GPT-5.6 Luna run's report, diagnostics, and admin-UI screens. `ScoringMethodVersion` stays at **5** — no scoring formula changed — but `BenchmarkAssessmentPrompt.HarnessVersion` moves to **6**, because what a model is graded on changed for narration-carrying answers. Runs before and after are not comparable on those answers.
+
+- **The narration strip no longer stops at the first paragraph it does not recognise.** Harness version 5 claimed to remove reasoning narration before grading, and the report said so; two answers of the reference run nevertheless reached the assessor with narration intact and were docked for it, one losing 32 points on both conciseness and readability for "transport/preamble filler". The cause was structural: `BenchmarkArtifactScrubber` stripped narration only as a *prefix* and `break`ed at the first non-matching paragraph, so anything unrecognised at the front shielded every narration paragraph behind it. Q3 was shielded by a bare decoding artifact (`tsotlhe`); Q5 by `I found the relevant implementation…`, an opener the signature regex did not cover. Three changes:
+  - The strip now steps over up to **2** consecutive unrecognised leading paragraphs (`MaxNarrationShieldParagraphs`) and puts them back in front of whatever survives. A paragraph is only stepped over when it is shorter than `MaxShieldParagraphChars` and carries no Markdown block structure — otherwise the rule could reach into an answer's own body, where "Let me look at this another way" is ordinary prose.
+  - A leading paragraph that is a single bare word — letters only, no punctuation, no Markdown, no digits, at most `MaxOrphanTokenChars` — is removed as a decoding artifact (`StripLeadingOrphanToken`). Punctuation, emphasis markers, or a digit disqualify it, so an authored `**Yes.**` is untouched.
+  - `NarrationSignatureRegex` covers `I found the`, `I located the`, and `I confirmed the` alongside the existing `I have the` / `I need the`.
+- **The removal count is persisted.** `BenchmarkRunAnswer.NarrationBlockCount` (nullable `int`, migration `AddBenchmarkNarrationBlockCount`) records how many narration blocks the scrubber actually removed. The report previously inferred removal from `ScrubbedArtifactText` being non-empty — also true when only a leaked *payload* was removed — which is why it asserted a removal that had not happened. **Null means "not recorded", never zero**: runs before this version fall back to the old proxy and the report says the figure is inferred rather than measured.
+- **The speed score is annotated with the numbers it was computed from.** The per-question line printed `DurationMs` beside a score computed from `ModelTimeMs` against `Target(q)`. It now prints model time and the effective target.
+- **Budget pressure and grounding.** A question that stops one call short of its budget is not "exhausted" and was flagged nowhere, though it may have been cut off mid-investigation: the reference run's Q7 spent 34 of 35 and Q2 23 of 25. The Tool Usage Profile now names any question at or above 90% of its band budget, and separately names Advanced-band questions answered with one tool call or fewer — a signal about the *suite* rather than the model, since such a question is no longer testing source retrieval.
+- **Cache creation tokens read `n/a` when the provider does not report them.** OpenAI reports cache reads only, and a literal `0` beside four million cache reads reads as a cache that never warmed.
+- **Profile fit.** When the candidate ran at thinking level `high` or `max` against a profile whose `SpeedTargetMs` is below 30,000 ms, the Comparability block says the Speed Index is advisory for that run, and the run start dialog says so before the run. Advisory only: no gate, no scoring effect.
+- **The non-monotonicity note names the cause when it is known.** When every critical-error-capped question falls in one assessed band, that band's average is depressed by the cap rather than by difficulty, and the report says which band and which questions instead of offering the generic explanation.
+- **A forgone second opinion is quantified.** When no second opinion assessor was selected, the report states how many answers *would* have been re-graded, split by trigger. The reference run produced two critical errors with no second opinion selected — exactly the trigger the feature exists for — and nothing connected the two facts.
+- **Critical errors are surfaced in the admin UI.** The run-detail Run Integrity Notice now names the critical-error count and the affected question numbers, and fires even when a critical error is a run's only problem. Previously the screen showed five score tiles and the sentence "2 answer(s) carry advisory flags", with the two critical errors visible only by scrolling into the per-question list. The advisory-flag line names its questions too, and the client-side diagnostics capture labels the holistic score `holistic:` rather than `final:`.
+
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).
-- **Speed Score**: $\text{Speed} = \text{clamp}(100 - k \cdot \log_2(\text{DurationMs} / \text{TargetMs}), 1, 100)$.
+- **Model Time**: $\text{ModelTime} = \max(0, \text{DurationMs} - \text{ToolTimeMs})$ — the turn duration with harness tool I/O removed. This, not `DurationMs`, is what speed is scored on.
+- **Speed Target**: $Target(q) = T \cdot (1 + s \cdot \text{Difficulty}(q) / 100)$, where $T$ is `SpeedTargetMs` and $s$ is `SpeedDifficultyScaling`.
+- **Speed Score**: $\text{Speed} = \text{clamp}(100 - k \cdot \log_2(\text{ModelTime} / Target(q)), 1, 100)$, where $k$ is `SpeedDecayK`.
 - **Intelligence Index**: $\sum(\text{Difficulty}(q) \cdot \text{Quality}(q)) / \sum(\text{Difficulty}(q))$.
-- **Speed Index**: $\sum(\text{Difficulty}(q) \cdot \text{Speed}(q)) / \sum(\text{Difficulty}(q))$.
+- **Speed Index**: the **equal-weight mean** of $\text{Speed}(q)$ over answered questions. Difficulty enters through $Target(q)$, not through the weight — weighting here as well would count difficulty twice and drag the index toward the floor by construction. (This line previously claimed a difficulty-weighted mean, which neither the code nor the generated report has ever produced.)
 
 ---
 
@@ -261,3 +284,22 @@ Compliance review must be revisited if:
 
 - **Pin Explicit Thinking Levels**: Benchmark and assessor System AI Configurations should pin an explicit **Thinking Level** (e.g. `high`, `medium`, or `none`). Leaving it on `Default` makes a run's reasoning behavior depend on the model and on `AnthropicSettings:ExplicitDefaultEffort`, which can compromise run-to-run comparability over time.
 - **Assessor Token Limits (`AssessorMaxOutputTokens`)**: Evaluator and assessor completions share their `max_tokens` budget with internal reasoning/thinking output. The default fallback limit (`Benchmark:AssessorMaxOutputTokens`) is set to `32000` to prevent assessor evaluation JSON completions from being prematurely truncated when thinking is enabled. Individual assessor configurations can override this fallback using their per-configuration `MaxOutputTokens` setting.
+
+---
+
+## 7. Keeping Chat Limits in Step with the Benchmark
+
+The benchmark measures what the Overseer chat can do, so the chat's own defaults must not be tighter than the caps the harness grants its hardest questions. They were: before harness version 6 the chat allowed 15 tool iterations against the Advanced band's 22, and 50 tool calls against the Advanced band's 45.
+
+**The scope difference is the part that is easy to misread.** `ToolExecutor` keys its counter on `ToolBudgetScopeId ?? SessionId`. The benchmark sets a per-question scope (`bench_{runId}_q{orderIndex}`), so `Benchmark:ToolCallBudget:Advanced` is a **per-question** allowance. Chat sets none, so `AiPerformanceSettings:MaxCallsPerSession` is the allowance for an **entire chat session** across a four-hour window. Comparing the two numbers directly makes the chat look generous when it is not.
+
+Two invariants, to be re-checked whenever the benchmark bands are retuned:
+
+| Invariant | Today |
+|---|---|
+| `AiPerformanceSettings:MaxToolIterations:Default` **equals** `Benchmark:ToolIterations:Advanced` | 22 = 22 |
+| `AiPerformanceSettings:MaxCallsPerSession:Default` is **at least 3x** `Benchmark:ToolCallBudget:Advanced` | 150 ≥ 3 × 45 |
+
+The 3x factor is empirical, not arbitrary: on the 2026-09-03 run a single Advanced question executed up to **39** tool calls (Q13 and Q18, each 39 of 45), so a session budget has to cover several such questions rather than one. At the old default of 50, the second hard question in a session was refused mid-investigation with "Maximum tool calls per session exceeded."
+
+Both chat values remain user-adjustable in `/settings`; these are the defaults for a user who has never changed them. `MaxResultLength` already agreed at 10,000 on both sides, and chat's `ChatRequestTimeout` (1,800 s) already exceeds the Advanced band's per-question timeout (720 s).

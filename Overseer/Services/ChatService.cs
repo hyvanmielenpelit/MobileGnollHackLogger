@@ -704,8 +704,8 @@ public class ChatService
             SpoilerFreeMode = spoilerFreeMode, 
             OverseerMode = overseerMode, 
             IsGnollHackSession = isGnollHackSession,
-            MaxResultLength = userMaxResultLength ?? _configuration.GetValue<int>("AiPerformanceSettings:MaxResultLength:Default", 3000),
-            MaxCallsPerSession = userMaxCallsPerSession ?? _configuration.GetValue<int>("AiPerformanceSettings:MaxCallsPerSession:Default", 30),
+            MaxResultLength = userMaxResultLength ?? _configuration.GetValue<int>("AiPerformanceSettings:MaxResultLength:Default", 10000),
+            MaxCallsPerSession = userMaxCallsPerSession ?? _configuration.GetValue<int>("AiPerformanceSettings:MaxCallsPerSession:Default", 150),
             ShowDebugLog = _showDebugLog,
             EnableSubAgents = enableSubAgents,
             Budget = runBudget,
@@ -718,7 +718,7 @@ public class ChatService
                 await _hubContext.Clients.Group(currentSessionId.ToString()).SendAsync("ReceiveChatEvent", evt, CancellationToken.None);
             }
         };
-        int maxToolIterations = userMaxToolIterations ?? _configuration.GetValue<int>("AiPerformanceSettings:MaxToolIterations:Default", 32);
+        int maxToolIterations = userMaxToolIterations ?? _configuration.GetValue<int>("AiPerformanceSettings:MaxToolIterations:Default", 22);
 
         int cfgParallelMin = _configuration.GetValue<int>("AiPerformanceSettings:MaxParallelToolCalls:Min", 1);
         int cfgParallelMax = _configuration.GetValue<int>("AiPerformanceSettings:MaxParallelToolCalls:Max", 10);

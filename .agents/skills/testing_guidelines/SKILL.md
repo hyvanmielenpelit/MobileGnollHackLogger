@@ -13,12 +13,15 @@ Tests that call external APIs (like OpenAI, Anthropic, or Google) consume quota 
 
 *   **Ask for Permission**: You MUST ALWAYS ask the user for explicit permission before running any test that hits an external AI API.
 *   **Trait Tagging**: Every test method or class that connects to an external API must be decorated with `[Trait("Category", "UsesExternalApi")]`.
-*   **Default CLI Test Command**: When running test commands in verification plans or automated testing routines, always append `--filter "Category!=UsesExternalApi"` to prevent unintended API calls and quota consumption:
+*   **Default CLI Test Command**: When running test commands in verification plans or automated testing routines, always append `--filter "Category!=UsesExternalApi"` to prevent unintended API calls and quota consumption. **This is the command for this repository's implementation plans and verification runs:**
     ```bash
-    dotnet test MobileGnollHackLogger.slnx --filter "Category!=UsesExternalApi"
-    # or for specific project:
     dotnet test Overseer.Tests --filter "Category!=UsesExternalApi"
     ```
+    The whole-solution variant, for when the other test projects matter too:
+    ```bash
+    dotnet test MobileGnollHackLogger.slnx --filter "Category!=UsesExternalApi"
+    ```
+    Both commands are also stated in **`AGENTS.md`**, which is loaded into every context window, so they are available without invoking this skill. The Verification Plan rules that consume them are in `server_implementation_planning`.
 *   **CLI Instructions in Code**: The test file must contain a human-readable header comment instructing developers and agents on how to skip these tests during normal execution.
     ```csharp
     // To run tests while SKIPPING this file (to save AI API quota), use:
@@ -132,6 +135,7 @@ Run commands from the `Overseer/ClientApp/` directory:
     ```bash
     npm run test:headless
     ```
+    This is the command for this repository's implementation plans and verification runs, and it is also stated in **`AGENTS.md`**, which is loaded into every context window.
     *(Alternatively: `npx ng test --no-watch --browsers=ChromeHeadless` or `npm test -- --no-watch --browsers=ChromeHeadless`)*
 
 *   **Run Specific Test File (Headless)**:

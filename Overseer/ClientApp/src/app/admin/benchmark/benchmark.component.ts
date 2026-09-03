@@ -1650,7 +1650,9 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       // --- SCORES --- (only when terminal)
       if (this.runIsTerminal) {
         lines.push('--- SCORES ---');
-        lines.push(`final: ${run.finalScore ?? 'n/a'}, computed: ${run.computedScore ?? 'n/a'}, quality index: ${run.qualityIndex ?? 'n/a'}, speed index: ${run.speedIndex ?? 'n/a'}`);
+        // `finalScore` is the Holistic Assessor Score, which feeds no aggregate — labelling it
+        // "final" read as the canonical result, which is the Intelligence Index (quality index).
+        lines.push(`holistic: ${run.finalScore ?? 'n/a'}, computed: ${run.computedScore ?? 'n/a'}, quality index: ${run.qualityIndex ?? 'n/a'}, speed index: ${run.speedIndex ?? 'n/a'}`);
         lines.push('');
       }
 
@@ -2301,6 +2303,36 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   /**
+   * Answers the assessor flagged with a critical error, and therefore capped at the scoring
+   * profile's critical error ceiling. This is the failure mode the report tells readers to look
+   * for, and it is deliberately reported as a count rather than left to the Intelligence Index:
+   * the index weights by difficulty, so a critical error on an easy question barely moves it.
+   */
+  get criticalErrorAnswerCount(): number {
+    return (this.selectedRunDetail?.answers ?? []).filter(a => a.criticalError).length;
+  }
+
+  /** The question numbers of the critical-error answers, comma separated, for the integrity notice. */
+  get criticalErrorQuestionNumbers(): string {
+    return (this.selectedRunDetail?.answers ?? [])
+      .filter(a => a.criticalError)
+      .map(a => a.orderIndex)
+      .join(', ');
+  }
+
+  /**
+   * The question numbers of the answers carrying an advisory flag. The run-level
+   * `advisoryFlagAnswerCount` says how many there are; this names them, using the same per-answer
+   * test the question cards use so the two can never disagree.
+   */
+  get advisoryFlagQuestionNumbers(): string {
+    return (this.selectedRunDetail?.answers ?? [])
+      .filter(a => this.hasAdvisoryFlag(a))
+      .map(a => a.orderIndex)
+      .join(', ');
+  }
+
+  /**
    * The assessor's stored justification. Returns null when there is nothing to show — a run
    * graded before evidence was collected, or a malformed blob — so the template's `@if` skips
    * the block entirely. Evidence is commentary and never a score input, so a parse failure
@@ -2449,6 +2481,28 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
 
   get selectedSuite(): BenchmarkSuiteDto | undefined {
     return this.suites.find(s => s.id === this.selectedSuiteId);
+  }
+
+  get selectedScoringProfile(): BenchmarkScoringProfileDto | undefined {
+    return this.scoringProfiles.find(p => p.id === this.selectedScoringProfileId);
+  }
+
+  // --- Profile fit ---
+  //
+  // A deliberating model measured against a profile tuned for interactive latency scores badly on
+  // Speed Index for a reason that says nothing about the model: the target it is compared against
+  // was chosen for a different kind of workload. The pairing is legitimate, so it is an advisory
+  // rather than a block — but it is shown before the run, not explained after it.
+  private static readonly DELIBERATING_THINKING_LEVELS: readonly string[] = ['high', 'max'];
+  private static readonly INTERACTIVE_SPEED_TARGET_MAX_MS = 30000;
+
+  get showProfileFitAdvisory(): boolean {
+    const thinkingLevel = this.selectedTestedModel?.thinkingLevel;
+    const speedTargetMs = this.selectedScoringProfile?.speedTargetMs;
+    if (!thinkingLevel || speedTargetMs == null) return false;
+
+    return AdminBenchmarkComponent.DELIBERATING_THINKING_LEVELS.includes(thinkingLevel.toLowerCase()) &&
+      speedTargetMs < AdminBenchmarkComponent.INTERACTIVE_SPEED_TARGET_MAX_MS;
   }
 
   get canStartRun(): boolean {

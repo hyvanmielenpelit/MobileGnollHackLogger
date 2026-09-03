@@ -36,6 +36,14 @@ public class BenchmarkRunAnswer
 
     public int ScrubbedArtifactCount { get; set; }
 
+    // Reasoning-narration blocks removed from AnswerText, counted separately from
+    // ScrubbedArtifactCount, which counts leaked tool-argument payloads. Nullable because
+    // runs before harness version 6 never recorded it: null means "not recorded", not zero.
+    // Without this column the report had to infer removal from ScrubbedArtifactText being
+    // non-empty, which is also true when only a payload was removed - so it claimed
+    // narration had been removed from answers that still carried it.
+    public int? NarrationBlockCount { get; set; }
+
     public BenchmarkAnswerStatus Status { get; set; } = BenchmarkAnswerStatus.Ok;
 
     [MaxLength(2048)]

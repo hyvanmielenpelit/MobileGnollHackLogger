@@ -136,6 +136,19 @@
                   <option [ngValue]="profile.id">{{ formatProfileOption(profile) }}</option>
                 }
               </select>
+              <!--
+                Profile fit. A high/max thinking model measured against a profile tuned for
+                interactive latency scores badly on Speed Index for a reason that has nothing to do
+                with the model being slow for its class, so the mismatch is called out before the
+                run rather than explained afterwards.
+              -->
+              @if (showProfileFitAdvisory) {
+                <span class="form-hint">
+                  This profile targets interactive latency. A high/max thinking model will score low
+                  on Speed Index against it; consider a Reasoning Agent profile, or read the Speed
+                  Index as advisory.
+                </span>
+              }
             </div>
           </div>
 
@@ -190,6 +203,12 @@
                   </div>
                 }
               </div>
+              <span class="form-hint">
+                The candidate. Every question in the suite is answered by this configuration, and its
+                thinking level, reasoning mode, service tier and parallel tool call setting are
+                snapshotted onto the run and printed in the report. Speed Index is only comparable
+                between runs at the same thinking level.
+              </span>
             </div>
 
             <!-- Assessor Model -->
@@ -241,6 +260,12 @@
                   </div>
                 }
               </div>
+              <span class="form-hint">
+                Grades every answer against its rubric on four BARS dimensions and writes the closing
+                synthesis. It runs pipelined behind each answer, so a slow assessor rarely adds wall
+                time. Choosing the same provider as the model under test requires an explicit
+                acknowledgement before the run starts.
+              </span>
             </div>
 
             <!-- Second Opinion Assessor.
@@ -651,7 +676,7 @@
           </div>
         </div>
 
-        @if ((selectedRunDetail.transportDefectAnswerCount ?? 0) > 0 || (selectedRunDetail.recoveredAnswerCount ?? 0) > 0 || (selectedRunDetail.toolStarvedAnswerCount ?? 0) > 0 || (selectedRunDetail.advisoryFlagAnswerCount ?? 0) > 0 || disputedAnswerCount > 0) {
+        @if (criticalErrorAnswerCount > 0 || (selectedRunDetail.transportDefectAnswerCount ?? 0) > 0 || (selectedRunDetail.recoveredAnswerCount ?? 0) > 0 || (selectedRunDetail.toolStarvedAnswerCount ?? 0) > 0 || (selectedRunDetail.advisoryFlagAnswerCount ?? 0) > 0 || disputedAnswerCount > 0) {
           <div class="alert alert-warning mb-20" role="alert">
             <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
@@ -676,8 +701,20 @@
                 @if ((selectedRunDetail.toolStarvedAnswerCount ?? 0) > 0) {
                   <div>{{ selectedRunDetail.toolStarvedAnswerCount }} answer(s) hit a configured harness limit (tool budget).</div>
                 }
+                @if (criticalErrorAnswerCount > 0) {
+                  <div>
+                    <strong>{{ criticalErrorAnswerCount }} answer(s) capped by a critical error</strong>
+                    (question(s) {{ criticalErrorQuestionNumbers }}). The Intelligence Index weights by
+                    difficulty, so a critical error on an easy question barely moves it &mdash; read this
+                    count, not the index, for this failure mode.
+                  </div>
+                }
                 @if ((selectedRunDetail.advisoryFlagAnswerCount ?? 0) > 0) {
-                  <div>{{ selectedRunDetail.advisoryFlagAnswerCount }} answer(s) carry advisory flags.</div>
+                  <!--
+                    The count is a run-level field while the numbers are derived from the answer
+                    rows, so the parenthetical is rendered only when those rows are actually loaded.
+                  -->
+                  <div>{{ selectedRunDetail.advisoryFlagAnswerCount }} answer(s) carry advisory flags@if (advisoryFlagQuestionNumbers) { <span> (question(s) {{ advisoryFlagQuestionNumbers }})</span> }.</div>
                 }
                 @if (disputedAnswerCount > 0) {
                   <div>{{ disputedAnswerCount }} answer(s) were re-graded by a second assessor that reached a materially different verdict. The first verdict is what scored.</div>

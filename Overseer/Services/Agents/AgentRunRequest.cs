@@ -23,7 +23,7 @@ public class AgentRunRequest
     public string? ReasoningSummary { get; set; }
     public string? ServiceTier { get; set; }
     public int? MaxOutputTokens { get; set; }
-    public int MaxToolIterations { get; set; } = 32;
+    public int MaxToolIterations { get; set; } = 22;
     public int MaxParallelTools { get; set; } = 6;
     public int MaxParallelClientTools { get; set; } = 1;
     public bool EnableWebSearch { get; set; }

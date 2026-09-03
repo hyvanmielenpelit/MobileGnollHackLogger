@@ -759,6 +759,7 @@ public class BenchmarkService
             TerminationReason = runResult.TerminationReason,
             ScrubbedArtifactText = sanitized.ScrubbedArtifactText,
             ScrubbedArtifactCount = sanitized.ScrubbedArtifactCount,
+            NarrationBlockCount = sanitized.NarrationBlockCount,
             AnswerFlags = (int)sanitized.Flags
         };
 
@@ -929,6 +930,7 @@ public class BenchmarkService
         answer.TerminationReason = runResult.TerminationReason;
         answer.ScrubbedArtifactText = sanitized.ScrubbedArtifactText;
         answer.ScrubbedArtifactCount = sanitized.ScrubbedArtifactCount;
+        answer.NarrationBlockCount = sanitized.NarrationBlockCount;
         answer.AnswerFlags = (int)sanitized.Flags;
 
         await db.SaveChangesAsync(CancellationToken.None);

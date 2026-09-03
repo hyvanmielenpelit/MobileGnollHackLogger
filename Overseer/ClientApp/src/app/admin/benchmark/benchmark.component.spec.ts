@@ -1813,6 +1813,55 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.isAdvisoryFlagName('Empty')).toBeFalse();
     });
 
+    it('should count and name the critical error answers alongside the advisory ones', () => {
+      component.selectedRunDetail = buildCompletedRun({
+        advisoryFlagAnswerCount: 2,
+        answers: [
+          buildScoredAnswer(1, { qualityScore: 25, criticalError: true }),
+          buildScoredAnswer(2),
+          buildScoredAnswer(3, { qualityScore: 25, criticalError: true, answerFlags: 8, answerFlagNames: ['ReasoningBleed'] }),
+          buildScoredAnswer(4),
+          buildScoredAnswer(5, { answerFlags: 16, answerFlagNames: ['RepeatedFragments'] })
+        ]
+      });
+      fixture.detectChanges();
+
+      expect(component.criticalErrorAnswerCount).toBe(2);
+      expect(component.criticalErrorQuestionNumbers).toBe('1, 3');
+      expect(component.advisoryFlagQuestionNumbers).toBe('3, 5');
+
+      const text = integrityNoticeText().replace(/\s+/g, ' ').trim();
+      expect(text).toContain('2 answer(s) capped by a critical error (question(s) 1, 3).');
+      expect(text).toContain('2 answer(s) carry advisory flags (question(s) 3, 5).');
+    });
+
+    it('should raise the integrity notice for a critical error that is the only cause', () => {
+      component.selectedRunDetail = buildCompletedRun({
+        answers: [buildScoredAnswer(1, { qualityScore: 25, criticalError: true })]
+      });
+      fixture.detectChanges();
+
+      const text = integrityNoticeText().replace(/\s+/g, ' ').trim();
+      expect(text).toContain('1 answer(s) capped by a critical error (question(s) 1).');
+      expect(text).toContain('read this count, not the index, for this failure mode.');
+      expect(text).not.toContain('advisory flags');
+    });
+
+    it('should name no questions when there is no run detail or no flagged answer', () => {
+      component.selectedRunDetail = null;
+      expect(component.criticalErrorAnswerCount).toBe(0);
+      expect(component.criticalErrorQuestionNumbers).toBe('');
+      expect(component.advisoryFlagQuestionNumbers).toBe('');
+
+      component.selectedRunDetail = buildCompletedRun({ answers: [buildScoredAnswer(1), buildScoredAnswer(2)] });
+      fixture.detectChanges();
+
+      expect(component.criticalErrorAnswerCount).toBe(0);
+      expect(component.criticalErrorQuestionNumbers).toBe('');
+      expect(component.advisoryFlagQuestionNumbers).toBe('');
+      expect(integrityNoticeText()).toBe('');
+    });
+
     it('should format CompletedWithLimits from both the numeric and the string status', () => {
       expect(component.formatStatus(6)).toBe('CompletedWithLimits');
       expect(component.formatStatus('CompletedWithLimits')).toBe('CompletedWithLimits');
@@ -2108,6 +2157,82 @@ describe('AdminBenchmarkComponent', () => {
 
       // The alignment itself comes from the grid CSS (max-content / minmax(0, 1fr)),
       // which a unit test cannot assert — only that the markup it depends on is present.
+    });
+
+    it('should explain what the Model Under Test and the Assessor Model each do', () => {
+      component.activeSubTab = 'run';
+      fixture.detectChanges();
+
+      const groups = Array.from(
+        fixture.nativeElement.querySelectorAll('.form-row.three-cols > .form-group')
+      ) as HTMLElement[];
+
+      expect(groups[0].querySelector('.form-hint')?.textContent).toContain('The candidate.');
+      expect(groups[1].querySelector('.form-hint')?.textContent)
+        .toContain('four BARS dimensions');
+    });
+  });
+
+  describe('scoring profile fit advisory', () => {
+    /** Re-points the Model Under Test at a config carrying the given thinking level. */
+    function selectTestedModelWithThinkingLevel(level: string | null): void {
+      component.systemConfigs = [{ ...component.systemConfigs[0], thinkingLevel: level }];
+      component.testedConfigId = component.systemConfigs[0].id;
+    }
+
+    /** The hint rendered inside the scoring profile's own .form-group, if any. */
+    function profileFitHintText(): string {
+      const group = (fixture.nativeElement.querySelector('#profileSelect') as HTMLElement)?.parentElement;
+      const hint = group?.querySelector('.form-hint') as HTMLElement | null;
+      return (hint?.textContent ?? '').replace(/\s+/g, ' ').trim();
+    }
+
+    beforeEach(() => {
+      component.activeSubTab = 'run';
+    });
+
+    it('should warn when a deliberating model is graded against an interactive latency profile', () => {
+      // The default profile targets 15000 ms, which is well inside the interactive band.
+      for (const level of ['high', 'max', 'Max', 'HIGH']) {
+        selectTestedModelWithThinkingLevel(level);
+        expect(component.showProfileFitAdvisory).withContext(level).toBeTrue();
+      }
+
+      fixture.detectChanges();
+      expect(profileFitHintText()).toContain('This profile targets interactive latency.');
+      expect(profileFitHintText()).toContain('consider a Reasoning Agent profile');
+    });
+
+    it('should stay silent for a shallow thinking level or a profile with a slow speed target', () => {
+      selectTestedModelWithThinkingLevel('low');
+      expect(component.showProfileFitAdvisory).toBeFalse();
+
+      selectTestedModelWithThinkingLevel('max');
+      component.scoringProfiles = [{ ...component.scoringProfiles[0], speedTargetMs: 30000 }];
+      expect(component.showProfileFitAdvisory).toBeFalse();
+
+      fixture.detectChanges();
+      expect(profileFitHintText()).toBe('');
+    });
+
+    it('should stay silent while either half of the pairing is unselected', () => {
+      component.testedConfigId = null;
+      component.selectedScoringProfileId = null;
+      expect(component.showProfileFitAdvisory).toBeFalse();
+
+      // A model chosen, but no profile yet.
+      selectTestedModelWithThinkingLevel('max');
+      component.selectedScoringProfileId = null;
+      expect(component.showProfileFitAdvisory).toBeFalse();
+
+      // A profile chosen, but no model yet.
+      component.selectedScoringProfileId = 1;
+      component.testedConfigId = null;
+      expect(component.showProfileFitAdvisory).toBeFalse();
+
+      // A model with no thinking level at all is not a deliberating one.
+      selectTestedModelWithThinkingLevel(null);
+      expect(component.showProfileFitAdvisory).toBeFalse();
     });
   });
 });

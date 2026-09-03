@@ -52,7 +52,7 @@ namespace Overseer.Services.Tools
         public string DataDirectory { get; set; } = string.Empty;
         public bool IsGnollHackSession { get; set; }
         public int MaxResultLength { get; set; } = 10000;
-        public int MaxCallsPerSession { get; set; } = 50;
+        public int MaxCallsPerSession { get; set; } = 150;
         public string? ToolCallId { get; set; }
         public string? AgentName { get; set; }
         public int AgentDepth { get; set; } = 0;

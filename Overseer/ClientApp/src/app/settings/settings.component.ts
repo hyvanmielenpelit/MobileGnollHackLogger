@@ -113,8 +113,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
     return [
       { label: 'Default', value: null, text: `Default \u2013 ${l.defaultValue}` },
       { label: 'Minimal', value: Math.max(l.min, 5), text: `Minimal \u2013 ${Math.max(l.min, 5)}` },
-      { label: 'Low', value: Math.max(l.min, 15), text: `Low \u2013 ${Math.max(l.min, 15)}` },
-      { label: 'Medium', value: 50, text: `Medium \u2013 50` },
+      { label: 'Low', value: Math.max(l.min, 40), text: `Low \u2013 ${Math.max(l.min, 40)}` },
+      { label: 'Medium', value: 80, text: `Medium \u2013 80` },
       { label: 'High', value: Math.min(l.max, 100), text: `High \u2013 ${Math.min(l.max, 100)}` },
       { label: 'Very High', value: Math.min(l.max, 250), text: `Very High \u2013 ${Math.min(l.max, 250)}` },
       { label: 'Custom', value: 'custom', text: 'Custom' }
@@ -128,9 +128,9 @@ export class SettingsComponent implements OnInit, OnDestroy {
       { label: 'Default', value: null, text: `Default \u2013 ${l.defaultValue}` },
       { label: 'Minimal', value: Math.max(l.min, 3), text: `Minimal \u2013 ${Math.max(l.min, 3)}` },
       { label: 'Low', value: Math.max(l.min, 5), text: `Low \u2013 ${Math.max(l.min, 5)}` },
-      { label: 'Medium', value: 10, text: `Medium \u2013 10` },
-      { label: 'High', value: Math.min(l.max, 20), text: `High \u2013 ${Math.min(l.max, 20)}` },
-      { label: 'Very High', value: Math.min(l.max, 30), text: `Very High \u2013 ${Math.min(l.max, 30)}` },
+      { label: 'Medium', value: 12, text: `Medium \u2013 12` },
+      { label: 'High', value: Math.min(l.max, 22), text: `High \u2013 ${Math.min(l.max, 22)}` },
+      { label: 'Very High', value: Math.min(l.max, 35), text: `Very High \u2013 ${Math.min(l.max, 35)}` },
       { label: 'Custom', value: 'custom', text: 'Custom' }
     ];
   }

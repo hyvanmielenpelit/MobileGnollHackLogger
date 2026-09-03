@@ -177,7 +177,7 @@
 
         <div class="margin-y-20 mt-15 form-group-stacked">
           <label class="block fw-bold">Max Calls Per Session</label>
-          <span class="form-hint mt-5 d-block mb-10">Maximum number of interactions permitted in a single chat session.</span>
+          <span class="form-hint mt-5 d-block mb-10">Maximum number of tool calls the AI may make across this chat session. The counter resets four hours after the first call. A single hard, source-digging question can use 40 or more.</span>
 
           <button type="button" class="form-input form-select popover-trigger-btn popover-anchor-calls" popovertarget="maxCallsPerSessionPopover">
             <span class="opt-label">{{ getSelectedOptionDisplay('maxCallsPerSession').label }}</span>

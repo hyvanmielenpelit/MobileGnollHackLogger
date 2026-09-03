@@ -152,6 +152,54 @@ one, and no two agents may touch both ends of a chain concurrently.
 | Overseer TypeScript / templates -> Angular client rebuild -> (release only) Sentry source-map upload | Changes are not visible until the client is rebuilt. The source-map upload is its own step and only on release. |
 | New/moved files under `docs/` -> add to `MobileGnollHackLogger.slnx` | Solution Explorer accessibility. Visual Studio does not show documentation files unless they are declared in `.slnx`. |
 
+## Verification Plan
+
+Every plan must include the **Verification Plan** section, with **Automated** and
+**Manual** subsections.
+
+### Automated
+
+The Automated subsection uses these commands **verbatim**. They are also stated in
+`AGENTS.md`, which is loaded into every context window, so there is no excuse for a plan
+inventing its own:
+
+```bash
+dotnet build MobileGnollHackLogger.slnx
+```
+
+```bash
+dotnet test Overseer.Tests --filter "Category!=UsesExternalApi"
+```
+
+From `Overseer/ClientApp/`, whenever the Angular client changed:
+
+```bash
+npm run test:headless
+```
+
+```bash
+npm run build
+```
+
+Three ways a plan gets this wrong, all of which have happened:
+
+- **Omitting `--filter "Category!=UsesExternalApi"`.** The run then calls live OpenAI,
+  Anthropic and Google APIs and spends real quota.
+- **Writing `npm test`, `ng test`, or `npm test -- --watch=false`** instead of
+  `npm run test:headless`. Karma stays in watch mode and the command never returns.
+- **Writing `.sln`.** This repository uses `MobileGnollHackLogger.slnx`.
+
+**Read `testing_guidelines` before writing this section.** It also governs whether any test
+the plan adds needs the `[Trait("Category", "UsesExternalApi")]` decoration -- a plan-time
+decision, not an execution-time one. A plan that adds a live-API test must say so
+explicitly and must state that the user's permission is required before running it.
+
+### Manual
+
+List the steps that prove the change works in the running application: which page, which
+action, and what the user should see. Automated coverage does not substitute for this on
+UI or report-output changes.
+
 ## Subagent Use
 
 Every plan must include the **Subagent Use** section. Tiers, the selection rule, the

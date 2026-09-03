@@ -1026,6 +1026,7 @@ public class AdminBenchmarkController : ControllerBase
                 ModelTimeMs = a.ModelTimeMs,
                 ScrubbedArtifactText = a.ScrubbedArtifactText,
                 ScrubbedArtifactCount = a.ScrubbedArtifactCount,
+                NarrationBlockCount = a.NarrationBlockCount,
                 TerminationReason = a.TerminationReason,
                 AnswerFlags = a.AnswerFlags,
                 AnswerFlagNames = ((BenchmarkAnswerFlags)a.AnswerFlags != BenchmarkAnswerFlags.None)

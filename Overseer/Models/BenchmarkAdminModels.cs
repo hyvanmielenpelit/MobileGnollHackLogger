@@ -273,6 +273,12 @@ public class BenchmarkRunAnswerDto
 
     public int ScrubbedArtifactCount { get; set; }
 
+    /// <summary>
+    /// Reasoning-narration blocks removed before grading. Null for runs before harness
+    /// version 6, which did not record it — null means "not recorded", not zero.
+    /// </summary>
+    public int? NarrationBlockCount { get; set; }
+
     public string? TerminationReason { get; set; }
     public int AnswerFlags { get; set; }
     public List<string> AnswerFlagNames { get; set; } = new();

@@ -614,4 +614,226 @@ public class BenchmarkReportBuilderTests
 
         Assert.DoesNotContain("**Critical Errors:**", report);
     }
+
+    // -------------------------------------------------------------------------------------
+    // Harness version 6 report changes. Every fixture below is shaped after the 2026-09-03
+    // GPT-5.6 Luna run, which is where each of these defects was found.
+    // -------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// A run carrying the profile snapshot the Luna run used: 15,000 ms target, k = 20,
+    /// difficulty scaling 1.0, second-opinion threshold 50.
+    /// </summary>
+    private const string StandardProfileSnapshot =
+        "{\"SpeedTargetMs\":15000,\"SpeedDecayK\":20.0,\"SpeedDifficultyScaling\":1.0," +
+        "\"SecondOpinionQualityThreshold\":50}";
+
+    private static BenchmarkRun HarnessV6Run(params BenchmarkRunAnswer[] answers)
+    {
+        return new BenchmarkRun
+        {
+            Id = 6,
+            SuiteName = "GnollHack Player Assistance Benchmark Suite",
+            TestedModelDisplayNameUsed = "GPT-5.6 Luna",
+            TestedModelProviderUsed = "OpenAI",
+            TestedModelIdUsed = "gpt-5.6-luna",
+            TestedModelThinkingLevelUsed = "max",
+            AssessorModelDisplayNameUsed = "Gemini 3.7 Flash",
+            AssessorModelProviderUsed = "Google",
+            AssessorModelIdUsed = "gemini-3.7-flash",
+            Status = BenchmarkRunStatus.Completed,
+            StartedAtUtc = DateTime.UtcNow.AddMinutes(-36),
+            CompletedAtUtc = DateTime.UtcNow,
+            QualityIndex = 91,
+            SpeedIndex = 65,
+            HarnessVersion = "6",
+            ScoringMethodVersion = 5,
+            ScoringProfileSnapshotJson = StandardProfileSnapshot,
+            TotalQuestionCount = answers.Length,
+            Answers = new List<BenchmarkRunAnswer>(answers)
+        };
+    }
+
+    private static BenchmarkRunAnswer ScoredAnswer(
+        int orderIndex,
+        BenchmarkDifficulty band,
+        int assessedDifficulty,
+        int qualityScore)
+    {
+        return new BenchmarkRunAnswer
+        {
+            OrderIndex = orderIndex,
+            QuestionText = $"Q{orderIndex}",
+            AnswerText = $"Answer {orderIndex}",
+            Difficulty = band,
+            AssessedDifficulty = assessedDifficulty,
+            Status = BenchmarkAnswerStatus.Ok,
+            AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+            QualityScore = qualityScore,
+            RawQualityScore = qualityScore
+        };
+    }
+
+    [Fact]
+    public void SpeedScore_IsAnnotatedWithModelTimeAndTarget_NotRawTurnDuration()
+    {
+        var answer = ScoredAnswer(3, BenchmarkDifficulty.Simple, 32, 25);
+        answer.SpeedScore = 29;
+        answer.DurationMs = 236723;
+        answer.ToolTimeMs = 1056;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV6Run(answer));
+
+        // ModelTimeMs = 236723 - 1056. The target is 15000 * (1 + 32/100) = 19,800.
+        Assert.Contains("**Speed Score:** 29 / 100 (model 235667 ms vs target 19,800 ms)", report);
+        Assert.DoesNotContain("29 / 100 (236723 ms)", report);
+    }
+
+    [Fact]
+    public void NarrationAdvisory_SaysRemoved_OnlyWhenTheRunRecordedARemoval()
+    {
+        var removed = ScoredAnswer(5, BenchmarkDifficulty.Simple, 42, 81);
+        removed.AnswerFlags = (int)BenchmarkAnswerFlags.ReasoningBleed;
+        removed.ScrubbedArtifactText = "I found the relevant implementation";
+        removed.NarrationBlockCount = 3;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV6Run(removed));
+
+        Assert.Contains("Reasoning narration removed before grading — 3 block(s) (advisory)", report);
+        Assert.DoesNotContain("removal not recorded", report);
+    }
+
+    [Fact]
+    public void NarrationAdvisory_SaysNotRecorded_ForRunsPredatingTheCounter()
+    {
+        var historical = ScoredAnswer(3, BenchmarkDifficulty.Simple, 32, 25);
+        historical.AnswerFlags = (int)BenchmarkAnswerFlags.ReasoningBleed;
+        historical.ScrubbedArtifactText = "tsotlhe";
+        historical.NarrationBlockCount = null;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV6Run(historical));
+
+        // The old proxy cannot tell a removed payload from removed narration, so the report
+        // must not claim the flattering reading it used to assert unconditionally.
+        Assert.Contains("removal not recorded for this run (advisory)", report);
+        Assert.DoesNotContain("Reasoning narration removed before grading — ", report);
+    }
+
+    [Fact]
+    public void BudgetPressure_NamesQuestionsThatNearlyExhaustedTheirBudget()
+    {
+        var pressured = ScoredAnswer(7, BenchmarkDifficulty.Intermediate, 60, 88);
+        pressured.ToolCallCount = 34;
+        pressured.ToolCallBudgetUsed = 35;
+
+        var comfortable = ScoredAnswer(8, BenchmarkDifficulty.Intermediate, 54, 100);
+        comfortable.ToolCallCount = 3;
+        comfortable.ToolCallBudgetUsed = 35;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV6Run(pressured, comfortable));
+
+        Assert.Contains("**Budget Pressure:**", report);
+        Assert.Contains("Q7 34/35 (1 left)", report);
+        Assert.DoesNotContain("Q8 3/35", report);
+    }
+
+    [Fact]
+    public void Grounding_NamesAdvancedQuestionsAnsweredWithoutSearching()
+    {
+        var ungrounded = ScoredAnswer(14, BenchmarkDifficulty.Advanced, 78, 83);
+        ungrounded.ToolCallCount = 1;
+        ungrounded.ToolCallBudgetUsed = 45;
+
+        var grounded = ScoredAnswer(13, BenchmarkDifficulty.Advanced, 75, 99);
+        grounded.ToolCallCount = 39;
+        grounded.ToolCallBudgetUsed = 45;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV6Run(ungrounded, grounded));
+
+        Assert.Contains("**Grounding:**", report);
+        Assert.Contains("Q14 (1)", report);
+        Assert.DoesNotContain("Q13 (39)", report);
+    }
+
+    [Fact]
+    public void CacheCreationTokens_ReadNotApplicable_WhenTheProviderDoesNotReportThem()
+    {
+        var run = HarnessV6Run(ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 25));
+        run.TotalCacheReadTokens = 4102396;
+        run.TotalCacheCreationTokens = 0;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("**Total Cache Creation Tokens:** n/a *(not reported by this provider)*", report);
+    }
+
+    [Fact]
+    public void CacheCreationTokens_PrintZero_WhenTheProviderDoesReportThem()
+    {
+        var run = HarnessV6Run(ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 25));
+        run.TestedModelProviderUsed = "Anthropic";
+        run.TotalCacheReadTokens = 4102396;
+        run.TotalCacheCreationTokens = 0;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("**Total Cache Creation Tokens:** 0", report);
+        Assert.DoesNotContain("not reported by this provider", report);
+    }
+
+    [Fact]
+    public void ProfileFit_WarnsWhenAHeavyThinkerIsGradedOnAnInteractiveLatencyProfile()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(
+            HarnessV6Run(ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 25)));
+
+        Assert.Contains("**Profile Fit:**", report);
+        Assert.Contains("thinking level **max**", report);
+    }
+
+    [Fact]
+    public void ProfileFit_IsSilentForAModelThatIsNotDeliberating()
+    {
+        var run = HarnessV6Run(ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 25));
+        run.TestedModelThinkingLevelUsed = "low";
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.DoesNotContain("**Profile Fit:**", report);
+    }
+
+    [Fact]
+    public void NonMonotonicNote_NamesTheBandWhenEveryCriticalErrorLandedInOne()
+    {
+        // The Luna run's shape: both caps on Simple questions, so the Simple average is
+        // depressed by the cap rather than by difficulty.
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 25);
+        q1.CriticalError = true;
+        var q3 = ScoredAnswer(3, BenchmarkDifficulty.Simple, 32, 25);
+        q3.CriticalError = true;
+        var q7 = ScoredAnswer(7, BenchmarkDifficulty.Intermediate, 60, 92);
+        var q13 = ScoredAnswer(13, BenchmarkDifficulty.Advanced, 75, 95);
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV6Run(q1, q3, q7, q13));
+
+        Assert.Contains("critical-error cap(s) on this run fell in the **Simple** band", report);
+        Assert.Contains("question(s) 1, 3", report);
+        Assert.DoesNotContain("This is common on small question sets", report);
+    }
+
+    [Fact]
+    public void SecondOpinion_ReportsWhatWouldHaveBeenRegraded_WhenNoneWasSelected()
+    {
+        var critical = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 25);
+        critical.CriticalError = true;
+        var lowScoring = ScoredAnswer(2, BenchmarkDifficulty.Simple, 28, 40);
+        var fine = ScoredAnswer(4, BenchmarkDifficulty.Simple, 30, 97);
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(
+            HarnessV6Run(critical, lowScoring, fine));
+
+        Assert.Contains("**2 answer(s) would have been re-graded**", report);
+        Assert.Contains("critical error: 1", report);
+        Assert.Contains("below the profile's threshold of 50: 1", report);
+    }
 }

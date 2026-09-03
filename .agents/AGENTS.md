@@ -42,6 +42,24 @@ When making changes to database models that require EF Core migrations, you MUST
 - **Add Migration**: `dotnet ef migrations add <MigrationName> -p GnollHackServer.Data -s MobileGnollHackLogger -o Migrations`
 - **Update Database**: After generating a migration, you MUST run a separate command to apply it to the database: `dotnet ef database update -p GnollHackServer.Data -s MobileGnollHackLogger`
 
+## Testing and Verification Commands
+
+These are the **only** correct ways to run this repository's tests. Use them verbatim in every implementation plan's Verification Plan and in every verification run.
+
+- **.NET tests** (from the repository root):
+  ```bash
+  dotnet test Overseer.Tests --filter "Category!=UsesExternalApi"
+  ```
+  The `--filter` is **not optional**. Without it the run calls live OpenAI, Anthropic and Google APIs, spending quota and money. For the whole solution, substitute `MobileGnollHackLogger.slnx` for `Overseer.Tests`. Note the project directory is `Overseer.Tests`, plural.
+
+- **Angular tests** (from `Overseer/ClientApp/`):
+  ```bash
+  npm run test:headless
+  ```
+  Never plain `npm test` or `ng test`: without `--no-watch` Karma stays in watch mode and the command never returns, and without `--browsers=ChromeHeadless` it opens a browser window on the user's desktop.
+
+Rationale, the `[Trait("Category", "UsesExternalApi")]` convention, live-model policy, and the Angular test configuration rules are in the `testing-guidelines` skill.
+
 ## File Organization
 
 | Area | Location |

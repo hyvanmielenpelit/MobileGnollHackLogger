@@ -61,6 +61,21 @@ public sealed class BenchmarkArtifactScrubber
     // pathological answer cannot loop: the reference run needed five passes.
     private const int MaxNarrationPasses = 10;
 
+    // How many consecutive unrecognised leading paragraphs the narration strip may step over
+    // before giving up. Two, because the reference run's worst shape was a single shielding
+    // paragraph and this leaves one in hand; every extra step is another chance to walk into
+    // an answer's own body.
+    private const int MaxNarrationShieldParagraphs = 2;
+
+    // Longest a leading paragraph may be and still be stepped over as a shield rather than
+    // treated as the answer's opening. Shares MinAnswerTailChars' reasoning: below this, a
+    // paragraph is too short to be carrying the answer.
+    private const int MaxShieldParagraphChars = MinAnswerTailChars;
+
+    // A bare token alone in a paragraph: letters only, no punctuation, no Markdown, no digits.
+    // Bounded above so that a genuine one-word answer line is not in range.
+    private const int MaxOrphanTokenChars = 24;
+
     private static readonly Regex MarkdownBlockRegex =
         new(@"^\s{0,3}(?:#{1,6}\s|[-*+]\s|\d+\.\s|>\s|\||```)", RegexOptions.Compiled | RegexOptions.Multiline);
 
@@ -83,7 +98,11 @@ public sealed class BenchmarkArtifactScrubber
         @"\b(?:I(?:’|')m|I am|I(?:’|')ll|I will|Let me)\s+(?:also\s+|now\s+|just\s+)?" +
         @"(?:check|verify|locat|trac|confirm|look|read|search|inspect|examin|resolv|find" +
         @"|keep|focus|narrow|pull|open|scan|retriev|fetch|gather|run|query|grep)" +
-        @"|\bI\s+(?:have|need)\s+the\b" +
+        // "found", "located" and "confirmed" were added after the 2026-09-03 Luna run, whose
+        // prayer-timeout answer opened "I found the relevant implementation; the remaining
+        // detail is..." — narration by any reading, and the paragraph that shielded three more
+        // narration paragraphs behind it from the prefix strip below.
+        @"|\bI\s+(?:have|need|found|located|confirmed)\s+the\b" +
         @"|\bI(?:’|')ve\s+(?:got|confirmed)\b" +
         // Bare gerund openers, anchored at the very start of the text handed in — a paragraph
         // or a sentence. Unanchored they would match ordinary prose ("...worth checking").
@@ -198,22 +217,56 @@ public sealed class BenchmarkArtifactScrubber
         // exactly what stops the narration rules from recognising the paragraph.
         answer = StripLeadingOrphanFence(answer, removed, ref flags);
 
+        // A bare word alone in the leading paragraph, carrying no punctuation and no Markdown,
+        // is a decoding artifact rather than an answer opening. The 2026-09-03 Luna run opened
+        // its silver dragon scale mail answer with "tsotlhe", and the same run scattered
+        // "abcedary", "unerquicklich" and "rsat" around its payloads (see MinButtedAnswerChars).
+        answer = StripLeadingOrphanToken(answer, removed, ref flags);
+
         // Narration prefixes with no leaked payload at all (Q2, Q11, Q17 of the reference run).
         //
         // Iterated, not single-pass: the same run emitted five consecutive narration
         // paragraphs, so one pass left four of them in the graded answer.
+        //
+        // Skip-tolerant, not stop-at-first-miss: the same run's Q3 and Q5 answers each opened
+        // with one unrecognised paragraph, which shielded every narration paragraph behind it
+        // and put narration into the graded answer while the report claimed it had been
+        // removed. A paragraph is only skipped when it is too short and too unformatted to be
+        // an answer opening (see IsSkippableShield) — otherwise walking past it would let this
+        // rule reach into an answer's own body, where "Let me look at this another way" is
+        // ordinary prose rather than narration.
         int narrationBlocks = 0;
+        var shielded = new List<string>();
+        int consecutiveMisses = 0;
         for (int pass = 0; pass < MaxNarrationPasses; pass++)
         {
             var (narrationStripped, narration) = StripNarrationPrefix(answer);
-            if (narration == null) break;
+            if (narration != null)
+            {
+                answer = narrationStripped;
+                // Inserted at the front, in removal order, so the audit record reads in the
+                // order the model actually produced it rather than back to front.
+                removed.Insert(narrationBlocks, narration);
+                narrationBlocks++;
+                flags |= BenchmarkAnswerFlags.ReasoningBleed;
+                consecutiveMisses = 0;
+                continue;
+            }
 
-            answer = narrationStripped;
-            // Inserted at the front, in removal order, so the audit record reads in the order
-            // the model actually produced it rather than back to front.
-            removed.Insert(narrationBlocks, narration);
-            narrationBlocks++;
-            flags |= BenchmarkAnswerFlags.ReasoningBleed;
+            if (consecutiveMisses >= MaxNarrationShieldParagraphs) break;
+
+            var (shieldStripped, shield) = TakeSkippableShieldParagraph(answer);
+            if (shield == null) break;
+
+            // Held aside, not removed: it is put back in front of whatever survives.
+            shielded.Add(shield);
+            answer = shieldStripped;
+            consecutiveMisses++;
+        }
+
+        if (shielded.Count > 0)
+        {
+            answer = string.Join("\n\n", shielded) + "\n\n" + answer;
         }
 
         // Narration butted straight onto the answer with no separator at all, which no
@@ -518,6 +571,58 @@ public sealed class BenchmarkArtifactScrubber
         string prose = ResidualRoutingMarkerRegex.Replace(sb.ToString(), string.Empty);
         int letters = prose.Count(char.IsLetter);
         return letters >= 40;
+    }
+
+    /// <summary>
+    /// Removes a leading paragraph that is a single bare word — letters only, no punctuation,
+    /// no Markdown, no digits — and is followed by further content.
+    ///
+    /// Deliberately narrow. Everything that makes a one-word line plausible as authored answer
+    /// text disqualifies it here: a closing full stop, bold or code markers, a digit, a hyphen.
+    /// What is left is the shape a decoder emits when it leaks a fragment ("tsotlhe"), and a
+    /// real answer essentially never opens with an unpunctuated, unformatted single word.
+    /// </summary>
+    private static string StripLeadingOrphanToken(string text, List<string> removed, ref BenchmarkAnswerFlags flags)
+    {
+        string working = text.TrimStart('\n', '\r', ' ', '\t');
+        int split = working.IndexOf("\n\n", StringComparison.Ordinal);
+        if (split <= 0) return text;
+
+        string first = working.Substring(0, split).Trim();
+        string rest = working.Substring(split + 2);
+
+        if (rest.Trim().Length == 0) return text;
+        if (first.Length == 0 || first.Length > MaxOrphanTokenChars) return text;
+        if (!first.All(char.IsLetter)) return text;
+
+        removed.Add(first);
+        flags |= BenchmarkAnswerFlags.HarnessArtifacts;
+
+        return rest;
+    }
+
+    /// <summary>
+    /// Detaches a leading paragraph that the narration rule did not recognise but which is too
+    /// short and too unformatted to be the answer's own opening, so the strip can look behind
+    /// it. The caller puts it back in front of whatever survives — this removes nothing.
+    /// </summary>
+    private static (string Answer, string? Shield) TakeSkippableShieldParagraph(string text)
+    {
+        string working = text.TrimStart('\n', '\r', ' ', '\t');
+        int split = working.IndexOf("\n\n", StringComparison.Ordinal);
+        if (split <= 0) return (text, null);
+
+        string first = working.Substring(0, split);
+        string rest = working.Substring(split + 2);
+
+        // Something must follow, or there is nothing behind the shield to look at.
+        if (rest.Trim().Length == 0) return (text, null);
+
+        // Formatting or length means this is answer content, not a shield.
+        if (MarkdownBlockRegex.IsMatch(first)) return (text, null);
+        if (first.Trim().Length > MaxShieldParagraphChars) return (text, null);
+
+        return (rest, first);
     }
 
     /// <summary>

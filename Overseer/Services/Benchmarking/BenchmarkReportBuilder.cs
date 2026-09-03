@@ -19,6 +19,62 @@ public static class BenchmarkReportBuilder
     private static readonly Regex BlockedCallsRegex =
         new(@"\((\d+)\s+blocked by budget\)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+    // Fraction of a question's tool call budget above which the question is reported as having
+    // run under budget pressure, short of actually exhausting it.
+    private const double BudgetPressureFraction = 0.90;
+
+    // Below this speed target, a scoring profile is an interactive-latency profile, and a
+    // high/max thinking candidate scores against it in a way that says more about the profile
+    // than about the model.
+    private const int InteractiveSpeedTargetMaxMs = 30000;
+
+    /// <summary>
+    /// The speed constants this run was actually scored with, read back from the run's own
+    /// profile snapshot so a report always describes the run in front of it rather than
+    /// today's default profile. Falls back to the defaults when a run carries no snapshot.
+    /// </summary>
+    private static BenchmarkScoringConstants ScoringConstantsOf(BenchmarkRun run)
+    {
+        if (string.IsNullOrWhiteSpace(run.ScoringProfileSnapshotJson))
+        {
+            return BenchmarkScoringConstants.Default;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(run.ScoringProfileSnapshotJson);
+            var root = doc.RootElement;
+            var defaults = BenchmarkScoringConstants.Default;
+
+            int target = root.TryGetProperty("SpeedTargetMs", out var t) && t.TryGetInt32(out int tv)
+                ? tv
+                : defaults.SpeedTargetMs;
+            double scaling = root.TryGetProperty("SpeedDifficultyScaling", out var s) && s.TryGetDouble(out double sv)
+                ? sv
+                : defaults.SpeedDifficultyScaling;
+            double decay = root.TryGetProperty("SpeedDecayK", out var k) && k.TryGetDouble(out double kv)
+                ? kv
+                : defaults.SpeedDecayK;
+            int secondOpinion = root.TryGetProperty("SecondOpinionQualityThreshold", out var o) && o.TryGetInt32(out int ov)
+                ? ov
+                : defaults.SecondOpinionQualityThreshold;
+
+            return defaults with
+            {
+                SpeedTargetMs = target,
+                SpeedDifficultyScaling = scaling,
+                SpeedDecayK = decay,
+                SecondOpinionQualityThreshold = secondOpinion
+            };
+        }
+        catch (JsonException)
+        {
+            // A malformed snapshot must not stop a report from rendering; the figures it
+            // annotates are already stored on the answers.
+            return BenchmarkScoringConstants.Default;
+        }
+    }
+
     // Same fence-splitting pattern as BenchmarkAnswerSanitizer.CodeBlockRegex: a "#" inside a
     // fenced block is a comment in someone's example, not a heading, and must not be rewritten.
     private static readonly Regex CodeFenceRegex = new(@"(```[\s\S]*?```)", RegexOptions.Compiled);
@@ -173,6 +229,9 @@ public static class BenchmarkReportBuilder
     public static string BuildMarkdownReport(BenchmarkRun run, string? overseerVersion = null)
     {
         var sb = new StringBuilder();
+        // Read back from the run's own profile snapshot, so the report describes the run in
+        // front of it rather than whatever the default profile says today.
+        var scoringConstants = ScoringConstantsOf(run);
 
         // 1. Introduction
         sb.AppendLine("# GnollHack Overseer AI Intelligence Benchmark Report");
@@ -210,6 +269,20 @@ public static class BenchmarkReportBuilder
         sb.AppendLine($"- **Harness Version:** {run.HarnessVersion ?? "1 (unversioned legacy)"}");
         sb.AppendLine($"- **Scoring Method Version:** {run.ScoringMethodVersion}");
         sb.AppendLine($"- **Scoring Profile:** {run.ScoringProfile?.Name ?? "Default Intelligence Profile"}");
+
+        // A heavy-thinking candidate graded against an interactive-latency profile produces a
+        // Speed Index that describes the profile more than the model: the 2026-09-03 run scored
+        // a max-thinking model 65 on speed beside 91 on intelligence. Say so where the reader
+        // meets the number, rather than leaving it to be inferred from the thinking level.
+        string candidateThinking = run.TestedModelThinkingLevelUsed ?? string.Empty;
+        bool deliberatingCandidate =
+            candidateThinking.Equals("high", StringComparison.OrdinalIgnoreCase) ||
+            candidateThinking.Equals("max", StringComparison.OrdinalIgnoreCase);
+        if (deliberatingCandidate && scoringConstants.SpeedTargetMs < InteractiveSpeedTargetMaxMs)
+        {
+            sb.AppendLine($"- **Profile Fit:** this profile targets interactive latency ({Inv(scoringConstants.SpeedTargetMs, "N0")} ms) while the candidate ran at thinking level **{candidateThinking}**. The Speed Index is advisory for this run; compare it only against runs sharing both the profile and the thinking level.");
+        }
+
         var budgetsUsed = answers
             .Where(a => a.ToolCallBudgetUsed.HasValue)
             .Select(a => a.ToolCallBudgetUsed!.Value)
@@ -263,6 +336,23 @@ public static class BenchmarkReportBuilder
         else
         {
             sb.AppendLine("- **None selected.** No answer in this run was re-graded by a second assessor.");
+
+            // What was forgone, stated in the run's own numbers. The 2026-09-03 run produced
+            // two critical errors with no second opinion selected — precisely the trigger the
+            // feature exists for — and nothing in the report connected the two facts.
+            int wouldCritical = answers.Count(a => a.CriticalError);
+            int threshold = scoringConstants.SecondOpinionQualityThreshold;
+            int wouldThreshold = threshold > 0
+                ? answers.Count(a => !a.CriticalError && a.QualityScore.HasValue && a.QualityScore.Value < threshold)
+                : 0;
+            int wouldTotal = wouldCritical + wouldThreshold;
+            if (wouldTotal > 0)
+            {
+                string thresholdPart = threshold > 0
+                    ? $"below the profile's threshold of {threshold}: {wouldThreshold}"
+                    : "score trigger disabled";
+                sb.AppendLine($"- **{wouldTotal} answer(s) would have been re-graded** had a second opinion assessor been selected (critical error: {wouldCritical}; {thresholdPart}).");
+            }
         }
         sb.AppendLine();
 
@@ -343,7 +433,16 @@ public static class BenchmarkReportBuilder
         sb.AppendLine($"- **Total Input Tokens:** {Inv(run.TotalInputTokens, "N0")}");
         sb.AppendLine($"- **Total Output Tokens:** {Inv(run.TotalOutputTokens, "N0")}");
         sb.AppendLine($"- **Total Cache Read Tokens:** {Inv(run.TotalCacheReadTokens, "N0")}");
-        sb.AppendLine($"- **Total Cache Creation Tokens:** {Inv(run.TotalCacheCreationTokens, "N0")}");
+        // A real zero and "this provider does not report the counter" are different facts, and
+        // printing 0 beside four million cache reads reads as a cache that never warmed. OpenAI
+        // reports cache reads only; the 2026-09-03 run showed exactly that shape.
+        bool cacheCreationUnreported =
+            run.TotalCacheCreationTokens == 0 &&
+            run.TotalCacheReadTokens > 0 &&
+            string.Equals(run.TestedModelProviderUsed, "OpenAI", StringComparison.OrdinalIgnoreCase);
+        sb.AppendLine(cacheCreationUnreported
+            ? "- **Total Cache Creation Tokens:** n/a *(not reported by this provider)*"
+            : $"- **Total Cache Creation Tokens:** {Inv(run.TotalCacheCreationTokens, "N0")}");
         sb.AppendLine();
 
         // Harness cost. The token totals above are the candidate's alone; grading an 18-question
@@ -384,17 +483,25 @@ public static class BenchmarkReportBuilder
         int recoveredCount = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.Recovered);
         int harnessLimitCount = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.HarnessLimit);
         int advisoryCount = answers.Count(BenchmarkRunFinalizer.HasAdvisoryFlag);
-        // NarrationBlockCount isn't persisted (see SanitizedAnswer.NarrationBlockCount), so a
-        // non-empty ScrubbedArtifactText on a ReasoningBleed-flagged answer is the stored signal
-        // that narration was actually removed from *that* answer, rather than merely detected.
-        int bleedRemoved = answers.Count(a =>
-            ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.ReasoningBleed) &&
-            !string.IsNullOrWhiteSpace(a.ScrubbedArtifactText));
+        // NarrationBlockCount is the honest figure: how many narration blocks the scrubber
+        // actually removed from this answer. Runs before harness version 6 did not record it,
+        // and there null means "not recorded" — never zero. For those the old proxy stands, a
+        // non-empty ScrubbedArtifactText, which is weaker because it is also true when only a
+        // leaked payload was removed. That weakness is why the 2026-09-03 run's report claimed
+        // narration had been removed from two answers that still carried it.
+        static bool NarrationRemoved(BenchmarkRunAnswer a) =>
+            a.NarrationBlockCount.HasValue
+                ? a.NarrationBlockCount.Value > 0
+                : !string.IsNullOrWhiteSpace(a.ScrubbedArtifactText);
+
+        static bool BleedFlagged(BenchmarkRunAnswer a) =>
+            ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.ReasoningBleed);
+
+        int bleedRemoved = answers.Count(a => BleedFlagged(a) && NarrationRemoved(a));
+        int bleedUnrecorded = answers.Count(a => BleedFlagged(a) && !a.NarrationBlockCount.HasValue);
         int scrubbedTransportCount = answers.Count(a => a.ScrubbedArtifactCount > 0);
         int scrubbedAnyCount = answers.Count(a =>
-            a.ScrubbedArtifactCount > 0 ||
-            (((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.ReasoningBleed) &&
-             !string.IsNullOrWhiteSpace(a.ScrubbedArtifactText)));
+            a.ScrubbedArtifactCount > 0 || (BleedFlagged(a) && NarrationRemoved(a)));
         int cleanCount = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.Clean);
         double cleanPct = totalQuestions > 0 ? (cleanCount * 100.0 / totalQuestions) : 0.0;
 
@@ -412,6 +519,10 @@ public static class BenchmarkReportBuilder
         string advisoryNote = bleedRemoved == bleedCount
             ? "— *advisory only; these overlap the categories above, do not affect the run status, and the text they describe was removed before grading.*"
             : $"— *advisory only; these overlap the categories above and do not affect the run status. Removed before grading in {bleedRemoved} of {bleedCount}; in the remainder the text was detected but remained in the graded answer.*";
+        if (bleedUnrecorded > 0)
+        {
+            advisoryNote += $" *Removal was not recorded for {bleedUnrecorded} of these — the run predates harness version {BenchmarkAssessmentPrompt.HarnessVersion}, which added the counter; that figure is inferred, not measured.*";
+        }
         sb.AppendLine($"- **Advisory Flags:** {advisoryCount} (reasoning bleed: {bleedCount}, repeated fragments: {repeatCount}) {advisoryNote}");
         sb.AppendLine($"- **Answers Scrubbed:** {scrubbedAnyCount} of {totalQuestions} (transport payloads: {scrubbedTransportCount}, reasoning narration: {bleedRemoved})");
         sb.AppendLine();
@@ -487,7 +598,27 @@ public static class BenchmarkReportBuilder
             double aAvg = advancedAssessed.Average(a => a.QualityScore!.Value);
             if (sAvg < iAvg || iAvg < aAvg)
             {
-                sb.AppendLine($"*Note:* Average quality does not decrease monotonically with assessed difficulty on this run (Simple: {Inv(sAvg, "F1")}, Intermediate: {Inv(iAvg, "F1")}, Advanced: {Inv(aAvg, "F1")}). This is common on small question sets or when the model has specific domain strengths.");
+                // When every critical-error cap landed in one band, that band's average is
+                // depressed by the cap rather than by difficulty, and the generic explanation
+                // is not the one that applies. On the 2026-09-03 run both caps fell on Simple
+                // questions, which alone accounted for the inversion.
+                var cappedAnswers = scoredAnswers.Where(a => a.CriticalError).ToList();
+                string cappedBand = string.Empty;
+                if (cappedAnswers.Count > 0)
+                {
+                    bool allSimple = cappedAnswers.All(a => BenchmarkDifficultyBands.IsSimple(AssessedOf(a)));
+                    bool allIntermediate = cappedAnswers.All(a => BenchmarkDifficultyBands.IsIntermediate(AssessedOf(a)));
+                    bool allAdvanced = cappedAnswers.All(a => BenchmarkDifficultyBands.IsAdvanced(AssessedOf(a)));
+                    if (allSimple) cappedBand = "Simple";
+                    else if (allIntermediate) cappedBand = "Intermediate";
+                    else if (allAdvanced) cappedBand = "Advanced";
+                }
+
+                string monotonicityCause = cappedBand.Length > 0
+                    ? $"All {cappedAnswers.Count} critical-error cap(s) on this run fell in the **{cappedBand}** band (question(s) {string.Join(", ", cappedAnswers.OrderBy(a => a.OrderIndex).Select(a => a.OrderIndex.ToString()))}), which is what depressed that band's average — read the inversion as a critical-error effect, not a difficulty effect."
+                    : "This is common on small question sets or when the model has specific domain strengths.";
+
+                sb.AppendLine($"*Note:* Average quality does not decrease monotonically with assessed difficulty on this run (Simple: {Inv(sAvg, "F1")}, Intermediate: {Inv(iAvg, "F1")}, Advanced: {Inv(aAvg, "F1")}). {monotonicityCause}");
                 sb.AppendLine();
             }
         }
@@ -521,6 +652,40 @@ public static class BenchmarkReportBuilder
         if (answers.Count > 0)
         {
             sb.AppendLine($"- **Mean Calls per Question:** {Inv(totalToolCalls / (double)answers.Count, "F1")}");
+        }
+
+        // Budget pressure. A question that stopped one call short of its budget is not
+        // "exhausted" and is not flagged anywhere, yet it may have been cut off mid-
+        // investigation — an outcome indistinguishable from a model choosing to stop. On the
+        // 2026-09-03 run Q7 spent 34 of 35 and Q2 23 of 25, and nothing said so.
+        var pressured = answers
+            .Where(a => !a.ToolBudgetExhausted
+                        && a.ToolCallBudgetUsed.HasValue && a.ToolCallBudgetUsed.Value > 0
+                        && a.ToolCallCount.HasValue
+                        && a.ToolCallCount.Value >= a.ToolCallBudgetUsed.Value * BudgetPressureFraction)
+            .OrderBy(a => a.OrderIndex)
+            .ToList();
+        if (pressured.Count > 0)
+        {
+            sb.AppendLine($"- **Budget Pressure:** {pressured.Count} question(s) used at least {Inv(BudgetPressureFraction * 100, "F0")}% of the tool call budget without exhausting it — " +
+                string.Join(", ", pressured.Select(a =>
+                    $"Q{a.OrderIndex} {a.ToolCallCount!.Value}/{a.ToolCallBudgetUsed!.Value} ({a.ToolCallBudgetUsed.Value - a.ToolCallCount.Value} left)")) +
+                ". *An answer this close to its cap may have stopped investigating because of the cap rather than because it was finished.*");
+        }
+
+        // Grounding. An Advanced question answered from memory is not necessarily wrong, but it
+        // is no longer testing source retrieval, which is what the Advanced band exists for.
+        // Q14 and Q17 of the 2026-09-03 run each executed a single tool call at assessed 78 and
+        // 79. This is a signal about the suite, not about the model.
+        var ungroundedAdvanced = answers
+            .Where(a => BenchmarkDifficultyBands.IsAdvanced(AssessedOf(a)) && (a.ToolCallCount ?? 0) <= 1)
+            .OrderBy(a => a.OrderIndex)
+            .ToList();
+        if (ungroundedAdvanced.Count > 0)
+        {
+            sb.AppendLine($"- **Grounding:** {ungroundedAdvanced.Count} Advanced-band question(s) answered with one tool call or fewer — " +
+                string.Join(", ", ungroundedAdvanced.Select(a => $"Q{a.OrderIndex} ({a.ToolCallCount ?? 0})")) +
+                ". *Worth reviewing as suite maintenance: these may no longer test source retrieval.*");
         }
 
         if (toolCounts.Count > 0)
@@ -635,7 +800,21 @@ public static class BenchmarkReportBuilder
                     sb.AppendLine("> - **Quality Score:** N/A");
                 }
 
-                sb.AppendLine($"> - **Speed Score:** {(a.SpeedScore.HasValue ? $"{a.SpeedScore.Value} / 100" : "N/A")} ({a.DurationMs} ms)");
+                // Model time and the effective target, not the raw turn duration: those are the
+                // two numbers the score is actually computed from, so printing DurationMs here
+                // left a reader unable to check the arithmetic — and misleading by exactly the
+                // tool time on a tool-heavy question.
+                if (a.SpeedScore.HasValue)
+                {
+                    double speedTarget = BenchmarkScoring.EffectiveSpeedTargetMs(
+                        a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty),
+                        scoringConstants);
+                    sb.AppendLine($"> - **Speed Score:** {a.SpeedScore.Value} / 100 (model {a.ModelTimeMs} ms vs target {Inv(Math.Round(speedTarget), "N0")} ms)");
+                }
+                else
+                {
+                    sb.AppendLine("> - **Speed Score:** N/A");
+                }
                 if (!string.IsNullOrWhiteSpace(a.ReviewComment))
                 {
                     sb.AppendLine($"> - **Assessor Comment:** {a.ReviewComment}");
@@ -741,12 +920,23 @@ public static class BenchmarkReportBuilder
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.Truncated)) flagDescriptions.Add("Answer truncated (output token limit)");
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.ReasoningBleed))
                 {
-                    // Same signal as the run-level advisory sentence: a non-empty
-                    // ScrubbedArtifactText means the harness actually removed something from
-                    // *this* answer; an empty one means the flag fired but the text stayed put.
-                    flagDescriptions.Add(!string.IsNullOrWhiteSpace(ia.ScrubbedArtifactText)
-                        ? "Reasoning narration removed before grading (advisory)"
-                        : "Reasoning narration present in the graded answer (advisory)");
+                    // Same signal as the run-level advisory sentence: NarrationBlockCount where
+                    // the run recorded it, and the weaker ScrubbedArtifactText proxy for runs
+                    // that predate it. A run before harness version 6 cannot distinguish
+                    // "removed" from "detected and left in place", and says so rather than
+                    // asserting the flattering reading.
+                    if (!ia.NarrationBlockCount.HasValue)
+                    {
+                        flagDescriptions.Add(!string.IsNullOrWhiteSpace(ia.ScrubbedArtifactText)
+                            ? "Reasoning narration detected; removal not recorded for this run (advisory)"
+                            : "Reasoning narration present in the graded answer (advisory)");
+                    }
+                    else
+                    {
+                        flagDescriptions.Add(ia.NarrationBlockCount.Value > 0
+                            ? $"Reasoning narration removed before grading — {ia.NarrationBlockCount.Value} block(s) (advisory)"
+                            : "Reasoning narration present in the graded answer (advisory)");
+                    }
                 }
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.RepeatedFragments)) flagDescriptions.Add("Repeated reasoning fragments in the removed narration (advisory)");
                 if (ia.ToolBudgetExhausted)

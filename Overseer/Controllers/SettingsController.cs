@@ -101,20 +101,23 @@ public class SettingsController : ControllerBase
             requestTimeout = settings?.RequestTimeout,
             showDebugLog = showDebugLog,
             performanceLimits = new {
+                // These defaultValue fallbacks are what the settings UI labels "Default", so a
+                // fallback disagreeing with appsettings.json would show the user a number the chat
+                // does not actually use. Keep them in step with AiPerformanceSettings.
                 maxResultLength = new {
                     min = _configuration.GetValue<int>("AiPerformanceSettings:MaxResultLength:Min", 500),
                     max = _configuration.GetValue<int>("AiPerformanceSettings:MaxResultLength:Max", 100000),
-                    defaultValue = _configuration.GetValue<int>("AiPerformanceSettings:MaxResultLength:Default", 3000)
+                    defaultValue = _configuration.GetValue<int>("AiPerformanceSettings:MaxResultLength:Default", 10000)
                 },
                 maxCallsPerSession = new {
                     min = _configuration.GetValue<int>("AiPerformanceSettings:MaxCallsPerSession:Min", 1),
                     max = _configuration.GetValue<int>("AiPerformanceSettings:MaxCallsPerSession:Max", 500),
-                    defaultValue = _configuration.GetValue<int>("AiPerformanceSettings:MaxCallsPerSession:Default", 30)
+                    defaultValue = _configuration.GetValue<int>("AiPerformanceSettings:MaxCallsPerSession:Default", 150)
                 },
                 maxToolIterations = new {
                     min = _configuration.GetValue<int>("AiPerformanceSettings:MaxToolIterations:Min", 1),
                     max = _configuration.GetValue<int>("AiPerformanceSettings:MaxToolIterations:Max", 100),
-                    defaultValue = _configuration.GetValue<int>("AiPerformanceSettings:MaxToolIterations:Default", 32)
+                    defaultValue = _configuration.GetValue<int>("AiPerformanceSettings:MaxToolIterations:Default", 22)
                 },
                 maxParallelToolCalls = new {
                     min = _configuration.GetValue<int>("AiPerformanceSettings:MaxParallelToolCalls:Min", 1),

@@ -232,6 +232,9 @@ export interface BenchmarkRunAnswerDto {
   /** Transport artifacts removed before grading, retained verbatim for audit. */
   scrubbedArtifactText?: string | null;
   scrubbedArtifactCount: number;
+  // Null for runs before harness version 6, which did not record it: null means
+  // "not recorded", not zero.
+  narrationBlockCount?: number | null;
   terminationReason?: string | null;
   answerFlags?: number;
   answerFlagNames?: string[];

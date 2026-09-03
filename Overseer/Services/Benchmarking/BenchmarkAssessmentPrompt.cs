@@ -48,8 +48,17 @@ public static class BenchmarkAssessmentPrompt
     ///     narration rules widened as a second line of defence; and per-question tool caps moved
     ///     from four flat keys to four difficulty-banded ones. Both changes alter what a model is
     ///     graded on, so runs before and after are not strictly comparable.
+    /// v6: the narration strip no longer stops at the first paragraph it does not recognise, so
+    ///     an unrecognised opener can no longer shield narration behind it; a bare leading token
+    ///     is removed as a decoding artifact; and the narration vocabulary covers "I found the".
+    ///     The removal count is persisted (BenchmarkRunAnswer.NarrationBlockCount), so a report
+    ///     no longer has to infer removal from the presence of any scrubbed text at all. The
+    ///     v5 rules were not enough: two answers of the 2026-09-03 run reached the assessor with
+    ///     narration intact while the report asserted it had been removed, and were docked for
+    ///     it. Changes what a model is graded on; runs before and after are not comparable on
+    ///     narration-carrying answers. ScoringMethodVersion does not move — no formula changed.
     /// </summary>
-    public const string HarnessVersion = "5";
+    public const string HarnessVersion = "6";
 
     public static string BuildPerQuestionPrompt(
         string suiteName,
