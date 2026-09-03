@@ -1,64 +1,266 @@
-// Suite Health. Reuses the shared .gh-tabs / .gh-table / .alert tokens, so this file only
-// carries what is specific to the three tables and the gap cards.
+// Suite Health. Reuses the shared .gh-tabs / .gh-table / .alert / .gh-tooltip tokens from
+// styles.scss, so this file carries only the panel's own layout, its two tables and its cards.
+//
+// .gh-table and .btn-link used to be declared in benchmark.component.scss. Angular's emulated
+// encapsulation rewrote those selectors to match that component's elements only, so neither
+// ever applied here and both tables rendered as unstyled browser tables. They now live in
+// styles.scss; nothing in this file may re-declare them.
+
+// The component is the dialog body's only child and has to fill it, or the panel below cannot
+// know how tall it is allowed to be.
+:host {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
 
 .suite-health {
   display: flex;
   flex-direction: column;
-  gap: 15px;
+  flex: 1;
+  min-height: 0;
+
+  // Layout below reacts to the panel's own width rather than the viewport's. A viewport media
+  // query cannot tell a full-screen dialog from the same component rendered narrow, and this
+  // component is the kind that gets embedded somewhere else eventually.
+  container-type: inline-size;
+  container-name: sh-panel-width;
 
   .section-note {
     margin: 0;
     color: #bbb;
     font-size: 13px;
     line-height: 1.5;
+    text-wrap: pretty;
   }
 
   .text-muted { color: #888; }
-  .mt-10 { margin-top: 10px; }
-  .flex-row { display: flex; }
-  .gap-10 { gap: 10px; }
-  .align-end { align-items: flex-end; }
-  .flex-1 { flex: 1; }
+
+  p { margin: 0; }
 }
 
-// Wide tables scroll inside their own container; the panel itself never scrolls sideways.
-.table-scroll {
-  overflow-x: auto;
-}
+// The tab row and Refresh stay pinned above the panel, so only the panel scrolls.
+.sh-toolbar {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+  flex-shrink: 0;
 
-.item-analysis-table,
-.coverage-table {
-  font-size: 12px;
-
-  td, th { white-space: nowrap; }
-
-  .item-order {
-    font-weight: 700;
-    margin-right: 6px;
+  .gh-tabs {
+    flex: 1;
+    min-width: 0;
+    border-bottom: 0;
+    margin-bottom: 0;
   }
 
-  // The question text is the one column allowed to be long, and it truncates rather than
-  // widening the table past the panel.
+  .sh-refresh {
+    margin-bottom: 6px;
+    flex-shrink: 0;
+  }
+}
+
+// One scroller per tab, and exactly one: a scroller nested inside another traps the wheel, and
+// a sticky table header sticks to whichever scrollport is nearest — which must be this one.
+.sh-panel {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: 20px 24px 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+
+  // The alert and the card list are prose and should not stretch to a 2560px monitor's width;
+  // the tables may use everything they need.
+  > .alert,
+  > .section-note,
+  > p,
+  > .sh-card-list,
+  > .coverage-controls {
+    max-width: 110ch;
+    width: 100%;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: -2px;
+  }
+}
+
+.sh-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+// --- Summary tiles ---
+//
+// Counts only. A suite-level mean here would be a figure large enough to be read before the
+// advisory banner that says it is not a measurement, which is the one thing this panel's design
+// exists to prevent. A count of items in a state is true at any sample size.
+.sh-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0;
+  width: 100%;
+  max-width: 110ch;
+
+  .sh-stat {
+    flex: 1 1 140px;
+    padding: 10px 14px;
+    border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.02);
+
+    dt {
+      margin: 0 0 2px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #888;
+    }
+
+    dd {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      color: #eee;
+    }
+
+    &.is-warn {
+      border-color: rgba(251, 191, 36, 0.4);
+
+      dd { color: #fbbf24; }
+    }
+  }
+}
+
+@container sh-panel-width (max-width: 700px) {
+  .sh-stats .sh-stat { flex-basis: 100%; }
+}
+
+// --- Tables ---
+//
+// Two overrides of .gh-table are needed for a sticky header, and both are non-obvious.
+// overflow: hidden (which .gh-table sets for its rounded corners) makes the table its own
+// scrollport, and since that box never scrolls, position: sticky silently does nothing. And
+// under border-collapse: collapse a sticky header loses its borders, because collapsed borders
+// belong to the table rather than to the cell that scrolls away with them — hence separate
+// borders, redrawn as an inset box-shadow so no layout shifts.
+.sh-table {
+  overflow: visible;
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: max-content;
+  font-size: 12px;
+
+  th, td {
+    border-bottom: 0;
+    box-shadow: inset 0 -1px 0 #2a2a2a;
+    vertical-align: top;
+  }
+
+  thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: #181818;
+    white-space: nowrap;
+  }
+
+  // .gh-table rounds its corners and clips them with overflow: hidden. The clip had to go
+  // for the sticky header, so the corner cells carry the radius themselves instead.
+  thead th:first-child { border-top-left-radius: 8px; }
+  thead th:last-child { border-top-right-radius: 8px; }
+
+  tbody tr:last-child > :first-child { border-bottom-left-radius: 8px; }
+  tbody tr:last-child > :last-child { border-bottom-right-radius: 8px; }
+  tbody tr:last-child > * { box-shadow: none; }
+
+  // The z-index ladder matters: a body row would otherwise slide over the sticky column, or
+  // the corner cell would vanish under the first row.
+  .col-q {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: #1e1e1e;
+    text-align: left;
+    font-weight: 400;
+    max-width: 44ch;
+  }
+
+  thead .col-q {
+    z-index: 3;
+    background: #181818;
+  }
+
+  tbody th[scope="row"] {
+    color: #ddd;
+    font-weight: 400;
+  }
+
+  .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .item-order {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 2px;
+  }
+
+  // The full-screen dialog has the room the 560px suite card never had, so the question text
+  // wraps instead of truncating — and the title attribute it needed to stay readable is gone.
   .item-text {
-    display: inline-block;
-    max-width: 320px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    vertical-align: bottom;
+    display: block;
     color: #bbb;
+    font-weight: 400;
+    text-wrap: pretty;
+  }
+
+  .item-flags {
+    min-width: 14ch;
   }
 
   .item-sample {
     white-space: normal;
+    min-width: 22ch;
     color: #888;
+  }
+
+  .rationale {
+    white-space: normal;
+    max-width: 60ch;
+    text-wrap: pretty;
   }
 
   // A confounded row is a mixture rather than a measurement, and an insufficient one is barely
   // even that. Both are dimmed instead of hidden: seeing the row is how an operator learns the
   // suite needs more runs.
-  tr.is-confounded { background: rgba(251, 191, 36, 0.06); }
+  tr.is-confounded {
+    background: rgba(251, 191, 36, 0.06);
+
+    .col-q { background: rgba(41, 38, 27, 1); }
+  }
+
   tr.is-insufficient { opacity: 0.75; }
 }
+
+// No scroll-edge gradient here, deliberately. A scroll-state container cannot be styled by
+// its own query, so the hint needs a descendant in normal flow — and an empty sticky strip
+// has no height to paint, while an absolutely positioned one scrolls away with the content.
+// scrollbar-gutter: stable above keeps a real scrollbar visible instead, and the sticky
+// header makes the scroll position obvious. Not worth fragile CSS for a decoration.
 
 .item-flag {
   display: inline-block;
@@ -140,3 +342,195 @@
 .citation-Unresolved .citation-status { color: #fbbf24; }
 .citation-NotValidated .citation-status { color: #888; }
 .citation-Resolved .citation-status { color: #81c784; }
+
+// The Coverage tab's controls. Vertical at every width: the Analyze button reads as an
+// action on the selector above it, and a horizontal row would put it level with the
+// selector while the selector's hint text runs on underneath it.
+.coverage-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+
+  .form-group {
+    width: 100%;
+    margin-bottom: 0;
+  }
+}
+
+// --- Model selector ---
+//
+// A verbatim copy of the selector vocabulary in benchmark.component.scss. Angular's
+// emulated view encapsulation rewrites those selectors to that component's elements
+// only, so they do not reach this component even though this component is rendered
+// inside that one's dialog. The alternative is promoting the whole selector to
+// styles.scss, which is a change to the global design system and to five existing call
+// sites - a separate task. If either copy changes, change both.
+
+/* Custom Model Selector */
+.custom-model-selector {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.selector-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #141414;
+  border: 1px solid #3d3d3d;
+  border-radius: 6px;
+  padding: 7px 12px;
+  color: #fff;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  transition: all 0.2s ease;
+  min-height: 38px;
+  width: 100%;
+  justify-content: flex-start;
+
+  &:hover {
+    border-color: var(--primary-color);
+    background: #1a1a1a;
+  }
+
+  &.open {
+    border-color: var(--primary-color);
+
+    .chevron {
+      transform: rotate(180deg);
+    }
+  }
+
+  .chevron {
+    margin-left: auto;
+    transition: transform 0.2s ease;
+    stroke: var(--primary-color);
+    flex-shrink: 0;
+  }
+}
+
+.selector-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 100%;
+  width: max-content;
+  max-width: 480px;
+  max-height: 300px;
+  overflow-y: auto;
+  background: #181818;
+  border: 1px solid var(--primary-color);
+  border-radius: 6px;
+  padding: 4px 0;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+
+  .empty-dropdown-hint {
+    padding: 12px 16px;
+    font-size: 12px;
+    color: #888;
+    line-height: 1.4;
+    font-style: italic;
+  }
+}
+
+.model-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background-color 0.15s ease;
+
+  &:hover {
+    background-color: rgba(212, 160, 23, 0.15);
+  }
+
+  &.selected {
+    background-color: rgba(212, 160, 23, 0.25);
+    border-left: 3px solid var(--primary-color);
+    padding-left: 9px;
+  }
+
+  // The options here are keyboard-focusable (role="option", tabindex="0"), unlike the
+  // benchmark tab's click-only copies, so they need a visible focus ring.
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+.model-name {
+  font-weight: 500;
+  color: #fff;
+  white-space: nowrap;
+}
+
+/* In the trigger, the model name shares the row with the thinking/reasoning/provider
+   badges and the chevron. A narrower grid column (see .form-row.three-cols) must not let
+   a long name push those out — truncate the name instead. The dropdown's own .model-name
+   above keeps wrapping off (white-space: nowrap) since the dropdown is free to grow via
+   its own width: max-content; max-width: 480px. */
+.selector-trigger .model-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.provider-badge {
+  font-size: 11px;
+  color: #aaa;
+  background: #252525;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid #383838;
+}
+
+.thinking-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: #7dd3fc;
+  border: 1px solid rgba(125, 211, 252, 0.4);
+  background: rgba(125, 211, 252, 0.08);
+  padding: 1px 5px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.reasoning-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: #c084fc;
+  border: 1px solid rgba(192, 132, 252, 0.4);
+  background: rgba(192, 132, 252, 0.08);
+  padding: 1px 5px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.parallel-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  white-space: nowrap;
+
+  &.badge-sequential {
+    color: #fbbf24;
+    border: 1px solid #fbbf24;
+    background: rgba(251, 191, 36, 0.15);
+  }
+
+  &.badge-on-request {
+    color: #38bdf8;
+    border: 1px solid #38bdf8;
+    background: rgba(56, 189, 248, 0.15);
+  }
+}

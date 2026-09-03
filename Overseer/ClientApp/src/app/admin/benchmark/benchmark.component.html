@@ -266,6 +266,21 @@
                 time. Choosing the same provider as the model under test requires an explicit
                 acknowledgement before the run starts.
               </span>
+
+              @if (showAssessorChangeAdvisory) {
+                <div class="alert alert-info mt-10" role="note">
+                  <div class="alert-content">
+                    <div class="alert-heading"><strong>Assessor differs from this suite's last run</strong></div>
+                    <div class="alert-body">
+                      Run {{ lastAssessor?.runId }} was graded by
+                      <strong>{{ lastAssessor?.assessorModelDisplayNameUsed }}</strong>
+                      ({{ lastAssessor?.assessorModelProviderUsed }}). A suite's runs are comparable
+                      to each other only while the grader is the same one, so this run's Intelligence
+                      Index will not be directly comparable with it.
+                    </div>
+                  </div>
+                </div>
+              }
             </div>
 
             <!-- Second Opinion Assessor.
@@ -346,21 +361,6 @@
                       is a weaker check than a cross-provider one: two models from one family share
                       training data and failure modes, and can agree for reasons that have nothing to
                       do with the answer.
-                    </div>
-                  </div>
-                </div>
-              }
-
-              @if (showAssessorChangeAdvisory) {
-                <div class="alert alert-info mt-10" role="note">
-                  <div class="alert-content">
-                    <div class="alert-heading"><strong>Assessor differs from this suite's last run</strong></div>
-                    <div class="alert-body">
-                      Run {{ lastAssessor?.runId }} was graded by
-                      <strong>{{ lastAssessor?.assessorModelDisplayNameUsed }}</strong>
-                      ({{ lastAssessor?.assessorModelProviderUsed }}). A suite's runs are comparable
-                      to each other only while the grader is the same one, so this run's Intelligence
-                      Index will not be directly comparable with it.
                     </div>
                   </div>
                 </div>
@@ -630,10 +630,9 @@
               <button type="button" class="btn-gh" (click)="openDifficultyAssessorDialog(suite)">
                 Assess Question Difficulty
               </button>
-              <button type="button" class="btn-gh" (click)="toggleSuiteHealth(suite)"
-                      [attr.aria-expanded]="suiteHealthSuiteId === suite.id"
-                      [attr.aria-controls]="'suite-health-' + suite.id">
-                {{ suiteHealthSuiteId === suite.id ? 'Hide Suite Health' : 'Suite Health' }}
+              <button type="button" class="btn-gh" (click)="openSuiteHealth(suite)"
+                      aria-haspopup="dialog">
+                Suite Health
               </button>
               @if (footprints[suite.id] && footprints[suite.id].runCount > 0) {
                 <button type="button" class="btn-gh btn-gh-delete" (click)="openBulkDeleteDialog(suite)">
@@ -643,26 +642,69 @@
               }
             </div>
 
-            <!--
-              Suite Health: what the stored runs say about the suite rather than about the models.
-              Read-only — its only action is to open a question for editing.
-            -->
-            @if (suiteHealthSuiteId === suite.id) {
-              <div class="suite-health-host" [id]="'suite-health-' + suite.id">
-                <app-benchmark-suite-health
-                  [suiteId]="suite.id"
-                  [suiteName]="suite.name"
-                  [benchmarkCapableConfigs]="benchmarkCapableConfigs"
-                  (editQuestionRequested)="onSuiteHealthEditQuestion(suite, $event)">
-                </app-benchmark-suite-health>
-              </div>
-            }
           </div>
         }
       </div>
     </div>
   }
 </div>
+
+<!--
+  SUITE HEALTH DIALOG
+
+  What the stored runs say about the suite rather than about the models. Read-only — its
+  only action is to open a question for editing.
+
+  One dialog for every suite card, not one per card, and full-screen: eleven columns of item
+  analysis never fitted the 560px suite card it used to render inside.
+
+  No closedby="any", unlike the other dialogs in this application: a viewport-filling dialog
+  has no backdrop to click, so light dismiss would add nothing but a way to lose the analysis
+  by mis-clicking. Escape, both Close controls and platform back gestures all work on a
+  showModal() dialog without it.
+
+  The @if is load-bearing beyond null safety: it re-creates SuiteHealthComponent on every
+  opening, so ngOnChanges fires with a first-change suiteId and the analysis reloads. Without
+  it, re-opening the same suite would show a stale table.
+-->
+<dialog #suiteHealthDialog class="gh-dialog benchmark-suite-health-dialog"
+        aria-labelledby="suite-health-dialog-title"
+        (close)="onSuiteHealthDialogClose()">
+  @if (suiteHealthSuite) {
+    <div class="dialog-content flex-col">
+      <div class="dialog-header">
+        <div class="dialog-title-group">
+          <h3 #suiteHealthHeading id="suite-health-dialog-title" tabindex="-1">
+            Suite Health: {{ suiteHealthSuite.name }}
+          </h3>
+          <p class="dialog-subtitle">
+            {{ suiteHealthSuite.questionCount }} questions &middot; read-only analysis of the stored runs
+          </p>
+        </div>
+        <button type="button" class="btn-icon-action" aria-label="Close suite health"
+                (click)="closeSuiteHealth()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width: 20px; height: 20px;">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <div class="dialog-body suite-health-dialog-body">
+        <app-benchmark-suite-health
+          [suiteId]="suiteHealthSuite.id"
+          [suiteName]="suiteHealthSuite.name"
+          [benchmarkCapableConfigs]="benchmarkCapableConfigs"
+          (editQuestionRequested)="onSuiteHealthEditQuestion(suiteHealthSuite, $event)">
+        </app-benchmark-suite-health>
+      </div>
+
+      <div class="dialog-footer">
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeSuiteHealth()">Close</button>
+      </div>
+    </div>
+  }
+</dialog>
 
 <!-- RUN DETAIL DIALOG -->
 <dialog #runDetailDialog class="gh-dialog benchmark-run-detail-dialog">

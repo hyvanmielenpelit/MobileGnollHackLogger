@@ -1221,6 +1221,64 @@ label.checkbox-label,
   }
 }
 
+/* Shared Data Table
+   Lives here rather than in a component stylesheet on purpose. It was declared in
+   benchmark.component.scss, where Angular's emulated encapsulation rewrote the selector to
+   .gh-table[_ngcontent-benchmark] — so the class never reached the Suite Health child
+   component's own markup, and its tables rendered as unstyled browser tables. */
+.gh-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #1e1e1e;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #333;
+
+  th, td {
+    padding: 12px 14px;
+    text-align: left;
+    border-bottom: 1px solid #2a2a2a;
+    font-size: 13px;
+  }
+
+  th {
+    background: #181818;
+    color: #aaa;
+    font-weight: 600;
+  }
+
+  tr:hover {
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  .action-cell {
+    display: flex;
+    gap: 4px;
+  }
+}
+
+/* Inline text button, for a secondary action inside a table row or a card.
+   Promoted from benchmark.component.scss for the same encapsulation reason as .gh-table. */
+.btn-link {
+  background: transparent;
+  border: none;
+  color: #64b5f6;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+
+  &:hover { color: #90caf9; }
+
+  /* It carries no border or background of its own, so without this a keyboard user has
+     nothing to see — and inside a modal dialog it is the main interactive control. */
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+}
+
 /* Action Buttons for Tables & Lists */
 .action-btn {
   display: inline-flex;

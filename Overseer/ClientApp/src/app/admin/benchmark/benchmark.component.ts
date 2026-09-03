@@ -79,6 +79,8 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   @ViewChild('retryDialog') retryDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('runProgressDialog') runProgressDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('runProgressHeading') runProgressHeading?: ElementRef<HTMLElement>;
+  @ViewChild('suiteHealthDialog') suiteHealthDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('suiteHealthHeading') suiteHealthHeading?: ElementRef<HTMLElement>;
 
   // Confirm Action Dialog State
   confirmDialogTitle = '';
@@ -256,8 +258,8 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   retryAssessorConfigId: number | null = null;
   isRetryAssessorDropdownOpen = false;
 
-  // Suite Health. One suite's panel is open at a time, keyed by suite id: the reports are
-  // per-suite and none of them is cheap enough to keep loaded for every card at once.
+  // Suite Health. The suite whose full-screen dialog is open, or null. One at a time by
+  // construction: there is a single dialog element for every suite card.
   suiteHealthSuiteId: number | null = null;
 
   /**
@@ -2765,9 +2767,30 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     return this.suites.find(s => s.id === this.selectedSuiteId);
   }
 
-  /** Toggles the Suite Health panel for one suite card. */
-  toggleSuiteHealth(suite: BenchmarkSuiteDto): void {
-    this.suiteHealthSuiteId = this.suiteHealthSuiteId === suite.id ? null : suite.id;
+  /** Opens the full-screen Suite Health dialog for one suite. */
+  openSuiteHealth(suite: BenchmarkSuiteDto): void {
+    this.suiteHealthSuiteId = suite.id;
+    // The dialog's @if content has to exist before showModal(), or an empty dialog opens.
+    this.cdr.detectChanges();
+    this.suiteHealthDialog?.nativeElement.showModal();
+    // showModal() would otherwise focus the close button, which announces "Close" as the
+    // first thing a screen-reader user hears in a dialog full of statistics.
+    this.suiteHealthHeading?.nativeElement.focus();
+  }
+
+  closeSuiteHealth(): void {
+    // close() fires the dialog's (close) event, so the state is cleared in one place.
+    this.suiteHealthDialog?.nativeElement.close();
+  }
+
+  /** Also reached by Escape and by platform back gestures, which bypass closeSuiteHealth(). */
+  onSuiteHealthDialogClose(): void {
+    this.suiteHealthSuiteId = null;
+    this.cdr.detectChanges();
+  }
+
+  get suiteHealthSuite(): BenchmarkSuiteDto | undefined {
+    return this.suites.find(s => s.id === this.suiteHealthSuiteId);
   }
 
   /**
@@ -2775,6 +2798,9 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
    * every finding in that panel is advisory, and a human decides what to change.
    */
   onSuiteHealthEditQuestion(suite: BenchmarkSuiteDto, questionId: number): void {
+    // Close first: openManageQuestions() calls showModal() on another dialog, and two stacked
+    // modals leave the user pressing Escape twice to get back to the page.
+    this.suiteHealthDialog?.nativeElement.close();
     // The list loads asynchronously, so the editor cannot be opened here: it is opened by
     // loadQuestions once the question this id names actually exists in memory.
     this.pendingQuestionEditId = questionId;

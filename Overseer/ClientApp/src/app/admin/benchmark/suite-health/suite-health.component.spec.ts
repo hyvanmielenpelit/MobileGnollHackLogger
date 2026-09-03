@@ -7,6 +7,7 @@ import {
   BenchmarkItemStatisticsDto,
   BenchmarkSuiteItemAnalysisDto
 } from '../../../services/admin-benchmark.service';
+import { SystemAiConfigDto } from '../../../services/admin.service';
 
 describe('SuiteHealthComponent', () => {
   let component: SuiteHealthComponent;
@@ -82,6 +83,24 @@ describe('SuiteHealthComponent', () => {
     component.suiteId = 5;
     component.ngOnChanges({ suiteId: { previousValue: null, currentValue: 5, firstChange: true, isFirstChange: () => true } });
     fixture.detectChanges();
+  }
+
+  /**
+   * A benchmark-capable configuration for the Coverage tab's model selector. Only the fields the
+   * selector reads are meaningful; the rest of SystemAiConfigDto is quota bookkeeping the panel
+   * never touches, so the seed is a partial cast rather than forty irrelevant zeroes.
+   */
+  function buildConfig(overrides: Partial<SystemAiConfigDto> = {}): SystemAiConfigDto {
+    return {
+      id: 1,
+      displayName: 'Claude Opus 5',
+      provider: 'Anthropic',
+      modelId: 'claude-opus-5',
+      thinkingLevel: 'high',
+      reasoningMode: null,
+      parallelExecutionMode: 2,
+      ...overrides
+    } as SystemAiConfigDto;
   }
 
   function bannerText(): string {
@@ -172,6 +191,80 @@ describe('SuiteHealthComponent', () => {
     expect(fixture.nativeElement.querySelector('.item-analysis-table tbody tr.is-confounded')).toBeTruthy();
   });
 
+  it('should summarise the suite as counts only', () => {
+    open(buildAnalysis({
+      questionCount: 3,
+      items: [
+        buildItem({ questionId: 1, runCount: 6 }),
+        buildItem({ questionId: 2, runCount: 1, insufficientData: true, flags: 16, flagNames: ['AssessorConfounded'], confounded: true }),
+        buildItem({ questionId: 3, runCount: 0 })
+      ]
+    }));
+
+    expect(component.itemsWithRunsCount).toBe(2);
+    expect(component.itemsBelowFloorCount).toBe(2);
+    expect(component.flaggedItemCount).toBe(1);
+    expect(component.confoundedItemCount).toBe(1);
+
+    // Counts only. A suite-level mean rendered this large would be read before the advisory
+    // banner that says the figures are not measurements, which is the mistake this panel's
+    // design exists to prevent.
+    const stats = fixture.nativeElement.querySelector('.sh-stats') as HTMLElement;
+    expect(stats).toBeTruthy();
+    expect(stats.textContent || '').not.toMatch(/mean|average|index/i);
+  });
+
+  it('should reload the stored reports on refresh, and never the paid ones', () => {
+    open();
+    expect(serviceMock.getItemAnalysis).toHaveBeenCalledTimes(1);
+
+    component.refreshActiveTab();
+    expect(serviceMock.getItemAnalysis).toHaveBeenCalledTimes(2);
+
+    component.selectTab('gaps');
+    component.refreshActiveTab();
+    expect(serviceMock.getRubricGaps).toHaveBeenCalledTimes(2);
+
+    // Citations and Coverage cost an index scan and AI tokens respectively, so a generic
+    // Refresh must neither offer itself nor fire them.
+    component.selectTab('citations');
+    expect(component.canRefreshActiveTab).toBeFalse();
+    component.refreshActiveTab();
+    expect(serviceMock.validateCitations).not.toHaveBeenCalled();
+
+    component.selectTab('coverage');
+    expect(component.canRefreshActiveTab).toBeFalse();
+    component.refreshActiveTab();
+    expect(serviceMock.analyzeCoverage).not.toHaveBeenCalled();
+  });
+
+  it('should let a keyboard user reach the panel from the tab row', () => {
+    open();
+
+    const panels: HTMLElement[] = Array.from(fixture.nativeElement.querySelectorAll('[role="tabpanel"]'));
+    expect(panels.length).toBe(1);
+    expect(panels.every(p => p.getAttribute('tabindex') === '0')).toBeTrue();
+
+    // The active tab's aria-controls has to resolve to the panel that is actually rendered.
+    const activeTab = fixture.nativeElement.querySelector('[role="tab"][aria-selected="true"]') as HTMLElement;
+    expect(activeTab.getAttribute('aria-controls')).toBe(panels[0].id);
+  });
+
+  it('should explain a flag with a hint popover rather than a title attribute', () => {
+    open(buildAnalysis({
+      items: [buildItem({ flags: 16, flagNames: ['AssessorConfounded'], confounded: true })]
+    }));
+
+    const badge = fixture.nativeElement.querySelector('.item-flag') as HTMLElement;
+    // title is unstyleable and never appears on keyboard focus, so it is not used here.
+    expect(badge.getAttribute('title')).toBeNull();
+    expect(badge.getAttribute('interestfor')).toBe('sh-tip-flag-1-AssessorConfounded');
+
+    const tip = fixture.nativeElement.querySelector('#sh-tip-flag-1-AssessorConfounded') as HTMLElement;
+    expect(tip.getAttribute('popover')).toBe('hint');
+    expect(tip.textContent).toContain('More than one assessor graded these runs');
+  });
+
   it('should surface an item-analysis failure without breaking the panel', () => {
     serviceMock.getItemAnalysis.and.returnValue(throwError(() => ({ error: 'boom' })));
     open();
@@ -183,7 +276,7 @@ describe('SuiteHealthComponent', () => {
   it('should expose no write action anywhere in the panel', () => {
     // The panel reports; it never edits. Its only outward action asks the host to open a
     // question, and in particular there is no control that copies empirical difficulty into
-    // assessed difficulty — that number weights the Intelligence Index.
+    // assessed difficulty ÔÇö that number weights the Intelligence Index.
     open();
 
     const labels: string[] = Array.from(fixture.nativeElement.querySelectorAll('button'))
@@ -277,6 +370,38 @@ describe('SuiteHealthComponent', () => {
     expect(text).toContain('src/polyself.c');
     // The report discloses the model that produced it, as a difficulty rating does.
     expect(text).toContain('Claude Opus 5');
+  });
+
+  it('should pick the coverage analysis model from the badge dropdown', () => {
+    open();
+    component.benchmarkCapableConfigs = [
+      buildConfig(),
+      buildConfig({ id: 2, displayName: 'Gemini 3 Pro', provider: 'Google', modelId: 'gemini-3-pro', thinkingLevel: 'low' })
+    ];
+    component.selectTab('coverage');
+    fixture.detectChanges();
+
+    const trigger = fixture.nativeElement.querySelector('.coverage-model-selector .selector-trigger') as HTMLElement;
+    expect(trigger).withContext('the Coverage tab renders the shared model selector').toBeTruthy();
+
+    trigger.click();
+    fixture.detectChanges();
+    expect(component.isCoverageModelDropdownOpen).toBeTrue();
+
+    const options: HTMLElement[] = Array.from(
+      fixture.nativeElement.querySelectorAll('.coverage-model-selector .model-option'));
+    expect(options.length).toBe(2);
+
+    options[options.length - 1].click();
+    fixture.detectChanges();
+
+    expect(component.isCoverageModelDropdownOpen).toBeFalse();
+    expect(component.coverageModelConfigId)
+      .toBe(component.benchmarkCapableConfigs[component.benchmarkCapableConfigs.length - 1].id);
+
+    // The badges are what distinguishes this selector from the plain <select> it replaced.
+    expect(trigger.querySelector('.provider-badge')?.textContent?.trim()).toBe('Google');
+    expect(trigger.querySelector('.thinking-badge')?.textContent?.trim()).toBe('Low');
   });
 
   it('should move between tabs with the arrow keys', () => {

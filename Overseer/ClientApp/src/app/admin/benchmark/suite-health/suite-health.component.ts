@@ -1,6 +1,7 @@
-import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges, ChangeDetectorRef, inject } from '@angular/core';
+import { Component, EventEmitter, HostListener, Input, OnChanges, OnInit, Output, SimpleChanges, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 import {
   AdminBenchmarkService,
   BenchmarkSuiteItemAnalysisDto,
@@ -34,7 +35,7 @@ export type SuiteHealthTab = 'items' | 'gaps' | 'citations' | 'coverage';
   templateUrl: './suite-health.component.html',
   styleUrls: ['./suite-health.component.scss']
 })
-export class SuiteHealthComponent implements OnChanges {
+export class SuiteHealthComponent implements OnInit, OnChanges {
   private benchmarkService = inject(AdminBenchmarkService);
   private cdr = inject(ChangeDetectorRef);
 
@@ -66,7 +67,17 @@ export class SuiteHealthComponent implements OnChanges {
   coverageError: string | null = null;
   coverageModelConfigId: number | null = null;
 
+  /** Open state of the Coverage analysis-model dropdown. */
+  isCoverageModelDropdownOpen = false;
+
   private readonly tabOrder: SuiteHealthTab[] = ['items', 'gaps', 'citations', 'coverage'];
+
+  ngOnInit(): void {
+    // The flag and verdict explanations are interestfor + popover="hint" tooltips rather than
+    // title attributes, which are unstyleable and never appear on keyboard focus. This
+    // feature-detects and lazily imports, so a supporting browser downloads nothing.
+    ensureOverlayPolyfills();
+  }
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['suiteId'] && this.suiteId != null) {
@@ -88,10 +99,53 @@ export class SuiteHealthComponent implements OnChanges {
     this.gapsError = null;
     this.citationsError = null;
     this.coverageError = null;
+    this.isCoverageModelDropdownOpen = false;
+  }
+
+  /**
+   * Closes the analysis-model dropdown on any click outside it. Scoped by the
+   * `.coverage-model-selector` marker class exactly as the benchmark tab scopes its own
+   * selectors, so a click inside the dropdown does not close it before the option is taken.
+   */
+  @HostListener('document:click', ['$event'])
+  onDocumentClick(event: MouseEvent): void {
+    const target = event.target as HTMLElement;
+    if (this.isCoverageModelDropdownOpen && !target.closest('.coverage-model-selector')) {
+      this.isCoverageModelDropdownOpen = false;
+      this.cdr.detectChanges();
+    }
+  }
+
+  toggleCoverageModelDropdown(event: Event): void {
+    // Without this the same click reaches onDocumentClick above and closes the dropdown in
+    // the same tick, so the trigger appears not to work at all.
+    event.stopPropagation();
+    this.isCoverageModelDropdownOpen = !this.isCoverageModelDropdownOpen;
+    this.cdr.detectChanges();
+  }
+
+  selectCoverageModel(config: SystemAiConfigDto): void {
+    this.coverageModelConfigId = config.id;
+    this.isCoverageModelDropdownOpen = false;
+    this.cdr.detectChanges();
+  }
+
+  // Identical to BenchmarkComponent.formatThinkingLevel and .showReasoningBadge, so the two
+  // selectors can never disagree about what they display. If either changes, change both.
+  formatThinkingLevel(level: string | null | undefined): string {
+    if (!level) return 'Default';
+    return level.charAt(0).toUpperCase() + level.slice(1);
+  }
+
+  showReasoningBadge(mode: string | null | undefined): boolean {
+    if (!mode) return false;
+    const lower = mode.toLowerCase();
+    return lower !== 'default' && lower !== 'standard';
   }
 
   selectTab(tab: SuiteHealthTab): void {
     this.activeTab = tab;
+    this.cdr.detectChanges();
   }
 
   onTabKeydown(event: KeyboardEvent, index: number): void {
@@ -106,6 +160,20 @@ export class SuiteHealthComponent implements OnChanges {
     this.activeTab = this.tabOrder[next];
     const target = document.getElementById(`sh-tab-${this.activeTab}`);
     target?.focus();
+  }
+
+  /**
+   * Re-fetches the active tab's stored analysis. Citations and Coverage are deliberately
+   * excluded: both are explicit actions with their own buttons, and Coverage spends AI tokens,
+   * so neither may be re-triggered by a generic Refresh.
+   */
+  refreshActiveTab(): void {
+    if (this.activeTab === 'items') this.loadItemAnalysis();
+    else if (this.activeTab === 'gaps') this.loadRubricGaps();
+  }
+
+  get canRefreshActiveTab(): boolean {
+    return this.activeTab === 'items' || this.activeTab === 'gaps';
   }
 
   loadItemAnalysis(): void {
@@ -210,6 +278,45 @@ export class SuiteHealthComponent implements OnChanges {
 
   get scoringMethodMixed(): boolean {
     return (this.itemAnalysis?.distinctScoringMethodVersionCount ?? 0) > 1;
+  }
+
+  // --- Summary tiles ---
+  //
+  // Counts only, and never a mean or any other derived measurement. A suite-level average
+  // quality tile would be the exact mistake the advisory banner exists to prevent: a figure
+  // large and legible enough to be read before the caveat that says it is not a measurement.
+  // A count of items in a state is true regardless of sample size.
+
+  get itemsWithRunsCount(): number {
+    return this.itemAnalysis?.items.filter(i => i.runCount > 0).length ?? 0;
+  }
+
+  get itemsBelowFloorCount(): number {
+    const floor = this.itemAnalysis?.minRunsForMeasurement ?? 4;
+    return this.itemAnalysis?.items.filter(i => i.runCount < floor).length ?? 0;
+  }
+
+  get flaggedItemCount(): number {
+    return this.itemAnalysis?.items.filter(i => i.flagNames.length > 0).length ?? 0;
+  }
+
+  get confoundedItemCount(): number {
+    return this.itemAnalysis?.items.filter(i => i.confounded).length ?? 0;
+  }
+
+  // --- Tooltip anchors ---
+  //
+  // One id per row and per flag, so each interestfor anchor name is unique. The anchor pair is
+  // written with [attr.style] in the template rather than [style.anchor-name]: Angular's style
+  // binding silently discards properties the browser does not recognise, which is precisely
+  // the case in the browsers that need the anchor-positioning polyfill.
+
+  flagTipId(item: BenchmarkItemStatisticsDto, flag: string): string {
+    return `sh-tip-flag-${item.questionId}-${flag}`;
+  }
+
+  verdictTipId(questionId: number, index: number): string {
+    return `sh-tip-verdict-${questionId}-${index}`;
   }
 
   // --- Row rendering ---

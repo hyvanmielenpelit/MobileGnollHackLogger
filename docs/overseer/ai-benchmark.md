@@ -573,9 +573,21 @@ because nothing is auto-inserted and the endpoint adds one bounded call per invo
 
 ### The Suite Health panel
 
-Reached from the suite card in the AI Benchmark tab, with four tabs following the shared
-`.gh-tabs` / `.gh-tab` widget conventions: **Items**, **Rubric gaps**, **Citations** and
-**Coverage**.
+The **Suite Health** button on a suite card opens a **full-screen modal dialog** — dismissed with
+Escape, the header close button, or the footer Close button. It is full-screen because it has to be:
+the item analysis is an eleven-column table, and the suite cards it used to render inside are 560px
+wide, which forced the question text to truncate and every other column to stop wrapping. There is
+one dialog for all suite cards, re-created per opening so the reports always reload rather than
+showing the previous suite's figures. It carries four tabs following the shared `.gh-tabs` /
+`.gh-tab` widget conventions: **Items**, **Rubric gaps**, **Citations** and **Coverage**. Each tab is
+its own scroll container, with the item table's header row and its question column pinned.
+
+The Items tab also shows a row of summary tiles below the banner: questions, items with runs, items
+below the run floor, flagged items, confounded items. These are **counts only, never a mean or any
+other derived measurement** — a large legible average would be read before the caveat that says it is
+not a measurement, whereas a count of items in a state is true at any sample size. The **Refresh**
+control beside the tabs re-fetches the Items and Rubric gaps reports only; Citations and Coverage
+keep their own explicit buttons, because one scans an index and the other spends AI tokens.
 
 Statistical honesty is a UI requirement here, not a nicety. The Items tab's banner comes *before*
 the table and states the suite-level sample size, the assessor mix, the scoring-method mix, how

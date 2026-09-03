@@ -1,42 +1,65 @@
 <div class="suite-health">
-  <div class="gh-tabs gh-tabs-secondary" role="tablist" aria-label="Suite health sections">
-    <button type="button" role="tab" class="gh-tab" id="sh-tab-items"
-            aria-controls="sh-panel-items"
-            [attr.aria-selected]="activeTab === 'items'"
-            [attr.tabindex]="activeTab === 'items' ? 0 : -1"
-            (keydown)="onTabKeydown($event, 0)"
-            (click)="selectTab('items')">
-      Items
-    </button>
-    <button type="button" role="tab" class="gh-tab" id="sh-tab-gaps"
-            aria-controls="sh-panel-gaps"
-            [attr.aria-selected]="activeTab === 'gaps'"
-            [attr.tabindex]="activeTab === 'gaps' ? 0 : -1"
-            (keydown)="onTabKeydown($event, 1)"
-            (click)="selectTab('gaps')">
-      Rubric gaps
-    </button>
-    <button type="button" role="tab" class="gh-tab" id="sh-tab-citations"
-            aria-controls="sh-panel-citations"
-            [attr.aria-selected]="activeTab === 'citations'"
-            [attr.tabindex]="activeTab === 'citations' ? 0 : -1"
-            (keydown)="onTabKeydown($event, 2)"
-            (click)="selectTab('citations')">
-      Citations
-    </button>
-    <button type="button" role="tab" class="gh-tab" id="sh-tab-coverage"
-            aria-controls="sh-panel-coverage"
-            [attr.aria-selected]="activeTab === 'coverage'"
-            [attr.tabindex]="activeTab === 'coverage' ? 0 : -1"
-            (keydown)="onTabKeydown($event, 3)"
-            (click)="selectTab('coverage')">
-      Coverage
-    </button>
+  <!--
+    The tab row and the Refresh control share one toolbar pinned above the panels, so the
+    panel below is the only thing that scrolls. Refresh appears on the two tabs that load a
+    stored report; Citations and Coverage have their own explicit buttons, and Coverage spends
+    AI tokens, so neither may be re-triggered by a generic Refresh.
+  -->
+  <div class="sh-toolbar">
+    <div class="gh-tabs gh-tabs-secondary" role="tablist" aria-label="Suite health sections">
+      <button type="button" role="tab" class="gh-tab" id="sh-tab-items"
+              aria-controls="sh-panel-items"
+              [attr.aria-selected]="activeTab === 'items'"
+              [attr.tabindex]="activeTab === 'items' ? 0 : -1"
+              (keydown)="onTabKeydown($event, 0)"
+              (click)="selectTab('items')">
+        Items
+      </button>
+      <button type="button" role="tab" class="gh-tab" id="sh-tab-gaps"
+              aria-controls="sh-panel-gaps"
+              [attr.aria-selected]="activeTab === 'gaps'"
+              [attr.tabindex]="activeTab === 'gaps' ? 0 : -1"
+              (keydown)="onTabKeydown($event, 1)"
+              (click)="selectTab('gaps')">
+        Rubric gaps
+      </button>
+      <button type="button" role="tab" class="gh-tab" id="sh-tab-citations"
+              aria-controls="sh-panel-citations"
+              [attr.aria-selected]="activeTab === 'citations'"
+              [attr.tabindex]="activeTab === 'citations' ? 0 : -1"
+              (keydown)="onTabKeydown($event, 2)"
+              (click)="selectTab('citations')">
+        Citations
+      </button>
+      <button type="button" role="tab" class="gh-tab" id="sh-tab-coverage"
+              aria-controls="sh-panel-coverage"
+              [attr.aria-selected]="activeTab === 'coverage'"
+              [attr.tabindex]="activeTab === 'coverage' ? 0 : -1"
+              (keydown)="onTabKeydown($event, 3)"
+              (click)="selectTab('coverage')">
+        Coverage
+      </button>
+    </div>
+
+    @if (canRefreshActiveTab) {
+      <button type="button" class="action-btn sh-refresh" (click)="refreshActiveTab()"
+              [attr.aria-label]="activeTab === 'items' ? 'Refresh item analysis' : 'Refresh rubric gap report'"
+              interestfor="sh-tip-refresh"
+              style="anchor-name: --sh-tip-refresh">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="23 4 23 10 17 10"></polyline>
+          <polyline points="1 20 1 14 7 14"></polyline>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+        </svg>
+      </button>
+      <div popover="hint" class="gh-tooltip" id="sh-tip-refresh"
+           style="position-anchor: --sh-tip-refresh">Reload this report</div>
+    }
   </div>
 
   <!-- ITEMS -->
   @if (activeTab === 'items') {
-    <div id="sh-panel-items" role="tabpanel" aria-labelledby="sh-tab-items">
+    <div id="sh-panel-items" class="sh-panel" role="tabpanel" aria-labelledby="sh-tab-items" tabindex="0">
       @if (loadingItems) {
         <p class="text-muted">Loading item analysis...</p>
       } @else if (itemsError) {
@@ -97,60 +120,97 @@
           </div>
         </div>
 
-        <div class="table-scroll">
-          <table class="gh-table item-analysis-table">
-            <thead>
-              <tr>
-                <th scope="col">Q</th>
-                <th scope="col">Mean</th>
-                <th scope="col">Spread</th>
-                <th scope="col">Assessed</th>
-                <th scope="col">Empirical</th>
-                <th scope="col">Delta</th>
-                <th scope="col">Discrimination</th>
-                <th scope="col">Tool calls</th>
-                <th scope="col">Flags</th>
-                <th scope="col">Sample</th>
-                <th scope="col"></th>
+        <!--
+          Counts, and deliberately no mean or other derived figure: a large legible average
+          above the table would be read before the banner that says it is not a measurement.
+          A count of items in a state is true at any sample size.
+        -->
+        <dl class="sh-stats">
+          <div class="sh-stat">
+            <dt>Questions</dt>
+            <dd>{{ itemAnalysis.questionCount }}</dd>
+          </div>
+          <div class="sh-stat">
+            <dt>Items with runs</dt>
+            <dd>{{ itemsWithRunsCount }}</dd>
+          </div>
+          <div class="sh-stat" [class.is-warn]="itemsBelowFloorCount > 0">
+            <dt>Below run floor</dt>
+            <dd>{{ itemsBelowFloorCount }}</dd>
+          </div>
+          <div class="sh-stat" [class.is-warn]="flaggedItemCount > 0">
+            <dt>Flagged</dt>
+            <dd>{{ flaggedItemCount }}</dd>
+          </div>
+          <div class="sh-stat" [class.is-warn]="confoundedItemCount > 0">
+            <dt>Confounded</dt>
+            <dd>{{ confoundedItemCount }}</dd>
+          </div>
+        </dl>
+
+        <table class="gh-table sh-table item-analysis-table">
+          <caption class="visually-hidden">
+            Per-item statistics for {{ suiteName }}: mean quality, spread, assessed and empirical
+            difficulty, discrimination, tool calls, flags and sample size.
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col" class="col-q">Q</th>
+              <th scope="col" class="num">Mean</th>
+              <th scope="col" class="num">Spread</th>
+              <th scope="col" class="num">Assessed</th>
+              <th scope="col" class="num">Empirical</th>
+              <th scope="col" class="num">Delta</th>
+              <th scope="col" class="num">Discrimination</th>
+              <th scope="col" class="num">Tool calls</th>
+              <th scope="col">Flags</th>
+              <th scope="col">Sample</th>
+              <th scope="col"><span class="visually-hidden">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (item of itemAnalysis.items; track item.questionId) {
+              <tr [class.is-confounded]="item.confounded" [class.is-insufficient]="item.insufficientData">
+                <!-- A row header, not a plain cell: it is what makes an eleven-column table
+                     navigable by screen reader, and what lets the column stay sticky without
+                     losing its meaning. -->
+                <th scope="row" class="col-q">
+                  <span class="item-order">Q{{ item.orderIndex }}</span>
+                  <span class="item-text">{{ item.questionText }}</span>
+                </th>
+                <td class="num">{{ item.runCount > 0 ? (item.meanQuality | number:'1.1-1') : '—' }}</td>
+                <td class="num">{{ spreadLabel(item) }}</td>
+                <td class="num">{{ item.assessedDifficulty ?? '—' }}</td>
+                <td class="num">{{ item.runCount > 0 ? item.empiricalDifficulty : '—' }}</td>
+                <td class="num">{{ deltaLabel(item) }}</td>
+                <td class="num">{{ discriminationLabel(item) }}</td>
+                <td class="num">{{ item.runCount > 0 ? (item.meanToolCalls | number:'1.1-1') : '—' }}</td>
+                <td class="item-flags">
+                  @for (flag of item.flagNames; track flag) {
+                    <span class="item-flag" [class]="'flag-' + flag"
+                          [attr.interestfor]="flagTipId(item, flag)"
+                          [attr.style]="'anchor-name: --' + flagTipId(item, flag)">{{ flag }}</span>
+                    <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="flagTipId(item, flag)"
+                         [attr.style]="'position-anchor: --' + flagTipId(item, flag)">{{ flagTitle(flag) }}</div>
+                  }
+                </td>
+                <td class="item-sample">{{ sampleLabel(item) }}@if (item.unknownRevisionCount > 0) { <span class="text-muted">, {{ item.unknownRevisionCount }} at an unrecorded revision</span> }</td>
+                <td>
+                  <button type="button" class="btn-link" (click)="editQuestion(item.questionId)">
+                    Edit question
+                  </button>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              @for (item of itemAnalysis.items; track item.questionId) {
-                <tr [class.is-confounded]="item.confounded" [class.is-insufficient]="item.insufficientData">
-                  <td>
-                    <span class="item-order">Q{{ item.orderIndex }}</span>
-                    <span class="item-text" [title]="item.questionText">{{ item.questionText }}</span>
-                  </td>
-                  <td>{{ item.runCount > 0 ? (item.meanQuality | number:'1.1-1') : '—' }}</td>
-                  <td>{{ spreadLabel(item) }}</td>
-                  <td>{{ item.assessedDifficulty ?? '—' }}</td>
-                  <td>{{ item.runCount > 0 ? item.empiricalDifficulty : '—' }}</td>
-                  <td>{{ deltaLabel(item) }}</td>
-                  <td>{{ discriminationLabel(item) }}</td>
-                  <td>{{ item.runCount > 0 ? (item.meanToolCalls | number:'1.1-1') : '—' }}</td>
-                  <td>
-                    @for (flag of item.flagNames; track flag) {
-                      <span class="item-flag" [class]="'flag-' + flag" [title]="flagTitle(flag)">{{ flag }}</span>
-                    }
-                  </td>
-                  <td class="item-sample">{{ sampleLabel(item) }}@if (item.unknownRevisionCount > 0) { <span class="text-muted">, {{ item.unknownRevisionCount }} at an unrecorded revision</span> }</td>
-                  <td>
-                    <button type="button" class="btn-link" (click)="editQuestion(item.questionId)">
-                      Edit question
-                    </button>
-                  </td>
-                </tr>
-              }
-            </tbody>
-          </table>
-        </div>
+            }
+          </tbody>
+        </table>
       }
     </div>
   }
 
   <!-- RUBRIC GAPS -->
   @if (activeTab === 'gaps') {
-    <div id="sh-panel-gaps" role="tabpanel" aria-labelledby="sh-tab-gaps">
+    <div id="sh-panel-gaps" class="sh-panel" role="tabpanel" aria-labelledby="sh-tab-gaps" tabindex="0">
       @if (loadingGaps) {
         <p class="text-muted">Loading rubric gaps...</p>
       } @else if (gapsError) {
@@ -173,24 +233,31 @@
           }
         </p>
 
-        @for (cluster of rubricGaps.clusters; track cluster.questionId + '-' + cluster.claims[0]) {
-          <div class="gap-cluster" [class.is-rubric-gap]="cluster.verdict === 'LikelyRubricGap'">
-            <div class="gap-header">
-              <strong>Q{{ cluster.questionOrderIndex }}</strong>
-              <span class="gap-verdict" [title]="verdictTitle(cluster.verdict)">{{ verdictLabel(cluster.verdict) }}</span>
-              <span class="text-muted">
-                {{ cluster.occurrences }} occurrence(s), {{ cluster.modelFamilies.length }} family(ies)
-              </span>
+        <div class="sh-card-list">
+          @for (cluster of rubricGaps.clusters; track cluster.questionId + '-' + cluster.claims[0]; let clusterIndex = $index) {
+            <div class="gap-cluster" [class.is-rubric-gap]="cluster.verdict === 'LikelyRubricGap'">
+              <div class="gap-header">
+                <strong>Q{{ cluster.questionOrderIndex }}</strong>
+                <span class="gap-verdict"
+                      [attr.interestfor]="verdictTipId(cluster.questionId, clusterIndex)"
+                      [attr.style]="'anchor-name: --' + verdictTipId(cluster.questionId, clusterIndex)">{{ verdictLabel(cluster.verdict) }}</span>
+                <div popover="hint" class="gh-tooltip gh-tooltip-multiline"
+                     [id]="verdictTipId(cluster.questionId, clusterIndex)"
+                     [attr.style]="'position-anchor: --' + verdictTipId(cluster.questionId, clusterIndex)">{{ verdictTitle(cluster.verdict) }}</div>
+                <span class="text-muted">
+                  {{ cluster.occurrences }} occurrence(s), {{ cluster.modelFamilies.length }} family(ies)
+                </span>
+              </div>
+              <ul class="gap-claims">
+                @for (claim of cluster.claims; track claim) {
+                  <li>“{{ claim }}”</li>
+                }
+              </ul>
+              <div class="gap-models text-muted">Raised by: {{ cluster.modelIds.join(', ') }}</div>
+              <button type="button" class="btn-link" (click)="editQuestion(cluster.questionId)">Edit question</button>
             </div>
-            <ul class="gap-claims">
-              @for (claim of cluster.claims; track claim) {
-                <li>“{{ claim }}”</li>
-              }
-            </ul>
-            <div class="gap-models text-muted">Raised by: {{ cluster.modelIds.join(', ') }}</div>
-            <button type="button" class="btn-link" (click)="editQuestion(cluster.questionId)">Edit question</button>
-          </div>
-        }
+          }
+        </div>
         @if (rubricGaps.clusters.length === 0) {
           <p class="text-muted">No unverified claims have been recorded for this suite.</p>
         }
@@ -200,25 +267,27 @@
 
   <!-- CITATIONS -->
   @if (activeTab === 'citations') {
-    <div id="sh-panel-citations" role="tabpanel" aria-labelledby="sh-tab-citations">
+    <div id="sh-panel-citations" class="sh-panel" role="tabpanel" aria-labelledby="sh-tab-citations" tabindex="0">
       <p class="section-note">
         Resolves the <code>**SOURCE**</code> citations the rubrics carry against the running source
         and wiki indexes. Line numbers are parsed and shown but never validated: they drift with
         every commit, and permanent false alarms train an operator to ignore the whole panel.
       </p>
-      <button type="button" class="btn-gh" (click)="validateCitations()" [disabled]="loadingCitations">
-        {{ loadingCitations ? 'Validating...' : 'Validate citations' }}
-      </button>
+      <div>
+        <button type="button" class="btn-gh" (click)="validateCitations()" [disabled]="loadingCitations">
+          {{ loadingCitations ? 'Validating...' : 'Validate citations' }}
+        </button>
+      </div>
 
       @if (citationsError) {
-        <div class="alert alert-warning mt-10" role="alert">
+        <div class="alert alert-warning" role="alert">
           <div class="alert-content"><div class="alert-body">{{ citationsError }}</div></div>
         </div>
       }
 
       @if (citations) {
         @if (!citations.sourceIndexReady) {
-          <div class="alert alert-warning mt-10" role="note">
+          <div class="alert alert-warning" role="note">
             <div class="alert-content">
               <div class="alert-body">
                 The source index is still building, so an unresolved source citation below may only
@@ -227,39 +296,41 @@
             </div>
           </div>
         }
-        <p class="text-muted mt-10">
+        <p class="text-muted">
           {{ citations.unresolvedCount }} unresolved, {{ citations.notValidatedCount }} not validated.
         </p>
 
-        @for (question of citations.questions; track question.questionId) {
-          @if (!question.hasNoCitations) {
-            <div class="citation-block" [class.has-unresolved]="question.unresolvedCount > 0">
-              <div class="citation-header">
-                <strong>Q{{ question.orderIndex }}</strong>
-                <button type="button" class="btn-link" (click)="editQuestion(question.questionId)">Edit question</button>
+        <div class="sh-card-list">
+          @for (question of citations.questions; track question.questionId) {
+            @if (!question.hasNoCitations) {
+              <div class="citation-block" [class.has-unresolved]="question.unresolvedCount > 0">
+                <div class="citation-header">
+                  <strong>Q{{ question.orderIndex }}</strong>
+                  <button type="button" class="btn-link" (click)="editQuestion(question.questionId)">Edit question</button>
+                </div>
+                <ul class="citation-list">
+                  @for (citation of question.citations; track citation.kind + citation.value) {
+                    <li [class]="'citation-' + citation.status">
+                      <span class="citation-status">{{ citation.status }}</span>
+                      <span class="citation-kind">{{ citation.kind }}</span>
+                      <code>{{ citation.value }}</code>
+                      @if (citation.lineNumber != null) {
+                        <span class="text-muted">line {{ citation.lineNumber }} (not validated)</span>
+                      }
+                    </li>
+                  }
+                </ul>
               </div>
-              <ul class="citation-list">
-                @for (citation of question.citations; track citation.kind + citation.value) {
-                  <li [class]="'citation-' + citation.status">
-                    <span class="citation-status">{{ citation.status }}</span>
-                    <span class="citation-kind">{{ citation.kind }}</span>
-                    <code>{{ citation.value }}</code>
-                    @if (citation.lineNumber != null) {
-                      <span class="text-muted">line {{ citation.lineNumber }} (not validated)</span>
-                    }
-                  </li>
-                }
-              </ul>
-            </div>
+            }
           }
-        }
+        </div>
       }
     </div>
   }
 
   <!-- COVERAGE -->
   @if (activeTab === 'coverage') {
-    <div id="sh-panel-coverage" role="tabpanel" aria-labelledby="sh-tab-coverage">
+    <div id="sh-panel-coverage" class="sh-panel" role="tabpanel" aria-labelledby="sh-tab-coverage" tabindex="0">
       <p class="section-note">
         Asks an explicitly selected model which GnollHack subsystems this suite does not test. The
         prompt carries the suite's <strong>question texts only</strong> — no rubrics, no answers,
@@ -269,15 +340,74 @@
         question.
       </p>
 
-      <div class="flex-row gap-10 align-end">
-        <div class="form-group flex-1">
-          <label for="coverageModelSelect">Analysis model</label>
-          <select id="coverageModelSelect" class="gh-input" [(ngModel)]="coverageModelConfigId">
-            @for (model of benchmarkCapableConfigs; track model.id) {
-              <option [ngValue]="model.id">{{ model.displayName || model.modelId }} ({{ model.provider }})</option>
+      <!--
+        The analysis-model selector is the same badge trigger + dropdown the AI Benchmark tab uses
+        for its five model selectors: the thinking level, reasoning mode and parallel-execution
+        mode of the chosen configuration all matter here, and a browser <select> can show none of
+        them. The Analyze button sits below the selector's hint rather than beside the selector,
+        so it reads as an action on the whole control and not as a peer of the field.
+      -->
+      <div class="coverage-controls">
+        <div class="form-group">
+          <label id="coverageModelLabel">Analysis model</label>
+          <div class="custom-model-selector coverage-model-selector">
+            <button type="button" id="coverageModelTrigger" class="selector-trigger"
+                    (click)="toggleCoverageModelDropdown($event)"
+                    [class.open]="isCoverageModelDropdownOpen"
+                    [attr.aria-expanded]="isCoverageModelDropdownOpen"
+                    aria-haspopup="listbox"
+                    aria-labelledby="coverageModelLabel coverageModelTrigger"
+                    aria-describedby="coverageModelHint">
+              <span class="model-name" [class.text-muted]="!selectedCoverageModel">{{ selectedCoverageModel?.displayName || selectedCoverageModel?.modelId || 'Select Model' }}</span>
+              @if (selectedCoverageModel?.thinkingLevel) {
+                <span class="thinking-badge">{{ formatThinkingLevel(selectedCoverageModel?.thinkingLevel) }}</span>
+              }
+              @if (showReasoningBadge(selectedCoverageModel?.reasoningMode)) {
+                <span class="reasoning-badge">{{ selectedCoverageModel?.reasoningMode }}</span>
+              }
+              @if (selectedCoverageModel?.provider) {
+                <span class="provider-badge">{{ selectedCoverageModel?.provider }}</span>
+              }
+              @if (selectedCoverageModel?.parallelExecutionMode === 0) {
+                <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
+              }
+              @if (selectedCoverageModel?.parallelExecutionMode === 1) {
+                <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
+              }
+              <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </button>
+            @if (isCoverageModelDropdownOpen) {
+              <div class="selector-dropdown" role="listbox" aria-labelledby="coverageModelLabel">
+                @if (benchmarkCapableConfigs.length === 0) {
+                  <div class="empty-dropdown-hint">No system AI configs with the Benchmark role are enabled. Enable the Benchmark role in System Configs.</div>
+                }
+                @for (model of benchmarkCapableConfigs; track model.id) {
+                  <div class="model-option" role="option" tabindex="0"
+                       [attr.aria-selected]="coverageModelConfigId === model.id"
+                       [class.selected]="coverageModelConfigId === model.id"
+                       (click)="selectCoverageModel(model)"
+                       (keydown.enter)="selectCoverageModel(model)"
+                       (keydown.space)="selectCoverageModel(model)">
+                    <span class="model-name">{{ model.displayName || model.modelId }}</span>
+                    @if (model.thinkingLevel) {
+                      <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
+                    }
+                    @if (showReasoningBadge(model.reasoningMode)) {
+                      <span class="reasoning-badge">{{ model.reasoningMode }}</span>
+                    }
+                    <span class="provider-badge">{{ model.provider }}</span>
+                    @if (model.parallelExecutionMode === 0) {
+                      <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
+                    }
+                    @if (model.parallelExecutionMode === 1) {
+                      <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
+                    }
+                  </div>
+                }
+              </div>
             }
-          </select>
-          <span class="form-hint">
+          </div>
+          <span id="coverageModelHint" class="form-hint">
             Keep this configuration distinct from the graders': a model that helps author a suite is
             not a neutral reader of answers against it.
           </span>
@@ -289,13 +419,13 @@
       </div>
 
       @if (coverageError) {
-        <div class="alert alert-warning mt-10" role="alert">
+        <div class="alert alert-warning" role="alert">
           <div class="alert-content"><div class="alert-body">{{ coverageError }}</div></div>
         </div>
       }
 
       @if (coverage && coverage.gaps.length > 0) {
-        <p class="text-muted mt-10">
+        <p class="text-muted">
           Analysed by <strong>{{ coverage.analysisModelDisplayNameUsed }}</strong>
           ({{ coverage.analysisModelProviderUsed }} / {{ coverage.analysisModelIdUsed }})
           on {{ coverage.analyzedAtUtc | date:'yyyy-MM-dd HH:mm:ss' }} UTC —
@@ -304,30 +434,32 @@
         @if (coverage.comment) {
           <p class="section-note">{{ coverage.comment }}</p>
         }
-        <div class="table-scroll">
-          <table class="gh-table coverage-table">
-            <thead>
+        <table class="gh-table sh-table coverage-table">
+          <caption class="visually-hidden">
+            Subsystems the analysis model reports as untested by {{ suiteName }}, with a source
+            location, a suggested difficulty band and a rationale for each.
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Subsystem</th>
+              <th scope="col">Source location</th>
+              <th scope="col">Suggested band</th>
+              <th scope="col">Rationale</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (gap of coverage.gaps; track gap.subsystem) {
               <tr>
-                <th scope="col">Subsystem</th>
-                <th scope="col">Source location</th>
-                <th scope="col">Suggested band</th>
-                <th scope="col">Rationale</th>
+                <th scope="row">{{ gap.subsystem }}</th>
+                <td><code>{{ gap.sourceLocation }}</code></td>
+                <td>{{ gap.suggestedBand || '—' }}</td>
+                <td class="rationale">{{ gap.rationale }}</td>
               </tr>
-            </thead>
-            <tbody>
-              @for (gap of coverage.gaps; track gap.subsystem) {
-                <tr>
-                  <td>{{ gap.subsystem }}</td>
-                  <td><code>{{ gap.sourceLocation }}</code></td>
-                  <td>{{ gap.suggestedBand || '—' }}</td>
-                  <td>{{ gap.rationale }}</td>
-                </tr>
-              }
-            </tbody>
-          </table>
-        </div>
+            }
+          </tbody>
+        </table>
       } @else if (coverage && !coverage.errorMessage) {
-        <p class="text-muted mt-10">The analysis reported no coverage gaps.</p>
+        <p class="text-muted">The analysis reported no coverage gaps.</p>
       }
     </div>
   }
