@@ -265,7 +265,9 @@ public static class BenchmarkAssessmentParser
             // Same treatment — recorded, routed to a second reader, never applied to the score.
             bool unevidencedDeduction = BenchmarkVerdictConsistency.HasUnevidencedDeduction(
                 Math.Clamp(accuracyLevel, 0, 6), accuracyEvidence,
-                Math.Clamp(completenessLevel, 0, 6), completenessEvidence);
+                Math.Clamp(completenessLevel, 0, 6), completenessEvidence)
+                || BenchmarkVerdictConsistency.IsUnverifiabilityGroundedDeduction(
+                    Math.Clamp(accuracyLevel, 0, 6), accuracyEvidence, unverifiedClaims.Count);
 
             var result = new BenchmarkPerQuestionAssessmentResult
             {

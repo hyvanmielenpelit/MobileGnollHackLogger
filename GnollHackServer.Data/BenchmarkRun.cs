@@ -64,16 +64,17 @@ public enum BenchmarkAnswerFlags
     ContestedVerdict = 32,
 
     // The assessor docked ACCURACY or COMPLETENESS to UnevidencedDeductionMaxLevel or below while
-    // its own evidence string for that dimension names no defect ("Matches rubric."). Scoring method
-    // v7 tells the assessor that a no-fault evidence string may only accompany level 6, so this flag
-    // is a compliance check on that instruction rather than a guess about grader intent — the same
-    // arrangement as criticalErrorQuote, which the prompt demands and the harness verifies.
+    // its stated evidence names no defect ("Matches rubric."), or docked ACCURACY to that level
+    // citing only unverifiability when unverified claims are present. Scoring method v7 forbids both
+    // as accuracy deductions: a no-fault evidence string may only accompany level 6, and unverifiable
+    // claims belong in unverifiedClaims rather than grounding an accuracy reduction. This flag is a
+    // compliance check on those instructions rather than a guess about grader intent.
     //
     // Advisory, and grouped here for the same reason as ContestedVerdict: the answer is intact and
     // the verdict may well be right. Accuracy carries 55% of the quality weight, so a level docked on
-    // evidence naming nothing is the cheapest place this harness loses points to its own grader — on
-    // run 8 it cost Q1 28 points of its dominant dimension. Nothing here changes a score.
-    // See BenchmarkVerdictConsistency.HasUnevidencedDeduction.
+    // an impermissible basis is the cheapest place this harness loses points to its own grader.
+    // Nothing here changes a score.
+    // See BenchmarkVerdictConsistency.HasUnevidencedDeduction and IsUnverifiabilityGroundedDeduction.
     UnevidencedDeduction = 64,
 
     // A claim the assessor recorded as unadjudicable was checked against the source or wiki by the

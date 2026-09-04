@@ -204,9 +204,9 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsNine()
+    public void HarnessVersion_IsTen()
     {
-        Assert.Equal("9", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("10", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]

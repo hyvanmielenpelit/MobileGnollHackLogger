@@ -80,7 +80,7 @@ public class BenchmarkGenerationService
                 return;
             }
 
-            string apiKey = _cryptoService.Decrypt(config.EncryptedApiKey, config.ApiKeyNonce!, config.ApiKeyTag!, "SYSTEM_API_KEY");
+            string apiKey = _cryptoService.Decrypt(config.EncryptedApiKey!, config.ApiKeyNonce!, config.ApiKeyTag!, "SYSTEM_API_KEY");
 
             bool hasErrors = false;
             bool isFirstBand = true;

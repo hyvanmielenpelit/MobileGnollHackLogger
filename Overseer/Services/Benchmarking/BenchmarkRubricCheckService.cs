@@ -68,7 +68,7 @@ public class BenchmarkRubricCheckService
                 return;
             }
 
-            string apiKey = _cryptoService.Decrypt(config.EncryptedApiKey, config.ApiKeyNonce!, config.ApiKeyTag!, "SYSTEM_API_KEY");
+            string apiKey = _cryptoService.Decrypt(config.EncryptedApiKey!, config.ApiKeyNonce!, config.ApiKeyTag!, "SYSTEM_API_KEY");
 
             bool hasErrors = false;
             int maxOutputTokens = Math.Max(config.MaxOutputTokens ?? 4096, 4096);

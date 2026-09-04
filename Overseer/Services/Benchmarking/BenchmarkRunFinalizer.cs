@@ -145,13 +145,30 @@ public static class BenchmarkRunFinalizer
         return BenchmarkRunStatus.Completed;
     }
 
+    /// <summary>
+    /// Computes candidate token and timing totals from a collection of answers.
+    /// Shared with AdminBenchmarkController for live run-detail reporting while a run is pending or running.
+    /// Note: BenchmarkRunFinalizer.Apply remains the only writer to the database entities.
+    /// </summary>
+    public static (long TotalInputTokens, long TotalOutputTokens, long TotalCacheReadTokens, long TotalCacheCreationTokens, long TotalAnswerDurationMs) ComputeCandidateTotals(IEnumerable<BenchmarkRunAnswer> answers)
+    {
+        return (
+            answers.Sum(a => (long)(a.InputTokens ?? 0)),
+            answers.Sum(a => (long)(a.OutputTokens ?? 0)),
+            answers.Sum(a => (long)(a.CacheReadInputTokens ?? 0)),
+            answers.Sum(a => (long)(a.CacheCreationInputTokens ?? 0)),
+            answers.Sum(a => a.DurationMs)
+        );
+    }
+
     public static void Apply(BenchmarkRun run, IReadOnlyCollection<BenchmarkRunAnswer> answers)
     {
-        run.TotalInputTokens = answers.Sum(a => (long)(a.InputTokens ?? 0));
-        run.TotalOutputTokens = answers.Sum(a => (long)(a.OutputTokens ?? 0));
-        run.TotalCacheReadTokens = answers.Sum(a => (long)(a.CacheReadInputTokens ?? 0));
-        run.TotalCacheCreationTokens = answers.Sum(a => (long)(a.CacheCreationInputTokens ?? 0));
-        run.TotalAnswerDurationMs = answers.Sum(a => a.DurationMs);
+        var candidateTotals = ComputeCandidateTotals(answers);
+        run.TotalInputTokens = candidateTotals.TotalInputTokens;
+        run.TotalOutputTokens = candidateTotals.TotalOutputTokens;
+        run.TotalCacheReadTokens = candidateTotals.TotalCacheReadTokens;
+        run.TotalCacheCreationTokens = candidateTotals.TotalCacheCreationTokens;
+        run.TotalAnswerDurationMs = candidateTotals.TotalAnswerDurationMs;
 
         // Assessor side, kept separate from the candidate totals above: the run's cost is the
         // two together, and the model under test must not be charged for its grader.

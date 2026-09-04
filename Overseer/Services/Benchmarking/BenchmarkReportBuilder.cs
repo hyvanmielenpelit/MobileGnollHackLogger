@@ -416,7 +416,7 @@ public static class BenchmarkReportBuilder
             sb.AppendLine($"- **Mode:** {configuredMode}{ModeGloss(configuredMode)} Advisory throughout: the first verdict is what scored.");
             if (configuredMode is BenchmarkSecondOpinionMode.Flagged or BenchmarkSecondOpinionMode.FlaggedAndOutliers)
             {
-                sb.AppendLine($"- **Triggers:** a critical error; a contested verdict; an unevidenced deduction (a level docked to {BenchmarkVerdictConsistency.UnevidencedDeductionMaxLevel} or below whose stated evidence names no defect); unverifiable claims alongside an accuracy level of {BenchmarkService.UnverifiedClaimsAccuracyMaxLevel} or below; a quality score below the profile's threshold of {scoringConstants.SecondOpinionQualityThreshold}" +
+                sb.AppendLine($"- **Triggers:** a critical error; a contested verdict; an unevidenced deduction (a level docked to {BenchmarkVerdictConsistency.UnevidencedDeductionMaxLevel} or below whose stated evidence names no defect, or rests only on unverifiability); unverifiable claims alongside an accuracy level of {BenchmarkService.UnverifiedClaimsAccuracyMaxLevel} or below; a quality score below the profile's threshold of {scoringConstants.SecondOpinionQualityThreshold}" +
                     (configuredMode == BenchmarkSecondOpinionMode.FlaggedAndOutliers
                         ? $"; and, after scoring, any answer more than {scoringConstants.SecondOpinionOutlierDeltaPoints} points below the run's median."
                         : "."));
@@ -615,7 +615,10 @@ public static class BenchmarkReportBuilder
             sb.AppendLine($"- **Assessor Tokens:** {Inv(run.TotalAssessmentInputTokens, "N0")} in / {Inv(run.TotalAssessmentOutputTokens, "N0")} out");
             if (run.TotalClaimVerificationInputTokens > 0 || run.TotalClaimVerificationOutputTokens > 0 || run.ClaimVerifierModelConfigurationId.HasValue)
             {
-                sb.AppendLine($"- **Claim Verifier Tokens:** {Inv(run.TotalClaimVerificationInputTokens, "N0")} in / {Inv(run.TotalClaimVerificationOutputTokens, "N0")} out");
+                bool allVerificationAttemptsFailed = answers.Any(a => !string.IsNullOrWhiteSpace(a.ClaimVerificationError)) &&
+                    !answers.Any(a => string.IsNullOrWhiteSpace(a.ClaimVerificationError) && (a.ClaimsSupportedCount.HasValue || a.ClaimsRefutedCount.HasValue || a.ClaimsIndeterminateCount.HasValue));
+                string failedCaveat = allVerificationAttemptsFailed ? " — *every attempt failed; see Issues*" : string.Empty;
+                sb.AppendLine($"- **Claim Verifier Tokens:** {Inv(run.TotalClaimVerificationInputTokens, "N0")} in / {Inv(run.TotalClaimVerificationOutputTokens, "N0")} out{failedCaveat}");
             }
             long totalInput = run.TotalInputTokens + run.TotalAssessmentInputTokens + run.TotalClaimVerificationInputTokens;
             long totalOutput = run.TotalOutputTokens + run.TotalAssessmentOutputTokens + run.TotalClaimVerificationOutputTokens;
@@ -718,8 +721,12 @@ public static class BenchmarkReportBuilder
             .Where(a => (a.ClaimsRefutedCount ?? 0) > 0 && !string.IsNullOrWhiteSpace(a.ClaimVerificationJson))
             .OrderBy(a => a.OrderIndex)
             .ToList();
+        var verificationFailedAnswers = answers
+            .Where(a => !string.IsNullOrWhiteSpace(a.ClaimVerificationError))
+            .OrderBy(a => a.OrderIndex)
+            .ToList();
 
-        if (!claimsRecorded || unverifiedTotal > 0 || contestedAnswers.Count > 0 || refutedAnswers.Count > 0)
+        if (!claimsRecorded || unverifiedTotal > 0 || contestedAnswers.Count > 0 || refutedAnswers.Count > 0 || verificationFailedAnswers.Count > 0)
         {
             sb.AppendLine("### Assessor Findings");
             if (!claimsRecorded)
@@ -731,13 +738,25 @@ public static class BenchmarkReportBuilder
                 int totalSupported = run.ClaimsSupportedCount > 0 ? run.ClaimsSupportedCount : answers.Sum(a => a.ClaimsSupportedCount ?? 0);
                 int totalRefuted = run.ClaimsRefutedCount > 0 ? run.ClaimsRefutedCount : answers.Sum(a => a.ClaimsRefutedCount ?? 0);
                 int totalIndeterminate = run.ClaimsIndeterminateCount > 0 ? run.ClaimsIndeterminateCount : answers.Sum(a => a.ClaimsIndeterminateCount ?? 0);
-                bool hasVerification = run.ClaimVerifiedAnswerCount > 0 || answers.Any(a => a.ClaimsSupportedCount.HasValue || a.ClaimsRefutedCount.HasValue || a.ClaimsIndeterminateCount.HasValue);
+                bool hasVerification = (run.ClaimVerifiedAnswerCount > 0 || answers.Any(a => a.ClaimsSupportedCount.HasValue || a.ClaimsRefutedCount.HasValue || a.ClaimsIndeterminateCount.HasValue))
+                    && (totalSupported > 0 || totalRefuted > 0 || totalIndeterminate > 0);
 
                 string outcome = hasVerification
                     ? $" — verified: {totalSupported} supported, {totalRefuted} refuted, {totalIndeterminate} indeterminate."
                     : string.Empty;
 
                 sb.AppendLine($"- **Unverified Claims:** {unverifiedTotal} across {withClaims.Count} answer(s) ({string.Join(", ", withClaims.Select(a => $"Q{a.OrderIndex}"))}){outcome} — *claims the assessor could neither confirm nor refute against the rubric. Advisory: from harness version 7 these do not reduce Accuracy.*");
+
+                if (verificationFailedAnswers.Count > 0)
+                {
+                    string firstError = BenchmarkAssessmentFailure.Truncate(verificationFailedAnswers[0].ClaimVerificationError, 200) ?? string.Empty;
+                    sb.AppendLine($"- **Claim Verification Failed:** {verificationFailedAnswers.Count} of {withClaims.Count} answer(s) with unverified claims ({string.Join(", ", verificationFailedAnswers.Select(a => $"Q{a.OrderIndex}"))}) — the verifier was configured but returned no verdict, so the unverified claims above were never checked. First error: `{firstError}`.");
+                }
+            }
+            else if (verificationFailedAnswers.Count > 0)
+            {
+                string firstError = BenchmarkAssessmentFailure.Truncate(verificationFailedAnswers[0].ClaimVerificationError, 200) ?? string.Empty;
+                sb.AppendLine($"- **Claim Verification Failed:** {verificationFailedAnswers.Count} answer(s) ({string.Join(", ", verificationFailedAnswers.Select(a => $"Q{a.OrderIndex}"))}) — the verifier was configured but returned no verdict. First error: `{firstError}`.");
             }
             if (contestedAnswers.Count > 0)
             {
@@ -826,7 +845,25 @@ public static class BenchmarkReportBuilder
 
             sb.AppendLine("### Assessor Agreement");
             sb.AppendLine($"- **Mode:** {agreementMode}{ModeGloss(agreementMode)}");
-            sb.AppendLine($"- **Coverage:** 0 of {answeredForAgreement} answered questions. **No answer met a trigger, so no answer was graded twice and grader agreement is not measured for this run.** The second-opinion assessor ({assessorName}) made no calls and appears in the Harness Cost figures only as zero.");
+
+            var secondOpinionFailedAnswers = answers
+                .Where(a => !string.IsNullOrWhiteSpace(a.SecondOpinionError))
+                .OrderBy(a => a.OrderIndex)
+                .ToList();
+
+            if (secondOpinionFailedAnswers.Count > 0)
+            {
+                string firstError = secondOpinionFailedAnswers[0].SecondOpinionError!.Trim();
+                if (firstError.Length > 200)
+                {
+                    firstError = firstError.Substring(0, 197) + "...";
+                }
+                sb.AppendLine($"- **Coverage:** 0 of {answeredForAgreement} answered questions. **{secondOpinionFailedAnswers.Count} answer(s) met a trigger but the second-opinion call failed, so grader agreement is not measured for this run.** First error: `{firstError}`.");
+            }
+            else
+            {
+                sb.AppendLine($"- **Coverage:** 0 of {answeredForAgreement} answered questions. **No answer met a trigger, so no answer was graded twice and grader agreement is not measured for this run.** The second-opinion assessor ({assessorName}) made no calls and appears in the Harness Cost figures only as zero.");
+            }
 
             var scoredOkAnswers = answers.Where(a => a.Status == BenchmarkAnswerStatus.Ok && a.QualityScore.HasValue).OrderBy(a => a.QualityScore!.Value).ToList();
             if (scoredOkAnswers.Count > 0)
@@ -847,7 +884,7 @@ public static class BenchmarkReportBuilder
                 }
                 else
                 {
-                    sb.AppendLine($"- **Nearest miss:** lowest quality score {lowest.QualityScore.Value} (Q{lowest.OrderIndex}); no quality threshold configured.");
+                    sb.AppendLine($"- **Nearest miss:** lowest quality score {lowest.QualityScore!.Value} (Q{lowest.OrderIndex}); no quality threshold configured.");
                 }
 
                 double median = Median(scoredOkAnswers.Select(a => (double)a.QualityScore!.Value));
@@ -1253,10 +1290,17 @@ public static class BenchmarkReportBuilder
                 if ((((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.UnevidencedDeduction) != 0)
                 {
                     var flaggedDims = new List<string>();
-                    if (a.AccuracyLevel.HasValue && a.AccuracyLevel.Value <= BenchmarkVerdictConsistency.UnevidencedDeductionMaxLevel && BenchmarkVerdictConsistency.IsNoFaultEvidence(accuracyEvidence))
+                    if (a.AccuracyLevel.HasValue && a.AccuracyLevel.Value <= BenchmarkVerdictConsistency.UnevidencedDeductionMaxLevel)
                     {
-                        string evDisplay = !string.IsNullOrWhiteSpace(accuracyEvidence) ? $"\"{accuracyEvidence.Trim()}\"" : "(none)";
-                        flaggedDims.Add($"Accuracy to {a.AccuracyLevel.Value}/6 while its stated evidence ({evDisplay}) names no defect");
+                        if (BenchmarkVerdictConsistency.IsNoFaultEvidence(accuracyEvidence))
+                        {
+                            string evDisplay = !string.IsNullOrWhiteSpace(accuracyEvidence) ? $"\"{accuracyEvidence.Trim()}\"" : "(none)";
+                            flaggedDims.Add($"Accuracy to {a.AccuracyLevel.Value}/6 while its stated evidence ({evDisplay}) names no defect");
+                        }
+                        else if (BenchmarkVerdictConsistency.IsUnverifiabilityGroundedDeduction(a.AccuracyLevel.Value, accuracyEvidence, a.UnverifiedClaimCount ?? unverifiedClaims.Count))
+                        {
+                            flaggedDims.Add($"Accuracy to {a.AccuracyLevel.Value}/6 while its stated evidence rests only on claims it could not verify, which scoring method v7 does not permit as an accuracy deduction");
+                        }
                     }
                     if (a.CompletenessLevel.HasValue && a.CompletenessLevel.Value <= BenchmarkVerdictConsistency.UnevidencedDeductionMaxLevel && BenchmarkVerdictConsistency.IsNoFaultEvidence(completenessEvidence))
                     {
@@ -1270,7 +1314,7 @@ public static class BenchmarkReportBuilder
                     }
                     else
                     {
-                        sb.AppendLine("> - **Harness note:** the assessor docked a level while its stated evidence names no defect. Advisory: the verdict stands and this did not change the score.");
+                        sb.AppendLine("> - **Harness note:** the assessor docked a level while its stated evidence names no defect, or rests only on unverifiability. Advisory: the verdict stands and this did not change the score.");
                     }
                 }
                 if (a.SecondOpinionQualityScore.HasValue)
@@ -1284,6 +1328,12 @@ public static class BenchmarkReportBuilder
                         ? string.Empty
                         : $" (trigger: {TriggerLabel(a.SecondOpinionTrigger)})";
                     sb.AppendLine($"> - **Second Opinion ({a.SecondOpinionByModelDisplayNameUsed}):** {a.SecondOpinionQualityScore.Value} / 100, critical error {secondCritical} — {agreement} with the first verdict{triggerPart}. Advisory; the first verdict is what scored.");
+                }
+                if (!string.IsNullOrWhiteSpace(a.ClaimVerificationError))
+                {
+                    string verifierName = a.ClaimVerificationByModelDisplayNameUsed ?? run.ClaimVerifierDisplayNameUsed ?? "claim verifier";
+                    string err = BenchmarkAssessmentFailure.Truncate(a.ClaimVerificationError, 200) ?? a.ClaimVerificationError;
+                    sb.AppendLine($"> - **Claim Verification ({verifierName}):** failed — {err}. The unverified claims above were not checked.");
                 }
                 if (!string.IsNullOrWhiteSpace(a.ClaimVerificationJson) || a.ClaimsSupportedCount.HasValue || a.ClaimsRefutedCount.HasValue || a.ClaimsIndeterminateCount.HasValue)
                 {
@@ -1408,6 +1458,38 @@ public static class BenchmarkReportBuilder
             }
         }
         sb.AppendLine();
+
+        var stageFailedAnswers = answers.Where(a =>
+            !string.IsNullOrWhiteSpace(a.AssessmentError)
+            || !string.IsNullOrWhiteSpace(a.ClaimVerificationError)
+            || !string.IsNullOrWhiteSpace(a.SecondOpinionError))
+            .OrderBy(a => a.OrderIndex)
+            .ToList();
+
+        if (stageFailedAnswers.Count > 0)
+        {
+            sb.AppendLine("### Harness Stage Failures");
+            sb.AppendLine("*(Advisory infrastructure failures; candidate output was not damaged)*");
+            sb.AppendLine();
+            foreach (var sfa in stageFailedAnswers)
+            {
+                var stageErrors = new List<string>();
+                if (!string.IsNullOrWhiteSpace(sfa.AssessmentError))
+                {
+                    stageErrors.Add($"Assessment failed: {sfa.AssessmentError.Trim()}");
+                }
+                if (!string.IsNullOrWhiteSpace(sfa.ClaimVerificationError))
+                {
+                    stageErrors.Add($"Claim verification failed: {sfa.ClaimVerificationError.Trim()}");
+                }
+                if (!string.IsNullOrWhiteSpace(sfa.SecondOpinionError))
+                {
+                    stageErrors.Add($"Second opinion failed: {sfa.SecondOpinionError.Trim()}");
+                }
+                sb.AppendLine($"- **Question {sfa.OrderIndex}:** {string.Join("; ", stageErrors)}");
+            }
+            sb.AppendLine();
+        }
 
         // Synthesis divergence. The run-level synthesis reads every verdict at once and can name
         // a hallucination the per-question grader declined to flag — which is what happened on

@@ -1,5 +1,5 @@
 import { Component, OnInit, OnDestroy, OnChanges, SimpleChanges, Input, ChangeDetectorRef, HostListener, ViewChild, ElementRef, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { CommonModule, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
   AdminBenchmarkService,
@@ -63,7 +63,7 @@ export interface BenchmarkRunProgressRow {
 @Component({
   selector: 'app-admin-benchmark',
   standalone: true,
-  imports: [CommonModule, FormsModule, CollapsibleMarkdownComponent, SuiteHealthComponent, SnapshotViewerComponent],
+  imports: [CommonModule, DecimalPipe, FormsModule, CollapsibleMarkdownComponent, SuiteHealthComponent, SnapshotViewerComponent],
   templateUrl: './benchmark.component.html',
   styleUrls: ['./benchmark.component.scss']
 })
@@ -3059,10 +3059,36 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       .join(', ');
   }
 
+  get claimVerificationFailedAnswerCount(): number {
+    return (this.selectedRunDetail?.answers ?? [])
+      .filter(a => !!a.claimVerificationError && a.claimVerificationError.trim().length > 0)
+      .length;
+  }
+
+  get claimVerificationFailedQuestionNumbers(): string {
+    return (this.selectedRunDetail?.answers ?? [])
+      .filter(a => !!a.claimVerificationError && a.claimVerificationError.trim().length > 0)
+      .map(a => a.orderIndex)
+      .join(', ');
+  }
+
   get secondOpinionSelectedButUnused(): boolean {
     const run = this.selectedRunDetail;
     return !!run?.secondOpinionAssessorModelConfigurationId &&
       (run.secondOpinionGradedAnswerCount ?? 0) === 0;
+  }
+
+  get secondOpinionFailedAnswerCount(): number {
+    return (this.selectedRunDetail?.answers ?? [])
+      .filter(a => !!a.secondOpinionError && a.secondOpinionError.trim().length > 0)
+      .length;
+  }
+
+  get secondOpinionFailedQuestionNumbers(): string {
+    return (this.selectedRunDetail?.answers ?? [])
+      .filter(a => !!a.secondOpinionError && a.secondOpinionError.trim().length > 0)
+      .map(a => a.orderIndex)
+      .join(', ');
   }
 
   get reassessedAnswerCount(): number {

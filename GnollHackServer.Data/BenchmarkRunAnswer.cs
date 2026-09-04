@@ -181,6 +181,14 @@ public class BenchmarkRunAnswer
     public string? SecondOpinionTrigger { get; set; }
 
     /// <summary>
+    /// Why a second verdict was requested but never obtained. Distinguishes "no answer met a
+    /// trigger" from "a trigger fired and the call failed" — the report previously rendered
+    /// both as the former. Advisory; the first verdict stands and no score changes.
+    /// </summary>
+    [MaxLength(2048)]
+    public string? SecondOpinionError { get; set; }
+
+    /// <summary>
     /// Claims the assessor could neither confirm nor refute against the rubric, verbatim from
     /// the answer, as a JSON array. Under scoring method v6 these do not reduce Accuracy — the
     /// assessor declares them instead of deducting for them.

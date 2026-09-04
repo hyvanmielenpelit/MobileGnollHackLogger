@@ -1601,35 +1601,19 @@ public class BenchmarkService
                 allowedTools,
                 toolCallBudget);
 
-            var runRequest = new AgentRunRequest
-            {
-                ProviderName = verifierConfig.Provider,
-                ModelId = verifierConfig.ModelId,
-                ApiKey = verifierApiKey,
-                ModelDisplayName = verifierConfig.DisplayName,
-                SystemPrompt = prompt,
-                ThinkingLevel = verifierConfig.ThinkingLevel,
-                ReasoningMode = verifierConfig.ReasoningMode,
-                ReasoningSummary = verifierConfig.ReasoningSummary,
-                ServiceTier = verifierConfig.ServiceTier,
-                MaxOutputTokens = maxOutputTokens,
-                MaxToolIterations = toolIterations,
-                EnableToolUse = true,
-                EnableWebSearch = false,
-                EnableSubAgents = false,
-                AllowedTools = allowedTools,
-                SystemModelId = verifierConfig.Id,
-                Budget = new AgentRunBudget { MaxTotalModelCalls = totalModelCalls },
-                ToolExecutionContext = new Tools.ToolExecutionContext
-                {
-                    SessionId = run.Id,
-                    ToolBudgetScopeId = $"bench_{run.Id}_verify_q{answer.OrderIndex}",
-                    UserId = run.StartedByUserId ?? string.Empty,
-                    MaxResultLength = maxResultLength,
-                    MaxCallsPerSession = toolCallBudget,
-                    ShowDebugLog = false
-                }
-            };
+            var runRequest = BuildClaimVerificationRequest(
+                verifierConfig,
+                verifierApiKey,
+                prompt,
+                allowedTools,
+                maxOutputTokens,
+                toolIterations,
+                totalModelCalls,
+                toolCallBudget,
+                maxResultLength,
+                run.Id,
+                answer.OrderIndex,
+                run.StartedByUserId);
 
             using var verifyCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             verifyCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
@@ -1662,8 +1646,18 @@ public class BenchmarkService
             }
             sw.Stop();
 
-            int inputTokens = runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : runResult.EstimatedInputTokens;
-            int outputTokens = runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens;
+            int inputTokens;
+            int outputTokens;
+            if (!string.IsNullOrWhiteSpace(terminalError))
+            {
+                inputTokens = runResult.TotalPromptTokens;
+                outputTokens = runResult.OutputTokens;
+            }
+            else
+            {
+                inputTokens = runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : runResult.EstimatedInputTokens;
+                outputTokens = runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens;
+            }
             int toolCallsCount = runResult.ToolCalls.Count(tc => tc.Status == "completed");
 
             answer.ClaimVerificationInputTokens = inputTokens;
@@ -1674,7 +1668,7 @@ public class BenchmarkService
 
             if (!string.IsNullOrWhiteSpace(terminalError))
             {
-                answer.ClaimVerificationError = BenchmarkAssessmentFailure.Truncate(terminalError);
+                answer.ClaimVerificationError = BenchmarkAssessmentFailure.Truncate(terminalError, BenchmarkAssessmentFailure.MaxClaimVerificationErrorLength);
                 _logger.LogWarning(
                     "Benchmark run {RunId} answer {OrderIndex}: claim verification failed ({Error}).",
                     run.Id, answer.OrderIndex, terminalError);
@@ -1684,7 +1678,7 @@ public class BenchmarkService
                 var parseResult = BenchmarkClaimVerificationParser.Parse(runResult.FinalText, claims);
                 if (!parseResult.Success)
                 {
-                    answer.ClaimVerificationError = BenchmarkAssessmentFailure.Truncate(parseResult.ErrorMessage ?? "Claim verification parse failed.");
+                    answer.ClaimVerificationError = BenchmarkAssessmentFailure.Truncate(parseResult.ErrorMessage ?? "Claim verification parse failed.", BenchmarkAssessmentFailure.MaxClaimVerificationErrorLength);
                     _logger.LogWarning(
                         "Benchmark run {RunId} answer {OrderIndex}: claim verification parse failed ({Error}).",
                         run.Id, answer.OrderIndex, parseResult.ErrorMessage);
@@ -1710,6 +1704,55 @@ public class BenchmarkService
 
             await db.SaveChangesAsync(CancellationToken.None);
         }
+    }
+
+    internal static AgentRunRequest BuildClaimVerificationRequest(
+        SystemAiApiConfiguration verifierConfig,
+        string verifierApiKey,
+        string prompt,
+        List<string> allowedTools,
+        int maxOutputTokens,
+        int toolIterations,
+        int totalModelCalls,
+        int toolCallBudget,
+        int maxResultLength,
+        long runId,
+        int orderIndex,
+        string? startedByUserId)
+    {
+        return new AgentRunRequest
+        {
+            ProviderName = verifierConfig.Provider,
+            ModelId = verifierConfig.ModelId,
+            ApiKey = verifierApiKey,
+            ModelDisplayName = verifierConfig.DisplayName,
+            SystemPrompt = "You verify individual factual claims about GnollHack against the game's own source code and wiki. Strictly adhere to the requested JSON response format.",
+            ThinkingLevel = verifierConfig.ThinkingLevel,
+            ReasoningMode = verifierConfig.ReasoningMode,
+            ReasoningSummary = verifierConfig.ReasoningSummary,
+            ServiceTier = verifierConfig.ServiceTier,
+            MaxOutputTokens = maxOutputTokens,
+            MaxToolIterations = toolIterations,
+            EnableToolUse = true,
+            EnableWebSearch = false,
+            EnableSubAgents = false,
+            AllowedTools = allowedTools,
+            SystemModelId = verifierConfig.Id,
+            Budget = new AgentRunBudget { MaxTotalModelCalls = totalModelCalls },
+            ToolExecutionContext = new Tools.ToolExecutionContext
+            {
+                SessionId = runId,
+                ToolBudgetScopeId = $"bench_{runId}_verify_q{orderIndex}",
+                UserId = startedByUserId ?? string.Empty,
+                MaxResultLength = maxResultLength,
+                MaxCallsPerSession = toolCallBudget,
+                ShowDebugLog = false
+            },
+            SeedHistory = new List<object>
+            {
+                new { role = "user", content = prompt }
+            }
+        };
     }
 
     private static double Median(IEnumerable<double> values)
@@ -2444,6 +2487,7 @@ public class BenchmarkService
 
         if (!parseResult.Success || parseResult.Result == null)
         {
+            answer.SecondOpinionError = BenchmarkAssessmentFailure.Truncate(parseResult.ErrorMessage ?? terminalError);
             _logger.LogWarning(
                 "Benchmark run {RunId} answer {OrderIndex}: second opinion unavailable ({Error}). The first verdict stands.",
                 run.Id, answer.OrderIndex, parseResult.ErrorMessage ?? terminalError);
@@ -2451,6 +2495,7 @@ public class BenchmarkService
             return;
         }
 
+        answer.SecondOpinionError = null;
         var second = parseResult.Result;
         var (secondQuality, _, _) = BenchmarkScoring.Quality(
             second.AccuracyLevel, second.CompletenessLevel, second.ConcisenessLevel, second.ReadabilityLevel,

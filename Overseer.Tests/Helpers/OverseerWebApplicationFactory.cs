@@ -21,10 +21,11 @@ namespace Overseer.Tests.Helpers
         {
             builder.ConfigureAppConfiguration((context, configBuilder) =>
             {
-                // Inject fake admins
+                // Inject fake admins and test encryption key for CryptoService dependency in BenchmarkService cleanup
                 configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    { "Admins", "TestAdmin" }
+                    { "Admins", "TestAdmin" },
+                    { "AesEncryptionKey", System.Convert.ToBase64String(new byte[32]) }
                 });
             });
 

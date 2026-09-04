@@ -425,6 +425,7 @@ public class BenchmarkRunAnswerDto
     /// one looked wrong" are different facts about the same second verdict.
     /// </summary>
     public string? SecondOpinionTrigger { get; set; }
+    public string? SecondOpinionError { get; set; }
 
     /// <summary>
     /// Re-assessment provenance. A published index can move after publication, and these are how

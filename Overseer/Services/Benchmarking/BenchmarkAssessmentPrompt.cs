@@ -100,10 +100,12 @@ public static class BenchmarkAssessmentPrompt
     ///     silence; the advisory-flag breakdown lists every advisory member rather than two of them;
     ///     and a claim the assessor could not adjudicate can be checked against the source and wiki
     ///     by a third model role with read-only tools, recorded as advisory evidence that changes no
-    ///     level, score or index. Execution behaviour changes (a new post-scoring stage), so runs
-    ///     before and after are compared only through the version.
+    /// v10: unverified-grounded accuracy deductions are detected and flagged under
+    ///     UnevidencedDeduction, routing them to a second reader; claim verifier requests place
+    ///     the prompt in the user turn; harness stage failures are surfaced in the report and notice;
+    ///     and mid-run progress statistics update live.
     /// </summary>
-    public const string HarnessVersion = "9";
+    public const string HarnessVersion = "10";
 
     public static string BuildPerQuestionPrompt(
         string suiteName,

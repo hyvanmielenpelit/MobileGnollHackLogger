@@ -531,6 +531,9 @@ export interface BenchmarkRunAnswerDto {
    */
   secondOpinionTrigger?: string | null;
 
+  /** Failure details if the second-opinion call threw or returned no parseable verdict. */
+  secondOpinionError?: string | null;
+
   /** Claims the assessor could neither confirm nor refute. Null for a run graded before the field existed. */
   unverifiedClaimCount?: number | null;
   unverifiedClaimsJson?: string | null;

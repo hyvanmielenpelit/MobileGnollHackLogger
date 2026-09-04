@@ -2947,4 +2947,124 @@ describe('AdminBenchmarkComponent', () => {
       discardPeriodicTasks();
     }));
   });
+
+  describe('live run statistics, token formatting, and integrity notice', () => {
+    it('should format token cards in run-stat strip with commas', () => {
+      component.activeRunDetail = {
+        id: 1,
+        suiteName: 'Suite',
+        status: 'Running',
+        totalInputTokens: 1234567,
+        totalOutputTokens: 8910,
+        totalCacheReadTokens: 50000,
+        totalCacheCreationTokens: 12000,
+        answers: []
+      } as any;
+
+      fixture.detectChanges();
+
+      const el: HTMLElement = fixture.nativeElement;
+      const text = el.textContent || '';
+      expect(text).toContain('1,234,567');
+      expect(text).toContain('8,910');
+      expect(text).toContain('50,000');
+      expect(text).toContain('12,000');
+    });
+
+    it('should display candidate totals when run is running', () => {
+      component.activeRunDetail = {
+        id: 1,
+        suiteName: 'Suite',
+        status: 'Running',
+        totalInputTokens: 15000,
+        totalOutputTokens: 3000,
+        totalCacheReadTokens: 0,
+        totalCacheCreationTokens: 0,
+        answers: [
+          { orderIndex: 1, inputTokens: 5000, outputTokens: 1000 } as any,
+          { orderIndex: 2, inputTokens: 10000, outputTokens: 2000 } as any
+        ]
+      } as any;
+
+      fixture.detectChanges();
+
+      const el: HTMLElement = fixture.nativeElement;
+      const text = el.textContent || '';
+      expect(text).toContain('15,000');
+      expect(text).toContain('3,000');
+    });
+
+    it('should display claim verification failure clause in Run Integrity Notice when claimVerificationFailedAnswerCount > 0', () => {
+      component.selectedRunDetail = {
+        id: 1,
+        suiteName: 'Suite',
+        status: 'Completed',
+        answers: [
+          { orderIndex: 3, status: 'Ok', claimVerificationError: 'Model timeout after 120s' } as any
+        ]
+      } as any;
+
+      expect(component.claimVerificationFailedAnswerCount).toBe(1);
+      expect(component.claimVerificationFailedQuestionNumbers).toBe('3');
+
+      fixture.detectChanges();
+
+      const el: HTMLElement = fixture.nativeElement;
+      const text = el.textContent || '';
+      expect(text).toContain('Run Integrity Notice');
+      expect(text).toContain('1 answer(s) had claim verification fail');
+      expect(text).toContain('(question(s) 3)');
+      expect(text).toContain('unverified claims were never checked');
+    });
+
+    it('should display second-opinion failure clause and suppress no-trigger clause when secondOpinionFailedAnswerCount > 0', () => {
+      component.selectedRunDetail = {
+        id: 1,
+        suiteName: 'Suite',
+        status: 'Completed',
+        secondOpinionAssessorModelConfigurationId: 4,
+        secondOpinionGradedAnswerCount: 0,
+        answers: [
+          { orderIndex: 7, status: 'Ok', secondOpinionError: '429 Rate limited' } as any
+        ]
+      } as any;
+
+      expect(component.secondOpinionFailedAnswerCount).toBe(1);
+      expect(component.secondOpinionFailedQuestionNumbers).toBe('7');
+      expect(component.secondOpinionSelectedButUnused).toBeTrue();
+
+      fixture.detectChanges();
+
+      const el: HTMLElement = fixture.nativeElement;
+      const text = el.textContent || '';
+      expect(text).toContain('Run Integrity Notice');
+      expect(text).toContain('1 answer(s) met a trigger but the second-opinion call failed');
+      expect(text).toContain('(question(s) 7)');
+      expect(text).not.toContain('A second-opinion assessor was selected but no answer met a trigger');
+    });
+
+    it('should display no-trigger clause when secondOpinionSelectedButUnused is true and secondOpinionFailedAnswerCount is 0', () => {
+      component.selectedRunDetail = {
+        id: 1,
+        suiteName: 'Suite',
+        status: 'Completed',
+        secondOpinionAssessorModelConfigurationId: 4,
+        secondOpinionGradedAnswerCount: 0,
+        answers: [
+          { orderIndex: 1, status: 'Ok' } as any
+        ]
+      } as any;
+
+      expect(component.secondOpinionFailedAnswerCount).toBe(0);
+      expect(component.secondOpinionSelectedButUnused).toBeTrue();
+
+      fixture.detectChanges();
+
+      const el: HTMLElement = fixture.nativeElement;
+      const text = el.textContent || '';
+      expect(text).toContain('Run Integrity Notice');
+      expect(text).toContain('A second-opinion assessor was selected but no answer met a trigger');
+      expect(text).not.toContain('second-opinion call failed');
+    });
+  });
 });

@@ -800,4 +800,113 @@ public class BenchmarkServiceTests
             Assert.Equal(0, run.ClaimVerifiedAnswerCount);
         }
     }
+
+    [Fact]
+    public void BuildClaimVerificationRequest_PlacesPromptInUserTurn()
+    {
+        var verifierConfig = new SystemAiApiConfiguration
+        {
+            Id = 5,
+            Provider = "OpenAI",
+            ModelId = "gpt-4o",
+            DisplayName = "GPT-4o Verifier"
+        };
+        var claims = new List<string> { "Claim 1: Master Kaen has 350 HP" };
+        string prompt = BenchmarkClaimVerificationPrompt.BuildPrompt(
+            "GnollHack Suite",
+            1,
+            "What are Master Kaen stats?",
+            "Expected points",
+            claims,
+            new List<string> { "repo_search" },
+            3);
+
+        var request = BenchmarkService.BuildClaimVerificationRequest(
+            verifierConfig,
+            "api-key-test",
+            prompt,
+            new List<string> { "repo_search" },
+            maxOutputTokens: 1024,
+            toolIterations: 5,
+            totalModelCalls: 10,
+            toolCallBudget: 3,
+            maxResultLength: 2000,
+            runId: 42,
+            orderIndex: 1,
+            startedByUserId: "user-1");
+
+        Assert.Single(request.SeedHistory);
+        var userTurn = request.SeedHistory[0];
+        var roleProp = userTurn.GetType().GetProperty("role")?.GetValue(userTurn) as string;
+        var contentProp = userTurn.GetType().GetProperty("content")?.GetValue(userTurn) as string;
+
+        Assert.Equal("user", roleProp);
+        Assert.NotNull(contentProp);
+        Assert.Contains("What are Master Kaen stats?", contentProp);
+        Assert.Contains("Claim 1: Master Kaen has 350 HP", contentProp);
+        Assert.Contains("Strictly adhere to the requested JSON response format", request.SystemPrompt);
+    }
+
+    [Fact]
+    public void BuildClaimVerificationRequest_EnablesToolsWithConfiguredBudget()
+    {
+        var verifierConfig = new SystemAiApiConfiguration
+        {
+            Id = 5,
+            Provider = "Anthropic",
+            ModelId = "claude-3-sonnet",
+            DisplayName = "Claude Sonnet Verifier"
+        };
+
+        var request = BenchmarkService.BuildClaimVerificationRequest(
+            verifierConfig,
+            "api-key-test",
+            "test prompt",
+            new List<string> { "repo_search", "c_code_definition" },
+            maxOutputTokens: 1024,
+            toolIterations: 6,
+            totalModelCalls: 12,
+            toolCallBudget: 4,
+            maxResultLength: 2048,
+            runId: 99,
+            orderIndex: 2,
+            startedByUserId: "user-2");
+
+        Assert.True(request.EnableToolUse);
+        Assert.Equal(4, request.ToolExecutionContext.MaxCallsPerSession);
+        Assert.Equal(6, request.MaxToolIterations);
+        Assert.Equal(new[] { "repo_search", "c_code_definition" }, request.AllowedTools);
+    }
+
+    [Fact]
+    public void Truncate_ClaimVerificationLength_FitsColumn()
+    {
+        var longError = new string('x', 2000);
+        var truncated = BenchmarkAssessmentFailure.Truncate(longError, BenchmarkAssessmentFailure.MaxClaimVerificationErrorLength);
+
+        Assert.NotNull(truncated);
+        Assert.Equal(BenchmarkAssessmentFailure.MaxClaimVerificationErrorLength, truncated.Length);
+        Assert.EndsWith("…", truncated);
+    }
+
+    [Fact]
+    public void ResolveSecondOpinionTrigger_UnverifiabilityDeduction_TriggersSecondOpinion()
+    {
+        var answer = new BenchmarkRunAnswer
+        {
+            AnswerFlags = (int)BenchmarkAnswerFlags.UnevidencedDeduction,
+            UnverifiedClaimCount = 2,
+            AccuracyLevel = 4,
+            QualityScore = 75
+        };
+
+        var constants = new BenchmarkScoringConstants();
+
+        var trigger = BenchmarkService.ResolveSecondOpinionTrigger(
+            answer,
+            BenchmarkSecondOpinionMode.Flagged,
+            constants);
+
+        Assert.Equal(BenchmarkService.SecondOpinionTriggers.UnevidencedDeduction, trigger);
+    }
 }

@@ -154,4 +154,46 @@ public class BenchmarkVerdictConsistencyTests
             completenessLevel: 6,
             completenessEvidence: "Matches rubric."));
     }
+
+    [Fact]
+    public void IsUnverifiabilityGroundedDeduction_Run9Q1Evidence_Flags()
+    {
+        const string evidence = "Docked to 4 because claims cannot be verified from the provided context.";
+        Assert.True(BenchmarkVerdictConsistency.IsUnverifiabilityGroundedDeduction(
+            accuracyLevel: 4,
+            accuracyEvidence: evidence,
+            unverifiedClaimCount: 3));
+    }
+
+    [Theory]
+    [InlineData("Claims cannot be verified and the answer hallucinates.")]
+    [InlineData("Cannot be verified; contains an incorrect statement about AC.")]
+    [InlineData("Fabricates nonexistent monster stats.")]
+    public void IsUnverifiabilityGroundedDeduction_EvidenceNamingADefect_DoesNotFlag(string evidence)
+    {
+        Assert.False(BenchmarkVerdictConsistency.IsUnverifiabilityGroundedDeduction(
+            accuracyLevel: 4,
+            accuracyEvidence: evidence,
+            unverifiedClaimCount: 3));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void IsUnverifiabilityGroundedDeduction_NoUnverifiedClaims_DoesNotFlag(int unverifiedClaimCount)
+    {
+        Assert.False(BenchmarkVerdictConsistency.IsUnverifiabilityGroundedDeduction(
+            accuracyLevel: 4,
+            accuracyEvidence: "Docked to 4 because claims cannot be verified from the provided context.",
+            unverifiedClaimCount: unverifiedClaimCount));
+    }
+
+    [Fact]
+    public void IsUnverifiabilityGroundedDeduction_AccuracyLevelFive_DoesNotFlag()
+    {
+        Assert.False(BenchmarkVerdictConsistency.IsUnverifiabilityGroundedDeduction(
+            accuracyLevel: 5,
+            accuracyEvidence: "Docked to 4 because claims cannot be verified from the provided context.",
+            unverifiedClaimCount: 3));
+    }
 }

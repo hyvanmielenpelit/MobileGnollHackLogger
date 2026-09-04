@@ -1902,6 +1902,18 @@ public class AdminBenchmarkController : ControllerBase
                 c.Id == run.AssessorModelConfigurationId.Value &&
                 c.IsEnabled && c.EncryptedApiKey != null && (c.ModelRole & 4) == 4);
 
+        // While a run is running, the run-level totals are 0 because BenchmarkRunFinalizer
+        // writes them once at the end. Compute live candidate totals from answers so the progress dialog
+        // and mid-run diagnostics report actual progress. The finalizer remains the single writer.
+        bool isLiveRun = run.Status is BenchmarkRunStatus.Running;
+        var liveCandidateTotals = isLiveRun ? BenchmarkRunFinalizer.ComputeCandidateTotals(run.Answers) : default;
+
+        long totalInputTokens = isLiveRun ? liveCandidateTotals.TotalInputTokens : run.TotalInputTokens;
+        long totalOutputTokens = isLiveRun ? liveCandidateTotals.TotalOutputTokens : run.TotalOutputTokens;
+        long totalCacheReadTokens = isLiveRun ? liveCandidateTotals.TotalCacheReadTokens : run.TotalCacheReadTokens;
+        long totalCacheCreationTokens = isLiveRun ? liveCandidateTotals.TotalCacheCreationTokens : run.TotalCacheCreationTokens;
+        long totalAnswerDurationMs = isLiveRun ? liveCandidateTotals.TotalAnswerDurationMs : run.TotalAnswerDurationMs;
+
         var dto = new BenchmarkRunDetailDto
         {
             Id = run.Id,
@@ -1955,7 +1967,7 @@ public class AdminBenchmarkController : ControllerBase
                     .ToList()),
             UnweightedQualityIndex = run.UnweightedQualityIndex,
             SpeedIndex = run.SpeedIndex,
-            TotalAnswerDurationMs = run.TotalAnswerDurationMs,
+            TotalAnswerDurationMs = totalAnswerDurationMs,
             ScoringProfileId = run.ScoringProfileId,
             ScoringProfileName = run.ScoringProfile?.Name,
             ScoringProfileSnapshotJson = run.ScoringProfileSnapshotJson,
@@ -2000,10 +2012,10 @@ public class AdminBenchmarkController : ControllerBase
             AssessmentJson = run.AssessmentJson,
             AssessmentText = run.AssessmentText,
             AssessmentParseFailed = run.AssessmentParseFailed,
-            TotalInputTokens = run.TotalInputTokens,
-            TotalOutputTokens = run.TotalOutputTokens,
-            TotalCacheReadTokens = run.TotalCacheReadTokens,
-            TotalCacheCreationTokens = run.TotalCacheCreationTokens,
+            TotalInputTokens = totalInputTokens,
+            TotalOutputTokens = totalOutputTokens,
+            TotalCacheReadTokens = totalCacheReadTokens,
+            TotalCacheCreationTokens = totalCacheCreationTokens,
             TotalDurationMs = run.TotalDurationMs,
             TotalAssessmentInputTokens = run.TotalAssessmentInputTokens,
             TotalAssessmentOutputTokens = run.TotalAssessmentOutputTokens,
@@ -2090,6 +2102,7 @@ public class AdminBenchmarkController : ControllerBase
                 SecondOpinionJson = a.SecondOpinionJson,
                 SecondOpinionDisagreed = a.SecondOpinionDisagreed,
                 SecondOpinionTrigger = a.SecondOpinionTrigger,
+                SecondOpinionError = a.SecondOpinionError,
                 ClaimVerificationJson = a.ClaimVerificationJson,
                 ClaimsSupportedCount = a.ClaimsSupportedCount,
                 ClaimsRefutedCount = a.ClaimsRefutedCount,

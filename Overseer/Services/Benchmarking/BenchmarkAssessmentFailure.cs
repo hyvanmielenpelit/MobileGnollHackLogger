@@ -8,7 +8,12 @@ public static class BenchmarkAssessmentFailure
 {
     public const int MaxErrorLength = 2048;
 
-    // Truncate any text destined for a [MaxLength(2048)] column.
+    /// <summary>
+    /// Matches the [MaxLength(1024)] constraint on BenchmarkRunAnswer.ClaimVerificationError.
+    /// </summary>
+    public const int MaxClaimVerificationErrorLength = 1024;
+
+    // Truncate any text destined for a [MaxLength(2048)] column (or specified maxLength).
     public static string? Truncate(string? text, int maxLength = MaxErrorLength)
     {
         if (string.IsNullOrWhiteSpace(text))

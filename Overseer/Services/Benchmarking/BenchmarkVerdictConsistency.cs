@@ -133,6 +133,43 @@ public static class BenchmarkVerdictConsistency
     }
 
     /// <summary>
+    /// Vocabulary citing unverifiability as a reason for an assessment finding.
+    /// </summary>
+    private static readonly Regex UnverifiabilityRegex = new(
+        @"could not (?:be )?verif|cannot (?:be )?verif|unable to verif|unverifi|could not confirm|not confirmed|no confirmation|not verifiable",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// Vocabulary naming an actual candidate defect. Used to guard <see cref="IsUnverifiabilityGroundedDeduction"/>:
+    /// evidence naming a real defect alongside an unverifiable claim is a legitimate deduction and must not flag.
+    /// </summary>
+    private static readonly Regex DefectRegex = new(
+        @"omit|missing|wrong|incorrect|inaccurat|contradic|error|misstat|conflat|false|mischaracteris|mischaracteriz|fails to|does not (?:state|mention|include)|rubric point",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// True when accuracy was docked to <see cref="UnevidencedDeductionMaxLevel"/> or below with
+    /// unverified claims present, where the evidence cites unverifiability and names no actual defect.
+    /// Compliance check on BenchmarkAssessmentPrompt line 206, which instructs the assessor to never
+    /// write "unverified", "could not confirm", or equivalent as the basis of an accuracy deduction.
+    /// Advisory; changes no score.
+    /// </summary>
+    public static bool IsUnverifiabilityGroundedDeduction(
+        int accuracyLevel,
+        string? accuracyEvidence,
+        int unverifiedClaimCount)
+    {
+        if (unverifiedClaimCount <= 0 || accuracyLevel > UnevidencedDeductionMaxLevel || string.IsNullOrWhiteSpace(accuracyEvidence))
+        {
+            return false;
+        }
+
+        return UnverifiabilityRegex.IsMatch(accuracyEvidence)
+            && !DefectRegex.IsMatch(accuracyEvidence)
+            && !MentionsFabrication(accuracyEvidence);
+    }
+
+    /// <summary>
     /// True when either graded dimension was docked to <see cref="UnevidencedDeductionMaxLevel"/> or
     /// below while its own evidence string names no defect.
     ///
