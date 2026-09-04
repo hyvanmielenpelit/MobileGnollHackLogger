@@ -82,7 +82,18 @@ public enum BenchmarkAnswerFlags
     // was not equipped to make — and still advisory, for the same reason every other finding here is:
     // it arrives after scoring, from a model the rubric never sanctioned as a grader, and a metric
     // that can be revised after the fact by a later pass is not reproducible. Reported, never applied.
-    RefutedClaim = 128
+    RefutedClaim = 128,
+
+    // The assessor docked ACCURACY to UnevidencedDeductionMaxLevel or below citing only an omission
+    // (vocabulary like "omit", "fails to mention", "instead of") with no assertion of falsehood.
+    // An omission is graded through COMPLETENESS; charging it on ACCURACY docks the answer on both
+    // dimensions, costing 80% of the quality weight for one defect.
+    //
+    // Advisory, and grouped here for the same reason as UnevidencedDeduction: the answer is intact
+    // and the verdict may well be right. What it is not is attributable to the dimension it was
+    // charged on. Nothing here changes a score.
+    // See BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction.
+    OmissionAsAccuracy = 256
 }
 
 /// <summary>
@@ -345,6 +356,15 @@ public class BenchmarkRun
     /// <summary>Answers carrying <see cref="BenchmarkAnswerFlags.RefutedClaim"/>. Advisory.</summary>
     public int RefutedClaimAnswerCount { get; set; }
 
+    /// <summary>Answers carrying <see cref="BenchmarkAnswerFlags.OmissionAsAccuracy"/>. Advisory.</summary>
+    public int OmissionAsAccuracyAnswerCount { get; set; }
+
+    /// <summary>
+    /// Answers that consumed 100% of their tool call budget without any tool calls being blocked.
+    /// Distinct from budget-exhausted answers where calls were refused.
+    /// </summary>
+    public int BudgetSaturatedAnswerCount { get; set; }
+
     /// <summary>Answers for which claim verification was run (at least one claim evaluated).</summary>
     public int ClaimVerifiedAnswerCount { get; set; }
 
@@ -372,10 +392,23 @@ public class BenchmarkRun
     // property of a difficulty-weighted metric, and it should be visible rather than implicit.
     public int? UnweightedQualityIndex { get; set; }
 
+    /// <summary>
+    /// Standard error of the difficulty-weighted Intelligence Index over the answered items,
+    /// with the n/(n-1) correction. Null for runs before harness version 11, or below 3 items.
+    /// Item-sampling error (uncertainty from item selection), NOT candidate run-to-run variance.
+    /// </summary>
+    public double? QualityIndexStandardError { get; set; }
+
     // How the second-opinion assessor was used, snapshotted from the scoring profile or the
     // start dialog's per-run override. Stored on the run so a report can always say what
     // produced its second verdicts, and what coverage the agreement figures rest on.
     public int SecondOpinionModeUsed { get; set; }
+
+    /// <summary>
+    /// Whether the second-opinion assessor was blinded to the first grader's score, critical-error
+    /// flag, and comment. Snapshotted from the scoring profile.
+    /// </summary>
+    public bool SecondOpinionBlindUsed { get; set; }
 
     // Answers that received a second verdict, and the mean |first - second| quality gap across
     // them. Read together with the mode: a mean delta over 4 of 18 trigger-selected answers is

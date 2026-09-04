@@ -272,12 +272,65 @@ The changes:
   generated report read `19.32.00`. A report is compared across machines; its timestamps have to look
   the same on all of them.
 
+### Harness Version 9 & Scoring Method Version 7 Updates
+
+Prompted by the 2026-09-03 GPT-5.6 Luna run where Q1 was docked to Accuracy 4/6 (losing 28 points on the 55%-weight dimension) with `accuracyEvidence: "Matches rubric."` — a string the prompt offered as the full-level form — and Q5 exhibited the same shape at 5/6. A deduction whose stated basis names no defect is unreviewable: neither a human operator nor the harness can discern whether the awarded level or the evidence string was the error.
+
+- **`ScoringMethodVersion` moves to 7**: A no-fault evidence string such as "Matches rubric" may accompany **level 6 only**. If an assessor awards any level below 6, the evidence string MUST specifically name what kept it below (the rubric point, the claim, or the missing element). Scores are **not comparable** with v6 on any answer graded below level 6.
+- **Unevidenced deductions are detected and flagged**: `BenchmarkVerdictConsistency` checks whether deductions below level 6 carry no-fault or unevidenced strings. Violations set `BenchmarkAnswerFlags.UnevidencedDeduction` (64), routing the answer to a second reader. Advisory only; the first verdict stands and no score is altered mechanically.
+- **Reporting un-triggered second opinions**: When a second-opinion assessor is configured on a run but no answer meets an activation trigger, the report explicitly states zero coverage instead of remaining silent.
+- **Complete advisory-flag breakdown**: The report itemizes the complete set of advisory flags rather than truncating to a subset.
+- **Claim verifier role introduced**: Factual claims the assessor could neither confirm nor refute can now be checked against the GnollHack C source code and NetHack/GnollHack wiki by a third model role equipped with read-only exploration tools. Claim verification runs as an advisory post-grading phase and does not alter scores.
+
+### Harness Version 10 Updates
+
+Prompted by grader behavior where assessors continued to penalize answers for unverified claims despite the prohibition introduced in harness 7, grounding accuracy deductions in the fact that a claim could not be verified against the authored rubric alone.
+
+- **Detection of unverified-grounded deductions**: `BenchmarkVerdictConsistency` detects accuracy deductions whose evidence describes unverified status or inability to confirm against the rubric, flagging them under `UnevidencedDeduction` and routing to a second opinion.
+- **Claim verifier prompt optimization**: Claim verifier queries place the prompt in the user turn to optimize instruction adherence and tool engagement across diverse frontier model providers.
+- **Harness stage failure visibility**: Failures occurring during intermediate harness stages (such as second opinions or claim verifications) are clearly surfaced in the Markdown report and UI Run Integrity Notice rather than failing silently.
+- **Live mid-run progress updates**: Progress statistics update dynamically throughout execution.
+
+### Harness Version 11 Updates
+
+Prompted by the 2026-09-04 GPT-5.6 Luna run (run 10), which exposed critical grader fidelity and instrumentation gaps (findings F1–F8):
+
+- **ACCURACY Omission Deduction Prohibition and Pure Detector (F1)**:
+  Assessors docked the ACCURACY dimension for omitted content (such as missing racial attribute maxima or unmentioned item materials), double-penalizing the omission on both ACCURACY (55% weight) and COMPLETENESS (25% weight). The prompt (§6) now explicitly instructs: *"An omission MUST NOT reduce ACCURACY — that is what COMPLETENESS grades. Deduct from ACCURACY only for statements the answer actually makes that are false."*
+  Complementing this rule, `BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction` matches omission vocabulary in `accuracyEvidence` without corresponding falsehood terms, setting `BenchmarkAnswerFlags.OmissionAsAccuracy` (256). This flag joins the advisory set and routes the answer to a second reader.
+- **Blind Second Opinions Eliminating Anchoring Bias (F2)**:
+  Previously, `BuildSecondOpinionPrompt` revealed the first assessor's quality score, critical error flag, and qualitative comments, preceded by the biasing statement *"its verdict was severe enough that the harness asked for an independent second reading"*. This rendered `SecondOpinionMeanAbsDelta` an anchoring residual rather than an independent inter-rater metric.
+  Harness 11 introduces **Blind Second Opinions** (`SecondOpinionBlind` on scoring profiles, default `true`; snapshotted on runs as `SecondOpinionBlindUsed`). In blind mode, the second assessor evaluates the answer without seeing the first assessor's scores, deductions, or comments. The prompt uses neutral trigger framing across all triggers. Agreement metrics from blind runs are **not comparable** to earlier anchored runs.
+- **Prioritized Claim Verification and Trigger Cascade Integration (F3)**:
+  Claim verification now executes per-answer *before* the second-opinion trigger cascade rather than at run completion.
+  - New trigger: `RefutedClaim` routes an answer to a second opinion if a factual claim was refuted by the verifier.
+  - New trigger: `OmissionAsAccuracy` routes answers with flagged omission-grounded accuracy deductions.
+  - The `UnverifiedClaims` trigger now fires only if claims were actually refuted or indeterminate; an answer whose unverified claims were all confirmed true by the verifier no longer triggers an unnecessary second opinion.
+  - Verified claim records are provided as factual context to the second reader.
+- **Scope-Aware Tool Budget and Early Warning Notice (F4)**:
+  Candidate models hitting tool limits were previously met with an inaccurate `"Maximum tool calls per session exceeded"` message. The refusal message is now scoped to the benchmark question: `"Tool call budget for this question is exhausted ({limit} calls). No further tool calls will run — answer now with what you have."`
+  Additionally, `AgentLoopRunner` appends a proactive budget warning (`[Tool budget: N of M calls remaining for this question.]`) to tool results when remaining calls fall to $\le \max(3, 20\%)$ (emitted at most once per iteration). Blocked tool attempts are persisted as `BenchmarkRunAnswer.ToolCallsBlocked`.
+- **Three Distinct Budget States (F5)**:
+  Reports and analytics now distinguish between three budget conditions:
+  1. **Pressured**: Answer used $\ge 90\%$ and $< 100\%$ of its allocated budget.
+  2. **Budget Saturated**: Answer used exactly 100% of its budget with 0 calls refused (spent all available calls without hitting the blocking limit).
+  3. **Budget Exhausted**: Answer attempted calls beyond the cap, displaying the exact number of refused calls.
+- **Intelligence Index Standard Error and 95% Confidence Interval (F6)**:
+  To distinguish meaningful model differences from finite item-sampling noise, the difficulty-weighted Intelligence Index now computes its standard error:
+  $$\text{SE} = \frac{\sqrt{\sum w_i^2 (q_i - \hat{I})^2 \cdot \frac{n}{n-1}}}{\sum w_i}$$
+  Reports, admin UI score tiles, and DTOs report $\hat{I} \pm 1.96 \cdot \text{SE}$ (95% CI).
+- **Disputed Verdicts Connected to Claim Verification (F7)**:
+  In the Disputed Assessments report section and the admin UI Run Integrity Notice, disputed answers display the outcome of any claim verification conducted for those questions (supported, refuted, indeterminate counts).
+
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).
 - **Model Time**: $\text{ModelTime} = \max(0, \text{DurationMs} - \text{ToolTimeMs})$ — the turn duration with harness tool I/O removed. This, not `DurationMs`, is what speed is scored on.
 - **Speed Target**: $Target(q) = T \cdot (1 + s \cdot \text{Difficulty}(q) / 100)$, where $T$ is `SpeedTargetMs` and $s$ is `SpeedDifficultyScaling`.
 - **Speed Score**: $\text{Speed} = \text{clamp}(100 - k \cdot \log_2(\text{ModelTime} / Target(q)), 1, 100)$, where $k$ is `SpeedDecayK`.
 - **Intelligence Index**: $\sum(\text{Difficulty}(q) \cdot \text{Quality}(q)) / \sum(\text{Difficulty}(q))$.
+- **Intelligence Index Standard Error**:
+  $$\text{SE} = \frac{\sqrt{\sum w_i^2 (q_i - \hat{I})^2 \cdot \frac{n}{n-1}}}{\sum w_i}$$
+  with $95\%\text{ CI} = \hat{I} \pm 1.96 \cdot \text{SE}$ (where $n \ge 3$). Reflected as `QualityIndexStandardError` on `BenchmarkRun`. Represents item-sampling uncertainty; two runs whose intervals overlap cannot be distinguished with statistical confidence.
 - **Unweighted Quality Mean**: the **equal-weight mean** of $\text{Quality}(q)$ over answered questions,
   stored as `UnweightedQualityIndex` from harness version 7. Not a rival to the Intelligence Index but a
   companion to it: the difference between the two is how far difficulty weighting moved the headline, and
@@ -385,6 +438,12 @@ In stage 2 the second opinion rotates to whichever of OpenAI and Google is not t
 rotation, stated plainly: **the agreement metric is comparable only within a candidate-provider family.**
 The Intelligence Index is unaffected, because it comes from the primary assessor, which does not rotate
 once stage 2 begins.
+
+### Blind vs. Anchored Second Opinions
+
+From Harness Version 11, the second opinion is **blind by default** (`SecondOpinionBlind = true`). In earlier versions (Harness 4–10), the second reader received the first assessor's score, critical error flag, and full commentary, preceded by the notice that the first verdict was "severe enough".
+
+Anchored second opinions suffer from anchoring bias: models instructed to review an existing score systematically regress toward the anchor rather than evaluating independently. While anchored evaluations can be useful for human-style appeals or error reviews, they do not produce an authentic inter-rater agreement metric. Under blind mode, the second assessor receives only the question, rubric, answer, and any objective claim verification findings, ensuring `SecondOpinionMeanAbsDelta` represents true inter-rater variation. Agreement statistics between blind and anchored runs are **not comparable**.
 
 ### Grade everything twice
 

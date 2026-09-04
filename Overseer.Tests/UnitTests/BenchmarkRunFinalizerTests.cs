@@ -440,4 +440,37 @@ public class BenchmarkRunFinalizerTests
         Assert.False(BenchmarkRunFinalizer.HasTransportDefect(a1));
         Assert.Equal(BenchmarkAnswerIntegrity.Clean, BenchmarkRunFinalizer.Classify(a1));
     }
+
+    [Fact]
+    public void Finalizer_AggregatesOmissionAsAccuracy_AndBudgetSaturated_AndStandardError()
+    {
+        var a1 = MakeAnswer(1, BenchmarkAnswerFlags.OmissionAsAccuracy);
+        a1.QualityScore = 70;
+        a1.ToolCallCount = 20;
+        a1.ToolCallBudgetUsed = 25;
+        a1.ToolCallsBlocked = 0;
+
+        // a2 is budget saturated: exactly 100% used with 0 calls blocked
+        var a2 = MakeAnswer(2);
+        a2.QualityScore = 85;
+        a2.ToolCallCount = 35;
+        a2.ToolCallBudgetUsed = 35;
+        a2.ToolCallsBlocked = 0;
+
+        var a3 = MakeAnswer(3);
+        a3.QualityScore = 95;
+        a3.ToolCallCount = 10;
+        a3.ToolCallBudgetUsed = 25;
+        a3.ToolCallsBlocked = 0;
+
+        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 3 };
+        BenchmarkRunFinalizer.Apply(run, new[] { a1, a2, a3 });
+
+        Assert.Equal(1, run.OmissionAsAccuracyAnswerCount);
+        Assert.Equal(1, run.BudgetSaturatedAnswerCount);
+        Assert.Equal(1, run.AdvisoryFlagAnswerCount);
+        Assert.True(BenchmarkRunFinalizer.HasAdvisoryFlag(a1));
+        Assert.NotNull(run.QualityIndexStandardError);
+        Assert.True(run.QualityIndexStandardError > 0);
+    }
 }

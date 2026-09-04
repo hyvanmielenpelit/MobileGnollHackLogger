@@ -250,6 +250,14 @@ public class ToolExecutorRateLimitTests
         Assert.Equal(3, q1Results.Count(r => r.Success));
         Assert.Equal(2, q1Results.Count(r => !r.Success && r.BudgetExhausted));
 
+        // RemainingBudget is decremented on each success
+        Assert.Equal(2, q1Results[0].RemainingBudget);
+        Assert.Equal(1, q1Results[1].RemainingBudget);
+        Assert.Equal(0, q1Results[2].RemainingBudget);
+
+        // Scope-aware refusal text
+        Assert.Equal("Tool call budget for this question is exhausted (3 calls). No further tool calls will run — answer now with what you have.", q1Results[3].ErrorMessage);
+
         // Q2 is independent even though same SessionId
         var q2Results = new List<ToolResult>();
         for (int i = 0; i < 3; i++)

@@ -1200,7 +1200,7 @@ public class BenchmarkReportBuilderTests
 
         var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
 
-        Assert.Contains("**Advisory Flags:** 2 (reasoning bleed: 1, repeated fragments: 0, contested verdicts: 1, unevidenced deductions: 0, refuted claims: 0)", report);
+        Assert.Contains("**Advisory Flags:** 2 (reasoning bleed: 1, repeated fragments: 0, contested verdicts: 1, unevidenced deductions: 0, omissions as accuracy: 0, refuted claims: 0)", report);
     }
 
     [Fact]
@@ -1235,5 +1235,82 @@ public class BenchmarkReportBuilderTests
         Assert.Contains("#### Refuted Claims", report);
         Assert.Contains("Gnolls can breathe underwater", report);
         Assert.Contains("src/role.c:120", report);
+    }
+
+    [Fact]
+    public void ToolUsageProfile_RendersThreeBudgetStatesCorrectly()
+    {
+        // q1: pressured (23 of 25 = 92% >= 90% and < 100%)
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.ToolCallCount = 23;
+        q1.ToolCallBudgetUsed = 25;
+        q1.ToolCallsBlocked = 0;
+        q1.ToolBudgetExhausted = false;
+
+        // q2: saturated (35 of 35 = 100%, 0 blocked)
+        var q2 = ScoredAnswer(2, BenchmarkDifficulty.Intermediate, 50, 85);
+        q2.ToolCallCount = 35;
+        q2.ToolCallBudgetUsed = 35;
+        q2.ToolCallsBlocked = 0;
+        q2.ToolBudgetExhausted = false;
+
+        // q3: exhausted (25 of 25, 3 blocked)
+        var q3 = ScoredAnswer(3, BenchmarkDifficulty.Simple, 25, 75);
+        q3.ToolCallCount = 25;
+        q3.ToolCallBudgetUsed = 25;
+        q3.ToolCallsBlocked = 3;
+        q3.ToolBudgetExhausted = true;
+
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1, q2, q3);
+        BenchmarkRunFinalizer.Apply(run, new[] { q1, q2, q3 });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("Budget Pressure:", report);
+        Assert.Contains("Q1 23/25", report);
+        Assert.Contains("Budget Saturated:", report);
+        Assert.Contains("Q2 35/35", report);
+        Assert.Contains("Budget Exhausted:", report);
+        Assert.Contains("Q3 25/25 (3 calls refused by budget)", report);
+    }
+
+    [Fact]
+    public void Report_RendersStandardErrorAndConfidenceInterval()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        var q2 = ScoredAnswer(2, BenchmarkDifficulty.Intermediate, 50, 90);
+        var q3 = ScoredAnswer(3, BenchmarkDifficulty.Advanced, 75, 70);
+
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1, q2, q3);
+        BenchmarkRunFinalizer.Apply(run, new[] { q1, q2, q3 });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("(95% CI over 3 items)", report);
+        Assert.Contains("finite item-sampling uncertainty", report);
+    }
+
+    [Fact]
+    public void DisputedAssessments_RendersClaimVerificationBesideDispute()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 54);
+        q1.SecondOpinionQualityScore = 25;
+        q1.SecondOpinionCriticalError = true;
+        q1.SecondOpinionDisagreed = true;
+        q1.SecondOpinionTrigger = "LowQualityScore";
+        q1.ClaimsSupportedCount = 3;
+        q1.ClaimsRefutedCount = 0;
+        q1.ClaimsIndeterminateCount = 0;
+
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Flagged, q1);
+        run.SecondOpinionAssessorModelDisplayNameUsed = "Second Assessor";
+        run.SecondOpinionBlindUsed = true;
+        BenchmarkRunFinalizer.Apply(run, new[] { q1 });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("### Disputed Assessments", report);
+        Assert.Contains("Claims: 3 supported, 0 refuted, 0 indeterminate", report);
+        Assert.Contains("Assessor agreement is reported for a **blind** second reader", report);
     }
 }

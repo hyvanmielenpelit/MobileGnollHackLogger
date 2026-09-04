@@ -39,6 +39,7 @@ namespace Overseer.Services.Tools
         public List<MobileGnollHackLogger.Data.ChatMessageToolCall>? NestedToolCalls { get; set; }
         public string? TerminationStatus { get; set; }
         public bool BudgetExhausted { get; set; }
+        public int? RemainingBudget { get; set; }
     }
 
     public class ToolExecutionContext

@@ -466,12 +466,14 @@ public class AgentLoopRunner
                 var batchBudget = new ToolBatchResultBudget(Math.Max(budgetChars, execContext.MaxResultLength));
 
                 var providerResults = new List<ProviderToolResult>(outcomes.Count);
+                bool budgetNoticeEmittedThisIteration = false;
                 for (int i = 0; i < outcomes.Count; i++)
                 {
                     var outcome = outcomes[i];
                     if (outcome.BudgetExhausted)
                     {
                         result.ToolBudgetExhausted = true;
+                        result.ToolCallsBlocked++;
                     }
 
                     bool exemptFromBatchBudget =
@@ -494,6 +496,20 @@ public class AgentLoopRunner
                         }
                     }
                     cumulativeTurnResultLength += finalContent.Length;
+
+                    if (!budgetNoticeEmittedThisIteration && outcome.RemainingBudget.HasValue)
+                    {
+                        int totalBudget = execContext.MaxCallsPerSession;
+                        int threshold = Math.Max(3, (int)(totalBudget * 0.20));
+                        if (outcome.RemainingBudget.Value <= threshold)
+                        {
+                            string notice = $"[Tool budget: {outcome.RemainingBudget.Value} of {totalBudget} calls remaining for this question.]";
+                            finalContent = string.IsNullOrEmpty(finalContent)
+                                ? notice
+                                : $"{finalContent}\n\n{notice}";
+                            budgetNoticeEmittedThisIteration = true;
+                        }
+                    }
 
                     // Snapshot supersession (Phase 4.1)
                     if (outcome.ToolName == "refresh_snapshot" && outcome.Success)

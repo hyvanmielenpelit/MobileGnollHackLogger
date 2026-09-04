@@ -40,6 +40,12 @@ public class BenchmarkScoringProfile
     // rate is conditioned on the first assessor's own uncertainty.
     public int SecondOpinionMode { get; set; } = (int)BenchmarkSecondOpinionMode.Flagged;
 
+    /// <summary>
+    /// Whether the second-opinion assessor should be blinded to the first assessor's score,
+    /// critical-error flag, and comment. Defaults to true.
+    /// </summary>
+    public bool SecondOpinionBlind { get; set; } = true;
+
     // Quality points below the run's own median at which an answer is re-graded, in
     // FlaggedAndOutliers mode only. It exists because an absolute threshold cannot see an
     // outlier in an otherwise strong run: on the 2026-09-03 run the median was 96 and the two

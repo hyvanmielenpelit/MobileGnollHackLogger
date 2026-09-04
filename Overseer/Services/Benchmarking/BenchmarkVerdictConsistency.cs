@@ -183,4 +183,30 @@ public static class BenchmarkVerdictConsistency
         return (accuracyLevel <= UnevidencedDeductionMaxLevel && IsNoFaultEvidence(accuracyEvidence))
             || (completenessLevel <= UnevidencedDeductionMaxLevel && IsNoFaultEvidence(completenessEvidence));
     }
+
+    // Words that describe something the answer did not say.
+    private static readonly Regex OmissionRegex = new(
+        @"\bomit|\bomission|does not (?:mention|include|state|list|cover|address|provide)|fails? to (?:mention|include|state|list|identify|note|cover|address|provide)|missing|instead of|rather than|no mention of|never (?:mentions|states)|leaves out|does not name",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    // Words that assert the answer said something untrue. Their presence means the deduction has a
+    // genuine accuracy basis and must not flag, even if the same string also names an omission.
+    private static readonly Regex FalsehoodRegex = new(
+        @"\bwrong|\bincorrect|\binaccurat|\bfalse|contradic|misstat|conflat|mischaracteris|mischaracteriz|reverses|inverts|hallucinat|fabricat|\binvent(?!or)|does not exist|no such|overstate|understate",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// True when ACCURACY was docked to <see cref="UnevidencedDeductionMaxLevel"/> or below and its own
+    /// evidence describes only an omission — the defect COMPLETENESS grades — with no assertion that
+    /// anything the answer said is untrue.
+    /// </summary>
+    public static bool IsOmissionGroundedAccuracyDeduction(int accuracyLevel, string? accuracyEvidence)
+    {
+        if (accuracyLevel > UnevidencedDeductionMaxLevel || string.IsNullOrWhiteSpace(accuracyEvidence))
+        {
+            return false;
+        }
+
+        return OmissionRegex.IsMatch(accuracyEvidence) && !FalsehoodRegex.IsMatch(accuracyEvidence);
+    }
 }

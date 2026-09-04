@@ -132,9 +132,9 @@ public static class BenchmarkReportBuilder
     private static (int Executed, int Blocked) ToolCallSplit(BenchmarkRunAnswer answer)
     {
         int attempted = answer.ToolCallCount ?? 0;
-        int blocked = 0;
+        int blocked = answer.ToolCallsBlocked ?? 0;
 
-        if (!string.IsNullOrWhiteSpace(answer.ToolCallSummary))
+        if (blocked == 0 && !string.IsNullOrWhiteSpace(answer.ToolCallSummary))
         {
             var match = BlockedCallsRegex.Match(answer.ToolCallSummary);
             if (match.Success && int.TryParse(match.Groups[1].Value, out int parsed))
@@ -416,7 +416,7 @@ public static class BenchmarkReportBuilder
             sb.AppendLine($"- **Mode:** {configuredMode}{ModeGloss(configuredMode)} Advisory throughout: the first verdict is what scored.");
             if (configuredMode is BenchmarkSecondOpinionMode.Flagged or BenchmarkSecondOpinionMode.FlaggedAndOutliers)
             {
-                sb.AppendLine($"- **Triggers:** a critical error; a contested verdict; an unevidenced deduction (a level docked to {BenchmarkVerdictConsistency.UnevidencedDeductionMaxLevel} or below whose stated evidence names no defect, or rests only on unverifiability); unverifiable claims alongside an accuracy level of {BenchmarkService.UnverifiedClaimsAccuracyMaxLevel} or below; a quality score below the profile's threshold of {scoringConstants.SecondOpinionQualityThreshold}" +
+                sb.AppendLine($"- **Triggers:** a critical error; a refuted claim; a contested verdict; an unevidenced deduction (a level docked to {BenchmarkVerdictConsistency.UnevidencedDeductionMaxLevel} or below whose stated evidence names no defect, or rests only on unverifiability); an omission docked as an accuracy defect; unverifiable claims alongside an accuracy level of {BenchmarkService.UnverifiedClaimsAccuracyMaxLevel} or below; a quality score below the profile's threshold of {scoringConstants.SecondOpinionQualityThreshold}" +
                     (configuredMode == BenchmarkSecondOpinionMode.FlaggedAndOutliers
                         ? $"; and, after scoring, any answer more than {scoringConstants.SecondOpinionOutlierDeltaPoints} points below the run's median."
                         : "."));
@@ -440,9 +440,12 @@ public static class BenchmarkReportBuilder
             string? WouldTrigger(BenchmarkRunAnswer a)
             {
                 if (a.CriticalError) return "critical error";
+                if ((((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.RefutedClaim) != 0) return "refuted claim";
                 if ((((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.ContestedVerdict) != 0) return "contested verdict";
                 if ((((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.UnevidencedDeduction) != 0) return "unevidenced deduction";
-                if ((a.UnverifiedClaimCount ?? 0) > 0 && (a.AccuracyLevel ?? 6) <= BenchmarkService.UnverifiedClaimsAccuracyMaxLevel) return "unverifiable claims";
+                if ((((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.OmissionAsAccuracy) != 0) return "omission docked as accuracy";
+                if ((a.UnverifiedClaimCount ?? 0) > 0 && (a.AccuracyLevel ?? 6) <= BenchmarkService.UnverifiedClaimsAccuracyMaxLevel
+                    && ((a.ClaimsRefutedCount ?? 0) > 0 || (a.ClaimsIndeterminateCount ?? 0) > 0 || (a.ClaimVerificationJson == null && a.ClaimVerificationError == null))) return "unverifiable claims";
                 if (threshold > 0 && a.QualityScore.HasValue && a.QualityScore.Value < threshold) return $"below the profile's threshold of {threshold}";
                 return null;
             }
@@ -509,7 +512,30 @@ public static class BenchmarkReportBuilder
 
         sb.AppendLine("## 2. Results Summary");
         sb.AppendLine();
-        sb.AppendLine($"### **Intelligence Index: {(run.QualityIndex.HasValue ? $"{run.QualityIndex.Value} / 100" : "Not Scored")}**");
+
+        double? se = run.QualityIndexStandardError;
+        if (!se.HasValue && scoredAnswers.Count >= 3)
+        {
+            se = BenchmarkScoring.QualityIndexStandardError(
+                scoredAnswers.Select(a => (a.QualityScore, a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty))));
+        }
+
+        string seText = string.Empty;
+        int ciLower = 0, ciUpper = 100;
+        if (se.HasValue && run.QualityIndex.HasValue)
+        {
+            double halfWidth = 1.96 * se.Value;
+            ciLower = (int)Math.Max(0, Math.Round(run.QualityIndex.Value - halfWidth));
+            ciUpper = (int)Math.Min(100, Math.Round(run.QualityIndex.Value + halfWidth));
+            seText = $" ± {halfWidth:F0} (95% CI over {scoredAnswers.Count} items)";
+        }
+
+        sb.AppendLine($"### **Intelligence Index: {(run.QualityIndex.HasValue ? $"{run.QualityIndex.Value}{seText} / 100" : "Not Scored")}**");
+        if (se.HasValue && run.QualityIndex.HasValue)
+        {
+            sb.AppendLine("*This reflects finite item-sampling uncertainty — how much the index would move under a different draw of questions of the same difficulty profile. Two runs whose intervals overlap are statistically indistinguishable on this suite.*");
+            sb.AppendLine();
+        }
         // Only shown when a critical-error cap actually moved it. Printing the identical number
         // under a second heading told the reader nothing.
         if (rawQualityIndex.HasValue && rawQualityIndex.Value != (run.QualityIndex ?? 0))
@@ -652,6 +678,7 @@ public static class BenchmarkReportBuilder
         int repeatCount = answers.Count(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.RepeatedFragments));
         int contestedCount = answers.Count(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.ContestedVerdict));
         int unevidencedCount = answers.Count(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.UnevidencedDeduction));
+        int omissionCount = answers.Count(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.OmissionAsAccuracy));
         int refutedCount = answers.Count(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.RefutedClaim));
         int providerErrorCount = answers.Count(a => a.Status == BenchmarkAnswerStatus.ProviderError);
 
@@ -699,14 +726,13 @@ public static class BenchmarkReportBuilder
         {
             advisoryNote += $" *Removal was not recorded for {bleedUnrecorded} of these — the run predates harness version {BenchmarkAssessmentPrompt.HarnessVersion}, which added the counter; that figure is inferred, not measured.*";
         }
-        sb.AppendLine($"- **Advisory Flags:** {advisoryCount} (reasoning bleed: {bleedCount}, repeated fragments: {repeatCount}, contested verdicts: {contestedCount}, unevidenced deductions: {unevidencedCount}, refuted claims: {refutedCount}) {advisoryNote}");
+        sb.AppendLine($"- **Advisory Flags:** {advisoryCount} (reasoning bleed: {bleedCount}, repeated fragments: {repeatCount}, contested verdicts: {contestedCount}, unevidenced deductions: {unevidencedCount}, omissions as accuracy: {omissionCount}, refuted claims: {refutedCount}) {advisoryNote}");
         sb.AppendLine($"- **Answers Scrubbed:** {scrubbedAnyCount} of {totalQuestions} (transport payloads: {scrubbedTransportCount}, reasoning narration: {bleedRemoved})");
         sb.AppendLine();
 
-        // Assessor Findings — two advisory signals about the *grading* rather than the answers:
-        // what the assessor could not verify, and where its own prose contradicted its
-        // critical-error flag. Both were invisible on the 2026-09-03 run, whose two worst
-        // answers carried comments describing hallucinations beside criticalError: false.
+        // Assessor Findings — advisory signals about the *grading* rather than the answers:
+        // what the assessor could not verify, where its own prose contradicted its
+        // critical-error flag, and where an omission was docked under accuracy.
         var withClaims = answers
             .Where(a => (a.UnverifiedClaimCount ?? 0) > 0)
             .OrderBy(a => a.OrderIndex)
@@ -715,6 +741,10 @@ public static class BenchmarkReportBuilder
         bool claimsRecorded = answers.Any(a => a.UnverifiedClaimCount.HasValue);
         var contestedAnswers = answers
             .Where(a => (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.ContestedVerdict) != 0)
+            .OrderBy(a => a.OrderIndex)
+            .ToList();
+        var omissionAnswers = answers
+            .Where(a => (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.OmissionAsAccuracy) != 0)
             .OrderBy(a => a.OrderIndex)
             .ToList();
         var refutedAnswers = answers
@@ -726,7 +756,7 @@ public static class BenchmarkReportBuilder
             .OrderBy(a => a.OrderIndex)
             .ToList();
 
-        if (!claimsRecorded || unverifiedTotal > 0 || contestedAnswers.Count > 0 || refutedAnswers.Count > 0 || verificationFailedAnswers.Count > 0)
+        if (!claimsRecorded || unverifiedTotal > 0 || contestedAnswers.Count > 0 || omissionAnswers.Count > 0 || refutedAnswers.Count > 0 || verificationFailedAnswers.Count > 0)
         {
             sb.AppendLine("### Assessor Findings");
             if (!claimsRecorded)
@@ -761,6 +791,10 @@ public static class BenchmarkReportBuilder
             if (contestedAnswers.Count > 0)
             {
                 sb.AppendLine($"- **Contested Verdicts:** {contestedAnswers.Count} ({string.Join(", ", contestedAnswers.Select(a => $"Q{a.OrderIndex}"))}) — *the assessor's own comment describes a fabrication while its critical-error flag is false. Advisory; no scoring effect.*");
+            }
+            if (omissionAnswers.Count > 0)
+            {
+                sb.AppendLine($"- **Omission Docked as Accuracy:** {omissionAnswers.Count} ({string.Join(", ", omissionAnswers.Select(a => $"Q{a.OrderIndex}"))}) — *the assessor docked Accuracy citing an omission, which scoring rules reserve for Completeness. An omission is not a defect of truthfulness.*");
             }
             if (refutedAnswers.Count > 0)
             {
@@ -820,6 +854,15 @@ public static class BenchmarkReportBuilder
             sb.AppendLine("### Assessor Agreement");
             sb.AppendLine($"- **Mode:** {agreementMode}{ModeGloss(agreementMode)}");
             sb.AppendLine($"- **Coverage:** {run.SecondOpinionGradedAnswerCount} of {answeredForAgreement} answered questions.");
+            sb.AppendLine($"- **Prompt Protocol:** {(run.SecondOpinionBlindUsed ? "Blind — the second assessor received the candidate's answer without seeing the first assessor's scores, comments, or critical error flag." : "Anchored — the second assessor saw the first assessor's verdict and comment.")}");
+            if (run.SecondOpinionBlindUsed)
+            {
+                sb.AppendLine("  - *Note: Assessor agreement is reported for a **blind** second reader. Blind and anchored agreement figures are not comparable.*");
+            }
+            else
+            {
+                sb.AppendLine("  - *Note: Anchored second opinions exhibit anchoring bias toward the first assessor's verdict and cannot be compared directly with blind second opinions.*");
+            }
             sb.AppendLine(meanAbsDelta.HasValue
                 ? $"- **Mean absolute difference:** {Inv(meanAbsDelta.Value, "F1")} points."
                 : "- **Mean absolute difference:** not recorded.");
@@ -1070,12 +1113,22 @@ public static class BenchmarkReportBuilder
         // investigation — an outcome indistinguishable from a model choosing to stop. On the
         // 2026-09-03 run Q7 spent 34 of 35 and Q2 23 of 25, and nothing said so.
         var pressured = answers
-            .Where(a => !a.ToolBudgetExhausted
+            .Where(a => !a.ToolBudgetExhausted && (a.ToolCallsBlocked ?? 0) == 0
                         && a.ToolCallBudgetUsed.HasValue && a.ToolCallBudgetUsed.Value > 0
                         && a.ToolCallCount.HasValue
-                        && a.ToolCallCount.Value >= a.ToolCallBudgetUsed.Value * BudgetPressureFraction)
+                        && a.ToolCallCount.Value >= a.ToolCallBudgetUsed.Value * BudgetPressureFraction
+                        && a.ToolCallCount.Value < a.ToolCallBudgetUsed.Value)
             .OrderBy(a => a.OrderIndex)
             .ToList();
+
+        var saturated = answers
+            .Where(a => !a.ToolBudgetExhausted && (a.ToolCallsBlocked ?? 0) == 0
+                        && a.ToolCallBudgetUsed.HasValue && a.ToolCallBudgetUsed.Value > 0
+                        && a.ToolCallCount.HasValue
+                        && a.ToolCallCount.Value >= a.ToolCallBudgetUsed.Value)
+            .OrderBy(a => a.OrderIndex)
+            .ToList();
+
         // Whether the cap cost anything is a different question from whether it was reached, and
         // the report used to answer only the second. On the 2026-09-03 run Q10 stopped one call
         // short of its budget and scored 60 — the worst answer in its band — and Q11 exhausted
@@ -1097,8 +1150,35 @@ public static class BenchmarkReportBuilder
                 ". *An answer this close to its cap may have stopped investigating because of the cap rather than because it was finished.*");
         }
 
+        if (saturated.Count > 0)
+        {
+            sb.AppendLine($"- **Budget Saturated:** {saturated.Count} question(s) reached the configured tool call budget without any calls blocked — " +
+                string.Join(", ", saturated.Select(a =>
+                    $"Q{a.OrderIndex} {a.ToolCallCount!.Value}/{a.ToolCallBudgetUsed!.Value}{BelowMeanMarker(a)}")) +
+                ". *These questions used every allocated tool call but were not cut off mid-call; they may benefit from a larger budget.*");
+        }
+
+        var exhausted = answers
+            .Where(a => a.ToolBudgetExhausted || (a.ToolCallsBlocked ?? 0) > 0)
+            .OrderBy(a => a.OrderIndex)
+            .ToList();
+
+        if (exhausted.Count > 0)
+        {
+            sb.AppendLine($"- **Budget Exhausted:** {exhausted.Count} question(s) exhausted their tool call budget — " +
+                string.Join(", ", exhausted.Select(a =>
+                {
+                    var (_, blocked) = ToolCallSplit(a);
+                    string blockedClause = blocked > 0
+                        ? $" ({blocked} calls refused by budget)"
+                        : string.Empty;
+                    return $"Q{a.OrderIndex} {a.ToolCallCount?.ToString() ?? "N/A"}/{a.ToolCallBudgetUsed?.ToString() ?? "N/A"}{blockedClause}{BelowMeanMarker(a)}";
+                })) +
+                ". *Further tool calls were refused; these questions were cut off mid-investigation.*");
+        }
+
         var budgetConstrainedBelowMean = answers
-            .Where(a => a.ToolBudgetExhausted || pressured.Contains(a))
+            .Where(a => a.ToolBudgetExhausted || (a.ToolCallsBlocked ?? 0) > 0 || saturated.Contains(a) || pressured.Contains(a))
             .Where(a => unweightedMean.HasValue && a.QualityScore.HasValue && a.QualityScore.Value < unweightedMean.Value)
             .OrderBy(a => a.OrderIndex)
             .ToList();
@@ -1106,7 +1186,7 @@ public static class BenchmarkReportBuilder
         {
             sb.AppendLine($"- **Budget/Quality Correlation:** {budgetConstrainedBelowMean.Count} budget-constrained question(s) scored below the run's unweighted mean of {unweightedMean!.Value} — " +
                 string.Join(", ", budgetConstrainedBelowMean.Select(a =>
-                    $"Q{a.OrderIndex} ({a.QualityScore!.Value}, {(a.ToolBudgetExhausted ? "budget exhausted" : "budget pressured")})")) +
+                    $"Q{a.OrderIndex} ({a.QualityScore!.Value}, {(a.ToolBudgetExhausted || (a.ToolCallsBlocked ?? 0) > 0 ? "budget exhausted" : saturated.Contains(a) ? "budget saturated" : "budget pressured")})")) +
                 ". *The cap is a candidate explanation, not a demonstrated one — raise `Benchmark:ToolCallBudget:{Band}` for the affected band and re-run to test it.*");
         }
 
@@ -1136,11 +1216,11 @@ public static class BenchmarkReportBuilder
             }
         }
 
-        var starved = answers.Where(a => a.ToolBudgetExhausted).OrderBy(a => a.OrderIndex).ToList();
+        var starved = answers.Where(a => a.ToolBudgetExhausted || (a.ToolCallsBlocked ?? 0) > 0).OrderBy(a => a.OrderIndex).ToList();
         if (starved.Count > 0)
         {
             sb.AppendLine();
-            sb.AppendLine("**Questions that reached their tool call budget:**");
+            sb.AppendLine("**Questions that exhausted their tool call budget:**");
             foreach (var a in starved)
             {
                 sb.AppendLine($"- **Question {a.OrderIndex}** ({a.Difficulty}, assessed {AssessedOf(a)}): {FormatToolBudgetLine(a)}{BelowMeanMarker(a)}");
@@ -1529,7 +1609,12 @@ public static class BenchmarkReportBuilder
             sb.AppendLine();
             foreach (var d in disputed)
             {
-                sb.AppendLine($"- **Question {d.OrderIndex}:** first {d.QualityScore ?? 0} / 100 (critical error {(d.CriticalError ? "yes" : "no")}, {d.AssessedByModelDisplayNameUsed}) vs second {d.SecondOpinionQualityScore!.Value} / 100 (critical error {(d.SecondOpinionCriticalError == true ? "yes" : "no")}, {d.SecondOpinionByModelDisplayNameUsed})");
+                string claimNote = string.Empty;
+                if (d.ClaimsSupportedCount.HasValue || d.ClaimsRefutedCount.HasValue || d.ClaimsIndeterminateCount.HasValue)
+                {
+                    claimNote = $" [Claims: {d.ClaimsSupportedCount ?? 0} supported, {d.ClaimsRefutedCount ?? 0} refuted, {d.ClaimsIndeterminateCount ?? 0} indeterminate]";
+                }
+                sb.AppendLine($"- **Question {d.OrderIndex}:** first {d.QualityScore ?? 0} / 100 (critical error {(d.CriticalError ? "yes" : "no")}, {d.AssessedByModelDisplayNameUsed}) vs second {d.SecondOpinionQualityScore!.Value} / 100 (critical error {(d.SecondOpinionCriticalError == true ? "yes" : "no")}, {d.SecondOpinionByModelDisplayNameUsed}){claimNote}");
             }
             sb.AppendLine();
         }
@@ -1556,7 +1641,7 @@ public static class BenchmarkReportBuilder
         // 8. Final Score
         sb.AppendLine("## 7. Final Indices");
         sb.AppendLine();
-        sb.AppendLine($"# **Intelligence Index: {run.QualityIndex?.ToString() ?? "N/A"} / 100**");
+        sb.AppendLine($"# **Intelligence Index: {run.QualityIndex?.ToString() ?? "N/A"}{seText} / 100**");
         // As in the summary, only printed when a critical-error cap actually moved it.
         if (rawQualityIndex.HasValue && rawQualityIndex.Value != (run.QualityIndex ?? 0))
         {

@@ -82,6 +82,7 @@ namespace Overseer.Services.Tools
                     ? TimeSpan.FromHours(1)
                     : TimeSpan.FromHours(4);
                 bool allowed;
+                int? remainingBudget = null;
                 lock (_rateLimitLock)
                 {
                     int count = _cache.GetOrCreate(rateLimitKey, entry =>
@@ -94,21 +95,27 @@ namespace Overseer.Services.Tools
                     allowed = count < sessionLimit;
                     if (allowed)
                     {
-                        _cache.Set(rateLimitKey, count + 1, new MemoryCacheEntryOptions
+                        int newCount = count + 1;
+                        _cache.Set(rateLimitKey, newCount, new MemoryCacheEntryOptions
                         {
                             Size = 1,
                             AbsoluteExpirationRelativeToNow = expiry
                         });
+                        remainingBudget = Math.Max(0, sessionLimit - newCount);
                     }
                 }
 
                 if (!allowed)
                 {
                     _logger.LogWarning("Rate limit exceeded for Session {SessionId} (Scope: {Scope})", callContext.SessionId, baseScope);
+                    string refusalMessage = callContext.ToolBudgetScopeId != null
+                        ? $"Tool call budget for this question is exhausted ({sessionLimit} calls). No further tool calls will run — answer now with what you have."
+                        : "Maximum tool calls per session exceeded.";
+
                     return new ToolResult
                     {
                         Success = false,
-                        ErrorMessage = "Maximum tool calls per session exceeded.",
+                        ErrorMessage = refusalMessage,
                         BudgetExhausted = true
                     };
                 }
@@ -121,7 +128,7 @@ namespace Overseer.Services.Tools
                 var handler = _handlers.FirstOrDefault(h => string.Equals(h.ToolName, toolName, StringComparison.OrdinalIgnoreCase));
                 if (handler == null)
                 {
-                    return new ToolResult { Success = false, ErrorMessage = $"Tool '{toolName}' is not registered or not available." };
+                    return new ToolResult { Success = false, ErrorMessage = $"Tool '{toolName}' is not registered or not available.", RemainingBudget = remainingBudget };
                 }
 
                 // 3. Throttling and Execution
@@ -155,7 +162,8 @@ namespace Overseer.Services.Tools
                                 {
                                     Success = false,
                                     ErrorMessage = "The server is at subagent capacity. Try the lookup directly, or retry shortly.",
-                                    TerminationStatus = "error"
+                                    TerminationStatus = "error",
+                                    RemainingBudget = remainingBudget
                                 };
                             }
                         }
@@ -175,7 +183,7 @@ namespace Overseer.Services.Tools
                 {
                     if (processSlot) _processThrottler.Release();
                     if (categorySlot) categoryThrottler?.Release();
-                    return new ToolResult { Success = false, ErrorMessage = "Tool execution was canceled (request stopped)." };
+                    return new ToolResult { Success = false, ErrorMessage = "Tool execution was canceled (request stopped).", RemainingBudget = remainingBudget };
                 }
                 finally
                 {
@@ -278,6 +286,7 @@ namespace Overseer.Services.Tools
                 _logger.LogInformation("Tool Execution Audit - Session: {SessionId}, Tool: {ToolName}, Success: {Success}, Error: {Error}", 
                     callContext.SessionId, toolName, result.Success, result.ErrorMessage ?? "None");
 
+                result.RemainingBudget = remainingBudget;
                 return result;
             }
         }

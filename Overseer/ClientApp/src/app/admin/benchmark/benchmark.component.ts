@@ -124,10 +124,10 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   /**
    * BenchmarkAnswerFlags bits that are advisory only and must never be presented as a
    * failure: ReasoningBleed = 8, RepeatedFragments = 16, ContestedVerdict = 32,
-   * UnevidencedDeduction = 64, RefutedClaim = 128. Must track BenchmarkRunFinalizer.AdvisoryFlags on the
-   * server as the source of truth.
+   * UnevidencedDeduction = 64, RefutedClaim = 128, OmissionAsAccuracy = 256. Must track
+   * BenchmarkRunFinalizer.AdvisoryFlags on the server as the source of truth.
    */
-  private static readonly ADVISORY_FLAGS = 8 | 16 | 32 | 64 | 128;
+  private static readonly ADVISORY_FLAGS = 8 | 16 | 32 | 64 | 128 | 256;
 
   /** The same advisory members by name, as they arrive in answerFlagNames. */
   private static readonly ADVISORY_FLAG_NAMES: readonly string[] = [
@@ -135,7 +135,8 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     'RepeatedFragments',
     'ContestedVerdict',
     'UnevidencedDeduction',
-    'RefutedClaim'
+    'RefutedClaim',
+    'OmissionAsAccuracy'
   ];
 
   // Suites
@@ -160,6 +161,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     secondOpinionQualityThreshold: 50,
     secondOpinionMode: BenchmarkSecondOpinionMode.Flagged,
     secondOpinionOutlierDeltaPoints: 25,
+    secondOpinionBlind: true,
     speedTargetMs: 15000,
     speedDecayK: 20.0,
     speedDifficultyScaling: 1.0,
@@ -819,6 +821,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       secondOpinionQualityThreshold: 50,
       secondOpinionMode: BenchmarkSecondOpinionMode.Flagged,
       secondOpinionOutlierDeltaPoints: 25,
+      secondOpinionBlind: true,
       speedTargetMs: 15000,
       speedDecayK: 20.0,
       speedDifficultyScaling: 1.0,
@@ -842,6 +845,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       secondOpinionQualityThreshold: profile.secondOpinionQualityThreshold ?? 50,
       secondOpinionMode: profile.secondOpinionMode ?? BenchmarkSecondOpinionMode.Flagged,
       secondOpinionOutlierDeltaPoints: profile.secondOpinionOutlierDeltaPoints ?? 25,
+      secondOpinionBlind: profile.secondOpinionBlind ?? true,
       speedTargetMs: profile.speedTargetMs,
       speedDecayK: profile.speedDecayK,
       speedDifficultyScaling: profile.speedDifficultyScaling,
@@ -2085,7 +2089,8 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
    * Calls the budget refused, parsed from the tool summary the executor writes. `toolCallCount`
    * counts attempts, so printing it against the budget alone produced lines like "27 of 25".
    */
-  private blockedToolCallsOf(answer: BenchmarkRunAnswerDto): number {
+  blockedToolCallsOf(answer: BenchmarkRunAnswerDto): number {
+    if (answer.toolCallsBlocked != null) return answer.toolCallsBlocked;
     const match = /\((\d+)\s+blocked by budget\)/i.exec(answer.toolCallSummary ?? '');
     if (!match) return 0;
     const parsed = Number(match[1]);
@@ -3037,6 +3042,43 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       .join(', ');
   }
 
+  get indexConfidenceLabel(): string {
+    const se = this.selectedRunDetail?.qualityIndexStandardError;
+    if (se == null || se <= 0) return '';
+    return `± ${Math.round(1.96 * se)}`;
+  }
+
+  get secondOpinionBlindLabel(): string {
+    return this.selectedRunDetail?.secondOpinionBlindUsed ? 'blind' : 'anchored';
+  }
+
+  get disputeVerificationLabel(): string {
+    const disputed = (this.selectedRunDetail?.answers ?? [])
+      .filter(a => a.secondOpinionDisagreed);
+    const verified = disputed.filter(a =>
+      a.claimsSupportedCount != null || a.claimsRefutedCount != null || a.claimsIndeterminateCount != null
+    );
+    if (verified.length === 0) return '';
+    const totalSupported = verified.reduce((sum, a) => sum + (a.claimsSupportedCount ?? 0), 0);
+    const totalRefuted = verified.reduce((sum, a) => sum + (a.claimsRefutedCount ?? 0), 0);
+    const totalIndeterminate = verified.reduce((sum, a) => sum + (a.claimsIndeterminateCount ?? 0), 0);
+    if (verified.length === 1) {
+      return `Claim verification for Q${verified[0].orderIndex}: ${totalSupported} supported, ${totalRefuted} refuted, ${totalIndeterminate} indeterminate.`;
+    }
+    return `Claim verification for disputed answer(s): ${totalSupported} supported, ${totalRefuted} refuted, ${totalIndeterminate} indeterminate.`;
+  }
+
+  get omissionAsAccuracyAnswerCount(): number {
+    return this.selectedRunDetail?.omissionAsAccuracyAnswerCount ?? 0;
+  }
+
+  get omissionAsAccuracyQuestionNumbers(): string {
+    return (this.selectedRunDetail?.answers ?? [])
+      .filter(a => (a.answerFlagNames ?? []).includes('OmissionAsAccuracy'))
+      .map(a => a.orderIndex)
+      .join(', ');
+  }
+
   get unevidencedDeductionAnswerCount(): number {
     return this.selectedRunDetail?.unevidencedDeductionAnswerCount ?? 0;
   }
@@ -3133,8 +3175,10 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   secondOpinionTriggerLabel(trigger: string | null | undefined): string {
     switch (trigger) {
       case 'CriticalError': return 'critical error';
+      case 'RefutedClaim': return 'refuted claim';
       case 'ContestedVerdict': return 'contested verdict';
       case 'UnevidencedDeduction': return 'unevidenced deduction';
+      case 'OmissionAsAccuracy': return 'omission docked as accuracy';
       case 'UnverifiedClaims': return 'unverifiable claims';
       case 'BelowThreshold': return 'below profile threshold';
       case 'Outlier': return 'outlier below run median';

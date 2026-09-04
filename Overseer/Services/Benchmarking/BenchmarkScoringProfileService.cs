@@ -1,4 +1,4 @@
-﻿namespace Overseer.Services.Benchmarking;
+namespace Overseer.Services.Benchmarking;
 
 using System;
 using System.Collections.Generic;
@@ -153,6 +153,7 @@ public class BenchmarkScoringProfileService
         existing.SecondOpinionQualityThreshold = profile.SecondOpinionQualityThreshold;
         existing.SecondOpinionMode = profile.SecondOpinionMode;
         existing.SecondOpinionOutlierDeltaPoints = profile.SecondOpinionOutlierDeltaPoints;
+        existing.SecondOpinionBlind = profile.SecondOpinionBlind;
         existing.SpeedTargetMs = profile.SpeedTargetMs;
         existing.SpeedDecayK = profile.SpeedDecayK;
         existing.SpeedDifficultyScaling = profile.SpeedDifficultyScaling;
@@ -336,6 +337,7 @@ public class BenchmarkScoringProfileService
                 ? (BenchmarkSecondOpinionMode)profile.SecondOpinionMode
                 : BenchmarkSecondOpinionMode.Flagged,
             SecondOpinionOutlierDeltaPoints = profile.SecondOpinionOutlierDeltaPoints,
+            SecondOpinionBlind = profile.SecondOpinionBlind,
             SpeedTargetMs = profile.SpeedTargetMs,
             SpeedDecayK = profile.SpeedDecayK,
             SpeedDifficultyScaling = profile.SpeedDifficultyScaling
@@ -370,6 +372,7 @@ public class BenchmarkScoringProfileService
             // silently double every future run's assessor spend. The editor recommends All.
             SecondOpinionMode = (int)BenchmarkSecondOpinionMode.Flagged,
             SecondOpinionOutlierDeltaPoints = 25,
+            SecondOpinionBlind = true,
             // Recalibrated: the old 5000 ms / k=25 pair drove the speed score to its floor at
             // roughly 78 s, tying together every slower answer on an agentic run. See
             // BenchmarkScoringConstants for the two invariants these satisfy. Existing databases

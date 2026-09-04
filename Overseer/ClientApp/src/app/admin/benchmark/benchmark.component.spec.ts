@@ -3067,4 +3067,167 @@ describe('AdminBenchmarkComponent', () => {
       expect(text).not.toContain('second-opinion call failed');
     });
   });
+
+  describe('Harness Version 11 fidelity features', () => {
+    it('should compute indexConfidenceLabel correctly from qualityIndexStandardError', () => {
+      component.selectedRunDetail = {
+        id: 1,
+        qualityIndexStandardError: 3.06
+      } as any;
+      expect(component.indexConfidenceLabel).toBe('± 6');
+
+      component.selectedRunDetail = {
+        id: 1,
+        qualityIndexStandardError: null
+      } as any;
+      expect(component.indexConfidenceLabel).toBe('');
+
+      component.selectedRunDetail = {
+        id: 1,
+        qualityIndexStandardError: 0
+      } as any;
+      expect(component.indexConfidenceLabel).toBe('');
+    });
+
+    it('should compute secondOpinionBlindLabel correctly', () => {
+      component.selectedRunDetail = {
+        id: 1,
+        secondOpinionBlindUsed: true
+      } as any;
+      expect(component.secondOpinionBlindLabel).toBe('blind');
+
+      component.selectedRunDetail = {
+        id: 1,
+        secondOpinionBlindUsed: false
+      } as any;
+      expect(component.secondOpinionBlindLabel).toBe('anchored');
+    });
+
+    it('should compute disputeVerificationLabel for single and multiple disputed answers with verification', () => {
+      // Single disputed answer with verified claims
+      component.selectedRunDetail = {
+        id: 1,
+        answers: [
+          {
+            orderIndex: 1,
+            secondOpinionDisagreed: true,
+            claimsSupportedCount: 3,
+            claimsRefutedCount: 0,
+            claimsIndeterminateCount: 0
+          } as any,
+          {
+            orderIndex: 2,
+            secondOpinionDisagreed: false
+          } as any
+        ]
+      } as any;
+
+      expect(component.disputeVerificationLabel).toBe('Claim verification for Q1: 3 supported, 0 refuted, 0 indeterminate.');
+
+      // Multiple disputed answers with verified claims
+      component.selectedRunDetail = {
+        id: 1,
+        answers: [
+          {
+            orderIndex: 1,
+            secondOpinionDisagreed: true,
+            claimsSupportedCount: 2,
+            claimsRefutedCount: 1,
+            claimsIndeterminateCount: 0
+          } as any,
+          {
+            orderIndex: 3,
+            secondOpinionDisagreed: true,
+            claimsSupportedCount: 1,
+            claimsRefutedCount: 0,
+            claimsIndeterminateCount: 1
+          } as any
+        ]
+      } as any;
+
+      expect(component.disputeVerificationLabel).toBe('Claim verification for disputed answer(s): 3 supported, 1 refuted, 1 indeterminate.');
+
+      // Disputed answer with no claim verification
+      component.selectedRunDetail = {
+        id: 1,
+        answers: [
+          {
+            orderIndex: 1,
+            secondOpinionDisagreed: true
+          } as any
+        ]
+      } as any;
+
+      expect(component.disputeVerificationLabel).toBe('');
+    });
+
+    it('should compute omissionAsAccuracyAnswerCount and omissionAsAccuracyQuestionNumbers', () => {
+      component.selectedRunDetail = {
+        id: 1,
+        omissionAsAccuracyAnswerCount: 2,
+        answers: [
+          { orderIndex: 1, answerFlagNames: ['OmissionAsAccuracy'] } as any,
+          { orderIndex: 4, answerFlagNames: ['UnevidencedDeduction'] } as any,
+          { orderIndex: 10, answerFlagNames: ['OmissionAsAccuracy', 'RefutedClaim'] } as any
+        ]
+      } as any;
+
+      expect(component.omissionAsAccuracyAnswerCount).toBe(2);
+      expect(component.omissionAsAccuracyQuestionNumbers).toBe('1, 10');
+    });
+
+    it('should map secondOpinionTriggerLabel for RefutedClaim and OmissionAsAccuracy', () => {
+      expect(component.secondOpinionTriggerLabel('RefutedClaim')).toBe('refuted claim');
+      expect(component.secondOpinionTriggerLabel('OmissionAsAccuracy')).toBe('omission docked as accuracy');
+    });
+
+    it('should render 95% CI score note under Intelligence Index tile and blind label in Assessor Agreement', () => {
+      component.selectedRunDetail = {
+        id: 1,
+        status: 'Completed',
+        suiteName: 'Suite',
+        qualityIndex: 91,
+        qualityIndexStandardError: 3.06,
+        secondOpinionGradedAnswerCount: 2,
+        secondOpinionBlindUsed: true,
+        answers: []
+      } as any;
+
+      fixture.detectChanges();
+
+      const el: HTMLElement = fixture.nativeElement;
+      const text = el.textContent || '';
+      expect(text).toContain('± 6 (95%)');
+      expect(text).toContain('blind');
+    });
+
+    it('should render omission-as-accuracy clause and dispute claim verification in Run Integrity Notice', () => {
+      component.selectedRunDetail = {
+        id: 1,
+        status: 'Completed',
+        suiteName: 'Suite',
+        omissionAsAccuracyAnswerCount: 1,
+        answers: [
+          {
+            orderIndex: 1,
+            status: 'Ok',
+            secondOpinionDisagreed: true,
+            claimsSupportedCount: 3,
+            claimsRefutedCount: 0,
+            claimsIndeterminateCount: 0,
+            answerFlagNames: ['OmissionAsAccuracy']
+          } as any
+        ]
+      } as any;
+
+      fixture.detectChanges();
+
+      const el: HTMLElement = fixture.nativeElement;
+      const text = el.textContent || '';
+      expect(text).toContain('Run Integrity Notice');
+      expect(text).toContain('1 answer(s) carry an omission docked as accuracy');
+      expect(text).toContain('(question(s) 1)');
+      expect(text).toContain('Claim verification for Q1: 3 supported, 0 refuted, 0 indeterminate.');
+    });
+  });
 });

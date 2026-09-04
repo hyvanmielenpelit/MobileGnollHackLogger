@@ -104,8 +104,14 @@ public static class BenchmarkAssessmentPrompt
     ///     UnevidencedDeduction, routing them to a second reader; claim verifier requests place
     ///     the prompt in the user turn; harness stage failures are surfaced in the report and notice;
     ///     and mid-run progress statistics update live.
+    /// v11: grader fidelity: an omission is never an accuracy deduction, enforced by
+    ///     IsOmissionGroundedAccuracyDeduction and the prompt rule; blind second opinions by default;
+    ///     second-opinion prompt framing cleaned of anchoring and false severity language; claim
+    ///     verification runs per-answer ahead of the second-opinion trigger cascade and feeds into the
+    ///     prompt; tool budget is scope-aware and warning is surfaced to candidate; standard error
+    ///     recorded for Intelligence Index.
     /// </summary>
-    public const string HarnessVersion = "10";
+    public const string HarnessVersion = "11";
 
     public static string BuildPerQuestionPrompt(
         string suiteName,
@@ -202,6 +208,7 @@ public static class BenchmarkAssessmentPrompt
         sb.AppendLine("### 6. EVIDENCE FOR DEDUCTIONS");
         sb.AppendLine("For accuracy and completeness, state what your deduction rests on:");
         sb.AppendLine("- `accuracyEvidence` / `completenessEvidence`: name the rubric point the answer failed, quoting the rubric where you can.");
+        sb.AppendLine("- **An omission is NEVER an ACCURACY deduction**, however material. Missing information is graded through COMPLETENESS, and charging it on both dimensions costs the answer 80% of the quality weight for one defect. An accuracy deduction must name something the answer **states** that is wrong. \"The answer gives X instead of Y\" and \"the answer fails to mention Y\" are completeness findings; \"the answer says X, and X is false\" is an accuracy finding. The harness checks this and routes a mismatch to a second reader.");
         sb.AppendLine("- If a deduction does not come from the rubric, say so explicitly, e.g. 'Not in rubric: from my own knowledge of the GnollHack source'.");
         sb.AppendLine("- A no-fault evidence string such as 'Matches rubric' may accompany **level 6 only**. If you award any level below 6, the evidence string MUST name specifically what kept it below — the rubric point, the claim, or the missing element. 'Matches rubric' beside level 4 asserts both that the answer was faultless and that it was not; the harness records that contradiction and routes the answer to a second reader.");
         sb.AppendLine("- Never invent a rubric point that is not present above.");
@@ -274,10 +281,10 @@ public static class BenchmarkAssessmentPrompt
     }
 
     /// <summary>
-    /// The second-opinion prompt: the same rubric, plus the first assessor's verdict, used when
-    /// the first flagged a critical error or scored the answer low. It deliberately does not ask
-    /// the second assessor to defer or to reconcile — an independent verdict is the only thing
-    /// worth having, and the harness compares the two rather than asking a model to agree.
+    /// The second-opinion prompt: the same rubric, used when an answer is selected for a second
+    /// verdict. Under blind mode (the default), no first score, critical error flag, or comment
+    /// is shown, and selection triggers are named neutrally. Under anchored mode (blind: false),
+    /// the first verdict is shown for reference.
     /// </summary>
     public static string BuildSecondOpinionPrompt(
         string suiteName,
@@ -296,7 +303,10 @@ public static class BenchmarkAssessmentPrompt
         int scrubbedArtifactCount = 0,
         int? toolCallBudget = null,
         string? boardName = null,
-        string? boardText = null)
+        string? boardText = null,
+        bool blind = true,
+        string? triggerLabel = null,
+        IReadOnlyList<BenchmarkClaimVerification>? claimVerifications = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine(BuildPerQuestionPrompt(
@@ -316,22 +326,77 @@ public static class BenchmarkAssessmentPrompt
             boardText));
         sb.AppendLine();
         sb.AppendLine("--- SECOND OPINION ---");
-        sb.AppendLine("Another assessor has already graded this answer, and its verdict was severe enough that the harness asked for an independent second reading. Grade the answer yourself against the rubric above.");
-        sb.AppendLine("Do NOT defer to the first verdict, and do NOT try to split the difference. If you reach the same conclusion, say so; if you do not, grade what you actually find. The harness records both verdicts and flags disagreement for a human.");
-        sb.AppendLine("The first verdict, for reference only:");
-        sb.AppendLine($"- Quality score: {firstQualityScore} / 100");
-        sb.AppendLine($"- Critical error: {(firstCriticalError ? "yes" : "no")}");
-        if (!string.IsNullOrWhiteSpace(firstComment))
+
+        if (blind)
         {
-            sb.AppendLine("- Comment: --- BEGIN FIRST VERDICT COMMENT ---");
-            sb.AppendLine(firstComment);
-            sb.AppendLine("--- END FIRST VERDICT COMMENT ---");
+            sb.AppendLine("Another assessor has already graded this answer independently. Grade the answer yourself against the rubric above; the harness compares the two verdicts.");
+            if (!string.IsNullOrWhiteSpace(triggerLabel) && !string.Equals(triggerLabel, "All", StringComparison.OrdinalIgnoreCase))
+            {
+                sb.AppendLine($"The harness selected this answer for a second reading because {GetTriggerDescription(triggerLabel)}");
+            }
+            sb.AppendLine("Do NOT assume any defect exists, and grade what you actually find. The harness records both verdicts and flags disagreement for a human.");
         }
+        else
+        {
+            sb.AppendLine("Another assessor has already graded this answer independently. Grade the answer yourself against the rubric above.");
+            if (!string.IsNullOrWhiteSpace(triggerLabel) && !string.Equals(triggerLabel, "All", StringComparison.OrdinalIgnoreCase))
+            {
+                sb.AppendLine($"The harness selected this answer for a second reading because {GetTriggerDescription(triggerLabel)}");
+            }
+            sb.AppendLine("Do NOT defer to the first verdict, and do NOT try to split the difference. If you reach the same conclusion, say so; if you do not, grade what you actually find. The harness records both verdicts and flags disagreement for a human.");
+            sb.AppendLine("The first verdict, for reference only:");
+            sb.AppendLine($"- Quality score: {firstQualityScore} / 100");
+            sb.AppendLine($"- Critical error: {(firstCriticalError ? "yes" : "no")}");
+            if (!string.IsNullOrWhiteSpace(firstComment))
+            {
+                sb.AppendLine("- Comment: --- BEGIN FIRST VERDICT COMMENT ---");
+                sb.AppendLine(firstComment);
+                sb.AppendLine("--- END FIRST VERDICT COMMENT ---");
+            }
+        }
+
+        if (claimVerifications != null && claimVerifications.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("--- FACT-CHECK VERIFICATION CONTEXT ---");
+            sb.AppendLine("The following claims from the candidate answer were evaluated by an automated claim verifier with read-only access to GnollHack source code and NetHackWiki.");
+            sb.AppendLine("This is factual reference context about the game world, NOT a verdict or an assessment score. Use it to inform your grading of the candidate's claims.");
+            sb.AppendLine();
+            foreach (var cv in claimVerifications)
+            {
+                sb.AppendLine($"- Claim: \"{cv.Claim}\"");
+                sb.AppendLine($"  Verdict: {cv.Verdict}");
+                if (!string.IsNullOrWhiteSpace(cv.Citation))
+                {
+                    sb.AppendLine($"  Citation: {cv.Citation}");
+                }
+                if (!string.IsNullOrWhiteSpace(cv.Basis))
+                {
+                    sb.AppendLine($"  Basis: {cv.Basis}");
+                }
+            }
+            sb.AppendLine("--- END FACT-CHECK VERIFICATION CONTEXT ---");
+        }
+
         sb.AppendLine();
         sb.AppendLine("Output the same JSON schema as above and nothing else.");
 
         return sb.ToString();
     }
+
+    private static string GetTriggerDescription(string triggerLabel) => triggerLabel switch
+    {
+        "CriticalError" => "the first assessor flagged a critical error.",
+        "ContestedVerdict" => "the first verdict described a fabrication while leaving the critical error flag false.",
+        "UnevidencedDeduction" => "the first verdict's stated evidence did not name a defect.",
+        "OmissionAsAccuracy" => "the first verdict docked accuracy citing an omission rather than a falsehood.",
+        "RefutedClaim" => "a stated claim was refuted by source/wiki verification.",
+        "UnverifiedClaims" => "the first verdict cited claims that could not be verified against the rubric.",
+        "BelowThreshold" => "the first verdict fell below the configured quality threshold.",
+        "Outlier" => "the first verdict scored significantly below the run median.",
+        "Manual" => "an operator requested an independent trial reading.",
+        _ => $"a trigger ({triggerLabel}) fired."
+    };
 
     public static string BuildPerQuestionPrompt(
         string suiteName,

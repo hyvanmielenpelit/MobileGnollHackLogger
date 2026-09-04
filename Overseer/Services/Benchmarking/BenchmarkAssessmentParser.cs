@@ -81,6 +81,14 @@ public class BenchmarkPerQuestionAssessmentResult
     /// </summary>
     [JsonIgnore]
     public bool UnevidencedDeduction { get; set; }
+
+    /// <summary>
+    /// The assessor docked accuracy to UnevidencedDeductionMaxLevel or below citing only an omission
+    /// with no assertion of falsehood. Advisory; see
+    /// <see cref="BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction"/>.
+    /// </summary>
+    [JsonIgnore]
+    public bool OmissionAsAccuracy { get; set; }
 }
 
 public class PerQuestionAssessmentParseResult
@@ -269,6 +277,9 @@ public static class BenchmarkAssessmentParser
                 || BenchmarkVerdictConsistency.IsUnverifiabilityGroundedDeduction(
                     Math.Clamp(accuracyLevel, 0, 6), accuracyEvidence, unverifiedClaims.Count);
 
+            bool omissionAsAccuracy = BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(
+                Math.Clamp(accuracyLevel, 0, 6), accuracyEvidence);
+
             var result = new BenchmarkPerQuestionAssessmentResult
             {
                 AccuracyLevel = Math.Clamp(accuracyLevel, 0, 6),
@@ -284,7 +295,8 @@ public static class BenchmarkAssessmentParser
                 CriticalErrorDemoted = demoted,
                 UnverifiedClaimsDropped = unverifiedClaimsDropped,
                 ContestedVerdict = contestedVerdict,
-                UnevidencedDeduction = unevidencedDeduction
+                UnevidencedDeduction = unevidencedDeduction,
+                OmissionAsAccuracy = omissionAsAccuracy
             };
 
             return new PerQuestionAssessmentParseResult

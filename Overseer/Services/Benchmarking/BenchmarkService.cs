@@ -196,6 +196,8 @@ public class BenchmarkService
             // them. A per-run override set in the start dialog is already on the run and wins.
             // Without a second-opinion assessor the mode is inert, so it is recorded as Off
             // rather than as a setting that looks like it did something.
+            run.SecondOpinionBlindUsed = scoringConstants.SecondOpinionBlind;
+
             if (run.SecondOpinionModeUsed == 0 && run.SecondOpinionAssessorModelConfigurationId.HasValue)
             {
                 run.SecondOpinionModeUsed = (int)scoringConstants.SecondOpinionMode;
@@ -842,6 +844,7 @@ public class BenchmarkService
             CacheCreationInputTokens = runResult.CacheCreationTokens,
             ModelCallCount = runResult.ModelCallCount,
             ToolCallCount = runResult.ToolCallCount,
+            ToolCallsBlocked = runResult.ToolCallsBlocked,
             ToolBudgetExhausted = runResult.ToolBudgetExhausted,
             ToolCallBudgetUsed = toolCallBudget,
             ToolTimeMs = runResult.ToolTimeMs,
@@ -1010,6 +1013,7 @@ public class BenchmarkService
         answer.CacheCreationInputTokens = runResult.CacheCreationTokens;
         answer.ModelCallCount = runResult.ModelCallCount;
         answer.ToolCallCount = runResult.ToolCallCount;
+        answer.ToolCallsBlocked = runResult.ToolCallsBlocked;
         answer.ToolBudgetExhausted = runResult.ToolBudgetExhausted;
         answer.ToolCallBudgetUsed = toolCallBudget;
         answer.ToolTimeMs = runResult.ToolTimeMs;
@@ -1198,6 +1202,15 @@ public class BenchmarkService
             {
                 flags &= ~BenchmarkAnswerFlags.UnevidencedDeduction;
             }
+
+            if (res.OmissionAsAccuracy)
+            {
+                flags |= BenchmarkAnswerFlags.OmissionAsAccuracy;
+            }
+            else
+            {
+                flags &= ~BenchmarkAnswerFlags.OmissionAsAccuracy;
+            }
             answer.AnswerFlags = (int)flags;
 
             if (res.CriticalErrorDemoted)
@@ -1225,6 +1238,13 @@ public class BenchmarkService
             {
                 _logger.LogInformation(
                     "Benchmark run {RunId} answer {OrderIndex}: assessor docked a level while evidence names no defect; recorded as an unevidenced deduction.",
+                    run.Id, answer.OrderIndex);
+            }
+
+            if (res.OmissionAsAccuracy)
+            {
+                _logger.LogInformation(
+                    "Benchmark run {RunId} answer {OrderIndex}: assessor docked accuracy citing an omission; recorded as omission as accuracy.",
                     run.Id, answer.OrderIndex);
             }
 
@@ -1279,6 +1299,33 @@ public class BenchmarkService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to record usage for per-question assessor call.");
+        }
+
+        if (run.ClaimVerifierModelConfigurationId.HasValue && (answer.UnverifiedClaimCount ?? 0) > 0)
+        {
+            try
+            {
+                var (verifierConfig, verifierApiKey, resolveError) = await ResolveAssessorAsync(
+                    db, run, run.ClaimVerifierModelConfigurationId.Value, cancellationToken);
+                if (verifierConfig != null && verifierApiKey != null)
+                {
+                    await VerifyAnswerClaimsAsync(
+                        db, configService, run, answer, verifierConfig, verifierApiKey, expectedPoints, cancellationToken);
+                }
+                else
+                {
+                    _logger.LogWarning(
+                        "Benchmark run {RunId} answer {OrderIndex}: claim verifier configuration unusable ({Error}).",
+                        run.Id, answer.OrderIndex, resolveError);
+                }
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Benchmark run {RunId} answer {OrderIndex}: per-answer claim verification threw.",
+                    run.Id, answer.OrderIndex);
+            }
         }
 
         await MaybeRunSecondOpinionAsync(
@@ -1389,6 +1436,13 @@ public class BenchmarkService
 
         if (answer.CriticalError) return SecondOpinionTriggers.CriticalError;
 
+        // Finding F3: Claim verification runs BEFORE this cascade now. If any claim was refuted,
+        // that is hard evidence of an accuracy defect and takes precedence over soft triggers.
+        if ((((BenchmarkAnswerFlags)answer.AnswerFlags) & BenchmarkAnswerFlags.RefutedClaim) != 0)
+        {
+            return SecondOpinionTriggers.RefutedClaim;
+        }
+
         // The Q10 shape: the assessor wrote "hallucinates 'adamantium'" and left criticalError
         // false, so no existing trigger saw it and the synthesis reported the hallucination the
         // per-question verdict had declined to flag.
@@ -1405,11 +1459,22 @@ public class BenchmarkService
             return SecondOpinionTriggers.UnevidencedDeduction;
         }
 
-        // The Q1 shape: claims the assessor could not adjudicate *and* an accuracy level it
-        // nevertheless docked. Either alone is unremarkable — an assessor may legitimately report
-        // an unverifiable claim and still award full accuracy — but together they suggest the
-        // deduction rested on the thing scoring method v6 forbids deducting for.
-        if ((answer.UnverifiedClaimCount ?? 0) > 0 && (answer.AccuracyLevel ?? 6) <= UnverifiedClaimsAccuracyMaxLevel)
+        // Finding F1: Grader docked accuracy citing an omission. The second assessor gets a neutral prompt.
+        if ((((BenchmarkAnswerFlags)answer.AnswerFlags) & BenchmarkAnswerFlags.OmissionAsAccuracy) != 0)
+        {
+            return SecondOpinionTriggers.OmissionAsAccuracy;
+        }
+
+        // Finding F3: UnverifiedClaims trigger condition adjusted.
+        // If all unverified claims were positively supported, do NOT fire this trigger.
+        bool allClaimsSupported = answer.ClaimsSupportedCount.HasValue
+            && answer.ClaimsSupportedCount.Value == (answer.UnverifiedClaimCount ?? 0)
+            && (answer.ClaimsRefutedCount ?? 0) == 0
+            && (answer.ClaimsIndeterminateCount ?? 0) == 0;
+
+        if (!allClaimsSupported
+            && (answer.UnverifiedClaimCount ?? 0) > 0
+            && (answer.AccuracyLevel ?? 6) <= UnverifiedClaimsAccuracyMaxLevel)
         {
             return SecondOpinionTriggers.UnverifiedClaims;
         }
@@ -1549,7 +1614,9 @@ public class BenchmarkService
         var candidateAnswers = await db.BenchmarkRunAnswers
             .Where(a => a.BenchmarkRunId == run.Id &&
                         a.Status == BenchmarkAnswerStatus.Ok &&
-                        (a.UnverifiedClaimCount ?? 0) > 0)
+                        (a.UnverifiedClaimCount ?? 0) > 0 &&
+                        a.ClaimVerificationJson == null &&
+                        a.ClaimVerificationError == null)
             .OrderBy(a => a.OrderIndex)
             .ToListAsync(cancellationToken);
 
@@ -1559,6 +1626,58 @@ public class BenchmarkService
             "Benchmark run {RunId}: running claim verification for {Count} answer(s) with unverified claims using {Verifier}.",
             run.Id, candidateAnswers.Count, verifierConfig.DisplayName ?? verifierConfig.ModelId);
 
+        var suiteQuestions = await db.BenchmarkQuestions
+            .Where(q => q.BenchmarkSuiteId == run.BenchmarkSuiteId)
+            .ToDictionaryAsync(q => q.OrderIndex, q => q.ExpectedPoints, cancellationToken);
+
+        foreach (var answer in candidateAnswers)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            suiteQuestions.TryGetValue(answer.OrderIndex, out var expectedPoints);
+
+            await VerifyAnswerClaimsAsync(
+                db, configService, run, answer, verifierConfig, verifierApiKey, expectedPoints, cancellationToken);
+        }
+    }
+
+    internal async Task VerifyAnswerClaimsAsync(
+        ApplicationDbContext db,
+        SystemAiConfigService configService,
+        BenchmarkRun run,
+        BenchmarkRunAnswer answer,
+        SystemAiApiConfiguration verifierConfig,
+        string verifierApiKey,
+        string? expectedPoints,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(answer.ClaimVerificationJson) || !string.IsNullOrWhiteSpace(answer.ClaimVerificationError))
+        {
+            return;
+        }
+
+        List<string>? claims = null;
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(answer.UnverifiedClaimsJson))
+            {
+                claims = JsonSerializer.Deserialize<List<string>>(answer.UnverifiedClaimsJson);
+            }
+        }
+        catch (JsonException)
+        {
+            claims = null;
+        }
+
+        if (claims == null || claims.Count == 0) return;
+
+        if (expectedPoints == null)
+        {
+            expectedPoints = await db.BenchmarkQuestions
+                .Where(q => q.BenchmarkSuiteId == run.BenchmarkSuiteId && q.OrderIndex == answer.OrderIndex)
+                .Select(q => q.ExpectedPoints)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
         var allowedTools = _configuration.GetSection("Benchmark:AllowedTools").Get<List<string>>() ?? _defaultAllowedTools;
         int toolCallBudget = _configuration.GetValue<int>("Benchmark:ClaimVerification:ToolCallBudget", 15);
         int toolIterations = _configuration.GetValue<int>("Benchmark:ClaimVerification:ToolIterations", 8);
@@ -1567,142 +1686,133 @@ public class BenchmarkService
         int timeoutSeconds = _configuration.GetValue<int>("Benchmark:ClaimVerification:TimeoutSeconds", 300);
         int maxResultLength = _configuration.GetValue<int>("Benchmark:MaxResultLength", 10000);
 
-        var suiteQuestions = await db.BenchmarkQuestions
-            .Where(q => q.BenchmarkSuiteId == run.BenchmarkSuiteId)
-            .ToDictionaryAsync(q => q.OrderIndex, q => q.ExpectedPoints, cancellationToken);
+        string prompt = BenchmarkClaimVerificationPrompt.BuildPrompt(
+            run.SuiteName,
+            answer.OrderIndex,
+            answer.QuestionText,
+            expectedPoints,
+            claims,
+            allowedTools,
+            toolCallBudget);
 
-        foreach (var answer in candidateAnswers)
+        var runRequest = BuildClaimVerificationRequest(
+            verifierConfig,
+            verifierApiKey,
+            prompt,
+            allowedTools,
+            maxOutputTokens,
+            toolIterations,
+            totalModelCalls,
+            toolCallBudget,
+            maxResultLength,
+            run.Id,
+            answer.OrderIndex,
+            run.StartedByUserId);
+
+        using var verifyCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        verifyCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+
+        var runResult = new AgentRunResult();
+        var sw = Stopwatch.StartNew();
+        string? terminalError = null;
+
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            List<string>? claims = null;
-            try
+            await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, runResult, verifyCts.Token))
             {
-                if (!string.IsNullOrWhiteSpace(answer.UnverifiedClaimsJson))
+                if (evt.Type == "error")
                 {
-                    claims = JsonSerializer.Deserialize<List<string>>(answer.UnverifiedClaimsJson);
+                    terminalError = evt.Data?.ToString();
                 }
             }
-            catch (JsonException)
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && verifyCts.IsCancellationRequested)
+        {
+            terminalError = $"Claim verification timeout exceeded ({timeoutSeconds} s).";
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            terminalError = ex.Message;
+        }
+        sw.Stop();
+
+        int inputTokens;
+        int outputTokens;
+        if (!string.IsNullOrWhiteSpace(terminalError))
+        {
+            inputTokens = runResult.TotalPromptTokens;
+            outputTokens = runResult.OutputTokens;
+        }
+        else
+        {
+            inputTokens = runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : runResult.EstimatedInputTokens;
+            outputTokens = runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens;
+        }
+        int toolCallsCount = runResult.ToolCalls.Count(tc => tc.Status == "completed");
+
+        answer.ClaimVerificationInputTokens = inputTokens;
+        answer.ClaimVerificationOutputTokens = outputTokens;
+        answer.ClaimVerificationDurationMs = sw.ElapsedMilliseconds;
+        answer.ClaimVerificationToolCallCount = toolCallsCount;
+        answer.ClaimVerificationByModelDisplayNameUsed = verifierConfig.DisplayName ?? verifierConfig.ModelId;
+
+        if (!string.IsNullOrWhiteSpace(terminalError))
+        {
+            answer.ClaimVerificationError = BenchmarkAssessmentFailure.Truncate(terminalError, BenchmarkAssessmentFailure.MaxClaimVerificationErrorLength);
+            _logger.LogWarning(
+                "Benchmark run {RunId} answer {OrderIndex}: claim verification failed ({Error}).",
+                run.Id, answer.OrderIndex, terminalError);
+        }
+        else
+        {
+            var parseResult = BenchmarkClaimVerificationParser.Parse(runResult.FinalText, claims);
+            if (!parseResult.Success)
             {
-                claims = null;
-            }
-
-            if (claims == null || claims.Count == 0) continue;
-
-            suiteQuestions.TryGetValue(answer.OrderIndex, out var expectedPoints);
-
-            string prompt = BenchmarkClaimVerificationPrompt.BuildPrompt(
-                run.SuiteName,
-                answer.OrderIndex,
-                answer.QuestionText,
-                expectedPoints,
-                claims,
-                allowedTools,
-                toolCallBudget);
-
-            var runRequest = BuildClaimVerificationRequest(
-                verifierConfig,
-                verifierApiKey,
-                prompt,
-                allowedTools,
-                maxOutputTokens,
-                toolIterations,
-                totalModelCalls,
-                toolCallBudget,
-                maxResultLength,
-                run.Id,
-                answer.OrderIndex,
-                run.StartedByUserId);
-
-            using var verifyCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            verifyCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
-
-            var runResult = new AgentRunResult();
-            var sw = Stopwatch.StartNew();
-            string? terminalError = null;
-
-            try
-            {
-                await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, runResult, verifyCts.Token))
-                {
-                    if (evt.Type == "error")
-                    {
-                        terminalError = evt.Data?.ToString();
-                    }
-                }
-            }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && verifyCts.IsCancellationRequested)
-            {
-                terminalError = $"Claim verification timeout exceeded ({timeoutSeconds} s).";
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                terminalError = ex.Message;
-            }
-            sw.Stop();
-
-            int inputTokens;
-            int outputTokens;
-            if (!string.IsNullOrWhiteSpace(terminalError))
-            {
-                inputTokens = runResult.TotalPromptTokens;
-                outputTokens = runResult.OutputTokens;
-            }
-            else
-            {
-                inputTokens = runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : runResult.EstimatedInputTokens;
-                outputTokens = runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens;
-            }
-            int toolCallsCount = runResult.ToolCalls.Count(tc => tc.Status == "completed");
-
-            answer.ClaimVerificationInputTokens = inputTokens;
-            answer.ClaimVerificationOutputTokens = outputTokens;
-            answer.ClaimVerificationDurationMs = sw.ElapsedMilliseconds;
-            answer.ClaimVerificationToolCallCount = toolCallsCount;
-            answer.ClaimVerificationByModelDisplayNameUsed = verifierConfig.DisplayName ?? verifierConfig.ModelId;
-
-            if (!string.IsNullOrWhiteSpace(terminalError))
-            {
-                answer.ClaimVerificationError = BenchmarkAssessmentFailure.Truncate(terminalError, BenchmarkAssessmentFailure.MaxClaimVerificationErrorLength);
+                answer.ClaimVerificationError = BenchmarkAssessmentFailure.Truncate(parseResult.ErrorMessage ?? "Claim verification parse failed.", BenchmarkAssessmentFailure.MaxClaimVerificationErrorLength);
                 _logger.LogWarning(
-                    "Benchmark run {RunId} answer {OrderIndex}: claim verification failed ({Error}).",
-                    run.Id, answer.OrderIndex, terminalError);
+                    "Benchmark run {RunId} answer {OrderIndex}: claim verification parse failed ({Error}).",
+                    run.Id, answer.OrderIndex, parseResult.ErrorMessage);
             }
             else
             {
-                var parseResult = BenchmarkClaimVerificationParser.Parse(runResult.FinalText, claims);
-                if (!parseResult.Success)
+                answer.ClaimVerificationError = null;
+                answer.ClaimsSupportedCount = parseResult.ClaimsSupportedCount;
+                answer.ClaimsRefutedCount = parseResult.ClaimsRefutedCount;
+                answer.ClaimsIndeterminateCount = parseResult.ClaimsIndeterminateCount;
+                answer.ClaimVerificationJson = JsonSerializer.Serialize(parseResult.Verifications);
+
+                if (parseResult.ClaimsRefutedCount > 0)
                 {
-                    answer.ClaimVerificationError = BenchmarkAssessmentFailure.Truncate(parseResult.ErrorMessage ?? "Claim verification parse failed.", BenchmarkAssessmentFailure.MaxClaimVerificationErrorLength);
-                    _logger.LogWarning(
-                        "Benchmark run {RunId} answer {OrderIndex}: claim verification parse failed ({Error}).",
-                        run.Id, answer.OrderIndex, parseResult.ErrorMessage);
+                    answer.AnswerFlags |= (int)BenchmarkAnswerFlags.RefutedClaim;
                 }
                 else
                 {
-                    answer.ClaimVerificationError = null;
-                    answer.ClaimsSupportedCount = parseResult.ClaimsSupportedCount;
-                    answer.ClaimsRefutedCount = parseResult.ClaimsRefutedCount;
-                    answer.ClaimsIndeterminateCount = parseResult.ClaimsIndeterminateCount;
-                    answer.ClaimVerificationJson = JsonSerializer.Serialize(parseResult.Verifications);
-
-                    if (parseResult.ClaimsRefutedCount > 0)
-                    {
-                        answer.AnswerFlags |= (int)BenchmarkAnswerFlags.RefutedClaim;
-                    }
-                    else
-                    {
-                        answer.AnswerFlags &= ~(int)BenchmarkAnswerFlags.RefutedClaim;
-                    }
+                    answer.AnswerFlags &= ~(int)BenchmarkAnswerFlags.RefutedClaim;
                 }
             }
+        }
 
-            await db.SaveChangesAsync(CancellationToken.None);
+        await db.SaveChangesAsync(CancellationToken.None);
+
+        try
+        {
+            await configService.RecordUsageAsync(
+                verifierConfig.Id,
+                run.StartedByUserId,
+                inputTokens,
+                outputTokens,
+                roleContext: 4,
+                cacheReadTokens: runResult.CacheReadTokens,
+                cacheCreationTokens: runResult.CacheCreationTokens,
+                totalDurationMs: (int)sw.ElapsedMilliseconds);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to record usage for claim verification call.");
         }
     }
 
@@ -2361,8 +2471,10 @@ public class BenchmarkService
     internal static class SecondOpinionTriggers
     {
         public const string CriticalError = "CriticalError";
+        public const string RefutedClaim = "RefutedClaim";
         public const string ContestedVerdict = "ContestedVerdict";
         public const string UnevidencedDeduction = "UnevidencedDeduction";
+        public const string OmissionAsAccuracy = "OmissionAsAccuracy";
         public const string UnverifiedClaims = "UnverifiedClaims";
         public const string BelowThreshold = "BelowThreshold";
         public const string Outlier = "Outlier";
@@ -2407,6 +2519,23 @@ public class BenchmarkService
             return;
         }
 
+        bool blind = run.SecondOpinionBlindUsed || (run.Id == 0 && constants.SecondOpinionBlind);
+
+        List<BenchmarkClaimVerification>? claimVerifications = null;
+        if (!string.IsNullOrWhiteSpace(answer.ClaimVerificationJson))
+        {
+            try
+            {
+                claimVerifications = JsonSerializer.Deserialize<List<BenchmarkClaimVerification>>(
+                    answer.ClaimVerificationJson,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            }
+            catch (JsonException)
+            {
+                claimVerifications = null;
+            }
+        }
+
         var allowedTools = _configuration.GetSection("Benchmark:AllowedTools").Get<List<string>>() ?? _defaultAllowedTools;
         string prompt = BenchmarkAssessmentPrompt.BuildSecondOpinionPrompt(
             run.SuiteName,
@@ -2425,7 +2554,10 @@ public class BenchmarkService
             answer.ScrubbedArtifactCount,
             answer.ToolCallBudgetUsed,
             boardName: run.BenchmarkSuite?.GameSnapshot?.Name,
-            boardText: run.BenchmarkSuite?.GameSnapshot?.SanitizedText);
+            boardText: run.BenchmarkSuite?.GameSnapshot?.SanitizedText,
+            blind: blind,
+            triggerLabel: trigger,
+            claimVerifications: claimVerifications);
 
         int assessorMaxTokens = _configuration.GetValue<int>("Benchmark:AssessorMaxOutputTokens", 32000);
 

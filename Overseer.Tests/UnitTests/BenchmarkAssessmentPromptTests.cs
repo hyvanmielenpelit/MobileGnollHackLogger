@@ -204,9 +204,9 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsTen()
+    public void HarnessVersion_IsEleven()
     {
-        Assert.Equal("10", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("11", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -338,7 +338,24 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void SecondOpinionPrompt_CarriesTheFirstVerdictWithoutAskingForAgreement()
+    public void PerQuestionPrompt_ExcludesOmissionsFromAccuracy()
+    {
+        string prompt = BenchmarkAssessmentPrompt.BuildPerQuestionPrompt(
+            "Suite",
+            1,
+            "Question?",
+            BenchmarkDifficulty.Advanced,
+            "Rubric point one.",
+            "Answer text.",
+            BenchmarkAnswerStatus.Ok);
+
+        Assert.Contains("An omission is NEVER an ACCURACY deduction", prompt);
+        Assert.Contains("Missing information is graded through COMPLETENESS", prompt);
+        Assert.Contains("An accuracy deduction must name something the answer **states** that is wrong", prompt);
+    }
+
+    [Fact]
+    public void SecondOpinionPrompt_BlindMode_OmitsFirstVerdictAndFramesIndependently()
     {
         string prompt = BenchmarkAssessmentPrompt.BuildSecondOpinionPrompt(
             "Suite",
@@ -350,13 +367,63 @@ public class BenchmarkAssessmentPromptTests
             BenchmarkAnswerStatus.Ok,
             firstQualityScore: 25,
             firstCriticalError: true,
-            firstComment: "Misstates the gift formula.");
+            firstComment: "Misstates the gift formula.",
+            blind: true,
+            triggerLabel: "LowQualityScore");
+
+        Assert.Contains("--- SECOND OPINION ---", prompt);
+        Assert.Contains("Another assessor has already graded this answer independently", prompt);
+        Assert.Contains("The harness selected this answer for a second reading because", prompt);
+        Assert.DoesNotContain("Quality score: 25 / 100", prompt);
+        Assert.DoesNotContain("Critical error: yes", prompt);
+        Assert.DoesNotContain("Misstates the gift formula.", prompt);
+        Assert.DoesNotContain("severe enough", prompt);
+        Assert.Contains("Rubric point one.", prompt);
+    }
+
+    [Fact]
+    public void SecondOpinionPrompt_AnchoredMode_CarriesTheFirstVerdictWithoutAskingForAgreement()
+    {
+        string prompt = BenchmarkAssessmentPrompt.BuildSecondOpinionPrompt(
+            "Suite",
+            17,
+            "How do sacrifice gifts work?",
+            BenchmarkDifficulty.Advanced,
+            "Rubric point one.",
+            "Answer text.",
+            BenchmarkAnswerStatus.Ok,
+            firstQualityScore: 25,
+            firstCriticalError: true,
+            firstComment: "Misstates the gift formula.",
+            blind: false,
+            triggerLabel: "CriticalError");
 
         Assert.Contains("SECOND OPINION", prompt);
         Assert.Contains("Quality score: 25 / 100", prompt);
         Assert.Contains("Critical error: yes", prompt);
         Assert.Contains("Do NOT defer to the first verdict", prompt);
-        // The rubric must still be present: a second opinion graded against nothing is noise.
+        Assert.DoesNotContain("severe enough", prompt);
         Assert.Contains("Rubric point one.", prompt);
+    }
+
+    [Fact]
+    public void SecondOpinionPrompt_WithVerifiedClaims_IncludesVerifiedClaimsContext()
+    {
+        string prompt = BenchmarkAssessmentPrompt.BuildSecondOpinionPrompt(
+            "Suite",
+            1,
+            "Question?",
+            BenchmarkDifficulty.Simple,
+            "Rubric.",
+            "Answer.",
+            BenchmarkAnswerStatus.Ok,
+            firstQualityScore: 50,
+            firstCriticalError: false,
+            firstComment: "Comment.",
+            claimVerifications: new[] { new BenchmarkClaimVerification(0, "Claim A", BenchmarkClaimVerdict.Supported, "source.c:10", null) });
+
+        Assert.Contains("--- FACT-CHECK VERIFICATION CONTEXT ---", prompt);
+        Assert.Contains("Claim: \"Claim A\"", prompt);
+        Assert.Contains("source.c:10", prompt);
     }
 }

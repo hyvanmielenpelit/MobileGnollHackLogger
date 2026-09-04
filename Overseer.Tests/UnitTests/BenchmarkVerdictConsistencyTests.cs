@@ -196,4 +196,53 @@ public class BenchmarkVerdictConsistencyTests
             accuracyEvidence: "Docked to 4 because claims cannot be verified from the provided context.",
             unverifiedClaimCount: 3));
     }
+
+    [Fact]
+    public void IsOmissionGroundedAccuracyDeduction_Run10Q1Shape_Flags()
+    {
+        // Q1 shape from run 10: Accuracy 3/6 with omission evidence and no falsehood
+        const string evidence = "The answer provides relative attribute modifiers (+0, +1, +1, -2, -2, -2) instead of the GnollHack attribute maxima (Str 18/100, Int 16, ...)";
+        Assert.True(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(
+            accuracyLevel: 3,
+            accuracyEvidence: evidence));
+    }
+
+    [Fact]
+    public void IsOmissionGroundedAccuracyDeduction_Run10Q10Shape_Flags()
+    {
+        // Q10 shape from run 10: fails to identify/mention
+        const string evidence = "Rubric REQUIRED: hard crystal grants REFLECTION ..., orichalcum grants MAGIC RESISTANCE (+7 MC) ...; the answer fails to identify these crucial specific properties.";
+        Assert.True(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(
+            accuracyLevel: 3,
+            accuracyEvidence: evidence));
+    }
+
+    [Fact]
+    public void IsOmissionGroundedAccuracyDeduction_WithFalsehood_DoesNotFlag()
+    {
+        // When the evidence names a genuine inaccuracy or falsehood along with an omission, it is not a pure omission
+        const string evidence = "Incorrect statement that silver grants poison resistance, and fails to mention AC.";
+        Assert.False(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(
+            accuracyLevel: 3,
+            accuracyEvidence: evidence));
+    }
+
+    [Fact]
+    public void IsOmissionGroundedAccuracyDeduction_AccuracyLevelFiveOrSix_DoesNotFlag()
+    {
+        Assert.False(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(
+            accuracyLevel: 5,
+            accuracyEvidence: "Omits attribute maxima."));
+        Assert.False(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(
+            accuracyLevel: 6,
+            accuracyEvidence: "Omits attribute maxima."));
+    }
+
+    [Fact]
+    public void IsOmissionGroundedAccuracyDeduction_EmptyOrNullEvidence_DoesNotFlag()
+    {
+        Assert.False(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(3, null));
+        Assert.False(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(3, ""));
+        Assert.False(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(3, "   "));
+    }
 }

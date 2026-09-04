@@ -268,6 +268,8 @@ public class BenchmarkScoringProfileDto
     /// <summary>Meaningful under FlaggedAndOutliers only; validated &gt; 0 there.</summary>
     public int SecondOpinionOutlierDeltaPoints { get; set; }
 
+    public bool SecondOpinionBlind { get; set; }
+
     public int SpeedTargetMs { get; set; }
     public double SpeedDecayK { get; set; }
     public double SpeedDifficultyScaling { get; set; }
@@ -289,6 +291,7 @@ public class CreateBenchmarkScoringProfileRequest
     public int SecondOpinionQualityThreshold { get; set; } = 50;
     public int SecondOpinionMode { get; set; } = (int)BenchmarkSecondOpinionMode.Flagged;
     public int SecondOpinionOutlierDeltaPoints { get; set; } = 25;
+    public bool SecondOpinionBlind { get; set; } = true;
     public int SpeedTargetMs { get; set; } = 15000;
     public double SpeedDecayK { get; set; } = 20.0;
     public double SpeedDifficultyScaling { get; set; } = 1.0;
@@ -308,6 +311,7 @@ public class UpdateBenchmarkScoringProfileRequest
     public int SecondOpinionQualityThreshold { get; set; }
     public int SecondOpinionMode { get; set; }
     public int SecondOpinionOutlierDeltaPoints { get; set; }
+    public bool SecondOpinionBlind { get; set; }
     public int SpeedTargetMs { get; set; }
     public double SpeedDecayK { get; set; }
     public double SpeedDifficultyScaling { get; set; }
@@ -369,6 +373,7 @@ public class BenchmarkRunAnswerDto
     public int? ModelCallCount { get; set; }
     public int? ToolCallCount { get; set; }
     public bool ToolBudgetExhausted { get; set; }
+    public int? ToolCallsBlocked { get; set; }
 
     /// <summary>The per-band budget that actually applied to this question.</summary>
     public int? ToolCallBudgetUsed { get; set; }
@@ -508,6 +513,7 @@ public class BenchmarkRunDetailDto
     /// from the weighted index, where the gap is what the weighting did to the headline.
     /// </summary>
     public int? UnweightedQualityIndex { get; set; }
+    public double? QualityIndexStandardError { get; set; }
 
     public int? SpeedIndex { get; set; }
     public long TotalAnswerDurationMs { get; set; }
@@ -532,6 +538,7 @@ public class BenchmarkRunDetailDto
     public int? MaxToolCallsPerQuestionUsed { get; set; }
     public int DegradedAnswerCount { get; set; }
     public int ToolStarvedAnswerCount { get; set; }
+    public int BudgetSaturatedAnswerCount { get; set; }
 
     /// <summary>
     /// Answers compromised by a transport or provider defect. Disjoint from
@@ -561,6 +568,7 @@ public class BenchmarkRunDetailDto
     /// </summary>
     public int ContestedVerdictAnswerCount { get; set; }
     public int UnevidencedDeductionAnswerCount { get; set; }
+    public int OmissionAsAccuracyAnswerCount { get; set; }
     public int RefutedClaimAnswerCount { get; set; }
     public int ClaimVerifiedAnswerCount { get; set; }
     public int ClaimsSupportedCount { get; set; }
@@ -573,6 +581,7 @@ public class BenchmarkRunDetailDto
     /// FlaggedAndOutliers (2) or All (3), as stamped at run start.
     /// </summary>
     public int SecondOpinionModeUsed { get; set; }
+    public bool SecondOpinionBlindUsed { get; set; }
 
     /// <summary>
     /// Grader agreement, which is only interpretable together with its coverage: a mean delta
@@ -832,6 +841,7 @@ public class BenchmarkRunSummaryDto
     public int? FinalScore { get; set; }
     public int? ComputedScore { get; set; }
     public int? QualityIndex { get; set; }
+    public double? QualityIndexStandardError { get; set; }
     public int? RawQualityIndex { get; set; }
     public int? SpeedIndex { get; set; }
     public long TotalAnswerDurationMs { get; set; }
@@ -840,6 +850,8 @@ public class BenchmarkRunSummaryDto
     public int TotalQuestionCount { get; set; }
     public int DegradedAnswerCount { get; set; }
     public int ToolStarvedAnswerCount { get; set; }
+    public int BudgetSaturatedAnswerCount { get; set; }
+    public bool SecondOpinionBlindUsed { get; set; }
     public string? HarnessVersion { get; set; }
     public long TotalDurationMs { get; set; }
 }

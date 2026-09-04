@@ -53,7 +53,8 @@ public static class BenchmarkRunFinalizer
         | BenchmarkAnswerFlags.RepeatedFragments
         | BenchmarkAnswerFlags.ContestedVerdict
         | BenchmarkAnswerFlags.UnevidencedDeduction
-        | BenchmarkAnswerFlags.RefutedClaim;
+        | BenchmarkAnswerFlags.RefutedClaim
+        | BenchmarkAnswerFlags.OmissionAsAccuracy;
 
     /// <summary>A transport or provider defect corrupted this answer beyond recovery.</summary>
     public static bool HasTransportDefect(BenchmarkRunAnswer answer)
@@ -192,6 +193,8 @@ public static class BenchmarkRunFinalizer
             a => (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.ContestedVerdict) != 0);
         run.UnevidencedDeductionAnswerCount = answers.Count(
             a => (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.UnevidencedDeduction) != 0);
+        run.OmissionAsAccuracyAnswerCount = answers.Count(
+            a => (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.OmissionAsAccuracy) != 0);
         run.RefutedClaimAnswerCount = answers.Count(
             a => (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.RefutedClaim) != 0);
         run.ClaimVerifiedAnswerCount = answers.Count(
@@ -199,6 +202,12 @@ public static class BenchmarkRunFinalizer
         run.ClaimsSupportedCount = answers.Sum(a => a.ClaimsSupportedCount ?? 0);
         run.ClaimsRefutedCount = answers.Sum(a => a.ClaimsRefutedCount ?? 0);
         run.ClaimsIndeterminateCount = answers.Sum(a => a.ClaimsIndeterminateCount ?? 0);
+        run.BudgetSaturatedAnswerCount = answers.Count(
+            a => a.ToolCallBudgetUsed.HasValue
+                 && a.ToolCallCount.HasValue
+                 && a.ToolCallCount.Value >= a.ToolCallBudgetUsed.Value
+                 && (a.ToolCallsBlocked ?? 0) == 0
+                 && !a.ToolBudgetExhausted);
         run.ReassessedAnswerCount = answers.Count(a => a.ReassessmentCount > 0);
 
         // Grader agreement. Manual verdicts are excluded: those come from a third model an
@@ -228,6 +237,7 @@ public static class BenchmarkRunFinalizer
             .ToList();
 
         run.QualityIndex = BenchmarkScoring.QualityIndex(scorableItems);
+        run.QualityIndexStandardError = BenchmarkScoring.QualityIndexStandardError(scorableItems);
 
         // The plain mean of the same scores. Not a rival to the index above — a companion to it:
         // the gap between them is how much difficulty weighting moved the headline, which is

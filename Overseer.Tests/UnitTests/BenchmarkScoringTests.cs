@@ -1,4 +1,4 @@
-﻿namespace Overseer.Tests.UnitTests;
+namespace Overseer.Tests.UnitTests;
 
 using System;
 using System.Collections.Generic;
@@ -371,5 +371,48 @@ public class BenchmarkScoringTests
         Assert.Equal(50, BenchmarkScoring.UnweightedQualityMean(new int?[] { 40, null, 60, null }));
         Assert.Null(BenchmarkScoring.UnweightedQualityMean(new int?[] { null, null }));
         Assert.Null(BenchmarkScoring.UnweightedQualityMean(null!));
+    }
+
+    [Fact]
+    public void SecondOpinionBlind_DefaultsToTrue()
+    {
+        Assert.True(BenchmarkScoringConstants.Default.SecondOpinionBlind);
+    }
+
+    [Fact]
+    public void QualityIndexStandardError_OverRun7_ComputesReasonableSE()
+    {
+        double? se = BenchmarkScoring.QualityIndexStandardError(
+            Run7.Select(x => ((int?)x.Quality, (int?)x.Difficulty)));
+
+        Assert.NotNull(se);
+        Assert.InRange(se.Value, 2.0, 4.0);
+    }
+
+    [Fact]
+    public void QualityIndexStandardError_AllIdenticalScores_ReturnsZero()
+    {
+        var items = new (int? Quality, int? Difficulty)[]
+        {
+            (85, 20), (85, 40), (85, 60)
+        };
+
+        double? se = BenchmarkScoring.QualityIndexStandardError(items);
+
+        Assert.NotNull(se);
+        Assert.Equal(0.0, se.Value);
+    }
+
+    [Fact]
+    public void QualityIndexStandardError_FewerThanThreeItems_ReturnsNull()
+    {
+        var twoItems = new (int? Quality, int? Difficulty)[]
+        {
+            (85, 20), (90, 40)
+        };
+
+        Assert.Null(BenchmarkScoring.QualityIndexStandardError(twoItems));
+        Assert.Null(BenchmarkScoring.QualityIndexStandardError(Array.Empty<(int?, int?)>()));
+        Assert.Null(BenchmarkScoring.QualityIndexStandardError((IEnumerable<(int? QualityScore, int? Difficulty)>)null!));
     }
 }

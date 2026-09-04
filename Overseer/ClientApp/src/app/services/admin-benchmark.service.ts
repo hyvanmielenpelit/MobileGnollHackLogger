@@ -61,6 +61,7 @@ export interface BenchmarkScoringProfileDto {
   secondOpinionMode: number;
   /** Quality points below the run's own median at which an answer is re-graded. FlaggedAndOutliers only. */
   secondOpinionOutlierDeltaPoints: number;
+  secondOpinionBlind?: boolean;
   speedTargetMs: number;
   speedDecayK: number;
   speedDifficultyScaling: number;
@@ -84,6 +85,7 @@ export interface CreateBenchmarkScoringProfileRequest {
   secondOpinionMode: number;
   /** Quality points below the run's own median at which an answer is re-graded. FlaggedAndOutliers only. */
   secondOpinionOutlierDeltaPoints: number;
+  secondOpinionBlind?: boolean;
   speedTargetMs: number;
   speedDecayK: number;
   speedDifficultyScaling: number;
@@ -105,6 +107,7 @@ export interface UpdateBenchmarkScoringProfileRequest {
   secondOpinionMode: number;
   /** Quality points below the run's own median at which an answer is re-graded. FlaggedAndOutliers only. */
   secondOpinionOutlierDeltaPoints: number;
+  secondOpinionBlind?: boolean;
   speedTargetMs: number;
   speedDecayK: number;
   speedDifficultyScaling: number;
@@ -490,6 +493,7 @@ export interface BenchmarkRunAnswerDto {
   modelCallCount?: number | null;
   toolCallCount?: number | null;
   toolBudgetExhausted?: boolean;
+  toolCallsBlocked?: number | null;
   /** The per-band tool call budget that actually applied to this question. */
   toolCallBudgetUsed?: number | null;
   /** Wall-clock time spent in tool batches during this turn. */
@@ -610,6 +614,7 @@ export interface BenchmarkRunDetailDto {
    * harness version 7. The gap between the two is what difficulty weighting did to the headline.
    */
   unweightedQualityIndex?: number | null;
+  qualityIndexStandardError?: number | null;
   speedIndex?: number | null;
   totalAnswerDurationMs: number;
   scoringProfileId?: number | null;
@@ -629,6 +634,7 @@ export interface BenchmarkRunDetailDto {
   maxToolCallsPerQuestionUsed?: number | null;
   degradedAnswerCount?: number;
   toolStarvedAnswerCount?: number;
+  budgetSaturatedAnswerCount?: number;
   /**
    * Answers corrupted beyond recovery (empty or truncated). Disjoint from
    * recoveredAnswerCount and toolStarvedAnswerCount: together with the clean count these
@@ -653,6 +659,7 @@ export interface BenchmarkRunDetailDto {
    */
   contestedVerdictAnswerCount?: number;
   unevidencedDeductionAnswerCount?: number;
+  omissionAsAccuracyAnswerCount?: number;
   refutedClaimAnswerCount?: number;
   claimVerifiedAnswerCount?: number;
   claimsSupportedCount?: number;
@@ -661,6 +668,7 @@ export interface BenchmarkRunDetailDto {
   reassessedAnswerCount?: number;
   /** How the second-opinion assessor was used: Off (0), Flagged (1), FlaggedAndOutliers (2), All (3). */
   secondOpinionModeUsed?: number;
+  secondOpinionBlindUsed?: boolean;
   /**
    * Grader agreement, interpretable only together with its coverage: a mean delta over
    * trigger-selected answers is conditioned on the first assessor's own uncertainty, while the
@@ -863,6 +871,7 @@ export interface BenchmarkRunSummaryDto {
   finalScore?: number | null;
   computedScore?: number | null;
   qualityIndex?: number | null;
+  qualityIndexStandardError?: number | null;
   rawQualityIndex?: number | null;
   speedIndex?: number | null;
   totalAnswerDurationMs: number;
@@ -871,6 +880,8 @@ export interface BenchmarkRunSummaryDto {
   totalQuestionCount: number;
   degradedAnswerCount?: number;
   toolStarvedAnswerCount?: number;
+  budgetSaturatedAnswerCount?: number;
+  secondOpinionBlindUsed?: boolean;
   harnessVersion?: string | null;
   totalDurationMs: number;
 }

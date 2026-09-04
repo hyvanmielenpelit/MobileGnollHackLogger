@@ -36,6 +36,12 @@ public record BenchmarkScoringConstants
     /// </summary>
     public int SecondOpinionOutlierDeltaPoints { get; init; } = 25;
 
+    /// <summary>
+    /// Whether the second-opinion assessor should be blinded to the first assessor's score,
+    /// critical-error flag, and comment. Defaults to true.
+    /// </summary>
+    public bool SecondOpinionBlind { get; init; } = true;
+
     // Speed constants are pinned to two invariants rather than to a convention:
     //
     //  1. The score floor must be unreachable within Benchmark:QuestionTimeoutSeconds:{Band} at
@@ -126,6 +132,10 @@ public static class BenchmarkScoring
                 ? dv
                 : defaults.SecondOpinionOutlierDeltaPoints;
 
+            bool secondOpinionBlind = root.TryGetProperty("SecondOpinionBlind", out var bl) && (bl.ValueKind == JsonValueKind.True || bl.ValueKind == JsonValueKind.False)
+                ? bl.GetBoolean()
+                : defaults.SecondOpinionBlind;
+
             return defaults with
             {
                 SpeedTargetMs = target,
@@ -133,7 +143,8 @@ public static class BenchmarkScoring
                 SpeedDecayK = decay,
                 SecondOpinionQualityThreshold = secondOpinion,
                 SecondOpinionMode = mode,
-                SecondOpinionOutlierDeltaPoints = outlierDelta
+                SecondOpinionOutlierDeltaPoints = outlierDelta,
+                SecondOpinionBlind = secondOpinionBlind
             };
         }
         catch (JsonException)
@@ -279,6 +290,50 @@ public static class BenchmarkScoring
     public static int? QualityIndex(IEnumerable<(int? QualityScore, int Difficulty)> items)
     {
         return QualityIndex(items?.Select(i => (i.QualityScore, (int?)i.Difficulty))!);
+    }
+
+    /// <summary>
+    /// Standard error of the difficulty-weighted Intelligence Index over the answered items, with the
+    /// n/(n−1) correction. Null below 3 items. This is item-sampling error — how much the index would
+    /// move if the suite had drawn a different 18 questions of the same difficulty profile — and NOT
+    /// the model's run-to-run variance, which one sample per question cannot estimate.
+    /// </summary>
+    public static double? QualityIndexStandardError(IEnumerable<(int? QualityScore, int? Difficulty)> items)
+    {
+        if (items == null) return null;
+
+        var index = QualityIndex(items);
+        if (!index.HasValue) return null;
+
+        double sumWeightedSqDev = 0.0;
+        double weightSum = 0.0;
+        int n = 0;
+
+        foreach (var (quality, difficulty) in items)
+        {
+            if (quality.HasValue)
+            {
+                double w = Math.Max(1.0, (double)(difficulty ?? 50));
+                double dev = quality.Value - index.Value;
+                sumWeightedSqDev += w * w * dev * dev;
+                weightSum += w;
+                n++;
+            }
+        }
+
+        if (n < 3 || weightSum <= 0.0)
+        {
+            return null;
+        }
+
+        double correction = (double)n / (n - 1);
+        double variance = sumWeightedSqDev * correction;
+        return Math.Sqrt(variance) / weightSum;
+    }
+
+    public static double? QualityIndexStandardError(IEnumerable<(int? QualityScore, int Difficulty)> items)
+    {
+        return QualityIndexStandardError(items?.Select(i => (i.QualityScore, (int?)i.Difficulty))!);
     }
 
     /// <summary>

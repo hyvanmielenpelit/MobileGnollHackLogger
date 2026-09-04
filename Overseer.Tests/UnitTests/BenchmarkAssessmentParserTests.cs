@@ -174,4 +174,30 @@ public class BenchmarkAssessmentParserTests
         Assert.True(result.Result.CriticalErrorDemoted);
         Assert.True(result.Result.ContestedVerdict);
     }
+
+    [Fact]
+    public void OmissionAsAccuracy_IsSetWhenAccuracyEvidenceDescribesOmissionWithoutFalsehood()
+    {
+        var result = BenchmarkAssessmentParser.ParsePerQuestion(
+            Verdict(
+                accuracyEvidence: "Rubric REQUIRED: omits the racial attribute maxima.",
+                comment: "Good answer but missing details."),
+            Answer);
+
+        Assert.True(result.Success);
+        Assert.True(result.Result!.OmissionAsAccuracy);
+    }
+
+    [Fact]
+    public void OmissionAsAccuracy_IsNotSetWhenAccuracyEvidenceHasFalsehood()
+    {
+        var result = BenchmarkAssessmentParser.ParsePerQuestion(
+            Verdict(
+                accuracyEvidence: "Rubric REQUIRED: omits bronze, and incorrectly claims iron gives reflection.",
+                comment: "Has errors."),
+            Answer);
+
+        Assert.True(result.Success);
+        Assert.False(result.Result!.OmissionAsAccuracy);
+    }
 }

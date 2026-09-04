@@ -21,6 +21,7 @@ public class AgentRunResult
     public string? TerminationReason { get; set; }
     public string? ActualServiceTier { get; set; }
     public bool ToolBudgetExhausted { get; set; }
+    public int ToolCallsBlocked { get; set; }
     public int ModelCallCount { get; set; }
     public int ToolCallCount { get; set; }
 

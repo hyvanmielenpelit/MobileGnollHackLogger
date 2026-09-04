@@ -909,4 +909,81 @@ public class BenchmarkServiceTests
 
         Assert.Equal(BenchmarkService.SecondOpinionTriggers.UnevidencedDeduction, trigger);
     }
+
+    [Fact]
+    public void ResolveSecondOpinionTrigger_RefutedClaim_TriggersSecondOpinion()
+    {
+        var answer = new BenchmarkRunAnswer
+        {
+            AnswerFlags = (int)BenchmarkAnswerFlags.RefutedClaim,
+            QualityScore = 85
+        };
+
+        var trigger = BenchmarkService.ResolveSecondOpinionTrigger(
+            answer,
+            BenchmarkSecondOpinionMode.Flagged,
+            BenchmarkScoringConstants.Default);
+
+        Assert.Equal(BenchmarkService.SecondOpinionTriggers.RefutedClaim, trigger);
+    }
+
+    [Fact]
+    public void ResolveSecondOpinionTrigger_OmissionAsAccuracy_TriggersSecondOpinion()
+    {
+        var answer = new BenchmarkRunAnswer
+        {
+            AnswerFlags = (int)BenchmarkAnswerFlags.OmissionAsAccuracy,
+            QualityScore = 85
+        };
+
+        var trigger = BenchmarkService.ResolveSecondOpinionTrigger(
+            answer,
+            BenchmarkSecondOpinionMode.Flagged,
+            BenchmarkScoringConstants.Default);
+
+        Assert.Equal(BenchmarkService.SecondOpinionTriggers.OmissionAsAccuracy, trigger);
+    }
+
+    [Fact]
+    public void ResolveSecondOpinionTrigger_UnverifiedClaims_SuppressedWhenAllClaimsSupported()
+    {
+        // When claim verification positively supported all claims, the UnverifiedClaims trigger does not fire
+        var answer = new BenchmarkRunAnswer
+        {
+            UnverifiedClaimCount = 3,
+            AccuracyLevel = 3,
+            ClaimsSupportedCount = 3,
+            ClaimsRefutedCount = 0,
+            ClaimsIndeterminateCount = 0,
+            QualityScore = 75
+        };
+
+        var trigger = BenchmarkService.ResolveSecondOpinionTrigger(
+            answer,
+            BenchmarkSecondOpinionMode.Flagged,
+            new BenchmarkScoringConstants { SecondOpinionQualityThreshold = 50 });
+
+        Assert.Null(trigger);
+    }
+
+    [Fact]
+    public void ResolveSecondOpinionTrigger_UnverifiedClaims_FiresWhenAnyClaimRefutedOrIndeterminate()
+    {
+        var answer = new BenchmarkRunAnswer
+        {
+            UnverifiedClaimCount = 3,
+            AccuracyLevel = 3,
+            ClaimsSupportedCount = 2,
+            ClaimsRefutedCount = 0,
+            ClaimsIndeterminateCount = 1,
+            QualityScore = 75
+        };
+
+        var trigger = BenchmarkService.ResolveSecondOpinionTrigger(
+            answer,
+            BenchmarkSecondOpinionMode.Flagged,
+            new BenchmarkScoringConstants { SecondOpinionQualityThreshold = 50 });
+
+        Assert.Equal(BenchmarkService.SecondOpinionTriggers.UnverifiedClaims, trigger);
+    }
 }

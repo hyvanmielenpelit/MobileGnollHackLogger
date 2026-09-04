@@ -278,6 +278,13 @@ public class BenchmarkRunAnswer
     public int? ToolCallCount { get; set; }
     public bool ToolBudgetExhausted { get; set; }
 
+    /// <summary>
+    /// How many tool calls were blocked because the per-question tool budget was exhausted.
+    /// Nullable because runs before harness version 11 never recorded it: null means "not recorded",
+    /// never zero. Reports fall back to ToolCallCount - executed inference for pre-v11 runs.
+    /// </summary>
+    public int? ToolCallsBlocked { get; set; }
+
     // The per-question tool call budget that actually applied to this answer. The budget is
     // resolved per difficulty band, so it differs between questions in the same run and cannot
     // be read off BenchmarkRun.MaxToolCallsPerQuestionUsed.
