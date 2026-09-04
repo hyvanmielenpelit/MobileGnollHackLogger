@@ -999,4 +999,154 @@ describe('ChatComponent context window indicator', () => {
       expect(component.showContextWindowUsage).toBeTrue();
     });
   });
+
+  describe('Benchmark capture button visibility and snapshot attachment', () => {
+    let authService: AuthService;
+    let clientBridge: ClientBridgeService;
+
+    beforeEach(() => {
+      authService = TestBed.inject(AuthService);
+      clientBridge = TestBed.inject(ClientBridgeService);
+    });
+
+    it('should render header save-attached button when isAdmin and currentSessionId and hasGameSnapshot are true', () => {
+      (authService as any).userSubject.next({
+        userName: 'admin',
+        email: 'admin@example.com',
+        hasApiKey: true,
+        isAdmin: true
+      });
+      component.currentSessionId = 42;
+      component.hasGameSnapshot = true;
+      component.showDebugLog = false;
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      const attachedBtn = compiled.querySelector('button[aria-label="Save attached game snapshot of this chat for benchmarking"]');
+      const liveBtn = compiled.querySelector('button[aria-label="Capture Live Game Board for Benchmarking"]');
+
+      expect(attachedBtn).toBeTruthy();
+      expect(liveBtn).toBeTruthy();
+    });
+
+    it('should omit header save-attached button when hasGameSnapshot is false, but still render live capture button', () => {
+      (authService as any).userSubject.next({
+        userName: 'admin',
+        email: 'admin@example.com',
+        hasApiKey: true,
+        isAdmin: true
+      });
+      component.currentSessionId = 42;
+      component.hasGameSnapshot = false;
+      component.showDebugLog = false;
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      const attachedBtn = compiled.querySelector('button[aria-label="Save attached game snapshot of this chat for benchmarking"]');
+      const liveBtn = compiled.querySelector('button[aria-label="Capture Live Game Board for Benchmarking"]');
+
+      expect(attachedBtn).toBeFalsy();
+      expect(liveBtn).toBeTruthy();
+    });
+
+    it('should omit benchmark buttons when user is not admin', () => {
+      (authService as any).userSubject.next({
+        userName: 'player',
+        email: 'player@example.com',
+        hasApiKey: true,
+        isAdmin: false
+      });
+      component.currentSessionId = 42;
+      component.hasGameSnapshot = true;
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      const attachedBtn = compiled.querySelector('button[aria-label="Save attached game snapshot of this chat for benchmarking"]');
+      const liveBtn = compiled.querySelector('button[aria-label="Capture Live Game Board for Benchmarking"]');
+
+      expect(attachedBtn).toBeFalsy();
+      expect(liveBtn).toBeFalsy();
+    });
+
+    it('should show composer attach-snapshot button only when embedded and !hasGameSnapshot', () => {
+      spyOn(clientBridge, 'isEmbedded').and.returnValue(true);
+      component.hasGameSnapshot = false;
+      fixture.detectChanges();
+
+      let compiled = fixture.nativeElement as HTMLElement;
+      let attachBtn = compiled.querySelector('button[aria-label="Attach the current game board from GnollHack to this chat"]');
+      expect(attachBtn).toBeTruthy();
+
+      // When hasGameSnapshot is true, it should disappear
+      component.hasGameSnapshot = true;
+      fixture.detectChanges();
+      attachBtn = compiled.querySelector('button[aria-label="Attach the current game board from GnollHack to this chat"]');
+      expect(attachBtn).toBeFalsy();
+    });
+
+    it('should hide composer attach-snapshot button when not embedded', () => {
+      spyOn(clientBridge, 'isEmbedded').and.returnValue(false);
+      component.hasGameSnapshot = false;
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      const attachBtn = compiled.querySelector('button[aria-label="Attach the current game board from GnollHack to this chat"]');
+      expect(attachBtn).toBeFalsy();
+    });
+
+    it('should resolve local tool request and not forward to sendToolResult when requestId matches', async () => {
+      const sendToolResultSpy = spyOn(component, 'sendToolResult');
+      const reqId = 'local_test_123';
+      let resolvedContent: string | null = null;
+
+      const promise = new Promise<string>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('timeout')), 5000);
+        component.localToolRequests.set(reqId, { resolve, reject, timer });
+      });
+
+      component.onGnollHackToolResponse({
+        type: 'tool_response',
+        requestId: reqId,
+        success: true,
+        content: 'GnollHack snapshot text content',
+        errorMessage: null
+      });
+
+      resolvedContent = await promise;
+      expect(resolvedContent).toBe('GnollHack snapshot text content');
+      expect(component.localToolRequests.has(reqId)).toBeFalse();
+      expect(sendToolResultSpy).not.toHaveBeenCalled();
+    });
+
+    it('should reject local tool request when response success is false', async () => {
+      const sendToolResultSpy = spyOn(component, 'sendToolResult');
+      const reqId = 'local_test_456';
+      let rejectedError: any = null;
+
+      const promise = new Promise<string>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('timeout')), 5000);
+        component.localToolRequests.set(reqId, { resolve, reject, timer });
+      });
+
+      component.onGnollHackToolResponse({
+        type: 'tool_response',
+        requestId: reqId,
+        success: false,
+        content: '',
+        errorMessage: 'Game not running'
+      });
+
+      try {
+        await promise;
+        fail('Should have rejected');
+      } catch (err: any) {
+        rejectedError = err;
+      }
+
+      expect(rejectedError).toBeTruthy();
+      expect(rejectedError.message).toBe('Game not running');
+      expect(component.localToolRequests.has(reqId)).toBeFalse();
+      expect(sendToolResultSpy).not.toHaveBeenCalled();
+    });
+  });
 });

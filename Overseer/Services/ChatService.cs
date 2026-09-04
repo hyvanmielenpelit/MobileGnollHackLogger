@@ -84,6 +84,65 @@ public class ChatService
     public const string GameSnapshotPrefix = "Game Context Snapshot:";
 
     /// <summary>
+    /// SQL LIKE patterns matching game snapshot system messages in ChatController queries.
+    /// Acts as the single source of truth for database LIKE checks corresponding to IsGameSnapshotMessage.
+    /// </summary>
+    public static readonly string[] GameSnapshotLikePatterns = { "Game Snapshot%", "Game Context Snapshot%" };
+
+    /// <summary>
+    /// Strips the game snapshot prefix from snapshot content so imported benchmark boards
+    /// do not begin with "Game Context Snapshot:".
+    /// </summary>
+    public static string StripGameSnapshotPrefix(string content)
+    {
+        if (string.IsNullOrEmpty(content))
+            return string.Empty;
+
+        int firstNewline = content.IndexOf('\n');
+        if (firstNewline >= 0)
+        {
+            string firstLine = content.Substring(0, firstNewline).TrimEnd('\r');
+            string trimmedFirstLine = firstLine.Trim();
+            if (trimmedFirstLine.EndsWith(':'))
+                trimmedFirstLine = trimmedFirstLine[..^1].Trim();
+
+            if (trimmedFirstLine.Equals("Game Context Snapshot", StringComparison.OrdinalIgnoreCase)
+                || trimmedFirstLine.Equals("Game Snapshot", StringComparison.OrdinalIgnoreCase))
+            {
+                string remainder = content.Substring(firstNewline + 1);
+                if (!string.IsNullOrWhiteSpace(remainder))
+                {
+                    if (remainder.StartsWith("\r\n"))
+                        remainder = remainder.Substring(2);
+                    else if (remainder.StartsWith("\n"))
+                        remainder = remainder.Substring(1);
+
+                    return remainder;
+                }
+            }
+        }
+
+        string[] prefixes = { "Game Context Snapshot", "Game Snapshot" };
+        foreach (var prefix in prefixes)
+        {
+            if (content.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                int index = prefix.Length;
+                if (index < content.Length && content[index] == ':')
+                    index++;
+
+                while (index < content.Length && (content[index] == ' ' || content[index] == '\t'))
+                    index++;
+
+                string result = content.Substring(index);
+                return string.IsNullOrWhiteSpace(result) ? string.Empty : result;
+            }
+        }
+
+        return content;
+    }
+
+    /// <summary>
     /// Canonical prefix of the system message that carries the in-game message history.
     /// Written by SessionController.CreateSession and matched by IsMessageHistoryMessage.
     /// </summary>

@@ -370,16 +370,21 @@ public class ChatController : ControllerBase
             }
         }
 
-        swTotal.Stop();
-
-        Response.Headers.Append("Access-Control-Expose-Headers", "Server-Timing");
-        Response.Headers.Append("Server-Timing", $"total;dur={swTotal.ElapsedMilliseconds}, session;dur={sessionMs}, msgs;dur={messagesMs}, attach;dur={attachmentsMs}, tools;dur={toolCallsMs}, models;dur={modelsMs}, asm;dur={assemblyMs}");
+        string p0 = ChatService.GameSnapshotLikePatterns[0];
+        string p1 = ChatService.GameSnapshotLikePatterns[1];
+        // Note: SQL Server's default collation is case-insensitive, matching
+        // ChatService.IsGameSnapshotMessage's OrdinalIgnoreCase check.
+        // A case-sensitive collation would silently diverge.
+        bool hasGameSnapshot = await _dbContext.ChatMessage
+            .AnyAsync(m => m.ChatSessionId == id && m.Role == "system" &&
+                (EF.Functions.Like(m.Content, p0) || EF.Functions.Like(m.Content, p1)));
 
         return Ok(new
         {
             session.Id,
             session.Title,
             session.IsGnollHackSession,
+            hasGameSnapshot,
             Messages = formattedMessages,
             HasOngoingGeneration = hasOngoing,
             OngoingGeneration = ongoingData,
@@ -556,6 +561,77 @@ public class ChatController : ControllerBase
             return PhysicalFile(filePath, attachment.ContentType ?? "application/octet-stream");
         else
             return PhysicalFile(filePath, attachment.ContentType ?? "application/octet-stream", attachment.FileName);
+    }
+
+    [HttpPost("sessions/attach-snapshot")]
+    public async Task<IActionResult> AttachSnapshot([FromBody] AttachGameSnapshotRequest request)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+        if (string.IsNullOrWhiteSpace(request.SnapshotText))
+        {
+            return BadRequest(new { error = "Snapshot text must not be empty." });
+        }
+
+        string snapshotText = request.SnapshotText;
+        if (snapshotText.Length > 60200)
+        {
+            snapshotText = snapshotText.Substring(0, 60200);
+        }
+
+        long sessionId;
+        if (request.SessionId.HasValue && request.SessionId.Value > 0)
+        {
+            sessionId = request.SessionId.Value;
+            var session = await _dbContext.ChatSession.FindAsync(sessionId);
+            if (session == null || session.AspNetUserId != userId)
+                return NotFound(new { error = "Session not found." });
+        }
+        else
+        {
+            var session = new ChatSession
+            {
+                AspNetUserId = userId,
+                Title = "GnollHack Session",
+                CreatedUtc = DateTime.UtcNow,
+                LastMessageUtc = DateTime.UtcNow,
+                IsGnollHackSession = true,
+                ClientSettings = "{\"BoolData\":{\"isGameOn\":true}}"
+            };
+            _dbContext.ChatSession.Add(session);
+            await _dbContext.SaveChangesAsync();
+            sessionId = session.Id;
+
+            await _chatRetentionService.EnforceUserSessionQuotaAsync(userId);
+        }
+
+        // Rewrite any existing snapshot system message's content to the supersession marker.
+        string p0 = ChatService.GameSnapshotLikePatterns[0];
+        string p1 = ChatService.GameSnapshotLikePatterns[1];
+        var existingSnapshots = await _dbContext.ChatMessage
+            .Where(m => m.ChatSessionId == sessionId && m.Role == "system" &&
+                (EF.Functions.Like(m.Content, p0) || EF.Functions.Like(m.Content, p1)))
+            .ToListAsync();
+
+        foreach (var existing in existingSnapshots)
+        {
+            existing.Content = "[Game state snapshot superseded by the updated snapshot below]";
+        }
+
+        // Insert the new system message
+        string normalized = DumpHtmlSanitizer.NormalizeFlattenedText(snapshotText);
+        var systemMsg = new ChatMessage
+        {
+            ChatSessionId = sessionId,
+            Role = "system",
+            Content = ChatService.GameSnapshotPrefix + "\n" + normalized,
+            TimestampUtc = DateTime.UtcNow
+        };
+        _dbContext.ChatMessage.Add(systemMsg);
+        await _dbContext.SaveChangesAsync();
+
+        return Ok(new { sessionId, hasGameSnapshot = true });
     }
 
     [HttpPost("send")]
@@ -850,4 +926,11 @@ public class SendMessageRequest
     public long? UserModelId { get; set; }
     public long? SystemModelId { get; set; }
     public bool HasGreeted { get; set; }
+}
+
+public class AttachGameSnapshotRequest
+{
+    public long? SessionId { get; set; }
+    public string SnapshotText { get; set; } = string.Empty;
+    public string? SourceGnollHackVersion { get; set; }
 }

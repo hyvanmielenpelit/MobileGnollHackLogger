@@ -28,6 +28,13 @@ public class BenchmarkGameSnapshot
 
     public string? Notes { get; set; }
 
+    /// <summary>
+    /// The chat session this board was captured from, when it came from one. Null for
+    /// uploads, and null again once that session is permanently deleted — a board is
+    /// evidence for benchmark runs and must outlive the conversation it came from.
+    /// </summary>
+    public long? SourceChatSessionId { get; set; }
+
     public DateTime? CapturedAtUtc { get; set; }
 
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;

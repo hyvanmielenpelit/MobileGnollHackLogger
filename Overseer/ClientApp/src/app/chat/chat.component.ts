@@ -691,18 +691,36 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   reportError = '';
   showDebugLog = localStorage.getItem('showDebugLog') === 'true';
 
+  hasGameSnapshot = false;
+  captureBoardMode: 'live' | 'attached' = 'live';
   showCaptureBoardModal = false;
   captureBoardName = '';
   captureBoardNotes = '';
   captureBoardVersion = '';
   isCapturingBoard = false;
   captureBoardError: string | null = null;
-  captureBoardResult: { boardName: string; charCount: number; shaPrefix: string; suiteName: string; suiteId: number } | null = null;
+  captureBoardResult: {
+    boardName: string;
+    charCount: number;
+    shaPrefix: string;
+    suiteName: string;
+    suiteId: number;
+    wasRenamed?: boolean;
+    requestedName?: string;
+  } | null = null;
 
-  openCaptureBoardModal(event?: Event) {
+  localToolRequests = new Map<string, {
+    resolve: (content: string) => void;
+    reject: (err: any) => void;
+    timer: ReturnType<typeof setTimeout>;
+  }>();
+  isAttachingSnapshot = false;
+
+  openCaptureBoardModal(event?: Event, mode: 'live' | 'attached' = 'live') {
     if (event) {
       event.preventDefault();
     }
+    this.captureBoardMode = mode;
     this.captureBoardError = null;
     this.captureBoardResult = null;
     const now = new Date().toISOString().substring(0, 10);
@@ -733,12 +751,19 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.captureBoardResult = null;
     this.cdr.detectChanges();
 
-    this.adminBenchmarkService.captureSnapshot({
+    const requestedName = this.captureBoardName.trim();
+    const req = {
       sessionId: this.currentSessionId.toString(),
-      name: this.captureBoardName.trim(),
+      name: requestedName,
       notes: this.captureBoardNotes.trim() || undefined,
       sourceGnollHackVersion: this.captureBoardVersion.trim() || undefined
-    }).subscribe({
+    };
+
+    const call$ = this.captureBoardMode === 'attached'
+      ? this.adminBenchmarkService.saveAttachedSnapshot(req)
+      : this.adminBenchmarkService.captureSnapshot(req);
+
+    call$.subscribe({
       next: (res) => {
         this.isCapturingBoard = false;
         this.captureBoardResult = {
@@ -746,16 +771,83 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           charCount: res.board.charCount,
           shaPrefix: res.board.sha256 ? res.board.sha256.substring(0, 8) : '',
           suiteName: res.suite.name,
-          suiteId: res.suite.id
+          suiteId: res.suite.id,
+          wasRenamed: res.board.name !== requestedName,
+          requestedName
         };
         this.cdr.detectChanges();
       },
       error: (err) => {
         this.isCapturingBoard = false;
-        this.captureBoardError = err?.error?.message || (typeof err?.error === 'string' ? err.error : null) || 'Failed to capture benchmark board.';
+        this.captureBoardError = err?.error?.error || err?.error?.message || (typeof err?.error === 'string' ? err.error : null) || 'Failed to capture benchmark board.';
         this.cdr.detectChanges();
       }
     });
+  }
+
+  async attachGameSnapshotFromClient() {
+    if (!this.clientBridge.isEmbedded() || this.hasGameSnapshot || this.isAttachingSnapshot) {
+      return;
+    }
+
+    this.isAttachingSnapshot = true;
+    this.cdr.detectChanges();
+
+    const requestId = 'local_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now();
+
+    try {
+      const snapshotText = await new Promise<string>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          this.localToolRequests.delete(requestId);
+          reject(new Error('Game client timed out responding to snapshot request.'));
+        }, 45000);
+
+        this.localToolRequests.set(requestId, { resolve, reject, timer });
+
+        this.clientBridge.postMessage({
+          type: 'tool_client_request',
+          requestId,
+          toolName: 'refresh_snapshot',
+          parameters: {}
+        });
+      });
+
+      this.chatService.attachGameSnapshot(this.currentSessionId, snapshotText).subscribe({
+        next: (res) => {
+          this.isAttachingSnapshot = false;
+          this.hasGameSnapshot = true;
+          const newSessionId = res.sessionId;
+          if (this.currentSessionId !== newSessionId) {
+            this.currentSessionId = newSessionId;
+            this.clientBridge.notifySessionChanged(newSessionId);
+
+            if (this.hubConnection?.state === signalR.HubConnectionState.Connected) {
+              this.hubConnection.invoke("JoinSession", this.currentSessionId).catch(console.error);
+            }
+            this.loadSessions(true);
+
+            const urlTree = this.router.createUrlTree([], {
+              relativeTo: this.route,
+              queryParams: { sessionId: this.currentSessionId },
+              queryParamsHandling: 'merge'
+            });
+            this.router.navigateByUrl(urlTree, { replaceUrl: true });
+          }
+          this.cdr.detectChanges();
+        },
+        error: (err) => {
+          this.isAttachingSnapshot = false;
+          console.error('Failed to attach game snapshot:', err);
+          this.showErrorToast(err?.error?.error || 'Failed to attach game snapshot to chat.', 'Snapshot Error');
+          this.cdr.detectChanges();
+        }
+      });
+    } catch (err: any) {
+      this.isAttachingSnapshot = false;
+      console.error('Failed to request snapshot from client bridge:', err);
+      this.showErrorToast(err?.message || 'Failed to request snapshot from game client.', 'Bridge Error');
+      this.cdr.detectChanges();
+    }
   }
 
   currentStatusText = '';
@@ -812,6 +904,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     (window as any).__gnollhackReceiveFiles = undefined;
     this.pendingRequests.forEach(timer => clearTimeout(timer));
     this.pendingRequests.clear();
+    this.localToolRequests.forEach(req => clearTimeout(req.timer));
+    this.localToolRequests.clear();
     this.sessionSearchSub?.unsubscribe();
     if (this.timeUpdateInterval) clearInterval(this.timeUpdateInterval);
     if (this.handoffTimeoutHandle) { clearTimeout(this.handoffTimeoutHandle); this.handoffTimeoutHandle = null; }
@@ -1092,23 +1186,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     }
 
     (window as any).onGnollHackToolResponse = (jsonString: string) => {
-      try {
-          const response: ToolResponse = JSON.parse(jsonString);
-
-          if (response.type !== 'tool_response') {
-              return;
-          }
-
-          const timer = this.pendingRequests.get(response.requestId);
-          if (timer) {
-              clearTimeout(timer);
-              this.pendingRequests.delete(response.requestId);
-          }
-
-          this.sendToolResult(response.requestId, response.success, response.content, response.errorMessage);
-      } catch (e) {
-          console.error('Failed to parse tool response:', e);
-      }
+      this.onGnollHackToolResponse(jsonString);
     };
 
     (window as any).__gnollhackReceiveFiles = (json: string) => {
@@ -1872,6 +1950,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   newSession() {
     this.sessionLoadSub?.unsubscribe();
     this.currentSessionId = null;
+    this.hasGameSnapshot = false;
     this.clientBridge.notifySessionChanged(null);
     this.lastSeenSeqNo = -1;
     this.messages = [];
@@ -1951,6 +2030,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.sessionLoadSub?.unsubscribe();
 
     this.messages = [];
+    this.hasGameSnapshot = false;
     this.autoScrollEnabled = true;
     this.lastSeenSeqNo = -1;
     this.clearStreamingState();
@@ -2022,6 +2102,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         }
 
         this.messages = s.messages || [];
+        this.hasGameSnapshot = !!s.hasGameSnapshot;
         this.hasOngoingGeneration = s.hasOngoingGeneration === true;
         this.formatMessageToolCalls(this.messages);
         this.recomputeContextUsage();
@@ -2930,6 +3011,38 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         );
     } catch (e) {
         console.error('Failed to send tool result:', e);
+    }
+  }
+
+  onGnollHackToolResponse(data: ToolResponse | string): void {
+    try {
+      const response: ToolResponse = typeof data === 'string' ? JSON.parse(data) : data;
+
+      if (response.type !== 'tool_response') {
+        return;
+      }
+
+      const localReq = this.localToolRequests.get(response.requestId);
+      if (localReq) {
+        clearTimeout(localReq.timer);
+        this.localToolRequests.delete(response.requestId);
+        if (response.success) {
+          localReq.resolve(response.content || '');
+        } else {
+          localReq.reject(new Error(response.errorMessage || response.content || 'Local tool execution failed'));
+        }
+        return;
+      }
+
+      const timer = this.pendingRequests.get(response.requestId);
+      if (timer) {
+        clearTimeout(timer);
+        this.pendingRequests.delete(response.requestId);
+      }
+
+      this.sendToolResult(response.requestId, response.success, response.content, response.errorMessage);
+    } catch (e) {
+      console.error('Failed to parse tool response from GnollHack:', e);
     }
   }
 

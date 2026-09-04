@@ -761,11 +761,17 @@ Harness version 8 introduces **Game Context Board Snapshots** and **AI-Generated
 ### Game Context Board Snapshots
 A board snapshot (`BenchmarkGameSnapshot`) captures the complete, authentic text dump of a live GnollHack game session board.
 - **Capture Pipeline**:
-  - **Live Game Capture (`client_refresh_snapshot`)**: Captured directly from the running game client over the client bridge via SignalR in the Chat UI. It creates both the snapshot and an empty question suite bound to it in a single transaction.
-  - **File Upload (`file_upload`)**: Captured from an uploaded dump or `.snapshot.txt` file via admin UI.
-  - **Manual Entry (`manual_entry`)**: Author-provided board dumps.
-- **Sanitizer Convergence**: All capture paths pass board text through `BenchmarkSnapshotImporter.NormalizeFlattenedText` before persistence. This normalizes line endings (`\r\n` / `\r` to `\n`), strips trailing whitespace per line, strips terminal backticks/triple backticks, rejects empty text, computes a canonical SHA-256 digest, and enforces the 60,000 character hard cap with an explicit truncation marker (`[SNAPSHOT TRUNCATED at 60000 chars]`).
-- **Provenance Tracking**: Each snapshot records `CaptureMethod`, `SourceSessionId`, `SourceClientBridgeId`, `SourceGnollHackVersion`, `Notes`, `DigestText`, and `CapturedAtUtc`.
+  - **Live Game Capture (`ClientRefresh`)**: Captured directly from the running game client over the client bridge via SignalR from the Chat UI ("Capture Live Board" button). It creates both the snapshot and an empty question suite bound to it in a single transaction.
+  - **Session Attachment Capture (`SessionAttachment`)**: Captured from an existing game snapshot attached to the chat session ("Save Attached Game Snapshot" button in the chat header). This extracts the newest attached snapshot text directly from the session's system messages without requiring a 45-second round trip to the native game client.
+  - **Server Upload (`ServerUpload`)**: Captured via programmatic API or file import (`file_upload` and `manual_entry` currently have no dedicated UI).
+- **Sanitizer Convergence**: All capture paths pass board text through `DumpHtmlSanitizer.NormalizeFlattenedText` before persistence. This normalizes line endings (`\r\n` / `\r` to `\n`), strips trailing whitespace per line, strips terminal backticks/triple backticks, rejects empty text, computes a canonical SHA-256 digest, and enforces the 60,000 character hard cap with an explicit truncation marker (`[SNAPSHOT TRUNCATED at 60000 chars]`).
+- **Provenance Tracking**: Each snapshot records `CaptureMethod`, `SourceChatSessionId`, `SourceGnollHackVersion`, `Notes`, `DigestText`, and `CapturedAtUtc`.
+- **Automatic Name Disambiguation**: Duplicate board names are automatically disambiguated with an incrementing numeric counter suffix (e.g. `Board Name (2)`, `Board Name (3)`) rather than rejected with an error, keeping the bound question suite name synchronized with the board.
+- **Chat UI Controls & Gating**:
+  - **Capture Live Board**: Displayed in the chat header actions and sidebar whenever an active session is open.
+  - **Save Attached Game Snapshot**: Displayed in the chat header actions whenever an active session has an attached snapshot (`hasGameSnapshot`).
+  - **Attach Game Snapshot to Chat**: Displayed in the composer input container whenever running embedded inside the GnollHack game client (`clientBridge.isEmbedded()`) and no snapshot is attached yet (`!hasGameSnapshot`).
+  - Both capture buttons are strictly gated by administrator privileges (`isAdmin`) and do **not** depend on `ShowDebugLog` or any build configuration flags.
 - **Immutability & Safety**: Board text is immutable after creation. Only metadata (`Name`, `SourceGnollHackVersion`, `Notes`, `DigestText`) can be edited. A board snapshot cannot be deleted if any benchmark suites or runs reference it.
 
 ### Snapshot Viewer UI

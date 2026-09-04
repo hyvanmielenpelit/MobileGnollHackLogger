@@ -57,16 +57,37 @@ public class BenchmarkSnapshotImporterTests
     }
 
     [Fact]
-    public async Task DuplicateBoardName_ThrowsDuplicateBoardNameException()
+    public async Task DuplicateBoardName_AutoSuffixes()
     {
         using var db = CreateDbContext();
         var importer = new BenchmarkSnapshotImporter(db);
-        await importer.FromClientTextAsync("HP: 50", new BoardMetadata("same_board"));
+        var (b1, s1) = await importer.FromClientTextAsync("HP: 50", new BoardMetadata("same_board"));
+        var (b2, s2) = await importer.FromClientTextAsync("HP: 60", new BoardMetadata("same_board"));
+        var (b3, s3) = await importer.FromClientTextAsync("HP: 70", new BoardMetadata("same_board"));
 
-        var ex = await Assert.ThrowsAsync<DuplicateBoardNameException>(
-            () => importer.FromClientTextAsync("HP: 60", new BoardMetadata("same_board")));
-        Assert.Equal("same_board", ex.BoardName);
-        Assert.True(ex.ExistingBoardId > 0);
+        Assert.Equal("same_board", b1.Name);
+        Assert.Equal("Board: same_board", s1.Name);
+
+        Assert.Equal("same_board (2)", b2.Name);
+        Assert.Equal("Board: same_board (2)", s2.Name);
+
+        Assert.Equal("same_board (3)", b3.Name);
+        Assert.Equal("Board: same_board (3)", s3.Name);
+    }
+
+    [Fact]
+    public async Task FromSessionAttachmentAsync_StampsCaptureMethodAndPersistsSourceChatSessionId()
+    {
+        using var db = CreateDbContext();
+        var importer = new BenchmarkSnapshotImporter(db);
+        var meta = new BoardMetadata("session_attached_board", Notes: "Admin note", SourceGnollHackVersion: "1.0", SourceChatSessionId: 42);
+        var (board, suite) = await importer.FromSessionAttachmentAsync("Attached snapshot text\nMore details", meta);
+
+        Assert.Equal("SessionAttachment", board.CaptureMethod);
+        Assert.Equal(42, board.SourceChatSessionId);
+        Assert.Equal("Admin note", board.Notes);
+        Assert.Equal("session_attached_board", board.Name);
+        Assert.Equal("Board: session_attached_board", suite.Name);
     }
 
     [Fact]

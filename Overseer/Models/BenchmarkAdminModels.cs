@@ -856,6 +856,7 @@ public class BenchmarkGameSnapshotDto
     public string CaptureMethod { get; set; } = string.Empty;
     public string? SourceGnollHackVersion { get; set; }
     public string? Notes { get; set; }
+    public long? SourceChatSessionId { get; set; }
     public DateTime? CapturedAtUtc { get; set; }
     public DateTime CreatedAtUtc { get; set; }
     public DateTime ModifiedAtUtc { get; set; }
@@ -864,6 +865,14 @@ public class BenchmarkGameSnapshotDto
 }
 
 public class CaptureBenchmarkSnapshotRequest
+{
+    public long SessionId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string? Notes { get; set; }
+    public string? SourceGnollHackVersion { get; set; }
+}
+
+public class SaveAttachedSnapshotRequest
 {
     public long SessionId { get; set; }
     public string Name { get; set; } = string.Empty;

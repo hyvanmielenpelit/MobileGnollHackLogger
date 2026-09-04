@@ -104,6 +104,7 @@ export interface ChatSessionDetailResponse {
   id: number;
   title: string;
   isGnollHackSession?: boolean;
+  hasGameSnapshot?: boolean;
   messages: ChatMessage[];
   hasOngoingGeneration?: boolean;
   ongoingGeneration?: { events: ChatStreamEvent[] };
@@ -199,6 +200,14 @@ export class ChatService {
       userModelId,
       systemModelId,
       hasGreeted
+    });
+  }
+
+  attachGameSnapshot(sessionId: number | null, snapshotText: string, sourceGnollHackVersion?: string | null) {
+    return this.http.post<{sessionId: number, hasGameSnapshot: boolean}>('/api/chat/sessions/attach-snapshot', {
+      sessionId,
+      snapshotText,
+      sourceGnollHackVersion
     });
   }
 

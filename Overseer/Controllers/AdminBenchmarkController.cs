@@ -15,6 +15,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
+using Overseer.Services;
 using Overseer.Services.Benchmarking;
 using Overseer.Services.Tools;
 using Microsoft.Extensions.DependencyInjection;
@@ -131,6 +132,7 @@ public class AdminBenchmarkController : ControllerBase
         CaptureMethod = s.CaptureMethod,
         SourceGnollHackVersion = s.SourceGnollHackVersion,
         Notes = s.Notes,
+        SourceChatSessionId = s.SourceChatSessionId,
         CapturedAtUtc = s.CapturedAtUtc,
         CreatedAtUtc = s.CreatedAtUtc,
         ModifiedAtUtc = s.ModifiedAtUtc,
@@ -1234,7 +1236,8 @@ public class AdminBenchmarkController : ControllerBase
             request.Name.Trim(),
             request.Notes?.Trim(),
             request.SourceGnollHackVersion?.Trim(),
-            DateTime.UtcNow);
+            DateTime.UtcNow,
+            request.SessionId);
 
         try
         {
@@ -1245,9 +1248,62 @@ public class AdminBenchmarkController : ControllerBase
                 Suite = ToSuiteDto(suite)
             });
         }
-        catch (DuplicateBoardNameException ex)
+        catch (ArgumentException ex)
         {
-            return Conflict(new { error = ex.Message, existingBoardId = ex.ExistingBoardId });
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    [HttpPost("snapshots/from-session")]
+    public async Task<IActionResult> SaveAttachedSnapshot([FromBody] SaveAttachedSnapshotRequest request, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.Name))
+        {
+            return BadRequest(new { error = "Board name is required." });
+        }
+
+        var session = await _dbContext.ChatSession.FirstOrDefaultAsync(s => s.Id == request.SessionId, ct);
+        if (session == null)
+        {
+            return NotFound(new { error = "Session not found." });
+        }
+
+        string userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+        if (session.AspNetUserId != userId)
+        {
+            return Forbid();
+        }
+
+        string p0 = ChatService.GameSnapshotLikePatterns[0];
+        string p1 = ChatService.GameSnapshotLikePatterns[1];
+        var snapshotMessage = await _dbContext.ChatMessage
+            .Where(m => m.ChatSessionId == session.Id && m.Role == "system" &&
+                (EF.Functions.Like(m.Content, p0) || EF.Functions.Like(m.Content, p1)))
+            .OrderByDescending(m => m.TimestampUtc)
+            .FirstOrDefaultAsync(ct);
+
+        if (snapshotMessage == null || string.IsNullOrWhiteSpace(snapshotMessage.Content))
+        {
+            return Conflict(new { error = "This chat has no attached game snapshot. Use Capture Live Board instead, or attach a snapshot first." });
+        }
+
+        string strippedContent = ChatService.StripGameSnapshotPrefix(snapshotMessage.Content);
+
+        var meta = new BoardMetadata(
+            request.Name.Trim(),
+            request.Notes?.Trim(),
+            request.SourceGnollHackVersion?.Trim(),
+            DateTime.UtcNow,
+            request.SessionId);
+
+        try
+        {
+            var (board, suite) = await _snapshotImporter.FromSessionAttachmentAsync(strippedContent, meta, ct);
+            return Ok(new CaptureBenchmarkSnapshotResponse
+            {
+                Board = ToSnapshotDto(board, suite.Id, suite.Name),
+                Suite = ToSuiteDto(suite)
+            });
         }
         catch (ArgumentException ex)
         {
@@ -1282,10 +1338,6 @@ public class AdminBenchmarkController : ControllerBase
                 Suite = ToSuiteDto(suite)
             });
         }
-        catch (DuplicateBoardNameException ex)
-        {
-            return Conflict(new { error = ex.Message, existingBoardId = ex.ExistingBoardId });
-        }
         catch (ArgumentException ex)
         {
             return BadRequest(new { error = ex.Message });
@@ -1307,6 +1359,7 @@ public class AdminBenchmarkController : ControllerBase
                 CaptureMethod = s.CaptureMethod,
                 SourceGnollHackVersion = s.SourceGnollHackVersion,
                 Notes = s.Notes,
+                SourceChatSessionId = s.SourceChatSessionId,
                 CapturedAtUtc = s.CapturedAtUtc,
                 CreatedAtUtc = s.CreatedAtUtc,
                 ModifiedAtUtc = s.ModifiedAtUtc

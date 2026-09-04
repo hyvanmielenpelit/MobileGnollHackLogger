@@ -72,6 +72,10 @@
             <span class="meta-label">GnollHack Version:</span>
             <span class="meta-value">{{ snapshot.sourceGnollHackVersion || 'Unknown' }}</span>
           </div>
+          <div class="meta-item">
+            <span class="meta-label">Source Chat:</span>
+            <span class="meta-value">{{ snapshot.sourceChatSessionId ? ('#' + snapshot.sourceChatSessionId) : '—' }}</span>
+          </div>
           <div class="meta-item meta-full-width">
             <span class="meta-label">SHA-256:</span>
             <code class="sha-box">{{ snapshot.sha256 }}</code>

@@ -14,21 +14,9 @@ public record BoardMetadata(
     string Name,
     string? Notes = null,
     string? SourceGnollHackVersion = null,
-    DateTime? CapturedAtUtc = null
+    DateTime? CapturedAtUtc = null,
+    long? SourceChatSessionId = null
 );
-
-public class DuplicateBoardNameException : InvalidOperationException
-{
-    public long ExistingBoardId { get; }
-    public string BoardName { get; }
-
-    public DuplicateBoardNameException(string name, long existingBoardId)
-        : base($"A benchmark game snapshot with name '{name}' already exists (ID: {existingBoardId}).")
-    {
-        BoardName = name;
-        ExistingBoardId = existingBoardId;
-    }
-}
 
 public class BenchmarkSnapshotImporter
 {
@@ -56,6 +44,13 @@ public class BenchmarkSnapshotImporter
         return await ProcessAndPersistAsync(sanitized, "ServerUpload", meta, ct);
     }
 
+    public async Task<(BenchmarkGameSnapshot Board, BenchmarkSuite Suite)> FromSessionAttachmentAsync(
+        string attachedText, BoardMetadata meta, CancellationToken ct = default)
+    {
+        string normalized = DumpHtmlSanitizer.NormalizeFlattenedText(attachedText);
+        return await ProcessAndPersistAsync(normalized, "SessionAttachment", meta, ct);
+    }
+
     private async Task<(BenchmarkGameSnapshot Board, BenchmarkSuite Suite)> ProcessAndPersistAsync(
         string normalizedText, string captureMethod, BoardMetadata meta, CancellationToken ct)
     {
@@ -69,13 +64,6 @@ public class BenchmarkSnapshotImporter
         if (string.IsNullOrWhiteSpace(meta.Name))
         {
             throw new ArgumentException("Board name must not be empty.", nameof(meta));
-        }
-
-        var existing = await _dbContext.BenchmarkGameSnapshots
-            .FirstOrDefaultAsync(s => s.Name == meta.Name, ct);
-        if (existing != null)
-        {
-            throw new DuplicateBoardNameException(meta.Name, existing.Id);
         }
 
         string finalText = normalizedText;
@@ -102,63 +90,91 @@ public class BenchmarkSnapshotImporter
                 : finalText.Substring(0, MaxDigestChars).Trim();
         }
 
-        var board = new BenchmarkGameSnapshot
-        {
-            Name = meta.Name,
-            SanitizedText = finalText,
-            DigestText = digestText,
-            CharCount = finalText.Length,
-            Sha256 = sha256,
-            CaptureMethod = captureMethod,
-            SourceGnollHackVersion = meta.SourceGnollHackVersion,
-            Notes = meta.Notes,
-            CapturedAtUtc = meta.CapturedAtUtc ?? DateTime.UtcNow,
-            CreatedAtUtc = DateTime.UtcNow,
-            ModifiedAtUtc = DateTime.UtcNow
-        };
-
-        _dbContext.BenchmarkGameSnapshots.Add(board);
-
-        string suiteBaseName = $"Board: {board.Name}";
-        string finalSuiteName = suiteBaseName;
+        string finalName = meta.Name;
         int counter = 1;
-        while (await _dbContext.BenchmarkSuites.AnyAsync(s => s.Name == finalSuiteName, ct))
-        {
-            counter++;
-            finalSuiteName = $"{suiteBaseName} ({counter})";
-        }
 
-        string shaPrefix = board.Sha256.Length >= 12 ? board.Sha256[..12] : board.Sha256;
-        var suite = new BenchmarkSuite
+        const int maxAttempts = 3;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
         {
-            Name = finalSuiteName,
-            Description = $"Benchmark question suite bound to game board '{board.Name}' (captured via {board.CaptureMethod}, {board.CharCount} characters, SHA-256 {shaPrefix}).",
-            GameSnapshot = board,
-            HasGeneratedQuestions = false,
-            CreatedAtUtc = DateTime.UtcNow,
-            ModifiedAtUtc = DateTime.UtcNow
-        };
-
-        _dbContext.BenchmarkSuites.Add(suite);
-
-        var profile = await _dbContext.BenchmarkScoringProfiles
-            .FirstOrDefaultAsync(p => p.Name == "Situational Advisor", ct);
-        if (profile == null)
-        {
-            profile = new BenchmarkScoringProfile
+            while (await _dbContext.BenchmarkGameSnapshots.AnyAsync(s => s.Name == finalName, ct))
             {
-                Name = "Situational Advisor",
-                SpeedTargetMs = 25000,
-                SpeedDecayK = 20.0,
-                IsDefault = false,
+                counter++;
+                finalName = $"{meta.Name} ({counter})";
+            }
+
+            var board = new BenchmarkGameSnapshot
+            {
+                Name = finalName,
+                SanitizedText = finalText,
+                DigestText = digestText,
+                CharCount = finalText.Length,
+                Sha256 = sha256,
+                CaptureMethod = captureMethod,
+                SourceGnollHackVersion = meta.SourceGnollHackVersion,
+                Notes = meta.Notes,
+                SourceChatSessionId = meta.SourceChatSessionId,
+                CapturedAtUtc = meta.CapturedAtUtc ?? DateTime.UtcNow,
                 CreatedAtUtc = DateTime.UtcNow,
                 ModifiedAtUtc = DateTime.UtcNow
             };
-            _dbContext.BenchmarkScoringProfiles.Add(profile);
+
+            string suiteBaseName = $"Board: {board.Name}";
+            string finalSuiteName = suiteBaseName;
+            int suiteCounter = 1;
+            while (await _dbContext.BenchmarkSuites.AnyAsync(s => s.Name == finalSuiteName, ct))
+            {
+                suiteCounter++;
+                finalSuiteName = $"{suiteBaseName} ({suiteCounter})";
+            }
+
+            string shaPrefix = board.Sha256.Length >= 12 ? board.Sha256[..12] : board.Sha256;
+            var suite = new BenchmarkSuite
+            {
+                Name = finalSuiteName,
+                Description = $"Benchmark question suite bound to game board '{board.Name}' (captured via {board.CaptureMethod}, {board.CharCount} characters, SHA-256 {shaPrefix}).",
+                GameSnapshot = board,
+                HasGeneratedQuestions = false,
+                CreatedAtUtc = DateTime.UtcNow,
+                ModifiedAtUtc = DateTime.UtcNow
+            };
+
+            _dbContext.BenchmarkGameSnapshots.Add(board);
+            _dbContext.BenchmarkSuites.Add(suite);
+
+            var profile = await _dbContext.BenchmarkScoringProfiles
+                .FirstOrDefaultAsync(p => p.Name == "Situational Advisor", ct);
+            if (profile == null)
+            {
+                profile = new BenchmarkScoringProfile
+                {
+                    Name = "Situational Advisor",
+                    SpeedTargetMs = 25000,
+                    SpeedDecayK = 20.0,
+                    IsDefault = false,
+                    CreatedAtUtc = DateTime.UtcNow,
+                    ModifiedAtUtc = DateTime.UtcNow
+                };
+                _dbContext.BenchmarkScoringProfiles.Add(profile);
+            }
+
+            try
+            {
+                await _dbContext.SaveChangesAsync(ct);
+                return (board, suite);
+            }
+            catch (DbUpdateException) when (attempt < maxAttempts)
+            {
+                _dbContext.Entry(board).State = EntityState.Detached;
+                _dbContext.Entry(suite).State = EntityState.Detached;
+                if (profile != null && _dbContext.Entry(profile).State == EntityState.Added)
+                {
+                    _dbContext.Entry(profile).State = EntityState.Detached;
+                }
+                counter++;
+                finalName = $"{meta.Name} ({counter})";
+            }
         }
 
-        await _dbContext.SaveChangesAsync(ct);
-
-        return (board, suite);
+        throw new InvalidOperationException("Failed to save snapshot after maximum retry attempts.");
     }
 }

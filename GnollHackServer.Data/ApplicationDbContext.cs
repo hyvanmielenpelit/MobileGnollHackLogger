@@ -109,6 +109,12 @@ namespace MobileGnollHackLogger.Data
                 .HasIndex(s => s.Name)
                 .IsUnique();
 
+            modelBuilder.Entity<BenchmarkGameSnapshot>()
+                .HasOne<ChatSession>()
+                .WithMany()
+                .HasForeignKey(s => s.SourceChatSessionId)
+                .OnDelete(DeleteBehavior.SetNull);
+
             modelBuilder.Entity<BenchmarkSuite>()
                 .HasIndex(s => s.Name)
                 .IsUnique();

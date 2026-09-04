@@ -92,6 +92,41 @@ public class GameSnapshotDetectionTests
         Assert.True(ChatService.IsMessageHistoryMessage(ChatService.MessageHistoryPrefix));
     }
 
+    [Theory]
+    // Multiline forms (both prefixes, mixed case, CRLF)
+    [InlineData("Game Context Snapshot:\n<h1>Map</h1>", "<h1>Map</h1>")]
+    [InlineData("Game Context Snapshot:\r\n<h1>Map</h1>", "<h1>Map</h1>")]
+    [InlineData("Game Context Snapshot:\n\n<h1>Map</h1>", "<h1>Map</h1>")]
+    [InlineData("Game Context Snapshot:\r\n\r\n<h1>Map</h1>", "<h1>Map</h1>")]
+    [InlineData("Game Snapshot:\nPlayer HP: 20", "Player HP: 20")]
+    [InlineData("Game Snapshot:\r\nPlayer HP: 20", "Player HP: 20")]
+    [InlineData("game context snapshot:\nlower case", "lower case")]
+    [InlineData("GAME SNAPSHOT:\nUPPER CASE", "UPPER CASE")]
+    // Inline forms (both prefixes, mixed case)
+    [InlineData("Game Snapshot: Turn 100", "Turn 100")]
+    [InlineData("Game Snapshot:   Turn 100", "Turn 100")]
+    [InlineData("Game Context Snapshot: Map data", "Map data")]
+    [InlineData("game snapshot: lower case", "lower case")]
+    [InlineData("game context snapshot: lower case", "lower case")]
+    // Only the prefix (must yield empty)
+    [InlineData("Game Context Snapshot:", "")]
+    [InlineData("Game Context Snapshot:\n", "")]
+    [InlineData("Game Context Snapshot:\r\n", "")]
+    [InlineData("Game Snapshot:", "")]
+    [InlineData("Game Snapshot:\n", "")]
+    [InlineData("Game Snapshot", "")]
+    [InlineData("Game Context Snapshot", "")]
+    [InlineData("game context snapshot", "")]
+    // Non-prefixed text
+    [InlineData("Hello World", "Hello World")]
+    [InlineData("", "")]
+    [InlineData(null, "")]
+    public void StripGameSnapshotPrefix_StripsCorrectly(string? content, string expected)
+    {
+        string actual = ChatService.StripGameSnapshotPrefix(content!);
+        Assert.Equal(expected, actual);
+    }
+
     [Fact]
     public void BuildSystemPrompt_WhenHasGameSnapshotIsTrue_IncludesSnapshotDeclaration()
     {
