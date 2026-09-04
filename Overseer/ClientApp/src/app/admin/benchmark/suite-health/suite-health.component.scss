@@ -507,7 +507,17 @@
   border-left: 3px solid rgba(255, 255, 255, 0.2);
   border-radius: 4px;
   background: rgba(0, 0, 0, 0.2);
-  font-size: 13px;
+  // A verified gap with citation has evidence from code/wiki, so it gets a distinct emerald border.
+  // A cross-family cluster has cross-model agreement, so it gets amber.
+  &.is-verified-gap {
+    border-left-color: #34d399;
+
+    .gap-verdict {
+      background: rgba(52, 211, 153, 0.15);
+      color: #6ee7b7;
+      border: 1px solid rgba(52, 211, 153, 0.3);
+    }
+  }
 
   // Only a cross-family cluster is evidence about the suite, so only it is marked.
   &.is-rubric-gap,

@@ -191,21 +191,22 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void ScoringMethodVersion_IsSix()
+    public void ScoringMethodVersion_IsSeven()
     {
         // v4 was the artifact scrubbing and speed recalibration. v5 changed what a critical
-        // error is — an omission can no longer be one, and the claim must be quoted. v6 changes
+        // error is — an omission can no longer be one, and the claim must be quoted. v6 changed
         // what an *accuracy deduction* is: a claim the rubric neither states nor contradicts is
-        // declared rather than deducted for. Scores are not comparable across any of those
-        // boundaries on the answers they touch, and the report prints the version so a mixed
-        // comparison is visible rather than silent.
-        Assert.Equal(6, BenchmarkAssessmentPrompt.ScoringMethodVersion);
+        // declared rather than deducted for. v7 enforces evidence discipline: docking a level
+        // requires stating what was wrong, and "Matches rubric." may only accompany level 6.
+        // Scores are not comparable across any of those boundaries on the answers they touch,
+        // and the report prints the version so a mixed comparison is visible rather than silent.
+        Assert.Equal(7, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 
     [Fact]
-    public void HarnessVersion_IsEight()
+    public void HarnessVersion_IsNine()
     {
-        Assert.Equal("8", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("9", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]

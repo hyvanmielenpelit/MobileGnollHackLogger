@@ -367,6 +367,66 @@
               }
             </div>
           </div>
+
+          <!-- Row 3: Claim Verifier.
+               Optional, off by default: checks factual claims the assessor could neither confirm nor
+               refute against the game source code and wiki using tools. Advisory: does not alter score. -->
+          <div class="form-row claim-verifier-row">
+            <div class="form-group">
+              <label>Claim Verifier (optional)</label>
+              <div class="custom-model-selector claim-verifier-model-selector">
+                <button type="button" class="selector-trigger" (click)="toggleClaimVerifierModelDropdown($event)" [class.open]="isClaimVerifierModelDropdownOpen">
+                  <span class="model-name" [class.text-muted]="!selectedClaimVerifierModel">{{ selectedClaimVerifierModel?.displayName || selectedClaimVerifierModel?.modelId || 'None — no claim verification' }}</span>
+                  @if (selectedClaimVerifierModel?.thinkingLevel) {
+                    <span class="thinking-badge">{{ formatThinkingLevel(selectedClaimVerifierModel?.thinkingLevel) }}</span>
+                  }
+                  @if (showReasoningBadge(selectedClaimVerifierModel?.reasoningMode)) {
+                    <span class="reasoning-badge">{{ selectedClaimVerifierModel?.reasoningMode }}</span>
+                  }
+                  @if (selectedClaimVerifierModel?.provider) {
+                    <span class="provider-badge">{{ selectedClaimVerifierModel?.provider }}</span>
+                  }
+                  <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </button>
+                @if (isClaimVerifierModelDropdownOpen) {
+                  <div class="selector-dropdown">
+                    <div class="model-option" (click)="selectClaimVerifierModel(null)" [class.selected]="claimVerifierConfigId === null">
+                      <span class="model-name text-muted">None — no claim verification</span>
+                    </div>
+                    @for (model of benchmarkCapableConfigs; track model.id) {
+                      <div class="model-option" (click)="selectClaimVerifierModel(model)" [class.selected]="claimVerifierConfigId === model.id">
+                        <span class="model-name">{{ model.displayName || model.modelId }}</span>
+                        @if (model.thinkingLevel) {
+                          <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
+                        }
+                        @if (showReasoningBadge(model.reasoningMode)) {
+                          <span class="reasoning-badge">{{ model.reasoningMode }}</span>
+                        }
+                        <span class="provider-badge">{{ model.provider }}</span>
+                      </div>
+                    }
+                  </div>
+                }
+              </div>
+              <span class="form-hint">
+                Verifies individual factual claims the rubric could not adjudicate against the game's source code
+                and wiki using read-only tools. Advisory; recorded after scoring and folded into no index.
+              </span>
+
+              @if (showClaimVerifierCandidateAdvisory) {
+                <div class="alert alert-info mt-10" role="note">
+                  <div class="alert-content">
+                    <div class="alert-heading"><strong>Verifier is the candidate under test</strong></div>
+                    <div class="alert-body">
+                      The model under test would be checking its own claims. The tools supply the evidence
+                      rather than the model's memory, so this is not worthless — but it is the weakest available
+                      pairing.
+                    </div>
+                  </div>
+                </div>
+              }
+            </div>
+          </div>
         </div>
 
         <div class="compliance-purpose-box mt-20">
@@ -859,7 +919,7 @@
           </div>
         </div>
 
-        @if (criticalErrorAnswerCount > 0 || (selectedRunDetail.transportDefectAnswerCount ?? 0) > 0 || (selectedRunDetail.recoveredAnswerCount ?? 0) > 0 || (selectedRunDetail.toolStarvedAnswerCount ?? 0) > 0 || (selectedRunDetail.advisoryFlagAnswerCount ?? 0) > 0 || disputedAnswerCount > 0 || contestedVerdictAnswerCount > 0 || reassessedAnswerCount > 0 || showRunProfileFitAdvisory) {
+        @if (criticalErrorAnswerCount > 0 || (selectedRunDetail.transportDefectAnswerCount ?? 0) > 0 || (selectedRunDetail.recoveredAnswerCount ?? 0) > 0 || (selectedRunDetail.toolStarvedAnswerCount ?? 0) > 0 || (selectedRunDetail.advisoryFlagAnswerCount ?? 0) > 0 || disputedAnswerCount > 0 || contestedVerdictAnswerCount > 0 || (selectedRunDetail.unevidencedDeductionAnswerCount ?? 0) > 0 || refutedClaimAnswerCount > 0 || secondOpinionSelectedButUnused || reassessedAnswerCount > 0 || showRunProfileFitAdvisory) {
           <div class="alert alert-warning mb-20" role="alert">
             <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
@@ -909,6 +969,22 @@
                     <strong>{{ contestedVerdictAnswerCount }} contested verdict(s)</strong>@if (contestedVerdictQuestionNumbers) { <span> (question(s) {{ contestedVerdictQuestionNumbers }})</span> } &mdash;
                     the assessor's own comment describes a fabrication while its critical-error flag
                     is false. Advisory; no scoring effect.
+                  </div>
+                }
+                @if ((selectedRunDetail.unevidencedDeductionAnswerCount ?? 0) > 0) {
+                  <div>
+                    <strong>{{ selectedRunDetail.unevidencedDeductionAnswerCount }} answer(s) carry a level docked below the rubric-match anchor with evidence that names no defect</strong>@if (unevidencedDeductionQuestionNumbers) { <span> (question(s) {{ unevidencedDeductionQuestionNumbers }})</span> }. Advisory; the verdict stands and no score changed.
+                  </div>
+                }
+                @if (refutedClaimAnswerCount > 0) {
+                  <div>
+                    <strong>{{ refutedClaimAnswerCount }} answer(s) carry refuted claim(s)</strong>@if (refutedClaimQuestionNumbers) { <span> (question(s) {{ refutedClaimQuestionNumbers }})</span> } &mdash;
+                    a factual claim outside the rubric was checked against the source code/wiki by a claim verifier and refuted. Advisory; recorded after scoring and folded into no index.
+                  </div>
+                }
+                @if (secondOpinionSelectedButUnused) {
+                  <div>
+                    A second-opinion assessor was selected but no answer met a trigger, so nothing was graded twice and grader agreement is not measured for this run.
                   </div>
                 }
                 @if (reassessedAnswerCount > 0) {
@@ -1088,7 +1164,7 @@
                       -->
                       <span class="badge-flag"
                             [class]="'badge-flag-' + flag.toLowerCase() + (isAdvisoryFlagName(flag) ? ' badge-flag-advisory' : '')"
-                            [title]="isAdvisoryFlagName(flag) ? 'Advisory only — this does not affect the run status or the clean answer count.' : 'Transport defect detected in this answer.'">{{ flag }}</span>
+                            [title]="flag === 'RefutedClaim' ? 'Advisory: a claim outside the rubric was checked against the source/wiki and refuted. Recorded after scoring; no score changed.' : flag === 'UnevidencedDeduction' ? 'Advisory: a level was docked while stated evidence names no defect. The verdict stands and no score changed.' : isAdvisoryFlagName(flag) ? 'Advisory only — this does not affect the run status or the clean answer count.' : 'Transport defect detected in this answer.'">{{ flag }}</span>
                     }
                   }
                   @if (formatAssessmentStatus(ans.assessmentStatus) !== 'Scored') {
@@ -1229,6 +1305,45 @@
                         second reading to replace it.
                       </div>
                     </div>
+                  }
+
+                  @if (claimVerificationsOf(ans); as verifications) {
+                    @if (verifications.length > 0) {
+                      <div class="claim-verification-box mb-15">
+                        <div class="claim-verification-header">
+                          <div>
+                            <strong>Claim verification ({{ ans.claimVerificationByModelDisplayNameUsed || selectedRunDetail?.claimVerifierDisplayNameUsed || 'claim verifier' }}):</strong>
+                            <span class="claim-verification-counts">
+                              {{ ans.claimsSupportedCount ?? 0 }} supported, {{ ans.claimsRefutedCount ?? 0 }} refuted, {{ ans.claimsIndeterminateCount ?? 0 }} indeterminate
+                            </span>
+                          </div>
+                          @if (ans.claimVerificationToolCallCount != null) {
+                            <span class="text-muted text-11">({{ ans.claimVerificationToolCallCount }} tool call(s))</span>
+                          }
+                        </div>
+                        <div class="claim-verification-list">
+                          @for (v of verifications; track v.claimIndex ?? v.claim) {
+                            <div class="claim-verification-item" [class.is-refuted]="v.verdict === 'Refuted'">
+                              <div class="claim-verification-title">
+                                <span class="verdict-pill" [class.verdict-supported]="v.verdict === 'Supported'" [class.verdict-refuted]="v.verdict === 'Refuted'" [class.verdict-indeterminate]="v.verdict === 'Indeterminate'">
+                                  {{ v.verdict }}
+                                </span>
+                                <span class="claim-text">“{{ v.claim }}”</span>
+                              </div>
+                              @if (v.citation) {
+                                <div class="claim-citation"><strong>Citation:</strong> {{ v.citation }}</div>
+                              }
+                              @if (v.basis) {
+                                <div class="claim-basis"><strong>Basis:</strong> {{ v.basis }}</div>
+                              }
+                            </div>
+                          }
+                        </div>
+                        <div class="claim-verification-note">
+                          Advisory. Checked against source code and wiki using tools; does not alter scoring.
+                        </div>
+                      </div>
+                    }
                   }
 
                   <!--
@@ -2462,6 +2577,23 @@
                 }
                 @if (formatSecondOpinionMode(activeRunDetail.secondOpinionModeUsed)) {
                   <span class="second-opinion-mode-badge" [title]="secondOpinionModeHintOf(activeRunDetail.secondOpinionModeUsed)">{{ formatSecondOpinionMode(activeRunDetail.secondOpinionModeUsed) }}</span>
+                }
+              </dd>
+            </div>
+          }
+          @if (activeRunDetail.claimVerifierDisplayNameUsed || activeRunDetail.claimVerifierModelIdUsed) {
+            <div class="run-model-row">
+              <dt>Claim verifier</dt>
+              <dd>
+                <span class="model-name">{{ activeRunDetail.claimVerifierDisplayNameUsed || activeRunDetail.claimVerifierModelIdUsed }}</span>
+                @if (activeRunDetail.claimVerifierThinkingLevelUsed) {
+                  <span class="thinking-badge">{{ formatThinkingLevel(activeRunDetail.claimVerifierThinkingLevelUsed) }}</span>
+                }
+                @if (showReasoningBadge(activeRunDetail.claimVerifierReasoningModeUsed)) {
+                  <span class="reasoning-badge">{{ activeRunDetail.claimVerifierReasoningModeUsed }}</span>
+                }
+                @if (activeRunDetail.claimVerifierProviderUsed) {
+                  <span class="provider-badge">{{ activeRunDetail.claimVerifierProviderUsed }}</span>
                 }
               </dd>
             </div>

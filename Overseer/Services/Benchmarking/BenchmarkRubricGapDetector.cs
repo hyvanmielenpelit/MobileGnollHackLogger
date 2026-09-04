@@ -18,6 +18,7 @@ public sealed record BenchmarkUnverifiedClaimSample
     public string Provider { get; init; } = string.Empty;
     public string ModelId { get; init; } = string.Empty;
     public string Claim { get; init; } = string.Empty;
+    public BenchmarkClaimVerdict? VerificationVerdict { get; init; }
 }
 
 /// <summary>What a cluster of near-identical claims means.</summary>
@@ -36,7 +37,16 @@ public enum BenchmarkRubricGapVerdict
     /// invention as a rubric gap is how a benchmark absorbs a model's hallucinations into its own
     /// answer key.
     /// </summary>
-    LikelyHallucination = 2
+    LikelyHallucination = 2,
+
+    /// <summary>
+    /// At least one occurrence was checked against the source or wiki by a claim verifier and came
+    /// back Supported with a citation. Stronger evidence than LikelyRubricGap and available from a
+    /// single run: cross-model agreement is a proxy for truth, a citation is evidence of it.
+    /// Still surfaced for a human to fold into the rubric — never applied automatically, for the same
+    /// reason nothing else here is.
+    /// </summary>
+    VerifiedRubricGap = 3
 }
 
 public sealed record BenchmarkRubricGapCluster
@@ -117,7 +127,8 @@ public static class BenchmarkRubricGapDetector
         }
 
         return clusters
-            .OrderByDescending(c => c.Verdict == BenchmarkRubricGapVerdict.LikelyRubricGap)
+            .OrderByDescending(c => c.Verdict == BenchmarkRubricGapVerdict.VerifiedRubricGap)
+            .ThenByDescending(c => c.Verdict == BenchmarkRubricGapVerdict.LikelyRubricGap)
             .ThenByDescending(c => c.ModelFamilies.Count)
             .ThenByDescending(c => c.Occurrences)
             .ThenBy(c => c.QuestionOrderIndex)
@@ -161,6 +172,24 @@ public static class BenchmarkRubricGapDetector
                 .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
+            BenchmarkRubricGapVerdict verdict;
+            if (members.Any(m => m.VerificationVerdict == BenchmarkClaimVerdict.Refuted))
+            {
+                verdict = BenchmarkRubricGapVerdict.LikelyHallucination;
+            }
+            else if (members.Any(m => m.VerificationVerdict == BenchmarkClaimVerdict.Supported))
+            {
+                verdict = BenchmarkRubricGapVerdict.VerifiedRubricGap;
+            }
+            else if (families.Count >= FamiliesForRubricGap)
+            {
+                verdict = BenchmarkRubricGapVerdict.LikelyRubricGap;
+            }
+            else
+            {
+                verdict = BenchmarkRubricGapVerdict.LikelyHallucination;
+            }
+
             yield return new BenchmarkRubricGapCluster
             {
                 QuestionId = members[0].QuestionId,
@@ -174,9 +203,7 @@ public static class BenchmarkRubricGapDetector
                     .OrderBy(id => id, StringComparer.OrdinalIgnoreCase)
                     .ToList(),
                 Occurrences = members.Count,
-                Verdict = families.Count >= FamiliesForRubricGap
-                    ? BenchmarkRubricGapVerdict.LikelyRubricGap
-                    : BenchmarkRubricGapVerdict.LikelyHallucination
+                Verdict = verdict
             };
         }
     }

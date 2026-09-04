@@ -61,7 +61,27 @@ public enum BenchmarkAnswerFlags
     // second-opinion trigger and a report line for a human. Adding it to the defect flags would
     // flip healthy runs to CompletedWithErrors, which is the regression harness version 4 exists
     // to undo. See BenchmarkVerdictConsistency.
-    ContestedVerdict = 32
+    ContestedVerdict = 32,
+
+    // The assessor docked ACCURACY or COMPLETENESS to UnevidencedDeductionMaxLevel or below while
+    // its own evidence string for that dimension names no defect ("Matches rubric."). Scoring method
+    // v7 tells the assessor that a no-fault evidence string may only accompany level 6, so this flag
+    // is a compliance check on that instruction rather than a guess about grader intent — the same
+    // arrangement as criticalErrorQuote, which the prompt demands and the harness verifies.
+    //
+    // Advisory, and grouped here for the same reason as ContestedVerdict: the answer is intact and
+    // the verdict may well be right. Accuracy carries 55% of the quality weight, so a level docked on
+    // evidence naming nothing is the cheapest place this harness loses points to its own grader — on
+    // run 8 it cost Q1 28 points of its dominant dimension. Nothing here changes a score.
+    // See BenchmarkVerdictConsistency.HasUnevidencedDeduction.
+    UnevidencedDeduction = 64,
+
+    // A claim the assessor recorded as unadjudicable was checked against the source or wiki by the
+    // claim verifier and came back Refuted, with a citation. A real accuracy finding the first grader
+    // was not equipped to make — and still advisory, for the same reason every other finding here is:
+    // it arrives after scoring, from a model the rubric never sanctioned as a grader, and a metric
+    // that can be revised after the fact by a later pass is not reproducible. Reported, never applied.
+    RefutedClaim = 128
 }
 
 /// <summary>
@@ -230,6 +250,29 @@ public class BenchmarkRun
     [MaxLength(32)]
     public string? SecondOpinionAssessorModelReasoningModeUsed { get; set; }
 
+    // Claim Verifier snapshot.
+    //
+    // Null means this run performs no claim verification. Like every other model choice for a run,
+    // this one is made in the start dialog and recorded here — a SystemAiApiConfiguration id is a
+    // database identity and belongs nowhere near a settings file.
+    public long? ClaimVerifierModelConfigurationId { get; set; }
+    public SystemAiApiConfiguration? ClaimVerifierModelConfiguration { get; set; }
+
+    [MaxLength(64)]
+    public string? ClaimVerifierProviderUsed { get; set; }
+
+    [MaxLength(128)]
+    public string? ClaimVerifierModelIdUsed { get; set; }
+
+    [MaxLength(256)]
+    public string? ClaimVerifierDisplayNameUsed { get; set; }
+
+    [MaxLength(32)]
+    public string? ClaimVerifierThinkingLevelUsed { get; set; }
+
+    [MaxLength(32)]
+    public string? ClaimVerifierReasoningModeUsed { get; set; }
+
     // Run metadata
     [MaxLength(450)]
     public string? StartedByUserId { get; set; }
@@ -295,6 +338,24 @@ public class BenchmarkRun
     // Advisory; overlaps the counts above and is never summed with them.
     public int ContestedVerdictAnswerCount { get; set; }
 
+    /// <summary>Answers carrying <see cref="BenchmarkAnswerFlags.UnevidencedDeduction"/>. Advisory.</summary>
+    public int UnevidencedDeductionAnswerCount { get; set; }
+
+    /// <summary>Answers carrying <see cref="BenchmarkAnswerFlags.RefutedClaim"/>. Advisory.</summary>
+    public int RefutedClaimAnswerCount { get; set; }
+
+    /// <summary>Answers for which claim verification was run (at least one claim evaluated).</summary>
+    public int ClaimVerifiedAnswerCount { get; set; }
+
+    /// <summary>Total claims evaluated across all answers whose verdict was Supported.</summary>
+    public int ClaimsSupportedCount { get; set; }
+
+    /// <summary>Total claims evaluated across all answers whose verdict was Refuted.</summary>
+    public int ClaimsRefutedCount { get; set; }
+
+    /// <summary>Total claims evaluated across all answers whose verdict was Indeterminate.</summary>
+    public int ClaimsIndeterminateCount { get; set; }
+
     // Answers whose verdict was replaced after the run finished, by the re-assess action.
     // A published index can move after publication, so the report says when it has.
     public int ReassessedAnswerCount { get; set; }
@@ -356,6 +417,11 @@ public class BenchmarkRun
     public long TotalAssessmentInputTokens { get; set; }
     public long TotalAssessmentOutputTokens { get; set; }
     public long TotalAssessmentDurationMs { get; set; }
+
+    // Claim-verifier-side usage, kept apart from candidate and assessor totals above.
+    public long TotalClaimVerificationInputTokens { get; set; }
+    public long TotalClaimVerificationOutputTokens { get; set; }
+    public long TotalClaimVerificationDurationMs { get; set; }
 
     public List<BenchmarkRunAnswer> Answers { get; set; } = new();
 }

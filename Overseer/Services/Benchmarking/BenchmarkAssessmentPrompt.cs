@@ -26,6 +26,9 @@ public class BenchmarkPerQuestionVerdictSummary
     public string? AccuracyEvidence { get; set; }
     public string? CompletenessEvidence { get; set; }
     public int UnverifiedClaimCount { get; set; }
+    public int? ClaimsSupportedCount { get; set; }
+    public int? ClaimsRefutedCount { get; set; }
+    public int? ClaimsIndeterminateCount { get; set; }
     public int? AssessedDifficulty { get; set; }
     public bool CriticalError { get; set; }
     public string? ReviewComment { get; set; }
@@ -49,7 +52,15 @@ public static class BenchmarkAssessmentPrompt
     // than its rubric, systematically and in one direction. The level-3 anchor drops the
     // hallucination wording with it; fabrication stays covered at levels 0-2 and by CRITICAL
     // ERROR. Scores are not comparable with v5 on any answer containing an out-of-rubric claim.
-    public const int ScoringMethodVersion = 6;
+    // v7: a no-fault evidence string may accompany level 6 only; any level below 6 must name what
+    // kept it there. v6 had no rule, and on the 2026-09-03 run Q1 was docked to Accuracy 4/6 —
+    // 28 points of the 55%-weight dimension — with accuracyEvidence "Matches rubric.", a string the
+    // prompt itself offers as the *full-level* form. Q5 was the same shape at 5/6. A deduction whose
+    // stated basis names no defect is unreviewable: neither a reader nor the harness can tell whether
+    // the level or the evidence was the mistake. The harness verifies compliance through
+    // BenchmarkAnswerFlags.UnevidencedDeduction and routes a violation to a second reader; it never
+    // changes a level itself. Scores are not comparable with v6 on any answer graded below level 6.
+    public const int ScoringMethodVersion = 7;
 
     /// <summary>
     /// The harness the run executed under. A constant rather than a configuration key: it exists
@@ -84,8 +95,15 @@ public static class BenchmarkAssessmentPrompt
     ///     re-assessment records a verdict without touching the score at all; and a calibration
     ///     run re-grades a stored run with an alternative assessor, non-destructively, so an
     ///     assessor change can be measured before it is made.
+    /// v9: unevidenced deductions are detected and routed to a second reader; a second-opinion
+    ///     assessor that was selected but never triggered is reported as zero coverage instead of
+    ///     silence; the advisory-flag breakdown lists every advisory member rather than two of them;
+    ///     and a claim the assessor could not adjudicate can be checked against the source and wiki
+    ///     by a third model role with read-only tools, recorded as advisory evidence that changes no
+    ///     level, score or index. Execution behaviour changes (a new post-scoring stage), so runs
+    ///     before and after are compared only through the version.
     /// </summary>
-    public const string HarnessVersion = "8";
+    public const string HarnessVersion = "9";
 
     public static string BuildPerQuestionPrompt(
         string suiteName,
@@ -183,7 +201,8 @@ public static class BenchmarkAssessmentPrompt
         sb.AppendLine("For accuracy and completeness, state what your deduction rests on:");
         sb.AppendLine("- `accuracyEvidence` / `completenessEvidence`: name the rubric point the answer failed, quoting the rubric where you can.");
         sb.AppendLine("- If a deduction does not come from the rubric, say so explicitly, e.g. 'Not in rubric: from my own knowledge of the GnollHack source'.");
-        sb.AppendLine("- Award full levels with a short evidence string such as 'Matches rubric'. Never invent a rubric point that is not present above.");
+        sb.AppendLine("- A no-fault evidence string such as 'Matches rubric' may accompany **level 6 only**. If you award any level below 6, the evidence string MUST name specifically what kept it below — the rubric point, the claim, or the missing element. 'Matches rubric' beside level 4 asserts both that the answer was faultless and that it was not; the harness records that contradiction and routes the answer to a second reader.");
+        sb.AppendLine("- Never invent a rubric point that is not present above.");
         sb.AppendLine("- Never write \"unverified\", \"could not confirm\", or equivalent as the basis of an accuracy deduction. That finding belongs in `unverifiedClaims`.");
         sb.AppendLine();
         sb.AppendLine("### 7. UNVERIFIED CLAIMS");
@@ -391,6 +410,10 @@ public static class BenchmarkAssessmentPrompt
                 if (v.UnverifiedClaimCount > 0)
                 {
                     sb.AppendLine($"Unverified claims recorded: {v.UnverifiedClaimCount} (declared, not deducted for)");
+                }
+                if (v.ClaimsSupportedCount.HasValue || v.ClaimsRefutedCount.HasValue || v.ClaimsIndeterminateCount.HasValue)
+                {
+                    sb.AppendLine($"Claim verification: {v.ClaimsSupportedCount ?? 0} supported, {v.ClaimsRefutedCount ?? 0} refuted, {v.ClaimsIndeterminateCount ?? 0} indeterminate (checked against source/wiki after grading; advisory, not reflected in the scores above)");
                 }
                 sb.AppendLine($"Assessor Comment: {v.ReviewComment}");
             }

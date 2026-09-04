@@ -123,12 +123,20 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
 
   /**
    * BenchmarkAnswerFlags bits that are advisory only and must never be presented as a
-   * failure: ReasoningBleed = 8, RepeatedFragments = 16.
+   * failure: ReasoningBleed = 8, RepeatedFragments = 16, ContestedVerdict = 32,
+   * UnevidencedDeduction = 64, RefutedClaim = 128. Must track BenchmarkRunFinalizer.AdvisoryFlags on the
+   * server as the source of truth.
    */
-  private static readonly ADVISORY_FLAGS = 8 | 16;
+  private static readonly ADVISORY_FLAGS = 8 | 16 | 32 | 64 | 128;
 
   /** The same advisory members by name, as they arrive in answerFlagNames. */
-  private static readonly ADVISORY_FLAG_NAMES: readonly string[] = ['ReasoningBleed', 'RepeatedFragments'];
+  private static readonly ADVISORY_FLAG_NAMES: readonly string[] = [
+    'ReasoningBleed',
+    'RepeatedFragments',
+    'ContestedVerdict',
+    'UnevidencedDeduction',
+    'RefutedClaim'
+  ];
 
   // Suites
   suites: BenchmarkSuiteDto[] = [];
@@ -171,6 +179,12 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   secondOpinionConfigId: number | null = null;
 
   /**
+   * Optional model: verifies unverified factual claims against the game source code and wiki
+   * using read-only tools. Null means no claim verification for this run, which is the default.
+   */
+  claimVerifierConfigId: number | null = null;
+
+  /**
    * Per-run override of the scoring profile's second-opinion mode. Null follows the profile, so
    * changing the profile changes the shown default until the operator picks something.
    */
@@ -187,6 +201,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   isTestedModelDropdownOpen = false;
   isAssessorModelDropdownOpen = false;
   isSecondOpinionModelDropdownOpen = false;
+  isClaimVerifierModelDropdownOpen = false;
   startingRun = false;
   runErrorMessage: string | null = null;
   sameProviderWarning: SameProviderWarningDto | null = null;
@@ -475,6 +490,9 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     if (this.isSecondOpinionModelDropdownOpen && !target.closest('.second-opinion-model-selector')) {
       this.isSecondOpinionModelDropdownOpen = false;
     }
+    if (this.isClaimVerifierModelDropdownOpen && !target.closest('.claim-verifier-model-selector')) {
+      this.isClaimVerifierModelDropdownOpen = false;
+    }
     if (this.isDifficultyAssessorDropdownOpen && !target.closest('.difficulty-assessor-model-selector')) {
       this.isDifficultyAssessorDropdownOpen = false;
     }
@@ -500,6 +518,20 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
 
   get selectedSecondOpinionModel(): SystemAiConfigDto | undefined {
     return this.benchmarkCapableConfigs.find(c => c.id === this.secondOpinionConfigId);
+  }
+
+  get selectedClaimVerifierModel(): SystemAiConfigDto | undefined {
+    return this.benchmarkCapableConfigs.find(c => c.id === this.claimVerifierConfigId);
+  }
+
+  /**
+   * The verifier is the candidate model itself. Tools supply the evidence rather than the model's
+   * memory, so this is not worthless — but it is the weakest available pairing.
+   */
+  get showClaimVerifierCandidateAdvisory(): boolean {
+    return this.claimVerifierConfigId != null &&
+      this.testedConfigId != null &&
+      this.claimVerifierConfigId === this.testedConfigId;
   }
 
   /**
@@ -601,6 +633,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     if (this.isTestedModelDropdownOpen) {
       this.isAssessorModelDropdownOpen = false;
       this.isSecondOpinionModelDropdownOpen = false;
+      this.isClaimVerifierModelDropdownOpen = false;
       this.isDifficultyAssessorDropdownOpen = false;
       this.isRetryAssessorDropdownOpen = false;
     }
@@ -612,6 +645,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     if (this.isAssessorModelDropdownOpen) {
       this.isTestedModelDropdownOpen = false;
       this.isSecondOpinionModelDropdownOpen = false;
+      this.isClaimVerifierModelDropdownOpen = false;
       this.isDifficultyAssessorDropdownOpen = false;
       this.isRetryAssessorDropdownOpen = false;
     }
@@ -623,6 +657,19 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     if (this.isSecondOpinionModelDropdownOpen) {
       this.isTestedModelDropdownOpen = false;
       this.isAssessorModelDropdownOpen = false;
+      this.isClaimVerifierModelDropdownOpen = false;
+      this.isDifficultyAssessorDropdownOpen = false;
+      this.isRetryAssessorDropdownOpen = false;
+    }
+  }
+
+  toggleClaimVerifierModelDropdown(event: Event) {
+    event.stopPropagation();
+    this.isClaimVerifierModelDropdownOpen = !this.isClaimVerifierModelDropdownOpen;
+    if (this.isClaimVerifierModelDropdownOpen) {
+      this.isTestedModelDropdownOpen = false;
+      this.isAssessorModelDropdownOpen = false;
+      this.isSecondOpinionModelDropdownOpen = false;
       this.isDifficultyAssessorDropdownOpen = false;
       this.isRetryAssessorDropdownOpen = false;
     }
@@ -635,6 +682,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       this.isTestedModelDropdownOpen = false;
       this.isAssessorModelDropdownOpen = false;
       this.isSecondOpinionModelDropdownOpen = false;
+      this.isClaimVerifierModelDropdownOpen = false;
       this.isRetryAssessorDropdownOpen = false;
     }
   }
@@ -646,6 +694,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       this.isTestedModelDropdownOpen = false;
       this.isAssessorModelDropdownOpen = false;
       this.isSecondOpinionModelDropdownOpen = false;
+      this.isClaimVerifierModelDropdownOpen = false;
       this.isDifficultyAssessorDropdownOpen = false;
     }
   }
@@ -663,6 +712,11 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   selectSecondOpinionModel(config: SystemAiConfigDto | null) {
     this.secondOpinionConfigId = config?.id ?? null;
     this.isSecondOpinionModelDropdownOpen = false;
+  }
+
+  selectClaimVerifierModel(config: SystemAiConfigDto | null) {
+    this.claimVerifierConfigId = config?.id ?? null;
+    this.isClaimVerifierModelDropdownOpen = false;
   }
 
   selectDifficultyAssessorModel(config: SystemAiConfigDto) {
@@ -1465,6 +1519,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       // Sent only when an assessor is selected: without one the mode is inert, and sending Off
       // would be indistinguishable from "the operator chose Never".
       secondOpinionMode: this.secondOpinionConfigId != null ? this.secondOpinionMode : null,
+      claimVerifierModelConfigurationId: this.claimVerifierConfigId,
       scoringProfileId: this.selectedScoringProfileId,
       acknowledgeSameProvider: acknowledgeSameProvider
     };
@@ -1615,8 +1670,12 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     switch (this.runStage) {
       case 'answering':
         return `Stage 1 of 2 — Collecting and assessing answers. Answered ${this.runAnsweredCount} of ${total}, scored ${this.runScoredCount} of ${total}.`;
-      case 'finalizing':
-        return `Stage 2 of 2 — Synthesis and scoring. All ${total} answers assessed.`;
+      case 'finalizing': {
+        const stageName = run.claimVerifierModelConfigurationId != null
+          ? 'Verification and synthesis'
+          : 'Synthesis and scoring';
+        return `Stage 2 of 2 — ${stageName}. All ${total} answers assessed.`;
+      }
       default: {
         const status = this.formatStatus(run.status);
         const label = status === 'CompletedWithErrors'
@@ -1877,17 +1936,36 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
           - (run.recoveredAnswerCount ?? 0)
           - (run.toolStarvedAnswerCount ?? 0);
         lines.push(`clean: ${clean}, transport defects: ${run.transportDefectAnswerCount ?? 0}, recovered: ${run.recoveredAnswerCount ?? 0}, harness limits: ${run.toolStarvedAnswerCount ?? 0} (sums to ${run.totalQuestionCount})`);
-        lines.push(`advisory flags: ${run.advisoryFlagAnswerCount ?? 0}, scrubbed: ${run.scrubbedArtifactAnswerCount ?? 0}, contested verdicts: ${run.contestedVerdictAnswerCount ?? 0}, re-assessed: ${run.reassessedAnswerCount ?? 0}`);
+        lines.push(`advisory flags: ${run.advisoryFlagAnswerCount ?? 0}, scrubbed: ${run.scrubbedArtifactAnswerCount ?? 0}, contested verdicts: ${run.contestedVerdictAnswerCount ?? 0}, unevidenced deductions: ${run.unevidencedDeductionAnswerCount ?? 0}, refuted claims: ${run.refutedClaimAnswerCount ?? 0}, re-assessed: ${run.reassessedAnswerCount ?? 0}`);
         // Computed from `run`, not from the run-detail getters: this capture describes the
         // *active* run, and those getters read whichever run the detail dialog has open.
         const criticalHere = run.answers.filter(a => a.criticalError).map(a => a.orderIndex);
         const unverifiedHere = run.answers.reduce((sum, a) => sum + (a.unverifiedClaimCount ?? 0), 0);
         lines.push(`critical errors: ${criticalHere.length}${criticalHere.length > 0 ? ` (${criticalHere.map(i => 'Q' + i).join(', ')})` : ''}, unverified claims: ${unverifiedHere}`);
         lines.push(`agreement: ${run.secondOpinionMeanAbsDelta != null ? run.secondOpinionMeanAbsDelta.toFixed(1) + ' mean abs delta' : 'not measured'} over ${run.secondOpinionGradedAnswerCount ?? 0} of ${run.answeredQuestionCount} answered, disagreements: ${run.secondOpinionDisagreementCount ?? 0}`);
+        if (run.secondOpinionAssessorModelConfigurationId != null && (run.secondOpinionGradedAnswerCount ?? 0) === 0) {
+          lines.push(`second opinion: selected (${run.secondOpinionAssessorModelDisplayNameUsed ?? 'configured'}) but no answer met a trigger — 0 graded`);
+        }
         if ((run.secondOpinionGradedAnswerCount ?? 0) > 0 && run.secondOpinionModeUsed !== 3) {
           lines.push('  (coverage selected by trigger — conditioned on the first assessor\'s own uncertainty, not an unbiased agreement rate)');
         }
         lines.push('');
+
+        // --- CLAIM VERIFICATION ---
+        if (run.claimVerifierModelConfigurationId != null || (run.claimVerifiedAnswerCount ?? 0) > 0) {
+          lines.push('--- CLAIM VERIFICATION ---');
+          const verifierName = run.claimVerifierDisplayNameUsed ?? (run.claimVerifierModelConfigurationId != null ? 'configured' : 'none');
+          lines.push(`verifier: ${verifierName} (${run.claimVerifierProviderUsed ?? 'n/a'}, ${run.claimVerifierModelIdUsed ?? 'n/a'})`);
+          lines.push(`outcomes: ${run.claimsSupportedCount ?? 0} supported, ${run.claimsRefutedCount ?? 0} refuted, ${run.claimsIndeterminateCount ?? 0} indeterminate across ${run.claimVerifiedAnswerCount ?? 0} answer(s)`);
+          const verifiedAnswersWithErrors = run.answers.filter(a => a.claimVerificationError);
+          if (verifiedAnswersWithErrors.length > 0) {
+            lines.push(`errors (${verifiedAnswersWithErrors.length}):`);
+            for (const a of verifiedAnswersWithErrors) {
+              lines.push(`  Q${a.orderIndex}: ${a.claimVerificationError}`);
+            }
+          }
+          lines.push('');
+        }
       }
 
       // --- FLAGS ---
@@ -2959,6 +3037,34 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       .join(', ');
   }
 
+  get unevidencedDeductionAnswerCount(): number {
+    return this.selectedRunDetail?.unevidencedDeductionAnswerCount ?? 0;
+  }
+
+  get unevidencedDeductionQuestionNumbers(): string {
+    return (this.selectedRunDetail?.answers ?? [])
+      .filter(a => (a.answerFlagNames ?? []).includes('UnevidencedDeduction'))
+      .map(a => a.orderIndex)
+      .join(', ');
+  }
+
+  get refutedClaimAnswerCount(): number {
+    return this.selectedRunDetail?.refutedClaimAnswerCount ?? 0;
+  }
+
+  get refutedClaimQuestionNumbers(): string {
+    return (this.selectedRunDetail?.answers ?? [])
+      .filter(a => (a.answerFlagNames ?? []).includes('RefutedClaim'))
+      .map(a => a.orderIndex)
+      .join(', ');
+  }
+
+  get secondOpinionSelectedButUnused(): boolean {
+    const run = this.selectedRunDetail;
+    return !!run?.secondOpinionAssessorModelConfigurationId &&
+      (run.secondOpinionGradedAnswerCount ?? 0) === 0;
+  }
+
   get reassessedAnswerCount(): number {
     return this.selectedRunDetail?.reassessedAnswerCount ?? 0;
   }
@@ -2986,11 +3092,23 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     }
   }
 
+  /** The per-claim verifications for this answer. Empty on a malformed or absent blob. */
+  claimVerificationsOf(answer: BenchmarkRunAnswerDto): { claimIndex?: number; claim: string; verdict: string; citation?: string | null; basis?: string | null }[] {
+    if (!answer.claimVerificationJson) return [];
+    try {
+      const parsed = JSON.parse(answer.claimVerificationJson);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
   /** Trigger names as stored, in the words this screen uses for them. */
   secondOpinionTriggerLabel(trigger: string | null | undefined): string {
     switch (trigger) {
       case 'CriticalError': return 'critical error';
       case 'ContestedVerdict': return 'contested verdict';
+      case 'UnevidencedDeduction': return 'unevidenced deduction';
       case 'UnverifiedClaims': return 'unverifiable claims';
       case 'BelowThreshold': return 'below profile threshold';
       case 'Outlier': return 'outlier below run median';

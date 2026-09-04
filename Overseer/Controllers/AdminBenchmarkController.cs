@@ -800,6 +800,7 @@ public class AdminBenchmarkController : ControllerBase
                 a.OrderIndex,
                 a.ItemRevisionUsed,
                 a.UnverifiedClaimsJson,
+                a.ClaimVerificationJson,
                 Provider = a.BenchmarkRun.TestedModelProviderUsed,
                 ModelId = a.BenchmarkRun.TestedModelIdUsed
             })
@@ -820,9 +821,39 @@ public class AdminBenchmarkController : ControllerBase
                 continue;
             }
 
+            Dictionary<string, BenchmarkClaimVerdict>? verificationsByClaim = null;
+            if (!string.IsNullOrWhiteSpace(row.ClaimVerificationJson))
+            {
+                try
+                {
+                    var verifications = JsonSerializer.Deserialize<List<BenchmarkClaimVerification>>(row.ClaimVerificationJson);
+                    if (verifications != null)
+                    {
+                        verificationsByClaim = new Dictionary<string, BenchmarkClaimVerdict>(StringComparer.Ordinal);
+                        foreach (var v in verifications)
+                        {
+                            if (!string.IsNullOrWhiteSpace(v.Claim))
+                            {
+                                verificationsByClaim[v.Claim.Trim()] = v.Verdict;
+                            }
+                        }
+                    }
+                }
+                catch (JsonException)
+                {
+                    // A malformed blob costs that answer's verdicts, never the report.
+                }
+            }
+
             foreach (string claim in claims ?? new List<string>())
             {
                 if (string.IsNullOrWhiteSpace(claim)) continue;
+
+                BenchmarkClaimVerdict? verdict = null;
+                if (verificationsByClaim != null && verificationsByClaim.TryGetValue(claim.Trim(), out var v))
+                {
+                    verdict = v;
+                }
 
                 samples.Add(new BenchmarkUnverifiedClaimSample
                 {
@@ -832,7 +863,8 @@ public class AdminBenchmarkController : ControllerBase
                     RunId = row.BenchmarkRunId,
                     Provider = row.Provider,
                     ModelId = row.ModelId,
-                    Claim = claim
+                    Claim = claim,
+                    VerificationVerdict = verdict
                 });
             }
         }
@@ -1651,6 +1683,21 @@ public class AdminBenchmarkController : ControllerBase
             }
         }
 
+        // Optional: a claim verifier checks unverified claims against source and wiki using read-only tools.
+        SystemAiApiConfiguration? claimVerifierConfig = null;
+        if (request.ClaimVerifierModelConfigurationId.HasValue)
+        {
+            claimVerifierConfig = await _dbContext.SystemAiApiConfigurations
+                .FindAsync(request.ClaimVerifierModelConfigurationId.Value);
+
+            if (claimVerifierConfig == null || !claimVerifierConfig.IsEnabled ||
+                string.IsNullOrWhiteSpace(claimVerifierConfig.EncryptedApiKey) ||
+                (claimVerifierConfig.ModelRole & 4) != 4)
+            {
+                return BadRequest("Claim verifier configuration is invalid, disabled, missing an API key, or not configured with the Benchmark role.");
+            }
+        }
+
         // The mode that will actually apply, resolved here rather than in the service: only this
         // method sees the start dialog's override, and only the service sees the profile. An
         // explicit Off drops the second-opinion assessor from the run, because the enum defines
@@ -1712,6 +1759,13 @@ public class AdminBenchmarkController : ControllerBase
             SecondOpinionAssessorModelIdUsed = secondOpinionConfig?.ModelId,
             SecondOpinionAssessorModelThinkingLevelUsed = secondOpinionConfig?.ThinkingLevel,
             SecondOpinionAssessorModelReasoningModeUsed = secondOpinionConfig?.ReasoningMode,
+
+            ClaimVerifierModelConfigurationId = claimVerifierConfig?.Id,
+            ClaimVerifierDisplayNameUsed = claimVerifierConfig?.DisplayName,
+            ClaimVerifierProviderUsed = claimVerifierConfig?.Provider,
+            ClaimVerifierModelIdUsed = claimVerifierConfig?.ModelId,
+            ClaimVerifierThinkingLevelUsed = claimVerifierConfig?.ThinkingLevel,
+            ClaimVerifierReasoningModeUsed = claimVerifierConfig?.ReasoningMode,
 
             // Left at Off (0) when the operator did not override, so the service stamps the
             // scoring profile's own default at run start.
@@ -1826,6 +1880,13 @@ public class AdminBenchmarkController : ControllerBase
             SecondOpinionAssessorModelThinkingLevelUsed = run.SecondOpinionAssessorModelThinkingLevelUsed,
             SecondOpinionAssessorModelReasoningModeUsed = run.SecondOpinionAssessorModelReasoningModeUsed,
 
+            ClaimVerifierModelConfigurationId = run.ClaimVerifierModelConfigurationId,
+            ClaimVerifierDisplayNameUsed = run.ClaimVerifierDisplayNameUsed,
+            ClaimVerifierProviderUsed = run.ClaimVerifierProviderUsed,
+            ClaimVerifierModelIdUsed = run.ClaimVerifierModelIdUsed,
+            ClaimVerifierThinkingLevelUsed = run.ClaimVerifierThinkingLevelUsed,
+            ClaimVerifierReasoningModeUsed = run.ClaimVerifierReasoningModeUsed,
+
             StartedByUserId = run.StartedByUserId,
             StartedByUserName = run.StartedByUser?.UserName,
             Status = run.Status,
@@ -1859,6 +1920,12 @@ public class AdminBenchmarkController : ControllerBase
             AdvisoryFlagAnswerCount = run.AdvisoryFlagAnswerCount,
             ScrubbedArtifactAnswerCount = run.ScrubbedArtifactAnswerCount,
             ContestedVerdictAnswerCount = run.ContestedVerdictAnswerCount,
+            UnevidencedDeductionAnswerCount = run.UnevidencedDeductionAnswerCount,
+            RefutedClaimAnswerCount = run.RefutedClaimAnswerCount,
+            ClaimVerifiedAnswerCount = run.ClaimVerifiedAnswerCount,
+            ClaimsSupportedCount = run.ClaimsSupportedCount,
+            ClaimsRefutedCount = run.ClaimsRefutedCount,
+            ClaimsIndeterminateCount = run.ClaimsIndeterminateCount,
             ReassessedAnswerCount = run.ReassessedAnswerCount,
             SecondOpinionModeUsed = run.SecondOpinionModeUsed,
             SecondOpinionGradedAnswerCount = run.SecondOpinionGradedAnswerCount,
@@ -1888,6 +1955,9 @@ public class AdminBenchmarkController : ControllerBase
             TotalAssessmentInputTokens = run.TotalAssessmentInputTokens,
             TotalAssessmentOutputTokens = run.TotalAssessmentOutputTokens,
             TotalAssessmentDurationMs = run.TotalAssessmentDurationMs,
+            TotalClaimVerificationInputTokens = run.TotalClaimVerificationInputTokens,
+            TotalClaimVerificationOutputTokens = run.TotalClaimVerificationOutputTokens,
+            TotalClaimVerificationDurationMs = run.TotalClaimVerificationDurationMs,
             ErrorMessage = run.ErrorMessage,
 
             // Empty unless this is the run currently executing in this process.
@@ -1967,6 +2037,16 @@ public class AdminBenchmarkController : ControllerBase
                 SecondOpinionJson = a.SecondOpinionJson,
                 SecondOpinionDisagreed = a.SecondOpinionDisagreed,
                 SecondOpinionTrigger = a.SecondOpinionTrigger,
+                ClaimVerificationJson = a.ClaimVerificationJson,
+                ClaimsSupportedCount = a.ClaimsSupportedCount,
+                ClaimsRefutedCount = a.ClaimsRefutedCount,
+                ClaimsIndeterminateCount = a.ClaimsIndeterminateCount,
+                ClaimVerificationByModelDisplayNameUsed = a.ClaimVerificationByModelDisplayNameUsed,
+                ClaimVerificationInputTokens = a.ClaimVerificationInputTokens,
+                ClaimVerificationOutputTokens = a.ClaimVerificationOutputTokens,
+                ClaimVerificationDurationMs = a.ClaimVerificationDurationMs,
+                ClaimVerificationToolCallCount = a.ClaimVerificationToolCallCount,
+                ClaimVerificationError = a.ClaimVerificationError,
                 ReassessedAtUtc = a.ReassessedAtUtc,
                 ReassessedByModelDisplayNameUsed = a.ReassessedByModelDisplayNameUsed,
                 PreviousQualityScore = a.PreviousQualityScore,

@@ -143,7 +143,7 @@ public class StartBenchmarkRunRequest
     /// two mean — the mode is inert without an assessor, and an assessor is inert under Off.
     /// </summary>
     public int? SecondOpinionMode { get; set; }
-
+    public long? ClaimVerifierModelConfigurationId { get; set; }
     public long? ScoringProfileId { get; set; }
     public bool AcknowledgeSameProvider { get; set; }
 }
@@ -434,6 +434,21 @@ public class BenchmarkRunAnswerDto
     public string? ReassessedByModelDisplayNameUsed { get; set; }
     public int? PreviousQualityScore { get; set; }
     public int ReassessmentCount { get; set; }
+
+    /// <summary>
+    /// Per-claim verdicts from the claim verifier, as a JSON array of
+    /// { claim, verdict, citation, basis }. Advisory: nothing here is read by any scoring path.
+    /// </summary>
+    public string? ClaimVerificationJson { get; set; }
+    public int? ClaimsSupportedCount { get; set; }
+    public int? ClaimsRefutedCount { get; set; }
+    public int? ClaimsIndeterminateCount { get; set; }
+    public string? ClaimVerificationByModelDisplayNameUsed { get; set; }
+    public int? ClaimVerificationInputTokens { get; set; }
+    public int? ClaimVerificationOutputTokens { get; set; }
+    public long? ClaimVerificationDurationMs { get; set; }
+    public int? ClaimVerificationToolCallCount { get; set; }
+    public string? ClaimVerificationError { get; set; }
 }
 
 public class BenchmarkRunDetailDto
@@ -467,6 +482,14 @@ public class BenchmarkRunDetailDto
     public string? SecondOpinionAssessorModelIdUsed { get; set; }
     public string? SecondOpinionAssessorModelThinkingLevelUsed { get; set; }
     public string? SecondOpinionAssessorModelReasoningModeUsed { get; set; }
+
+    /// <summary>Null when the run was started without a claim verifier.</summary>
+    public long? ClaimVerifierModelConfigurationId { get; set; }
+    public string? ClaimVerifierDisplayNameUsed { get; set; }
+    public string? ClaimVerifierProviderUsed { get; set; }
+    public string? ClaimVerifierModelIdUsed { get; set; }
+    public string? ClaimVerifierThinkingLevelUsed { get; set; }
+    public string? ClaimVerifierReasoningModeUsed { get; set; }
 
     public string? StartedByUserId { get; set; }
     public string? StartedByUserName { get; set; }
@@ -536,6 +559,12 @@ public class BenchmarkRunDetailDto
     /// counts above and are never summed with them.
     /// </summary>
     public int ContestedVerdictAnswerCount { get; set; }
+    public int UnevidencedDeductionAnswerCount { get; set; }
+    public int RefutedClaimAnswerCount { get; set; }
+    public int ClaimVerifiedAnswerCount { get; set; }
+    public int ClaimsSupportedCount { get; set; }
+    public int ClaimsRefutedCount { get; set; }
+    public int ClaimsIndeterminateCount { get; set; }
     public int ReassessedAnswerCount { get; set; }
 
     /// <summary>
@@ -577,6 +606,11 @@ public class BenchmarkRunDetailDto
     public long TotalAssessmentInputTokens { get; set; }
     public long TotalAssessmentOutputTokens { get; set; }
     public long TotalAssessmentDurationMs { get; set; }
+
+    /// <summary>Claim-verifier-side usage, kept apart from candidate and assessor totals.</summary>
+    public long TotalClaimVerificationInputTokens { get; set; }
+    public long TotalClaimVerificationOutputTokens { get; set; }
+    public long TotalClaimVerificationDurationMs { get; set; }
 
     public string? ErrorMessage { get; set; }
 

@@ -669,4 +669,135 @@ public class BenchmarkServiceTests
         Assert.Equal("BudgetExhausted", ans.TerminationReason);
         Assert.Equal((int)BenchmarkAnswerFlags.HarnessArtifacts, ans.AnswerFlags);
     }
+
+    [Fact]
+    public void ResolveSecondOpinionTrigger_ContestedVerdictBeatsUnevidencedDeduction()
+    {
+        var answer = new BenchmarkRunAnswer
+        {
+            AnswerFlags = (int)(BenchmarkAnswerFlags.ContestedVerdict | BenchmarkAnswerFlags.UnevidencedDeduction),
+            QualityScore = 80
+        };
+
+        var trigger = BenchmarkService.ResolveSecondOpinionTrigger(
+            answer,
+            BenchmarkSecondOpinionMode.Flagged,
+            BenchmarkScoringConstants.Default);
+
+        Assert.Equal(BenchmarkService.SecondOpinionTriggers.ContestedVerdict, trigger);
+    }
+
+    [Fact]
+    public void ResolveSecondOpinionTrigger_UnevidencedDeductionBeatsUnverifiedClaimsAndThreshold()
+    {
+        var answer = new BenchmarkRunAnswer
+        {
+            AnswerFlags = (int)BenchmarkAnswerFlags.UnevidencedDeduction,
+            UnverifiedClaimCount = 3,
+            AccuracyLevel = 2,
+            QualityScore = 30
+        };
+
+        var constants = new BenchmarkScoringConstants { SecondOpinionQualityThreshold = 50 };
+
+        var trigger = BenchmarkService.ResolveSecondOpinionTrigger(
+            answer,
+            BenchmarkSecondOpinionMode.Flagged,
+            constants);
+
+        Assert.Equal(BenchmarkService.SecondOpinionTriggers.UnevidencedDeduction, trigger);
+    }
+
+    [Fact]
+    public async Task RunClaimVerificationAsync_AnswerWithZeroUnverifiedClaims_ProducesNoVerifierCall()
+    {
+        var dbOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+
+        var dummyKey = Convert.ToBase64String(new byte[32]);
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["AesEncryptionKey"] = dummyKey
+        }).Build();
+        var crypto = new CryptoService(configuration);
+        var (cipher, nonce, tag) = crypto.Encrypt("test-api-key", "SYSTEM_API_KEY");
+
+        long runId;
+        await using (var db = new ApplicationDbContext(dbOptions))
+        {
+            var config = new SystemAiApiConfiguration
+            {
+                Id = 10,
+                DisplayName = "Verifier Model",
+                ModelId = "model-v",
+                Provider = "Anthropic",
+                ModelRole = 4, // Assessor / verifier
+                IsEnabled = true,
+                EncryptedApiKey = cipher,
+                ApiKeyNonce = nonce,
+                ApiKeyTag = tag
+            };
+            db.SystemAiApiConfigurations.Add(config);
+
+            var run = new BenchmarkRun
+            {
+                SuiteName = "Suite",
+                TestedModelDisplayNameUsed = "Model T",
+                TestedModelProviderUsed = "Provider T",
+                TestedModelIdUsed = "model-t",
+                AssessorModelDisplayNameUsed = "Model A",
+                AssessorModelProviderUsed = "Provider A",
+                AssessorModelIdUsed = "model-a",
+                ClaimVerifierModelConfigurationId = 10,
+                Status = BenchmarkRunStatus.Running,
+                StartedAtUtc = DateTime.UtcNow
+            };
+            db.BenchmarkRuns.Add(run);
+            await db.SaveChangesAsync();
+            runId = run.Id;
+
+            var answer = new BenchmarkRunAnswer
+            {
+                BenchmarkRunId = runId,
+                OrderIndex = 1,
+                QuestionText = "Question 1",
+                AnswerText = "Answer 1",
+                Status = BenchmarkAnswerStatus.Ok,
+                UnverifiedClaimCount = 0,
+                UnverifiedClaimsJson = "[]"
+            };
+            db.BenchmarkRunAnswers.Add(answer);
+            await db.SaveChangesAsync();
+        }
+
+        var services = new ServiceCollection();
+        services.AddScoped(_ => new ApplicationDbContext(dbOptions));
+        var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+
+        // _agentLoopRunner is passed as null: if gating failed and called the verifier,
+        // it would throw NullReferenceException.
+        var benchmarkService = new BenchmarkService(
+            scopeFactory,
+            null!,
+            null!,
+            crypto,
+            new BenchmarkRunManager(),
+            new BenchmarkDifficultyJobManager(),
+            null!,
+            configuration,
+            NullLogger<BenchmarkService>.Instance);
+
+        await using (var db = new ApplicationDbContext(dbOptions))
+        {
+            var run = await db.BenchmarkRuns.FindAsync(runId);
+            Assert.NotNull(run);
+
+            await benchmarkService.RunClaimVerificationAsync(db, null!, run, CancellationToken.None);
+
+            var verifyAnswer = await db.BenchmarkRunAnswers.FirstAsync(a => a.BenchmarkRunId == runId);
+            Assert.Null(verifyAnswer.ClaimVerificationJson);
+            Assert.Equal(0, run.ClaimVerifiedAnswerCount);
+        }
+    }
 }

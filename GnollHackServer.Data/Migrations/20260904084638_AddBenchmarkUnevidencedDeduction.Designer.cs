@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using MobileGnollHackLogger.Data;
 
@@ -11,9 +12,11 @@ using MobileGnollHackLogger.Data;
 namespace GnollHackServer.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260904084638_AddBenchmarkUnevidencedDeduction")]
+    partial class AddBenchmarkUnevidencedDeduction
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -537,41 +540,6 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<long?>("BenchmarkSuiteId")
                         .HasColumnType("bigint");
 
-                    b.Property<int>("ClaimVerifiedAnswerCount")
-                        .HasColumnType("int");
-
-                    b.Property<string>("ClaimVerifierDisplayNameUsed")
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
-
-                    b.Property<long?>("ClaimVerifierModelConfigurationId")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("ClaimVerifierModelIdUsed")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("ClaimVerifierProviderUsed")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("ClaimVerifierReasoningModeUsed")
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
-                    b.Property<string>("ClaimVerifierThinkingLevelUsed")
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
-                    b.Property<int>("ClaimsIndeterminateCount")
-                        .HasColumnType("int");
-
-                    b.Property<int>("ClaimsRefutedCount")
-                        .HasColumnType("int");
-
-                    b.Property<int>("ClaimsSupportedCount")
-                        .HasColumnType("int");
-
                     b.Property<DateTime?>("CompletedAtUtc")
                         .HasColumnType("datetime2");
 
@@ -630,9 +598,6 @@ namespace GnollHackServer.Data.Migrations
                         .HasColumnType("int");
 
                     b.Property<int>("RecoveredAnswerCount")
-                        .HasColumnType("int");
-
-                    b.Property<int>("RefutedClaimAnswerCount")
                         .HasColumnType("int");
 
                     b.Property<bool>("SameProviderAcknowledged")
@@ -773,15 +738,6 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<long>("TotalCacheReadTokens")
                         .HasColumnType("bigint");
 
-                    b.Property<long>("TotalClaimVerificationDurationMs")
-                        .HasColumnType("bigint");
-
-                    b.Property<long>("TotalClaimVerificationInputTokens")
-                        .HasColumnType("bigint");
-
-                    b.Property<long>("TotalClaimVerificationOutputTokens")
-                        .HasColumnType("bigint");
-
                     b.Property<long>("TotalDurationMs")
                         .HasColumnType("bigint");
 
@@ -808,8 +764,6 @@ namespace GnollHackServer.Data.Migrations
                     b.HasIndex("AssessorModelConfigurationId");
 
                     b.HasIndex("BenchmarkSuiteId");
-
-                    b.HasIndex("ClaimVerifierModelConfigurationId");
 
                     b.HasIndex("ScoringProfileId");
 
@@ -899,38 +853,6 @@ namespace GnollHackServer.Data.Migrations
                         .HasColumnType("int");
 
                     b.Property<int?>("CacheReadInputTokens")
-                        .HasColumnType("int");
-
-                    b.Property<string>("ClaimVerificationByModelDisplayNameUsed")
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
-
-                    b.Property<long?>("ClaimVerificationDurationMs")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("ClaimVerificationError")
-                        .HasMaxLength(1024)
-                        .HasColumnType("nvarchar(1024)");
-
-                    b.Property<int?>("ClaimVerificationInputTokens")
-                        .HasColumnType("int");
-
-                    b.Property<string>("ClaimVerificationJson")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<int?>("ClaimVerificationOutputTokens")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("ClaimVerificationToolCallCount")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("ClaimsIndeterminateCount")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("ClaimsRefutedCount")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("ClaimsSupportedCount")
                         .HasColumnType("int");
 
                     b.Property<int?>("CompletenessLevel")
@@ -2677,10 +2599,6 @@ namespace GnollHackServer.Data.Migrations
                         .WithMany("Runs")
                         .HasForeignKey("BenchmarkSuiteId");
 
-                    b.HasOne("MobileGnollHackLogger.Data.SystemAiApiConfiguration", "ClaimVerifierModelConfiguration")
-                        .WithMany()
-                        .HasForeignKey("ClaimVerifierModelConfigurationId");
-
                     b.HasOne("MobileGnollHackLogger.Data.BenchmarkScoringProfile", "ScoringProfile")
                         .WithMany()
                         .HasForeignKey("ScoringProfileId");
@@ -2700,8 +2618,6 @@ namespace GnollHackServer.Data.Migrations
                     b.Navigation("AssessorModelConfiguration");
 
                     b.Navigation("BenchmarkSuite");
-
-                    b.Navigation("ClaimVerifierModelConfiguration");
 
                     b.Navigation("ScoringProfile");
 

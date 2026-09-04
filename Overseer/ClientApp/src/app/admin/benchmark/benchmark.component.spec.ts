@@ -1817,6 +1817,9 @@ describe('AdminBenchmarkComponent', () => {
     it('should name only the advisory flags as advisory', () => {
       expect(component.isAdvisoryFlagName('ReasoningBleed')).toBeTrue();
       expect(component.isAdvisoryFlagName('RepeatedFragments')).toBeTrue();
+      expect(component.isAdvisoryFlagName('ContestedVerdict')).toBeTrue();
+      expect(component.isAdvisoryFlagName('UnevidencedDeduction')).toBeTrue();
+      expect(component.isAdvisoryFlagName('RefutedClaim')).toBeTrue();
       expect(component.isAdvisoryFlagName('HarnessArtifacts')).toBeFalse();
       expect(component.isAdvisoryFlagName('Truncated')).toBeFalse();
       expect(component.isAdvisoryFlagName('Empty')).toBeFalse();
@@ -2641,6 +2644,53 @@ describe('AdminBenchmarkComponent', () => {
       component.selectedRunDetail = buildFinishedRun({ answers: [answer] });
       expect(component.unverifiedClaimTotal).toBe(2);
     });
+
+    it('should render the zero-coverage clause in the integrity notice when second opinion was selected but unused', () => {
+      component.selectedRunDetail = buildFinishedRun({
+        secondOpinionAssessorModelConfigurationId: 4,
+        secondOpinionAssessorModelDisplayNameUsed: 'Claude Opus 5',
+        secondOpinionGradedAnswerCount: 0
+      });
+      fixture.detectChanges();
+
+      expect(component.secondOpinionSelectedButUnused).toBeTrue();
+      const notices: HTMLElement[] = Array.from(fixture.nativeElement.querySelectorAll('.alert-heading'));
+      const heading = notices.find(n => (n.textContent || '').includes('Run Integrity Notice'));
+      const body = ((heading?.parentElement?.querySelector('.alert-body') as HTMLElement)?.textContent || '')
+        .replace(/\s+/g, ' ').trim();
+
+      expect(body).toContain('A second-opinion assessor was selected but no answer met a trigger');
+      expect(body).toContain('grader agreement is not measured for this run');
+    });
+
+    it('should render claim verification rows and colour only Refuted verdicts', () => {
+      const answer: any = {
+        id: 1, orderIndex: 1, questionText: 'Q1', difficulty: 1, answerText: 'a',
+        status: 'Ok', assessmentStatus: 'Scored', durationMs: 1, modelTimeMs: 1,
+        scrubbedArtifactCount: 0, answerFlags: 0, answerFlagNames: [], qualityScore: 80,
+        claimVerificationJson: JSON.stringify([
+          { claimIndex: 0, claim: 'Claim 1', verdict: 'Supported', citation: 'src/a.c', basis: 'Valid.' },
+          { claimIndex: 1, claim: 'Claim 2', verdict: 'Refuted', citation: 'src/b.c', basis: 'Invalid.' },
+          { claimIndex: 2, claim: 'Claim 3', verdict: 'Indeterminate', citation: null, basis: 'Unknown.' }
+        ])
+      };
+
+      component.selectedRunDetail = buildFinishedRun({ answers: [answer] });
+      component.expandedQuestions.add(1);
+      fixture.detectChanges();
+
+      const verifications = component.claimVerificationsOf(answer);
+      expect(verifications.length).toBe(3);
+
+      const box = fixture.nativeElement.querySelector('.claim-verification-box');
+      expect(box).toBeTruthy();
+
+      const pills: HTMLElement[] = Array.from(box.querySelectorAll('.verdict-pill'));
+      expect(pills.length).toBe(3);
+      expect(pills[0].classList.contains('verdict-refuted')).toBeFalse();
+      expect(pills[1].classList.contains('verdict-refuted')).toBeTrue();
+      expect(pills[2].classList.contains('verdict-refuted')).toBeFalse();
+    });
   });
 
   describe('run diagnostics capture', () => {
@@ -2772,7 +2822,7 @@ describe('AdminBenchmarkComponent', () => {
 
       expect(text).toContain('--- INTEGRITY ---');
       expect(text).toContain('clean: 1, transport defects: 0, recovered: 0, harness limits: 1 (sums to 2)');
-      expect(text).toContain('contested verdicts: 1, re-assessed: 1');
+      expect(text).toContain('contested verdicts: 1, unevidenced deductions: 0, refuted claims: 0, re-assessed: 1');
       expect(text).toContain('unverified claims: 2');
       expect(text).toContain('4.3 mean abs delta');
       expect(text).toContain('over 2 of 2 answered, disagreements: 1');

@@ -347,7 +347,7 @@
 
         <div class="sh-card-list">
           @for (cluster of rubricGaps.clusters; track cluster.questionId + '-' + cluster.claims[0]; let clusterIndex = $index) {
-            <div class="gap-cluster" [class.is-rubric-gap]="cluster.verdict === 'LikelyRubricGap'">
+            <div class="gap-cluster" [class.is-verified-gap]="cluster.verdict === 'VerifiedRubricGap'" [class.is-rubric-gap]="cluster.verdict === 'LikelyRubricGap'">
               <div class="gap-header">
                 <strong>Q{{ cluster.questionOrderIndex }}</strong>
                 <span class="gap-verdict"

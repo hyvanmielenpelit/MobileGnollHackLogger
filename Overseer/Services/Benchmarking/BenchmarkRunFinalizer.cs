@@ -51,7 +51,9 @@ public static class BenchmarkRunFinalizer
     private const BenchmarkAnswerFlags AdvisoryFlags =
         BenchmarkAnswerFlags.ReasoningBleed
         | BenchmarkAnswerFlags.RepeatedFragments
-        | BenchmarkAnswerFlags.ContestedVerdict;
+        | BenchmarkAnswerFlags.ContestedVerdict
+        | BenchmarkAnswerFlags.UnevidencedDeduction
+        | BenchmarkAnswerFlags.RefutedClaim;
 
     /// <summary>A transport or provider defect corrupted this answer beyond recovery.</summary>
     public static bool HasTransportDefect(BenchmarkRunAnswer answer)
@@ -156,6 +158,12 @@ public static class BenchmarkRunFinalizer
         run.TotalAssessmentInputTokens = answers.Sum(a => (long)(a.AssessmentInputTokens ?? 0));
         run.TotalAssessmentOutputTokens = answers.Sum(a => (long)(a.AssessmentOutputTokens ?? 0));
         run.TotalAssessmentDurationMs = answers.Sum(a => a.AssessmentDurationMs ?? 0L);
+
+        // Claim verifier side, kept separate from candidate and assessor totals.
+        run.TotalClaimVerificationInputTokens = answers.Sum(a => (long)(a.ClaimVerificationInputTokens ?? 0));
+        run.TotalClaimVerificationOutputTokens = answers.Sum(a => (long)(a.ClaimVerificationOutputTokens ?? 0));
+        run.TotalClaimVerificationDurationMs = answers.Sum(a => a.ClaimVerificationDurationMs ?? 0L);
+
         run.AnsweredQuestionCount = answers.Count(a => a.Status == BenchmarkAnswerStatus.Ok);
         run.DegradedAnswerCount = answers.Count(IsDegraded);
         run.ToolStarvedAnswerCount = answers.Count(HasHarnessLimit);
@@ -165,6 +173,15 @@ public static class BenchmarkRunFinalizer
         run.ScrubbedArtifactAnswerCount = answers.Count(a => a.ScrubbedArtifactCount > 0);
         run.ContestedVerdictAnswerCount = answers.Count(
             a => (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.ContestedVerdict) != 0);
+        run.UnevidencedDeductionAnswerCount = answers.Count(
+            a => (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.UnevidencedDeduction) != 0);
+        run.RefutedClaimAnswerCount = answers.Count(
+            a => (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.RefutedClaim) != 0);
+        run.ClaimVerifiedAnswerCount = answers.Count(
+            a => (a.ClaimsSupportedCount ?? 0) + (a.ClaimsRefutedCount ?? 0) + (a.ClaimsIndeterminateCount ?? 0) > 0);
+        run.ClaimsSupportedCount = answers.Sum(a => a.ClaimsSupportedCount ?? 0);
+        run.ClaimsRefutedCount = answers.Sum(a => a.ClaimsRefutedCount ?? 0);
+        run.ClaimsIndeterminateCount = answers.Sum(a => a.ClaimsIndeterminateCount ?? 0);
         run.ReassessedAnswerCount = answers.Count(a => a.ReassessmentCount > 0);
 
         // Grader agreement. Manual verdicts are excluded: those come from a third model an

@@ -200,6 +200,28 @@ public class BenchmarkRunAnswer
     public int? UnverifiedClaimCount { get; set; }
 
     /// <summary>
+    /// Per-claim verdicts from the claim verifier, as a JSON array of
+    /// { claim, verdict, citation, basis }. Advisory: nothing here is read by any scoring path.
+    /// </summary>
+    public string? ClaimVerificationJson { get; set; }
+
+    public int? ClaimsSupportedCount { get; set; }
+    public int? ClaimsRefutedCount { get; set; }
+    public int? ClaimsIndeterminateCount { get; set; }
+
+    [MaxLength(256)]
+    public string? ClaimVerificationByModelDisplayNameUsed { get; set; }
+
+    public int? ClaimVerificationInputTokens { get; set; }
+    public int? ClaimVerificationOutputTokens { get; set; }
+    public long? ClaimVerificationDurationMs { get; set; }
+    public int? ClaimVerificationToolCallCount { get; set; }
+
+    /// <summary>Why verification did not complete for this answer. Never fails the run.</summary>
+    [MaxLength(1024)]
+    public string? ClaimVerificationError { get; set; }
+
+    /// <summary>
     /// When this answer's verdict was replaced by the re-assess action, and by which model. A
     /// trial re-assessment sets neither: it does not replace the verdict.
     ///

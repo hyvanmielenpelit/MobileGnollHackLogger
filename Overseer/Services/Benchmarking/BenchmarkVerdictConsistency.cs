@@ -103,4 +103,47 @@ public static class BenchmarkVerdictConsistency
             .SelectMany(line => Regex.Split(line, @"(?<=[.!?])\s+"))
             .Where(s => !string.IsNullOrWhiteSpace(s));
     }
+
+    /// <summary>
+    /// The highest level at which a no-fault evidence string is still treated as a contradiction.
+    ///
+    /// Scoring method v7 tells the assessor that such a string may accompany level 6 only, so this
+    /// constant is deliberately one level *below* the rule it enforces. Level 5 is "highly accurate
+    /// and precise; nuanced understanding", and a grader awarding 5 with "Matches rubric" is giving a
+    /// defensible reading of its own anchor; flagging that would fire on most answers of a strong run
+    /// and devalue the flag. Below 5 the contradiction is material — level 4 costs 28 points of the
+    /// 55%-weight dimension against level 6.
+    /// </summary>
+    public const int UnevidencedDeductionMaxLevel = 4;
+
+    /// <summary>
+    /// Evidence strings that assert no defect. Anchored at both ends after trimming trailing
+    /// punctuation: "Matches rubric" is a no-fault string, "Matches rubric points 1-3 but omits point
+    /// 4" is not, and a substring match would classify the second as the first.
+    /// </summary>
+    private static readonly Regex NoFaultEvidenceRegex = new(
+        @"^\s*(?:fully\s+)?(?:matches|meets|satisfies|consistent\s+with|aligns\s+with)?\s*(?:the\s+)?rubric\s*$|^\s*(?:no|none)\b[\s\w]*(?:error|issue|omission|inaccurac|deduction)\w*\s*$|^\s*(?:n\/?a|none|correct|accurate|fully\s+accurate|complete)\s*$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>True when the evidence string names no defect at all — including when it is absent.</summary>
+    public static bool IsNoFaultEvidence(string? evidence)
+    {
+        if (string.IsNullOrWhiteSpace(evidence)) return true;
+        return NoFaultEvidenceRegex.IsMatch(evidence.Trim().TrimEnd('.', ';', ':'));
+    }
+
+    /// <summary>
+    /// True when either graded dimension was docked to <see cref="UnevidencedDeductionMaxLevel"/> or
+    /// below while its own evidence string names no defect.
+    ///
+    /// Deliberately per-dimension: accuracy evidence never justifies a completeness deduction, and
+    /// pairing them would let a detailed completeness finding excuse an empty accuracy one.
+    /// </summary>
+    public static bool HasUnevidencedDeduction(
+        int accuracyLevel, string? accuracyEvidence,
+        int completenessLevel, string? completenessEvidence)
+    {
+        return (accuracyLevel <= UnevidencedDeductionMaxLevel && IsNoFaultEvidence(accuracyEvidence))
+            || (completenessLevel <= UnevidencedDeductionMaxLevel && IsNoFaultEvidence(completenessEvidence));
+    }
 }

@@ -223,6 +223,10 @@ public class BenchmarkReportBuilderTests
         run.SecondOpinionAssessorModelDisplayNameUsed = "Claude Reviewer";
         run.SecondOpinionAssessorModelProviderUsed = "Anthropic";
         run.SecondOpinionAssessorModelIdUsed = "claude-reviewer-1";
+        run.ClaimVerifierModelConfigurationId = 8;
+        run.ClaimVerifierDisplayNameUsed = "Verifier Model";
+        run.ClaimVerifierProviderUsed = "Google";
+        run.ClaimVerifierModelIdUsed = "gemini-3.7-flash";
 
         var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
 
@@ -1160,5 +1164,76 @@ public class BenchmarkReportBuilderTests
 
         Assert.DoesNotContain("Calibration", report);
         Assert.DoesNotContain("calibration", report);
+    }
+
+    [Fact]
+    public void AssessorAgreement_ZeroCoverage_ReportsAssessorConfiguredWithNoTriggersMet()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 70);
+        var q2 = ScoredAnswer(2, BenchmarkDifficulty.Intermediate, 50, 85);
+
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Flagged, q1, q2);
+        run.SecondOpinionAssessorModelConfigurationId = 4;
+        run.SecondOpinionAssessorModelDisplayNameUsed = "Claude Opus 5";
+        run.SecondOpinionAssessorModelProviderUsed = "Anthropic";
+        run.SecondOpinionGradedAnswerCount = 0;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("### Assessor Agreement", report);
+        Assert.Contains("**Coverage:** 0 of 2 answered questions.", report);
+        Assert.Contains("No answer met a trigger, so no answer was graded twice", report);
+        Assert.Contains("Claude Opus 5", report);
+    }
+
+    [Fact]
+    public void AdvisoryFlags_BreakdownIncludesContestedVerdictsAndReflectedTotal()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.AnswerFlags = (int)BenchmarkAnswerFlags.ReasoningBleed;
+
+        var q2 = ScoredAnswer(2, BenchmarkDifficulty.Intermediate, 50, 75);
+        q2.AnswerFlags = (int)BenchmarkAnswerFlags.ContestedVerdict;
+
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1, q2);
+        BenchmarkRunFinalizer.Apply(run, new[] { q1, q2 });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("**Advisory Flags:** 2 (reasoning bleed: 1, repeated fragments: 0, contested verdicts: 1, unevidenced deductions: 0, refuted claims: 0)", report);
+    }
+
+    [Fact]
+    public void ClaimVerification_ManifestAndRefutedClaimsRenderedInReport()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 75);
+        q1.UnverifiedClaimCount = 2;
+        q1.ClaimsSupportedCount = 1;
+        q1.ClaimsRefutedCount = 1;
+        q1.AnswerFlags = (int)BenchmarkAnswerFlags.RefutedClaim;
+        q1.ClaimVerificationJson = @"[{""claimIndex"":0,""" + "claim" + @""":""Gnolls can breathe underwater"",""verdict"":""Refuted"",""citation"":""src/role.c:120"",""basis"":""Gnolls have no water breathing intrinsic.""}]";
+
+        q1.ClaimVerificationInputTokens = 1200;
+        q1.ClaimVerificationOutputTokens = 300;
+        q1.ClaimVerificationDurationMs = 2500;
+
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        run.ClaimVerifierModelConfigurationId = 7;
+        run.ClaimVerifierDisplayNameUsed = "Verifier Model";
+        run.ClaimVerifierProviderUsed = "Google";
+        run.ClaimVerifierModelIdUsed = "gemini-3.7-pro";
+
+        BenchmarkRunFinalizer.Apply(run, new[] { q1 });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("### Claim Verifier", report);
+        Assert.Contains("- **Display Name:** Verifier Model", report);
+        Assert.Contains("- **Provider:** Google", report);
+        Assert.Contains("- **Model ID:** gemini-3.7-pro", report);
+        Assert.Contains("Claim Verifier Tokens:", report);
+        Assert.Contains("#### Refuted Claims", report);
+        Assert.Contains("Gnolls can breathe underwater", report);
+        Assert.Contains("src/role.c:120", report);
     }
 }

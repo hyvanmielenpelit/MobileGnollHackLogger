@@ -424,4 +424,20 @@ public class BenchmarkRunFinalizerTests
         Assert.Null(run.SecondOpinionMeanAbsDelta);
     }
 
+    [Fact]
+    public void Finalizer_CountsUnevidencedDeductionsAndAdvisoryFlags()
+    {
+        var a1 = MakeAnswer(1, BenchmarkAnswerFlags.UnevidencedDeduction);
+        var a2 = MakeAnswer(2);
+        var a3 = MakeAnswer(3);
+
+        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 3 };
+        BenchmarkRunFinalizer.Apply(run, new[] { a1, a2, a3 });
+
+        Assert.Equal(1, run.UnevidencedDeductionAnswerCount);
+        Assert.Equal(1, run.AdvisoryFlagAnswerCount);
+        Assert.True(BenchmarkRunFinalizer.HasAdvisoryFlag(a1));
+        Assert.False(BenchmarkRunFinalizer.HasTransportDefect(a1));
+        Assert.Equal(BenchmarkAnswerIntegrity.Clean, BenchmarkRunFinalizer.Classify(a1));
+    }
 }

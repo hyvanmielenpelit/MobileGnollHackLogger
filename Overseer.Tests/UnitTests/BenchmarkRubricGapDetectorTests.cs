@@ -14,7 +14,8 @@ public class BenchmarkRubricGapDetectorTests
         long questionId = 1,
         int orderIndex = 1,
         int? revision = 1,
-        long runId = 1) => new()
+        long runId = 1,
+        BenchmarkClaimVerdict? verdict = null) => new()
         {
             QuestionId = questionId,
             QuestionOrderIndex = orderIndex,
@@ -22,7 +23,8 @@ public class BenchmarkRubricGapDetectorTests
             RunId = runId,
             Provider = provider,
             ModelId = modelId,
-            Claim = claim
+            Claim = claim,
+            VerificationVerdict = verdict
         };
 
     [Fact]
@@ -159,5 +161,35 @@ public class BenchmarkRubricGapDetectorTests
 
         Assert.Equal(BenchmarkRubricGapVerdict.LikelyRubricGap, clusters[0].Verdict);
         Assert.Equal(2, clusters[0].QuestionOrderIndex);
+    }
+
+    [Fact]
+    public void Precedence_ClusterWithOneSupported_IsVerifiedRubricGap()
+    {
+        var samples = new[]
+        {
+            Sample("Gnolls gain infravision at experience level 1", provider: "OpenAI", modelId: "gpt-5.6-luna", verdict: BenchmarkClaimVerdict.Supported),
+            Sample("Gnolls gain infravision at experience level 1", provider: "OpenAI", modelId: "gpt-5.6-luna", verdict: BenchmarkClaimVerdict.Indeterminate, runId: 2)
+        };
+
+        var cluster = Assert.Single(BenchmarkRubricGapDetector.Detect(samples));
+
+        Assert.Equal(BenchmarkRubricGapVerdict.VerifiedRubricGap, cluster.Verdict);
+    }
+
+    [Fact]
+    public void Precedence_ClusterWithRefutedAndTwoFamilies_IsLikelyHallucination()
+    {
+        var samples = new[]
+        {
+            Sample("Yeenaghu grants gnolls a bonus to speed", provider: "OpenAI", modelId: "gpt-5.6-luna", verdict: BenchmarkClaimVerdict.Refuted),
+            Sample("Yeenaghu grants gnolls a bonus to speed", provider: "Google", modelId: "gemini-3.7-flash", verdict: BenchmarkClaimVerdict.Indeterminate, runId: 2)
+        };
+
+        var cluster = Assert.Single(BenchmarkRubricGapDetector.Detect(samples));
+
+        // Even though 2 independent families raised it, the claim was checked and refuted,
+        // so it must stay LikelyHallucination rather than LikelyRubricGap or VerifiedRubricGap.
+        Assert.Equal(BenchmarkRubricGapVerdict.LikelyHallucination, cluster.Verdict);
     }
 }

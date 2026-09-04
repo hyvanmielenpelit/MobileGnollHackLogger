@@ -330,8 +330,10 @@ describe('SuiteHealthComponent', () => {
   });
 
   it('should label a cross-family cluster as a rubric gap and a single-family one as a hallucination', () => {
+    expect(component.verdictLabel('VerifiedRubricGap')).toBe('Verified rubric gap');
     expect(component.verdictLabel('LikelyRubricGap')).toBe('Likely rubric gap');
     expect(component.verdictLabel('LikelyHallucination')).toBe('Likely hallucination');
+    expect(component.verdictTitle('VerifiedRubricGap')).toContain('claim verifier with a citation');
     expect(component.verdictTitle('LikelyRubricGap')).toContain('two or more independent model families');
     expect(component.verdictTitle('LikelyHallucination')).toContain('not a suite issue');
   });

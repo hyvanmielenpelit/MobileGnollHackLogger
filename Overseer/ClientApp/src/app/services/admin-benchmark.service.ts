@@ -365,6 +365,11 @@ export interface StartBenchmarkRunRequest {
    * because the mode is inert without an assessor and an assessor is inert under Off.
    */
   secondOpinionMode?: number | null;
+  /**
+   * Optional. When set, unverified factual claims are verified against the game source code
+   * and wiki using read-only tools. Null means no claim verification.
+   */
+  claimVerifierModelConfigurationId?: number | null;
   scoringProfileId?: number | null;
   acknowledgeSameProvider?: boolean;
 }
@@ -518,12 +523,21 @@ export interface BenchmarkRunAnswerDto {
    */
   secondOpinionTrigger?: string | null;
 
-  /**
-   * Claims the assessor could neither confirm nor refute. Null for a run graded before the field
-   * existed: null is "never asked", zero is "asked and found none".
-   */
+  /** Claims the assessor could neither confirm nor refute. Null for a run graded before the field existed. */
   unverifiedClaimCount?: number | null;
   unverifiedClaimsJson?: string | null;
+
+  /** Claim verification findings from the read-only tool verifier. Advisory: does not alter score. */
+  claimVerificationJson?: string | null;
+  claimsSupportedCount?: number | null;
+  claimsRefutedCount?: number | null;
+  claimsIndeterminateCount?: number | null;
+  claimVerificationByModelDisplayNameUsed?: string | null;
+  claimVerificationInputTokens?: number | null;
+  claimVerificationOutputTokens?: number | null;
+  claimVerificationDurationMs?: number | null;
+  claimVerificationToolCallCount?: number | null;
+  claimVerificationError?: string | null;
 
   /** Re-assessment provenance: a published index can move after publication. */
   reassessedAtUtc?: string | null;
@@ -562,6 +576,14 @@ export interface BenchmarkRunDetailDto {
   secondOpinionAssessorModelIdUsed?: string | null;
   secondOpinionAssessorModelThinkingLevelUsed?: string | null;
   secondOpinionAssessorModelReasoningModeUsed?: string | null;
+
+  /** Null when the run was started without a claim verifier. */
+  claimVerifierModelConfigurationId?: number | null;
+  claimVerifierDisplayNameUsed?: string | null;
+  claimVerifierProviderUsed?: string | null;
+  claimVerifierModelIdUsed?: string | null;
+  claimVerifierThinkingLevelUsed?: string | null;
+  claimVerifierReasoningModeUsed?: string | null;
 
   startedByUserId?: string | null;
   startedByUserName?: string | null;
@@ -619,6 +641,12 @@ export interface BenchmarkRunDetailDto {
    * above and are never summed with them.
    */
   contestedVerdictAnswerCount?: number;
+  unevidencedDeductionAnswerCount?: number;
+  refutedClaimAnswerCount?: number;
+  claimVerifiedAnswerCount?: number;
+  claimsSupportedCount?: number;
+  claimsRefutedCount?: number;
+  claimsIndeterminateCount?: number;
   reassessedAnswerCount?: number;
   /** How the second-opinion assessor was used: Off (0), Flagged (1), FlaggedAndOutliers (2), All (3). */
   secondOpinionModeUsed?: number;
@@ -651,6 +679,11 @@ export interface BenchmarkRunDetailDto {
   totalAssessmentInputTokens?: number;
   totalAssessmentOutputTokens?: number;
   totalAssessmentDurationMs?: number;
+
+  /** Claim-verifier usage. */
+  totalClaimVerificationInputTokens?: number;
+  totalClaimVerificationOutputTokens?: number;
+  totalClaimVerificationDurationMs?: number;
 
   errorMessage?: string | null;
 
@@ -733,7 +766,7 @@ export interface BenchmarkRubricGapClusterDto {
   modelFamilies: string[];
   modelIds: string[];
   occurrences: number;
-  /** 'LikelyRubricGap' or 'LikelyHallucination'. */
+  /** 'VerifiedRubricGap', 'LikelyRubricGap' or 'LikelyHallucination'. */
   verdict: string;
 }
 

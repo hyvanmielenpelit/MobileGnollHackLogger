@@ -519,13 +519,22 @@ export class SuiteHealthComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   verdictLabel(verdict: string): string {
-    return verdict === 'LikelyRubricGap' ? 'Likely rubric gap' : 'Likely hallucination';
+    switch (verdict) {
+      case 'VerifiedRubricGap': return 'Verified rubric gap';
+      case 'LikelyRubricGap': return 'Likely rubric gap';
+      default: return 'Likely hallucination';
+    }
   }
 
   verdictTitle(verdict: string): string {
-    return verdict === 'LikelyRubricGap'
-      ? 'Raised by two or more independent model families. Two unrelated models inventing the same specific fact is unlikely; a rubric that omits a fact both know is likely.'
-      : 'Raised by one model family only. This is a finding about that model, already visible on its run — not a suite issue.';
+    switch (verdict) {
+      case 'VerifiedRubricGap':
+        return 'Verified against the source code or wiki by a claim verifier with a citation. Stronger evidence than cross-model agreement; consider updating the rubric to cover this fact.';
+      case 'LikelyRubricGap':
+        return 'Raised by two or more independent model families. Two unrelated models inventing the same specific fact is unlikely; a rubric that omits a fact both know is likely.';
+      default:
+        return 'Raised by one model family only, or refuted by source code citation. This is a finding about that model, already visible on its run — not a suite issue.';
+    }
   }
 
   get selectedCoverageModel(): SystemAiConfigDto | undefined {

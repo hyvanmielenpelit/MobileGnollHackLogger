@@ -73,6 +73,14 @@ public class BenchmarkPerQuestionAssessmentResult
     /// </summary>
     [JsonIgnore]
     public bool ContestedVerdict { get; set; }
+
+    /// <summary>
+    /// The assessor docked accuracy or completeness to UnevidencedDeductionMaxLevel or below while
+    /// its stated evidence for that dimension names no defect. Advisory; see
+    /// <see cref="BenchmarkVerdictConsistency.HasUnevidencedDeduction"/>.
+    /// </summary>
+    [JsonIgnore]
+    public bool UnevidencedDeduction { get; set; }
 }
 
 public class PerQuestionAssessmentParseResult
@@ -253,6 +261,12 @@ public static class BenchmarkAssessmentParser
                  BenchmarkVerdictConsistency.MentionsFabrication(accuracyEvidence) ||
                  BenchmarkVerdictConsistency.MentionsFabrication(completenessEvidence));
 
+            // The inverse of contestedVerdict: there the prose says more than the flag, here it says less.
+            // Same treatment — recorded, routed to a second reader, never applied to the score.
+            bool unevidencedDeduction = BenchmarkVerdictConsistency.HasUnevidencedDeduction(
+                Math.Clamp(accuracyLevel, 0, 6), accuracyEvidence,
+                Math.Clamp(completenessLevel, 0, 6), completenessEvidence);
+
             var result = new BenchmarkPerQuestionAssessmentResult
             {
                 AccuracyLevel = Math.Clamp(accuracyLevel, 0, 6),
@@ -267,7 +281,8 @@ public static class BenchmarkAssessmentParser
                 Comment = comment,
                 CriticalErrorDemoted = demoted,
                 UnverifiedClaimsDropped = unverifiedClaimsDropped,
-                ContestedVerdict = contestedVerdict
+                ContestedVerdict = contestedVerdict,
+                UnevidencedDeduction = unevidencedDeduction
             };
 
             return new PerQuestionAssessmentParseResult
