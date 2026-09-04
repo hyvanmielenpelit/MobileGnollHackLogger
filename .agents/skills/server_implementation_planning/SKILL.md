@@ -214,7 +214,8 @@ The benchmark evaluates the production chat system prompt (`ChatService.BuildSys
 1. Triage findings into harness defects, suite defects, or chat-transferable findings.
 2. Check configuration parity (e.g. `verboseMode` concise vs. detailed).
 3. Identify the proposed ladder rung (knowledge base article, wiki update, tool policy/description, limits parity, model selection, or prompt prose modification).
-4. Evaluate whether the evidence bar is met (minimum two independent runs or an isolated variable pair) before any chat prompt change is proposed.
+4. Evaluate whether the evidence bar is met (minimum two comparable runs or an isolated variable pair) before any chat prompt change is proposed.
+5. State the pre-declared acceptance criterion and the rollback trigger for any proposed change, per the skill's Verification and Rollback section.
 
 If the plan addresses only harness or suite infrastructure, it must explicitly state: *"No chat-transferable changes proposed in this plan."*
 

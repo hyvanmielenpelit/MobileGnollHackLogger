@@ -856,21 +856,39 @@ While § 9 governs the **chat → benchmark** direction (ensuring benchmark reso
 
 A foundational architectural reality in Overseer is that the benchmark does not evaluate models in a vacuum or under an artificial test prompt: **the candidate model is evaluated under the verbatim production Overseer chat system prompt**.
 
-In `BenchmarkService.cs:262`:
+The candidate prompt is built from a snapshotted configuration record rather than from literals at the call site, in `BenchmarkService.cs:262-270`:
 ```csharp
-var systemPrompt = await _chatService.BuildSystemPrompt(
-    userId: null,
-    gameplayHelpMode: true,
-    hasGameSnapshot: suiteHasBoard,
-    gameplayRole: null,
-    verboseMode: promptOptions.VerboseMode,
-    spoilerFree: false,
-    webSearchEnabled: false,
-    subAgentsEnabled: false,
-    allowSourceReferences: true,
-    preferredLanguage: null,
-    cancellationToken: cancellationToken);
+var promptOptions = new BenchmarkCandidatePromptOptions
+{
+    VerboseMode = verboseMode,
+    HasGameSnapshot = suiteHasBoard
+};
+run.CandidatePromptOptionsJson = promptOptions.ToCanonicalJson();
+run.CandidatePromptSourceUsed = "ChatService.BuildSystemPrompt";
+
+string systemPrompt = promptOptions.BuildSystemPrompt(_chatService, testedConfig.ParallelExecutionMode);
 ```
+
+`BenchmarkCandidatePromptOptions.BuildSystemPrompt` (`BenchmarkCandidatePromptOptions.cs:93-107`) forwards those options to the production builder, `ChatService.cs:1395`:
+```csharp
+internal string BuildSystemPrompt(
+    IEnumerable<string> wikiContext,
+    bool spoilerFreeMode,
+    bool verboseMode,
+    bool isGameOn,
+    bool developerMode,
+    int overseerMode,
+    bool hasGameSnapshot,
+    bool hasMessageHistory,
+    string? clientSettings,
+    bool enableToolUse,
+    bool enableWebSearch,
+    bool allowSourceCodeReferences,
+    bool enableSubAgents = false,
+    ParallelExecutionMode parallelMode = ParallelExecutionMode.Enabled)
+```
+
+There are three such call sites — `BenchmarkService.cs:270`, `:497` and `:3562` — all routed through `BenchmarkCandidatePromptOptions`.
 Every quality score, completeness deduction, hallucination finding, and latency measurement in a benchmark run is a direct empirical test of the exact instructions, formatting guidelines, and tool preferences delivered to real users.
 
 ### The Graded Configuration and Run Comparability
@@ -878,7 +896,7 @@ Every quality score, completeness deduction, hallucination finding, and latency 
 Because the prompt is parameterised, a benchmark run only measures the specific configuration passed at start time. From Harness Version 12, `BenchmarkCandidatePromptOptions` records this configuration into `BenchmarkRun.CandidatePromptOptionsJson` and prints it as the *Chat Prompt Under Test* report manifest.
 
 Run 11 (and all prior runs through 11) answered under:
-- **Mode:** Gameplay Help (`gameplayHelpMode: true`)
+- **Mode:** Gameplay Help (`overseerMode: 0`)
 - **Response Style:** Concise (`verboseMode: false` — *"Default to 2–5 sentences per response"*)
 - **Tools:** Enabled; **Source code references:** Allowed
 - **Web search:** Disabled; **Subagents:** Disabled

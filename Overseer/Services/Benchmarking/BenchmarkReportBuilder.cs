@@ -1310,7 +1310,13 @@ public static class BenchmarkReportBuilder
             }
             if (routing.SourceFamilySharePercentage > 50.0)
             {
-                sb.AppendLine($"- *Prompt observation:* Source code tools accounted for {Inv(routing.SourceFamilySharePercentage, "F1")}% of all tool calls. The production chat system prompt states: *\"Prefer wiki tools over source code tools when answering lore, mechanics, or general gameplay questions. Use source code tools only when wiki tools lack detail or when verifying specific implementation constants.\"* However, {routing.AdvancedQuestionCount} question(s) were assessed in the Advanced band where source-level inspection is legitimately required. This is an observation for operator review, not a rule violation.");
+                // Do not quote the tool policy here. This line previously carried a hardcoded
+                // paraphrase introduced as something "the production chat system prompt states",
+                // and the prompt had never contained it — the policy is conditional, not a blanket
+                // wiki-over-source preference. A hardcoded copy of a file that is edited
+                // independently drifts silently, and a report that misquotes the prompt produces
+                // findings about a rule that does not exist. Point at the policy file instead.
+                sb.AppendLine($"- *Prompt observation:* Source code tools accounted for {Inv(routing.SourceFamilySharePercentage, "F1")}% of all tool calls. The tool preference hierarchy the candidate was given is in `Overseer/ToolGuides/_policy.md`: it routes strategy and general \"what is X\" questions to wiki tools first, routes specific mechanics questions (exact AC, damage dice, MR, resistances, speed, material, artifact flags) to the structured stats tools, and places source code tools at rung 4 for questions that require reading game logic. {routing.AdvancedQuestionCount} question(s) were assessed in the Advanced band, where source-level inspection is expected. Read this share against the suite's question mix and against the policy text itself — it is an observation for operator review, not a rule violation.");
             }
             sb.AppendLine();
             sb.AppendLine("*Note on tool ordering:* `ToolCallSummary` records aggregate call counts, not an ordered execution log (ordering is not recorded). Whether wiki tools were attempted before source code tools on any given question is not derivable from this data.");
