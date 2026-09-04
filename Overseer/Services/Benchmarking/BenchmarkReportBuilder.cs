@@ -394,6 +394,38 @@ public static class BenchmarkReportBuilder
         sb.AppendLine($"- **Max Output Tokens:** {(run.TestedModelMaxOutputTokensUsed.HasValue ? run.TestedModelMaxOutputTokensUsed.Value.ToString() : "Default")}");
         sb.AppendLine($"- **Parallel Tool Calls:** {run.TestedModelParallelExecutionModeUsed} *(provider-side tool batching, unrelated to Question Parallelism)*");
         sb.AppendLine();
+
+        sb.AppendLine("### Chat Prompt Under Test");
+        if (string.IsNullOrWhiteSpace(run.CandidatePromptOptionsJson))
+        {
+            sb.AppendLine("The candidate is graded under the **production Overseer chat system prompt** (`ChatService.BuildSystemPrompt`), not a benchmark-specific prompt. Every quality verdict below is a verdict on the prompt real users receive.");
+            sb.AppendLine();
+            sb.AppendLine("- *Configuration not recorded for this run.*");
+        }
+        else
+        {
+            var promptOpts = BenchmarkCandidatePromptOptions.FromJson(run.CandidatePromptOptionsJson);
+            string modeStr = promptOpts.OverseerMode == 0 ? "Gameplay Help" : $"Mode {promptOpts.OverseerMode}";
+            string styleStr = promptOpts.VerboseMode ? "detailed (`verboseMode: true`)" : "concise (`verboseMode: false`)";
+            string toolsStr = promptOpts.EnableToolUse ? "enabled" : "disabled";
+            string webStr = promptOpts.EnableWebSearch ? "enabled" : "disabled";
+            string subagentsStr = promptOpts.EnableSubAgents ? "enabled" : "disabled";
+            string srcStr = promptOpts.AllowSourceCodeReferences ? "allowed" : "disallowed";
+            string spoilerStr = promptOpts.SpoilerFreeMode ? "on" : "off";
+            string activeGameStr = promptOpts.IsGameOn ? "yes" : "no";
+            string historyStr = promptOpts.HasMessageHistory ? "yes" : "no";
+
+            sb.AppendLine("The candidate is graded under the **production Overseer chat system prompt** (`ChatService.BuildSystemPrompt`), not a benchmark-specific prompt. Every quality verdict below is a verdict on the prompt real users receive.");
+            sb.AppendLine();
+            sb.AppendLine($"- **Mode:** {modeStr} · **Response style:** {styleStr}");
+            sb.AppendLine($"- **Tools:** {toolsStr} · **Web search:** {webStr} · **Subagents:** {subagentsStr} · **Source code references:** {srcStr}");
+            sb.AppendLine($"- **Spoiler-free mode:** {spoilerStr} · **Active game:** {activeGameStr} · **Message history:** {historyStr}");
+            sb.AppendLine("- **Pre-injected wiki context:** none — live chat pre-injects relevant articles, so this run is a strictly harder configuration than production and its tool counts are an upper bound on chat's.");
+            sb.AppendLine();
+            sb.AppendLine("*Configurations differ in what they measure. Two runs are comparable on Completeness, Conciseness and Readability only if this block matches.*");
+        }
+        sb.AppendLine();
+
         sb.AppendLine("### Assessment Model");
         sb.AppendLine($"- **Display Name:** {run.AssessorModelDisplayNameUsed}");
         sb.AppendLine($"- **Provider:** {run.AssessorModelProviderUsed}");
@@ -484,6 +516,13 @@ public static class BenchmarkReportBuilder
                 string.Equals(run.TestedModelProviderUsed, run.ClaimVerifierProviderUsed, StringComparison.OrdinalIgnoreCase))
             {
                 sb.AppendLine("  - *The verifier and the candidate come from the same provider: the tools supply the evidence rather than the model's memory, so this is not worthless — but it is the weakest available pairing.*");
+            }
+            if (run.SecondOpinionAssessorModelConfigurationId.HasValue &&
+                (run.SecondOpinionAssessorModelConfigurationId == run.ClaimVerifierModelConfigurationId ||
+                 (!string.IsNullOrWhiteSpace(run.SecondOpinionAssessorModelIdUsed) &&
+                  string.Equals(run.SecondOpinionAssessorModelIdUsed, run.ClaimVerifierModelIdUsed, StringComparison.OrdinalIgnoreCase))))
+            {
+                sb.AppendLine("  - *Same model as the second-opinion assessor. Under blind mode the second reader is given the verification findings, so a refuted claim and a harsh second opinion on the same answer are one finding, not two independent ones.*");
             }
         }
         else
@@ -850,6 +889,13 @@ public static class BenchmarkReportBuilder
                 ?? (graded.Count > 0
                     ? graded.Average(a => Math.Abs(a.SecondOpinionQualityScore!.Value - a.QualityScore!.Value))
                     : null);
+            double? meanSignedDelta = run.SecondOpinionMeanSignedDelta
+                ?? (graded.Count > 0
+                    ? graded.Average(a => (double)(a.SecondOpinionQualityScore!.Value - a.QualityScore!.Value))
+                    : null);
+            var criticalErrorSplits = graded
+                .Where(a => a.SecondOpinionCriticalError.HasValue && a.SecondOpinionCriticalError.Value != a.CriticalError)
+                .ToList();
 
             sb.AppendLine("### Assessor Agreement");
             sb.AppendLine($"- **Mode:** {agreementMode}{ModeGloss(agreementMode)}");
@@ -866,6 +912,32 @@ public static class BenchmarkReportBuilder
             sb.AppendLine(meanAbsDelta.HasValue
                 ? $"- **Mean absolute difference:** {Inv(meanAbsDelta.Value, "F1")} points."
                 : "- **Mean absolute difference:** not recorded.");
+            if (meanSignedDelta.HasValue)
+            {
+                string directionSuffix = string.Empty;
+                var deltas = graded.Select(a => a.SecondOpinionQualityScore!.Value - a.QualityScore!.Value).ToList();
+                if (deltas.Count > 0 && deltas.All(d => d < 0))
+                {
+                    directionSuffix = " — the second reader graded **lower** on every re-graded answer. A one-directional gap of this size is a statement about the grader whose verdict scores, not about noise between two readers.";
+                }
+                else if (deltas.Count > 0 && deltas.All(d => d > 0))
+                {
+                    directionSuffix = " — the second reader graded **higher** on every re-graded answer. A one-directional gap of this size is a statement about the grader whose verdict scores, not about noise between two readers.";
+                }
+                sb.AppendLine($"- **Mean signed difference:** {Inv(meanSignedDelta.Value, "F1")} points{directionSuffix}");
+            }
+            else
+            {
+                sb.AppendLine("- **Mean signed difference:** not recorded.");
+            }
+            int splitCount = run.SecondOpinionCriticalErrorSplitCount > 0 ? run.SecondOpinionCriticalErrorSplitCount : criticalErrorSplits.Count;
+            if (splitCount > 0 && graded.Count > 0)
+            {
+                string splitNamed = criticalErrorSplits.Count > 0
+                    ? " — " + string.Join(", ", criticalErrorSplits.Select(a => $"Q{a.OrderIndex}"))
+                    : string.Empty;
+                sb.AppendLine($"- **Critical-error splits:** {splitCount} of {graded.Count}{splitNamed}. The two readers disagree on whether the answer contains a fabrication, which is the most severe disagreement this harness records.");
+            }
             if (graded.Count > 0)
             {
                 double disagreementPct = disagreedAnswers.Count * 100.0 / graded.Count;
@@ -951,6 +1023,11 @@ public static class BenchmarkReportBuilder
             sb.AppendLine($"- **Conciseness (Weight 10%):** {Inv(scoredAnswers.Average(a => a.ConcisenessScore ?? 0), "F1")} / 100 (Avg Level: {Inv(scoredAnswers.Average(a => a.ConcisenessLevel ?? 0), "F1")} / 6)");
             sb.AppendLine($"- **Readability (Weight 10%):** {Inv(scoredAnswers.Average(a => a.ReadabilityScore ?? 0), "F1")} / 100 (Avg Level: {Inv(scoredAnswers.Average(a => a.ReadabilityLevel ?? 0), "F1")} / 6)");
             sb.AppendLine();
+            if (BenchmarkChatTransfer.HasResponseStyleConflict(run, scoredAnswers, out double gap))
+            {
+                sb.AppendLine($"> **Response-style conflict.** This run graded a candidate instructed to *\"Default to 2–5 sentences per response\"* (`verboseMode: false`) against a Completeness dimension worth 25%, and Completeness is the weakest dimension by {Inv(gap, "F1")} points. Some of that gap may be the prompt rather than the model. Running the same suite at `verboseMode: true` separates the two; that run is not comparable with this one on Completeness, Conciseness or Readability.");
+                sb.AppendLine();
+            }
         }
 
         // Difficulty breakdown bucketed by AssessedDifficulty, using the shared band boundaries.
@@ -1080,25 +1157,7 @@ public static class BenchmarkReportBuilder
         // Tool Usage Profile. The old report said a cap had been hit but never which tools
         // consumed the budget, leaving the operator no basis for tuning it: Q11 of the
         // 2026-09-03 run spent all 25 calls on wiki search churn and nothing said so.
-        var toolCounts = new SortedDictionary<string, int>(StringComparer.Ordinal);
-        foreach (var a in answers)
-        {
-            if (string.IsNullOrWhiteSpace(a.ToolCallSummary)) continue;
-
-            foreach (var entry in a.ToolCallSummary.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-            {
-                // Entries look like "wiki_search×11"; a trailing "(n blocked by budget)" note is
-                // parenthesised and carries no tool name.
-                int sep = entry.IndexOf('×');
-                if (sep <= 0) continue;
-
-                string name = entry.Substring(0, sep).Trim();
-                string countPart = new string(entry.Substring(sep + 1).TakeWhile(char.IsDigit).ToArray());
-                if (name.Length == 0 || name.StartsWith('(') || !int.TryParse(countPart, out int n)) continue;
-
-                toolCounts[name] = toolCounts.TryGetValue(name, out int prev) ? prev + n : n;
-            }
-        }
+        var toolCounts = BenchmarkChatTransfer.AggregateToolCounts(answers);
 
         sb.AppendLine("### Tool Usage Profile");
         int totalToolCalls = answers.Sum(a => a.ToolCallCount ?? 0);
@@ -1214,6 +1273,47 @@ public static class BenchmarkReportBuilder
             {
                 sb.AppendLine($"| `{kv.Key}` | {kv.Value} |");
             }
+        }
+
+        var routing = BenchmarkChatTransfer.AnalyzeToolRouting(answers);
+        if (routing.TotalCalls > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("#### Tool Routing");
+            sb.AppendLine("Distribution of tool calls across functional tool families:");
+            sb.AppendLine();
+            sb.AppendLine("| Tool Family | Calls | Share |");
+            sb.AppendLine("|-------------|------:|------:|");
+            foreach (var fs in routing.RunWideStats.Where(s => s.CallCount > 0))
+            {
+                string famName = fs.Family switch
+                {
+                    BenchmarkToolFamily.SourceCode => "Source Code",
+                    BenchmarkToolFamily.Wiki => "Wiki",
+                    BenchmarkToolFamily.StructuredLookup => "Structured Lookup",
+                    BenchmarkToolFamily.KnowledgeBase => "Knowledge Base",
+                    _ => "Other"
+                };
+                sb.AppendLine($"| {famName} | {fs.CallCount} | {Inv(fs.SharePercentage, "F1")}% |");
+            }
+            sb.AppendLine();
+            sb.AppendLine($"- **Knowledge base under-use:** {routing.ZeroKnowledgeBaseAnswerCount} of {routing.AnsweredQuestionCount} answered question(s) made zero `get_knowledge_article` calls.");
+            if (routing.CorrelationSampleSize >= 2)
+            {
+                string rTimeStr = routing.SourceShareModelTimeCorrelation.HasValue
+                    ? Inv(routing.SourceShareModelTimeCorrelation.Value, "F2")
+                    : "N/A";
+                string rQualStr = routing.SourceShareQualityScoreCorrelation.HasValue
+                    ? Inv(routing.SourceShareQualityScoreCorrelation.Value, "F2")
+                    : "N/A";
+                sb.AppendLine($"- **Source-family correlations (n = {routing.CorrelationSampleSize}):** r = {rTimeStr} with model time; r = {rQualStr} with quality score.");
+            }
+            if (routing.SourceFamilySharePercentage > 50.0)
+            {
+                sb.AppendLine($"- *Prompt observation:* Source code tools accounted for {Inv(routing.SourceFamilySharePercentage, "F1")}% of all tool calls. The production chat system prompt states: *\"Prefer wiki tools over source code tools when answering lore, mechanics, or general gameplay questions. Use source code tools only when wiki tools lack detail or when verifying specific implementation constants.\"* However, {routing.AdvancedQuestionCount} question(s) were assessed in the Advanced band where source-level inspection is legitimately required. This is an observation for operator review, not a rule violation.");
+            }
+            sb.AppendLine();
+            sb.AppendLine("*Note on tool ordering:* `ToolCallSummary` records aggregate call counts, not an ordered execution log (ordering is not recorded). Whether wiki tools were attempted before source code tools on any given question is not derivable from this data.");
         }
 
         var starved = answers.Where(a => a.ToolBudgetExhausted || (a.ToolCallsBlocked ?? 0) > 0).OrderBy(a => a.OrderIndex).ToList();
@@ -1525,9 +1625,18 @@ public static class BenchmarkReportBuilder
                     }
                 }
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.RepeatedFragments)) flagDescriptions.Add("Repeated reasoning fragments in the removed narration (advisory)");
+                if (iaFlags.HasFlag(BenchmarkAnswerFlags.ContestedVerdict)) flagDescriptions.Add("Contested verdict (advisory, changed no score)");
+                if (iaFlags.HasFlag(BenchmarkAnswerFlags.UnevidencedDeduction)) flagDescriptions.Add("Unevidenced deduction (advisory, changed no score)");
+                if (iaFlags.HasFlag(BenchmarkAnswerFlags.RefutedClaim)) flagDescriptions.Add("Refuted claim (advisory, changed no score)");
+                if (iaFlags.HasFlag(BenchmarkAnswerFlags.OmissionAsAccuracy)) flagDescriptions.Add("Omission docked as accuracy (advisory, changed no score)");
                 if (ia.ToolBudgetExhausted)
                 {
                     flagDescriptions.Add($"Tool call budget reached ({FormatToolBudgetLine(ia)}) — configured harness limit, not an error");
+                }
+
+                if (flagDescriptions.Count == 0 && ia.Status == BenchmarkAnswerStatus.Ok)
+                {
+                    continue;
                 }
 
                 string desc = string.Join("; ", flagDescriptions);
@@ -1637,6 +1746,14 @@ public static class BenchmarkReportBuilder
             sb.AppendLine("No synthesis assessment generated.");
         }
         sb.AppendLine();
+
+        int totalRefutedClaims = run.ClaimsRefutedCount > 0 ? run.ClaimsRefutedCount : answers.Sum(a => a.ClaimsRefutedCount ?? 0);
+        int disputedVerdicts = answers.Count(a => a.SecondOpinionDisagreed && a.SecondOpinionQualityScore.HasValue);
+        if (totalRefutedClaims > 0 || disputedVerdicts > 0)
+        {
+            sb.AppendLine($"*The synthesis above is the primary assessor's own narrative. This run recorded {totalRefutedClaims} refuted claim(s) and {disputedVerdicts} disputed verdict(s) — see Run Integrity and Disputed Assessments.*");
+            sb.AppendLine();
+        }
 
         // 8. Final Score
         sb.AppendLine("## 7. Final Indices");

@@ -186,7 +186,17 @@ public static class BenchmarkVerdictConsistency
 
     // Words that describe something the answer did not say.
     private static readonly Regex OmissionRegex = new(
-        @"\bomit|\bomission|does not (?:mention|include|state|list|cover|address|provide)|fails? to (?:mention|include|state|list|identify|note|cover|address|provide)|missing|instead of|rather than|no mention of|never (?:mentions|states)|leaves out|does not name",
+        @"\bomit|\bomission|does not (?:mention|include|state|list|cover|address|provide)|fails? to (?:mention|include|state|list|identify|note|cover|address|provide)|missing|no mention of|never (?:mentions|states)|leaves out|does not name",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    // "X rather than Y" / "X instead of Y" describes a SUBSTITUTION: the answer stated X, and X is not
+    // what GnollHack does. That is an accuracy defect, correctly charged, and must not be reclassified
+    // as an omission. Run 11's Q1 evidence — "provides D&D-style relative attribute modifiers ... rather
+    // than GnollHack's racial attribute maxima" — flagged under the harness 11 detector and told the
+    // reader that Completeness already graded it, which was false. The remaining OmissionRegex
+    // alternatives ("omits", "fails to mention", "no mention of") all describe genuinely absent content.
+    private static readonly Regex SubstitutionRegex = new(
+        @"\b(?:provides?|gives?|states?|lists?|uses?|presents?|reports?|offers?|supplies|describes?|says)\b[^.;]{0,120}?\b(?:rather than|instead of)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     // Words that assert the answer said something untrue. Their presence means the deduction has a
@@ -207,6 +217,8 @@ public static class BenchmarkVerdictConsistency
             return false;
         }
 
-        return OmissionRegex.IsMatch(accuracyEvidence) && !FalsehoodRegex.IsMatch(accuracyEvidence);
+        return OmissionRegex.IsMatch(accuracyEvidence)
+            && !FalsehoodRegex.IsMatch(accuracyEvidence)
+            && !SubstitutionRegex.IsMatch(accuracyEvidence);
     }
 }

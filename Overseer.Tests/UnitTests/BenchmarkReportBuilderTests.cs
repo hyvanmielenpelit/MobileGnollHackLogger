@@ -1313,4 +1313,107 @@ public class BenchmarkReportBuilderTests
         Assert.Contains("Claims: 3 supported, 0 refuted, 0 indeterminate", report);
         Assert.Contains("Assessor agreement is reported for a **blind** second reader", report);
     }
+
+    [Fact]
+    public void ChatPromptUnderTest_RendersConfiguration_AndFallsBackWhenNull()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        var runWithoutSnapshot = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        runWithoutSnapshot.CandidatePromptOptionsJson = null;
+        BenchmarkRunFinalizer.Apply(runWithoutSnapshot, new[] { q1 });
+
+        var report1 = BenchmarkReportBuilder.BuildMarkdownReport(runWithoutSnapshot);
+        Assert.Contains("### Chat Prompt Under Test", report1);
+        Assert.Contains("not recorded for this run", report1);
+
+        var runWithSnapshot = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        runWithSnapshot.CandidatePromptOptionsJson = new BenchmarkCandidatePromptOptions { VerboseMode = true }.ToCanonicalJson();
+        BenchmarkRunFinalizer.Apply(runWithSnapshot, new[] { q1 });
+
+        var report2 = BenchmarkReportBuilder.BuildMarkdownReport(runWithSnapshot);
+        Assert.Contains("### Chat Prompt Under Test", report2);
+        Assert.Contains("detailed (`verboseMode: true`)", report2);
+    }
+
+    [Fact]
+    public void ToolRouting_RendersFamilyCountsAndCaveats()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.ToolCallSummary = "source_code_search×5, wiki_search×3, monster_lookup×1, get_knowledge_article×1";
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        BenchmarkRunFinalizer.Apply(run, new[] { q1 });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+        Assert.Contains("#### Tool Routing", report);
+        Assert.Contains("Source Code", report);
+        Assert.Contains("Wiki", report);
+        Assert.Contains("Structured Lookup", report);
+        Assert.Contains("Knowledge Base", report);
+        Assert.Contains("ordering is not recorded", report);
+    }
+
+    [Fact]
+    public void ResponseStyleConflict_RendersOnlyWhenPredicateHolds()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.AccuracyLevel = 6;
+        q1.CompletenessLevel = 4;
+        q1.ConcisenessLevel = 5;
+        q1.ReadabilityLevel = 5;
+
+        q1.AccuracyScore = 98;
+        q1.CompletenessScore = 83;
+        q1.ConcisenessScore = 95;
+        q1.ReadabilityScore = 95;
+
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        run.CandidatePromptOptionsJson = new BenchmarkCandidatePromptOptions { VerboseMode = false }.ToCanonicalJson();
+        BenchmarkRunFinalizer.Apply(run, new[] { q1 });
+
+        var reportWithConflict = BenchmarkReportBuilder.BuildMarkdownReport(run);
+        Assert.Contains("Response-style conflict.", reportWithConflict);
+
+        run.CandidatePromptOptionsJson = new BenchmarkCandidatePromptOptions { VerboseMode = true }.ToCanonicalJson();
+        var reportWithoutConflict = BenchmarkReportBuilder.BuildMarkdownReport(run);
+        Assert.DoesNotContain("Response-style conflict.", reportWithoutConflict);
+    }
+
+    [Fact]
+    public void SameModelClaimVerifier_RendersAdvisoryWhenIdsMatch()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        run.SecondOpinionAssessorModelConfigurationId = 42;
+        run.ClaimVerifierModelConfigurationId = 42;
+        BenchmarkRunFinalizer.Apply(run, new[] { q1 });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+        Assert.Contains("Same model as the second-opinion assessor.", report);
+    }
+
+    [Fact]
+    public void SynthesisCaveat_RendersWhenRefutedClaimsOrDisputedAssessmentsExist()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.ClaimsRefutedCount = 2;
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        run.AssessmentText = "Everything was flawless.";
+        run.ClaimsRefutedCount = 2;
+        BenchmarkRunFinalizer.Apply(run, new[] { q1 });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+        Assert.Contains("The synthesis above is the primary assessor's own narrative. This run recorded 2 refuted claim(s)", report);
+    }
+
+    [Fact]
+    public void Section5_DoesNotRenderEmptyFlagDescriptions()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.AnswerFlags = (int)BenchmarkAnswerFlags.ContestedVerdict;
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        BenchmarkRunFinalizer.Apply(run, new[] { q1 });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+        Assert.DoesNotContain("— .", report);
+    }
 }

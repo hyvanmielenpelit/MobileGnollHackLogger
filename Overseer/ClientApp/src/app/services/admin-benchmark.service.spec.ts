@@ -79,4 +79,14 @@ describe('AdminBenchmarkService', () => {
 
     expect(result).toBeNull();
   });
+
+  it('should retry claim verification for a run', () => {
+    service.retryClaimVerification(42).subscribe(res => {
+      expect(res.runId).toBe(42);
+    });
+
+    const req = httpMock.expectOne('/api/admin/benchmark/runs/42/retry-claim-verification');
+    expect(req.request.method).toBe('POST');
+    req.flush({ runId: 42 });
+  });
 });

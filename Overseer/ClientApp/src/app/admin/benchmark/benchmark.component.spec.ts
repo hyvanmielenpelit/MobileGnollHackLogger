@@ -46,11 +46,13 @@ describe('AdminBenchmarkComponent', () => {
       'trialReassessAnswer',
       'calibrateAssessor',
       'getCalibrations',
-      'getLastAssessor'
+      'getLastAssessor',
+      'retryClaimVerification'
     ]);
 
     benchmarkServiceMock.getActiveDifficultyAssessment.and.returnValue(of(null));
     benchmarkServiceMock.getActiveRun.and.returnValue(of(null));
+    benchmarkServiceMock.getRun.and.returnValue(of({ id: 1, answers: [] } as any));
     benchmarkServiceMock.getQuestions.and.returnValue(of([]));
     benchmarkServiceMock.getSuiteRunsFootprint.and.returnValue(of({ runCount: 0, totalAnswerCharacters: 0 }));
     benchmarkServiceMock.getCalibrations.and.returnValue(of([]));
@@ -2136,6 +2138,19 @@ describe('AdminBenchmarkComponent', () => {
       expect(hint!.textContent).toContain('Produces a second, independent verdict');
     });
 
+    it('should place Claim Verifier and Response Style in .form-row.claim-verifier-row in col 1 and col 2', () => {
+      component.activeSubTab = 'run';
+      fixture.detectChanges();
+
+      const row = fixture.nativeElement.querySelector('.form-row.claim-verifier-row');
+      expect(row).toBeTruthy();
+
+      const groups = Array.from(row.querySelectorAll(':scope > .form-group')) as HTMLElement[];
+      expect(groups.length).toBe(2);
+      expect(groups[0].querySelector('label')?.textContent?.trim()).toBe('Claim Verifier (optional)');
+      expect(groups[1].querySelector('label')?.textContent?.trim()).toBe('Response Style (candidate prompt)');
+    });
+
     it('should render both dt/dd pairs and keep .run-model-row present in the run-model-strip', () => {
       component.activeRunDetail = {
         id: 42,
@@ -3228,6 +3243,54 @@ describe('AdminBenchmarkComponent', () => {
       expect(text).toContain('1 answer(s) carry an omission docked as accuracy');
       expect(text).toContain('(question(s) 1)');
       expect(text).toContain('Claim verification for Q1: 3 supported, 0 refuted, 0 indeterminate.');
+    });
+
+    it('should default candidateVerboseMode to false and reflect appropriate hint', () => {
+      expect(component.candidateVerboseMode).toBe(false);
+      expect(component.candidateResponseStyleHint).toContain('Default to 2–5 sentences per response');
+
+      component.candidateVerboseMode = true;
+      expect(component.candidateResponseStyleHint).toContain('detailed explanations');
+      expect(component.candidateResponseStyleHint).toContain('NOT be comparable');
+    });
+
+    it('should include verboseMode in startRun payload', () => {
+      benchmarkServiceMock.startRun.and.returnValue(of({ runId: 101 } as any));
+      component.selectedSuiteId = 1;
+      component.testedConfigId = 10;
+      component.assessorConfigId = 20;
+      component.candidateVerboseMode = true;
+
+      component.startBenchmark();
+
+      expect(benchmarkServiceMock.startRun).toHaveBeenCalledWith(jasmine.objectContaining({
+        verboseMode: true
+      }));
+    });
+
+    it('should identify failed claim verifications and trigger retry', () => {
+      component.selectedRunDetail = {
+        id: 55,
+        status: 'Completed',
+        answers: [
+          { orderIndex: 1, claimVerificationError: null },
+          { orderIndex: 2, claimVerificationError: 'Model timeout' }
+        ]
+      } as any;
+
+      expect(component.claimVerificationFailedAnswerCount).toBe(1);
+      expect(component.claimVerificationFailedQuestionNumbers).toBe('2');
+
+      benchmarkServiceMock.retryClaimVerification.and.returnValue(of({ runId: 55 } as any));
+      benchmarkServiceMock.getRun.and.returnValue(of({ id: 55, answers: [] } as any));
+
+      component.openRetryDialog('claim-verification', 55);
+      expect(component.retryScope).toBe('claim-verification');
+      expect(component.retryRunId).toBe(55);
+
+      component.confirmRetry();
+      expect(benchmarkServiceMock.retryClaimVerification).toHaveBeenCalledWith(55, jasmine.anything());
+      component.stopDetailPolling();
     });
   });
 });

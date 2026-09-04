@@ -634,4 +634,9 @@ export class SuiteHealthComponent implements OnInit, OnChanges, OnDestroy {
   onVerifyQuestion(questionId: number): void {
     this.verifyQuestionRequested.emit(questionId);
   }
+
+  formatQuestionIndices(indices: number[]): string {
+    if (!indices || indices.length === 0) return 'None';
+    return indices.map(i => `Q${i}`).join(', ');
+  }
 }

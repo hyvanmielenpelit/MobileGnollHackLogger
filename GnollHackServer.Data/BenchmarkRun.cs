@@ -418,6 +418,30 @@ public class BenchmarkRun
 
     public double? SecondOpinionMeanAbsDelta { get; set; }
 
+    /// <summary>
+    /// The mean signed difference (second − first quality score) across second-opinion answers.
+    /// A negative value means the second reader graded lower. The absolute delta measures
+    /// the magnitude of disagreement; the signed delta measures direction, distinguishing
+    /// a noisy grader from a systematically lenient or harsh one.
+    /// </summary>
+    public double? SecondOpinionMeanSignedDelta { get; set; }
+
+    /// <summary>
+    /// Answers where the two readers disagreed on CriticalError.
+    /// </summary>
+    public int SecondOpinionCriticalErrorSplitCount { get; set; }
+
+    /// <summary>
+    /// Canonical JSON representation of the candidate prompt options used to build the system prompt.
+    /// </summary>
+    public string? CandidatePromptOptionsJson { get; set; }
+
+    /// <summary>
+    /// The system prompt builder that produced the candidate prompt (e.g. "ChatService.BuildSystemPrompt").
+    /// </summary>
+    [MaxLength(256)]
+    public string? CandidatePromptSourceUsed { get; set; }
+
     // Total wall-clock time spent executing tool batches across the run. Subtracting this
     // from TotalAnswerDurationMs gives the model-attributable time that speed is scored on.
     public long? ToolOverheadMs { get; set; }

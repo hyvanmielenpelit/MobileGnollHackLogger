@@ -227,6 +227,11 @@ public static class BenchmarkRunFinalizer
         run.SecondOpinionMeanAbsDelta = secondOpinions.Count > 0
             ? secondOpinions.Average(a => Math.Abs(a.SecondOpinionQualityScore!.Value - a.QualityScore!.Value))
             : null;
+        run.SecondOpinionMeanSignedDelta = secondOpinions.Count > 0
+            ? secondOpinions.Average(a => (double)(a.SecondOpinionQualityScore!.Value - a.QualityScore!.Value))
+            : null;
+        run.SecondOpinionCriticalErrorSplitCount = secondOpinions.Count(
+            a => a.SecondOpinionCriticalError.HasValue && a.SecondOpinionCriticalError.Value != a.CriticalError);
         run.ToolOverheadMs = answers.Any(a => a.ToolTimeMs.HasValue)
             ? answers.Sum(a => a.ToolTimeMs ?? 0L)
             : null;

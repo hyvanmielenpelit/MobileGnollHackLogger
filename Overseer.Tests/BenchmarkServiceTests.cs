@@ -986,4 +986,59 @@ public class BenchmarkServiceTests
 
         Assert.Equal(BenchmarkService.SecondOpinionTriggers.UnverifiedClaims, trigger);
     }
+
+    [Fact]
+    public void CandidatePromptOptions_DefaultParity_MatchesProductionLiterals()
+    {
+        // Parity test: every default on BenchmarkCandidatePromptOptions must match the hard-coded
+        // literals previously at BenchmarkService.cs:263-276, member by member.
+        var opts = new BenchmarkCandidatePromptOptions();
+
+        Assert.False(opts.VerboseMode);
+        Assert.False(opts.SpoilerFreeMode);
+        Assert.Equal(0, opts.OverseerMode);
+        Assert.True(opts.EnableToolUse);
+        Assert.False(opts.EnableWebSearch);
+        Assert.True(opts.AllowSourceCodeReferences);
+        Assert.False(opts.EnableSubAgents);
+        Assert.False(opts.IsGameOn);
+        Assert.False(opts.DeveloperMode);
+        Assert.False(opts.HasMessageHistory);
+        Assert.False(opts.HasWikiContext);
+        Assert.False(opts.HasGameSnapshot);
+    }
+
+    [Fact]
+    public void CandidatePromptOptions_CanonicalJson_RoundTripsAccurately()
+    {
+        var original = new BenchmarkCandidatePromptOptions
+        {
+            VerboseMode = true,
+            HasGameSnapshot = true
+        };
+
+        string json = original.ToCanonicalJson();
+        var roundTripped = BenchmarkCandidatePromptOptions.FromJson(json);
+
+        Assert.NotNull(roundTripped);
+        Assert.True(roundTripped.VerboseMode);
+        Assert.True(roundTripped.HasGameSnapshot);
+        Assert.Equal(original.EnableToolUse, roundTripped.EnableToolUse);
+        Assert.Equal(original.AllowSourceCodeReferences, roundTripped.AllowSourceCodeReferences);
+        Assert.Equal(original.OverseerMode, roundTripped.OverseerMode);
+    }
+
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    public void CandidatePromptOptions_VerboseMode_ResolvedCorrectlyFromRequest(bool? requestVerbose, bool expectedVerbose)
+    {
+        var options = new BenchmarkCandidatePromptOptions
+        {
+            VerboseMode = requestVerbose ?? false
+        };
+
+        Assert.Equal(expectedVerbose, options.VerboseMode);
+    }
 }

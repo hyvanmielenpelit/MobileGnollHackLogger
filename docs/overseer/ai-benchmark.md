@@ -322,6 +322,39 @@ Prompted by the 2026-09-04 GPT-5.6 Luna run (run 10), which exposed critical gra
 - **Disputed Verdicts Connected to Claim Verification (F7)**:
   In the Disputed Assessments report section and the admin UI Run Integrity Notice, disputed answers display the outcome of any claim verification conducted for those questions (supported, refuted, indeterminate counts).
 
+### Harness Version 12 Updates
+
+Prompted by the 2026-09-04 GPT-5.6 Luna benchmark run (run 11), which revealed eight harness grader defects (**F1–F8**) and six gaps in what the benchmark feeds back to the production chat agent (**T1–T6**):
+
+- **Blind Second Opinion Backfill Migration (F1)**:
+  Although Harness 11 introduced blind second opinions, the original migration set `defaultValue: false` and performed no data backfill, leaving existing default scoring profiles anchored (causing run 11 to still run anchored). Harness 12 adds migration `AddBenchmarkAgreementDirection` which explicitly backfills `SecondOpinionBlind = 1 WHERE IsDefault = 1`.
+- **Claim Verification Raw Text Capture, Bounded JSON Re-ask, and Retry Endpoint (F2)**:
+  When a claim verifier produces unparseable output, the raw text is preserved in `BenchmarkRunAnswer.ClaimVerificationRawText` and surfaced in diagnostics and answer details. If JSON extraction fails, the parser issues a bounded one-turn follow-up requesting only JSON before flagging failure. A dedicated recovery endpoint (`POST /api/admin/benchmark/runs/{id}/retry-claim-verification`) allows retrying failed claim verifications without regrading the entire run.
+- **Shared Robust BenchmarkJsonExtractor (F3)**:
+  A shared `BenchmarkJsonExtractor` utility replaces fragmented and brittle JSON parsers across candidate answers, per-question assessments, final synthesis, and claim verification using a deterministic 4-stage bounded search (direct parse, markdown fenced code blocks, brace-matching scanner, and trimmed object boundary detection).
+- **Substitution Regex Guard in Verdict Consistency (F4)**:
+  `BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction` was augmented with a substitution regex guard (`\binstead\s+of\b`, `\brather\s+than\b`, `\bin\s+place\s+of\b`, `\bnot\s+X\s+but\s+Y\b`) to prevent false-positive `OmissionAsAccuracy` flags when an assessor notes that the candidate stated one thing instead of the correct fact (which is a genuine accuracy finding, not an omission).
+- **Assessor Agreement Signed Delta and Critical-Error Splits (F5)**:
+  The direction of grader disagreement is now tracked alongside absolute magnitude. `BenchmarkRun.SecondOpinionMeanSignedDelta` records whether the second assessor was systematically harsher (negative) or more lenient (positive) than the primary grader. The Run Integrity Notice and report highlight critical-error splits (questions where one grader called a critical error and the other did not).
+- **Synthesis Awareness of Refuted Claims and Second Opinions (F6)**:
+  `BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt` now feeds refuted claim citations and second-opinion scores into the holistic synthesis prompt with a strict instruction: a run containing refuted claims or critical-error splits must NOT be described as free of factual errors in the synthesis prose.
+- **Report §5 Formatting Repairs (F7)**:
+  Repaired three formatting issues in §5 of the benchmark report: omission question lists now render properly, disputed assessment tables align correctly, and unverified claim counts format consistently.
+- **Same-Model Assessor Advisory (F8)**:
+  When the second-opinion assessor and claim verifier share the same model configuration, an advisory callout is rendered noting that independent validation is compromised by shared model biases.
+- **Candidate System Prompt Configuration Snapshot (T1)**:
+  The candidate answers under the production chat prompt (`ChatService.BuildSystemPrompt`). `BenchmarkCandidatePromptOptions` snapshots the exact prompt arguments (`verboseMode`, `hasGameSnapshot`, `spoilerFree`, etc.) into `BenchmarkRun.CandidatePromptOptionsJson`, displayed in the report manifest (*Chat Prompt Under Test*) and UI diagnostics.
+- **Response Style Control in Start Dialog (T2)**:
+  The benchmark start dialog now features a **Response Style (candidate prompt)** selector (Concise vs. Detailed). Selecting Detailed sets `verboseMode: true`, allowing operators to determine whether a Completeness deficit is caused by the model or the concise prompt instruction.
+- **Tool Routing Analysis (T3)**:
+  `BenchmarkChatTransfer` aggregates tool calls into five functional families (Source Code, Wiki, Structured Lookup, Knowledge Base, Other), analyzes family shares by difficulty band, computes Pearson correlation ($r$) of source tool share against latency and quality score, highlights knowledge base under-use, and includes caveats noting that tool execution order is not recorded.
+- **Response-Style Conflict Advisory (T4)**:
+  A deterministic predicate detects when a concise-prompt candidate (`verboseMode: false`) scores Completeness as its lowest dimension with a gap $\ge 13$ points below Accuracy, printing a dedicated advisory explaining the prompt-rubric tension.
+- **Knowledge Base Gaps in Suite Health (T5)**:
+  Refuted factual claims across benchmark runs are aggregated by `BenchmarkRubricGapDetector` and surfaced in the Suite Health panel as candidate topics for new knowledge base articles, complete with source citations and question references.
+- **Benchmark-to-Chat Transfer Framework and Project Skill (T6)**:
+  Documentation and the mandatory project skill `server_benchmark_to_chat_transfer` codify the disciplined protocol for translating benchmark empirical findings into production chat system prompt and routing improvements.
+
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).
 - **Model Time**: $\text{ModelTime} = \max(0, \text{DurationMs} - \text{ToolTimeMs})$ — the turn duration with harness tool I/O removed. This, not `DurationMs`, is what speed is scored on.
@@ -443,7 +476,9 @@ once stage 2 begins.
 
 From Harness Version 11, the second opinion is **blind by default** (`SecondOpinionBlind = true`). In earlier versions (Harness 4–10), the second reader received the first assessor's score, critical error flag, and full commentary, preceded by the notice that the first verdict was "severe enough".
 
-Anchored second opinions suffer from anchoring bias: models instructed to review an existing score systematically regress toward the anchor rather than evaluating independently. While anchored evaluations can be useful for human-style appeals or error reviews, they do not produce an authentic inter-rater agreement metric. Under blind mode, the second assessor receives only the question, rubric, answer, and any objective claim verification findings, ensuring `SecondOpinionMeanAbsDelta` represents true inter-rater variation. Agreement statistics between blind and anchored runs are **not comparable**.
+> **Harness 11 Migration Note & Harness 12 Backfill:** While Harness 11 added the `SecondOpinionBlind` property defaulting to `true` in code and the seeder, the original database migration set `defaultValue: false` without backfilling existing rows. Consequently, the existing default scoring profile in production remained anchored, and benchmark run 11 executed anchored. Harness 12 resolved this via migration `20260904214142_AddBenchmarkAgreementDirection`, which explicitly backfilled `SecondOpinionBlind = 1 WHERE IsDefault = 1`. Runs starting from Harness 12 truly grade blind under the default profile.
+
+Anchored second opinions suffer from anchoring bias: models instructed to review an existing score systematically regress toward the anchor rather than evaluating independently. While anchored evaluations can be useful for human-style appeals or error reviews, they do not produce an authentic inter-rater agreement metric. Under blind mode, the second assessor receives only the question, rubric, answer, and any objective claim verification findings, ensuring `SecondOpinionMeanAbsDelta` and `SecondOpinionMeanSignedDelta` represent true inter-rater variation and direction. Agreement statistics between blind and anchored runs are **not comparable**.
 
 ### Grade everything twice
 
@@ -810,6 +845,84 @@ Two invariants, to be re-checked whenever the benchmark bands are retuned:
 The 3x factor is empirical, not arbitrary: on the 2026-09-03 run a single Advanced question executed up to **39** tool calls (Q13 and Q18, each 39 of 45), so a session budget has to cover several such questions rather than one. At the old default of 50, the second hard question in a session was refused mid-investigation with "Maximum tool calls per session exceeded."
 
 Both chat values remain user-adjustable in `/settings`; these are the defaults for a user who has never changed them. `MaxResultLength` already agreed at 10,000 on both sides, and chat's `ChatRequestTimeout` (1,800 s) already exceeds the Advanced band's per-question timeout (720 s).
+
+---
+
+## 9.1 What the Benchmark Tells the Chat
+
+While § 9 governs the **chat → benchmark** direction (ensuring benchmark resource limits never exceed chat defaults), this section establishes the **benchmark → chat** return path (translating benchmark empirical findings into chat quality, latency, and cost improvements).
+
+### The Benchmark Grades the Production Chat Prompt
+
+A foundational architectural reality in Overseer is that the benchmark does not evaluate models in a vacuum or under an artificial test prompt: **the candidate model is evaluated under the verbatim production Overseer chat system prompt**.
+
+In `BenchmarkService.cs:262`:
+```csharp
+var systemPrompt = await _chatService.BuildSystemPrompt(
+    userId: null,
+    gameplayHelpMode: true,
+    hasGameSnapshot: suiteHasBoard,
+    gameplayRole: null,
+    verboseMode: promptOptions.VerboseMode,
+    spoilerFree: false,
+    webSearchEnabled: false,
+    subAgentsEnabled: false,
+    allowSourceReferences: true,
+    preferredLanguage: null,
+    cancellationToken: cancellationToken);
+```
+Every quality score, completeness deduction, hallucination finding, and latency measurement in a benchmark run is a direct empirical test of the exact instructions, formatting guidelines, and tool preferences delivered to real users.
+
+### The Graded Configuration and Run Comparability
+
+Because the prompt is parameterised, a benchmark run only measures the specific configuration passed at start time. From Harness Version 12, `BenchmarkCandidatePromptOptions` records this configuration into `BenchmarkRun.CandidatePromptOptionsJson` and prints it as the *Chat Prompt Under Test* report manifest.
+
+Run 11 (and all prior runs through 11) answered under:
+- **Mode:** Gameplay Help (`gameplayHelpMode: true`)
+- **Response Style:** Concise (`verboseMode: false` — *"Default to 2–5 sentences per response"*)
+- **Tools:** Enabled; **Source code references:** Allowed
+- **Web search:** Disabled; **Subagents:** Disabled
+- **Spoiler-free mode:** Off; **Active game:** No; **Message history:** No
+- **Pre-injected wiki context:** None
+
+> ⚠️ **Comparability Invariant**: Configurations differ in what they measure. Two benchmark runs are strictly comparable on **Completeness**, **Conciseness**, and **Readability** only if their candidate prompt options match.
+
+### Three Empirical Signals Flowing Back to Chat
+
+Harness Version 12 surfaces three concrete analytical signals to guide chat system design:
+
+1. **Tool Routing Analysis (`BenchmarkChatTransfer`)**:
+   Aggregates tool calls into five functional families (Source Code, Wiki, Structured Lookup, Knowledge Base, Other) across difficulty bands.
+   - *Correlations*: Computes Pearson correlation ($r$) of source tool share against model latency and quality score. A high positive correlation with time indicates tool proliferation latency penalties.
+   - *Knowledge Base Under-use*: Highlights questions where the model made zero `get_knowledge_article` calls despite available documentation.
+   - *Limit*: `ToolCallSummary` records aggregate tool counts, not execution traces. Whether wiki tools were attempted before source tools is not derivable.
+2. **Response-Style Conflict Detection**:
+   When `verboseMode: false`, the model is instructed to answer in 2–5 sentences. If Completeness is the lowest scoring dimension by $\ge 13$ points below Accuracy, the harness flags a response-style conflict. This alerts operators that low Completeness may stem from prompt obedience rather than model inability. Running the suite under `verboseMode: true` isolates the model capability.
+3. **Knowledge Base Gaps from Refuted Claims**:
+   Claims refuted by the claim verifier (`src/...` or wiki citations) are aggregated across runs and projected in the Suite Health panel. These represent verified misconceptions held by frontier models, providing authoritative candidate topics for new knowledge base articles.
+
+### The Standing Rule: Motivation vs. Justification
+
+> 🛑 **Prompt Modification Bar**: A benchmark finding may **motivate** a chat prompt change, but it can never **justify** one on a single run.
+
+The prompt is the measuring instrument. Altering the prompt based on an isolated observation from a single run invalidates the baseline and risks overfitting to idiosyncratic grader or model behaviors. The standing bar before altering the production chat prompt is:
+- A finding reproduced across at least **two independent benchmark runs**, OR
+- A deliberate controlled run under an explicitly varied configuration (e.g. comparing `verboseMode: false` vs. `verboseMode: true`).
+
+See the project skill `server_benchmark_to_chat_transfer` for the detailed protocol.
+
+### What Is Measured vs. What Is Unmeasured
+
+The benchmark today covers only a specific slice of Overseer chat capabilities:
+- **Measured**: Concise gameplay questions without game context (or with static board context in Harness 8+).
+- **Unmeasured**:
+  - Conversational multi-turn context (chat history)
+  - Pre-injected wiki context (which live chat provides automatically)
+  - Spoiler-free mode
+  - Web search tool routing
+  - Subagent delegation and parallel tasks
+
+Each unmeasured configuration represents an active chat capability operating outside benchmark verification.
 
 ---
 

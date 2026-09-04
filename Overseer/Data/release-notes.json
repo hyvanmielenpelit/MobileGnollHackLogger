@@ -1,5 +1,56 @@
 [
   {
+    "version": "1.1.0",
+    "date": "2026-09-05T01:00:00Z",
+    "summary": "Upgraded the AI benchmark harness to Version 12 with blind second opinions, claim verification retry and raw text capture, robust multi-stage JSON extraction, tool routing analysis, candidate response style controls, and knowledge base gap tracking in Suite Health.",
+    "changes": [
+      {
+        "type": "feature",
+        "text": "Added a candidate Response Style selector (Concise vs. Detailed) to the Benchmark start dialog to test models under verbose response guidelines and isolate prompt effects from model capabilities."
+      },
+      {
+        "type": "feature",
+        "text": "Added a claim verification retry endpoint and UI action to re-evaluate unverified factual claims after verifier timeouts or parsing failures without re-grading the entire benchmark run."
+      },
+      {
+        "type": "feature",
+        "text": "Added a Knowledge Base Gaps card to the Suite Health panel to surface recurring factual misconceptions refuted across benchmark runs with authoritative citations."
+      },
+      {
+        "type": "improvement",
+        "text": "Upgraded the AI benchmark evaluation harness to Version 12 with blind second opinions backfilled across default scoring profiles, eliminating anchored scoring bias."
+      },
+      {
+        "type": "improvement",
+        "text": "Introduced a robust, multi-stage JSON extractor for parsing candidate answers, assessments, syntheses, and claim verifications across diverse model outputs."
+      },
+      {
+        "type": "improvement",
+        "text": "Added assessor agreement signed delta and critical-error split tracking to measure both magnitude and direction of scoring disagreements between graders."
+      },
+      {
+        "type": "improvement",
+        "text": "Enhanced the benchmark synthesis prompt to factor in verified claim refutations and second-opinion verdicts, preventing erroneous claims of factual correctness."
+      },
+      {
+        "type": "improvement",
+        "text": "Added tool routing analysis to benchmark reports, classifying tool usage into functional families and correlating source inspection share with latency and quality."
+      },
+      {
+        "type": "improvement",
+        "text": "Added a response-style conflict advisory in benchmark reports to detect when concise prompt formatting constraints depress completeness scores."
+      },
+      {
+        "type": "fix",
+        "text": "Fixed an issue in accuracy consistency checks where substitution phrasing (such as 'instead of') was incorrectly flagged as an unevidenced omission deduction."
+      },
+      {
+        "type": "fix",
+        "text": "Repaired formatting defects in Section 5 of the benchmark report for omission question indices, disputed assessment tables, and unverified claim counts."
+      }
+    ]
+  },
+  {
     "version": "1.0.28",
     "date": "2026-08-31T16:30:00Z",
     "summary": "Added tracking and persistence for actual served AI service tiers across Google Gemini, OpenAI, and Anthropic providers, and fixed an issue with saving system API keys in the Admin panel.",

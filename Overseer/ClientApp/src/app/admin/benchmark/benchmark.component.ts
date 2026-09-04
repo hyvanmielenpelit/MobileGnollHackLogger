@@ -187,6 +187,18 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   claimVerifierConfigId: number | null = null;
 
   /**
+   * Candidate system prompt response style: false for concise (default, comparable with runs 1–11),
+   * true for detailed.
+   */
+  candidateVerboseMode = false;
+
+  get candidateResponseStyleHint(): string {
+    return this.candidateVerboseMode
+      ? "The candidate is told to give detailed explanations with background, edge cases and headers. This run will NOT be comparable with previous runs on Completeness, Conciseness or Readability. Use it to test whether a completeness gap is the prompt or the model."
+      : "The candidate is told 'Default to 2–5 sentences per response' — the production chat default, and what every run so far used.";
+  }
+
+  /**
    * Per-run override of the scoring profile's second-opinion mode. Null follows the profile, so
    * changing the profile changes the shown default until the operator picks something.
    */
@@ -271,6 +283,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   isCalibrationAssessorDropdownOpen = false;
   runningSynthesis = false;
   retryingAssessments = false;
+  retryingClaimVerification = false;
 
   // Retry Dialog
   /**
@@ -278,7 +291,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
    * the second-opinion slot and moves nothing. That is the most consequential distinction on this
    * screen, so the two are separate scopes rather than a flag on one.
    */
-  retryScope: 'assessment' | 'trial' | 'question' | 'synthesis' | 'assessments' | null = null;
+  retryScope: 'assessment' | 'trial' | 'question' | 'synthesis' | 'assessments' | 'claim-verification' | null = null;
   retryRunId: number | null = null;
   retryAnswer: BenchmarkRunAnswerDto | null = null;
   retryAssessorConfigId: number | null = null;
@@ -1524,6 +1537,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       // would be indistinguishable from "the operator chose Never".
       secondOpinionMode: this.secondOpinionConfigId != null ? this.secondOpinionMode : null,
       claimVerifierModelConfigurationId: this.claimVerifierConfigId,
+      verboseMode: this.candidateVerboseMode,
       scoringProfileId: this.selectedScoringProfileId,
       acknowledgeSameProvider: acknowledgeSameProvider
     };
@@ -1946,7 +1960,13 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
         const criticalHere = run.answers.filter(a => a.criticalError).map(a => a.orderIndex);
         const unverifiedHere = run.answers.reduce((sum, a) => sum + (a.unverifiedClaimCount ?? 0), 0);
         lines.push(`critical errors: ${criticalHere.length}${criticalHere.length > 0 ? ` (${criticalHere.map(i => 'Q' + i).join(', ')})` : ''}, unverified claims: ${unverifiedHere}`);
-        lines.push(`agreement: ${run.secondOpinionMeanAbsDelta != null ? run.secondOpinionMeanAbsDelta.toFixed(1) + ' mean abs delta' : 'not measured'} over ${run.secondOpinionGradedAnswerCount ?? 0} of ${run.answeredQuestionCount} answered, disagreements: ${run.secondOpinionDisagreementCount ?? 0}`);
+        const signedDeltaStr = run.secondOpinionMeanSignedDelta != null
+          ? `, ${run.secondOpinionMeanSignedDelta > 0 ? '+' : run.secondOpinionMeanSignedDelta < 0 ? '−' : ''}${Math.abs(run.secondOpinionMeanSignedDelta).toFixed(1)} mean signed delta`
+          : '';
+        const splitsStr = (run.secondOpinionCriticalErrorSplitCount ?? 0) > 0
+          ? `, critical-error splits: ${run.secondOpinionCriticalErrorSplitCount}`
+          : '';
+        lines.push(`agreement: ${run.secondOpinionMeanAbsDelta != null ? run.secondOpinionMeanAbsDelta.toFixed(1) + ' mean abs delta' : 'not measured'}${signedDeltaStr} over ${run.secondOpinionGradedAnswerCount ?? 0} of ${run.answeredQuestionCount} answered, disagreements: ${run.secondOpinionDisagreementCount ?? 0}${splitsStr}`);
         if (run.secondOpinionAssessorModelConfigurationId != null && (run.secondOpinionGradedAnswerCount ?? 0) === 0) {
           lines.push(`second opinion: selected (${run.secondOpinionAssessorModelDisplayNameUsed ?? 'configured'}) but no answer met a trigger — 0 graded`);
         }
@@ -1965,11 +1985,68 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
           if (verifiedAnswersWithErrors.length > 0) {
             lines.push(`errors (${verifiedAnswersWithErrors.length}):`);
             for (const a of verifiedAnswersWithErrors) {
-              lines.push(`  Q${a.orderIndex}: ${a.claimVerificationError}`);
+              const captured = a.claimVerificationRawText ? ' (raw response captured)' : '';
+              lines.push(`  Q${a.orderIndex}: ${a.claimVerificationError}${captured}`);
             }
           }
           lines.push('');
         }
+
+        // --- CHAT PROMPT ---
+        lines.push('--- CHAT PROMPT ---');
+        lines.push(`source: ${run.candidatePromptSourceUsed ?? 'not recorded'}`);
+        if (run.candidatePromptOptionsJson) {
+          try {
+            const opts = JSON.parse(run.candidatePromptOptionsJson);
+            lines.push(`options: mode=${opts.overseerMode ?? 0}, verbose=${opts.verboseMode ?? false}, spoilerFree=${opts.spoilerFreeMode ?? false}, tools=${opts.enableToolUse ?? true}, webSearch=${opts.enableWebSearch ?? false}, subagents=${opts.enableSubAgents ?? false}, sourceCodeRefs=${opts.allowSourceCodeReferences ?? true}`);
+          } catch {
+            lines.push(`options: ${run.candidatePromptOptionsJson}`);
+          }
+        } else {
+          lines.push('options: not recorded for this run');
+        }
+        lines.push('');
+
+        // --- TOOL ROUTING ---
+        lines.push('--- TOOL ROUTING ---');
+        let totalCalls = 0;
+        let sourceCalls = 0;
+        let wikiCalls = 0;
+        let lookupCalls = 0;
+        let kbCalls = 0;
+        let otherCalls = 0;
+        let zeroKbAnswers = 0;
+
+        for (const ans of run.answers) {
+          let ansKb = 0;
+          if (ans.toolCallSummary) {
+            const parts = ans.toolCallSummary.split(',').map(s => s.trim()).filter(s => s.length > 0);
+            for (const part of parts) {
+              const match = part.match(/^([a-zA-Z0-9_-]+)(?:×(\d+))?$/);
+              if (match) {
+                const name = match[1].toLowerCase();
+                const count = match[2] ? parseInt(match[2], 10) : 1;
+                totalCalls += count;
+                if (['source_code_search', 'source_code_view', 'search_definitions', 'get_function_definition', 'get_constants', 'list_indexed_files'].includes(name)) {
+                  sourceCalls += count;
+                } else if (['wiki_search', 'wiki_view', 'nethack_wiki_search', 'nethack_wiki_view'].includes(name)) {
+                  wikiCalls += count;
+                } else if (['monster_lookup', 'item_lookup', 'get_monster_stats', 'get_item_stats'].includes(name)) {
+                  lookupCalls += count;
+                } else if (['get_knowledge_article'].includes(name)) {
+                  kbCalls += count;
+                  ansKb += count;
+                } else {
+                  otherCalls += count;
+                }
+              }
+            }
+          }
+          if (ansKb === 0) zeroKbAnswers++;
+        }
+        lines.push(`total calls: ${totalCalls} (source: ${sourceCalls}, wiki: ${wikiCalls}, lookup: ${lookupCalls}, kb: ${kbCalls}, other: ${otherCalls})`);
+        lines.push(`answers with 0 knowledge base calls: ${zeroKbAnswers} of ${run.answers.length}`);
+        lines.push('');
       }
 
       // --- FLAGS ---
@@ -2305,6 +2382,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
           this.rerunningAnswerId = null;
           this.runningSynthesis = false;
           this.retryingAssessments = false;
+          this.retryingClaimVerification = false;
           this.loadHistory();
         }
         this.cdr.detectChanges();
@@ -2316,6 +2394,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
         this.rerunningAnswerId = null;
         this.runningSynthesis = false;
         this.retryingAssessments = false;
+        this.retryingClaimVerification = false;
         this.cdr.detectChanges();
       }
     });
@@ -2333,11 +2412,13 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     });
   }
 
-  openRetryDialog(scope: 'assessment' | 'trial' | 'question' | 'synthesis' | 'assessments', runId: number, answer?: BenchmarkRunAnswerDto) {
+  openRetryDialog(scope: 'assessment' | 'trial' | 'question' | 'synthesis' | 'assessments' | 'claim-verification', runId: number, answer?: BenchmarkRunAnswerDto) {
     this.retryScope = scope;
     this.retryRunId = runId;
     this.retryAnswer = answer ?? null;
-    this.retryAssessorConfigId = this.resolveRetryAssessor();
+    this.retryAssessorConfigId = scope === 'claim-verification'
+      ? this.resolveRetryClaimVerifier()
+      : this.resolveRetryAssessor();
     this.isRetryAssessorDropdownOpen = false;
     this.retryDialog?.nativeElement.showModal();
     this.cdr.detectChanges();
@@ -2359,6 +2440,14 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       return runAssessorId;
     }
     return this.benchmarkCapableConfigs[0]?.id ?? null;
+  }
+
+  private resolveRetryClaimVerifier(): number | null {
+    const runVerifierId = this.selectedRunDetail?.claimVerifierModelConfigurationId;
+    if (runVerifierId != null && this.benchmarkCapableConfigs.some(c => c.id === runVerifierId)) {
+      return runVerifierId;
+    }
+    return this.selectedRunDetail?.assessorModelConfigurationId ?? this.benchmarkCapableConfigs[0]?.id ?? null;
   }
 
   confirmRetry() {
@@ -2443,6 +2532,19 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
         error: (err) => {
           this.retryingAssessments = false;
           this.actionErrorMessage = err?.error || 'Failed to retry failed assessments.';
+          this.cdr.detectChanges();
+        }
+      });
+    } else if (scope === 'claim-verification') {
+      this.actionErrorMessage = null;
+      this.retryingClaimVerification = true;
+      this.benchmarkService.retryClaimVerification(runId, assessorId).subscribe({
+        next: () => {
+          this.startDetailPolling(runId);
+        },
+        error: (err) => {
+          this.retryingClaimVerification = false;
+          this.actionErrorMessage = err?.error || 'Failed to retry claim verification.';
           this.cdr.detectChanges();
         }
       });
@@ -2677,6 +2779,12 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
 
   hasUnscoredAssessments(): boolean {
     return (this.selectedRunDetail?.answers ?? []).some(ans => this.isAssessmentFailed(ans) || this.isAssessmentIncomplete(ans));
+  }
+
+  hasFailedClaimVerifications(): boolean {
+    return (this.selectedRunDetail?.answers ?? []).some(
+      ans => !!ans.claimVerificationError && ans.claimVerificationError.trim().length > 0
+    );
   }
 
   isRunBusy(): boolean {
@@ -2973,6 +3081,13 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     return delta == null ? 'N/A' : delta.toFixed(1);
   }
 
+  get agreementMeanSignedDeltaLabel(): string {
+    const delta = this.selectedRunDetail?.secondOpinionMeanSignedDelta;
+    if (delta == null) return '';
+    const sign = delta > 0 ? '+' : delta < 0 ? '−' : '';
+    return `${sign}${Math.abs(delta).toFixed(1)} signed`;
+  }
+
   /**
    * Never shown without this fraction beside it. A mean delta over trigger-selected answers is
    * conditioned on the first assessor's own uncertainty and says nothing about the instrument;
@@ -3112,6 +3227,29 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       .filter(a => !!a.claimVerificationError && a.claimVerificationError.trim().length > 0)
       .map(a => a.orderIndex)
       .join(', ');
+  }
+
+  get criticalErrorSplitQuestionNumbers(): string {
+    return (this.selectedRunDetail?.answers ?? [])
+      .filter(a => a.secondOpinionCriticalError != null && a.secondOpinionCriticalError !== a.criticalError)
+      .map(a => a.orderIndex)
+      .join(', ');
+  }
+
+  candidatePromptSummaryOf(run?: BenchmarkRunDetailDto | BenchmarkRunSummaryDto | null): string | null {
+    if (!run?.candidatePromptOptionsJson) return null;
+    try {
+      const opts = JSON.parse(run.candidatePromptOptionsJson);
+      const style = opts.verboseMode ? 'detailed' : 'concise';
+      const tools = opts.enableToolUse !== false ? 'tools on' : 'tools off';
+      return `Gameplay Help · ${style} (${tools})`;
+    } catch {
+      return run.candidatePromptSourceUsed || 'ChatService.BuildSystemPrompt';
+    }
+  }
+
+  get candidatePromptSummary(): string | null {
+    return this.candidatePromptSummaryOf(this.selectedRunDetail);
   }
 
   get secondOpinionSelectedButUnused(): boolean {

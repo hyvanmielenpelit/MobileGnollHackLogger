@@ -29,6 +29,9 @@ public class BenchmarkPerQuestionVerdictSummary
     public int? ClaimsSupportedCount { get; set; }
     public int? ClaimsRefutedCount { get; set; }
     public int? ClaimsIndeterminateCount { get; set; }
+    public IReadOnlyList<(string Claim, string? Citation, string? Basis)> RefutedClaims { get; set; } = Array.Empty<(string, string?, string?)>();
+    public int? SecondOpinionQualityScore { get; set; }
+    public bool? SecondOpinionCriticalError { get; set; }
     public int? AssessedDifficulty { get; set; }
     public bool CriticalError { get; set; }
     public string? ReviewComment { get; set; }
@@ -110,8 +113,13 @@ public static class BenchmarkAssessmentPrompt
     ///     verification runs per-answer ahead of the second-opinion trigger cascade and feeds into the
     ///     prompt; tool budget is scope-aware and warning is surfaced to candidate; standard error
     ///     recorded for Intelligence Index.
+    /// v12: grader protocol, stage recovery, report fidelity, and the return path to chat:
+    ///     second-opinion blind backfill applied; claim verification recovery and JSON-only re-ask;
+    ///     shared JSON extractor; substitution is not an omission; agreement direction and signed
+    ///     delta; synthesis prompt receives refuted claims and second-opinion verdicts; candidate
+    ///     prompt options recorded and Response Style control added.
     /// </summary>
-    public const string HarnessVersion = "11";
+    public const string HarnessVersion = "12";
 
     public static string BuildPerQuestionPrompt(
         string suiteName,
@@ -429,8 +437,9 @@ public static class BenchmarkAssessmentPrompt
         sb.AppendLine();
         sb.AppendLine("CRITICAL INSTRUCTIONS:");
         sb.AppendLine("1. Review the per-question scores, levels, critical error flags, durations, and comments below.");
-        sb.AppendLine("2. Produce a holistic finalScore (1-100), key strengths, key weaknesses, and a comprehensive overall review commentary.");
-        sb.AppendLine("3. Output ONLY a valid JSON object matching the exact schema specified at the end.");
+        sb.AppendLine("2. Note any refuted claims and second-opinion verdicts. These findings are advisory and did not change any per-question score or level, so do not attempt to re-derive finalScore from them. However, a run containing refuted claims or critical-error splits must NOT be described as free of factual errors, and the synthesis must name them in weaknesses.");
+        sb.AppendLine("3. Produce a holistic finalScore (1-100), key strengths, key weaknesses, and a comprehensive overall review commentary.");
+        sb.AppendLine("4. Output ONLY a valid JSON object matching the exact schema specified at the end.");
         sb.AppendLine();
         sb.AppendLine("--- PER-QUESTION VERDICTS AND ASSESSMENTS ---");
         sb.AppendLine();
@@ -481,6 +490,20 @@ public static class BenchmarkAssessmentPrompt
                 if (v.ClaimsSupportedCount.HasValue || v.ClaimsRefutedCount.HasValue || v.ClaimsIndeterminateCount.HasValue)
                 {
                     sb.AppendLine($"Claim verification: {v.ClaimsSupportedCount ?? 0} supported, {v.ClaimsRefutedCount ?? 0} refuted, {v.ClaimsIndeterminateCount ?? 0} indeterminate (checked against source/wiki after grading; advisory, not reflected in the scores above)");
+                }
+                if (v.RefutedClaims != null && v.RefutedClaims.Count > 0)
+                {
+                    foreach (var rc in v.RefutedClaims)
+                    {
+                        string cit = !string.IsNullOrWhiteSpace(rc.Citation) ? $"against {rc.Citation}" : "against source/wiki";
+                        string bas = !string.IsNullOrWhiteSpace(rc.Basis) ? $" Basis: {rc.Basis}" : string.Empty;
+                        sb.AppendLine($"Refuted claim: \"{rc.Claim}\" — refuted {cit}.{bas}");
+                    }
+                }
+                if (v.SecondOpinionQualityScore.HasValue)
+                {
+                    string crit = v.SecondOpinionCriticalError == true ? "yes" : "no";
+                    sb.AppendLine($"Second opinion (advisory, did not score): {v.SecondOpinionQualityScore.Value}/100, critical error {crit}");
                 }
                 sb.AppendLine($"Assessor Comment: {v.ReviewComment}");
             }

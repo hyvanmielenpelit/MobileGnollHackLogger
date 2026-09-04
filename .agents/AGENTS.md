@@ -110,6 +110,10 @@ A plan is **not** required for single-file fixes, typo and comment corrections, 
 - **Harness rules take precedence**: the plans repository is the source of truth across all AI agents. If a harness keeps a private plan file or artifact, copy the finished plan there immediately before requesting user approval.
 - **Research Isolation**: Do NOT browse or read the plans repository or `.plans/` during Phase 1 (Research), and never read another repository's scope, to prevent stale or superseded designs from corrupting analysis.
 
+## AI Benchmark Findings
+
+Any analysis of an AI benchmark run — its report, diagnostics, or assessments — and any implementation plan derived from one **MUST** read the `server-benchmark-to-chat-transfer` skill first, and **MUST** produce the **Chat Transfer** section it specifies. The benchmark grades the production chat system prompt, so a benchmark analysis that yields no conclusion about the chat assistant is incomplete, not merely brief. The skill is a living document: every analysis appends its run to the model behaviour notes.
+
 ## Publishing
 
 - **Do NOT publish anything** (e.g., via `dotnet publish` or similar commands) unless explicitly requested by the user.
@@ -119,6 +123,7 @@ A plan is **not** required for single-file fixes, typo and comment corrections, 
 Skills in this repository use the **`server_`** prefix. Canonical bodies live in
 `.agents/skills/<underscore_name>/SKILL.md`; the `.claude/skills/<kebab-name>/` stubs are
 **generated** by `SharedAgentSkills\tools\sync_stubs.ps1` and must never be hand-edited.
+Notable project skills include `server_implementation_planning` and `server_benchmark_to_chat_transfer`.
 
 > [!IMPORTANT]
 > **Never use the `client_` prefix here.** It is reserved for **GnollHack**, which is the

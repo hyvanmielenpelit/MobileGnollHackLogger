@@ -33,6 +33,7 @@ public class BenchmarkClaimVerificationParseResult
     public int MismatchesDropped { get; set; }
     public int CitationsMissingDemoted { get; set; }
     public string? RawJson { get; set; }
+    public string? RawResponse { get; set; }
     public string? ErrorMessage { get; set; }
 }
 
@@ -55,11 +56,12 @@ public static class BenchmarkClaimVerificationParser
             return new BenchmarkClaimVerificationParseResult
             {
                 Success = false,
+                RawResponse = responseText,
                 ErrorMessage = "Verification text was empty."
             };
         }
 
-        string json = StripCodeFences(responseText);
+        string json = BenchmarkJsonExtractor.Extract(responseText);
 
         try
         {
@@ -81,6 +83,7 @@ public static class BenchmarkClaimVerificationParser
                     {
                         Success = false,
                         RawJson = json,
+                        RawResponse = BenchmarkAssessmentFailure.Truncate(responseText, 8000),
                         ErrorMessage = "'verifications' property was not a JSON array."
                     };
                 }
@@ -91,6 +94,7 @@ public static class BenchmarkClaimVerificationParser
                 {
                     Success = false,
                     RawJson = json,
+                    RawResponse = BenchmarkAssessmentFailure.Truncate(responseText, 8000),
                     ErrorMessage = "Could not find 'verifications' array in JSON object."
                 };
             }
@@ -218,6 +222,7 @@ public static class BenchmarkClaimVerificationParser
             {
                 Success = false,
                 RawJson = json,
+                RawResponse = BenchmarkAssessmentFailure.Truncate(responseText, 8000),
                 ErrorMessage = $"Verification JSON parse error: {ex.Message}"
             };
         }
@@ -247,33 +252,5 @@ public static class BenchmarkClaimVerificationParser
             }
         }
         return null;
-    }
-
-    private static string StripCodeFences(string text)
-    {
-        string trimmed = text.Trim();
-
-        var fenceMatch = Regex.Match(trimmed, @"```(?:json)?\s*([\s\S]*?)\s*```", RegexOptions.IgnoreCase);
-        if (fenceMatch.Success)
-        {
-            return fenceMatch.Groups[1].Value.Trim();
-        }
-
-        int firstBracket = trimmed.IndexOf('[');
-        int lastBracket = trimmed.LastIndexOf(']');
-        int firstBrace = trimmed.IndexOf('{');
-        int lastBrace = trimmed.LastIndexOf('}');
-
-        if (firstBracket >= 0 && lastBracket > firstBracket && (firstBrace < 0 || firstBracket < firstBrace))
-        {
-            return trimmed.Substring(firstBracket, lastBracket - firstBracket + 1);
-        }
-
-        if (firstBrace >= 0 && lastBrace > firstBrace)
-        {
-            return trimmed.Substring(firstBrace, lastBrace - firstBrace + 1);
-        }
-
-        return trimmed;
     }
 }

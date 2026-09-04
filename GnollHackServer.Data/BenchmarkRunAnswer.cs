@@ -230,6 +230,11 @@ public class BenchmarkRunAnswer
     public string? ClaimVerificationError { get; set; }
 
     /// <summary>
+    /// The raw response text from the claim verifier when parsing fails, retained for recovery and diagnosis.
+    /// </summary>
+    public string? ClaimVerificationRawText { get; set; }
+
+    /// <summary>
     /// When this answer's verdict was replaced by the re-assess action, and by which model. A
     /// trial re-assessment sets neither: it does not replace the verdict.
     ///

@@ -204,9 +204,9 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsEleven()
+    public void HarnessVersion_IsTwelve()
     {
-        Assert.Equal("11", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("12", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -425,5 +425,46 @@ public class BenchmarkAssessmentPromptTests
         Assert.Contains("--- FACT-CHECK VERIFICATION CONTEXT ---", prompt);
         Assert.Contains("Claim: \"Claim A\"", prompt);
         Assert.Contains("source.c:10", prompt);
+    }
+
+    [Fact]
+    public void Versions_HarnessIs12_ScoringMethodIs7()
+    {
+        Assert.Equal("12", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal(7, BenchmarkAssessmentPrompt.ScoringMethodVersion);
+    }
+
+    [Fact]
+    public void BuildFinalSynthesisPrompt_EmitsRefutedClaimsAndSecondOpinions()
+    {
+        var summary = new BenchmarkPerQuestionVerdictSummary
+        {
+            OrderIndex = 1,
+            QuestionText = "Question 1",
+            ExpectedPoints = "Rubric",
+            AccuracyLevel = 4,
+            CompletenessLevel = 4,
+            ConcisenessLevel = 5,
+            ReadabilityLevel = 5,
+            QualityScore = 70,
+            SpeedScore = 80,
+            DurationMs = 2000,
+            AssessedDifficulty = 30,
+            CriticalError = false,
+            ReviewComment = "Good answer.",
+            Status = BenchmarkAnswerStatus.Ok,
+            RefutedClaims = new List<(string Claim, string? Citation, string? Basis)>
+            {
+                ("Gnolls have infravision", "src/role.c:10", "Code shows gnolls do not have infravision")
+            },
+            SecondOpinionQualityScore = 40,
+            SecondOpinionCriticalError = true
+        };
+
+        string prompt = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt("Suite", new[] { summary });
+
+        Assert.Contains("Refuted claim: \"Gnolls have infravision\" — refuted against src/role.c:10. Basis: Code shows gnolls do not have infravision", prompt);
+        Assert.Contains("Second opinion (advisory, did not score): 40/100, critical error yes", prompt);
+        Assert.Contains("must NOT be described as free of factual errors", prompt);
     }
 }

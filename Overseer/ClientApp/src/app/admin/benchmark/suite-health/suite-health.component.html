@@ -373,6 +373,41 @@
         @if (rubricGaps.clusters.length === 0) {
           <p class="text-muted">No unverified claims have been recorded for this suite.</p>
         }
+
+        <!-- Knowledge Base Gaps -->
+        <h4 class="mt-25">Knowledge Base Gaps</h4>
+        <p class="section-note">
+          Candidate articles derived from claims refuted by the claim verifier against the game source code or wiki.
+          Each row is a candidate article: the wrong belief a model held, the correct mechanic, and the source citation.
+          Advisory worklist; nothing is installed into the knowledge base automatically.
+        </p>
+
+        @if (rubricGaps.knowledgeBaseGaps && rubricGaps.knowledgeBaseGaps.length > 0) {
+          <div class="sh-card-list">
+            @for (gap of rubricGaps.knowledgeBaseGaps; track gap.claim) {
+              <div class="gap-cluster is-verified-gap">
+                <div class="gap-header">
+                  <strong>Question(s): {{ formatQuestionIndices(gap.questionOrderIndices) }}</strong>
+                  <span class="gap-verdict">Refuted Claim</span>
+                  <span class="text-muted">
+                    Recurred across {{ gap.recurrence }} run(s)
+                  </span>
+                </div>
+                <div class="gap-claims">
+                  <div><strong>Wrong belief:</strong> “{{ gap.claim }}”</div>
+                  @if (gap.citation) {
+                    <div class="mt-5"><strong>Citation:</strong> <code>{{ gap.citation }}</code></div>
+                  }
+                  @if (gap.basis) {
+                    <div class="mt-5"><strong>Correct mechanic / basis:</strong> {{ gap.basis }}</div>
+                  }
+                </div>
+              </div>
+            }
+          </div>
+        } @else {
+          <p class="text-muted">No refuted claims recorded as knowledge base gap candidates for this suite.</p>
+        }
       }
     </div>
   }

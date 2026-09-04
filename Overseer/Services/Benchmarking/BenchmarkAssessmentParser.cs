@@ -194,7 +194,7 @@ public static class BenchmarkAssessmentParser
             };
         }
 
-        string json = StripCodeFences(rawText);
+        string json = BenchmarkJsonExtractor.Extract(rawText);
 
         try
         {
@@ -328,7 +328,7 @@ public static class BenchmarkAssessmentParser
             };
         }
 
-        string json = StripCodeFences(rawText);
+        string json = BenchmarkJsonExtractor.Extract(rawText);
 
         try
         {
@@ -374,7 +374,7 @@ public static class BenchmarkAssessmentParser
             };
         }
 
-        string json = StripCodeFences(rawText);
+        string json = BenchmarkJsonExtractor.Extract(rawText);
 
         try
         {
@@ -532,26 +532,5 @@ public static class BenchmarkAssessmentParser
         // critical error, which is the expensive direction of this decision.
         string collapsed = Regex.Replace(text, @"[*_`>#]", string.Empty);
         return Regex.Replace(collapsed, @"\s+", " ").Trim();
-    }
-
-    private static string StripCodeFences(string text)
-    {
-        string trimmed = text.Trim();
-
-        var fenceMatch = Regex.Match(trimmed, @"```(?:json)?\s*([\s\S]*?)\s*```", RegexOptions.IgnoreCase);
-        if (fenceMatch.Success)
-        {
-            return fenceMatch.Groups[1].Value.Trim();
-        }
-
-        int firstBrace = trimmed.IndexOf('{');
-        int lastBrace = trimmed.LastIndexOf('}');
-
-        if (firstBrace >= 0 && lastBrace > firstBrace)
-        {
-            return trimmed.Substring(firstBrace, lastBrace - firstBrace + 1);
-        }
-
-        return trimmed;
     }
 }

@@ -198,13 +198,24 @@ public class BenchmarkVerdictConsistencyTests
     }
 
     [Fact]
-    public void IsOmissionGroundedAccuracyDeduction_Run10Q1Shape_Flags()
+    public void IsOmissionGroundedAccuracyDeduction_SubstitutionEvidence_DoesNotFlag()
     {
-        // Q1 shape from run 10: Accuracy 3/6 with omission evidence and no falsehood
-        const string evidence = "The answer provides relative attribute modifiers (+0, +1, +1, -2, -2, -2) instead of the GnollHack attribute maxima (Str 18/100, Int 16, ...)";
+        // Q1's literal evidence string from run 11: describes a substitution ("provides ... rather than ..."),
+        // which is a genuine accuracy defect and must not be flagged as an omission.
+        const string substitutionEvidence =
+            "The answer provides D&D-style relative attribute modifiers (+1 Dex, -2 Int, etc.) rather than GnollHack's racial attribute maxima (Str 18/100, Int 16, Wis 16, Dex 19, Con 19, Cha 16).";
+        Assert.False(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(
+            accuracyLevel: 4,
+            accuracyEvidence: substitutionEvidence));
+    }
+
+    [Fact]
+    public void IsOmissionGroundedAccuracyDeduction_PureOmissionEvidence_Flags()
+    {
+        const string omissionEvidence = "The answer omits the racial attribute maxima.";
         Assert.True(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(
-            accuracyLevel: 3,
-            accuracyEvidence: evidence));
+            accuracyLevel: 4,
+            accuracyEvidence: omissionEvidence));
     }
 
     [Fact]

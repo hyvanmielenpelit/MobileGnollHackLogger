@@ -205,3 +205,22 @@ UI or report-output changes.
 Every plan must include the **Subagent Use** section. Tiers, the selection rule, the
 spawn boundary, and file-level exclusivity are in **`agent-subagent-guidelines`**; the
 chains above are what constrains sequencing here.
+
+## AI Benchmark Plans and Chat Transfer
+
+Any plan derived from an AI benchmark run analysis, report, or diagnostic review **MUST** include a dedicated **Chat Transfer** section and must consult the **`server_benchmark_to_chat_transfer`** skill before drafting.
+
+The benchmark evaluates the production chat system prompt (`ChatService.BuildSystemPrompt`), so benchmark observations directly measure live assistant behavior. The plan's Chat Transfer section must:
+1. Triage findings into harness defects, suite defects, or chat-transferable findings.
+2. Check configuration parity (e.g. `verboseMode` concise vs. detailed).
+3. Identify the proposed ladder rung (knowledge base article, wiki update, tool policy/description, limits parity, model selection, or prompt prose modification).
+4. Evaluate whether the evidence bar is met (minimum two independent runs or an isolated variable pair) before any chat prompt change is proposed.
+
+If the plan addresses only harness or suite infrastructure, it must explicitly state: *"No chat-transferable changes proposed in this plan."*
+
+## Cross-References
+
+- `agent-implementation-planning` (global lifecycle baseline)
+- `agent-subagent-guidelines` (subagent tiers and exclusivity)
+- `server_benchmark_to_chat_transfer` (mandatory method for benchmark-to-chat translation)
+- `testing_guidelines` (test classification and execution)

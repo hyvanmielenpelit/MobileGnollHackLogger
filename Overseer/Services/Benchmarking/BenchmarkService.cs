@@ -134,7 +134,7 @@ public class BenchmarkService
         return (config, apiKey, null);
     }
 
-    public async Task RunAsync(long runId, CancellationToken cancellationToken)
+    public async Task RunAsync(long runId, CancellationToken cancellationToken, bool verboseMode = false)
     {
         var runStopwatch = Stopwatch.StartNew();
         try
@@ -259,21 +259,15 @@ public class BenchmarkService
             await db.SaveChangesAsync(cancellationToken);
 
             bool suiteHasBoard = run.BenchmarkSuite?.GameSnapshot != null;
-            string systemPrompt = _chatService.BuildSystemPrompt(
-                wikiContext: Array.Empty<string>(),
-                spoilerFreeMode: false,
-                verboseMode: false,
-                isGameOn: false,
-                developerMode: false,
-                overseerMode: 0,
-                hasGameSnapshot: suiteHasBoard,
-                hasMessageHistory: false,
-                clientSettings: null,
-                enableToolUse: true,
-                enableWebSearch: false,
-                allowSourceCodeReferences: true,
-                enableSubAgents: false,
-                parallelMode: testedConfig.ParallelExecutionMode);
+            var promptOptions = new BenchmarkCandidatePromptOptions
+            {
+                VerboseMode = verboseMode,
+                HasGameSnapshot = suiteHasBoard
+            };
+            run.CandidatePromptOptionsJson = promptOptions.ToCanonicalJson();
+            run.CandidatePromptSourceUsed = "ChatService.BuildSystemPrompt";
+
+            string systemPrompt = promptOptions.BuildSystemPrompt(_chatService, testedConfig.ParallelExecutionMode);
 
             // Check credential collision between candidate and assessor
             string testedKey = AiRequestGovernor.GetCredentialKey(testedConfig.Provider, null, testedConfig.Id);
@@ -497,21 +491,10 @@ public class BenchmarkService
             int maxCallsPerSession = _configuration.GetValue<int>("Benchmark:MaxCallsPerSession", 50);
 
             bool suiteHasBoard = run.BenchmarkSuite?.GameSnapshot != null;
-            string systemPrompt = _chatService.BuildSystemPrompt(
-                wikiContext: Array.Empty<string>(),
-                spoilerFreeMode: false,
-                verboseMode: false,
-                isGameOn: false,
-                developerMode: false,
-                overseerMode: 0,
-                hasGameSnapshot: suiteHasBoard,
-                hasMessageHistory: false,
-                clientSettings: null,
-                enableToolUse: true,
-                enableWebSearch: false,
-                allowSourceCodeReferences: true,
-                enableSubAgents: false,
-                parallelMode: testedConfig.ParallelExecutionMode);
+            var promptOptions = !string.IsNullOrWhiteSpace(run.CandidatePromptOptionsJson)
+                ? BenchmarkCandidatePromptOptions.FromJson(run.CandidatePromptOptionsJson)
+                : new BenchmarkCandidatePromptOptions { HasGameSnapshot = suiteHasBoard };
+            string systemPrompt = promptOptions.BuildSystemPrompt(_chatService, testedConfig.ParallelExecutionMode);
 
             var suiteQuestions = (run.BenchmarkSuite?.Questions ?? new List<BenchmarkQuestion>())
                 .ToDictionary(q => q.OrderIndex, q => q.ExpectedPoints);
@@ -1738,8 +1721,6 @@ public class BenchmarkService
         {
             terminalError = ex.Message;
         }
-        sw.Stop();
-
         int inputTokens;
         int outputTokens;
         if (!string.IsNullOrWhiteSpace(terminalError))
@@ -1754,15 +1735,16 @@ public class BenchmarkService
         }
         int toolCallsCount = runResult.ToolCalls.Count(tc => tc.Status == "completed");
 
-        answer.ClaimVerificationInputTokens = inputTokens;
-        answer.ClaimVerificationOutputTokens = outputTokens;
-        answer.ClaimVerificationDurationMs = sw.ElapsedMilliseconds;
-        answer.ClaimVerificationToolCallCount = toolCallsCount;
-        answer.ClaimVerificationByModelDisplayNameUsed = verifierConfig.DisplayName ?? verifierConfig.ModelId;
-
         if (!string.IsNullOrWhiteSpace(terminalError))
         {
+            sw.Stop();
+            answer.ClaimVerificationInputTokens = inputTokens;
+            answer.ClaimVerificationOutputTokens = outputTokens;
+            answer.ClaimVerificationDurationMs = sw.ElapsedMilliseconds;
+            answer.ClaimVerificationToolCallCount = toolCallsCount;
+            answer.ClaimVerificationByModelDisplayNameUsed = verifierConfig.DisplayName ?? verifierConfig.ModelId;
             answer.ClaimVerificationError = BenchmarkAssessmentFailure.Truncate(terminalError, BenchmarkAssessmentFailure.MaxClaimVerificationErrorLength);
+            answer.ClaimVerificationRawText = null;
             _logger.LogWarning(
                 "Benchmark run {RunId} answer {OrderIndex}: claim verification failed ({Error}).",
                 run.Id, answer.OrderIndex, terminalError);
@@ -1770,9 +1752,75 @@ public class BenchmarkService
         else
         {
             var parseResult = BenchmarkClaimVerificationParser.Parse(runResult.FinalText, claims);
-            if (!parseResult.Success)
+
+            bool retryEnabled = _configuration.GetValue<bool>("Benchmark:ClaimVerification:ParseRetryEnabled", true);
+            if (!parseResult.Success && retryEnabled)
+            {
+                _logger.LogWarning(
+                    "Benchmark run {RunId} answer {OrderIndex}: claim verification output failed JSON parsing. Retrying once...",
+                    run.Id, answer.OrderIndex);
+                runRequest.SeedHistory.Add(new { role = "assistant", content = runResult.FinalText ?? string.Empty });
+                runRequest.SeedHistory.Add(new { role = "user", content = $"Your previous response was not valid JSON or could not be parsed: {parseResult.ErrorMessage}. Please output ONLY the raw JSON object according to the schema without any markdown wrapping, code fences, or extra text." });
+
+                var retryResult = new AgentRunResult();
+                try
+                {
+                    await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, retryResult, verifyCts.Token))
+                    {
+                        if (evt.Type == "error")
+                        {
+                            terminalError = evt.Data?.ToString();
+                        }
+                    }
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && verifyCts.IsCancellationRequested)
+                {
+                    terminalError = $"Claim verification timeout exceeded ({timeoutSeconds} s).";
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    terminalError = ex.Message;
+                }
+
+                int retryInputTokens = retryResult.TotalPromptTokens > 0 ? retryResult.TotalPromptTokens : retryResult.EstimatedInputTokens;
+                int retryOutputTokens = retryResult.OutputTokens > 0 ? retryResult.OutputTokens : retryResult.EstimatedOutputTokens;
+                inputTokens += retryInputTokens;
+                outputTokens += retryOutputTokens;
+                toolCallsCount += retryResult.ToolCalls.Count(tc => tc.Status == "completed");
+
+                if (string.IsNullOrWhiteSpace(terminalError))
+                {
+                    parseResult = BenchmarkClaimVerificationParser.Parse(retryResult.FinalText, claims);
+                    if (retryResult.TotalPromptTokens > 0)
+                    {
+                        runResult = retryResult;
+                    }
+                }
+            }
+
+            sw.Stop();
+            answer.ClaimVerificationInputTokens = inputTokens;
+            answer.ClaimVerificationOutputTokens = outputTokens;
+            answer.ClaimVerificationDurationMs = sw.ElapsedMilliseconds;
+            answer.ClaimVerificationToolCallCount = toolCallsCount;
+            answer.ClaimVerificationByModelDisplayNameUsed = verifierConfig.DisplayName ?? verifierConfig.ModelId;
+
+            if (!string.IsNullOrWhiteSpace(terminalError))
+            {
+                answer.ClaimVerificationError = BenchmarkAssessmentFailure.Truncate(terminalError, BenchmarkAssessmentFailure.MaxClaimVerificationErrorLength);
+                answer.ClaimVerificationRawText = null;
+                _logger.LogWarning(
+                    "Benchmark run {RunId} answer {OrderIndex}: claim verification failed on retry ({Error}).",
+                    run.Id, answer.OrderIndex, terminalError);
+            }
+            else if (!parseResult.Success)
             {
                 answer.ClaimVerificationError = BenchmarkAssessmentFailure.Truncate(parseResult.ErrorMessage ?? "Claim verification parse failed.", BenchmarkAssessmentFailure.MaxClaimVerificationErrorLength);
+                answer.ClaimVerificationRawText = BenchmarkAssessmentFailure.Truncate(parseResult.RawResponse, 8000);
                 _logger.LogWarning(
                     "Benchmark run {RunId} answer {OrderIndex}: claim verification parse failed ({Error}).",
                     run.Id, answer.OrderIndex, parseResult.ErrorMessage);
@@ -1780,6 +1828,7 @@ public class BenchmarkService
             else
             {
                 answer.ClaimVerificationError = null;
+                answer.ClaimVerificationRawText = null;
                 answer.ClaimsSupportedCount = parseResult.ClaimsSupportedCount;
                 answer.ClaimsRefutedCount = parseResult.ClaimsRefutedCount;
                 answer.ClaimsIndeterminateCount = parseResult.ClaimsIndeterminateCount;
@@ -2717,27 +2766,55 @@ public class BenchmarkService
             .OrderBy(a => a.OrderIndex)
             .ToListAsync(cancellationToken);
 
-        var summaries = answers.Select(a => new BenchmarkPerQuestionVerdictSummary
+        var summaries = answers.Select(a =>
         {
-            OrderIndex = a.OrderIndex,
-            QuestionText = a.QuestionText,
-            AccuracyLevel = a.AccuracyLevel,
-            CompletenessLevel = a.CompletenessLevel,
-            ConcisenessLevel = a.ConcisenessLevel,
-            ReadabilityLevel = a.ReadabilityLevel,
-            QualityScore = a.QualityScore,
-            SpeedScore = a.SpeedScore,
-            DurationMs = a.DurationMs,
-            AssessedDifficulty = a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty),
-            CriticalError = a.CriticalError,
-            AccuracyEvidence = ReadEvidence(a.AssessmentEvidenceJson, "accuracy"),
-            CompletenessEvidence = ReadEvidence(a.AssessmentEvidenceJson, "completeness"),
-            UnverifiedClaimCount = a.UnverifiedClaimCount ?? 0,
-            ClaimsSupportedCount = a.ClaimsSupportedCount,
-            ClaimsRefutedCount = a.ClaimsRefutedCount,
-            ClaimsIndeterminateCount = a.ClaimsIndeterminateCount,
-            ReviewComment = a.ReviewComment,
-            Status = a.Status
+            var refutedList = new List<(string Claim, string? Citation, string? Basis)>();
+            if (!string.IsNullOrWhiteSpace(a.ClaimVerificationJson))
+            {
+                try
+                {
+                    var verifications = JsonSerializer.Deserialize<List<BenchmarkClaimVerification>>(
+                        a.ClaimVerificationJson,
+                        new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    if (verifications != null)
+                    {
+                        foreach (var v in verifications.Where(x => x.Verdict == BenchmarkClaimVerdict.Refuted))
+                        {
+                            refutedList.Add((v.Claim, v.Citation, v.Basis));
+                        }
+                    }
+                }
+                catch (JsonException)
+                {
+                    // Ignore malformed JSON in advisory/synthesis path
+                }
+            }
+
+            return new BenchmarkPerQuestionVerdictSummary
+            {
+                OrderIndex = a.OrderIndex,
+                QuestionText = a.QuestionText,
+                AccuracyLevel = a.AccuracyLevel,
+                CompletenessLevel = a.CompletenessLevel,
+                ConcisenessLevel = a.ConcisenessLevel,
+                ReadabilityLevel = a.ReadabilityLevel,
+                QualityScore = a.QualityScore,
+                SpeedScore = a.SpeedScore,
+                DurationMs = a.DurationMs,
+                AssessedDifficulty = a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty),
+                CriticalError = a.CriticalError,
+                AccuracyEvidence = ReadEvidence(a.AssessmentEvidenceJson, "accuracy"),
+                CompletenessEvidence = ReadEvidence(a.AssessmentEvidenceJson, "completeness"),
+                UnverifiedClaimCount = a.UnverifiedClaimCount ?? 0,
+                ClaimsSupportedCount = a.ClaimsSupportedCount,
+                ClaimsRefutedCount = a.ClaimsRefutedCount,
+                ClaimsIndeterminateCount = a.ClaimsIndeterminateCount,
+                RefutedClaims = refutedList,
+                SecondOpinionQualityScore = a.SecondOpinionQualityScore,
+                SecondOpinionCriticalError = a.SecondOpinionCriticalError,
+                ReviewComment = a.ReviewComment,
+                Status = a.Status
+            };
         }).ToList();
 
         if (run.BenchmarkSuiteId.HasValue)
@@ -3479,21 +3556,10 @@ public class BenchmarkService
             int maxToolCallsPerQuestion = ResolveToolCallBudget(BenchmarkDifficulty.Advanced, null);
 
             bool suiteHasBoard = run.BenchmarkSuite?.GameSnapshot != null;
-            string systemPrompt = _chatService.BuildSystemPrompt(
-                wikiContext: Array.Empty<string>(),
-                spoilerFreeMode: false,
-                verboseMode: false,
-                isGameOn: false,
-                developerMode: false,
-                overseerMode: 0,
-                hasGameSnapshot: suiteHasBoard,
-                hasMessageHistory: false,
-                clientSettings: null,
-                enableToolUse: true,
-                enableWebSearch: false,
-                allowSourceCodeReferences: true,
-                enableSubAgents: false,
-                parallelMode: testedConfig.ParallelExecutionMode);
+            var promptOptions = !string.IsNullOrWhiteSpace(run.CandidatePromptOptionsJson)
+                ? BenchmarkCandidatePromptOptions.FromJson(run.CandidatePromptOptionsJson)
+                : new BenchmarkCandidatePromptOptions { HasGameSnapshot = suiteHasBoard };
+            string systemPrompt = promptOptions.BuildSystemPrompt(_chatService, testedConfig.ParallelExecutionMode);
 
             string? expectedPoints = MatchSuiteQuestion(run, answer)?.ExpectedPoints;
 
@@ -3810,6 +3876,72 @@ public class BenchmarkService
             run.Status = BenchmarkRunStatus.CompletedWithErrors;
             run.ErrorMessage = BenchmarkAssessmentFailure.Truncate(ex.Message);
             await db.SaveChangesAsync(CancellationToken.None);
+        }
+        finally
+        {
+            _runManager.Complete(run.Id);
+        }
+    }
+
+    public async Task RetryFailedClaimVerificationAsync(
+        long runId,
+        long? verifierConfigId = null,
+        CancellationToken cancellationToken = default)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var configService = scope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
+
+        var run = await db.BenchmarkRuns
+            .Include(r => r.Answers)
+            .FirstOrDefaultAsync(r => r.Id == runId, cancellationToken);
+
+        if (run == null)
+        {
+            _logger.LogWarning("Run {RunId} not found for retry failed claim verification.", runId);
+            _runManager.Complete(runId);
+            return;
+        }
+
+        try
+        {
+            if (verifierConfigId.HasValue)
+            {
+                run.ClaimVerifierModelConfigurationId = verifierConfigId.Value;
+            }
+
+            var failedAnswers = run.Answers
+                .Where(a => !string.IsNullOrWhiteSpace(a.ClaimVerificationError))
+                .ToList();
+
+            if (failedAnswers.Count == 0)
+            {
+                _logger.LogInformation("Run {RunId} has no failed claim verifications to retry.", runId);
+                return;
+            }
+
+            foreach (var answer in failedAnswers)
+            {
+                answer.ClaimVerificationError = null;
+                answer.ClaimVerificationRawText = null;
+            }
+            await db.SaveChangesAsync(cancellationToken);
+
+            await RunClaimVerificationAsync(db, configService, run, cancellationToken);
+
+            var allAnswers = await db.BenchmarkRunAnswers
+                .Where(a => a.BenchmarkRunId == run.Id)
+                .ToListAsync(CancellationToken.None);
+            BenchmarkRunFinalizer.Apply(run, allAnswers);
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("Claim verification retry canceled for run {RunId}.", runId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Retry failed claim verification failed for run {RunId}.", runId);
         }
         finally
         {

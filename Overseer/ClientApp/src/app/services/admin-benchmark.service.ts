@@ -383,6 +383,7 @@ export interface StartBenchmarkRunRequest {
   claimVerifierModelConfigurationId?: number | null;
   scoringProfileId?: number | null;
   acknowledgeSameProvider?: boolean;
+  verboseMode?: boolean;
 }
 
 /**
@@ -553,6 +554,7 @@ export interface BenchmarkRunAnswerDto {
   claimVerificationDurationMs?: number | null;
   claimVerificationToolCallCount?: number | null;
   claimVerificationError?: string | null;
+  claimVerificationRawText?: string | null;
 
   /** Re-assessment provenance: a published index can move after publication. */
   reassessedAtUtc?: string | null;
@@ -676,6 +678,10 @@ export interface BenchmarkRunDetailDto {
    */
   secondOpinionGradedAnswerCount?: number;
   secondOpinionMeanAbsDelta?: number | null;
+  secondOpinionMeanSignedDelta?: number | null;
+  secondOpinionCriticalErrorSplitCount?: number;
+  candidatePromptOptionsJson?: string | null;
+  candidatePromptSourceUsed?: string | null;
   secondOpinionDisagreementCount?: number;
   toolOverheadMs?: number | null;
   difficultyFallbackUsed: boolean;
@@ -789,11 +795,20 @@ export interface BenchmarkRubricGapClusterDto {
   verdict: string;
 }
 
+export interface BenchmarkKnowledgeBaseGapDto {
+  claim: string;
+  citation?: string | null;
+  basis?: string | null;
+  questionOrderIndices: number[];
+  recurrence: number;
+}
+
 export interface BenchmarkRubricGapReportDto {
   suiteId: number;
   runCount: number;
   claimCount: number;
   clusters: BenchmarkRubricGapClusterDto[];
+  knowledgeBaseGaps?: BenchmarkKnowledgeBaseGapDto[];
 }
 
 export interface BenchmarkCitationDto {
@@ -882,6 +897,10 @@ export interface BenchmarkRunSummaryDto {
   toolStarvedAnswerCount?: number;
   budgetSaturatedAnswerCount?: number;
   secondOpinionBlindUsed?: boolean;
+  secondOpinionMeanSignedDelta?: number | null;
+  secondOpinionCriticalErrorSplitCount?: number;
+  candidatePromptOptionsJson?: string | null;
+  candidatePromptSourceUsed?: string | null;
   harnessVersion?: string | null;
   totalDurationMs: number;
 }
@@ -1055,6 +1074,10 @@ export class AdminBenchmarkService {
 
   retryFailedAssessments(runId: number, assessorModelConfigurationId?: number | null): Observable<{ runId: number }> {
     return this.http.post<{ runId: number }>(`/api/admin/benchmark/runs/${runId}/retry-failed-assessments`, { assessorModelConfigurationId });
+  }
+
+  retryClaimVerification(runId: number, assessorModelConfigurationId?: number | null): Observable<{ runId: number }> {
+    return this.http.post<{ runId: number }>(`/api/admin/benchmark/runs/${runId}/retry-claim-verification`, { assessorModelConfigurationId });
   }
 
   cancelRun(id: number): Observable<{ success: boolean }> {

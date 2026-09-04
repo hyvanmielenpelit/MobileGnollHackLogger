@@ -19,6 +19,17 @@ public sealed record BenchmarkUnverifiedClaimSample
     public string ModelId { get; init; } = string.Empty;
     public string Claim { get; init; } = string.Empty;
     public BenchmarkClaimVerdict? VerificationVerdict { get; init; }
+    public string? Citation { get; init; }
+    public string? Basis { get; init; }
+}
+
+public sealed record BenchmarkKnowledgeBaseGap
+{
+    public string Claim { get; init; } = string.Empty;
+    public string? Citation { get; init; }
+    public string? Basis { get; init; }
+    public IReadOnlyList<int> QuestionOrderIndices { get; init; } = Array.Empty<int>();
+    public int Recurrence { get; init; }
 }
 
 /// <summary>What a cluster of near-identical claims means.</summary>
@@ -253,5 +264,67 @@ public static class BenchmarkRubricGapDetector
         int intersection = a.Count(b.Contains);
         int union = a.Count + b.Count - intersection;
         return union == 0 ? 0.0 : intersection / (double)union;
+    }
+
+    /// <summary>
+    /// Projects refuted claims across runs into knowledge-base gap candidates.
+    /// Emits claim text, verifier citation, verifier basis, question order indices,
+    /// and recurrence (number of distinct runs where the claim was refuted).
+    /// </summary>
+    public static IReadOnlyList<BenchmarkKnowledgeBaseGap> DetectKnowledgeBaseGaps(
+        IEnumerable<BenchmarkUnverifiedClaimSample> samples)
+    {
+        if (samples == null) return Array.Empty<BenchmarkKnowledgeBaseGap>();
+
+        var refuted = samples
+            .Where(s => s.VerificationVerdict == BenchmarkClaimVerdict.Refuted && !string.IsNullOrWhiteSpace(s.Claim))
+            .ToList();
+
+        if (refuted.Count == 0) return Array.Empty<BenchmarkKnowledgeBaseGap>();
+
+        var tokenSets = refuted.Select(s => Tokenize(s.Claim)).ToList();
+        var buckets = new List<List<int>>();
+
+        for (int i = 0; i < refuted.Count; i++)
+        {
+            var bucket = buckets.FirstOrDefault(b =>
+                b.Any(j => string.Equals(refuted[i].Claim.Trim(), refuted[j].Claim.Trim(), StringComparison.OrdinalIgnoreCase)
+                           || Jaccard(tokenSets[i], tokenSets[j]) >= SimilarityThreshold));
+
+            if (bucket == null)
+            {
+                buckets.Add(new List<int> { i });
+            }
+            else
+            {
+                bucket.Add(i);
+            }
+        }
+
+        var gaps = new List<BenchmarkKnowledgeBaseGap>();
+        foreach (var bucket in buckets)
+        {
+            var members = bucket.Select(i => refuted[i]).ToList();
+            string claim = members.First().Claim.Trim();
+            string? citation = members.Select(m => m.Citation).FirstOrDefault(c => !string.IsNullOrWhiteSpace(c));
+            string? basis = members.Select(m => m.Basis).FirstOrDefault(b => !string.IsNullOrWhiteSpace(b));
+            var questionIndices = members.Select(m => m.QuestionOrderIndex).Distinct().OrderBy(x => x).ToList();
+            int recurrence = members.Select(m => m.RunId).Distinct().Count();
+
+            gaps.Add(new BenchmarkKnowledgeBaseGap
+            {
+                Claim = claim,
+                Citation = citation,
+                Basis = basis,
+                QuestionOrderIndices = questionIndices,
+                Recurrence = recurrence
+            });
+        }
+
+        return gaps
+            .OrderByDescending(g => g.Recurrence)
+            .ThenBy(g => g.QuestionOrderIndices.FirstOrDefault())
+            .ThenBy(g => g.Claim, StringComparer.Ordinal)
+            .ToList();
     }
 }

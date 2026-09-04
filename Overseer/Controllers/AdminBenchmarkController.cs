@@ -828,7 +828,7 @@ public class AdminBenchmarkController : ControllerBase
                 continue;
             }
 
-            Dictionary<string, BenchmarkClaimVerdict>? verificationsByClaim = null;
+            Dictionary<string, BenchmarkClaimVerification>? verificationsByClaim = null;
             if (!string.IsNullOrWhiteSpace(row.ClaimVerificationJson))
             {
                 try
@@ -836,12 +836,12 @@ public class AdminBenchmarkController : ControllerBase
                     var verifications = JsonSerializer.Deserialize<List<BenchmarkClaimVerification>>(row.ClaimVerificationJson);
                     if (verifications != null)
                     {
-                        verificationsByClaim = new Dictionary<string, BenchmarkClaimVerdict>(StringComparer.Ordinal);
+                        verificationsByClaim = new Dictionary<string, BenchmarkClaimVerification>(StringComparer.Ordinal);
                         foreach (var v in verifications)
                         {
                             if (!string.IsNullOrWhiteSpace(v.Claim))
                             {
-                                verificationsByClaim[v.Claim.Trim()] = v.Verdict;
+                                verificationsByClaim[v.Claim.Trim()] = v;
                             }
                         }
                     }
@@ -857,9 +857,13 @@ public class AdminBenchmarkController : ControllerBase
                 if (string.IsNullOrWhiteSpace(claim)) continue;
 
                 BenchmarkClaimVerdict? verdict = null;
+                string? citation = null;
+                string? basis = null;
                 if (verificationsByClaim != null && verificationsByClaim.TryGetValue(claim.Trim(), out var v))
                 {
-                    verdict = v;
+                    verdict = v.Verdict;
+                    citation = v.Citation;
+                    basis = v.Basis;
                 }
 
                 samples.Add(new BenchmarkUnverifiedClaimSample
@@ -871,12 +875,15 @@ public class AdminBenchmarkController : ControllerBase
                     Provider = row.Provider,
                     ModelId = row.ModelId,
                     Claim = claim,
-                    VerificationVerdict = verdict
+                    VerificationVerdict = verdict,
+                    Citation = citation,
+                    Basis = basis
                 });
             }
         }
 
         var clusters = BenchmarkRubricGapDetector.Detect(samples);
+        var kbGaps = BenchmarkRubricGapDetector.DetectKnowledgeBaseGaps(samples);
 
         return Ok(new BenchmarkRubricGapReportDto
         {
@@ -892,6 +899,14 @@ public class AdminBenchmarkController : ControllerBase
                 ModelIds = c.ModelIds.ToList(),
                 Occurrences = c.Occurrences,
                 Verdict = c.Verdict.ToString()
+            }).ToList(),
+            KnowledgeBaseGaps = kbGaps.Select(g => new BenchmarkKnowledgeBaseGapDto
+            {
+                Claim = g.Claim,
+                Citation = g.Citation,
+                Basis = g.Basis,
+                QuestionOrderIndices = g.QuestionOrderIndices.ToList(),
+                Recurrence = g.Recurrence
             }).ToList()
         });
     }
@@ -1849,7 +1864,7 @@ public class AdminBenchmarkController : ControllerBase
             return Conflict("A benchmark run is already in progress.");
         }
 
-        _ = Task.Run(() => _benchmarkService.RunAsync(run.Id, cts.Token));
+        _ = Task.Run(() => _benchmarkService.RunAsync(run.Id, cts.Token, request.VerboseMode ?? false));
 
         return Accepted(new { runId = run.Id });
     }
@@ -2004,6 +2019,10 @@ public class AdminBenchmarkController : ControllerBase
             SecondOpinionBlindUsed = run.SecondOpinionBlindUsed,
             SecondOpinionGradedAnswerCount = run.SecondOpinionGradedAnswerCount,
             SecondOpinionMeanAbsDelta = run.SecondOpinionMeanAbsDelta,
+            SecondOpinionMeanSignedDelta = run.SecondOpinionMeanSignedDelta,
+            SecondOpinionCriticalErrorSplitCount = run.SecondOpinionCriticalErrorSplitCount,
+            CandidatePromptOptionsJson = run.CandidatePromptOptionsJson,
+            CandidatePromptSourceUsed = run.CandidatePromptSourceUsed,
 
             // Manual verdicts are trials an operator ran by hand against a prospective assessor;
             // the agreement figures are about the run's own two graders.
@@ -2123,6 +2142,7 @@ public class AdminBenchmarkController : ControllerBase
                 ClaimVerificationDurationMs = a.ClaimVerificationDurationMs,
                 ClaimVerificationToolCallCount = a.ClaimVerificationToolCallCount,
                 ClaimVerificationError = a.ClaimVerificationError,
+                ClaimVerificationRawText = a.ClaimVerificationRawText,
                 ReassessedAtUtc = a.ReassessedAtUtc,
                 ReassessedByModelDisplayNameUsed = a.ReassessedByModelDisplayNameUsed,
                 PreviousQualityScore = a.PreviousQualityScore,
@@ -2194,6 +2214,10 @@ public class AdminBenchmarkController : ControllerBase
                 ToolStarvedAnswerCount = r.ToolStarvedAnswerCount,
                 BudgetSaturatedAnswerCount = r.BudgetSaturatedAnswerCount,
                 SecondOpinionBlindUsed = r.SecondOpinionBlindUsed,
+                SecondOpinionMeanSignedDelta = r.SecondOpinionMeanSignedDelta,
+                SecondOpinionCriticalErrorSplitCount = r.SecondOpinionCriticalErrorSplitCount,
+                CandidatePromptOptionsJson = r.CandidatePromptOptionsJson,
+                CandidatePromptSourceUsed = r.CandidatePromptSourceUsed,
                 HarnessVersion = r.HarnessVersion,
                 TotalDurationMs = r.TotalDurationMs
             })
@@ -2515,6 +2539,47 @@ public class AdminBenchmarkController : ControllerBase
         }
 
         _ = Task.Run(() => _benchmarkService.RetryFailedAssessmentsAsync(id, request?.AssessorModelConfigurationId, cts.Token));
+        return Accepted(new { runId = id });
+    }
+
+    [HttpPost("runs/{id}/retry-claim-verification")]
+    public async Task<IActionResult> RetryClaimVerification(long id, [FromBody] BenchmarkRetryRequest? request)
+    {
+        if (_runManager.CurrentRunId.HasValue)
+        {
+            return Conflict("A benchmark run is already in progress.");
+        }
+
+        var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync();
+        if (!canSpend)
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests, denialReason);
+        }
+
+        var run = await _dbContext.BenchmarkRuns
+            .Include(r => r.Answers)
+            .FirstOrDefaultAsync(r => r.Id == id);
+        if (run == null) return NotFound();
+
+        if (!run.Answers.Any(a => !string.IsNullOrWhiteSpace(a.ClaimVerificationError)))
+        {
+            return BadRequest("This run has no failed claim verifications to retry.");
+        }
+
+        long? targetVerifierId = request?.AssessorModelConfigurationId ?? run.ClaimVerifierModelConfigurationId;
+        var (verifierValid, verifierError) = await ValidateAssessorConfigurationAsync(targetVerifierId);
+        if (!verifierValid)
+        {
+            return BadRequest(verifierError);
+        }
+
+        var cts = new CancellationTokenSource();
+        if (!_runManager.TryStart(run.Id, cts, out _))
+        {
+            return Conflict("A benchmark run is already in progress.");
+        }
+
+        _ = Task.Run(() => _benchmarkService.RetryFailedClaimVerificationAsync(id, targetVerifierId, cts.Token));
         return Accepted(new { runId = id });
     }
 

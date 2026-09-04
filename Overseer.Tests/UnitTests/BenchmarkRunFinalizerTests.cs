@@ -412,6 +412,46 @@ public class BenchmarkRunFinalizerTests
 
         Assert.Equal(2, run.SecondOpinionGradedAnswerCount);
         Assert.Equal(14.0, run.SecondOpinionMeanAbsDelta);
+        Assert.Equal(4.0, run.SecondOpinionMeanSignedDelta);
+    }
+
+    [Fact]
+    public void Apply_ComputesSignedDeltaAndCriticalErrorSplits_MatchingHarness12Spec()
+    {
+        // 3 second opinions with deltas -45, -31, -72:
+        // abs delta mean = (45 + 31 + 72)/3 = 148 / 3 ≈ 49.333
+        // signed delta mean = (-45 + -31 + -72)/3 = -148 / 3 ≈ -49.333
+        // 2 critical error flips
+        var a1 = MakeAnswer(1);
+        a1.QualityScore = 90;
+        a1.SecondOpinionQualityScore = 45; // delta -45
+        a1.SecondOpinionTrigger = "FlaggedAndOutliers";
+        a1.CriticalError = false;
+        a1.SecondOpinionCriticalError = true; // flip 1
+
+        var a2 = MakeAnswer(2);
+        a2.QualityScore = 85;
+        a2.SecondOpinionQualityScore = 54; // delta -31
+        a2.SecondOpinionTrigger = "FlaggedAndOutliers";
+        a2.CriticalError = true;
+        a2.SecondOpinionCriticalError = false; // flip 2
+
+        var a3 = MakeAnswer(3);
+        a3.QualityScore = 95;
+        a3.SecondOpinionQualityScore = 23; // delta -72
+        a3.SecondOpinionTrigger = "FlaggedAndOutliers";
+        a3.CriticalError = false;
+        a3.SecondOpinionCriticalError = false; // no flip
+
+        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 3 };
+        BenchmarkRunFinalizer.Apply(run, new[] { a1, a2, a3 });
+
+        Assert.Equal(3, run.SecondOpinionGradedAnswerCount);
+        Assert.NotNull(run.SecondOpinionMeanAbsDelta);
+        Assert.NotNull(run.SecondOpinionMeanSignedDelta);
+        Assert.InRange(run.SecondOpinionMeanAbsDelta.Value, 49.3, 49.4);
+        Assert.InRange(run.SecondOpinionMeanSignedDelta.Value, -49.4, -49.3);
+        Assert.Equal(2, run.SecondOpinionCriticalErrorSplitCount);
     }
 
     [Fact]

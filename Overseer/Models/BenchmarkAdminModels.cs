@@ -146,6 +146,20 @@ public class StartBenchmarkRunRequest
     public long? ClaimVerifierModelConfigurationId { get; set; }
     public long? ScoringProfileId { get; set; }
     public bool AcknowledgeSameProvider { get; set; }
+
+    /// <summary>
+    /// Optional. The candidate answers under the production chat system prompt
+    /// (ChatService.BuildSystemPrompt); this selects its Response Style section. Null and false both mean
+    /// the concise style — "Default to 2–5 sentences per response" — which is what every run through 11
+    /// used and therefore what they are comparable against.
+    ///
+    /// True selects the verbose style. Run 11 scored Completeness at 83.0 against Accuracy 97.7 while
+    /// under the concise instruction, so a verbose run is the experiment that separates a prompt effect
+    /// from a model limitation. It is not comparable with concise runs on Completeness, Conciseness or
+    /// Readability, which is why the value is snapshotted onto the run and printed in the report manifest
+    /// rather than merely accepted.
+    /// </summary>
+    public bool? VerboseMode { get; set; }
 }
 
 /// <summary>
@@ -455,6 +469,7 @@ public class BenchmarkRunAnswerDto
     public long? ClaimVerificationDurationMs { get; set; }
     public int? ClaimVerificationToolCallCount { get; set; }
     public string? ClaimVerificationError { get; set; }
+    public string? ClaimVerificationRawText { get; set; }
 }
 
 public class BenchmarkRunDetailDto
@@ -590,6 +605,10 @@ public class BenchmarkRunDetailDto
     /// </summary>
     public int SecondOpinionGradedAnswerCount { get; set; }
     public double? SecondOpinionMeanAbsDelta { get; set; }
+    public double? SecondOpinionMeanSignedDelta { get; set; }
+    public int SecondOpinionCriticalErrorSplitCount { get; set; }
+    public string? CandidatePromptOptionsJson { get; set; }
+    public string? CandidatePromptSourceUsed { get; set; }
 
     /// <summary>Answers whose two verdicts disagreed, among those graded twice.</summary>
     public int SecondOpinionDisagreementCount { get; set; }
@@ -736,6 +755,16 @@ public class BenchmarkRubricGapReportDto
     public int ClaimCount { get; set; }
 
     public List<BenchmarkRubricGapClusterDto> Clusters { get; set; } = new();
+    public List<BenchmarkKnowledgeBaseGapDto> KnowledgeBaseGaps { get; set; } = new();
+}
+
+public class BenchmarkKnowledgeBaseGapDto
+{
+    public string Claim { get; set; } = string.Empty;
+    public string? Citation { get; set; }
+    public string? Basis { get; set; }
+    public List<int> QuestionOrderIndices { get; set; } = new();
+    public int Recurrence { get; set; }
 }
 
 public class BenchmarkCitationDto
@@ -852,6 +881,10 @@ public class BenchmarkRunSummaryDto
     public int ToolStarvedAnswerCount { get; set; }
     public int BudgetSaturatedAnswerCount { get; set; }
     public bool SecondOpinionBlindUsed { get; set; }
+    public double? SecondOpinionMeanSignedDelta { get; set; }
+    public int SecondOpinionCriticalErrorSplitCount { get; set; }
+    public string? CandidatePromptOptionsJson { get; set; }
+    public string? CandidatePromptSourceUsed { get; set; }
     public string? HarnessVersion { get; set; }
     public long TotalDurationMs { get; set; }
 }

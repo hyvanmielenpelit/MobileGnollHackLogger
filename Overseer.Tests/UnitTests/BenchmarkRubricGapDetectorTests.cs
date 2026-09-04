@@ -192,4 +192,52 @@ public class BenchmarkRubricGapDetectorTests
         // so it must stay LikelyHallucination rather than LikelyRubricGap or VerifiedRubricGap.
         Assert.Equal(BenchmarkRubricGapVerdict.LikelyHallucination, cluster.Verdict);
     }
+
+    [Fact]
+    public void DetectKnowledgeBaseGaps_ExtractsRefutedClaimsWithCitationsAndRecurrence()
+    {
+        var samples = new[]
+        {
+            new BenchmarkUnverifiedClaimSample
+            {
+                Claim = "Spell skills reduce saving throw difficulty",
+                Citation = "src/zap.c:359-364",
+                Basis = "Code shows spell skills increase saving throw difficulty instead",
+                VerificationVerdict = BenchmarkClaimVerdict.Refuted,
+                QuestionId = 1,
+                QuestionOrderIndex = 9,
+                RunId = 1
+            },
+            new BenchmarkUnverifiedClaimSample
+            {
+                Claim = "Spell skills reduce saving throw difficulty",
+                Citation = "src/zap.c:359-364",
+                Basis = "Code shows spell skills increase saving throw difficulty instead",
+                VerificationVerdict = BenchmarkClaimVerdict.Refuted,
+                QuestionId = 1,
+                QuestionOrderIndex = 9,
+                RunId = 2
+            },
+            new BenchmarkUnverifiedClaimSample
+            {
+                Claim = "Silver dragon scale mail grants reflection",
+                Citation = "src/role.c:100",
+                Basis = "Confirmed in source",
+                VerificationVerdict = BenchmarkClaimVerdict.Supported,
+                QuestionId = 2,
+                QuestionOrderIndex = 3,
+                RunId = 1
+            }
+        };
+
+        var gaps = BenchmarkRubricGapDetector.DetectKnowledgeBaseGaps(samples);
+
+        // Supported claim is excluded; only the refuted claim is projected
+        var gap = Assert.Single(gaps);
+        Assert.Equal("Spell skills reduce saving throw difficulty", gap.Claim);
+        Assert.Equal("src/zap.c:359-364", gap.Citation);
+        Assert.Equal("Code shows spell skills increase saving throw difficulty instead", gap.Basis);
+        Assert.Equal(2, gap.Recurrence);
+        Assert.Equal(new[] { 9 }, gap.QuestionOrderIndices);
+    }
 }
