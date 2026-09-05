@@ -23,7 +23,7 @@ public class SettingsService
 
     public static readonly string[] SupportedProviders = new[] { "OpenAI", "Anthropic", "Google" };
 
-    public async Task SaveSettingsAsync(string userId, bool? spoilerFreeMode = null, bool? enableWebSearch = null, bool? enableToolUse = null, bool? enableClientTools = null, bool? enableGameActions = null, bool? showSourceCodeReferences = null, int? maxResultLength = null, int? maxCallsPerSession = null, int? maxToolIterations = null, int? maxParallelToolCalls = null, int? showThoughtsAndTools = null, int? requestTimeout = null, bool? enableSubAgents = null, bool? showParallelBadge = null, bool? showContextWindowUsage = null)
+    public async Task SaveSettingsAsync(string userId, bool? spoilerFreeMode = null, bool? enableWebSearch = null, bool? enableToolUse = null, bool? enableClientTools = null, bool? enableGameActions = null, bool? showSourceCodeReferences = null, int? maxResultLength = null, int? maxCallsPerSession = null, int? maxToolIterations = null, int? maxParallelToolCalls = null, int? showThoughtsAndTools = null, int? requestTimeout = null, bool? enableSubAgents = null, bool? showParallelBadge = null, bool? showContextWindowUsage = null, bool? showChatCost = null)
     {
         var settings = await _dbContext.UserAiSettings.FindAsync(userId);
         if (settings == null)
@@ -49,6 +49,7 @@ public class SettingsService
         if (requestTimeout.HasValue) settings.RequestTimeout = requestTimeout.Value;
         if (showParallelBadge.HasValue) settings.ShowParallelBadge = showParallelBadge.Value;
         if (showContextWindowUsage.HasValue) settings.ShowContextWindowUsage = showContextWindowUsage.Value;
+        if (showChatCost.HasValue) settings.ShowChatCost = showChatCost.Value;
 
         await _dbContext.SaveChangesAsync();
     }
@@ -219,7 +220,7 @@ public class SettingsService
         await _dbContext.SaveChangesAsync();
     }
 
-    public async Task UpdateUserModelAsync(string userId, long id, string? displayName, string? displayNameMode, string? thinkingLevel, string? reasoningMode, string? reasoningSummary, string? serviceTier, int? maxInputTokens, int? maxOutputTokens, string? modelId = null, string? provider = null)
+    public async Task UpdateUserModelAsync(string userId, long id, string? displayName, string? displayNameMode, string? thinkingLevel, string? reasoningMode, string? reasoningSummary, string? serviceTier, int? maxInputTokens, int? maxOutputTokens, string? modelId = null, string? provider = null, string? pricingMode = null, decimal? inputPricePerMillion = null, decimal? outputPricePerMillion = null, decimal? cachedInputPricePerMillion = null)
     {
         var model = await _dbContext.UserAiModels.FirstOrDefaultAsync(m => m.Id == id && m.AspNetUserId == userId);
         if (model != null)
@@ -239,6 +240,10 @@ public class SettingsService
             // but in the UI we'll just send the current value or null to clear.
             model.MaxInputTokens = maxInputTokens;
             model.MaxOutputTokens = maxOutputTokens;
+            if (pricingMode != null) model.PricingMode = Overseer.Models.PricingModes.Normalize(pricingMode);
+            model.InputPricePerMillion = inputPricePerMillion;
+            model.OutputPricePerMillion = outputPricePerMillion;
+            model.CachedInputPricePerMillion = cachedInputPricePerMillion;
             
             await _dbContext.SaveChangesAsync();
         }

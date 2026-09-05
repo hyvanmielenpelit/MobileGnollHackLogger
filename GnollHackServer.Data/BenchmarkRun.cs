@@ -504,5 +504,12 @@ public class BenchmarkRun
     public long TotalClaimVerificationOutputTokens { get; set; }
     public long TotalClaimVerificationDurationMs { get; set; }
 
+    /// <summary>
+    /// Resolved per-million prices for every role, captured when the run started. A report
+    /// regenerated later prices the run at what it actually cost, not at today's rates. Null
+    /// for runs that predate this column; those are priced live and the report says so.
+    /// </summary>
+    public string? PricingSnapshotJson { get; set; }
+
     public List<BenchmarkRunAnswer> Answers { get; set; } = new();
 }

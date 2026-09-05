@@ -1807,6 +1807,36 @@ public class AdminBenchmarkController : ControllerBase
 
         string userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
 
+        string? pricingSnapshotJson = null;
+        if (_modelPricingService != null)
+        {
+            var candidatePricing = _modelPricingService.Resolve(testedConfig);
+            var assessorPricing = _modelPricingService.Resolve(assessorConfig);
+            var secondOpinionPricing = secondOpinionConfig != null ? _modelPricingService.Resolve(secondOpinionConfig) : null;
+            var claimVerifierPricing = claimVerifierConfig != null ? _modelPricingService.Resolve(claimVerifierConfig) : null;
+
+            object? ToSnapshotObj(ModelPricing? p) => p == null ? null : new
+            {
+                inputPerMillion = p.InputPerMillion,
+                outputPerMillion = p.OutputPerMillion,
+                cachedInputPerMillion = p.CachedInputPerMillion,
+                cacheWritePerMillion = p.CacheWritePerMillion,
+                source = p.Source == ModelPricingSource.Custom ? "custom" : "catalog",
+                currency = p.Currency,
+                asOf = p.AsOf
+            };
+
+            var snapshot = new
+            {
+                capturedAtUtc = DateTime.UtcNow,
+                candidate = ToSnapshotObj(candidatePricing),
+                assessor = ToSnapshotObj(assessorPricing),
+                secondOpinion = ToSnapshotObj(secondOpinionPricing),
+                claimVerifier = ToSnapshotObj(claimVerifierPricing)
+            };
+            pricingSnapshotJson = JsonSerializer.Serialize(snapshot);
+        }
+
         var run = new BenchmarkRun
         {
             BenchmarkSuiteId = suite.Id,
@@ -1855,7 +1885,8 @@ public class AdminBenchmarkController : ControllerBase
             StartedAtUtc = DateTime.UtcNow,
             TotalQuestionCount = suite.Questions.Count,
             PurposeStatementUsed = _complianceGuard.GetPurposeStatement(),
-            SameProviderAcknowledged = isSameProvider && request.AcknowledgeSameProvider
+            SameProviderAcknowledged = isSameProvider && request.AcknowledgeSameProvider,
+            PricingSnapshotJson = pricingSnapshotJson
         };
 
         _dbContext.BenchmarkRuns.Add(run);
@@ -1936,6 +1967,75 @@ public class AdminBenchmarkController : ControllerBase
         long totalCacheReadTokens = isLiveRun ? liveCandidateTotals.TotalCacheReadTokens : run.TotalCacheReadTokens;
         long totalCacheCreationTokens = isLiveRun ? liveCandidateTotals.TotalCacheCreationTokens : run.TotalCacheCreationTokens;
         long totalAnswerDurationMs = isLiveRun ? liveCandidateTotals.TotalAnswerDurationMs : run.TotalAnswerDurationMs;
+
+        BenchmarkRunPricing? pricing = null;
+        if (_modelPricingService != null)
+        {
+            pricing = await _modelPricingService.ResolveForRunAsync(run);
+        }
+
+        bool hasAssessor = run.TotalAssessmentInputTokens > 0 || run.TotalAssessmentOutputTokens > 0;
+        bool hasVerifier = run.TotalClaimVerificationInputTokens > 0 || run.TotalClaimVerificationOutputTokens > 0;
+
+        var candidatePricing = pricing?.Candidate;
+        var assessorPricing = hasAssessor ? pricing?.Assessor : null;
+        var verifierPricing = hasVerifier ? pricing?.ClaimVerifier : null;
+
+        bool canEstimateCost = pricing != null &&
+            candidatePricing != null &&
+            (!hasAssessor || assessorPricing != null) &&
+            (!hasVerifier || verifierPricing != null);
+
+        decimal? candidateCost = null;
+        decimal? assessorCost = null;
+        decimal? verifierCost = null;
+        decimal? totalEstimatedCost = null;
+        string? costCurrency = null;
+        string? pricingSource = null;
+        bool pricingIncomplete = !canEstimateCost;
+
+        if (pricing != null)
+        {
+            if (candidatePricing != null)
+            {
+                long cachedIn = totalCacheReadTokens;
+                long uncachedIn = Math.Max(0, totalInputTokens - cachedIn);
+                candidateCost = ModelPricingService.ComputeCost(candidatePricing, uncachedIn, totalOutputTokens, cachedIn, totalCacheCreationTokens);
+            }
+            if (hasAssessor && assessorPricing != null)
+            {
+                assessorCost = ModelPricingService.ComputeCost(assessorPricing, run.TotalAssessmentInputTokens, run.TotalAssessmentOutputTokens);
+            }
+            if (hasVerifier && verifierPricing != null)
+            {
+                verifierCost = ModelPricingService.ComputeCost(verifierPricing, run.TotalClaimVerificationInputTokens, run.TotalClaimVerificationOutputTokens);
+            }
+
+            var sources = new List<ModelPricingSource>();
+            if (candidatePricing != null) sources.Add(candidatePricing.Source);
+            if (hasAssessor && assessorPricing != null) sources.Add(assessorPricing.Source);
+            if (hasVerifier && verifierPricing != null) sources.Add(verifierPricing.Source);
+
+            if (sources.Count > 0)
+            {
+                if (sources.All(s => s == ModelPricingSource.Custom)) pricingSource = "custom";
+                else if (sources.All(s => s == ModelPricingSource.Catalog)) pricingSource = "catalog";
+                else pricingSource = "mixed";
+            }
+
+            if (canEstimateCost)
+            {
+                var currencies = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { candidatePricing!.Currency };
+                if (hasAssessor && assessorPricing != null) currencies.Add(assessorPricing.Currency);
+                if (hasVerifier && verifierPricing != null) currencies.Add(verifierPricing.Currency);
+
+                if (currencies.Count == 1)
+                {
+                    totalEstimatedCost = (candidateCost ?? 0m) + (assessorCost ?? 0m) + (verifierCost ?? 0m);
+                    costCurrency = candidatePricing.Currency;
+                }
+            }
+        }
 
         var dto = new BenchmarkRunDetailDto
         {
@@ -2058,6 +2158,13 @@ public class AdminBenchmarkController : ControllerBase
             TotalClaimVerificationOutputTokens = run.TotalClaimVerificationOutputTokens,
             TotalClaimVerificationDurationMs = run.TotalClaimVerificationDurationMs,
             ErrorMessage = run.ErrorMessage,
+            EstimatedCost = totalEstimatedCost,
+            EstimatedCandidateCost = candidateCost,
+            EstimatedAssessorCost = assessorCost,
+            EstimatedVerifierCost = verifierCost,
+            CostCurrency = costCurrency,
+            PricingSource = pricingSource,
+            PricingIncomplete = pricingIncomplete,
 
             // Empty unless this is the run currently executing in this process.
             InFlightOrderIndexes = _runManager.GetInFlightQuestions(run.Id).ToList(),
@@ -2189,47 +2296,153 @@ public class AdminBenchmarkController : ControllerBase
 
         int limit = Math.Clamp(take ?? 50, 1, 200);
 
-        var runs = await query
+        var rows = await query
             .OrderByDescending(r => r.StartedAtUtc)
             .Take(limit)
-            .Select(r => new BenchmarkRunSummaryDto
+            .Select(r => new
             {
-                Id = r.Id,
-                BenchmarkSuiteId = r.BenchmarkSuiteId,
-                SuiteName = r.SuiteName,
-                TestedModelConfigurationId = r.TestedModelConfigurationId,
-                TestedModelDisplayNameUsed = r.TestedModelDisplayNameUsed,
-                TestedModelProviderUsed = r.TestedModelProviderUsed,
-                TestedModelIdUsed = r.TestedModelIdUsed,
-                AssessorModelConfigurationId = r.AssessorModelConfigurationId,
-                AssessorModelDisplayNameUsed = r.AssessorModelDisplayNameUsed,
-                StartedByUserName = r.StartedByUser != null ? r.StartedByUser.UserName : null,
-                Status = r.Status,
-                StartedAtUtc = r.StartedAtUtc,
-                CompletedAtUtc = r.CompletedAtUtc,
-                FinalScore = r.FinalScore,
-                ComputedScore = r.ComputedScore,
-                QualityIndex = r.QualityIndex,
-                QualityIndexStandardError = r.QualityIndexStandardError,
-                SpeedIndex = r.SpeedIndex,
-                TotalAnswerDurationMs = r.TotalAnswerDurationMs,
-                SpeedMeasurementDegraded = r.SpeedMeasurementDegraded,
-                AnsweredQuestionCount = r.AnsweredQuestionCount,
-                TotalQuestionCount = r.TotalQuestionCount,
-                DegradedAnswerCount = r.DegradedAnswerCount,
-                ToolStarvedAnswerCount = r.ToolStarvedAnswerCount,
-                BudgetSaturatedAnswerCount = r.BudgetSaturatedAnswerCount,
-                SecondOpinionBlindUsed = r.SecondOpinionBlindUsed,
-                SecondOpinionMeanSignedDelta = r.SecondOpinionMeanSignedDelta,
-                SecondOpinionCriticalErrorSplitCount = r.SecondOpinionCriticalErrorSplitCount,
-                CandidatePromptOptionsJson = r.CandidatePromptOptionsJson,
-                CandidatePromptSourceUsed = r.CandidatePromptSourceUsed,
-                HarnessVersion = r.HarnessVersion,
-                TotalDurationMs = r.TotalDurationMs
+                Summary = new BenchmarkRunSummaryDto
+                {
+                    Id = r.Id,
+                    BenchmarkSuiteId = r.BenchmarkSuiteId,
+                    SuiteName = r.SuiteName,
+                    TestedModelConfigurationId = r.TestedModelConfigurationId,
+                    TestedModelDisplayNameUsed = r.TestedModelDisplayNameUsed,
+                    TestedModelProviderUsed = r.TestedModelProviderUsed,
+                    TestedModelIdUsed = r.TestedModelIdUsed,
+                    AssessorModelConfigurationId = r.AssessorModelConfigurationId,
+                    AssessorModelDisplayNameUsed = r.AssessorModelDisplayNameUsed,
+                    StartedByUserName = r.StartedByUser != null ? r.StartedByUser.UserName : null,
+                    Status = r.Status,
+                    StartedAtUtc = r.StartedAtUtc,
+                    CompletedAtUtc = r.CompletedAtUtc,
+                    FinalScore = r.FinalScore,
+                    ComputedScore = r.ComputedScore,
+                    QualityIndex = r.QualityIndex,
+                    QualityIndexStandardError = r.QualityIndexStandardError,
+                    SpeedIndex = r.SpeedIndex,
+                    TotalAnswerDurationMs = r.TotalAnswerDurationMs,
+                    SpeedMeasurementDegraded = r.SpeedMeasurementDegraded,
+                    AnsweredQuestionCount = r.AnsweredQuestionCount,
+                    TotalQuestionCount = r.TotalQuestionCount,
+                    DegradedAnswerCount = r.DegradedAnswerCount,
+                    ToolStarvedAnswerCount = r.ToolStarvedAnswerCount,
+                    BudgetSaturatedAnswerCount = r.BudgetSaturatedAnswerCount,
+                    SecondOpinionBlindUsed = r.SecondOpinionBlindUsed,
+                    SecondOpinionMeanSignedDelta = r.SecondOpinionMeanSignedDelta,
+                    SecondOpinionCriticalErrorSplitCount = r.SecondOpinionCriticalErrorSplitCount,
+                    CandidatePromptOptionsJson = r.CandidatePromptOptionsJson,
+                    CandidatePromptSourceUsed = r.CandidatePromptSourceUsed,
+                    HarnessVersion = r.HarnessVersion,
+                    TotalDurationMs = r.TotalDurationMs
+                },
+                r.PricingSnapshotJson,
+                r.TestedModelConfigurationId,
+                r.TestedModelProviderUsed,
+                r.TestedModelIdUsed,
+                r.AssessorModelConfigurationId,
+                r.AssessorModelProviderUsed,
+                r.AssessorModelIdUsed,
+                r.ClaimVerifierModelConfigurationId,
+                r.ClaimVerifierProviderUsed,
+                r.ClaimVerifierModelIdUsed,
+                r.SecondOpinionAssessorModelConfigurationId,
+                r.SecondOpinionAssessorModelProviderUsed,
+                r.SecondOpinionAssessorModelIdUsed,
+                r.TotalInputTokens,
+                r.TotalOutputTokens,
+                r.TotalCacheReadTokens,
+                r.TotalCacheCreationTokens,
+                r.TotalAssessmentInputTokens,
+                r.TotalAssessmentOutputTokens,
+                r.TotalClaimVerificationInputTokens,
+                r.TotalClaimVerificationOutputTokens
             })
             .ToListAsync();
 
-        return Ok(runs);
+        if (_modelPricingService != null)
+        {
+            foreach (var item in rows)
+            {
+                var tempRun = new BenchmarkRun
+                {
+                    PricingSnapshotJson = item.PricingSnapshotJson,
+                    TestedModelConfigurationId = item.TestedModelConfigurationId,
+                    TestedModelProviderUsed = item.TestedModelProviderUsed,
+                    TestedModelIdUsed = item.TestedModelIdUsed,
+                    AssessorModelConfigurationId = item.AssessorModelConfigurationId,
+                    AssessorModelProviderUsed = item.AssessorModelProviderUsed,
+                    AssessorModelIdUsed = item.AssessorModelIdUsed,
+                    ClaimVerifierModelConfigurationId = item.ClaimVerifierModelConfigurationId,
+                    ClaimVerifierProviderUsed = item.ClaimVerifierProviderUsed,
+                    ClaimVerifierModelIdUsed = item.ClaimVerifierModelIdUsed,
+                    SecondOpinionAssessorModelConfigurationId = item.SecondOpinionAssessorModelConfigurationId,
+                    SecondOpinionAssessorModelProviderUsed = item.SecondOpinionAssessorModelProviderUsed,
+                    SecondOpinionAssessorModelIdUsed = item.SecondOpinionAssessorModelIdUsed,
+                    TotalInputTokens = item.TotalInputTokens,
+                    TotalOutputTokens = item.TotalOutputTokens,
+                    TotalCacheReadTokens = item.TotalCacheReadTokens,
+                    TotalCacheCreationTokens = item.TotalCacheCreationTokens,
+                    TotalAssessmentInputTokens = item.TotalAssessmentInputTokens,
+                    TotalAssessmentOutputTokens = item.TotalAssessmentOutputTokens,
+                    TotalClaimVerificationInputTokens = item.TotalClaimVerificationInputTokens,
+                    TotalClaimVerificationOutputTokens = item.TotalClaimVerificationOutputTokens
+                };
+
+                var pricing = await _modelPricingService.ResolveForRunAsync(tempRun);
+
+                bool hasAssessor = tempRun.TotalAssessmentInputTokens > 0 || tempRun.TotalAssessmentOutputTokens > 0;
+                bool hasVerifier = tempRun.TotalClaimVerificationInputTokens > 0 || tempRun.TotalClaimVerificationOutputTokens > 0;
+
+                var candidatePricing = pricing?.Candidate;
+                var assessorPricing = hasAssessor ? pricing?.Assessor : null;
+                var verifierPricing = hasVerifier ? pricing?.ClaimVerifier : null;
+
+                bool canEstimateCost = pricing != null &&
+                    candidatePricing != null &&
+                    (!hasAssessor || assessorPricing != null) &&
+                    (!hasVerifier || verifierPricing != null);
+
+                if (!canEstimateCost)
+                {
+                    item.Summary.PricingIncomplete = true;
+                }
+                else
+                {
+                    long cachedIn = tempRun.TotalCacheReadTokens;
+                    long uncachedIn = Math.Max(0, tempRun.TotalInputTokens - cachedIn);
+                    decimal candCost = ModelPricingService.ComputeCost(candidatePricing!, uncachedIn, tempRun.TotalOutputTokens, cachedIn, tempRun.TotalCacheCreationTokens);
+                    decimal assCost = hasAssessor && assessorPricing != null ? ModelPricingService.ComputeCost(assessorPricing, tempRun.TotalAssessmentInputTokens, tempRun.TotalAssessmentOutputTokens) : 0m;
+                    decimal verCost = hasVerifier && verifierPricing != null ? ModelPricingService.ComputeCost(verifierPricing, tempRun.TotalClaimVerificationInputTokens, tempRun.TotalClaimVerificationOutputTokens) : 0m;
+
+                    var currencies = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { candidatePricing!.Currency };
+                    if (hasAssessor && assessorPricing != null) currencies.Add(assessorPricing.Currency);
+                    if (hasVerifier && verifierPricing != null) currencies.Add(verifierPricing.Currency);
+
+                    if (currencies.Count == 1)
+                    {
+                        item.Summary.EstimatedCost = candCost + assCost + verCost;
+                        item.Summary.CostCurrency = candidatePricing.Currency;
+                        item.Summary.PricingIncomplete = false;
+                    }
+                    else
+                    {
+                        item.Summary.EstimatedCost = null;
+                        item.Summary.CostCurrency = null;
+                        item.Summary.PricingIncomplete = false;
+                    }
+                }
+            }
+        }
+        else
+        {
+            foreach (var item in rows)
+            {
+                item.Summary.PricingIncomplete = true;
+            }
+        }
+
+        return Ok(rows.Select(r => r.Summary).ToList());
     }
 
     [HttpPost("runs/{id}/rescore")]
@@ -2653,7 +2866,10 @@ public class AdminBenchmarkController : ControllerBase
 
         // The report's provenance line is worthless as a hard-coded fallback: every report ever
         // produced claimed "1.0.0" because this caller never passed a version.
-        string markdown = BenchmarkReportBuilder.BuildMarkdownReport(run, GetOverseerVersion(), _modelPricingService);
+        BenchmarkRunPricing? runPricing = _modelPricingService != null
+            ? await _modelPricingService.ResolveForRunAsync(run)
+            : null;
+        string markdown = BenchmarkReportBuilder.BuildMarkdownReport(run, GetOverseerVersion(), runPricing);
         string filename = $"{SanitizeFilename(run.SuiteName)}_{SanitizeFilename(run.TestedModelDisplayNameUsed)}_{run.StartedAtUtc:yyyyMMdd_HHmmss}.md";
 
         return File(Encoding.UTF8.GetBytes(markdown), "text/markdown; charset=utf-8", filename);

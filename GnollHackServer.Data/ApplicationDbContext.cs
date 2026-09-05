@@ -245,14 +245,24 @@ namespace MobileGnollHackLogger.Data
             //modelBuilder.Entity<ApplicationUser>()
             //    .Property(u => u.IsBanned)
             //    .HasDefaultValue(0);
-            //modelBuilder.Entity<ApplicationUser>()
-            //    .Property(u => u.IsBonesBanned)
-            //    .HasDefaultValue(0);
-            //modelBuilder.Entity<ApplicationUser>()
-            //    .Property(u => u.IsGameLogBanned)
-            //    .HasDefaultValue(0);
-            //modelBuilder.Entity<GameLog>()
-            //    .HasIndex(gl => new { gl.ByteStart, gl.ByteEnd, gl.ByteLength });
+            modelBuilder.Entity<SystemAiApiConfiguration>(e =>
+            {
+                e.Property(c => c.InputPricePerMillion).HasPrecision(12, 6);
+                e.Property(c => c.OutputPricePerMillion).HasPrecision(12, 6);
+                e.Property(c => c.CachedInputPricePerMillion).HasPrecision(12, 6);
+            });
+
+            modelBuilder.Entity<UserAiModel>(e =>
+            {
+                e.Property(m => m.InputPricePerMillion).HasPrecision(12, 6);
+                e.Property(m => m.OutputPricePerMillion).HasPrecision(12, 6);
+                e.Property(m => m.CachedInputPricePerMillion).HasPrecision(12, 6);
+            });
+
+            // Costs, not rates: a single cheap turn can cost a few millionths of a unit, and
+            // decimal(18,2) would store every one of them as 0.00.
+            modelBuilder.Entity<ChatMessage>()
+                .Property(m => m.EstimatedCost).HasPrecision(18, 8);
         }
 
         public async Task<TopScoreNumberData> GetTopScoreNumberAsync(long databaseId, string? mode, string? death = null)

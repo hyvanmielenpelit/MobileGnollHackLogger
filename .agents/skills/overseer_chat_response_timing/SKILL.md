@@ -225,3 +225,48 @@ else if (evt.type === 'ttft') {
 2. **Immediate Errors**: If an API call fails before returning tokens, TTFT is recorded upon receiving the error event, and the total duration reflects the failure time.
 3. **Multi-Iteration Tool Calls**: When tools execute across multiple iterations, `apiCallStartTime` remains anchored at the very beginning of the first API call, ensuring the total time correctly reflects the entire end-to-end user wait time.
 4. **Reconnection & Silent State Sync**: When a client reconnects to an ongoing stream, replaying buffered `ttft` events seamlessly initializes `timeToFirstTokenMs`, putting the client in Phase 2 (`9s→[spinner]`) without jumping or resetting.
+
+---
+
+## 7. Context Window & Whole-Turn Cost Accounting
+
+For the full specification, see [docs/overseer/chat-response-telemetry.md](../../docs/overseer/chat-response-telemetry.md).
+
+### Whole-Turn Costing Basis
+Chat turn costs are computed from the **summed token counts across all tool iterations**:
+- `runResult.UncachedInputTokens`
+- `runResult.OutputTokens`
+- `runResult.CacheReadTokens`
+- `runResult.CacheCreationTokens`
+
+> [!WARNING]
+> Never cost from `LastPromptTokens` or `LastOutputTokens`. Those represent the final call in the tool loop and exist solely to measure remaining context window capacity. In multi-turn tool sessions, final-call costing would dramatically understate actual API usage.
+
+### Streaming `cost` Event
+Emitted by `ChatService` when response generation finishes:
+```csharp
+yield return new ChatEvent
+{
+    Type = "cost",
+    Data = JsonSerializer.Serialize(new
+    {
+        estimatedCost,
+        currency = pricing.Currency ?? "USD",
+        source = pricing.Source, // "custom" | "catalog"
+        inputTokens,
+        outputTokens,
+        cacheReadTokens,
+        cacheCreationTokens,
+        isOperatorCost // true when executing on a system configuration
+    })
+};
+```
+
+### Operator Cost Distinction (`isOperatorCost`)
+When a user chats using an operator-provided system model, `isOperatorCost` is `true`. The UI displays `(operator)` next to the cost figure so users clearly understand that server operator credits were used, not personal user billing.
+
+### Persistence & UI
+- Persisted on `ChatMessage`: `EstimatedCost` (precision 18, 8), `CostCurrency`, `PricingSource`, and the four token counts. Snapshotted on completion; never recomputed on read.
+- Gated in UI by user preference `showChatCost` (under Settings).
+- Rendered in `.ttft-container` in message headers and in the streaming footer.
+- Running conversation total in footer is explicitly labelled as `Total cost (loaded)` to prevent confusion when older messages have been pruned by chat retention policies.

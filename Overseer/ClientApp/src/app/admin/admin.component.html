@@ -270,6 +270,14 @@
                             }
                           </div>
                         }
+                        @if (formatPrice(config)) {
+                          <div class="model-price-line" style="font-size: 0.85em; margin-top: 4px; color: var(--gh-text-secondary); display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                            <span>{{ formatPrice(config) }}</span>
+                            <span class="status-badge" [class.badge-custom]="getPricingBadge(config) === 'Custom'" [class.badge-catalog]="getPricingBadge(config) === 'Catalog'">
+                              {{ getPricingBadge(config) }}
+                            </span>
+                          </div>
+                        }
                       </div>
                     </div>
                     <div class="model-actions">

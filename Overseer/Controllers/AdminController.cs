@@ -19,14 +19,22 @@ public class AdminController : ControllerBase
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly CryptoService _cryptoService;
     private readonly Overseer.Services.Providers.AiRequestGovernor _governor;
+    private readonly ModelPricingService? _modelPricingService;
 
-    public AdminController(ApplicationDbContext dbContext, IConfiguration configuration, UserManager<ApplicationUser> userManager, CryptoService cryptoService, Overseer.Services.Providers.AiRequestGovernor governor)
+    public AdminController(
+        ApplicationDbContext dbContext,
+        IConfiguration configuration,
+        UserManager<ApplicationUser> userManager,
+        CryptoService cryptoService,
+        Overseer.Services.Providers.AiRequestGovernor governor,
+        ModelPricingService? modelPricingService = null)
     {
         _dbContext = dbContext;
         _configuration = configuration;
         _userManager = userManager;
         _cryptoService = cryptoService;
         _governor = governor;
+        _modelPricingService = modelPricingService;
     }
 
     private static readonly System.Collections.Generic.HashSet<string> AllowedCounters = new(System.StringComparer.OrdinalIgnoreCase)
@@ -228,7 +236,11 @@ public class AdminController : ControllerBase
                 TotalTitleTokensCount = c.TotalTitleTokensCount,
                 ModelRole = c.ModelRole,
                 ParallelExecutionMode = (int)c.ParallelExecutionMode,
-                Note = c.Note
+                Note = c.Note,
+                PricingMode = c.PricingMode,
+                InputPricePerMillion = c.InputPricePerMillion,
+                OutputPricePerMillion = c.OutputPricePerMillion,
+                CachedInputPricePerMillion = c.CachedInputPricePerMillion
             })
             .ToListAsync();
 
@@ -236,6 +248,34 @@ public class AdminController : ControllerBase
         {
             c.UserAssignmentCount = userAssignmentCounts.GetValueOrDefault(c.Id, 0);
             c.GroupAssignmentCount = groupAssignmentCounts.GetValueOrDefault(c.Id, 0);
+
+            if (_modelPricingService != null)
+            {
+                var tempConfig = new SystemAiApiConfiguration
+                {
+                    Id = c.Id,
+                    Provider = c.Provider,
+                    ModelId = c.ModelId,
+                    PricingMode = c.PricingMode,
+                    InputPricePerMillion = c.InputPricePerMillion,
+                    OutputPricePerMillion = c.OutputPricePerMillion,
+                    CachedInputPricePerMillion = c.CachedInputPricePerMillion
+                };
+                var resolved = _modelPricingService.Resolve(tempConfig);
+                if (resolved != null)
+                {
+                    c.EffectiveInputPricePerMillion = resolved.InputPerMillion;
+                    c.EffectiveOutputPricePerMillion = resolved.OutputPerMillion;
+                    c.EffectiveCachedInputPricePerMillion = resolved.CachedInputPerMillion;
+                    c.PricingSource = resolved.Source == ModelPricingSource.Custom ? "custom" : "catalog";
+                    c.PricingCurrency = resolved.Currency;
+                    c.PricingAsOf = resolved.AsOf;
+                }
+                else
+                {
+                    c.PricingSource = "unknown";
+                }
+            }
         }
 
         return Ok(configs);
@@ -247,6 +287,22 @@ public class AdminController : ControllerBase
         if (request.ModelRole < 1 || request.ModelRole > 7)
         {
             return BadRequest("ModelRole must be between 1 and 7.");
+        }
+
+        if ((request.InputPricePerMillion.HasValue && request.InputPricePerMillion.Value < 0) ||
+            (request.OutputPricePerMillion.HasValue && request.OutputPricePerMillion.Value < 0) ||
+            (request.CachedInputPricePerMillion.HasValue && request.CachedInputPricePerMillion.Value < 0))
+        {
+            return BadRequest("Prices cannot be negative.");
+        }
+
+        string normalizedPricingMode = PricingModes.Normalize(request.PricingMode);
+        if (string.Equals(normalizedPricingMode, PricingModes.Custom, StringComparison.OrdinalIgnoreCase))
+        {
+            if (!request.InputPricePerMillion.HasValue || !request.OutputPricePerMillion.HasValue)
+            {
+                return BadRequest("Custom pricing requires both input and output prices per million.");
+            }
         }
 
         var orderIndex = await _dbContext.SystemAiApiConfigurations.AnyAsync() 
@@ -282,7 +338,11 @@ public class AdminController : ControllerBase
             ModelRole = request.ModelRole,
             ParallelExecutionMode = (MobileGnollHackLogger.Data.ParallelExecutionMode)request.ParallelExecutionMode,
             OrderIndex = orderIndex,
-            Note = request.Note
+            Note = request.Note,
+            PricingMode = normalizedPricingMode,
+            InputPricePerMillion = request.InputPricePerMillion,
+            OutputPricePerMillion = request.OutputPricePerMillion,
+            CachedInputPricePerMillion = request.CachedInputPricePerMillion
         };
 
         if (!string.IsNullOrWhiteSpace(request.ApiKey))
@@ -302,6 +362,22 @@ public class AdminController : ControllerBase
         if (request.ModelRole < 1 || request.ModelRole > 7)
         {
             return BadRequest("ModelRole must be between 1 and 7.");
+        }
+
+        if ((request.InputPricePerMillion.HasValue && request.InputPricePerMillion.Value < 0) ||
+            (request.OutputPricePerMillion.HasValue && request.OutputPricePerMillion.Value < 0) ||
+            (request.CachedInputPricePerMillion.HasValue && request.CachedInputPricePerMillion.Value < 0))
+        {
+            return BadRequest("Prices cannot be negative.");
+        }
+
+        string normalizedPricingMode = PricingModes.Normalize(request.PricingMode);
+        if (string.Equals(normalizedPricingMode, PricingModes.Custom, StringComparison.OrdinalIgnoreCase))
+        {
+            if (!request.InputPricePerMillion.HasValue || !request.OutputPricePerMillion.HasValue)
+            {
+                return BadRequest("Custom pricing requires both input and output prices per million.");
+            }
         }
 
         var config = await _dbContext.SystemAiApiConfigurations.FindAsync(id);
@@ -334,6 +410,10 @@ public class AdminController : ControllerBase
         config.ModelRole = request.ModelRole;
         config.ParallelExecutionMode = (MobileGnollHackLogger.Data.ParallelExecutionMode)request.ParallelExecutionMode;
         config.Note = request.Note;
+        config.PricingMode = normalizedPricingMode;
+        config.InputPricePerMillion = request.InputPricePerMillion;
+        config.OutputPricePerMillion = request.OutputPricePerMillion;
+        config.CachedInputPricePerMillion = request.CachedInputPricePerMillion;
 
         if (request.ApiKey != null)
         {

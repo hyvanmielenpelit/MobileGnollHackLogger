@@ -75,6 +75,20 @@ public class SystemAiApiConfigurationDto
     public string? Note { get; set; }
     public int UserAssignmentCount { get; set; }
     public int GroupAssignmentCount { get; set; }
+
+    public string? PricingMode { get; set; }
+    public decimal? InputPricePerMillion { get; set; }
+    public decimal? OutputPricePerMillion { get; set; }
+    public decimal? CachedInputPricePerMillion { get; set; }
+
+    public decimal? EffectiveInputPricePerMillion { get; set; }
+    public decimal? EffectiveOutputPricePerMillion { get; set; }
+    public decimal? EffectiveCachedInputPricePerMillion { get; set; }
+
+    /// <summary>"custom", "catalog", or "unknown" when no price resolves at all.</summary>
+    public string PricingSource { get; set; } = "unknown";
+    public string? PricingCurrency { get; set; }
+    public string? PricingAsOf { get; set; }
 }
 
 public class CreateSystemAiApiConfigurationRequest
@@ -107,6 +121,10 @@ public class CreateSystemAiApiConfigurationRequest
     public int ModelRole { get; set; } = 3;
     public int ParallelExecutionMode { get; set; } = 2;
     public string? Note { get; set; }
+    public string? PricingMode { get; set; }
+    public decimal? InputPricePerMillion { get; set; }
+    public decimal? OutputPricePerMillion { get; set; }
+    public decimal? CachedInputPricePerMillion { get; set; }
 }
 
 public class UpdateSystemAiApiConfigurationRequest : CreateSystemAiApiConfigurationRequest

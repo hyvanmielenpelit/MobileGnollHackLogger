@@ -6,7 +6,15 @@
     "thinkingLevels": ["low", "medium", "high", "max"],
     "reasoningSummaries": ["summarized", "omitted"],
     "contextWindowSize": 1000000,
-    "maxOutputTokens": 128000
+    "maxOutputTokens": 128000,
+    "pricing": {
+      "inputPerMillion": 5.00,
+      "outputPerMillion": 25.00,
+      "cachedInputPerMillion": 0.50,
+      "cacheWritePerMillion": 6.25,
+      "currency": "USD",
+      "asOf": "2026-09-05"
+    }
   },
   {
     "prefixes": ["claude-sonnet-4-6"],
@@ -15,7 +23,15 @@
     "thinkingLevels": ["low", "medium", "high", "max"],
     "reasoningSummaries": ["summarized", "omitted"],
     "contextWindowSize": 1000000,
-    "maxOutputTokens": 128000
+    "maxOutputTokens": 128000,
+    "pricing": {
+      "inputPerMillion": 3.00,
+      "outputPerMillion": 15.00,
+      "cachedInputPerMillion": 0.30,
+      "cacheWritePerMillion": 3.75,
+      "currency": "USD",
+      "asOf": "2026-09-05"
+    }
   },
   {
     "prefixes": ["claude-opus-4-7"],
@@ -24,7 +40,15 @@
     "thinkingLevels": ["low", "medium", "high", "xhigh", "max"],
     "reasoningSummaries": ["summarized", "omitted"],
     "contextWindowSize": 1000000,
-    "maxOutputTokens": 128000
+    "maxOutputTokens": 128000,
+    "pricing": {
+      "inputPerMillion": 5.00,
+      "outputPerMillion": 25.00,
+      "cachedInputPerMillion": 0.50,
+      "cacheWritePerMillion": 6.25,
+      "currency": "USD",
+      "asOf": "2026-09-05"
+    }
   },
   {
     "prefixes": ["claude-opus-4-8"],
@@ -33,7 +57,15 @@
     "thinkingLevels": ["low", "medium", "high", "xhigh", "max"],
     "reasoningSummaries": ["summarized", "omitted"],
     "contextWindowSize": 1000000,
-    "maxOutputTokens": 128000
+    "maxOutputTokens": 128000,
+    "pricing": {
+      "inputPerMillion": 5.00,
+      "outputPerMillion": 25.00,
+      "cachedInputPerMillion": 0.50,
+      "cacheWritePerMillion": 6.25,
+      "currency": "USD",
+      "asOf": "2026-09-05"
+    }
   },
   {
     "prefixes": ["claude-opus-5"],
@@ -42,7 +74,15 @@
     "thinkingLevels": ["low", "medium", "high", "xhigh", "max"],
     "reasoningSummaries": ["summarized", "omitted"],
     "contextWindowSize": 1000000,
-    "maxOutputTokens": 128000
+    "maxOutputTokens": 128000,
+    "pricing": {
+      "inputPerMillion": 5.00,
+      "outputPerMillion": 25.00,
+      "cachedInputPerMillion": 0.50,
+      "cacheWritePerMillion": 6.25,
+      "currency": "USD",
+      "asOf": "2026-09-05"
+    }
   },
   {
     "prefixes": ["claude-sonnet-5"],
@@ -51,7 +91,15 @@
     "thinkingLevels": ["low", "medium", "high", "xhigh", "max"],
     "reasoningSummaries": ["summarized", "omitted"],
     "contextWindowSize": 1000000,
-    "maxOutputTokens": 128000
+    "maxOutputTokens": 128000,
+    "pricing": {
+      "inputPerMillion": 2.00,
+      "outputPerMillion": 10.00,
+      "cachedInputPerMillion": 0.20,
+      "cacheWritePerMillion": 2.50,
+      "currency": "USD",
+      "asOf": "2026-09-05"
+    }
   },
   {
     "prefixes": ["claude-fable-5"],
@@ -60,7 +108,15 @@
     "thinkingLevels": ["low", "medium", "high", "xhigh", "max"],
     "reasoningSummaries": ["summarized", "omitted"],
     "contextWindowSize": 1000000,
-    "maxOutputTokens": 128000
+    "maxOutputTokens": 128000,
+    "pricing": {
+      "inputPerMillion": 10.00,
+      "outputPerMillion": 50.00,
+      "cachedInputPerMillion": 1.00,
+      "cacheWritePerMillion": 12.50,
+      "currency": "USD",
+      "asOf": "2026-09-05"
+    }
   },
   {
     "prefixes": ["claude-fable-5-1"],
@@ -69,6 +125,15 @@
     "thinkingLevels": ["low", "medium", "high", "xhigh", "max"],
     "reasoningSummaries": ["summarized", "omitted"],
     "contextWindowSize": 1000000,
-    "maxOutputTokens": 128000
+    "maxOutputTokens": 128000,
+    "pricing": {
+      "inputPerMillion": 10.00,
+      "outputPerMillion": 50.00,
+      "cachedInputPerMillion": 0.25,
+      "cacheWritePerMillion": 12.50,
+      "currency": "USD",
+      "asOf": "2026-09-05"
+    }
   }
 ]
+

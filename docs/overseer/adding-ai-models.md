@@ -214,21 +214,39 @@ dotnet build Overseer/Overseer.csproj
 
 Open the **Models** page, choose **OpenAI**, and confirm the new model appears as expected.
 
-### 4. Optional: Configure Token Pricing for Benchmark Cost Estimation
+### 4. Optional: Configure Token Pricing
 
-Token pricing lives in configuration (`Overseer/appsettings.json` or User Secrets), **not in the catalog JSON files**. This prevents prices from drifting in source and allows operators to update rates without rebuilding.
-
-To enable estimated cost reporting in the AI Benchmark for the model, add a prefix entry under `ModelPricing`:
+Token pricing is declared directly in the catalog JSON files under an optional `pricing` object. Published list prices are model facts rather than deployment configuration, and no provider offers an API to fetch them dynamically:
 
 ```json
-"ModelPricing": {
-  "gpt-5.6": {
-    "InputPerMillion": 2.50,
-    "OutputPerMillion": 10.00,
-    "CachedInputPerMillion": 0.25
-  }
+"pricing": {
+  "inputPerMillion": 5.00,
+  "outputPerMillion": 22.50,
+  "cachedInputPerMillion": 2.50,
+  "cacheWritePerMillion": null,
+  "currency": "USD",
+  "asOf": "2026-09-05"
 }
 ```
 
-Prefixes match by longest prefix against model IDs. `CachedInputPerMillion` is optional (omit if the provider does not support prompt caching discounts). If omitted, benchmark reports simply display that pricing is not configured.
+- `inputPerMillion` and `outputPerMillion`: Required when `pricing` is specified. Rates are in currency units per 1,000,000 tokens.
+- `cachedInputPerMillion`: Optional rate for prompt cache read hits. If omitted, cache reads are costed at `inputPerMillion`.
+- `cacheWritePerMillion`: Optional rate for prompt cache writes/creation (e.g. Anthropic). If omitted or null, cache creation cost is omitted.
+- `currency`: Currency code (defaults to `"USD"`).
+- `asOf`: The date (`"YYYY-MM-DD"`) when the published list price was verified.
+
+When a model publishes no pricing, omit the `pricing` block entirely. Overseer treats absent pricing as "price not available", never as zero.
+
+#### Custom Deployment Overrides
+
+Operators and users can override default catalog rates through the UI:
+- **Admin → System AI Configs**: Set **Pricing** mode to **Custom** on any system configuration to define custom input, output, and cached input rates.
+- **Settings → Models**: Set **Pricing** mode to **Custom** on any user model.
+
+Overseer resolves pricing with the following precedence:
+1. **Snapshotted Run Pricing**: For benchmark runs, the rates captured at run start.
+2. **Custom Override**: The configuration or user model's custom rates.
+3. **Catalog Default**: The provider catalog default for the model ID.
+4. **null (Not Available)**: When neither an override nor catalog pricing exists.
+
 

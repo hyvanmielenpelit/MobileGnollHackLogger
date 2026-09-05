@@ -45,6 +45,15 @@ export const BENCHMARK_SECOND_OPINION_MODES: readonly BenchmarkSecondOpinionMode
   }
 ];
 
+export interface ModelPricingDto {
+  inputPerMillion: number;
+  outputPerMillion: number;
+  cachedInputPerMillion?: number | null;
+  cacheWritePerMillion?: number | null;
+  currency?: string | null;
+  asOf?: string | null;
+}
+
 export interface BenchmarkScoringProfileDto {
   id: number;
   name: string;
@@ -722,6 +731,14 @@ export interface BenchmarkRunDetailDto {
    */
   inFlightOrderIndexes?: number[];
 
+  estimatedCost?: number | null;
+  estimatedCandidateCost?: number | null;
+  estimatedAssessorCost?: number | null;
+  estimatedVerifierCost?: number | null;
+  costCurrency?: string | null;
+  pricingSource?: string | null;
+  pricingIncomplete?: boolean;
+
   answers: BenchmarkRunAnswerDto[];
 }
 
@@ -906,6 +923,9 @@ export interface BenchmarkRunSummaryDto {
   candidatePromptSourceUsed?: string | null;
   harnessVersion?: string | null;
   totalDurationMs: number;
+  estimatedCost?: number | null;
+  costCurrency?: string | null;
+  pricingIncomplete?: boolean;
 }
 
 @Injectable({

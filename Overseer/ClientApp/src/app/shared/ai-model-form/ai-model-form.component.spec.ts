@@ -21,7 +21,14 @@ describe('AiModelFormComponent', () => {
       supportedReasoningSummaries: [],
       contextWindowSize: 128000,
       maxInputTokens: 128000,
-      maxOutputTokens: 4096
+      maxOutputTokens: 4096,
+      defaultPricing: {
+        inputPerMillion: 5.0,
+        outputPerMillion: 15.0,
+        cachedInputPerMillion: 2.5,
+        currency: 'USD',
+        asOf: '2024-05-13'
+      }
     },
     {
       id: 'claude-3-5-sonnet',
@@ -595,6 +602,55 @@ describe('AiModelFormComponent', () => {
       component.pickerModelSelect = 'custom';
       component.onPickerModelSelect();
       expect(component.defaultThinkingLevelLabel).toBe('Default');
+    });
+  });
+
+  describe('Pricing logic', () => {
+    it('should render default price when model with pricing is selected', () => {
+      component.isAdmin = false;
+      fixture.detectChanges();
+      component.fetchModels();
+      component.pickerModelSelect = 'gpt-4o';
+      component.onPickerModelSelect();
+      fixture.detectChanges();
+
+      const html = fixture.nativeElement.innerHTML;
+      expect(html).toContain('Pricing');
+      expect(html).toContain('5 in / 15 out');
+      expect(html).toContain('(2.5 cached)');
+      expect(html).toContain('USD per 1M tokens (catalog, as of 2024-05-13)');
+    });
+
+    it('should render pricing block for admin too', () => {
+      component.isAdmin = true;
+      component.apiKey = 'dummy';
+      fixture.detectChanges();
+      component.fetchModels();
+      component.pickerModelSelect = 'claude-3-5-sonnet'; // no pricing
+      component.onPickerModelSelect();
+      fixture.detectChanges();
+
+      const html = fixture.nativeElement.innerHTML;
+      expect(html).toContain('Pricing');
+      expect(html).toContain('No price published in the model catalog');
+    });
+
+    it('should seed custom inputs from default pricing when switching to custom', () => {
+      component.isAdmin = false;
+      fixture.detectChanges();
+      component.fetchModels();
+      component.pickerModelSelect = 'gpt-4o';
+      component.onPickerModelSelect();
+
+      expect(component.pricingMode).toBe('default');
+      expect(component.inputPricePerMillion).toBeNull();
+      
+      component.pricingMode = 'custom';
+      component.onPricingModeChange();
+
+      expect(component.inputPricePerMillion).toBe(5.0);
+      expect(component.outputPricePerMillion).toBe(15.0);
+      expect(component.cachedInputPricePerMillion).toBe(2.5);
     });
   });
 });

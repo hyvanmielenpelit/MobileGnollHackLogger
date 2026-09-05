@@ -61,6 +61,14 @@
                   <span class="detail-label thinking ml-0">Service Tier:</span> {{ formatServiceTier(model.serviceTier) }}
                 </div>
               }
+              @if (formatPrice(model)) {
+                <div class="model-price-line" style="font-size: 0.85em; margin-top: 4px; color: var(--gh-text-secondary); display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                  <span>{{ formatPrice(model) }}</span>
+                  <span class="status-badge" [class.badge-custom]="getPricingBadge(model) === 'Custom'" [class.badge-catalog]="getPricingBadge(model) === 'Catalog'">
+                    {{ getPricingBadge(model) }}
+                  </span>
+                </div>
+              }
             </div>
           </div>
           <div class="model-actions">
@@ -121,6 +129,14 @@
                 @if (model.serviceTier) {
                   <div>
                     <span class="detail-label thinking ml-0">Service Tier:</span> {{ formatServiceTier(model.serviceTier) }}
+                  </div>
+                }
+                @if (formatPrice(model)) {
+                  <div class="model-price-line" style="font-size: 0.85em; margin-top: 4px; color: var(--gh-text-secondary); display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                    <span>{{ formatPrice(model) }}</span>
+                    <span class="status-badge" [class.badge-custom]="getPricingBadge(model) === 'Custom'" [class.badge-catalog]="getPricingBadge(model) === 'Catalog'">
+                      {{ getPricingBadge(model) }}
+                    </span>
                   </div>
                 }
               </div>

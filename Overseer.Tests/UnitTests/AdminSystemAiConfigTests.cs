@@ -40,7 +40,9 @@ public class AdminSystemAiConfigTests
 
         var cryptoService = new CryptoService(config);
         var governor = new AiRequestGovernor(config, NullLogger<AiRequestGovernor>.Instance);
-        var controller = new AdminController(db, config, null!, cryptoService, governor);
+        var metadataService = new ModelMetadataService();
+        var pricingService = new ModelPricingService(metadataService, db);
+        var controller = new AdminController(db, config, null!, cryptoService, governor, pricingService);
 
         return (controller, db, cryptoService);
     }
@@ -252,5 +254,160 @@ public class AdminSystemAiConfigTests
         var configs = Assert.IsAssignableFrom<IEnumerable<SystemAiApiConfigurationDto>>(okList.Value);
         var dto = configs.First();
         Assert.True(dto.HasApiKey);
+    }
+
+    [Fact]
+    public async Task CreateSystemConfig_WithCustomPricing_PersistsOverrides_AndReturnsEffectivePricing()
+    {
+        var (controller, db, _) = CreateTestController();
+        var ct = TestContext.Current.CancellationToken;
+
+        var request = new CreateSystemAiApiConfigurationRequest
+        {
+            DisplayName = "Custom Pricing Config",
+            Provider = "OpenAI",
+            ModelId = "gpt-5.6",
+            IsEnabled = true,
+            PricingMode = "custom",
+            InputPricePerMillion = 3.50m,
+            OutputPricePerMillion = 12.00m,
+            CachedInputPricePerMillion = 0.50m
+        };
+
+        var result = await controller.CreateSystemConfig(request);
+        Assert.IsType<OkObjectResult>(result);
+
+        var saved = await db.SystemAiApiConfigurations.FirstOrDefaultAsync(c => c.DisplayName == "Custom Pricing Config", ct);
+        Assert.NotNull(saved);
+        Assert.Equal("custom", saved.PricingMode);
+        Assert.Equal(3.50m, saved.InputPricePerMillion);
+        Assert.Equal(12.00m, saved.OutputPricePerMillion);
+        Assert.Equal(0.50m, saved.CachedInputPricePerMillion);
+
+        var listResult = await controller.GetSystemConfigs();
+        var okList = Assert.IsType<OkObjectResult>(listResult);
+        var configs = Assert.IsAssignableFrom<IEnumerable<SystemAiApiConfigurationDto>>(okList.Value);
+        var dto = configs.First(c => c.DisplayName == "Custom Pricing Config");
+        Assert.Equal("custom", dto.PricingMode);
+        Assert.Equal(3.50m, dto.EffectiveInputPricePerMillion);
+        Assert.Equal(12.00m, dto.EffectiveOutputPricePerMillion);
+        Assert.Equal(0.50m, dto.EffectiveCachedInputPricePerMillion);
+        Assert.Equal("custom", dto.PricingSource);
+    }
+
+    [Fact]
+    public async Task CreateSystemConfig_WithNegativePrice_ReturnsBadRequest()
+    {
+        var (controller, _, _) = CreateTestController();
+
+        var request = new CreateSystemAiApiConfigurationRequest
+        {
+            DisplayName = "Invalid Negative Price",
+            Provider = "OpenAI",
+            ModelId = "gpt-5.6",
+            IsEnabled = true,
+            PricingMode = "custom",
+            InputPricePerMillion = -1.00m,
+            OutputPricePerMillion = 10.00m
+        };
+
+        var result = await controller.CreateSystemConfig(request);
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Equal("Prices cannot be negative.", badRequest.Value);
+    }
+
+    [Fact]
+    public async Task CreateSystemConfig_WithCustomModeAndNullOutput_ReturnsBadRequest()
+    {
+        var (controller, _, _) = CreateTestController();
+
+        var request = new CreateSystemAiApiConfigurationRequest
+        {
+            DisplayName = "Missing Output Rate",
+            Provider = "OpenAI",
+            ModelId = "gpt-5.6",
+            IsEnabled = true,
+            PricingMode = "custom",
+            InputPricePerMillion = 2.50m,
+            OutputPricePerMillion = null
+        };
+
+        var result = await controller.CreateSystemConfig(request);
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Equal("Custom pricing requires both input and output prices per million.", badRequest.Value);
+    }
+
+    [Fact]
+    public async Task UpdateSystemConfig_WithCustomPricing_UpdatesFields()
+    {
+        var (controller, db, _) = CreateTestController();
+        var ct = TestContext.Current.CancellationToken;
+
+        var initial = new SystemAiApiConfiguration
+        {
+            DisplayName = "Initial Default Config",
+            Provider = "Anthropic",
+            ModelId = "claude-sonnet-4-6",
+            IsEnabled = true,
+            OrderIndex = 0,
+            PricingMode = "default"
+        };
+        db.SystemAiApiConfigurations.Add(initial);
+        await db.SaveChangesAsync(ct);
+
+        var updateRequest = new UpdateSystemAiApiConfigurationRequest
+        {
+            DisplayName = "Initial Default Config",
+            Provider = "Anthropic",
+            ModelId = "claude-sonnet-4-6",
+            IsEnabled = true,
+            PricingMode = "custom",
+            InputPricePerMillion = 4.00m,
+            OutputPricePerMillion = 18.00m,
+            CachedInputPricePerMillion = 0.40m
+        };
+
+        var updateResult = await controller.UpdateSystemConfig(initial.Id, updateRequest);
+        Assert.IsType<OkResult>(updateResult);
+
+        var updated = await db.SystemAiApiConfigurations.FindAsync(new object?[] { initial.Id }, ct);
+        Assert.NotNull(updated);
+        Assert.Equal("custom", updated.PricingMode);
+        Assert.Equal(4.00m, updated.InputPricePerMillion);
+        Assert.Equal(18.00m, updated.OutputPricePerMillion);
+        Assert.Equal(0.40m, updated.CachedInputPricePerMillion);
+    }
+
+    [Fact]
+    public async Task UpdateSystemConfig_WithNegativePrice_ReturnsBadRequest()
+    {
+        var (controller, db, _) = CreateTestController();
+        var ct = TestContext.Current.CancellationToken;
+
+        var initial = new SystemAiApiConfiguration
+        {
+            DisplayName = "Initial Config",
+            Provider = "OpenAI",
+            ModelId = "gpt-5.6",
+            IsEnabled = true,
+            OrderIndex = 0
+        };
+        db.SystemAiApiConfigurations.Add(initial);
+        await db.SaveChangesAsync(ct);
+
+        var updateRequest = new UpdateSystemAiApiConfigurationRequest
+        {
+            DisplayName = "Initial Config",
+            Provider = "OpenAI",
+            ModelId = "gpt-5.6",
+            IsEnabled = true,
+            PricingMode = "custom",
+            InputPricePerMillion = 2.00m,
+            OutputPricePerMillion = -5.00m
+        };
+
+        var updateResult = await controller.UpdateSystemConfig(initial.Id, updateRequest);
+        var badRequest = Assert.IsType<BadRequestObjectResult>(updateResult);
+        Assert.Equal("Prices cannot be negative.", badRequest.Value);
     }
 }

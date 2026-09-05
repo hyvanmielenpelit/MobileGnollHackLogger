@@ -14,6 +14,7 @@ public class UserAiSettings
     public bool ShowSourceCodeReferences { get; set; } = false;
     public bool ShowParallelBadge { get; set; } = true;
     public bool ShowContextWindowUsage { get; set; } = true;
+    public bool ShowChatCost { get; set; } = true;
     public int ShowThoughtsAndTools { get; set; } = 1;
 
     public int? MaxResultLength { get; set; }

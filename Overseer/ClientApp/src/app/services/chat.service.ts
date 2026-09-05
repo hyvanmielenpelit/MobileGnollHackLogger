@@ -52,6 +52,26 @@ export interface SubAgentInfo {
   isEnabled: boolean;
 }
 
+export interface ModelPricingDto {
+  inputPerMillion: number;
+  outputPerMillion: number;
+  cachedInputPerMillion?: number | null;
+  cacheWritePerMillion?: number | null;
+  currency?: string | null;
+  asOf?: string | null;
+}
+
+export interface ChatCostEventData {
+  estimatedCost?: number | null;
+  currency?: string | null;
+  source?: string | null;
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
+  isOperatorCost?: boolean;
+}
+
 export interface ChatMessage {
   id?: number;
   role: string;
@@ -69,6 +89,14 @@ export interface ChatMessage {
   contextOutputTokens?: number;
   contextWindowTokens?: number;
   contextInputLimitTokens?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
+  estimatedCost?: number | null;
+  pricingSource?: string | null;
+  costCurrency?: string | null;
+  isOperatorCost?: boolean;
 }
 
 /**
@@ -85,7 +113,7 @@ export interface ChatContextUsage {
 }
 
 export interface ChatStreamEvent {
-  type: 'chunk' | 'status' | 'debug' | 'error' | 'sessionId' | 'tool_start' | 'tool_result' | 'tool_error' | 'title_update' | 'thinking_chunk' | 'ttft' | 'duration' | 'context' | 'final';
+  type: 'chunk' | 'status' | 'debug' | 'error' | 'sessionId' | 'tool_start' | 'tool_result' | 'tool_error' | 'title_update' | 'thinking_chunk' | 'ttft' | 'duration' | 'context' | 'cost' | 'final';
   data: string;
   seqNo?: number;
 }

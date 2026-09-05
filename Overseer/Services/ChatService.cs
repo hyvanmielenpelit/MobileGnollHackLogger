@@ -905,6 +905,68 @@ public class ChatService
                 int totalPromptTokens = runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : estimatedInputTokens;
                 int totalOutputTokens = runResult.OutputTokens > 0 ? runResult.OutputTokens : (fullResponse.Length / 4);
 
+                int wholeTurnInputTokens = runResult.TotalPromptTokens > 0 ? runResult.UncachedInputTokens : estimatedInputTokens;
+                int wholeTurnOutputTokens = runResult.OutputTokens > 0 ? runResult.OutputTokens : (fullResponse.Length / 4);
+                long cacheReadTokens = runResult.CacheReadTokens;
+                long cacheCreationTokens = runResult.CacheCreationTokens;
+
+                var pricingService = scope.ServiceProvider.GetRequiredService<ModelPricingService>();
+                ModelPricing? resolvedPricing = null;
+
+                if (systemModelId.HasValue)
+                {
+                    var sysConfig = await dbContext.SystemAiApiConfigurations.FindAsync(systemModelId.Value);
+                    if (sysConfig != null)
+                    {
+                        resolvedPricing = pricingService.Resolve(sysConfig);
+                    }
+                }
+                else
+                {
+                    var userModel = await dbContext.UserAiModels
+                        .FirstOrDefaultAsync(m => m.AspNetUserId == userId && m.Provider == provider && m.ModelId == model);
+                    if (userModel != null)
+                    {
+                        resolvedPricing = pricingService.Resolve(userModel);
+                    }
+                    else
+                    {
+                        resolvedPricing = pricingService.ResolveDefault(provider, model);
+                    }
+                }
+
+                decimal? estimatedCost = null;
+                string? costCurrency = null;
+                string? pricingSource = null;
+
+                if (resolvedPricing != null)
+                {
+                    estimatedCost = ModelPricingService.ComputeCost(
+                        resolvedPricing,
+                        wholeTurnInputTokens,
+                        wholeTurnOutputTokens,
+                        cacheReadTokens,
+                        cacheCreationTokens);
+                    costCurrency = resolvedPricing.Currency;
+                    pricingSource = resolvedPricing.Source == ModelPricingSource.Custom ? "custom" : "catalog";
+
+                    yield return new ChatEvent
+                    {
+                        Type = "cost",
+                        Data = JsonSerializer.Serialize(new
+                        {
+                            estimatedCost = estimatedCost,
+                            currency = costCurrency,
+                            source = pricingSource,
+                            inputTokens = wholeTurnInputTokens,
+                            outputTokens = wholeTurnOutputTokens,
+                            cacheReadTokens = cacheReadTokens,
+                            cacheCreationTokens = cacheCreationTokens,
+                            isOperatorCost = systemModelId.HasValue
+                        })
+                    };
+                }
+
                 var asstMsg = new ChatMessage
                 {
                     ChatSessionId = currentSessionId,
@@ -925,7 +987,14 @@ public class ChatService
                     ContextPromptTokens = runResult.LastPromptTokens > 0 ? runResult.LastPromptTokens : null,
                     ContextOutputTokens = runResult.LastPromptTokens > 0 ? runResult.LastOutputTokens : null,
                     ContextWindowTokens = contextWindowTokens,
-                    ContextInputLimitTokens = contextInputLimitTokens
+                    ContextInputLimitTokens = contextInputLimitTokens,
+                    InputTokens = wholeTurnInputTokens,
+                    OutputTokens = wholeTurnOutputTokens,
+                    CacheReadTokens = (int)Math.Min(int.MaxValue, cacheReadTokens),
+                    CacheCreationTokens = (int)Math.Min(int.MaxValue, cacheCreationTokens),
+                    EstimatedCost = estimatedCost,
+                    PricingSource = pricingSource,
+                    CostCurrency = costCurrency
                 };
                 dbContext.ChatMessage.Add(asstMsg);
                 session.LastMessageUtc = DateTime.UtcNow;
@@ -933,13 +1002,11 @@ public class ChatService
                 if (systemModelId.HasValue)
                 {
                     var systemAiConfigService = scope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
-                    int inputTokens = runResult.TotalPromptTokens > 0 ? runResult.UncachedInputTokens : estimatedInputTokens;
-                    int outputTokens = runResult.OutputTokens > 0 ? runResult.OutputTokens : (fullResponse.Length / 4);
                     await systemAiConfigService.RecordUsageAsync(
                         systemModelId.Value,
                         userId,
-                        inputTokens,
-                        outputTokens,
+                        wholeTurnInputTokens,
+                        wholeTurnOutputTokens,
                         roleContext: 1,
                         cacheReadTokens: runResult.CacheReadTokens,
                         cacheCreationTokens: runResult.CacheCreationTokens,

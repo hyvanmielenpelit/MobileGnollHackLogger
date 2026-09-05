@@ -15,6 +15,7 @@
     <File Path="docs/overseer/anthropic-model-latency-measurements.md" />
     <File Path="docs/overseer/changelog-guide.md" />
     <File Path="docs/overseer/chat-data-retention.md" />
+    <File Path="docs/overseer/chat-response-telemetry.md" />
     <File Path="docs/overseer/commands.md" />
     <File Path="docs/overseer/gemini-service-tier-measurements.md" />
     <File Path="docs/overseer/release-checklist.md" />

@@ -755,6 +755,55 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     return lower !== 'default' && lower !== 'standard';
   }
 
+  formatPickerPrice(config: SystemAiConfigDto): string {
+    if (config.effectiveInputPricePerMillion == null || config.effectiveOutputPricePerMillion == null) return '';
+    const currency = config.pricingCurrency ?? 'USD';
+    const numPipe = new DecimalPipe('en-US');
+    const inPrice = numPipe.transform(config.effectiveInputPricePerMillion, '1.2-2');
+    const outPrice = numPipe.transform(config.effectiveOutputPricePerMillion, '1.2-2');
+    return `${inPrice}/${outPrice} ${currency} per 1M`;
+  }
+
+  get estimatedRunCostSoFar(): number | null {
+    if (!this.activeRunDetail || !this.activeRunDetail.testedModelConfigurationId) return null;
+    const config = this.benchmarkCapableConfigs.find(c => c.id === this.activeRunDetail!.testedModelConfigurationId);
+    if (!config || config.effectiveInputPricePerMillion == null || config.effectiveOutputPricePerMillion == null) return null;
+
+    let inputTokens = this.activeRunDetail.totalInputTokens ?? 0;
+    const outputTokens = this.activeRunDetail.totalOutputTokens ?? 0;
+    const cacheReadTokens = this.activeRunDetail.totalCacheReadTokens ?? 0;
+
+    let cost = 0;
+    cost += (outputTokens / 1000000) * config.effectiveOutputPricePerMillion;
+
+    if (config.effectiveCachedInputPricePerMillion != null && cacheReadTokens > 0 && inputTokens >= cacheReadTokens) {
+      const uncached = inputTokens - cacheReadTokens;
+      cost += (uncached / 1000000) * config.effectiveInputPricePerMillion;
+      cost += (cacheReadTokens / 1000000) * config.effectiveCachedInputPricePerMillion;
+    } else {
+      cost += (inputTokens / 1000000) * config.effectiveInputPricePerMillion;
+    }
+
+    return cost;
+  }
+
+  get estimatedRunCostCurrencySoFar(): string {
+    if (!this.activeRunDetail || !this.activeRunDetail.testedModelConfigurationId) return '$';
+    const config = this.benchmarkCapableConfigs.find(c => c.id === this.activeRunDetail!.testedModelConfigurationId);
+    return config?.pricingCurrency ?? 'USD';
+  }
+
+  formatRunEstimatedCost(run: BenchmarkRunSummaryDto | BenchmarkRunDetailDto): string {
+    if (run.estimatedCost == null) return '-';
+    const currency = run.costCurrency ?? '$';
+    const numPipe = new DecimalPipe('en-US');
+    const formatted = numPipe.transform(run.estimatedCost, '1.2-4');
+    if (currency.length > 1) {
+      return `${formatted} ${currency}`;
+    }
+    return `${currency}${formatted}`;
+  }
+
   formatSecondOpinionMode(mode: number | null | undefined): string {
     const resolvedMode = mode ?? this.secondOpinionMode;
     const option = this.secondOpinionModeOptions.find(o => o.value === resolvedMode);

@@ -25,8 +25,17 @@ public class SettingsController : ControllerBase
     private readonly RecommendedModelService _recommendedModelService;
     private readonly IAuthorizationService _authorizationService;
     private readonly IEnumerable<IAiProvider> _aiProviders;
+    private readonly ModelPricingService? _modelPricingService;
 
-    public SettingsController(SettingsService settingsService, IHttpClientFactory httpClientFactory, IConfiguration configuration, ModelMetadataService modelMetadataService, RecommendedModelService recommendedModelService, IAuthorizationService authorizationService, IEnumerable<IAiProvider> aiProviders)
+    public SettingsController(
+        SettingsService settingsService,
+        IHttpClientFactory httpClientFactory,
+        IConfiguration configuration,
+        ModelMetadataService modelMetadataService,
+        RecommendedModelService recommendedModelService,
+        IAuthorizationService authorizationService,
+        IEnumerable<IAiProvider> aiProviders,
+        ModelPricingService? modelPricingService = null)
     {
         _settingsService = settingsService;
         _httpClientFactory = httpClientFactory;
@@ -35,6 +44,7 @@ public class SettingsController : ControllerBase
         _recommendedModelService = recommendedModelService;
         _authorizationService = authorizationService;
         _aiProviders = aiProviders;
+        _modelPricingService = modelPricingService;
     }
 
     [HttpGet]
@@ -97,6 +107,7 @@ public class SettingsController : ControllerBase
             showThoughtsAndTools = settings?.ShowThoughtsAndTools ?? 0,
             showParallelBadge = settings?.ShowParallelBadge ?? true,
             showContextWindowUsage = settings?.ShowContextWindowUsage ?? true,
+            showChatCost = settings?.ShowChatCost ?? true,
             parallelBadgeEnabled = _configuration.GetValue<bool>("ParallelExecutionSettings:ShowBadge", true),
             requestTimeout = settings?.RequestTimeout,
             showDebugLog = showDebugLog,
@@ -189,7 +200,7 @@ public class SettingsController : ControllerBase
                 return BadRequest($"RequestTimeout must be between {min} and {max}");
         }
 
-        await _settingsService.SaveSettingsAsync(userId, request.SpoilerFreeMode, request.EnableWebSearch, request.EnableToolUse, request.EnableClientTools, request.EnableGameActions, request.ShowSourceCodeReferences, request.MaxResultLength, request.MaxCallsPerSession, request.MaxToolIterations, request.MaxParallelToolCalls, request.ShowThoughtsAndTools, request.RequestTimeout, request.EnableSubAgents, request.ShowParallelBadge, request.ShowContextWindowUsage);
+        await _settingsService.SaveSettingsAsync(userId, request.SpoilerFreeMode, request.EnableWebSearch, request.EnableToolUse, request.EnableClientTools, request.EnableGameActions, request.ShowSourceCodeReferences, request.MaxResultLength, request.MaxCallsPerSession, request.MaxToolIterations, request.MaxParallelToolCalls, request.ShowThoughtsAndTools, request.RequestTimeout, request.EnableSubAgents, request.ShowParallelBadge, request.ShowContextWindowUsage, request.ShowChatCost);
         
         return Ok();
     }
@@ -276,41 +287,67 @@ public class SettingsController : ControllerBase
             StringComparer.OrdinalIgnoreCase);
 
         var models = await _settingsService.GetUserModelsAsync(userId);
-        var dtos = models.Select(m => new {
-            Id = m.Id,
-            Provider = m.Provider,
-            ModelId = m.ModelId,
-            DisplayName = (string?)m.DisplayName,
-            DisplayNameMode = (string?)m.DisplayNameMode,
-            ThinkingLevel = (string?)m.ThinkingLevel,
-            OrderIndex = m.OrderIndex,
-            MaxInputTokens = (int?)m.MaxInputTokens,
-            MaxOutputTokens = (int?)m.MaxOutputTokens,
-            ReasoningMode = m.ReasoningMode,
-            ReasoningSummary = m.ReasoningSummary,
-            ServiceTier = m.ServiceTier,
-            IsSystem = false,
-            ModelRole = 3,
-            ParallelExecutionMode = keyModeMap.TryGetValue(m.Provider, out var mode) ? mode : 2
+        var dtos = models.Select(m => {
+            var resolvedPricing = _modelPricingService?.Resolve(m);
+            return new {
+                Id = m.Id,
+                Provider = m.Provider,
+                ModelId = m.ModelId,
+                DisplayName = (string?)m.DisplayName,
+                DisplayNameMode = (string?)m.DisplayNameMode,
+                ThinkingLevel = (string?)m.ThinkingLevel,
+                OrderIndex = m.OrderIndex,
+                MaxInputTokens = (int?)m.MaxInputTokens,
+                MaxOutputTokens = (int?)m.MaxOutputTokens,
+                ReasoningMode = m.ReasoningMode,
+                ReasoningSummary = m.ReasoningSummary,
+                ServiceTier = m.ServiceTier,
+                IsSystem = false,
+                ModelRole = 3,
+                ParallelExecutionMode = keyModeMap.TryGetValue(m.Provider, out var mode) ? mode : 2,
+                PricingMode = m.PricingMode,
+                InputPricePerMillion = m.InputPricePerMillion,
+                OutputPricePerMillion = m.OutputPricePerMillion,
+                CachedInputPricePerMillion = m.CachedInputPricePerMillion,
+                EffectiveInputPricePerMillion = resolvedPricing?.InputPerMillion,
+                EffectiveOutputPricePerMillion = resolvedPricing?.OutputPerMillion,
+                EffectiveCachedInputPricePerMillion = resolvedPricing?.CachedInputPerMillion,
+                PricingSource = resolvedPricing != null ? (resolvedPricing.Source == ModelPricingSource.Custom ? "custom" : "catalog") : "unknown",
+                PricingCurrency = resolvedPricing?.Currency,
+                PricingAsOf = resolvedPricing?.AsOf
+            };
         }).ToList();
 
         var systemConfigs = await _settingsService.GetResolvedSystemModelsAsync(userId);
-        var sysDtos = systemConfigs.Select(x => new {
-            Id = x.Config.Id,
-            Provider = x.Config.Provider,
-            ModelId = x.Config.ModelId,
-            DisplayName = (string?)x.Config.DisplayName,
-            DisplayNameMode = (string?)x.Config.DisplayNameMode,
-            ThinkingLevel = (string?)x.Config.ThinkingLevel,
-            OrderIndex = x.Config.OrderIndex,
-            MaxInputTokens = (int?)x.Config.MaxInputTokens,
-            MaxOutputTokens = (int?)x.Config.MaxOutputTokens,
-            ReasoningMode = x.Config.ReasoningMode,
-            ReasoningSummary = x.Config.ReasoningSummary,
-            ServiceTier = x.Config.ServiceTier,
-            IsSystem = true,
-            ModelRole = x.ResolvedRole,
-            ParallelExecutionMode = (int)x.Config.ParallelExecutionMode
+        var sysDtos = systemConfigs.Select(x => {
+            var resolvedPricing = _modelPricingService?.Resolve(x.Config);
+            return new {
+                Id = x.Config.Id,
+                Provider = x.Config.Provider,
+                ModelId = x.Config.ModelId,
+                DisplayName = (string?)x.Config.DisplayName,
+                DisplayNameMode = (string?)x.Config.DisplayNameMode,
+                ThinkingLevel = (string?)x.Config.ThinkingLevel,
+                OrderIndex = x.Config.OrderIndex,
+                MaxInputTokens = (int?)x.Config.MaxInputTokens,
+                MaxOutputTokens = (int?)x.Config.MaxOutputTokens,
+                ReasoningMode = x.Config.ReasoningMode,
+                ReasoningSummary = x.Config.ReasoningSummary,
+                ServiceTier = x.Config.ServiceTier,
+                IsSystem = true,
+                ModelRole = x.ResolvedRole,
+                ParallelExecutionMode = (int)x.Config.ParallelExecutionMode,
+                PricingMode = x.Config.PricingMode,
+                InputPricePerMillion = x.Config.InputPricePerMillion,
+                OutputPricePerMillion = x.Config.OutputPricePerMillion,
+                CachedInputPricePerMillion = x.Config.CachedInputPricePerMillion,
+                EffectiveInputPricePerMillion = resolvedPricing?.InputPerMillion,
+                EffectiveOutputPricePerMillion = resolvedPricing?.OutputPerMillion,
+                EffectiveCachedInputPricePerMillion = resolvedPricing?.CachedInputPerMillion,
+                PricingSource = resolvedPricing != null ? (resolvedPricing.Source == ModelPricingSource.Custom ? "custom" : "catalog") : "unknown",
+                PricingCurrency = resolvedPricing?.Currency,
+                PricingAsOf = resolvedPricing?.AsOf
+            };
         });
 
         dtos.AddRange(sysDtos);
@@ -325,6 +362,22 @@ public class SettingsController : ControllerBase
         if (userId == null) return Unauthorized();
         if (string.IsNullOrEmpty(request.Provider) || string.IsNullOrEmpty(request.ModelId)) return BadRequest();
 
+        if ((request.InputPricePerMillion.HasValue && request.InputPricePerMillion.Value < 0) ||
+            (request.OutputPricePerMillion.HasValue && request.OutputPricePerMillion.Value < 0) ||
+            (request.CachedInputPricePerMillion.HasValue && request.CachedInputPricePerMillion.Value < 0))
+        {
+            return BadRequest("Prices cannot be negative.");
+        }
+
+        string normalizedPricingMode = PricingModes.Normalize(request.PricingMode);
+        if (string.Equals(normalizedPricingMode, PricingModes.Custom, StringComparison.OrdinalIgnoreCase))
+        {
+            if (!request.InputPricePerMillion.HasValue || !request.OutputPricePerMillion.HasValue)
+            {
+                return BadRequest("Custom pricing requires both input and output prices per million.");
+            }
+        }
+
         var model = new MobileGnollHackLogger.Data.UserAiModel
         {
             Provider = request.Provider,
@@ -336,7 +389,11 @@ public class SettingsController : ControllerBase
             ReasoningSummary = request.ReasoningSummary,
             ServiceTier = request.ServiceTier,
             MaxInputTokens = request.MaxInputTokens,
-            MaxOutputTokens = request.MaxOutputTokens
+            MaxOutputTokens = request.MaxOutputTokens,
+            PricingMode = normalizedPricingMode,
+            InputPricePerMillion = request.InputPricePerMillion,
+            OutputPricePerMillion = request.OutputPricePerMillion,
+            CachedInputPricePerMillion = request.CachedInputPricePerMillion
         };
         await _settingsService.AddUserModelAsync(userId, model);
         return Ok(new { model.Id });
@@ -347,6 +404,22 @@ public class SettingsController : ControllerBase
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (userId == null) return Unauthorized();
+
+        if ((request.InputPricePerMillion.HasValue && request.InputPricePerMillion.Value < 0) ||
+            (request.OutputPricePerMillion.HasValue && request.OutputPricePerMillion.Value < 0) ||
+            (request.CachedInputPricePerMillion.HasValue && request.CachedInputPricePerMillion.Value < 0))
+        {
+            return BadRequest("Prices cannot be negative.");
+        }
+
+        string normalizedPricingMode = PricingModes.Normalize(request.PricingMode);
+        if (string.Equals(normalizedPricingMode, PricingModes.Custom, StringComparison.OrdinalIgnoreCase))
+        {
+            if (!request.InputPricePerMillion.HasValue || !request.OutputPricePerMillion.HasValue)
+            {
+                return BadRequest("Custom pricing requires both input and output prices per million.");
+            }
+        }
 
         await _settingsService.UpdateUserModelAsync(
             userId,
@@ -360,7 +433,11 @@ public class SettingsController : ControllerBase
             request.MaxInputTokens,
             request.MaxOutputTokens,
             request.ModelId,
-            request.Provider
+            request.Provider,
+            normalizedPricingMode,
+            request.InputPricePerMillion,
+            request.OutputPricePerMillion,
+            request.CachedInputPricePerMillion
         );
         return Ok();
     }
@@ -473,7 +550,7 @@ public class SettingsController : ControllerBase
                                 created = createdElement.GetInt64();
                             }
                             
-                            models.Add(new ApiModelDto { Id = name, DisplayName = meta.DisplayName, CreatedAt = created, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels, SupportedReasoningModes = meta.SupportedReasoningModes, SupportedReasoningSummaries = meta.SupportedReasoningSummaries, ContextWindowSize = meta.ContextWindowSize, MaxInputTokens = meta.MaxInputTokens, MaxOutputTokens = meta.MaxOutputTokens });
+                            models.Add(new ApiModelDto { Id = name, DisplayName = meta.DisplayName, CreatedAt = created, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels, SupportedReasoningModes = meta.SupportedReasoningModes, SupportedReasoningSummaries = meta.SupportedReasoningSummaries, ContextWindowSize = meta.ContextWindowSize, MaxInputTokens = meta.MaxInputTokens, MaxOutputTokens = meta.MaxOutputTokens, DefaultPricing = meta.DefaultPricing });
                         }
                     }
                 }
@@ -514,7 +591,7 @@ public class SettingsController : ControllerBase
                                 }
                             }
                             
-                            var apiModelDto = new ApiModelDto { Id = name, DisplayName = meta.DisplayName, CreatedAt = created, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels, SupportedReasoningModes = meta.SupportedReasoningModes, SupportedReasoningSummaries = meta.SupportedReasoningSummaries, ContextWindowSize = meta.ContextWindowSize, MaxInputTokens = meta.MaxInputTokens, MaxOutputTokens = meta.MaxOutputTokens };
+                            var apiModelDto = new ApiModelDto { Id = name, DisplayName = meta.DisplayName, CreatedAt = created, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels, SupportedReasoningModes = meta.SupportedReasoningModes, SupportedReasoningSummaries = meta.SupportedReasoningSummaries, ContextWindowSize = meta.ContextWindowSize, MaxInputTokens = meta.MaxInputTokens, MaxOutputTokens = meta.MaxOutputTokens, DefaultPricing = meta.DefaultPricing };
 
                             var anthropicDefaultEffort = _configuration.GetValue<string>("AnthropicSettings:ExplicitDefaultEffort") ?? "high";
                             // Left null when disabled: behaviour then reverts to the model's own API default, which
@@ -558,7 +635,7 @@ public class SettingsController : ControllerBase
                                 created = dto.ToUnixTimeSeconds();
                             }
                             
-                            models.Add(new ApiModelDto { Id = name, DisplayName = meta.DisplayName, CreatedAt = created, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels, SupportedReasoningModes = meta.SupportedReasoningModes, SupportedReasoningSummaries = meta.SupportedReasoningSummaries, ContextWindowSize = meta.ContextWindowSize, MaxInputTokens = meta.MaxInputTokens, MaxOutputTokens = meta.MaxOutputTokens });
+                            models.Add(new ApiModelDto { Id = name, DisplayName = meta.DisplayName, CreatedAt = created, Description = meta.Description, SupportedThinkingLevels = meta.SupportedThinkingLevels, SupportedReasoningModes = meta.SupportedReasoningModes, SupportedReasoningSummaries = meta.SupportedReasoningSummaries, ContextWindowSize = meta.ContextWindowSize, MaxInputTokens = meta.MaxInputTokens, MaxOutputTokens = meta.MaxOutputTokens, DefaultPricing = meta.DefaultPricing });
                         }
                     }
                 }
@@ -623,6 +700,8 @@ public class ApiModelDto
     /// kill switch is engaged) — the client then shows a plain "Default".
     /// </summary>
     public string? DefaultThinkingLevel { get; set; }
+
+    public ModelCatalogPricing? DefaultPricing { get; set; }
 }
 
 public class UpdateSettingsRequest
@@ -641,6 +720,7 @@ public class UpdateSettingsRequest
     public int? ShowThoughtsAndTools { get; set; }
     public bool? ShowParallelBadge { get; set; }
     public bool? ShowContextWindowUsage { get; set; }
+    public bool? ShowChatCost { get; set; }
     public int? RequestTimeout { get; set; }
 }
 
@@ -667,6 +747,10 @@ public class AddUserModelRequest
     public string? ServiceTier { get; set; }
     public int? MaxInputTokens { get; set; }
     public int? MaxOutputTokens { get; set; }
+    public string? PricingMode { get; set; }
+    public decimal? InputPricePerMillion { get; set; }
+    public decimal? OutputPricePerMillion { get; set; }
+    public decimal? CachedInputPricePerMillion { get; set; }
 }
 
 public class UpdateUserModelRequest
@@ -681,6 +765,10 @@ public class UpdateUserModelRequest
     public string? ServiceTier { get; set; }
     public int? MaxInputTokens { get; set; }
     public int? MaxOutputTokens { get; set; }
+    public string? PricingMode { get; set; }
+    public decimal? InputPricePerMillion { get; set; }
+    public decimal? OutputPricePerMillion { get; set; }
+    public decimal? CachedInputPricePerMillion { get; set; }
 }
 
 public class ReorderModelsRequest

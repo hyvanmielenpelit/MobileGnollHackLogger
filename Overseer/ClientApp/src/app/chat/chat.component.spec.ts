@@ -400,6 +400,75 @@ describe('ChatComponent session loading and exclusivity', () => {
         jasmine.clock().uninstall();
       }
     });
+
+    it('should update liveCost, liveCostCurrency, and liveIsOperatorCost when cost event is received', () => {
+      expect(component.liveCost).toBeNull();
+      component.processChatEvent({ type: 'cost', data: JSON.stringify({ cost: 0.0015, currency: 'USD', isOperatorCost: true }) });
+      expect(component.liveCost).toBe(0.0015);
+      expect(component.liveCostCurrency).toBe('USD');
+      expect(component.liveIsOperatorCost).toBeTrue();
+    });
+
+    it('should calculate totalLoadedCost correctly for loaded messages and live stream', () => {
+      component.messages = [
+        { role: 'user', content: 'hello' } as any,
+        { role: 'assistant', content: 'hi', estimatedCost: 0.01, costCurrency: 'USD' } as any,
+        { role: 'assistant', content: 'test', estimatedCost: 0.02, costCurrency: 'USD' } as any,
+      ];
+      component.liveCost = 0.005;
+      expect(component.totalLoadedCost).toBeCloseTo(0.035, 4);
+    });
+
+    it('should format cost correctly based on value and currency', () => {
+      expect(component.formatCost(null)).toBe('');
+      expect(component.formatCost(0.005, 'USD')).toBe('$0.0050');
+      expect(component.formatCost(0.05, 'USD')).toBe('$0.05');
+      expect(component.formatCost(0, 'USD')).toBe('$0.00');
+      expect(component.formatCost(0.005, 'EUR')).toBe('0.0050 EUR');
+      expect(component.formatCost(0.05, 'EUR')).toBe('0.05 EUR');
+    });
+
+    it('should render estimatedCost in the TTFT container for a loaded message', () => {
+      component.messages = [{ role: 'assistant', content: 'test', timeToFirstTokenMs: 1000, estimatedCost: 0.015, costCurrency: 'USD', isOperatorCost: true } as any];
+      component.showChatCost = true;
+      fixture.detectChanges();
+      const compiled = fixture.nativeElement as HTMLElement;
+      const costBadge = compiled.querySelector('.message-box.assistant .cost-badge');
+      expect(costBadge).toBeTruthy();
+      expect(costBadge?.textContent).toContain('$0.01');
+      expect(costBadge?.textContent).toContain('(operator)');
+    });
+
+    it('should update the live footer with cost when streaming', () => {
+      component.isStreaming = true;
+      component.showChatCost = true;
+      component.liveCost = 0.005;
+      component.liveCostCurrency = 'USD';
+      component.liveIsOperatorCost = false;
+      fixture.detectChanges();
+      const compiled = fixture.nativeElement as HTMLElement;
+      const messageBoxes = compiled.querySelectorAll('.message-box.assistant');
+      const liveBox = messageBoxes[messageBoxes.length - 1];
+      const costBadge = liveBox?.querySelector('.cost-badge');
+      expect(costBadge).toBeTruthy();
+      expect(costBadge?.textContent).toContain('$0.0050');
+      expect(costBadge?.textContent).not.toContain('(operator)');
+    });
+
+    it('should not render chat costs when showChatCost is false', () => {
+      component.messages = [{ role: 'assistant', content: 'test', timeToFirstTokenMs: 1000, estimatedCost: 0.015, costCurrency: 'USD' } as any];
+      component.isStreaming = true;
+      component.liveCost = 0.005;
+      component.liveCostCurrency = 'USD';
+      component.showChatCost = false;
+      fixture.detectChanges();
+      const compiled = fixture.nativeElement as HTMLElement;
+      const costBadges = compiled.querySelectorAll('.cost-badge');
+      expect(costBadges.length).toBe(0);
+      
+      const totalCostIndicator = compiled.querySelector('.chat-cost-indicator');
+      expect(totalCostIndicator).toBeFalsy();
+    });
   });
 
   describe('ChatComponent network error resilience vs normal handling', () => {

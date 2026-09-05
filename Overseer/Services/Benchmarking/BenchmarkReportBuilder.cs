@@ -268,7 +268,7 @@ public static class BenchmarkReportBuilder
             : (sorted[mid - 1] + sorted[mid]) / 2.0;
     }
 
-    public static string BuildMarkdownReport(BenchmarkRun run, string? overseerVersion = null, ModelPricingService? pricingService = null)
+    public static string BuildMarkdownReport(BenchmarkRun run, string? overseerVersion = null, BenchmarkRunPricing? runPricing = null)
     {
         var sb = new StringBuilder();
         // Read back from the run's own profile snapshot, so the report describes the run in
@@ -741,11 +741,11 @@ public static class BenchmarkReportBuilder
             bool hasAssessor = run.TotalAssessmentInputTokens > 0 || run.TotalAssessmentOutputTokens > 0;
             bool hasVerifier = run.TotalClaimVerificationInputTokens > 0 || run.TotalClaimVerificationOutputTokens > 0;
 
-            var candidatePricing = pricingService?.GetPricing(run.TestedModelIdUsed);
-            var assessorPricing = hasAssessor ? pricingService?.GetPricing(run.AssessorModelIdUsed) : null;
-            var verifierPricing = hasVerifier ? pricingService?.GetPricing(run.ClaimVerifierModelIdUsed) : null;
+            var candidatePricing = runPricing?.Candidate;
+            var assessorPricing = hasAssessor ? runPricing?.Assessor : null;
+            var verifierPricing = hasVerifier ? runPricing?.ClaimVerifier : null;
 
-            bool canEstimateCost = pricingService != null &&
+            bool canEstimateCost = runPricing != null &&
                 candidatePricing != null &&
                 (!hasAssessor || assessorPricing != null) &&
                 (!hasVerifier || verifierPricing != null);
@@ -755,67 +755,121 @@ public static class BenchmarkReportBuilder
                 long cachedInTokens = run.TotalCacheReadTokens;
                 long uncachedInTokens = Math.Max(0, run.TotalInputTokens - cachedInTokens);
 
-                decimal candidateInCost;
-                if (candidatePricing!.CachedInputPerMillion.HasValue)
-                {
-                    candidateInCost = (uncachedInTokens / 1_000_000m * candidatePricing.InputPerMillion) +
-                                      (cachedInTokens / 1_000_000m * candidatePricing.CachedInputPerMillion.Value);
-                }
-                else
-                {
-                    candidateInCost = run.TotalInputTokens / 1_000_000m * candidatePricing.InputPerMillion;
-                }
+                decimal candidateInCost = (uncachedInTokens / 1_000_000m * candidatePricing!.InputPerMillion) +
+                                          (cachedInTokens / 1_000_000m * (candidatePricing.CachedInputPerMillion ?? candidatePricing.InputPerMillion));
                 decimal candidateOutCost = run.TotalOutputTokens / 1_000_000m * candidatePricing.OutputPerMillion;
-                decimal candidateTotalCost = candidateInCost + candidateOutCost;
+                decimal candidateCacheWriteCost = (run.TotalCacheCreationTokens > 0 && candidatePricing.CacheWritePerMillion.HasValue)
+                    ? (run.TotalCacheCreationTokens / 1_000_000m * candidatePricing.CacheWritePerMillion.Value)
+                    : 0m;
+                decimal candidateTotalCost = ModelPricingService.ComputeCost(candidatePricing, uncachedInTokens, run.TotalOutputTokens, cachedInTokens, run.TotalCacheCreationTokens);
 
+                decimal assessorTotalCost = 0m;
                 decimal assessorInCost = 0m;
                 decimal assessorOutCost = 0m;
-                decimal assessorTotalCost = 0m;
                 if (hasAssessor && assessorPricing != null)
                 {
                     assessorInCost = run.TotalAssessmentInputTokens / 1_000_000m * assessorPricing.InputPerMillion;
                     assessorOutCost = run.TotalAssessmentOutputTokens / 1_000_000m * assessorPricing.OutputPerMillion;
-                    assessorTotalCost = assessorInCost + assessorOutCost;
+                    assessorTotalCost = ModelPricingService.ComputeCost(assessorPricing, run.TotalAssessmentInputTokens, run.TotalAssessmentOutputTokens);
                 }
 
+                decimal verifierTotalCost = 0m;
                 decimal verifierInCost = 0m;
                 decimal verifierOutCost = 0m;
-                decimal verifierTotalCost = 0m;
                 if (hasVerifier && verifierPricing != null)
                 {
                     verifierInCost = run.TotalClaimVerificationInputTokens / 1_000_000m * verifierPricing.InputPerMillion;
                     verifierOutCost = run.TotalClaimVerificationOutputTokens / 1_000_000m * verifierPricing.OutputPerMillion;
-                    verifierTotalCost = verifierInCost + verifierOutCost;
+                    verifierTotalCost = ModelPricingService.ComputeCost(verifierPricing, run.TotalClaimVerificationInputTokens, run.TotalClaimVerificationOutputTokens);
                 }
 
-                decimal totalCost = candidateTotalCost + assessorTotalCost + verifierTotalCost;
+                string Curr(string? currency) => string.Equals(currency, "USD", StringComparison.OrdinalIgnoreCase) ? "$" : $"{currency} ";
 
-                sb.AppendLine($"- **Estimated Cost:** ${Inv(totalCost, "F2")} total");
-                if (candidatePricing.CachedInputPerMillion.HasValue && cachedInTokens > 0)
+                var currencies = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { candidatePricing.Currency };
+                if (hasAssessor && assessorPricing != null) currencies.Add(assessorPricing.Currency);
+                if (hasVerifier && verifierPricing != null) currencies.Add(verifierPricing.Currency);
+
+                bool sameCurrency = currencies.Count == 1;
+                if (sameCurrency)
                 {
-                    decimal uncachedCost = uncachedInTokens / 1_000_000m * candidatePricing.InputPerMillion;
-                    decimal cachedCost = cachedInTokens / 1_000_000m * candidatePricing.CachedInputPerMillion.Value;
-                    sb.AppendLine($"  - Candidate ({run.TestedModelIdUsed}): ${Inv(candidateTotalCost, "F2")} (uncached in: ${Inv(uncachedCost, "F2")}, cached in: ${Inv(cachedCost, "F2")}, out: ${Inv(candidateOutCost, "F2")})");
+                    decimal totalCost = candidateTotalCost + assessorTotalCost + verifierTotalCost;
+                    sb.AppendLine($"- **Estimated Cost:** {Curr(candidatePricing.Currency)}{Inv(totalCost, "F2")} total");
                 }
                 else
                 {
-                    sb.AppendLine($"  - Candidate ({run.TestedModelIdUsed}): ${Inv(candidateTotalCost, "F2")} (in: ${Inv(candidateInCost, "F2")}, out: ${Inv(candidateOutCost, "F2")})");
+                    sb.AppendLine("- **Estimated Cost:** *Roles are priced in different currencies; no total is shown.*");
                 }
 
-                if (hasAssessor)
+                if (candidatePricing.CachedInputPerMillion.HasValue && cachedInTokens > 0)
                 {
-                    sb.AppendLine($"  - Assessor ({run.AssessorModelIdUsed}): ${Inv(assessorTotalCost, "F2")} (in: ${Inv(assessorInCost, "F2")}, out: ${Inv(assessorOutCost, "F2")})");
+                    decimal uncachedCost = uncachedInTokens / 1_000_000m * candidatePricing.InputPerMillion;
+                    decimal cachedCost = cachedInTokens / 1_000_000m * (candidatePricing.CachedInputPerMillion ?? candidatePricing.InputPerMillion);
+                    if (candidateCacheWriteCost > 0)
+                    {
+                        sb.AppendLine($"  - Candidate ({run.TestedModelIdUsed}): {Curr(candidatePricing.Currency)}{Inv(candidateTotalCost, "F2")} (uncached in: {Curr(candidatePricing.Currency)}{Inv(uncachedCost, "F2")}, cached in: {Curr(candidatePricing.Currency)}{Inv(cachedCost, "F2")}, cache write: {Curr(candidatePricing.Currency)}{Inv(candidateCacheWriteCost, "F2")}, out: {Curr(candidatePricing.Currency)}{Inv(candidateOutCost, "F2")})");
+                    }
+                    else
+                    {
+                        sb.AppendLine($"  - Candidate ({run.TestedModelIdUsed}): {Curr(candidatePricing.Currency)}{Inv(candidateTotalCost, "F2")} (uncached in: {Curr(candidatePricing.Currency)}{Inv(uncachedCost, "F2")}, cached in: {Curr(candidatePricing.Currency)}{Inv(cachedCost, "F2")}, out: {Curr(candidatePricing.Currency)}{Inv(candidateOutCost, "F2")})");
+                    }
+                }
+                else
+                {
+                    if (candidateCacheWriteCost > 0)
+                    {
+                        sb.AppendLine($"  - Candidate ({run.TestedModelIdUsed}): {Curr(candidatePricing.Currency)}{Inv(candidateTotalCost, "F2")} (in: {Curr(candidatePricing.Currency)}{Inv(candidateInCost, "F2")}, cache write: {Curr(candidatePricing.Currency)}{Inv(candidateCacheWriteCost, "F2")}, out: {Curr(candidatePricing.Currency)}{Inv(candidateOutCost, "F2")})");
+                    }
+                    else
+                    {
+                        sb.AppendLine($"  - Candidate ({run.TestedModelIdUsed}): {Curr(candidatePricing.Currency)}{Inv(candidateTotalCost, "F2")} (in: {Curr(candidatePricing.Currency)}{Inv(candidateInCost, "F2")}, out: {Curr(candidatePricing.Currency)}{Inv(candidateOutCost, "F2")})");
+                    }
                 }
 
-                if (hasVerifier)
+                if (hasAssessor && assessorPricing != null)
                 {
-                    sb.AppendLine($"  - Claim Verifier ({run.ClaimVerifierModelIdUsed}): ${Inv(verifierTotalCost, "F2")} (in: ${Inv(verifierInCost, "F2")}, out: ${Inv(verifierOutCost, "F2")})");
+                    sb.AppendLine($"  - Assessor ({run.AssessorModelIdUsed}): {Curr(assessorPricing.Currency)}{Inv(assessorTotalCost, "F2")} (in: {Curr(assessorPricing.Currency)}{Inv(assessorInCost, "F2")}, out: {Curr(assessorPricing.Currency)}{Inv(assessorOutCost, "F2")})");
                 }
+
+                if (hasVerifier && verifierPricing != null)
+                {
+                    sb.AppendLine($"  - Claim Verifier ({run.ClaimVerifierModelIdUsed}): {Curr(verifierPricing.Currency)}{Inv(verifierTotalCost, "F2")} (in: {Curr(verifierPricing.Currency)}{Inv(verifierInCost, "F2")}, out: {Curr(verifierPricing.Currency)}{Inv(verifierOutCost, "F2")})");
+                }
+
+                var provenanceParts = new List<string>();
+                string FormatProv(string roleTitle, ModelPricing p)
+                {
+                    if (p.Source == ModelPricingSource.Custom)
+                        return $"{roleTitle} custom";
+                    return $"{roleTitle} catalog" + (!string.IsNullOrEmpty(p.AsOf) ? $" (as of {p.AsOf})" : "");
+                }
+                provenanceParts.Add(FormatProv("candidate", candidatePricing));
+                if (hasAssessor && assessorPricing != null)
+                {
+                    provenanceParts.Add(FormatProv("assessor", assessorPricing));
+                }
+                if (hasVerifier && verifierPricing != null)
+                {
+                    provenanceParts.Add(FormatProv("verifier", verifierPricing));
+                }
+
+                string provenanceLine = $"- *Prices: {string.Join("; ", provenanceParts)}.*";
+                if (runPricing != null && !runPricing.IsSnapshot)
+                {
+                    provenanceLine += " *(priced at report generation time; this run predates price snapshotting)*";
+                }
+                sb.AppendLine(provenanceLine);
             }
             else
             {
-                sb.AppendLine("- **Estimated Cost:** not configured (configure `ModelPricing` in appsettings.json)");
+                var missingRoles = new List<string>();
+                if (candidatePricing == null) missingRoles.Add("candidate");
+                if (hasAssessor && assessorPricing == null) missingRoles.Add("assessor");
+                if (hasVerifier && verifierPricing == null) missingRoles.Add("claim verifier");
+                if (missingRoles.Count == 0) missingRoles.Add("participating models");
+
+                sb.AppendLine($"- **Estimated Cost:** not available — no price is known for {string.Join(", ", missingRoles)}. Set a price in Admin → System AI Configs (Custom), or add `pricing` to the model's catalog entry.");
             }
+
 
             sb.AppendLine("*Assessment runs pipelined behind each answer, so assessment time overlaps the candidate's and the two do not sum to the wall time.*");
             sb.AppendLine();

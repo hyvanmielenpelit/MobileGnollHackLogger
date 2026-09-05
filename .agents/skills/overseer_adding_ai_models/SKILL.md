@@ -50,10 +50,33 @@ Each file is a **flat JSON array** of catalog entries, and each entry is deseria
 | `maxOutputTokens` | int | **yes** | `0` | Max output tokens. `MaxInputTokens` is **derived** as `contextWindowSize - maxOutputTokens`; never store it. |
 | `supportsSubAgentCoordination` | bool | no | **`true`** | Set `false` only for small/cheap models that must not orchestrate sub-agents. |
 | `supportsSubAgentExecution` | bool | no | **`true`** | Set `false` only for small/cheap models that must not run as a sub-agent. |
+| `pricing` | object | no | *none* | Published list pricing per million tokens. Omit entirely when the provider publishes no price. See schema below. |
 
 Because both sub-agent flags default to `true`, **omit them for capable models** and add them
 only to opt a weak model out. That is what the existing catalogs do — only the Gemini Flash-Lite
 and GPT Nano entries carry them.
+
+### The `pricing` Object
+
+Published list rates are declared per 1,000,000 tokens. When a model has no published price, omit the `pricing` block entirely; Overseer treats absent pricing as "price not available", never as zero.
+
+```json
+"pricing": {
+  "inputPerMillion": 5.00,
+  "outputPerMillion": 22.50,
+  "cachedInputPerMillion": 2.50,
+  "cacheWritePerMillion": null,
+  "currency": "USD",
+  "asOf": "2026-09-05"
+}
+```
+
+- `inputPerMillion` (decimal, required): Price per 1M uncached input tokens.
+- `outputPerMillion` (decimal, required): Price per 1M output tokens.
+- `cachedInputPerMillion` (decimal, optional): Price per 1M cached prompt tokens. If omitted, prompt cache reads are costed at `inputPerMillion`.
+- `cacheWritePerMillion` (decimal, optional): Price per 1M cache creation/write tokens (e.g. Anthropic). If omitted or null, cache write cost is omitted.
+- `currency` (string, optional): ISO currency code (defaults to `"USD"` if omitted).
+- `asOf` (string, required if pricing is present): ISO date (`YYYY-MM-DD`) when published list pricing was verified. Ensures operators know how fresh the pricing metadata is.
 
 ## Per-Provider Conventions
 

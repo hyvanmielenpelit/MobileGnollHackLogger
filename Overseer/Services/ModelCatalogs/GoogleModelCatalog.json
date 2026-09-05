@@ -5,7 +5,14 @@
     "releaseDate": "2026-02-19",
     "thinkingLevels": ["low", "medium", "high"],
     "contextWindowSize": 1048576,
-    "maxOutputTokens": 65536
+    "maxOutputTokens": 65536,
+    "pricing": {
+      "inputPerMillion": 2.00,
+      "outputPerMillion": 12.00,
+      "cachedInputPerMillion": 0.20,
+      "currency": "USD",
+      "asOf": "2026-09-05"
+    }
   },
   {
     "prefixes": ["gemini-3.1-flash-lite"],
@@ -15,7 +22,14 @@
     "contextWindowSize": 1048576,
     "maxOutputTokens": 65536,
     "supportsSubAgentCoordination": false,
-    "supportsSubAgentExecution": false
+    "supportsSubAgentExecution": false,
+    "pricing": {
+      "inputPerMillion": 0.25,
+      "outputPerMillion": 1.50,
+      "cachedInputPerMillion": 0.025,
+      "currency": "USD",
+      "asOf": "2026-09-05"
+    }
   },
   {
     "prefixes": ["gemini-3.5-flash-lite"],
@@ -25,7 +39,14 @@
     "contextWindowSize": 1048576,
     "maxOutputTokens": 65536,
     "supportsSubAgentCoordination": false,
-    "supportsSubAgentExecution": false
+    "supportsSubAgentExecution": false,
+    "pricing": {
+      "inputPerMillion": 0.30,
+      "outputPerMillion": 2.50,
+      "cachedInputPerMillion": 0.03,
+      "currency": "USD",
+      "asOf": "2026-09-05"
+    }
   },
   {
     "prefixes": ["gemini-3.5-flash"],
@@ -33,7 +54,14 @@
     "releaseDate": "2026-05-19",
     "thinkingLevels": ["minimal", "low", "medium", "high"],
     "contextWindowSize": 1048576,
-    "maxOutputTokens": 65536
+    "maxOutputTokens": 65536,
+    "pricing": {
+      "inputPerMillion": 1.50,
+      "outputPerMillion": 9.00,
+      "cachedInputPerMillion": 0.15,
+      "currency": "USD",
+      "asOf": "2026-09-05"
+    }
   },
   {
     "prefixes": ["gemini-3.6-flash"],
@@ -41,7 +69,14 @@
     "releaseDate": "2026-07-21",
     "thinkingLevels": ["minimal", "low", "medium", "high"],
     "contextWindowSize": 1048576,
-    "maxOutputTokens": 65536
+    "maxOutputTokens": 65536,
+    "pricing": {
+      "inputPerMillion": 1.50,
+      "outputPerMillion": 7.50,
+      "cachedInputPerMillion": 0.15,
+      "currency": "USD",
+      "asOf": "2026-09-05"
+    }
   },
   {
     "prefixes": ["gemini-3.7-flash"],
@@ -49,7 +84,14 @@
     "releaseDate": "2026-08-15",
     "thinkingLevels": ["low", "medium", "high"],
     "contextWindowSize": 1048576,
-    "maxOutputTokens": 65536
+    "maxOutputTokens": 65536,
+    "pricing": {
+      "inputPerMillion": 0.75,
+      "outputPerMillion": 3.75,
+      "cachedInputPerMillion": 0.075,
+      "currency": "USD",
+      "asOf": "2026-09-05"
+    }
   },
   {
     "prefixes": ["gemini-3.8-flash"],
@@ -57,6 +99,14 @@
     "releaseDate": "2026-09-02",
     "thinkingLevels": ["low", "medium", "high"],
     "contextWindowSize": 1048576,
-    "maxOutputTokens": 65536
+    "maxOutputTokens": 65536,
+    "pricing": {
+      "inputPerMillion": 0.75,
+      "outputPerMillion": 3.75,
+      "cachedInputPerMillion": 0.075,
+      "currency": "USD",
+      "asOf": "2026-09-05"
+    }
   }
 ]
+

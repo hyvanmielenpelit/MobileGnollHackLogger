@@ -175,6 +175,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   changelogService = inject(ChangelogService);
   
   showChangelogAnimation = false;
+  showChatCost = true;
+  liveCost: number | null = null;
+  liveCostCurrency: string | null = null;
+  liveIsOperatorCost: boolean = false;
   
   @ViewChild('messagesContainer') messagesContainer!: ElementRef;
   @ViewChild('deleteConfirmDialog') deleteConfirmDialog!: ElementRef<HTMLDialogElement>;
@@ -360,6 +364,29 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       return '/img/gnoll-overseer-avatar-128x128-static.webp';
     }
     return ChatComponent.AVATAR_SRCS[this.currentAvatarState] || ChatComponent.AVATAR_SRCS['thinking'];
+  }
+
+  get totalLoadedCost(): number {
+    return this.messages.reduce((sum, m) => sum + (m.role === 'assistant' ? (m.estimatedCost || 0) : 0), 0) + (this.liveCost || 0);
+  }
+
+  get firstCurrency(): string {
+    const msg = this.messages.find(m => m.role === 'assistant' && m.costCurrency);
+    if (msg) return msg.costCurrency!;
+    return this.liveCostCurrency || 'USD';
+  }
+
+  formatCost(cost: number | null | undefined, currency?: string | null): string {
+    if (cost == null) return '';
+    const c = currency ? currency.toUpperCase() : 'USD';
+    let formatted: string;
+    if (cost < 0.01 && cost > 0) {
+      formatted = cost.toFixed(4);
+    } else {
+      formatted = cost.toFixed(2);
+    }
+    if (c === 'USD') return `$${formatted}`;
+    return `${formatted} ${c}`;
   }
 
   /**
@@ -1045,6 +1072,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           this.spoilerFreeMode = settings.spoilerFreeMode === true;
           this.showParallelBadge = settings.showParallelBadge ?? true;
           this.showContextWindowUsage = settings.showContextWindowUsage ?? true;
+          this.showChatCost = settings.showChatCost ?? true;
           this.parallelBadgeEnabled = settings.parallelBadgeEnabled ?? true;
           this.debugService.log(`[Overseer] showThoughtsAndTools loaded: ${this.showThoughtsAndTools} (type: ${typeof this.showThoughtsAndTools})`);
 
@@ -1388,6 +1416,14 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     } else if (evt.type === 'duration') {
       this.totalDurationMs = parseInt(evt.data, 10);
       this.cdr.detectChanges();
+    } else if (evt.type === 'cost') {
+      try {
+        const d = JSON.parse(evt.data);
+        this.liveCost = d.cost;
+        this.liveCostCurrency = d.currency;
+        this.liveIsOperatorCost = d.isOperatorCost;
+        this.cdr.detectChanges();
+      } catch { }
     } else if (evt.type === 'context') {
       try {
         const d = JSON.parse(evt.data);
@@ -1618,6 +1654,9 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           this.streamingMessage = '';
           this.streamingToolCalls = [];
           this.timeToFirstTokenMs = null;
+    this.liveCost = null;
+    this.liveCostCurrency = null;
+    this.liveIsOperatorCost = false;
           this.totalDurationMs = null;
           this.showSpinner = false;
           this.currentStatusText = 'Generation complete.';
@@ -1985,6 +2024,9 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.isThinkingActive = false;
     this.titleStatusText = '';
     this.timeToFirstTokenMs = null;
+    this.liveCost = null;
+    this.liveCostCurrency = null;
+    this.liveIsOperatorCost = false;
     this.totalDurationMs = null;
     this.contextUsage = null;
     this.hasOngoingGeneration = false;
@@ -2568,6 +2610,9 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.hasRealContent = false;
     this.streamingToolCalls = [];
     this.timeToFirstTokenMs = null;
+    this.liveCost = null;
+    this.liveCostCurrency = null;
+    this.liveIsOperatorCost = false;
     this.totalDurationMs = null;
     this.lastSeenSeqNo = -1; // [NEW] Reset sequence tracker for new generation
 

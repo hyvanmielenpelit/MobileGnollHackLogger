@@ -368,18 +368,42 @@ export class ModelsComponent implements OnInit {
 
   onAddModel(formData: AiModelFormResult) {
     this.saving = true;
-    this.settingsService.addUserModel(
-      formData.provider, 
-      formData.modelId, 
-      formData.displayName, 
-      formData.displayNameMode,
-      formData.thinkingLevel || undefined,
-      formData.reasoningMode || undefined,
-      formData.reasoningSummary || undefined,
-      formData.serviceTier || undefined,
-      formData.maxInputTokens, 
-      formData.maxOutputTokens
-    ).subscribe({
+    const hasPricing = formData.pricingMode !== undefined ||
+      formData.inputPricePerMillion !== undefined ||
+      formData.outputPricePerMillion !== undefined ||
+      formData.cachedInputPricePerMillion !== undefined;
+
+    const addCall$ = hasPricing
+      ? this.settingsService.addUserModel(
+          formData.provider, 
+          formData.modelId, 
+          formData.displayName, 
+          formData.displayNameMode,
+          formData.thinkingLevel || undefined,
+          formData.reasoningMode || undefined,
+          formData.reasoningSummary || undefined,
+          formData.serviceTier || undefined,
+          formData.maxInputTokens, 
+          formData.maxOutputTokens,
+          formData.pricingMode,
+          formData.inputPricePerMillion,
+          formData.outputPricePerMillion,
+          formData.cachedInputPricePerMillion
+        )
+      : this.settingsService.addUserModel(
+          formData.provider, 
+          formData.modelId, 
+          formData.displayName, 
+          formData.displayNameMode,
+          formData.thinkingLevel || undefined,
+          formData.reasoningMode || undefined,
+          formData.reasoningSummary || undefined,
+          formData.serviceTier || undefined,
+          formData.maxInputTokens, 
+          formData.maxOutputTokens
+        );
+
+    addCall$.subscribe({
       next: () => {
         this.loadModels();
         this.closeModelPicker();
@@ -395,7 +419,13 @@ export class ModelsComponent implements OnInit {
 
   openEdit(model: UserAiModel) {
     this.editingModel = Object.assign({}, model);
-    this.editFormData = { ...model };
+    this.editFormData = {
+      ...model,
+      pricingMode: model.pricingMode,
+      inputPricePerMillion: model.inputPricePerMillion,
+      outputPricePerMillion: model.outputPricePerMillion,
+      cachedInputPricePerMillion: model.cachedInputPricePerMillion
+    };
     this.editModelDialog?.nativeElement.showModal();
   }
 
@@ -408,19 +438,44 @@ export class ModelsComponent implements OnInit {
   onEditSave(formData: AiModelFormResult) {
     if (this.editingModel && this.editingModel.id) {
       this.saving = true;
-      this.settingsService.updateUserModel(
-        this.editingModel.id, 
-        formData.displayName, 
-        formData.displayNameMode,
-        formData.thinkingLevel || undefined, 
-        formData.reasoningMode || undefined,
-        formData.reasoningSummary || undefined,
-        formData.serviceTier || undefined,
-        formData.maxInputTokens, 
-        formData.maxOutputTokens,
-        formData.modelId,
-        formData.provider
-      ).subscribe({
+      const hasPricing = formData.pricingMode !== undefined ||
+        formData.inputPricePerMillion !== undefined ||
+        formData.outputPricePerMillion !== undefined ||
+        formData.cachedInputPricePerMillion !== undefined;
+
+      const updateCall$ = hasPricing
+        ? this.settingsService.updateUserModel(
+            this.editingModel.id, 
+            formData.displayName, 
+            formData.displayNameMode,
+            formData.thinkingLevel || undefined, 
+            formData.reasoningMode || undefined,
+            formData.reasoningSummary || undefined,
+            formData.serviceTier || undefined,
+            formData.maxInputTokens, 
+            formData.maxOutputTokens,
+            formData.modelId,
+            formData.provider,
+            formData.pricingMode,
+            formData.inputPricePerMillion,
+            formData.outputPricePerMillion,
+            formData.cachedInputPricePerMillion
+          )
+        : this.settingsService.updateUserModel(
+            this.editingModel.id, 
+            formData.displayName, 
+            formData.displayNameMode,
+            formData.thinkingLevel || undefined, 
+            formData.reasoningMode || undefined,
+            formData.reasoningSummary || undefined,
+            formData.serviceTier || undefined,
+            formData.maxInputTokens, 
+            formData.maxOutputTokens,
+            formData.modelId,
+            formData.provider
+          );
+
+      updateCall$.subscribe({
         next: () => {
           this.loadModels();
           this.closeEdit();
@@ -432,6 +487,14 @@ export class ModelsComponent implements OnInit {
           alert(err.error?.message || 'Error updating model');
         }
       });
+    }
+  }
+
+  onSaveModel(formData: AiModelFormResult) {
+    if (this.editingModel?.id) {
+      this.onEditSave(formData);
+    } else {
+      this.onAddModel(formData);
     }
   }
 
@@ -460,5 +523,43 @@ export class ModelsComponent implements OnInit {
     if (!mode) return false;
     const lower = mode.toLowerCase();
     return lower !== 'default' && lower !== 'standard';
+  }
+
+  formatPrice(model: UserAiModel): string {
+    const input = model.effectiveInputPricePerMillion ?? (model.pricingMode === 'custom' ? model.inputPricePerMillion : null);
+    const output = model.effectiveOutputPricePerMillion ?? (model.pricingMode === 'custom' ? model.outputPricePerMillion : null);
+    const cached = model.effectiveCachedInputPricePerMillion ?? (model.pricingMode === 'custom' ? model.cachedInputPricePerMillion : null);
+
+    if (input == null || output == null) {
+      return '';
+    }
+
+    const curr = this.getCurrencySymbol(model.pricingCurrency);
+    const fmt = (val: number) => {
+      const formatted = new Intl.NumberFormat('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 6
+      }).format(val);
+      return `${curr}${formatted}`;
+    };
+
+    let result = `${fmt(input)} in / ${fmt(output)} out`;
+    if (cached != null) {
+      result += ` / ${fmt(cached)} cached`;
+    }
+    result += ' per 1M';
+    return result;
+  }
+
+  getPricingBadge(model: UserAiModel): 'Custom' | 'Catalog' {
+    return (model.pricingSource === 'custom' || model.pricingMode === 'custom') ? 'Custom' : 'Catalog';
+  }
+
+  private getCurrencySymbol(currency?: string | null): string {
+    if (!currency || currency === 'USD') return '$';
+    if (currency === 'EUR') return '€';
+    if (currency === 'GBP') return '£';
+    if (currency === 'JPY') return '¥';
+    return currency + ' ';
   }
 }

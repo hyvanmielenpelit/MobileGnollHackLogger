@@ -1295,4 +1295,29 @@ progress.telemetry-progress-bar {
   color: #ccc;
 }
 
+.model-price-line {
+  font-size: 0.85em;
+  margin-top: 4px;
+  color: var(--gh-text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.status-badge {
+  &.badge-custom {
+    background-color: rgba(241, 196, 15, 0.15);
+    border: 1px solid rgba(241, 196, 15, 0.4);
+    color: #f1c40f;
+  }
+
+  &.badge-catalog {
+    background-color: rgba(59, 130, 246, 0.15);
+    border: 1px solid rgba(59, 130, 246, 0.4);
+    color: #60a5fa;
+  }
+}
+
+
 

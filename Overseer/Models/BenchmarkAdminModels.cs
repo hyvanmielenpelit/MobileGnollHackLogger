@@ -644,6 +644,14 @@ public class BenchmarkRunDetailDto
     public long TotalClaimVerificationOutputTokens { get; set; }
     public long TotalClaimVerificationDurationMs { get; set; }
 
+    public decimal? EstimatedCost { get; set; }
+    public decimal? EstimatedCandidateCost { get; set; }
+    public decimal? EstimatedAssessorCost { get; set; }
+    public decimal? EstimatedVerifierCost { get; set; }
+    public string? CostCurrency { get; set; }
+    public string? PricingSource { get; set; }
+    public bool PricingIncomplete { get; set; }
+
     public string? ErrorMessage { get; set; }
 
     /// <summary>
@@ -890,6 +898,10 @@ public class BenchmarkRunSummaryDto
     public string? CandidatePromptSourceUsed { get; set; }
     public string? HarnessVersion { get; set; }
     public long TotalDurationMs { get; set; }
+
+    public decimal? EstimatedCost { get; set; }
+    public string? CostCurrency { get; set; }
+    public bool PricingIncomplete { get; set; }
 }
 
 // --- Benchmark Game Snapshot Models ---

@@ -84,4 +84,30 @@ public class ChatMessage
     /// This, not <see cref="ContextWindowTokens"/>, is where history truncation begins.
     /// </summary>
     public int? ContextInputLimitTokens { get; set; }
+
+    /// <summary>
+    /// Whole-turn token accounting, summed across every tool iteration — not the final model
+    /// call alone. <see cref="ContextPromptTokens"/> and <see cref="ContextOutputTokens"/>
+    /// describe the last call only and exist to size the context window; costing a
+    /// multi-iteration turn from them understates it badly. <see cref="TokensUsed"/> is the
+    /// pre-existing input+output sum and is kept for compatibility.
+    /// </summary>
+    public int? InputTokens { get; set; }
+    public int? OutputTokens { get; set; }
+    public int? CacheReadTokens { get; set; }
+    public int? CacheCreationTokens { get; set; }
+
+    /// <summary>
+    /// Cost of this turn at the prices in force when it ran. Null when no price was known for
+    /// the model. Snapshotted, never recomputed: a price change must not silently rewrite
+    /// history.
+    /// </summary>
+    public decimal? EstimatedCost { get; set; }
+
+    /// <summary>"custom" or "catalog" — which price produced <see cref="EstimatedCost"/>.</summary>
+    [MaxLength(16)]
+    public string? PricingSource { get; set; }
+
+    [MaxLength(8)]
+    public string? CostCurrency { get; set; }
 }

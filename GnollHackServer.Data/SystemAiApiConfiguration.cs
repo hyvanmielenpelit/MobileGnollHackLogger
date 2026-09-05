@@ -35,6 +35,19 @@ public class SystemAiApiConfiguration : IRateLimitedEntity
     public int? MaxInputTokens { get; set; }
     public int? MaxOutputTokens { get; set; }
 
+    /// <summary>
+    /// "default" | "custom"; null = legacy row, treated as "default". Mirrors
+    /// <see cref="DisplayNameMode"/>: an explicit mode is what lets a custom price legitimately
+    /// leave CachedInputPricePerMillion null, which a bare "all three nulls mean default" rule
+    /// cannot express.
+    /// </summary>
+    [MaxLength(32)]
+    public string? PricingMode { get; set; }
+
+    public decimal? InputPricePerMillion { get; set; }
+    public decimal? OutputPricePerMillion { get; set; }
+    public decimal? CachedInputPricePerMillion { get; set; }
+
     public int OrderIndex { get; set; }
     public bool IsEnabled { get; set; }
 

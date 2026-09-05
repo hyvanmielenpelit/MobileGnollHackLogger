@@ -20,6 +20,7 @@ Documentation and developer references for the Gnoll Overseer AI assistant web a
 | [**Adding AI Models**](overseer/adding-ai-models.md) | Instructions and schemas for adding new AI models (e.g. Google Gemini) to the Overseer model catalogs. |
 | [**Gemini Service Tier Measurements**](overseer/gemini-service-tier-measurements.md) | Measured availability, latency, and `service_tier` honouring for each supported Gemini model, plus where Google reports the served tier. Snapshot dated 2026-08-31 — expect it to shift when a new Gemini generation ships. |
 | [**Chat & Data Retention**](overseer/chat-data-retention.md) | Specification and architecture for user session quotas, soft-delete lifecycle, tool call payload pruning, disk attachment cleanup, and automated database maintenance. |
+| [**Chat Response Telemetry & Cost**](overseer/chat-response-telemetry.md) | Architectural specification for response timing (TTFT, duration), context window usage indicators, whole-turn token costing, streaming cost events, and operator cost attribution. |
 | [**Sentry Logging Architecture**](overseer/sentry-logging-architecture.md) | Specification and architecture for Sentry crash logging, server event processing, proxy tunneling, and frontend network error suppression. |
 | [**Sentry Source Maps Guide**](overseer/sentry-sourcemaps.md) | Guide to generating, injecting Debug IDs, and uploading Angular source maps to Sentry while excluding them from public deployment. |
 | [**Test Configuration & Secrets**](overseer/test-configuration.md) | User Secrets schema, required AI credentials for live API tests, and setup troubleshooting. |
@@ -69,6 +70,7 @@ docs/
 │   ├── adding-ai-models.md        # Adding LLM models to catalog
 │   ├── gemini-service-tier-measurements.md # Measured Gemini service tier / availability results
 │   ├── chat-data-retention.md     # Chat & data retention architectural specification
+│   ├── chat-response-telemetry.md # Chat response timing, context window & whole-turn cost accounting
 │   ├── sentry-logging-architecture.md # Sentry crash logging architecture & error filtering
 │   ├── sentry-sourcemaps.md       # Sentry source map injection & upload guide
 │   ├── test-configuration.md      # User Secrets schema, required AI credentials for live API tests, and setup troubleshooting

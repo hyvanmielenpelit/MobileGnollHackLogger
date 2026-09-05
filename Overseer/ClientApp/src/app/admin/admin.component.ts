@@ -517,14 +517,24 @@ export class AdminComponent implements OnInit, OnDestroy {
       isEnabled: true,
       isSystemWide: false,
       orderIndex: 0,
-      modelRole: 3
+      modelRole: 3,
+      pricingMode: 'default',
+      inputPricePerMillion: null,
+      outputPricePerMillion: null,
+      cachedInputPricePerMillion: null
     };
     this.configDialog.nativeElement.showModal();
   }
 
   openEditConfig(config: SystemAiConfigDto) {
     this.isNewConfig = false;
-    this.editingConfig = { ...config }; 
+    this.editingConfig = {
+      ...config,
+      pricingMode: config.pricingMode,
+      inputPricePerMillion: config.inputPricePerMillion,
+      outputPricePerMillion: config.outputPricePerMillion,
+      cachedInputPricePerMillion: config.cachedInputPricePerMillion
+    }; 
     this.configDialog.nativeElement.showModal();
   }
 
@@ -539,7 +549,11 @@ export class AdminComponent implements OnInit, OnDestroy {
     // Merge form data with existing config (for things like orderIndex)
     const payload = {
       ...(this.editingConfig || {}),
-      ...formData
+      ...formData,
+      pricingMode: formData.pricingMode,
+      inputPricePerMillion: formData.inputPricePerMillion,
+      outputPricePerMillion: formData.outputPricePerMillion,
+      cachedInputPricePerMillion: formData.cachedInputPricePerMillion
     };
 
     if (this.isNewConfig) {
@@ -988,6 +1002,44 @@ export class AdminComponent implements OnInit, OnDestroy {
     if (!tier) return 'None';
     if (tier.toLowerCase() === 'standard_only') return 'Standard Only';
     return tier.charAt(0).toUpperCase() + tier.slice(1);
+  }
+
+  formatPrice(config: SystemAiConfigDto): string {
+    const input = config.effectiveInputPricePerMillion ?? (config.pricingMode === 'custom' ? config.inputPricePerMillion : null);
+    const output = config.effectiveOutputPricePerMillion ?? (config.pricingMode === 'custom' ? config.outputPricePerMillion : null);
+    const cached = config.effectiveCachedInputPricePerMillion ?? (config.pricingMode === 'custom' ? config.cachedInputPricePerMillion : null);
+
+    if (input == null || output == null) {
+      return '';
+    }
+
+    const curr = this.getCurrencySymbol(config.pricingCurrency);
+    const fmt = (val: number) => {
+      const formatted = new Intl.NumberFormat('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 6
+      }).format(val);
+      return `${curr}${formatted}`;
+    };
+
+    let result = `${fmt(input)} in / ${fmt(output)} out`;
+    if (cached != null) {
+      result += ` / ${fmt(cached)} cached`;
+    }
+    result += ' per 1M';
+    return result;
+  }
+
+  getPricingBadge(config: SystemAiConfigDto): 'Custom' | 'Catalog' {
+    return (config.pricingSource === 'custom' || config.pricingMode === 'custom') ? 'Custom' : 'Catalog';
+  }
+
+  private getCurrencySymbol(currency?: string | null): string {
+    if (!currency || currency === 'USD') return '$';
+    if (currency === 'EUR') return '€';
+    if (currency === 'GBP') return '£';
+    if (currency === 'JPY') return '¥';
+    return currency + ' ';
   }
 
   modelRoleBadges(role: number): Array<{ label: string; cssClass: string }> {

@@ -22,6 +22,10 @@ export interface AiModelFormResult {
   modelRole?: number;
   parallelExecutionMode?: number;
   note?: string | null;
+  pricingMode?: string;
+  inputPricePerMillion?: number | null;
+  outputPricePerMillion?: number | null;
+  cachedInputPricePerMillion?: number | null;
 }
 
 @Component({
@@ -62,6 +66,10 @@ export class AiModelFormComponent implements OnInit {
   customServiceTier = '';
   maxInputTokens: number | null = null;
   maxOutputTokens: number | null = null;
+  pricingMode: 'default' | 'custom' = 'default';
+  inputPricePerMillion: number | null = null;
+  outputPricePerMillion: number | null = null;
+  cachedInputPricePerMillion: number | null = null;
 
   // Admin fields
   apiKey = '';
@@ -233,6 +241,10 @@ export class AiModelFormComponent implements OnInit {
       this.serviceTier = this.initialData.serviceTier || '';
       this.maxInputTokens = this.initialData.maxInputTokens || null;
       this.maxOutputTokens = this.initialData.maxOutputTokens || null;
+      this.pricingMode = this.initialData.pricingMode || 'default';
+      this.inputPricePerMillion = this.initialData.inputPricePerMillion ?? null;
+      this.outputPricePerMillion = this.initialData.outputPricePerMillion ?? null;
+      this.cachedInputPricePerMillion = this.initialData.cachedInputPricePerMillion ?? null;
       
       if (this.isAdmin) {
         this.apiKey = ''; // Start blank for edit, user can update it
@@ -688,7 +700,11 @@ export class AiModelFormComponent implements OnInit {
       reasoningSummary: finalReasoningSummary || null,
       serviceTier: finalServiceTier || null,
       maxInputTokens: this.maxInputTokens,
-      maxOutputTokens: this.maxOutputTokens
+      maxOutputTokens: this.maxOutputTokens,
+      pricingMode: this.pricingMode,
+      inputPricePerMillion: this.inputPricePerMillion,
+      outputPricePerMillion: this.outputPricePerMillion,
+      cachedInputPricePerMillion: this.cachedInputPricePerMillion
     };
 
     if (this.isAdmin) {
@@ -712,5 +728,13 @@ export class AiModelFormComponent implements OnInit {
       return 'Default (Full Thinking)';
     }
     return 'None';
+  }
+
+  onPricingModeChange() {
+    if (this.pricingMode === 'custom' && this.selectedModelObj?.defaultPricing) {
+      this.inputPricePerMillion = this.selectedModelObj.defaultPricing.inputPerMillion ?? null;
+      this.outputPricePerMillion = this.selectedModelObj.defaultPricing.outputPerMillion ?? null;
+      this.cachedInputPricePerMillion = this.selectedModelObj.defaultPricing.cachedInputPerMillion ?? null;
+    }
   }
 }

@@ -3293,4 +3293,63 @@ describe('AdminBenchmarkComponent', () => {
       component.stopDetailPolling();
     });
   });
+
+  describe('Model Pricing Feature', () => {
+    it('should render Estimated Cost card with the incomplete-pricing marker when pricingIncomplete is true', () => {
+      component.activeSubTab = 'run';
+      component.selectedRunDetail = {
+        id: 1,
+        benchmarkSuiteId: 1,
+        suiteName: 'Test',
+        status: 2,
+        estimatedCost: 1.2345,
+        costCurrency: 'USD',
+        pricingSource: 'Anthropic API',
+        pricingIncomplete: true,
+        answers: []
+      } as any;
+      fixture.detectChanges();
+
+      const cards = Array.from(fixture.nativeElement.querySelectorAll('.score-card')) as HTMLElement[];
+      const card = cards.find(c => c.querySelector('.score-label')?.textContent?.trim() === 'Estimated Cost');
+      expect(card).toBeTruthy();
+      
+      const content = card!.textContent?.replace(/\s+/g, ' ').trim() || '';
+      expect(content).toContain('1.2345 USD');
+      expect(content).toContain('Anthropic API');
+      
+      const marker = card!.querySelector('.degraded-tag');
+      expect(marker).toBeTruthy();
+      expect(marker?.textContent?.trim()).toBe('*');
+    });
+
+    it('should render Cost column in run history table with the incomplete-pricing marker when pricingIncomplete is true', () => {
+      component.activeSubTab = 'history';
+      component.historyRuns = [
+        {
+          id: 10,
+          suiteName: 'Test Suite',
+          status: 2,
+          estimatedCost: 0.50,
+          costCurrency: 'EUR',
+          pricingIncomplete: true
+        } as any
+      ];
+      fixture.detectChanges();
+
+      const headers = Array.from(fixture.nativeElement.querySelectorAll('.gh-table th')) as HTMLElement[];
+      const costHeader = headers.find(th => th.textContent?.trim() === 'Cost');
+      expect(costHeader).toBeTruthy();
+
+      const row = fixture.nativeElement.querySelector('.gh-table tbody tr');
+      expect(row).toBeTruthy();
+      
+      const cellText = row!.textContent || '';
+      expect(cellText).toContain('0.50 EUR');
+      
+      const marker = row!.querySelector('.degraded-tag');
+      expect(marker).toBeTruthy();
+      expect(marker?.textContent?.trim()).toBe('*');
+    });
+  });
 });

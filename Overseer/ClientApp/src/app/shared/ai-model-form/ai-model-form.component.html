@@ -189,6 +189,47 @@
         </div>
       }
 
+      <div class="form-group flex-col mb-15">
+        <label>Pricing</label>
+        <div class="compound-input">
+          <select class="gh-input w-100" [(ngModel)]="pricingMode" (change)="onPricingModeChange()">
+            <option value="default">Default</option>
+            <option value="custom">Custom...</option>
+          </select>
+        </div>
+        
+        @if (pricingMode === 'default') {
+          <div class="display-name-preview mt-5">
+            @if (selectedModelObj?.defaultPricing; as p) {
+              <span>{{ p.inputPerMillion }} in / {{ p.outputPerMillion }} out</span>
+              @if (p.cachedInputPerMillion != null) {
+                <span> ({{ p.cachedInputPerMillion }} cached)</span>
+              }
+              <span> {{ p.currency ?? 'USD' }} per 1M tokens (catalog, as of {{ p.asOf }})</span>
+            } @else {
+              <span style="color: #b8b8b8; font-style: italic;">No price published in the model catalog</span>
+            }
+          </div>
+        } @else {
+          <div class="custom-pricing-inputs mt-10">
+            <div class="pricing-row" style="display: flex; gap: 10px;">
+              <div class="flex-col" style="flex: 1; display: flex; flex-direction: column;">
+                <label style="font-size: 0.8rem; color: #ccc;">Input / 1M</label>
+                <input type="number" class="gh-input w-100" [(ngModel)]="inputPricePerMillion" step="0.01" min="0">
+              </div>
+              <div class="flex-col" style="flex: 1; display: flex; flex-direction: column;">
+                <label style="font-size: 0.8rem; color: #ccc;">Output / 1M</label>
+                <input type="number" class="gh-input w-100" [(ngModel)]="outputPricePerMillion" step="0.01" min="0">
+              </div>
+              <div class="flex-col" style="flex: 1; display: flex; flex-direction: column;">
+                <label style="font-size: 0.8rem; color: #ccc;">Cached / 1M</label>
+                <input type="number" class="gh-input w-100" [(ngModel)]="cachedInputPricePerMillion" step="0.01" min="0">
+              </div>
+            </div>
+          </div>
+        }
+      </div>
+
       <div class="settings-row mb-15">
         <!-- Thinking Level -->
         <div class="form-group flex-col">

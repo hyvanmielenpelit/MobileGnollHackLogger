@@ -1593,7 +1593,7 @@ public class BenchmarkReportBuilderTests
     }
 
     [Fact]
-    public void EstimatedCost_RendersNotConfigured_WhenPricingServiceIsNull()
+    public void EstimatedCost_RendersNotAvailable_WhenRunPricingIsNull()
     {
         var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
         var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
@@ -1601,12 +1601,12 @@ public class BenchmarkReportBuilderTests
         run.TotalAssessmentInputTokens = 1000;
         run.TotalAssessmentOutputTokens = 200;
 
-        var report = BenchmarkReportBuilder.BuildMarkdownReport(run, pricingService: null);
-        Assert.Contains("- **Estimated Cost:** not configured (configure `ModelPricing` in appsettings.json)", report);
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run, runPricing: null);
+        Assert.Contains("- **Estimated Cost:** not available — no price is known for candidate, assessor. Set a price in Admin → System AI Configs (Custom), or add `pricing` to the model's catalog entry.", report);
     }
 
     [Fact]
-    public void EstimatedCost_RendersNotConfigured_WhenModelPricingIsMissing()
+    public void EstimatedCost_RendersNotAvailable_WhenModelPricingIsMissingForRole()
     {
         var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
         var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
@@ -1616,16 +1616,16 @@ public class BenchmarkReportBuilderTests
         run.TotalAssessmentInputTokens = 1000;
         run.TotalAssessmentOutputTokens = 200;
 
-        var inMemory = new Dictionary<string, string?>
-        {
-            ["ModelPricing:gpt-5.6:InputPerMillion"] = "2.50",
-            ["ModelPricing:gpt-5.6:OutputPerMillion"] = "10.00"
-        };
-        var config = new ConfigurationBuilder().AddInMemoryCollection(inMemory).Build();
-        var pricingService = new ModelPricingService(config);
+        var runPricing = new BenchmarkRunPricing(
+            Candidate: new ModelPricing(2.50m, 10.00m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
+            Assessor: null,
+            SecondOpinion: null,
+            ClaimVerifier: null,
+            IsSnapshot: true
+        );
 
-        var report = BenchmarkReportBuilder.BuildMarkdownReport(run, pricingService: pricingService);
-        Assert.Contains("- **Estimated Cost:** not configured (configure `ModelPricing` in appsettings.json)", report);
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run, runPricing: runPricing);
+        Assert.Contains("- **Estimated Cost:** not available — no price is known for assessor. Set a price in Admin → System AI Configs (Custom), or add `pricing` to the model's catalog entry.", report);
     }
 
     [Fact]
@@ -1644,23 +1644,46 @@ public class BenchmarkReportBuilderTests
         run.TotalClaimVerificationInputTokens = 100_000;
         run.TotalClaimVerificationOutputTokens = 5_000;
 
-        var inMemory = new Dictionary<string, string?>
-        {
-            ["ModelPricing:gpt-5.6:InputPerMillion"] = "2.50",
-            ["ModelPricing:gpt-5.6:OutputPerMillion"] = "10.00",
-            ["ModelPricing:gpt-5.6:CachedInputPerMillion"] = "0.25",
-            ["ModelPricing:gemini-3.7-flash:InputPerMillion"] = "0.15",
-            ["ModelPricing:gemini-3.7-flash:OutputPerMillion"] = "0.60",
-            ["ModelPricing:gpt-5-mini:InputPerMillion"] = "1.00",
-            ["ModelPricing:gpt-5-mini:OutputPerMillion"] = "4.00"
-        };
-        var config = new ConfigurationBuilder().AddInMemoryCollection(inMemory).Build();
-        var pricingService = new ModelPricingService(config);
+        var runPricing = new BenchmarkRunPricing(
+            Candidate: new ModelPricing(2.50m, 10.00m, CachedInputPerMillion: 0.25m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
+            Assessor: new ModelPricing(0.15m, 0.60m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
+            SecondOpinion: null,
+            ClaimVerifier: new ModelPricing(1.00m, 4.00m, Source: ModelPricingSource.Custom),
+            IsSnapshot: true
+        );
 
-        var report = BenchmarkReportBuilder.BuildMarkdownReport(run, pricingService: pricingService);
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run, runPricing: runPricing);
         Assert.Contains("- **Estimated Cost:** $1.36 total", report);
         Assert.Contains("Candidate (gpt-5.6): $1.20 (uncached in: $0.50, cached in: $0.20, out: $0.50)", report);
         Assert.Contains("Assessor (gemini-3.7-flash): $0.04 (in: $0.03, out: $0.01)", report);
         Assert.Contains("Claim Verifier (gpt-5-mini): $0.12 (in: $0.10, out: $0.02)", report);
+        Assert.Contains("- *Prices: candidate catalog (as of 2026-09-05); assessor catalog (as of 2026-09-05); verifier custom.*", report);
+    }
+
+    [Fact]
+    public void EstimatedCost_MixedCurrencies_PrintsPerRoleCosts_AndOmitsTotal()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        run.TestedModelIdUsed = "custom-eur-model";
+        run.AssessorModelIdUsed = "gemini-3.7-flash";
+        run.TotalInputTokens = 1_000_000;
+        run.TotalOutputTokens = 100_000;
+        run.TotalAssessmentInputTokens = 100_000;
+        run.TotalAssessmentOutputTokens = 10_000;
+
+        var runPricing = new BenchmarkRunPricing(
+            Candidate: new ModelPricing(2.00m, 8.00m, Source: ModelPricingSource.Custom, Currency: "EUR"),
+            Assessor: new ModelPricing(0.15m, 0.60m, Source: ModelPricingSource.Catalog, Currency: "USD", AsOf: "2026-09-05"),
+            SecondOpinion: null,
+            ClaimVerifier: null,
+            IsSnapshot: false
+        );
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run, runPricing: runPricing);
+        Assert.Contains("- **Estimated Cost:** *Roles are priced in different currencies; no total is shown.*", report);
+        Assert.Contains("Candidate (custom-eur-model): EUR 2.80 (in: EUR 2.00, out: EUR 0.80)", report);
+        Assert.Contains("Assessor (gemini-3.7-flash): $0.02 (in: $0.02, out: $0.01)", report);
+        Assert.Contains("*(priced at report generation time; this run predates price snapshotting)*", report);
     }
 }

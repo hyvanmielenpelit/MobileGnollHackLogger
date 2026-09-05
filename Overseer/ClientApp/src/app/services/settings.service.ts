@@ -2,6 +2,15 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpResponse } from '@angular/common/http';
 import { Subject } from 'rxjs';
 
+export interface ModelPricingDto {
+  inputPerMillion: number;
+  outputPerMillion: number;
+  cachedInputPerMillion?: number | null;
+  cacheWritePerMillion?: number | null;
+  currency?: string | null;
+  asOf?: string | null;
+}
+
 export interface UserAiSettings {
   hasApiKey: boolean;
   hasModel?: boolean;
@@ -11,6 +20,7 @@ export interface UserAiSettings {
   showParallelBadge?: boolean;
   parallelBadgeEnabled?: boolean;
   showContextWindowUsage?: boolean;
+  showChatCost?: boolean;
   maxResultLength?: number | null;
   maxCallsPerSession?: number | null;
   maxToolIterations?: number | null;
@@ -46,6 +56,7 @@ export interface ApiModelDto {
   recommendationRank?: number;
   recommendedThinkingLevel?: string;
   defaultThinkingLevel?: string;
+  defaultPricing?: ModelPricingDto | null;
 }
 
 export interface UserAiModel {
@@ -64,6 +75,16 @@ export interface UserAiModel {
   isSystem?: boolean;
   modelRole?: number;
   parallelExecutionMode?: number;
+  pricingMode?: string;
+  inputPricePerMillion?: number | null;
+  outputPricePerMillion?: number | null;
+  cachedInputPricePerMillion?: number | null;
+  effectiveInputPricePerMillion?: number | null;
+  effectiveOutputPricePerMillion?: number | null;
+  effectiveCachedInputPricePerMillion?: number | null;
+  pricingSource?: string | null;
+  pricingCurrency?: string | null;
+  pricingAsOf?: string | null;
 }
 
 export interface ApiKeyStatus {
@@ -100,7 +121,7 @@ export class SettingsService {
     });
   }
 
-  saveSettings(spoilerFreeMode: boolean, enableWebSearch: boolean, enableToolUse: boolean, enableSubAgents: boolean, enableClientTools: boolean, enableGameActions: boolean, showSourceCodeReferences: boolean, maxResultLength: number | null, maxCallsPerSession: number | null, maxToolIterations: number | null, maxParallelToolCalls: number | null, showThoughtsAndTools: number, requestTimeout: number | null, showParallelBadge?: boolean, showContextWindowUsage?: boolean) {
+  saveSettings(spoilerFreeMode: boolean, enableWebSearch: boolean, enableToolUse: boolean, enableSubAgents: boolean, enableClientTools: boolean, enableGameActions: boolean, showSourceCodeReferences: boolean, maxResultLength: number | null, maxCallsPerSession: number | null, maxToolIterations: number | null, maxParallelToolCalls: number | null, showThoughtsAndTools: number, requestTimeout: number | null, showParallelBadge?: boolean, showContextWindowUsage?: boolean, showChatCost?: boolean) {
     return this.http.put('/api/settings', {
       spoilerFreeMode,
       enableWebSearch,
@@ -116,7 +137,8 @@ export class SettingsService {
       showThoughtsAndTools,
       requestTimeout,
       showParallelBadge,
-      showContextWindowUsage
+      showContextWindowUsage,
+      showChatCost
     });
   }
 
@@ -156,12 +178,12 @@ export class SettingsService {
     });
   }
 
-  addUserModel(provider: string, modelId: string, displayName?: string, displayNameMode?: string, thinkingLevel?: string, reasoningMode?: string, reasoningSummary?: string, serviceTier?: string, maxInputTokens?: number | null, maxOutputTokens?: number | null) {
-    return this.http.post<{ id: number }>('/api/settings/usermodels', { provider, modelId, displayName, displayNameMode, thinkingLevel, reasoningMode, reasoningSummary, serviceTier, maxInputTokens, maxOutputTokens });
+  addUserModel(provider: string, modelId: string, displayName?: string, displayNameMode?: string, thinkingLevel?: string, reasoningMode?: string, reasoningSummary?: string, serviceTier?: string, maxInputTokens?: number | null, maxOutputTokens?: number | null, pricingMode?: string, inputPricePerMillion?: number | null, outputPricePerMillion?: number | null, cachedInputPricePerMillion?: number | null) {
+    return this.http.post<{ id: number }>('/api/settings/usermodels', { provider, modelId, displayName, displayNameMode, thinkingLevel, reasoningMode, reasoningSummary, serviceTier, maxInputTokens, maxOutputTokens, pricingMode, inputPricePerMillion, outputPricePerMillion, cachedInputPricePerMillion });
   }
 
-  updateUserModel(id: number, displayName?: string, displayNameMode?: string, thinkingLevel?: string, reasoningMode?: string, reasoningSummary?: string, serviceTier?: string, maxInputTokens?: number | null, maxOutputTokens?: number | null, modelId?: string, provider?: string) {
-    return this.http.put(`/api/settings/usermodels/${id}`, { displayName, displayNameMode, thinkingLevel, reasoningMode, reasoningSummary, serviceTier, maxInputTokens, maxOutputTokens, modelId, provider });
+  updateUserModel(id: number, displayName?: string, displayNameMode?: string, thinkingLevel?: string, reasoningMode?: string, reasoningSummary?: string, serviceTier?: string, maxInputTokens?: number | null, maxOutputTokens?: number | null, modelId?: string, provider?: string, pricingMode?: string, inputPricePerMillion?: number | null, outputPricePerMillion?: number | null, cachedInputPricePerMillion?: number | null) {
+    return this.http.put(`/api/settings/usermodels/${id}`, { displayName, displayNameMode, thinkingLevel, reasoningMode, reasoningSummary, serviceTier, maxInputTokens, maxOutputTokens, modelId, provider, pricingMode, inputPricePerMillion, outputPricePerMillion, cachedInputPricePerMillion });
   }
 
   deleteUserModel(id: number) {

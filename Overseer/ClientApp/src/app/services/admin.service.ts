@@ -19,6 +19,15 @@ export interface GroupDto {
   displayName: string;
 }
 
+export interface ModelPricingDto {
+  inputPerMillion: number;
+  outputPerMillion: number;
+  cachedInputPerMillion?: number | null;
+  cacheWritePerMillion?: number | null;
+  currency?: string | null;
+  asOf?: string | null;
+}
+
 export interface SystemAiConfigDto {
   id: number;
   displayName: string;
@@ -65,6 +74,16 @@ export interface SystemAiConfigDto {
   note?: string | null;
   userAssignmentCount?: number;
   groupAssignmentCount?: number;
+  pricingMode?: string | null;
+  inputPricePerMillion?: number | null;
+  outputPricePerMillion?: number | null;
+  cachedInputPricePerMillion?: number | null;
+  effectiveInputPricePerMillion?: number | null;
+  effectiveOutputPricePerMillion?: number | null;
+  effectiveCachedInputPricePerMillion?: number | null;
+  pricingSource?: string | null;
+  pricingCurrency?: string | null;
+  pricingAsOf?: string | null;
 }
 
 export interface UserSystemAiConfigDto {

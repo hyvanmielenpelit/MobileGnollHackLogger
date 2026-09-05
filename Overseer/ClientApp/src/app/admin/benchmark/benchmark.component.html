@@ -169,6 +169,9 @@
                   @if (selectedTestedModel?.provider) {
                     <span class="provider-badge">{{ selectedTestedModel?.provider }}</span>
                   }
+                  @if (selectedTestedModel?.effectiveInputPricePerMillion != null) {
+                    <span class="price-badge">{{ formatPickerPrice(selectedTestedModel) }}</span>
+                  }
                   @if (selectedTestedModel?.parallelExecutionMode === 0) {
                     <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
                   }
@@ -192,6 +195,9 @@
                           <span class="reasoning-badge">{{ model.reasoningMode }}</span>
                         }
                         <span class="provider-badge">{{ model.provider }}</span>
+                        @if (model.effectiveInputPricePerMillion != null) {
+                          <span class="price-badge">{{ formatPickerPrice(model) }}</span>
+                        }
                         @if (model.parallelExecutionMode === 0) {
                           <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
                         }
@@ -226,6 +232,9 @@
                   @if (selectedAssessorModel?.provider) {
                     <span class="provider-badge">{{ selectedAssessorModel?.provider }}</span>
                   }
+                  @if (selectedAssessorModel?.effectiveInputPricePerMillion != null) {
+                    <span class="price-badge">{{ formatPickerPrice(selectedAssessorModel) }}</span>
+                  }
                   @if (selectedAssessorModel?.parallelExecutionMode === 0) {
                     <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
                   }
@@ -249,6 +258,9 @@
                           <span class="reasoning-badge">{{ model.reasoningMode }}</span>
                         }
                         <span class="provider-badge">{{ model.provider }}</span>
+                        @if (model.effectiveInputPricePerMillion != null) {
+                          <span class="price-badge">{{ formatPickerPrice(model) }}</span>
+                        }
                         @if (model.parallelExecutionMode === 0) {
                           <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
                         }
@@ -302,6 +314,9 @@
                   @if (selectedSecondOpinionModel?.provider) {
                     <span class="provider-badge">{{ selectedSecondOpinionModel?.provider }}</span>
                   }
+                  @if (selectedSecondOpinionModel?.effectiveInputPricePerMillion != null) {
+                    <span class="price-badge">{{ formatPickerPrice(selectedSecondOpinionModel) }}</span>
+                  }
                   <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
                 </button>
                 @if (isSecondOpinionModelDropdownOpen) {
@@ -319,6 +334,9 @@
                           <span class="reasoning-badge">{{ model.reasoningMode }}</span>
                         }
                         <span class="provider-badge">{{ model.provider }}</span>
+                        @if (model.effectiveInputPricePerMillion != null) {
+                          <span class="price-badge">{{ formatPickerPrice(model) }}</span>
+                        }
                       </div>
                     }
                   </div>
@@ -388,6 +406,9 @@
                   @if (selectedClaimVerifierModel?.provider) {
                     <span class="provider-badge">{{ selectedClaimVerifierModel?.provider }}</span>
                   }
+                  @if (selectedClaimVerifierModel?.effectiveInputPricePerMillion != null) {
+                    <span class="price-badge">{{ formatPickerPrice(selectedClaimVerifierModel) }}</span>
+                  }
                   <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
                 </button>
                 @if (isClaimVerifierModelDropdownOpen) {
@@ -405,6 +426,9 @@
                           <span class="reasoning-badge">{{ model.reasoningMode }}</span>
                         }
                         <span class="provider-badge">{{ model.provider }}</span>
+                        @if (model.effectiveInputPricePerMillion != null) {
+                          <span class="price-badge">{{ formatPickerPrice(model) }}</span>
+                        }
                       </div>
                     }
                   </div>
@@ -505,6 +529,7 @@
                 <th>Intelligence Index</th>
                 <th>Speed Index</th>
                 <th>Duration</th>
+                <th scope="col">Cost</th>
                 <th>Date (UTC)</th>
                 <th>Actions</th>
               </tr>
@@ -550,6 +575,16 @@
                     }
                   </td>
                   <td>{{ formatDuration(run.totalAnswerDurationMs || run.totalDurationMs) }}</td>
+                  <td>
+                    @if (run.estimatedCost != null) {
+                      {{ formatRunEstimatedCost(run) }}
+                      @if (run.pricingIncomplete) {
+                        <span class="degraded-tag" title="Some participating models lack pricing">*</span>
+                      }
+                    } @else {
+                      <span class="text-muted">-</span>
+                    }
+                  </td>
                   <td>{{ run.startedAtUtc | date:'yyyy-MM-dd HH:mm' }}</td>
                   <td class="action-cell">
                     <button type="button" class="action-btn" (click)="viewRunDetail(run.id)"
@@ -935,6 +970,16 @@
           <div class="score-card">
             <span class="score-label">Answer Duration</span>
             <span class="score-subvalue">{{ formatDuration(selectedRunDetail.totalAnswerDurationMs || selectedRunDetail.totalDurationMs) }}</span>
+          </div>
+          <div class="score-card">
+            <span class="score-label">Estimated Cost</span>
+            <span class="score-subvalue">
+              {{ formatRunEstimatedCost(selectedRunDetail) }}
+              @if (selectedRunDetail.pricingIncomplete) {
+                <span class="degraded-tag" title="Some participating models lack pricing">*</span>
+              }
+            </span>
+            <span class="score-note">{{ selectedRunDetail.pricingSource || 'Pricing unknown' }}</span>
           </div>
         </div>
 
@@ -2753,6 +2798,12 @@
           <dt>Cache creation</dt>
           <dd>{{ (activeRunDetail?.totalCacheCreationTokens ?? 0) | number }}</dd>
         </div>
+        @if (estimatedRunCostSoFar != null) {
+          <div class="run-stat">
+            <dt>Est. cost so far</dt>
+            <dd>{{ estimatedRunCostSoFar | number:'1.2-4' }} {{ estimatedRunCostCurrencySoFar }}</dd>
+          </div>
+        }
       </dl>
 
       <ul class="job-item-list run-question-list">

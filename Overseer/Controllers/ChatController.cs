@@ -188,7 +188,14 @@ public class ChatController : ControllerBase
                 m.ContextPromptTokens,
                 m.ContextOutputTokens,
                 m.ContextWindowTokens,
-                m.ContextInputLimitTokens
+                m.ContextInputLimitTokens,
+                m.InputTokens,
+                m.OutputTokens,
+                m.CacheReadTokens,
+                m.CacheCreationTokens,
+                m.EstimatedCost,
+                m.PricingSource,
+                m.CostCurrency
             })
             .ToListAsync();
         swDb.Stop();
@@ -323,7 +330,14 @@ public class ChatController : ControllerBase
                 m.ContextPromptTokens,
                 m.ContextOutputTokens,
                 m.ContextWindowTokens,
-                m.ContextInputLimitTokens
+                m.ContextInputLimitTokens,
+                m.InputTokens,
+                m.OutputTokens,
+                m.CacheReadTokens,
+                m.CacheCreationTokens,
+                m.EstimatedCost,
+                m.PricingSource,
+                m.CostCurrency
             };
         }).ToList();
         swAsm.Stop();

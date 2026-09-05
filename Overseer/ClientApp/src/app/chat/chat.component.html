@@ -255,9 +255,14 @@
                       }
                     </div>
                   }
-                  @if (msg.role === 'assistant' && (msg.timeToFirstTokenMs != null || msg.totalDurationMs != null)) {
+                  @if (msg.role === 'assistant' && (msg.timeToFirstTokenMs != null || msg.totalDurationMs != null || (showChatCost && msg.estimatedCost != null))) {
                     <div class="ttft-container" style="text-align: right; margin-top: 2px;">
-                      <span class="model-name-subtext">{{ formatDuration(msg.timeToFirstTokenMs, msg.totalDurationMs) }}</span>
+                      @if (showChatCost && msg.estimatedCost != null) {
+                        <span class="model-name-subtext cost-badge">{{ formatCost(msg.estimatedCost, msg.costCurrency) }}@if(msg.isOperatorCost){ (operator)} &bull; </span>
+                      }
+                      @if (msg.timeToFirstTokenMs != null || msg.totalDurationMs != null) {
+                        <span class="model-name-subtext">{{ formatDuration(msg.timeToFirstTokenMs, msg.totalDurationMs) }}</span>
+                      }
                     </div>
                   }
                 </div>
@@ -399,6 +404,9 @@
                     </div>
                   }
                   <div class="ttft-container" style="text-align: right; margin-top: 2px;">
+                    @if (showChatCost && liveCost != null) {
+                      <span class="model-name-subtext cost-badge">{{ formatCost(liveCost, liveCostCurrency) }}@if(liveIsOperatorCost){ (operator)} &bull; </span>
+                    }
                     @if (timeToFirstTokenMs === null) {
                       <span class="model-name-subtext"><span class="gh-spinner-small" style="display:inline-block; width: 10px; height: 10px; border-width: 1.5px;"></span></span>
                     }
@@ -504,11 +512,19 @@
         }
       </div>
       <div class="input-area-container">
-        <!-- Context window consumption, as of the last assistant reply. Hidden below 992px by CSS. -->
-        @if (contextUsage && showContextWindowUsage) {
-          <div class="context-window-indicator" [class.near-full]="contextUsagePercent >= 90">
-            <div class="cw-text">
-              <span class="cw-label">Context window</span>
+        <!-- Context window consumption and total cost -->
+        <div style="display: flex; justify-content: space-between; align-items: flex-end; width: 100%;">
+          @if (showChatCost && totalLoadedCost > 0) {
+            <div class="chat-cost-indicator" style="padding: 6px 0 0 20px; font-size: 11px; color: var(--nav-color); opacity: 0.85;">
+              Total cost (loaded): {{ formatCost(totalLoadedCost, firstCurrency) }}
+            </div>
+          } @else {
+            <div></div>
+          }
+          @if (contextUsage && showContextWindowUsage) {
+            <div class="context-window-indicator" [class.near-full]="contextUsagePercent >= 90" style="padding-left: 20px;">
+              <div class="cw-text">
+                <span class="cw-label">Context window</span>
               <button type="button" class="cw-value"
                       interestfor="cw-usage-tip"
                       style="anchor-name: --cw-usage-tip">
@@ -538,6 +554,7 @@
             }
           </div>
         }
+        </div>
         <!-- Progress Indicator at the top of the prompt box -->
         @if (isStreaming || currentStatusText) {
           <div class="progress-bar">
