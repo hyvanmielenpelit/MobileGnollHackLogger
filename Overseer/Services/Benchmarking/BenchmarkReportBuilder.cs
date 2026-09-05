@@ -783,22 +783,8 @@ public static class BenchmarkReportBuilder
                     verifierTotalCost = ModelPricingService.ComputeCost(verifierPricing, run.TotalClaimVerificationInputTokens, run.TotalClaimVerificationOutputTokens);
                 }
 
-                string Curr(string? currency) => string.Equals(currency, "USD", StringComparison.OrdinalIgnoreCase) ? "$" : $"{currency} ";
-
-                var currencies = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { candidatePricing.Currency };
-                if (hasAssessor && assessorPricing != null) currencies.Add(assessorPricing.Currency);
-                if (hasVerifier && verifierPricing != null) currencies.Add(verifierPricing.Currency);
-
-                bool sameCurrency = currencies.Count == 1;
-                if (sameCurrency)
-                {
-                    decimal totalCost = candidateTotalCost + assessorTotalCost + verifierTotalCost;
-                    sb.AppendLine($"- **Estimated Cost:** {Curr(candidatePricing.Currency)}{Inv(totalCost, "F2")} total");
-                }
-                else
-                {
-                    sb.AppendLine("- **Estimated Cost:** *Roles are priced in different currencies; no total is shown.*");
-                }
+                decimal totalCost = candidateTotalCost + assessorTotalCost + verifierTotalCost;
+                sb.AppendLine($"- **Estimated Cost:** ${Inv(totalCost, "F2")} total");
 
                 if (candidatePricing.CachedInputPerMillion.HasValue && cachedInTokens > 0)
                 {
@@ -806,33 +792,33 @@ public static class BenchmarkReportBuilder
                     decimal cachedCost = cachedInTokens / 1_000_000m * (candidatePricing.CachedInputPerMillion ?? candidatePricing.InputPerMillion);
                     if (candidateCacheWriteCost > 0)
                     {
-                        sb.AppendLine($"  - Candidate ({run.TestedModelIdUsed}): {Curr(candidatePricing.Currency)}{Inv(candidateTotalCost, "F2")} (uncached in: {Curr(candidatePricing.Currency)}{Inv(uncachedCost, "F2")}, cached in: {Curr(candidatePricing.Currency)}{Inv(cachedCost, "F2")}, cache write: {Curr(candidatePricing.Currency)}{Inv(candidateCacheWriteCost, "F2")}, out: {Curr(candidatePricing.Currency)}{Inv(candidateOutCost, "F2")})");
+                        sb.AppendLine($"  - Candidate ({run.TestedModelIdUsed}): ${Inv(candidateTotalCost, "F2")} (uncached in: ${Inv(uncachedCost, "F2")}, cached in: ${Inv(cachedCost, "F2")}, cache write: ${Inv(candidateCacheWriteCost, "F2")}, out: ${Inv(candidateOutCost, "F2")})");
                     }
                     else
                     {
-                        sb.AppendLine($"  - Candidate ({run.TestedModelIdUsed}): {Curr(candidatePricing.Currency)}{Inv(candidateTotalCost, "F2")} (uncached in: {Curr(candidatePricing.Currency)}{Inv(uncachedCost, "F2")}, cached in: {Curr(candidatePricing.Currency)}{Inv(cachedCost, "F2")}, out: {Curr(candidatePricing.Currency)}{Inv(candidateOutCost, "F2")})");
+                        sb.AppendLine($"  - Candidate ({run.TestedModelIdUsed}): ${Inv(candidateTotalCost, "F2")} (uncached in: ${Inv(uncachedCost, "F2")}, cached in: ${Inv(cachedCost, "F2")}, out: ${Inv(candidateOutCost, "F2")})");
                     }
                 }
                 else
                 {
                     if (candidateCacheWriteCost > 0)
                     {
-                        sb.AppendLine($"  - Candidate ({run.TestedModelIdUsed}): {Curr(candidatePricing.Currency)}{Inv(candidateTotalCost, "F2")} (in: {Curr(candidatePricing.Currency)}{Inv(candidateInCost, "F2")}, cache write: {Curr(candidatePricing.Currency)}{Inv(candidateCacheWriteCost, "F2")}, out: {Curr(candidatePricing.Currency)}{Inv(candidateOutCost, "F2")})");
+                        sb.AppendLine($"  - Candidate ({run.TestedModelIdUsed}): ${Inv(candidateTotalCost, "F2")} (in: ${Inv(candidateInCost, "F2")}, cache write: ${Inv(candidateCacheWriteCost, "F2")}, out: ${Inv(candidateOutCost, "F2")})");
                     }
                     else
                     {
-                        sb.AppendLine($"  - Candidate ({run.TestedModelIdUsed}): {Curr(candidatePricing.Currency)}{Inv(candidateTotalCost, "F2")} (in: {Curr(candidatePricing.Currency)}{Inv(candidateInCost, "F2")}, out: {Curr(candidatePricing.Currency)}{Inv(candidateOutCost, "F2")})");
+                        sb.AppendLine($"  - Candidate ({run.TestedModelIdUsed}): ${Inv(candidateTotalCost, "F2")} (in: ${Inv(candidateInCost, "F2")}, out: ${Inv(candidateOutCost, "F2")})");
                     }
                 }
 
                 if (hasAssessor && assessorPricing != null)
                 {
-                    sb.AppendLine($"  - Assessor ({run.AssessorModelIdUsed}): {Curr(assessorPricing.Currency)}{Inv(assessorTotalCost, "F2")} (in: {Curr(assessorPricing.Currency)}{Inv(assessorInCost, "F2")}, out: {Curr(assessorPricing.Currency)}{Inv(assessorOutCost, "F2")})");
+                    sb.AppendLine($"  - Assessor ({run.AssessorModelIdUsed}): ${Inv(assessorTotalCost, "F2")} (in: ${Inv(assessorInCost, "F2")}, out: ${Inv(assessorOutCost, "F2")})");
                 }
 
                 if (hasVerifier && verifierPricing != null)
                 {
-                    sb.AppendLine($"  - Claim Verifier ({run.ClaimVerifierModelIdUsed}): {Curr(verifierPricing.Currency)}{Inv(verifierTotalCost, "F2")} (in: {Curr(verifierPricing.Currency)}{Inv(verifierInCost, "F2")}, out: {Curr(verifierPricing.Currency)}{Inv(verifierOutCost, "F2")})");
+                    sb.AppendLine($"  - Claim Verifier ({run.ClaimVerifierModelIdUsed}): ${Inv(verifierTotalCost, "F2")} (in: ${Inv(verifierInCost, "F2")}, out: ${Inv(verifierOutCost, "F2")})");
                 }
 
                 var provenanceParts = new List<string>();

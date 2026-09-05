@@ -87,7 +87,6 @@ public class SystemAiApiConfigurationDto
 
     /// <summary>"custom", "catalog", or "unknown" when no price resolves at all.</summary>
     public string PricingSource { get; set; } = "unknown";
-    public string? PricingCurrency { get; set; }
     public string? PricingAsOf { get; set; }
 }
 

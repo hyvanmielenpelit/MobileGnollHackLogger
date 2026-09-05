@@ -268,7 +268,6 @@ public class AdminController : ControllerBase
                     c.EffectiveOutputPricePerMillion = resolved.OutputPerMillion;
                     c.EffectiveCachedInputPricePerMillion = resolved.CachedInputPerMillion;
                     c.PricingSource = resolved.Source == ModelPricingSource.Custom ? "custom" : "catalog";
-                    c.PricingCurrency = resolved.Currency;
                     c.PricingAsOf = resolved.AsOf;
                 }
                 else

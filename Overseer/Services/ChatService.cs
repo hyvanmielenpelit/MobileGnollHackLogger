@@ -936,7 +936,6 @@ public class ChatService
                 }
 
                 decimal? estimatedCost = null;
-                string? costCurrency = null;
                 string? pricingSource = null;
 
                 if (resolvedPricing != null)
@@ -947,7 +946,6 @@ public class ChatService
                         wholeTurnOutputTokens,
                         cacheReadTokens,
                         cacheCreationTokens);
-                    costCurrency = resolvedPricing.Currency;
                     pricingSource = resolvedPricing.Source == ModelPricingSource.Custom ? "custom" : "catalog";
 
                     yield return new ChatEvent
@@ -956,7 +954,6 @@ public class ChatService
                         Data = JsonSerializer.Serialize(new
                         {
                             estimatedCost = estimatedCost,
-                            currency = costCurrency,
                             source = pricingSource,
                             inputTokens = wholeTurnInputTokens,
                             outputTokens = wholeTurnOutputTokens,
@@ -993,8 +990,7 @@ public class ChatService
                     CacheReadTokens = (int)Math.Min(int.MaxValue, cacheReadTokens),
                     CacheCreationTokens = (int)Math.Min(int.MaxValue, cacheCreationTokens),
                     EstimatedCost = estimatedCost,
-                    PricingSource = pricingSource,
-                    CostCurrency = costCurrency
+                    PricingSource = pricingSource
                 };
                 dbContext.ChatMessage.Add(asstMsg);
                 session.LastMessageUtc = DateTime.UtcNow;

@@ -1822,7 +1822,6 @@ public class AdminBenchmarkController : ControllerBase
                 cachedInputPerMillion = p.CachedInputPerMillion,
                 cacheWritePerMillion = p.CacheWritePerMillion,
                 source = p.Source == ModelPricingSource.Custom ? "custom" : "catalog",
-                currency = p.Currency,
                 asOf = p.AsOf
             };
 
@@ -1990,7 +1989,6 @@ public class AdminBenchmarkController : ControllerBase
         decimal? assessorCost = null;
         decimal? verifierCost = null;
         decimal? totalEstimatedCost = null;
-        string? costCurrency = null;
         string? pricingSource = null;
         bool pricingIncomplete = !canEstimateCost;
 
@@ -2025,15 +2023,7 @@ public class AdminBenchmarkController : ControllerBase
 
             if (canEstimateCost)
             {
-                var currencies = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { candidatePricing!.Currency };
-                if (hasAssessor && assessorPricing != null) currencies.Add(assessorPricing.Currency);
-                if (hasVerifier && verifierPricing != null) currencies.Add(verifierPricing.Currency);
-
-                if (currencies.Count == 1)
-                {
-                    totalEstimatedCost = (candidateCost ?? 0m) + (assessorCost ?? 0m) + (verifierCost ?? 0m);
-                    costCurrency = candidatePricing.Currency;
-                }
+                totalEstimatedCost = (candidateCost ?? 0m) + (assessorCost ?? 0m) + (verifierCost ?? 0m);
             }
         }
 
@@ -2162,7 +2152,6 @@ public class AdminBenchmarkController : ControllerBase
             EstimatedCandidateCost = candidateCost,
             EstimatedAssessorCost = assessorCost,
             EstimatedVerifierCost = verifierCost,
-            CostCurrency = costCurrency,
             PricingSource = pricingSource,
             PricingIncomplete = pricingIncomplete,
 
@@ -2415,22 +2404,8 @@ public class AdminBenchmarkController : ControllerBase
                     decimal assCost = hasAssessor && assessorPricing != null ? ModelPricingService.ComputeCost(assessorPricing, tempRun.TotalAssessmentInputTokens, tempRun.TotalAssessmentOutputTokens) : 0m;
                     decimal verCost = hasVerifier && verifierPricing != null ? ModelPricingService.ComputeCost(verifierPricing, tempRun.TotalClaimVerificationInputTokens, tempRun.TotalClaimVerificationOutputTokens) : 0m;
 
-                    var currencies = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { candidatePricing!.Currency };
-                    if (hasAssessor && assessorPricing != null) currencies.Add(assessorPricing.Currency);
-                    if (hasVerifier && verifierPricing != null) currencies.Add(verifierPricing.Currency);
-
-                    if (currencies.Count == 1)
-                    {
-                        item.Summary.EstimatedCost = candCost + assCost + verCost;
-                        item.Summary.CostCurrency = candidatePricing.Currency;
-                        item.Summary.PricingIncomplete = false;
-                    }
-                    else
-                    {
-                        item.Summary.EstimatedCost = null;
-                        item.Summary.CostCurrency = null;
-                        item.Summary.PricingIncomplete = false;
-                    }
+                    item.Summary.EstimatedCost = candCost + assCost + verCost;
+                    item.Summary.PricingIncomplete = false;
                 }
             }
         }

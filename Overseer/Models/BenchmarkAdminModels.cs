@@ -648,7 +648,6 @@ public class BenchmarkRunDetailDto
     public decimal? EstimatedCandidateCost { get; set; }
     public decimal? EstimatedAssessorCost { get; set; }
     public decimal? EstimatedVerifierCost { get; set; }
-    public string? CostCurrency { get; set; }
     public string? PricingSource { get; set; }
     public bool PricingIncomplete { get; set; }
 
@@ -900,7 +899,6 @@ public class BenchmarkRunSummaryDto
     public long TotalDurationMs { get; set; }
 
     public decimal? EstimatedCost { get; set; }
-    public string? CostCurrency { get; set; }
     public bool PricingIncomplete { get; set; }
 }
 

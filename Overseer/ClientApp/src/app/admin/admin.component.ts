@@ -1013,7 +1013,7 @@ export class AdminComponent implements OnInit, OnDestroy {
       return '';
     }
 
-    const curr = this.getCurrencySymbol(config.pricingCurrency);
+    const curr = '$';
     const fmt = (val: number) => {
       const formatted = new Intl.NumberFormat('en-US', {
         minimumFractionDigits: 2,
@@ -1032,14 +1032,6 @@ export class AdminComponent implements OnInit, OnDestroy {
 
   getPricingBadge(config: SystemAiConfigDto): 'Custom' | 'Catalog' {
     return (config.pricingSource === 'custom' || config.pricingMode === 'custom') ? 'Custom' : 'Catalog';
-  }
-
-  private getCurrencySymbol(currency?: string | null): string {
-    if (!currency || currency === 'USD') return '$';
-    if (currency === 'EUR') return '€';
-    if (currency === 'GBP') return '£';
-    if (currency === 'JPY') return '¥';
-    return currency + ' ';
   }
 
   modelRoleBadges(role: number): Array<{ label: string; cssClass: string }> {

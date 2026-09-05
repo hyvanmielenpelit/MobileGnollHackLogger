@@ -177,7 +177,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   showChangelogAnimation = false;
   showChatCost = true;
   liveCost: number | null = null;
-  liveCostCurrency: string | null = null;
   liveIsOperatorCost: boolean = false;
   sessionTotalCost: number | null = null;
   
@@ -371,12 +370,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     return this.messages.reduce((sum, m) => sum + (m.role === 'assistant' ? (m.estimatedCost || 0) : 0), 0) + (this.liveCost || 0);
   }
 
-  get firstCurrency(): string {
-    const msg = this.messages.find(m => m.role === 'assistant' && m.costCurrency);
-    if (msg) return msg.costCurrency!;
-    return this.liveCostCurrency || 'USD';
-  }
-
   /**
    * Every cost figure in the chat: per reply, live, and the conversation total.
    * Dollars at or above $1, cents below it — a single reply, and often a whole short chat,
@@ -384,13 +377,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
    * resolve to $0.0001; anything smaller but non-zero prints "<0.01¢" rather than
    * rounding to zero.
    */
-  formatCost(cost: number | null | undefined, currency?: string | null): string {
+  formatCost(cost: number | null | undefined): string {
     if (cost == null) return '';
-    const c = currency ? currency.toUpperCase() : 'USD';
-    if (c !== 'USD') {
-      // Legacy rows only. Overseer prices exclusively in USD.
-      return `${cost.toFixed(4)} ${c}`;
-    }
     if (cost >= 1) return `$${cost.toFixed(2)}`;
     const cents = cost * 100;
     if (cost > 0 && cents < 0.01) return '<0.01¢';
@@ -422,7 +410,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
   /** The chat total as displayed: same dollars-or-cents rule as every per-reply figure. */
   get formattedChatCost(): string {
-    return this.formatCost(this.totalChatCost, 'USD');
+    return this.formatCost(this.totalChatCost);
   }
 
   get chatCostTooltip(): string {
@@ -1464,7 +1452,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       try {
         const d = JSON.parse(evt.data);
         this.liveCost = d.estimatedCost ?? null;
-        this.liveCostCurrency = d.currency;
         this.liveIsOperatorCost = d.isOperatorCost;
         this.cdr.detectChanges();
       } catch { }
@@ -1692,7 +1679,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
             contextWindowTokens: this.contextUsage?.windowTokens,
             contextInputLimitTokens: this.contextUsage?.inputLimitTokens,
             estimatedCost: this.liveCost,
-            costCurrency: this.liveCostCurrency,
             isOperatorCost: this.liveIsOperatorCost
           });
 
@@ -1709,7 +1695,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           this.streamingToolCalls = [];
           this.timeToFirstTokenMs = null;
     this.liveCost = null;
-    this.liveCostCurrency = null;
     this.liveIsOperatorCost = false;
           this.totalDurationMs = null;
           this.showSpinner = false;
@@ -2080,7 +2065,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.titleStatusText = '';
     this.timeToFirstTokenMs = null;
     this.liveCost = null;
-    this.liveCostCurrency = null;
     this.liveIsOperatorCost = false;
     this.totalDurationMs = null;
     this.contextUsage = null;
@@ -2668,7 +2652,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.streamingToolCalls = [];
     this.timeToFirstTokenMs = null;
     this.liveCost = null;
-    this.liveCostCurrency = null;
     this.liveIsOperatorCost = false;
     this.totalDurationMs = null;
     this.lastSeenSeqNo = -1; // [NEW] Reset sequence tracker for new generation

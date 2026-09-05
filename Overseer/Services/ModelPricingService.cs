@@ -14,7 +14,6 @@ public record ModelPricing(
     decimal? CachedInputPerMillion = null,
     decimal? CacheWritePerMillion = null,
     ModelPricingSource Source = ModelPricingSource.Catalog,
-    string Currency = "USD",
     string? AsOf = null);
 
 public record BenchmarkRunPricing(
@@ -53,7 +52,6 @@ public class ModelPricingService
                 config.CachedInputPricePerMillion,
                 CacheWritePerMillion: null,
                 Source: ModelPricingSource.Custom,
-                Currency: "USD",
                 AsOf: null);
         }
 
@@ -73,7 +71,6 @@ public class ModelPricingService
                 model.CachedInputPricePerMillion,
                 CacheWritePerMillion: null,
                 Source: ModelPricingSource.Custom,
-                Currency: "USD",
                 AsOf: null);
         }
 
@@ -96,7 +93,6 @@ public class ModelPricingService
             dp.CachedInputPerMillion,
             dp.CacheWritePerMillion,
             ModelPricingSource.Catalog,
-            "USD", // Overseer prices exclusively in USD; the catalog carries no currency field.
             dp.AsOf);
     }
 
@@ -142,10 +138,9 @@ public class ModelPricingService
                         decimal? cacheWrite = roleElem.TryGetProperty("cacheWritePerMillion", out var pCW) && pCW.ValueKind == JsonValueKind.Number ? pCW.GetDecimal() : null;
                         string sourceStr = roleElem.TryGetProperty("source", out var pSrc) ? pSrc.GetString() ?? "catalog" : "catalog";
                         var source = string.Equals(sourceStr, "custom", StringComparison.OrdinalIgnoreCase) ? ModelPricingSource.Custom : ModelPricingSource.Catalog;
-                        string currency = roleElem.TryGetProperty("currency", out var pCur) ? pCur.GetString() ?? "USD" : "USD";
                         string? asOf = roleElem.TryGetProperty("asOf", out var pAsOf) ? pAsOf.GetString() : null;
 
-                        return new ModelPricing(inPrice, outPrice, cachedIn, cacheWrite, source, currency, asOf);
+                        return new ModelPricing(inPrice, outPrice, cachedIn, cacheWrite, source, asOf);
                     }
                     return null;
                 }

@@ -33,7 +33,6 @@ public class ModelPricingServiceTests
         Assert.Equal(0.40m, result.CachedInputPerMillion);
         Assert.Equal(5.00m, result.CacheWritePerMillion);
         Assert.Equal(ModelPricingSource.Catalog, result.Source);
-        Assert.Equal("USD", result.Currency);
         Assert.Equal("2026-09-05", result.AsOf);
     }
 
@@ -85,7 +84,6 @@ public class ModelPricingServiceTests
         Assert.Equal(5.0m, result.InputPerMillion);
         Assert.Equal(15.0m, result.OutputPerMillion);
         Assert.Equal(1.0m, result.CachedInputPerMillion);
-        Assert.Equal("USD", result.Currency);
     }
 
     [Fact]

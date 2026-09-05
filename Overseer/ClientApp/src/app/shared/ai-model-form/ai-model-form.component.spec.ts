@@ -26,7 +26,6 @@ describe('AiModelFormComponent', () => {
         inputPerMillion: 5.0,
         outputPerMillion: 15.0,
         cachedInputPerMillion: 2.5,
-        currency: 'USD',
         asOf: '2024-05-13'
       }
     },

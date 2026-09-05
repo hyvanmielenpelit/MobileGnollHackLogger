@@ -313,7 +313,6 @@ public class SettingsController : ControllerBase
                 EffectiveOutputPricePerMillion = resolvedPricing?.OutputPerMillion,
                 EffectiveCachedInputPricePerMillion = resolvedPricing?.CachedInputPerMillion,
                 PricingSource = resolvedPricing != null ? (resolvedPricing.Source == ModelPricingSource.Custom ? "custom" : "catalog") : "unknown",
-                PricingCurrency = resolvedPricing?.Currency,
                 PricingAsOf = resolvedPricing?.AsOf
             };
         }).ToList();
@@ -345,7 +344,6 @@ public class SettingsController : ControllerBase
                 EffectiveOutputPricePerMillion = resolvedPricing?.OutputPerMillion,
                 EffectiveCachedInputPricePerMillion = resolvedPricing?.CachedInputPerMillion,
                 PricingSource = resolvedPricing != null ? (resolvedPricing.Source == ModelPricingSource.Custom ? "custom" : "catalog") : "unknown",
-                PricingCurrency = resolvedPricing?.Currency,
                 PricingAsOf = resolvedPricing?.AsOf
             };
         });

@@ -251,7 +251,6 @@ yield return new ChatEvent
     Data = JsonSerializer.Serialize(new
     {
         estimatedCost,
-        currency = pricing.Currency ?? "USD",
         source = pricing.Source, // "custom" | "catalog"
         inputTokens,
         outputTokens,
@@ -266,7 +265,7 @@ yield return new ChatEvent
 When a user chats using an operator-provided system model, `isOperatorCost` is `true`. The UI displays `(operator)` next to the cost figure so users clearly understand that server operator credits were used, not personal user billing.
 
 ### Persistence & UI
-- Persisted on `ChatMessage`: `EstimatedCost` (precision 18, 8), `CostCurrency`, `PricingSource`, and the four token counts. Snapshotted on completion; never recomputed on read.
+- Persisted on `ChatMessage`: `EstimatedCost` (precision 18, 8), `PricingSource`, and the four token counts. Snapshotted on completion; never recomputed on read.
 - Gated in UI by user preference `showChatCost` (under Settings).
 - Rendered in `.ttft-container` in message headers and in the streaming footer.
 - Running conversation total in footer is explicitly labelled as `Total cost (loaded)` to prevent confusion when older messages have been pruned by chat retention policies.

@@ -409,7 +409,6 @@ describe('ChatComponent session loading and exclusivity', () => {
         component.isStreaming = true;
         component.streamingMessage = 'Hello from Overseer';
         component.liveCost = 0.005;
-        component.liveCostCurrency = 'USD';
         component.liveIsOperatorCost = true;
 
         component.processChatEvent({ type: 'done', data: '' });
@@ -417,7 +416,6 @@ describe('ChatComponent session loading and exclusivity', () => {
 
         expect(component.messages.length).toBe(1);
         expect(component.messages[0].estimatedCost).toBe(0.005);
-        expect(component.messages[0].costCurrency).toBe('USD');
         expect(component.messages[0].isOperatorCost).toBeTrue();
 
         // Folded once, and only once: the live figure is cleared straight after.
@@ -435,20 +433,19 @@ describe('ChatComponent session loading and exclusivity', () => {
       }
     });
 
-    it('should update liveCost, liveCostCurrency, and liveIsOperatorCost when cost event is received', () => {
+    it('should update liveCost and liveIsOperatorCost when cost event is received', () => {
       expect(component.liveCost).toBeNull();
       // The wire format ChatService actually serializes: estimatedCost, not cost.
-      component.processChatEvent({ type: 'cost', data: JSON.stringify({ estimatedCost: 0.0015, currency: 'USD', isOperatorCost: true }) });
+      component.processChatEvent({ type: 'cost', data: JSON.stringify({ estimatedCost: 0.0015, isOperatorCost: true }) });
       expect(component.liveCost).toBe(0.0015);
-      expect(component.liveCostCurrency).toBe('USD');
       expect(component.liveIsOperatorCost).toBeTrue();
     });
 
     it('should calculate totalLoadedCost correctly for loaded messages and live stream', () => {
       component.messages = [
         { role: 'user', content: 'hello' } as any,
-        { role: 'assistant', content: 'hi', estimatedCost: 0.01, costCurrency: 'USD' } as any,
-        { role: 'assistant', content: 'test', estimatedCost: 0.02, costCurrency: 'USD' } as any,
+        { role: 'assistant', content: 'hi', estimatedCost: 0.01 } as any,
+        { role: 'assistant', content: 'test', estimatedCost: 0.02 } as any,
       ];
       component.liveCost = 0.005;
       expect(component.totalLoadedCost).toBeCloseTo(0.035, 4);
@@ -456,18 +453,14 @@ describe('ChatComponent session loading and exclusivity', () => {
 
     it('should format cost in dollars at or above $1 and in cents below it', () => {
       expect(component.formatCost(null)).toBe('');
-      expect(component.formatCost(0, 'USD')).toBe('0.00¢');
-      expect(component.formatCost(0.000005, 'USD')).toBe('<0.01¢');
-      expect(component.formatCost(0.0001, 'USD')).toBe('0.01¢');
-      expect(component.formatCost(0.005, 'USD')).toBe('0.50¢');
-      expect(component.formatCost(0.05, 'USD')).toBe('5.00¢');
-      expect(component.formatCost(0.99, 'USD')).toBe('99.00¢');
-      expect(component.formatCost(1, 'USD')).toBe('$1.00');
-      expect(component.formatCost(1.235, 'USD')).toBe('$1.24');
-    });
-
-    it('should format a legacy non-USD cost with its currency code', () => {
-      expect(component.formatCost(0.05, 'EUR')).toBe('0.0500 EUR');
+      expect(component.formatCost(0)).toBe('0.00¢');
+      expect(component.formatCost(0.000005)).toBe('<0.01¢');
+      expect(component.formatCost(0.0001)).toBe('0.01¢');
+      expect(component.formatCost(0.005)).toBe('0.50¢');
+      expect(component.formatCost(0.05)).toBe('5.00¢');
+      expect(component.formatCost(0.99)).toBe('99.00¢');
+      expect(component.formatCost(1)).toBe('$1.00');
+      expect(component.formatCost(1.235)).toBe('$1.24');
     });
 
     it('should format the chat total with the same dollars-or-cents rule', () => {
@@ -482,7 +475,7 @@ describe('ChatComponent session loading and exclusivity', () => {
     });
 
     it('should render the persisted session total for a restored chat with no live turn', () => {
-      component.messages = [{ role: 'assistant', content: 'test', estimatedCost: 0.01, costCurrency: 'USD' } as any];
+      component.messages = [{ role: 'assistant', content: 'test', estimatedCost: 0.01 } as any];
       component.sessionTotalCost = 0.0185;
       component.liveCost = null;
       component.showChatCost = true;
@@ -495,8 +488,8 @@ describe('ChatComponent session loading and exclusivity', () => {
 
     it('should fall back to the loaded-message sum when no session total was persisted', () => {
       component.messages = [
-        { role: 'assistant', content: 'a', estimatedCost: 0.01, costCurrency: 'USD' } as any,
-        { role: 'assistant', content: 'b', estimatedCost: 0.02, costCurrency: 'USD' } as any,
+        { role: 'assistant', content: 'a', estimatedCost: 0.01 } as any,
+        { role: 'assistant', content: 'b', estimatedCost: 0.02 } as any,
       ];
       component.sessionTotalCost = null;
       expect(component.totalChatCost).toBeCloseTo(0.03, 6);
@@ -519,7 +512,7 @@ describe('ChatComponent session loading and exclusivity', () => {
 
     it('should mark a partially priced chat with a PARTIAL badge', () => {
       component.messages = [
-        { role: 'assistant', content: 'a', estimatedCost: 0.01, costCurrency: 'USD' } as any,
+        { role: 'assistant', content: 'a', estimatedCost: 0.01 } as any,
         { role: 'assistant', content: 'b' } as any,
       ];
       component.sessionTotalCost = 0.01;
@@ -533,8 +526,8 @@ describe('ChatComponent session loading and exclusivity', () => {
 
     it('should not mark a fully priced chat as partial', () => {
       component.messages = [
-        { role: 'assistant', content: 'a', estimatedCost: 0.01, costCurrency: 'USD' } as any,
-        { role: 'assistant', content: 'b', estimatedCost: 0.02, costCurrency: 'USD' } as any,
+        { role: 'assistant', content: 'a', estimatedCost: 0.01 } as any,
+        { role: 'assistant', content: 'b', estimatedCost: 0.02 } as any,
       ];
       component.sessionTotalCost = 0.03;
       component.showChatCost = true;
@@ -545,7 +538,7 @@ describe('ChatComponent session loading and exclusivity', () => {
     });
 
     it('should render estimatedCost in the bottom-left footer of a loaded message', () => {
-      component.messages = [{ role: 'assistant', content: 'test', timeToFirstTokenMs: 1000, estimatedCost: 0.015, costCurrency: 'USD', isOperatorCost: true } as any];
+      component.messages = [{ role: 'assistant', content: 'test', timeToFirstTokenMs: 1000, estimatedCost: 0.015, isOperatorCost: true } as any];
       component.showChatCost = true;
       fixture.detectChanges();
       const compiled = fixture.nativeElement as HTMLElement;
@@ -571,7 +564,6 @@ describe('ChatComponent session loading and exclusivity', () => {
       component.isStreaming = true;
       component.showChatCost = true;
       component.liveCost = 0.005;
-      component.liveCostCurrency = 'USD';
       component.liveIsOperatorCost = false;
       fixture.detectChanges();
       const compiled = fixture.nativeElement as HTMLElement;
@@ -584,10 +576,9 @@ describe('ChatComponent session loading and exclusivity', () => {
     });
 
     it('should not render chat costs when showChatCost is false', () => {
-      component.messages = [{ role: 'assistant', content: 'test', timeToFirstTokenMs: 1000, estimatedCost: 0.015, costCurrency: 'USD' } as any];
+      component.messages = [{ role: 'assistant', content: 'test', timeToFirstTokenMs: 1000, estimatedCost: 0.015 } as any];
       component.isStreaming = true;
       component.liveCost = 0.005;
-      component.liveCostCurrency = 'USD';
       component.showChatCost = false;
       fixture.detectChanges();
       const compiled = fixture.nativeElement as HTMLElement;

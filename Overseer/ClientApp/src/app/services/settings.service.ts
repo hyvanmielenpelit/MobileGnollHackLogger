@@ -7,7 +7,6 @@ export interface ModelPricingDto {
   outputPerMillion: number;
   cachedInputPerMillion?: number | null;
   cacheWritePerMillion?: number | null;
-  currency?: string | null;
   asOf?: string | null;
 }
 
@@ -83,7 +82,6 @@ export interface UserAiModel {
   effectiveOutputPricePerMillion?: number | null;
   effectiveCachedInputPricePerMillion?: number | null;
   pricingSource?: string | null;
-  pricingCurrency?: string | null;
   pricingAsOf?: string | null;
 }
 

@@ -1659,31 +1659,4 @@ public class BenchmarkReportBuilderTests
         Assert.Contains("Claim Verifier (gpt-5-mini): $0.12 (in: $0.10, out: $0.02)", report);
         Assert.Contains("- *Prices: candidate catalog (as of 2026-09-05); assessor catalog (as of 2026-09-05); verifier custom.*", report);
     }
-
-    [Fact]
-    public void EstimatedCost_MixedCurrencies_PrintsPerRoleCosts_AndOmitsTotal()
-    {
-        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
-        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
-        run.TestedModelIdUsed = "custom-eur-model";
-        run.AssessorModelIdUsed = "gemini-3.7-flash";
-        run.TotalInputTokens = 1_000_000;
-        run.TotalOutputTokens = 100_000;
-        run.TotalAssessmentInputTokens = 100_000;
-        run.TotalAssessmentOutputTokens = 10_000;
-
-        var runPricing = new BenchmarkRunPricing(
-            Candidate: new ModelPricing(2.00m, 8.00m, Source: ModelPricingSource.Custom, Currency: "EUR"),
-            Assessor: new ModelPricing(0.15m, 0.60m, Source: ModelPricingSource.Catalog, Currency: "USD", AsOf: "2026-09-05"),
-            SecondOpinion: null,
-            ClaimVerifier: null,
-            IsSnapshot: false
-        );
-
-        var report = BenchmarkReportBuilder.BuildMarkdownReport(run, runPricing: runPricing);
-        Assert.Contains("- **Estimated Cost:** *Roles are priced in different currencies; no total is shown.*", report);
-        Assert.Contains("Candidate (custom-eur-model): EUR 2.80 (in: EUR 2.00, out: EUR 0.80)", report);
-        Assert.Contains("Assessor (gemini-3.7-flash): $0.02 (in: $0.02, out: $0.01)", report);
-        Assert.Contains("*(priced at report generation time; this run predates price snapshotting)*", report);
-    }
 }

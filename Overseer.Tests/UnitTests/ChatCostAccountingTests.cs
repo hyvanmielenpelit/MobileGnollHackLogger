@@ -33,8 +33,7 @@ public class ChatCostAccountingTests
         var pricing = new ModelPricing(
             InputPerMillion: 2.50m,
             OutputPerMillion: 10.00m,
-            Source: ModelPricingSource.Catalog,
-            Currency: "USD");
+            Source: ModelPricingSource.Catalog);
 
         decimal finalCallOnlyCost = ModelPricingService.ComputeCost(pricing, iter2Input, iter2Output);
         decimal wholeTurnCost = ModelPricingService.ComputeCost(pricing, wholeTurnInput, wholeTurnOutput);
@@ -94,8 +93,7 @@ public class ChatCostAccountingTests
             InputTokens = 1_000_000,
             OutputTokens = 100_000,
             EstimatedCost = cost,
-            PricingSource = pricing.Source == ModelPricingSource.Custom ? "custom" : "catalog",
-            CostCurrency = pricing.Currency
+            PricingSource = pricing.Source == ModelPricingSource.Custom ? "custom" : "catalog"
         };
         db.ChatMessage.Add(message);
         await db.SaveChangesAsync(ct);
@@ -110,7 +108,6 @@ public class ChatCostAccountingTests
         Assert.NotNull(reloaded);
         Assert.Equal(2.80m, reloaded.EstimatedCost);
         Assert.Equal("custom", reloaded.PricingSource);
-        Assert.Equal("USD", reloaded.CostCurrency);
     }
 
     [Fact]
@@ -136,13 +133,11 @@ public class ChatCostAccountingTests
 
         decimal? estimatedCost = null;
         string? pricingSource = null;
-        string? costCurrency = null;
 
         if (pricing != null)
         {
             estimatedCost = ModelPricingService.ComputeCost(pricing, 1_000_000, 100_000);
             pricingSource = pricing.Source == ModelPricingSource.Custom ? "custom" : "catalog";
-            costCurrency = pricing.Currency;
         }
 
         var message = new ChatMessage
@@ -154,13 +149,11 @@ public class ChatCostAccountingTests
             InputTokens = 1_000_000,
             OutputTokens = 100_000,
             EstimatedCost = estimatedCost,
-            PricingSource = pricingSource,
-            CostCurrency = costCurrency
+            PricingSource = pricingSource
         };
 
         Assert.Null(message.EstimatedCost);
         Assert.Null(message.PricingSource);
-        Assert.Null(message.CostCurrency);
     }
     [Fact]
     public void Accumulator_FirstPricedTurn_SetsTotalFromNull()
@@ -219,20 +212,5 @@ public class ChatCostAccountingTests
         var reloaded = await db.ChatSession.FindAsync(new object?[] { session.Id }, ct);
         Assert.NotNull(reloaded);
         Assert.Equal(0.01234567m, reloaded.TotalEstimatedCost);
-    }
-
-    [Fact]
-    public void ResolveDefault_CatalogEntry_IsPricedInUsd()
-    {
-        // The catalog no longer carries a currency field; ResolveDefault supplies the literal.
-        using var db = CreateInMemoryDbContext();
-        var metadataService = new ModelMetadataService();
-        var pricingService = new ModelPricingService(metadataService, db);
-
-        var pricing = pricingService.ResolveDefault("Anthropic", "claude-opus-4-6");
-
-        Assert.NotNull(pricing);
-        Assert.Equal("USD", pricing.Currency);
-        Assert.Equal(ModelPricingSource.Catalog, pricing.Source);
     }
 }

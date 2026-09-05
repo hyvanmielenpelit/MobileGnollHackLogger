@@ -3303,7 +3303,6 @@ describe('AdminBenchmarkComponent', () => {
         suiteName: 'Test',
         status: 2,
         estimatedCost: 1.2345,
-        costCurrency: 'USD',
         pricingSource: 'Anthropic API',
         pricingIncomplete: true,
         answers: []
@@ -3315,7 +3314,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(card).toBeTruthy();
       
       const content = card!.textContent?.replace(/\s+/g, ' ').trim() || '';
-      expect(content).toContain('1.2345 USD');
+      expect(content).toContain('$1.2345');
       expect(content).toContain('Anthropic API');
       
       const marker = card!.querySelector('.degraded-tag');
@@ -3331,7 +3330,6 @@ describe('AdminBenchmarkComponent', () => {
           suiteName: 'Test Suite',
           status: 2,
           estimatedCost: 0.50,
-          costCurrency: 'EUR',
           pricingIncomplete: true
         } as any
       ];
@@ -3345,7 +3343,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(row).toBeTruthy();
       
       const cellText = row!.textContent || '';
-      expect(cellText).toContain('0.50 EUR');
+      expect(cellText).toContain('$0.50');
       
       const marker = row!.querySelector('.degraded-tag');
       expect(marker).toBeTruthy();

@@ -44,11 +44,12 @@ When a chat turn completes, `ModelPricingService` resolves pricing in priority o
 3. **null (Not Available)**: If neither exists, cost estimation is omitted (never treated as zero).
 
 > [!IMPORTANT]
-> **USD-only policy.** Overseer prices exclusively in **USD**. The provider catalogs carry no
-> `currency` field, custom prices entered on a model are always USD, and `ModelPricingService`
-> supplies the literal `"USD"` at every resolution path. `ModelPricing.Currency` and
-> `ChatMessage.CostCurrency` are retained as constants — they keep historical rows readable and
-> feed benchmark reporting, but no code path can produce any other value.
+> **USD-only policy, and the currency fields are gone.** Overseer prices exclusively in **USD**.
+> The provider catalogs carry no `currency` field, and custom prices entered on a model are
+> always USD. The currency concept has therefore been **removed end to end**: `ModelPricing`
+> no longer carries a `Currency` property, the `cost` SSE event no longer carries a `currency`
+> field, and `ChatMessage.CostCurrency` was dropped by migration
+> `RemoveChatMessageCostCurrency`. Every amount is rendered with a leading `$`.
 
 ### Streaming `cost` Event
 
@@ -61,7 +62,6 @@ yield return new ChatEvent
     Data = JsonSerializer.Serialize(new
     {
         estimatedCost,
-        currency = pricing.Currency ?? "USD",
         source = pricing.Source, // "custom" | "catalog"
         inputTokens,
         outputTokens,
@@ -88,7 +88,6 @@ When executing via a user's personal API key (`UserAiModel`), `isOperatorCost` i
 In `ChatMessage` (`GnollHackServer.Data`):
 ```csharp
 public decimal? EstimatedCost { get; set; }       // precision: (18, 8)
-public string? CostCurrency { get; set; }
 public string? PricingSource { get; set; }       // "custom" | "catalog"
 public long? InputTokens { get; set; }
 public long? OutputTokens { get; set; }
@@ -136,8 +135,7 @@ All three surfaces share **one** formatter, `ChatComponent.formatCost`:
 
 A single reply, and often a whole short chat, costs a fraction of a cent; rendering that as
 `$0.00` would read as free. The dollar form takes over at $1, where the distinction starts to
-matter. A legacy row carrying a non-USD `CostCurrency` falls through to `0.0500 EUR` form; no
-current code path can produce one.
+matter.
 
 ### UI Presentation Surfaces
 
@@ -148,13 +146,13 @@ current code path can produce one.
    ```html
    @if (msg.role === 'assistant' && showChatCost && msg.estimatedCost != null) {
      <div class="msg-cost-footer" title="Estimated cost of this response">
-       {{ formatCost(msg.estimatedCost, msg.costCurrency) }}@if (msg.isOperatorCost) {<span class="msg-cost-operator">(operator)</span>}
+       {{ formatCost(msg.estimatedCost) }}@if (msg.isOperatorCost) {<span class="msg-cost-operator">(operator)</span>}
      </div>
    }
    ```
 2. **Live Streaming Cost**:
    The same `.msg-cost-footer`, on the streaming message box, driven by `liveCost` /
-   `liveCostCurrency` / `liveIsOperatorCost` once the `cost` event arrives.
+   `liveIsOperatorCost` once the `cost` event arrives.
 3. **Chat Total**:
    `Chat cost 1.85¢` in the telemetry bar above the prompt box, sharing the row with the
    context window indicator. The value is `ChatSession.TotalEstimatedCost` plus the in-flight

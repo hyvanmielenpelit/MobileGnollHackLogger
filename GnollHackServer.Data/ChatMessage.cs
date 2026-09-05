@@ -107,7 +107,4 @@ public class ChatMessage
     /// <summary>"custom" or "catalog" — which price produced <see cref="EstimatedCost"/>.</summary>
     [MaxLength(16)]
     public string? PricingSource { get; set; }
-
-    [MaxLength(8)]
-    public string? CostCurrency { get; set; }
 }

@@ -357,7 +357,7 @@
               <div [innerHTML]="msg.content | markdown" class="markdown-body"></div>
               @if (msg.role === 'assistant' && showChatCost && msg.estimatedCost != null) {
                 <div class="msg-cost-footer" title="Estimated cost of this response">
-                  {{ formatCost(msg.estimatedCost, msg.costCurrency) }}@if (msg.isOperatorCost) {<span class="msg-cost-operator">(operator)</span>}
+                  {{ formatCost(msg.estimatedCost) }}@if (msg.isOperatorCost) {<span class="msg-cost-operator">(operator)</span>}
                 </div>
               }
               @if (msg.role === 'assistant' && msg.id) {
@@ -496,7 +496,7 @@
               <div [innerHTML]="streamingMessage | markdown" class="markdown-body" [style.display]="(isStreaming && (showThoughtsAndTools === 0 || showThoughtsAndTools === 1) && !hasRealContent) ? 'none' : 'block'"></div>
               @if (showChatCost && liveCost != null) {
                 <div class="msg-cost-footer" title="Estimated cost of this response">
-                  {{ formatCost(liveCost, liveCostCurrency) }}@if (liveIsOperatorCost) {<span class="msg-cost-operator">(operator)</span>}
+                  {{ formatCost(liveCost) }}@if (liveIsOperatorCost) {<span class="msg-cost-operator">(operator)</span>}
                 </div>
               }
               <button class="copy-btn" (click)="copyToClipboard(streamingMessage, null)" title="Copy">

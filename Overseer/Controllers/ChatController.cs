@@ -194,8 +194,7 @@ public class ChatController : ControllerBase
                 m.CacheReadTokens,
                 m.CacheCreationTokens,
                 m.EstimatedCost,
-                m.PricingSource,
-                m.CostCurrency
+                m.PricingSource
             })
             .ToListAsync();
         swDb.Stop();
@@ -336,8 +335,7 @@ public class ChatController : ControllerBase
                 m.CacheReadTokens,
                 m.CacheCreationTokens,
                 m.EstimatedCost,
-                m.PricingSource,
-                m.CostCurrency
+                m.PricingSource
             };
         }).ToList();
         swAsm.Stop();

@@ -757,11 +757,10 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
 
   formatPickerPrice(config: SystemAiConfigDto): string {
     if (config.effectiveInputPricePerMillion == null || config.effectiveOutputPricePerMillion == null) return '';
-    const currency = config.pricingCurrency ?? 'USD';
     const numPipe = new DecimalPipe('en-US');
     const inPrice = numPipe.transform(config.effectiveInputPricePerMillion, '1.2-2');
     const outPrice = numPipe.transform(config.effectiveOutputPricePerMillion, '1.2-2');
-    return `${inPrice}/${outPrice} ${currency} per 1M`;
+    return `$${inPrice}/$${outPrice} per 1M`;
   }
 
   get estimatedRunCostSoFar(): number | null {
@@ -787,21 +786,11 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     return cost;
   }
 
-  get estimatedRunCostCurrencySoFar(): string {
-    if (!this.activeRunDetail || !this.activeRunDetail.testedModelConfigurationId) return '$';
-    const config = this.benchmarkCapableConfigs.find(c => c.id === this.activeRunDetail!.testedModelConfigurationId);
-    return config?.pricingCurrency ?? 'USD';
-  }
-
   formatRunEstimatedCost(run: BenchmarkRunSummaryDto | BenchmarkRunDetailDto): string {
     if (run.estimatedCost == null) return '-';
-    const currency = run.costCurrency ?? '$';
     const numPipe = new DecimalPipe('en-US');
     const formatted = numPipe.transform(run.estimatedCost, '1.2-4');
-    if (currency.length > 1) {
-      return `${formatted} ${currency}`;
-    }
-    return `${currency}${formatted}`;
+    return `$${formatted}`;
   }
 
   formatSecondOpinionMode(mode: number | null | undefined): string {

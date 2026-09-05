@@ -57,13 +57,11 @@ export interface ModelPricingDto {
   outputPerMillion: number;
   cachedInputPerMillion?: number | null;
   cacheWritePerMillion?: number | null;
-  currency?: string | null;
   asOf?: string | null;
 }
 
 export interface ChatCostEventData {
   estimatedCost?: number | null;
-  currency?: string | null;
   source?: string | null;
   inputTokens?: number;
   outputTokens?: number;
@@ -95,7 +93,6 @@ export interface ChatMessage {
   cacheCreationTokens?: number;
   estimatedCost?: number | null;
   pricingSource?: string | null;
-  costCurrency?: string | null;
   isOperatorCost?: boolean;
 }
 

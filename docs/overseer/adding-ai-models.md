@@ -224,16 +224,16 @@ Token pricing is declared directly in the catalog JSON files under an optional `
   "outputPerMillion": 22.50,
   "cachedInputPerMillion": 2.50,
   "cacheWritePerMillion": null,
-  "currency": "USD",
   "asOf": "2026-09-05"
 }
 ```
 
-- `inputPerMillion` and `outputPerMillion`: Required when `pricing` is specified. Rates are in currency units per 1,000,000 tokens.
+- `inputPerMillion` and `outputPerMillion`: Required when `pricing` is specified. Rates are in USD per 1,000,000 tokens.
 - `cachedInputPerMillion`: Optional rate for prompt cache read hits. If omitted, cache reads are costed at `inputPerMillion`.
 - `cacheWritePerMillion`: Optional rate for prompt cache writes/creation (e.g. Anthropic). If omitted or null, cache creation cost is omitted.
-- `currency`: Currency code (defaults to `"USD"`).
 - `asOf`: The date (`"YYYY-MM-DD"`) when the published list price was verified.
+
+The catalog has no `currency` field, because Overseer prices exclusively in USD.
 
 When a model publishes no pricing, omit the `pricing` block entirely. Overseer treats absent pricing as "price not available", never as zero.
 

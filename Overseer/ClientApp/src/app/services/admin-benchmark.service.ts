@@ -50,7 +50,6 @@ export interface ModelPricingDto {
   outputPerMillion: number;
   cachedInputPerMillion?: number | null;
   cacheWritePerMillion?: number | null;
-  currency?: string | null;
   asOf?: string | null;
 }
 
@@ -735,7 +734,6 @@ export interface BenchmarkRunDetailDto {
   estimatedCandidateCost?: number | null;
   estimatedAssessorCost?: number | null;
   estimatedVerifierCost?: number | null;
-  costCurrency?: string | null;
   pricingSource?: string | null;
   pricingIncomplete?: boolean;
 
@@ -924,7 +922,6 @@ export interface BenchmarkRunSummaryDto {
   harnessVersion?: string | null;
   totalDurationMs: number;
   estimatedCost?: number | null;
-  costCurrency?: string | null;
   pricingIncomplete?: boolean;
 }
 
