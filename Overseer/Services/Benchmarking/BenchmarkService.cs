@@ -4,9 +4,12 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -268,6 +271,7 @@ public class BenchmarkService
             run.CandidatePromptSourceUsed = "ChatService.BuildSystemPrompt";
 
             string systemPrompt = promptOptions.BuildSystemPrompt(_chatService, testedConfig.ParallelExecutionMode);
+            PopulateInstrumentFingerprint(run, systemPrompt);
 
             // Check credential collision between candidate and assessor
             string testedKey = AiRequestGovernor.GetCredentialKey(testedConfig.Provider, null, testedConfig.Id);
@@ -495,6 +499,7 @@ public class BenchmarkService
                 ? BenchmarkCandidatePromptOptions.FromJson(run.CandidatePromptOptionsJson)
                 : new BenchmarkCandidatePromptOptions { HasGameSnapshot = suiteHasBoard };
             string systemPrompt = promptOptions.BuildSystemPrompt(_chatService, testedConfig.ParallelExecutionMode);
+            PopulateInstrumentFingerprint(run, systemPrompt);
 
             var suiteQuestions = (run.BenchmarkSuite?.Questions ?? new List<BenchmarkQuestion>())
                 .ToDictionary(q => q.OrderIndex, q => q.ExpectedPoints);
@@ -1597,16 +1602,21 @@ public class BenchmarkService
         var candidateAnswers = await db.BenchmarkRunAnswers
             .Where(a => a.BenchmarkRunId == run.Id &&
                         a.Status == BenchmarkAnswerStatus.Ok &&
-                        (a.UnverifiedClaimCount ?? 0) > 0 &&
                         a.ClaimVerificationJson == null &&
                         a.ClaimVerificationError == null)
             .OrderBy(a => a.OrderIndex)
             .ToListAsync(cancellationToken);
 
+        candidateAnswers = candidateAnswers
+            .Where(a => (a.UnverifiedClaimCount ?? 0) > 0 ||
+                        (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.ContestedVerdict) != 0 ||
+                        (a.SecondOpinionCriticalError.HasValue && a.SecondOpinionCriticalError.Value != a.CriticalError))
+            .ToList();
+
         if (candidateAnswers.Count == 0) return;
 
         _logger.LogInformation(
-            "Benchmark run {RunId}: running claim verification for {Count} answer(s) with unverified claims using {Verifier}.",
+            "Benchmark run {RunId}: running claim verification for {Count} answer(s) with unverified or disputed claims using {Verifier}.",
             run.Id, candidateAnswers.Count, verifierConfig.DisplayName ?? verifierConfig.ModelId);
 
         var suiteQuestions = await db.BenchmarkQuestions
@@ -1651,6 +1661,36 @@ public class BenchmarkService
             claims = null;
         }
 
+        bool isDisputed = (((BenchmarkAnswerFlags)answer.AnswerFlags) & BenchmarkAnswerFlags.ContestedVerdict) != 0 ||
+                          (answer.SecondOpinionCriticalError.HasValue && answer.SecondOpinionCriticalError.Value != answer.CriticalError);
+
+        string? accuracyEvidence = null;
+        if (!string.IsNullOrWhiteSpace(answer.AssessmentEvidenceJson))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(answer.AssessmentEvidenceJson);
+                if (doc.RootElement.TryGetProperty("accuracy", out var accElem))
+                {
+                    accuracyEvidence = accElem.GetString();
+                }
+            }
+            catch
+            {
+                // Ignore parse errors on advisory evidence json
+            }
+        }
+
+        if ((claims == null || claims.Count == 0) && isDisputed)
+        {
+            claims = ExtractDisputedClaims(answer, accuracyEvidence);
+            if (claims.Count > 0)
+            {
+                answer.UnverifiedClaimCount = claims.Count;
+                answer.UnverifiedClaimsJson = JsonSerializer.Serialize(claims);
+            }
+        }
+
         if (claims == null || claims.Count == 0) return;
 
         if (expectedPoints == null)
@@ -1676,7 +1716,9 @@ public class BenchmarkService
             expectedPoints,
             claims,
             allowedTools,
-            toolCallBudget);
+            toolCallBudget,
+            isDisputedVerdict: isDisputed,
+            assessorEvidence: accuracyEvidence);
 
         var runRequest = BuildClaimVerificationRequest(
             verifierConfig,
@@ -3560,6 +3602,7 @@ public class BenchmarkService
                 ? BenchmarkCandidatePromptOptions.FromJson(run.CandidatePromptOptionsJson)
                 : new BenchmarkCandidatePromptOptions { HasGameSnapshot = suiteHasBoard };
             string systemPrompt = promptOptions.BuildSystemPrompt(_chatService, testedConfig.ParallelExecutionMode);
+            PopulateInstrumentFingerprint(run, systemPrompt);
 
             string? expectedPoints = MatchSuiteQuestion(run, answer)?.ExpectedPoints;
 
@@ -3948,4 +3991,139 @@ public class BenchmarkService
             _runManager.Complete(run.Id);
         }
     }
+
+    internal void PopulateInstrumentFingerprint(BenchmarkRun run, string systemPrompt)
+    {
+        using var sha256 = SHA256.Create();
+        byte[] promptBytes = Encoding.UTF8.GetBytes(systemPrompt);
+        byte[] promptHash = sha256.ComputeHash(promptBytes);
+        run.CandidateSystemPromptSha256 = Convert.ToHexString(promptHash).ToLowerInvariant();
+
+        bool storeText = _configuration.GetValue<bool>("Benchmark:StoreSystemPromptText", true);
+        if (storeText)
+        {
+            run.CandidateSystemPromptText = systemPrompt;
+        }
+
+        run.ToolGuidesSha256 = ComputeToolGuidesSha256();
+
+        var kbPath = _configuration["KbPath"];
+        if (!string.IsNullOrWhiteSpace(kbPath))
+        {
+            run.KnowledgeBaseHeadSha = GitHelper.GetGitHeadSha(kbPath);
+        }
+    }
+
+    internal static string? ComputeToolGuidesSha256()
+    {
+        try
+        {
+            string guidesPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ToolGuides");
+            if (!Directory.Exists(guidesPath))
+            {
+                return null;
+            }
+
+            var files = Directory.GetFiles(guidesPath, "*", SearchOption.AllDirectories);
+            if (files.Length == 0)
+            {
+                return null;
+            }
+
+            using var sha256 = SHA256.Create();
+            var entries = new List<(string RelPath, string FileHash)>();
+
+            foreach (var file in files)
+            {
+                string relPath = Path.GetRelativePath(guidesPath, file).Replace('\\', '/');
+                byte[] bytes = File.ReadAllBytes(file);
+                byte[] hash = sha256.ComputeHash(bytes);
+                entries.Add((relPath, Convert.ToHexString(hash).ToLowerInvariant()));
+            }
+
+            entries.Sort((a, b) => string.Compare(a.RelPath, b.RelPath, StringComparison.Ordinal));
+
+            var sb = new StringBuilder();
+            foreach (var (relPath, fileHash) in entries)
+            {
+                sb.Append(relPath).Append(':').Append(fileHash).Append('\n');
+            }
+
+            byte[] manifestBytes = Encoding.UTF8.GetBytes(sb.ToString());
+            byte[] manifestHash = sha256.ComputeHash(manifestBytes);
+            return Convert.ToHexString(manifestHash).ToLowerInvariant();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    internal static List<string> ExtractDisputedClaims(BenchmarkRunAnswer answer, string? accuracyEvidence)
+    {
+        var claims = new List<string>();
+
+        // 1. Critical error quote if identified by the assessor
+        if (!string.IsNullOrWhiteSpace(answer.CriticalErrorQuote))
+        {
+            var quote = answer.CriticalErrorQuote.Trim();
+            if (quote.Length >= 5 && !claims.Contains(quote, StringComparer.OrdinalIgnoreCase))
+            {
+                claims.Add(quote);
+            }
+        }
+
+        // 2. Candidate answer numeric assertions
+        if (!string.IsNullOrWhiteSpace(answer.AnswerText))
+        {
+            var rawSentences = Regex.Split(answer.AnswerText, @"(?<=[.!?\n])\s+");
+            int numericClaimsCount = 0;
+            foreach (var raw in rawSentences)
+            {
+                var trimmed = raw.Trim();
+                if (trimmed.Length >= 10 && trimmed.Length <= 300 && Regex.IsMatch(trimmed, @"\d"))
+                {
+                    if (!claims.Contains(trimmed, StringComparer.OrdinalIgnoreCase))
+                    {
+                        claims.Add(trimmed);
+                        numericClaimsCount++;
+                        if (numericClaimsCount >= 4) break;
+                    }
+                }
+            }
+        }
+
+        // 3. Counter-claims from assessor accuracy evidence
+        if (!string.IsNullOrWhiteSpace(accuracyEvidence))
+        {
+            var evidenceSentences = Regex.Split(accuracyEvidence, @"(?<=[.!?\n])\s+");
+            foreach (var raw in evidenceSentences)
+            {
+                var trimmed = raw.Trim();
+                if (trimmed.Length >= 15 && trimmed.Length <= 300 && !claims.Contains(trimmed, StringComparer.OrdinalIgnoreCase))
+                {
+                    claims.Add(trimmed);
+                    if (claims.Count >= 8) break;
+                }
+            }
+
+            if (claims.Count == 0 && accuracyEvidence.Trim().Length <= 400)
+            {
+                claims.Add(accuracyEvidence.Trim());
+            }
+        }
+
+        // 4. Fallback to review comment if still empty
+        if (claims.Count == 0 && !string.IsNullOrWhiteSpace(answer.ReviewComment))
+        {
+            var comment = answer.ReviewComment.Trim();
+            if (comment.Length <= 400)
+            {
+                claims.Add(comment);
+            }
+        }
+
+        return claims;
+    }
 }
+

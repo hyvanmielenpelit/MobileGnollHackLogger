@@ -13,10 +13,23 @@ public static class BenchmarkClaimVerificationPrompt
         string? expectedPoints,
         IReadOnlyList<string> claims,
         IReadOnlyList<string> allowedTools,
-        int toolCallBudget)
+        int toolCallBudget,
+        bool isDisputedVerdict = false,
+        string? assessorEvidence = null)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("You verify individual factual claims about GnollHack against the game's own source code and wiki. You are not grading an answer. Do not score, do not rate, do not comment on the answer as a whole.");
+        if (isDisputedVerdict)
+        {
+            sb.AppendLine("You verify factual claims and counter-claims about GnollHack against the game's own source code and wiki. You are not grading an answer. Do not score, do not rate, do not comment on the answer as a whole.");
+            sb.AppendLine();
+            sb.AppendLine("DISPUTED VERDICT ADJUDICATION:");
+            sb.AppendLine("Two independent readers reviewed this answer and reached conflicting verdicts regarding accuracy or critical error classification (e.g. one flagged a fabrication while the other did not).");
+            sb.AppendLine("You are provided with candidate claims and assessor counter-claims. Check BOTH against GnollHack source code and wiki facts to determine the ground truth.");
+        }
+        else
+        {
+            sb.AppendLine("You verify individual factual claims about GnollHack against the game's own source code and wiki. You are not grading an answer. Do not score, do not rate, do not comment on the answer as a whole.");
+        }
         sb.AppendLine($"Suite: {suiteName}");
         sb.AppendLine($"Question #{orderIndex}");
         sb.AppendLine();
@@ -42,13 +55,21 @@ public static class BenchmarkClaimVerificationPrompt
             sb.AppendLine(expectedPoints);
             sb.AppendLine("--- END RUBRIC ---");
         }
+        if (isDisputedVerdict && !string.IsNullOrWhiteSpace(assessorEvidence))
+        {
+            sb.AppendLine();
+            sb.AppendLine("Assessor Evidence / Counter-Claims:");
+            sb.AppendLine("--- BEGIN ASSESSOR EVIDENCE ---");
+            sb.AppendLine(assessorEvidence);
+            sb.AppendLine("--- END ASSESSOR EVIDENCE ---");
+        }
         sb.AppendLine();
         sb.AppendLine("Harness Context:");
         string toolsList = (allowedTools != null && allowedTools.Count > 0) ? string.Join(", ", allowedTools) : "None";
         sb.AppendLine($"- Available tools: {toolsList}");
         sb.AppendLine($"- Tool call budget: {toolCallBudget}");
         sb.AppendLine();
-        sb.AppendLine("--- CANDIDATE CLAIMS TO VERIFY ---");
+        sb.AppendLine(isDisputedVerdict ? "--- CLAIMS AND COUNTER-CLAIMS TO VERIFY ---" : "--- CANDIDATE CLAIMS TO VERIFY ---");
         for (int i = 0; i < claims.Count; i++)
         {
             sb.AppendLine($"=== START CLAIM {i} ===");

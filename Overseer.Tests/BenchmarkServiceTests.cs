@@ -1041,4 +1041,62 @@ public class BenchmarkServiceTests
 
         Assert.Equal(expectedVerbose, options.VerboseMode);
     }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void PopulateInstrumentFingerprint_ComputesSha256_AndConditionallyStoresText(bool storeText)
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Benchmark:StoreSystemPromptText"] = storeText.ToString()
+            })
+            .Build();
+
+        var service = new BenchmarkService(
+            null!, null!, null!, null!, null!, null!, null!,
+            config,
+            NullLogger<BenchmarkService>.Instance);
+
+        var run = new BenchmarkRun();
+        string prompt = "You are an assistant for GnollHack.";
+
+        service.PopulateInstrumentFingerprint(run, prompt);
+
+        using var sha256 = System.Security.Cryptography.SHA256.Create();
+        string expectedSha = Convert.ToHexString(sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(prompt))).ToLowerInvariant();
+
+        Assert.Equal(expectedSha, run.CandidateSystemPromptSha256);
+        if (storeText)
+        {
+            Assert.Equal(prompt, run.CandidateSystemPromptText);
+        }
+        else
+        {
+            Assert.Null(run.CandidateSystemPromptText);
+        }
+    }
+
+    [Fact]
+    public void ExtractDisputedClaims_ExtractsCriticalErrorQuote_NumericAssertions_AndCounterClaims()
+    {
+        var answer = new BenchmarkRunAnswer
+        {
+            OrderIndex = 12,
+            CriticalErrorQuote = "Exceptional body armor gives +2 AC and +1 blocking.",
+            AnswerText = "Exceptional body armor gives +2 AC and +1 blocking. Elite shields give +3 AC and +1 blocking.",
+            ReviewComment = "Completely hallucinates the mechanics."
+        };
+
+        string accuracyEvidence = "In GnollHack, exceptional body armor gives -4 AC / +1 MC, shields -3 AC / +1 MC; elite gives -8 AC / +2 MC.";
+
+        var claims = BenchmarkService.ExtractDisputedClaims(answer, accuracyEvidence);
+
+        Assert.NotEmpty(claims);
+        Assert.Contains(claims, c => c.Contains("+2 AC"));
+        Assert.Contains(claims, c => c.Contains("-4 AC"));
+    }
 }
+
+

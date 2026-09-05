@@ -69,6 +69,14 @@ public sealed record BenchmarkCandidatePromptOptions
         return JsonSerializer.Serialize(this, CanonicalOptions);
     }
 
+    /// <summary>
+    /// Computes the comparability signature incorporating the prompt options and the parallel execution mode.
+    /// </summary>
+    public string ComparabilitySignature(ParallelExecutionMode parallelMode)
+    {
+        return $"{ToCanonicalJson()}|parallelMode={(int)parallelMode}";
+    }
+
     public static BenchmarkCandidatePromptOptions FromJson(string? json)
     {
         if (string.IsNullOrWhiteSpace(json))

@@ -682,6 +682,9 @@ export interface BenchmarkRunDetailDto {
   secondOpinionCriticalErrorSplitCount?: number;
   candidatePromptOptionsJson?: string | null;
   candidatePromptSourceUsed?: string | null;
+  candidateSystemPromptSha256?: string | null;
+  toolGuidesSha256?: string | null;
+  knowledgeBaseHeadSha?: string | null;
   secondOpinionDisagreementCount?: number;
   toolOverheadMs?: number | null;
   difficultyFallbackUsed: boolean;

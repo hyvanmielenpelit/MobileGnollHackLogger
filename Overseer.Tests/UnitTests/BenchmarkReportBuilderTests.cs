@@ -3,7 +3,9 @@ namespace Overseer.Tests.UnitTests;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using Microsoft.Extensions.Configuration;
 using MobileGnollHackLogger.Data;
+using Overseer.Services;
 using Overseer.Services.Benchmarking;
 using Xunit;
 
@@ -624,6 +626,102 @@ public class BenchmarkReportBuilderTests
 
         Assert.DoesNotContain("**Critical Errors:**", report);
     }
+
+    [Fact]
+    public void BuildMarkdownReport_RendersContestedCriticalErrorsAndSensitivity_WhenContestedVerdictExists()
+    {
+        var run = new BenchmarkRun
+        {
+            Id = 56,
+            SuiteName = "Contested Error Suite",
+            TestedModelDisplayNameUsed = "Model X",
+            AssessorModelDisplayNameUsed = "Assessor Y",
+            Status = BenchmarkRunStatus.Completed,
+            StartedAtUtc = DateTime.UtcNow,
+            TotalQuestionCount = 2,
+            Answers = new List<BenchmarkRunAnswer>
+            {
+                new BenchmarkRunAnswer
+                {
+                    OrderIndex = 1,
+                    QuestionText = "Q1",
+                    Difficulty = BenchmarkDifficulty.Simple,
+                    Status = BenchmarkAnswerStatus.Ok,
+                    AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+                    AnswerText = "Answer 1",
+                    QualityScore = 90,
+                    CriticalError = false
+                },
+                new BenchmarkRunAnswer
+                {
+                    OrderIndex = 12,
+                    QuestionText = "Q12",
+                    Difficulty = BenchmarkDifficulty.Intermediate,
+                    Status = BenchmarkAnswerStatus.Ok,
+                    AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+                    AnswerText = "Answer 12",
+                    QualityScore = 42,
+                    CriticalError = false,
+                    AnswerFlags = (int)BenchmarkAnswerFlags.ContestedVerdict,
+                    SecondOpinionCriticalError = true,
+                    SecondOpinionQualityScore = 25
+                }
+            }
+        };
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("**Critical Errors:** 0 confirmed, 1 contested (question(s) 12)", report);
+        Assert.Contains("**Contested-Verdict Sensitivity:**", report);
+    }
+
+    [Fact]
+    public void BuildMarkdownReport_RendersConfirmedAndContested_WhenBothExist()
+    {
+        var run = new BenchmarkRun
+        {
+            Id = 57,
+            SuiteName = "Split Error Suite",
+            TestedModelDisplayNameUsed = "Model X",
+            AssessorModelDisplayNameUsed = "Assessor Y",
+            Status = BenchmarkRunStatus.Completed,
+            StartedAtUtc = DateTime.UtcNow,
+            TotalQuestionCount = 2,
+            Answers = new List<BenchmarkRunAnswer>
+            {
+                new BenchmarkRunAnswer
+                {
+                    OrderIndex = 3,
+                    QuestionText = "Q3",
+                    Difficulty = BenchmarkDifficulty.Simple,
+                    Status = BenchmarkAnswerStatus.Ok,
+                    AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+                    AnswerText = "Answer 3",
+                    QualityScore = 25,
+                    CriticalError = true
+                },
+                new BenchmarkRunAnswer
+                {
+                    OrderIndex = 12,
+                    QuestionText = "Q12",
+                    Difficulty = BenchmarkDifficulty.Intermediate,
+                    Status = BenchmarkAnswerStatus.Ok,
+                    AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+                    AnswerText = "Answer 12",
+                    QualityScore = 42,
+                    CriticalError = false,
+                    SecondOpinionCriticalError = true,
+                    SecondOpinionQualityScore = 25
+                }
+            }
+        };
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("**Critical Errors:** 1 confirmed, 1 contested (question(s) 3, 12)", report);
+        Assert.Contains("**Contested-Verdict Sensitivity:**", report);
+    }
+
 
     // -------------------------------------------------------------------------------------
     // Harness version 6 report changes. Every fixture below is shaped after the 2026-09-03
@@ -1415,5 +1513,154 @@ public class BenchmarkReportBuilderTests
 
         var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
         Assert.DoesNotContain("— .", report);
+    }
+
+    [Fact]
+    public void KnowledgeBaseRouting_SuppressesUnderUseLineOnAllMechanicsRun()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.QuestionText = "In GnollHack, what do Exceptional and Elite give to body armor?";
+        q1.ToolCallSummary = "wiki_search×3, source_code_search×5";
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        BenchmarkRunFinalizer.Apply(run, new[] { q1 });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+        Assert.DoesNotContain("Knowledge base under-use:", report);
+        Assert.Contains("Per `Overseer/Services/ChatService.cs` § \"Information Routing\" and `Overseer/ToolGuides/get_knowledge_article.md`", report);
+
+        // When a question covers a KB topic, the under-use line appears
+        var qKb = ScoredAnswer(2, BenchmarkDifficulty.Simple, 25, 80);
+        qKb.QuestionText = "How do I change the tileset settings in GnollHack?";
+        qKb.ToolCallSummary = "wiki_search×1";
+        var runKb = HarnessV7Run(BenchmarkSecondOpinionMode.Off, qKb);
+        BenchmarkRunFinalizer.Apply(runKb, new[] { qKb });
+
+        var reportKb = BenchmarkReportBuilder.BuildMarkdownReport(runKb);
+        Assert.Contains("Knowledge base under-use:", reportKb);
+    }
+
+    [Fact]
+    public void DirectionalAgreement_SentenceAbsentBelowThresholdAndPresentAtOrAbove()
+    {
+        // Case 1: n = 1 (below threshold of 3)
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.SecondOpinionQualityScore = 70; // delta = -10
+        var run1 = HarnessV7Run(BenchmarkSecondOpinionMode.Flagged, q1);
+        BenchmarkRunFinalizer.Apply(run1, new[] { q1 });
+
+        var report1 = BenchmarkReportBuilder.BuildMarkdownReport(run1);
+        Assert.Contains("Mean signed difference:", report1);
+        Assert.Contains("(over 1 of 1 answered)", report1);
+        Assert.DoesNotContain("A one-directional gap of this size is a statement about the grader", report1);
+
+        // Case 2: n = 3 (meets threshold of 3)
+        var qA = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        qA.SecondOpinionQualityScore = 70;
+        var qB = ScoredAnswer(2, BenchmarkDifficulty.Simple, 25, 85);
+        qB.SecondOpinionQualityScore = 75;
+        var qC = ScoredAnswer(3, BenchmarkDifficulty.Simple, 25, 90);
+        qC.SecondOpinionQualityScore = 80;
+        var run3 = HarnessV7Run(BenchmarkSecondOpinionMode.All, qA, qB, qC);
+        BenchmarkRunFinalizer.Apply(run3, new[] { qA, qB, qC });
+
+        var report3 = BenchmarkReportBuilder.BuildMarkdownReport(run3);
+        Assert.Contains("Mean signed difference:", report3);
+        Assert.Contains("(over 3 of 3 answered)", report3);
+        Assert.Contains("A one-directional gap of this size is a statement about the grader", report3);
+    }
+
+    [Fact]
+    public void ToolBatchingPolicy_RendersInPromptBlockAndModelBlock()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        run.TestedModelParallelExecutionModeUsed = ParallelExecutionMode.OnRequest;
+        run.CandidatePromptOptionsJson = new BenchmarkCandidatePromptOptions { VerboseMode = true }.ToCanonicalJson();
+        BenchmarkRunFinalizer.Apply(run, new[] { q1 });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+        Assert.Contains("- **Parallel Tool Calls:** OnRequest *(provider-side tool batching)*", report);
+        Assert.Contains("- **Tool batching policy:** OnRequest — selects Overseer/ToolGuides/_policy_parallel_on_request.md, so this is part of the prompt text.", report);
+    }
+
+    [Fact]
+    public void ComparabilitySignature_IncludesCanonicalJsonAndParallelMode()
+    {
+        var opts = new BenchmarkCandidatePromptOptions { VerboseMode = true };
+        string sig = opts.ComparabilitySignature(ParallelExecutionMode.OnRequest);
+        Assert.StartsWith(opts.ToCanonicalJson(), sig);
+        Assert.EndsWith("|parallelMode=1", sig);
+    }
+
+    [Fact]
+    public void EstimatedCost_RendersNotConfigured_WhenPricingServiceIsNull()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        BenchmarkRunFinalizer.Apply(run, new[] { q1 });
+        run.TotalAssessmentInputTokens = 1000;
+        run.TotalAssessmentOutputTokens = 200;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run, pricingService: null);
+        Assert.Contains("- **Estimated Cost:** not configured (configure `ModelPricing` in appsettings.json)", report);
+    }
+
+    [Fact]
+    public void EstimatedCost_RendersNotConfigured_WhenModelPricingIsMissing()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        run.TestedModelIdUsed = "gpt-5.6";
+        run.AssessorModelIdUsed = "gemini-3.7-flash";
+        BenchmarkRunFinalizer.Apply(run, new[] { q1 });
+        run.TotalAssessmentInputTokens = 1000;
+        run.TotalAssessmentOutputTokens = 200;
+
+        var inMemory = new Dictionary<string, string?>
+        {
+            ["ModelPricing:gpt-5.6:InputPerMillion"] = "2.50",
+            ["ModelPricing:gpt-5.6:OutputPerMillion"] = "10.00"
+        };
+        var config = new ConfigurationBuilder().AddInMemoryCollection(inMemory).Build();
+        var pricingService = new ModelPricingService(config);
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run, pricingService: pricingService);
+        Assert.Contains("- **Estimated Cost:** not configured (configure `ModelPricing` in appsettings.json)", report);
+    }
+
+    [Fact]
+    public void EstimatedCost_RendersCostBreakdown_WhenPricingIsConfigured()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        run.TestedModelIdUsed = "gpt-5.6";
+        run.AssessorModelIdUsed = "gemini-3.7-flash";
+        run.ClaimVerifierModelIdUsed = "gpt-5-mini";
+        run.TotalInputTokens = 1_000_000;
+        run.TotalCacheReadTokens = 800_000;
+        run.TotalOutputTokens = 50_000;
+        run.TotalAssessmentInputTokens = 200_000;
+        run.TotalAssessmentOutputTokens = 10_000;
+        run.TotalClaimVerificationInputTokens = 100_000;
+        run.TotalClaimVerificationOutputTokens = 5_000;
+
+        var inMemory = new Dictionary<string, string?>
+        {
+            ["ModelPricing:gpt-5.6:InputPerMillion"] = "2.50",
+            ["ModelPricing:gpt-5.6:OutputPerMillion"] = "10.00",
+            ["ModelPricing:gpt-5.6:CachedInputPerMillion"] = "0.25",
+            ["ModelPricing:gemini-3.7-flash:InputPerMillion"] = "0.15",
+            ["ModelPricing:gemini-3.7-flash:OutputPerMillion"] = "0.60",
+            ["ModelPricing:gpt-5-mini:InputPerMillion"] = "1.00",
+            ["ModelPricing:gpt-5-mini:OutputPerMillion"] = "4.00"
+        };
+        var config = new ConfigurationBuilder().AddInMemoryCollection(inMemory).Build();
+        var pricingService = new ModelPricingService(config);
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run, pricingService: pricingService);
+        Assert.Contains("- **Estimated Cost:** $1.36 total", report);
+        Assert.Contains("Candidate (gpt-5.6): $1.20 (uncached in: $0.50, cached in: $0.20, out: $0.50)", report);
+        Assert.Contains("Assessor (gemini-3.7-flash): $0.04 (in: $0.03, out: $0.01)", report);
+        Assert.Contains("Claim Verifier (gpt-5-mini): $0.12 (in: $0.10, out: $0.02)", report);
     }
 }

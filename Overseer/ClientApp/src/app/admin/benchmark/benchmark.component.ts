@@ -1995,6 +1995,10 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
         // --- CHAT PROMPT ---
         lines.push('--- CHAT PROMPT ---');
         lines.push(`source: ${run.candidatePromptSourceUsed ?? 'not recorded'}`);
+        lines.push(`promptSha256: ${run.candidateSystemPromptSha256 ?? 'not recorded'}`);
+        lines.push(`toolGuidesSha256: ${run.toolGuidesSha256 ?? 'not recorded'}`);
+        lines.push(`knowledgeBaseHeadSha: ${run.knowledgeBaseHeadSha ?? 'not recorded'}`);
+        lines.push(`parallelMode: ${run.testedModelParallelExecutionModeUsed}`);
         if (run.candidatePromptOptionsJson) {
           try {
             const opts = JSON.parse(run.candidatePromptOptionsJson);

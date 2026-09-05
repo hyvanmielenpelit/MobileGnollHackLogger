@@ -68,6 +68,16 @@ To prevent large tool results (e.g. wide code searches or full wiki articles) fr
   - **Partial Truncation**: A result that partially fits is truncated with `\n\n... (truncated: batch output budget reached)`.
   - **Skipped Execution Results**: Results arriving after the budget is completely exhausted are replaced with `(skipped: batch output budget reached)`.
 
+### 3. Heading-Scoped Wiki Snippet Extraction (`WikiSnippetExtractor`)
+- For `wiki_search`, returning concatenated full articles risks a single large article (e.g. `Item Appearances.md` at 60 KB) consuming the entire `MaxResultLength` (default 10,000 chars), dropping subsequent search hits and evicting critical information.
+- To eliminate this starvation defect, `WikiSearchTool` retrieves heading-scoped snippets via `WikiSnippetExtractor`:
+  - Splits markdown into ordered sections preserving hierarchical heading paths (`Armor › Shields`).
+  - Scores sections based on distinct query term matches, weighting heading matches 10× over body matches.
+  - Assembles snippets in document order up to `Tools:wiki_search:PerResultChars` (default 2,500 chars).
+  - Appends explicit omission markers (`[article: {filename} — {n} further section(s) omitted; use wiki_view for the full text]`) directing the LLM to call `wiki_view` for omitted text.
+  - Appends `[article: {filename} — complete]` when all sections fit within the budget.
+  - Falls back to the preamble and first section if no section matches query terms, ensuring non-empty results.
+
 ---
 
 ## 4. Real-Time Streaming via Channels

@@ -354,6 +354,19 @@ Prompted by the 2026-09-04 GPT-5.6 Luna benchmark run (run 11), which revealed e
   Refuted factual claims across benchmark runs are aggregated by `BenchmarkRubricGapDetector` and surfaced in the Suite Health panel as candidate topics for new knowledge base articles, complete with source citations and question references.
 - **Benchmark-to-Chat Transfer Framework and Project Skill (T6)**:
   Documentation and the mandatory project skill `server_benchmark_to_chat_transfer` codify the disciplined protocol for translating benchmark empirical findings into production chat system prompt and routing improvements.
+- **Instrument Fingerprinting**:
+  To guarantee exact reproducibility and detect drift in the evaluation instrument between benchmark runs, the harness computes and persists cryptographic hashes:
+  - `CandidateSystemPromptSha256`: Lower-case hex SHA-256 of the exact candidate system prompt string.
+  - `CandidateSystemPromptText`: Full prompt text persisted when `Benchmark:StoreSystemPromptText` is `true` (default), enabling exact diffs against historical runs.
+  - `ToolGuidesSha256`: SHA-256 across sorted `(relative path, file SHA-256)` pairs in `Overseer/ToolGuides/`.
+  - `KnowledgeBaseHeadSha`: Git HEAD commit SHA of the knowledge base repository.
+  Two runs represent an exact reproduction of the evaluation instrument only when `CandidateSystemPromptSha256`, `ToolGuidesSha256`, and `KnowledgeBaseHeadSha` match.
+- **Contested-Verdict Adjudication (H1)**:
+  When the primary assessor and second-opinion assessor split on `CriticalError` or when an answer carries `BenchmarkAnswerFlags.ContestedVerdict`, the answer is automatically selected for claim verification (`RunClaimVerificationAsync`), even if `UnverifiedClaimCount == 0`. The verifier receives a disputed verdict prompt testing both the candidate's claims and the assessor's counter-claims against source code facts. Reports summarize `Critical Errors: {confirmed} confirmed, {contested} contested` and print a **Contested-Verdict Sensitivity** line showing the Intelligence Index if contested verdicts were upheld at the second grader's score.
+- **Estimated Harness Cost Block (H7)**:
+  Under `### Harness Cost`, when token pricing is configured via `ModelPricing:{modelIdPrefix}:{InputPerMillion|OutputPerMillion|CachedInputPerMillion}`, the report renders an **Estimated Cost** breakdown (candidate uncached and cached input, candidate output, primary assessor, and claim verifier, plus total cost). If any participating model lacks pricing, a notice is printed stating pricing is not configured, ensuring no misleading partial totals are displayed.
+- **Heading-Scoped Wiki Snippet Retrieval (T8)**:
+  `wiki_search` returns heading-scoped excerpts (`WikiSnippetExtractor`) scored by distinct query-term frequency with 10× heading weighting, rather than concatenating whole articles. Each hit is bounded by `Tools:wiki_search:PerResultChars` (default 2,500) and includes omission markers (`[article: {filename} — {n} further section(s) omitted; use wiki_view for the full text]`) or complete markers, preventing large articles from evicting later search hits. Default result count is raised to 5 (`Tools:wiki_search:MaxResults`).
 
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).

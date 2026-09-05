@@ -184,6 +184,24 @@ appears separately under its own name — proof that the new entry did not captu
 > the catalog. A model absent from the provider's API will not appear no matter what the catalog
 > says, and no frontend file needs changing to add a model.
 
+## Optional: Token Pricing for Benchmark Cost Estimation
+
+Pricing lives in configuration (`Overseer/appsettings.json` or user secrets), **never in the catalog JSON files** — prices change without a release, and a hardcoded roster in source drifts silently.
+
+To enable estimated cost reporting in the AI Benchmark for the new model, add an entry under `ModelPricing`:
+
+```json
+"ModelPricing": {
+  "<model-id-prefix>": {
+    "InputPerMillion": 2.50,
+    "OutputPerMillion": 10.00,
+    "CachedInputPerMillion": 0.25
+  }
+}
+```
+
+Prefixes match by longest prefix against model IDs (e.g. `gpt-5.6` matches `gpt-5.6-luna`). `CachedInputPerMillion` is optional (omit if the model does not support prompt caching). If pricing is not configured, benchmark reports display that pricing is not configured and continue normally.
+
 ## What NOT to Do
 
 - **Do not edit `ModelMetadataService.cs`** to special-case a model. There are no per-model

@@ -179,6 +179,57 @@ public class WikiService : IDisposable
         return results;
     }
 
+    public IEnumerable<string> GetRelevantSnippets(string query, string? categoryFilter, int maxResults, int perResultChars)
+    {
+        IndexSearcher? searcher;
+        StandardAnalyzer? analyzer;
+        lock (_swapLock)
+        {
+            searcher = _searcher;
+            analyzer = _analyzer;
+        }
+        if (searcher == null || analyzer == null || string.IsNullOrWhiteSpace(query)) return Enumerable.Empty<string>();
+        
+        var parser = new MultiFieldQueryParser(
+            LuceneVersion.LUCENE_48,
+            new[] { "title", "content" },
+            analyzer,
+            new Dictionary<string, float> { { "title", 5.0f }, { "content", 1.0f } }
+        );
+        
+        Query luceneQuery;
+        try
+        {
+            luceneQuery = parser.Parse(QueryParserBase.Escape(query));
+        }
+        catch (Lucene.Net.QueryParsers.Classic.ParseException)
+        {
+            return Enumerable.Empty<string>();
+        }
+        
+        if (!string.IsNullOrEmpty(categoryFilter))
+        {
+            var boolQuery = new BooleanQuery();
+            boolQuery.Add(luceneQuery, Occur.MUST);
+            boolQuery.Add(new WildcardQuery(new Term("path", $"*{categoryFilter}*")), Occur.MUST);
+            luceneQuery = boolQuery;
+        }
+        
+        var hits = searcher.Search(luceneQuery, maxResults > 0 ? maxResults : 5);
+        var results = new List<string>();
+        var queryTerms = WikiSnippetExtractor.ExtractQueryTerms(query);
+        
+        foreach (var hit in hits.ScoreDocs)
+        {
+            var doc = searcher.Doc(hit.Doc);
+            string filename = doc.Get("filename");
+            string content = doc.Get("content");
+            results.Add(WikiSnippetExtractor.BuildSnippet(filename, content, queryTerms, perResultChars));
+        }
+        
+        return results;
+    }
+
     public string? GetArticle(string articleName, string? section = null)
     {
         IndexSearcher? searcher;

@@ -96,7 +96,7 @@ An analysis that fails to classify its findings into this taxonomy is incomplete
 - **Chat-Transferable Findings (T1–T6)**:
   - T1/T2: Completeness was lowest dimension (83.0 vs 97.7 Accuracy) because candidate was instructed to *"Default to 2–5 sentences per response"* (`verboseMode: false`).
   - **T3 — WITHDRAWN.** Source code tools accounted for 71% of tool calls, and the report described this as occurring despite a prompt rule *"Prefer wiki tools over source code tools"*. **No such rule exists.** That sentence was hardcoded in `BenchmarkReportBuilder.cs`, not read from the prompt. What `Overseer/ToolGuides/_policy.md` actually says is narrower and conditional: it prefers GnollHack tools over *web search*; it routes strategy and general "what is X" questions to wiki tools first; it routes **specific mechanics questions** (exact AC, damage dice, MR, resistances, speed, material, artifact flags) to the structured stats tools; and it places source code tools at rung 4 of a seven-rung hierarchy, for questions that require reading game logic. On a suite weighted toward mechanics, a high source share may be **prompt-compliant**. The routing-inefficiency reading is withdrawn; the correlation with turn latency ($r = 0.53$) survives as a **cost** observation. Reclassified: **Harness Defect**.
-  - T4: Knowledge base was called only once in 18 questions (`get_knowledge_article` under-use).
+  - **T4 — WITHDRAWN.** Knowledge base was called only once in 18 questions (`get_knowledge_article` under-use), and the report described this as under-use. **The prompt explicitly directs the model to skip the knowledge base for game mechanics** (`Overseer/Services/ChatService.cs:1103` § "Information Routing", scoping it to app navigation, settings, controls, replay, vault, and troubleshooting). On an all-mechanics suite, zero calls is **prompt-compliant**. Reclassified: **Harness Defect** and fixed in `BenchmarkReportBuilder` by guarding the line on question topics.
   - T5: Refuted claims on Q9 (spell-skill saving throws) and Q16 (simultaneous attacker cap) revealed specific game mechanics misconceptions.
   - T6: Systematic framework required to guide chat prompt updates.
 
@@ -346,8 +346,26 @@ Any implementation plan derived from a benchmark run must replicate this section
 - **Quality**: Accuracy 97.7 / Level 5.8; Completeness 83.0 / Level 4.8; Conciseness 95.0; Readability 95.0. Intelligence Index: 91.5 $\pm$ 5.9 (95% CI). Response-style conflict confirmed (14.7 pt gap). Refuted claims on Q9 (`src/zap.c:359-364`, spell skill) and Q16 (`src/makemon.c:110-129`, simultaneous attackers).
 - **Speed**: Mean model time 68.3s (max 179.9s on Q18). Speed score 56.6. Correlation between source tool share and model latency ($r = 0.53$).
 - **Cost**: 293 total tool calls. Source Code: 208 calls (71.0%), Wiki: 77 calls (26.3%), Structured Lookup: 7 calls (2.4%), Knowledge Base: 1 call (0.3%). Zero-KB answers: 17 of 18 questions. Token ratio: 44:1 input:output with 90% cache-read share.
-- **Transfer Action**: Seeded Knowledge Base Gap worklist with Q9 and Q16 (rung 1). Promoted Response Style control (T2) to allow testing `verboseMode: true` in Run 12. **T3 withdrawn** on 2026-09-05 — the prompt rule it cited does not exist (§ 2); reclassified as a Harness Defect and fixed in `BenchmarkReportBuilder`.
+- **Transfer Action**: Seeded Knowledge Base Gap worklist with Q9 and Q16 (rung 1). Promoted Response Style control (T2) to allow testing `verboseMode: true` in Run 12. **T3 withdrawn** on 2026-09-05 — the prompt rule it cited does not exist (§ 2); reclassified as a Harness Defect and fixed in `BenchmarkReportBuilder`. **T4 withdrawn** on 2026-09-05 — the prompt explicitly scopes the knowledge base away from game mechanics (`ChatService.cs:1103`); reclassified as a Harness Defect and line qualified in report.
 - **Verification Outcome**: n/a — no prior change under test.
+
+### Run 12 — 2026-09-05: GPT-5.6 Luna
+- **Candidate**: GPT-5.6 Luna, thinking level `max`. 18 questions (Default Suite 5).
+- **Prompt options**: `overseerMode: 0` (Gameplay Help), `verboseMode: true` (Detailed), `spoilerFreeMode: false`, `enableToolUse: true`, `enableWebSearch: false`, `allowSourceCodeReferences: true`, `enableSubAgents: false`, `isGameOn: false`, `developerMode: false`, `hasMessageHistory: false`, `hasWikiContext: false`, `hasGameSnapshot: false`. `parallelMode`: Enabled (`ParallelExecutionMode.Enabled`).
+- **Grading regime**: harness version 12; scoring method version 7; scoring profile Standard Intelligence Index (Default); assessor Gemini 3.7 Flash (`high`); second opinion Claude 5 Opus, blind, mode Flagged.
+- **Instrument SHAs**:
+  - `CandidateSystemPromptSha256`: recorded via `BenchmarkRun.CandidateSystemPromptSha256`
+  - `ToolGuidesSha256`: recorded via `BenchmarkRun.ToolGuidesSha256`
+  - `KnowledgeBaseHeadSha`: recorded via `BenchmarkRun.KnowledgeBaseHeadSha`
+- **Quality**: Accuracy 93.5 / Level 5.6; Completeness 83.8 / Level 4.9; Conciseness 89.9; Readability 97.1. Intelligence Index: 91 $\pm$ 7 (95% CI). Refuted claims: 0. Contested verdicts: 1 (Q12, split on critical error; sensitivity index ≈ 90).
+- **Speed**: Mean model time 87.2 s (max 183.2 s on Q18). Speed score 46. Median TTFT: 2,236 ms. Pearson $r = 0.65$ between source tool share and model time; $r = -0.19$ with quality score.
+- **Cost**: 334 total tool calls. Source Code: 237 calls (71.0%), Wiki: 91 calls (27.2%), Structured Lookup: 6 calls (1.8%), Knowledge Base: 0 calls (0.0%). Zero-KB answers: 18 of 18 questions (prompt-compliant per `ChatService.cs:1103`). Token ratio: 28.4:1 input:output (4,301,234 in / 151,373 out) with 90.1% cache-read share (3,873,723 cached).
+- **Transfer Action**:
+  - **T7**: `verboseMode: true` bought no Completeness (83.0 → 83.8) and cost 28% latency and 14% tool calls. Refuted T1/T2 hypothesis. Concise production default kept, change no prompt text.
+  - **T8**: Promoted to implementation (rung 3, heading-scoped wiki snippets in `WikiSnippetExtractor` and `WikiSearchTool`, default 5 results, 2,500 chars/snippet). Pre-declared acceptance criterion: Wiki share ≥ 35%, Source share ≤ 60%, total tool calls ≤ 300, total input tokens ≤ 3.4M, Q12 quality score ≥ 70 with no fabricated claims, budget-pressured questions ≤ 1.
+  - **T9**: Confident fabrication under retrieval failure (Q12). Deferred pending T8 verification (rung 7 prose change deferred).
+  - **T10**: Input token amplification (28.4:1) attacked via T8 and measured via H7 cost reporting.
+- **Verification Outcome**: Run 11 promoted T2 (`verboseMode: true`): criterion — Completeness rises materially under `verboseMode: true`; result — 83.0 → 83.8, inside noise, while Accuracy fell 4.2 and mean model time rose 28 %; hypothesis refuted, the concise default is kept.
 
 ---
 

@@ -11,6 +11,7 @@ namespace Overseer.Services.Tools
     {
         private readonly WikiService _wikiService;
         private readonly int _defaultMaxResults;
+        private readonly int _perResultChars;
 
         public string ToolName => "wiki_search";
         public string Description { get; set; } = "Search the GnollHack specific wiki for information.";
@@ -22,14 +23,15 @@ namespace Overseer.Services.Tools
         public WikiSearchTool(WikiService wikiService, IConfiguration configuration)
         {
             _wikiService = wikiService;
-            _defaultMaxResults = configuration.GetValue<int>("Tools:wiki_search:MaxResults", 3);
+            _defaultMaxResults = configuration.GetValue<int>("Tools:wiki_search:MaxResults", 5);
+            _perResultChars = configuration.GetValue<int>("Tools:wiki_search:PerResultChars", 2500);
             ParameterSchema = JsonDocument.Parse(@"
             {
                 ""type"": ""object"",
                 ""properties"": {
                     ""query"": { ""type"": ""string"", ""description"": ""The search terms to look up in the wiki"" },
                     ""category"": { ""type"": ""string"", ""description"": ""Optional. Filter by category (e.g., 'monster', 'item', 'spell', 'class')"" },
-                    ""max_results"": { ""type"": ""integer"", ""description"": ""Maximum number of wiki articles to return (default 3)"" }
+                    ""max_results"": { ""type"": ""integer"", ""description"": ""Maximum number of wiki articles to return (default 5)"" }
                 },
                 ""required"": [""query""]
             }").RootElement;
@@ -65,7 +67,7 @@ namespace Overseer.Services.Tools
                 category = categoryElem.GetString();
             }
 
-            var results = _wikiService.GetRelevantContext(query, category, maxResults);
+            var results = _wikiService.GetRelevantSnippets(query, category, maxResults, _perResultChars);
             var content = string.Join("\n\n", results);
 
             if (string.IsNullOrWhiteSpace(content))

@@ -609,6 +609,9 @@ public class BenchmarkRunDetailDto
     public int SecondOpinionCriticalErrorSplitCount { get; set; }
     public string? CandidatePromptOptionsJson { get; set; }
     public string? CandidatePromptSourceUsed { get; set; }
+    public string? CandidateSystemPromptSha256 { get; set; }
+    public string? ToolGuidesSha256 { get; set; }
+    public string? KnowledgeBaseHeadSha { get; set; }
 
     /// <summary>Answers whose two verdicts disagreed, among those graded twice.</summary>
     public int SecondOpinionDisagreementCount { get; set; }

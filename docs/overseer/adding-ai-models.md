@@ -213,3 +213,22 @@ dotnet build Overseer/Overseer.csproj
 ```
 
 Open the **Models** page, choose **OpenAI**, and confirm the new model appears as expected.
+
+### 4. Optional: Configure Token Pricing for Benchmark Cost Estimation
+
+Token pricing lives in configuration (`Overseer/appsettings.json` or User Secrets), **not in the catalog JSON files**. This prevents prices from drifting in source and allows operators to update rates without rebuilding.
+
+To enable estimated cost reporting in the AI Benchmark for the model, add a prefix entry under `ModelPricing`:
+
+```json
+"ModelPricing": {
+  "gpt-5.6": {
+    "InputPerMillion": 2.50,
+    "OutputPerMillion": 10.00,
+    "CachedInputPerMillion": 0.25
+  }
+}
+```
+
+Prefixes match by longest prefix against model IDs. `CachedInputPerMillion` is optional (omit if the provider does not support prompt caching discounts). If omitted, benchmark reports simply display that pricing is not configured.
+

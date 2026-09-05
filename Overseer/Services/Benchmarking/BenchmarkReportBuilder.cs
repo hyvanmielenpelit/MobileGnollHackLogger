@@ -268,7 +268,7 @@ public static class BenchmarkReportBuilder
             : (sorted[mid - 1] + sorted[mid]) / 2.0;
     }
 
-    public static string BuildMarkdownReport(BenchmarkRun run, string? overseerVersion = null)
+    public static string BuildMarkdownReport(BenchmarkRun run, string? overseerVersion = null, ModelPricingService? pricingService = null)
     {
         var sb = new StringBuilder();
         // Read back from the run's own profile snapshot, so the report describes the run in
@@ -381,6 +381,11 @@ public static class BenchmarkReportBuilder
         {
             sb.AppendLine("  - *The assessor and the second opinion come from the same provider, so the second verdict is a weaker check than a cross-provider one: two models from one family share training data and failure modes, and can agree for reasons that have nothing to do with the answer.*");
         }
+        sb.AppendLine($"- **Candidate System Prompt SHA-256:** {run.CandidateSystemPromptSha256 ?? "not recorded"}");
+        sb.AppendLine($"- **Candidate System Prompt Text:** {(string.IsNullOrEmpty(run.CandidateSystemPromptText) ? "not stored" : $"stored ({run.CandidateSystemPromptText.Length:N0} characters)")}");
+        sb.AppendLine($"- **ToolGuides SHA-256:** {run.ToolGuidesSha256 ?? "not recorded"}");
+        sb.AppendLine($"- **Knowledge Base HEAD SHA:** {run.KnowledgeBaseHeadSha ?? "not recorded"}");
+        sb.AppendLine("  - *Two runs are a reproduction only when `CandidateSystemPromptSha256` matches.*");
         sb.AppendLine();
 
         sb.AppendLine("### Model Under Test");
@@ -392,14 +397,19 @@ public static class BenchmarkReportBuilder
         sb.AppendLine($"- **Reasoning Summary:** {run.TestedModelReasoningSummaryUsed ?? "Default"}");
         sb.AppendLine($"- **Requested Service Tier:** {run.TestedModelServiceTierUsed ?? "Default"}");
         sb.AppendLine($"- **Max Output Tokens:** {(run.TestedModelMaxOutputTokensUsed.HasValue ? run.TestedModelMaxOutputTokensUsed.Value.ToString() : "Default")}");
-        sb.AppendLine($"- **Parallel Tool Calls:** {run.TestedModelParallelExecutionModeUsed} *(provider-side tool batching, unrelated to Question Parallelism)*");
+        sb.AppendLine($"- **Parallel Tool Calls:** {run.TestedModelParallelExecutionModeUsed} *(provider-side tool batching)*");
         sb.AppendLine();
 
         sb.AppendLine("### Chat Prompt Under Test");
+        string policyFile = run.TestedModelParallelExecutionModeUsed == MobileGnollHackLogger.Data.ParallelExecutionMode.Disabled
+            ? "_policy_parallel_disabled.md"
+            : "_policy_parallel_on_request.md";
+
         if (string.IsNullOrWhiteSpace(run.CandidatePromptOptionsJson))
         {
             sb.AppendLine("The candidate is graded under the **production Overseer chat system prompt** (`ChatService.BuildSystemPrompt`), not a benchmark-specific prompt. Every quality verdict below is a verdict on the prompt real users receive.");
             sb.AppendLine();
+            sb.AppendLine($"- **Tool batching policy:** {run.TestedModelParallelExecutionModeUsed} — selects Overseer/ToolGuides/{policyFile}, so this is part of the prompt text.");
             sb.AppendLine("- *Configuration not recorded for this run.*");
         }
         else
@@ -420,6 +430,7 @@ public static class BenchmarkReportBuilder
             sb.AppendLine($"- **Mode:** {modeStr} · **Response style:** {styleStr}");
             sb.AppendLine($"- **Tools:** {toolsStr} · **Web search:** {webStr} · **Subagents:** {subagentsStr} · **Source code references:** {srcStr}");
             sb.AppendLine($"- **Spoiler-free mode:** {spoilerStr} · **Active game:** {activeGameStr} · **Message history:** {historyStr}");
+            sb.AppendLine($"- **Tool batching policy:** {run.TestedModelParallelExecutionModeUsed} — selects Overseer/ToolGuides/{policyFile}, so this is part of the prompt text.");
             sb.AppendLine("- **Pre-injected wiki context:** none — live chat pre-injects relevant articles, so this run is a strictly harder configuration than production and its tool counts are an upper bound on chat's.");
             sb.AppendLine();
             sb.AppendLine("*Configurations differ in what they measure. Two runs are comparable on Completeness, Conciseness and Readability only if this block matches.*");
@@ -605,8 +616,40 @@ public static class BenchmarkReportBuilder
         // by as little as one point (see the "How to read these" note under Final Indices). The
         // headline below gives the reader the actual count instead of asking them to infer it
         // from a small index shift.
+        var contestedCriticalAnswers = answers
+            .Where(a => a.Status == BenchmarkAnswerStatus.Ok &&
+                        ((((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.ContestedVerdict) != 0 ||
+                         (a.SecondOpinionCriticalError.HasValue && a.SecondOpinionCriticalError.Value != a.CriticalError)))
+            .OrderBy(a => a.OrderIndex)
+            .ToList();
+
         var criticalErrorAnswers = answers.Where(a => a.CriticalError).OrderBy(a => a.OrderIndex).ToList();
-        if (criticalErrorAnswers.Count > 0)
+        var confirmedAnswers = criticalErrorAnswers.Where(a => !contestedCriticalAnswers.Any(ca => ca.OrderIndex == a.OrderIndex)).ToList();
+
+        if (contestedCriticalAnswers.Count > 0)
+        {
+            var affectedAnswers = confirmedAnswers.Concat(contestedCriticalAnswers).OrderBy(a => a.OrderIndex).DistinctBy(a => a.OrderIndex).ToList();
+            string questionNumbers = string.Join(", ", affectedAnswers.Select(a => a.OrderIndex));
+            sb.AppendLine($"- **Critical Errors:** {confirmedAnswers.Count} confirmed, {contestedCriticalAnswers.Count} contested (question(s) {questionNumbers})");
+
+            var sensitivityScorableItems = scoredAnswers
+                .Select(a =>
+                {
+                    int? score = a.QualityScore;
+                    if (contestedCriticalAnswers.Any(ca => ca.OrderIndex == a.OrderIndex) && a.SecondOpinionQualityScore.HasValue)
+                    {
+                        score = a.SecondOpinionQualityScore.Value;
+                    }
+                    return (score, a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty));
+                })
+                .ToList();
+            int? sensitivityIndex = BenchmarkScoring.QualityIndex(sensitivityScorableItems);
+            if (sensitivityIndex.HasValue)
+            {
+                sb.AppendLine($"- **Contested-Verdict Sensitivity:** {sensitivityIndex.Value} / 100 — Intelligence Index recomputed with each contested verdict upheld at the second reader's score.");
+            }
+        }
+        else if (criticalErrorAnswers.Count > 0)
         {
             int answeredCountForCritical = answers.Count(a => a.Status == BenchmarkAnswerStatus.Ok);
             string criticalQuestionNumbers = string.Join(", ", criticalErrorAnswers.Select(a => a.OrderIndex));
@@ -693,6 +736,87 @@ public static class BenchmarkReportBuilder
             {
                 sb.AppendLine($"- **Claim Verification Time:** {FormatDuration(run.TotalClaimVerificationDurationMs)} ({Inv(run.TotalClaimVerificationDurationMs, "N0")} ms)");
             }
+
+            // Estimated Cost block (H7)
+            bool hasAssessor = run.TotalAssessmentInputTokens > 0 || run.TotalAssessmentOutputTokens > 0;
+            bool hasVerifier = run.TotalClaimVerificationInputTokens > 0 || run.TotalClaimVerificationOutputTokens > 0;
+
+            var candidatePricing = pricingService?.GetPricing(run.TestedModelIdUsed);
+            var assessorPricing = hasAssessor ? pricingService?.GetPricing(run.AssessorModelIdUsed) : null;
+            var verifierPricing = hasVerifier ? pricingService?.GetPricing(run.ClaimVerifierModelIdUsed) : null;
+
+            bool canEstimateCost = pricingService != null &&
+                candidatePricing != null &&
+                (!hasAssessor || assessorPricing != null) &&
+                (!hasVerifier || verifierPricing != null);
+
+            if (canEstimateCost)
+            {
+                long cachedInTokens = run.TotalCacheReadTokens;
+                long uncachedInTokens = Math.Max(0, run.TotalInputTokens - cachedInTokens);
+
+                decimal candidateInCost;
+                if (candidatePricing!.CachedInputPerMillion.HasValue)
+                {
+                    candidateInCost = (uncachedInTokens / 1_000_000m * candidatePricing.InputPerMillion) +
+                                      (cachedInTokens / 1_000_000m * candidatePricing.CachedInputPerMillion.Value);
+                }
+                else
+                {
+                    candidateInCost = run.TotalInputTokens / 1_000_000m * candidatePricing.InputPerMillion;
+                }
+                decimal candidateOutCost = run.TotalOutputTokens / 1_000_000m * candidatePricing.OutputPerMillion;
+                decimal candidateTotalCost = candidateInCost + candidateOutCost;
+
+                decimal assessorInCost = 0m;
+                decimal assessorOutCost = 0m;
+                decimal assessorTotalCost = 0m;
+                if (hasAssessor && assessorPricing != null)
+                {
+                    assessorInCost = run.TotalAssessmentInputTokens / 1_000_000m * assessorPricing.InputPerMillion;
+                    assessorOutCost = run.TotalAssessmentOutputTokens / 1_000_000m * assessorPricing.OutputPerMillion;
+                    assessorTotalCost = assessorInCost + assessorOutCost;
+                }
+
+                decimal verifierInCost = 0m;
+                decimal verifierOutCost = 0m;
+                decimal verifierTotalCost = 0m;
+                if (hasVerifier && verifierPricing != null)
+                {
+                    verifierInCost = run.TotalClaimVerificationInputTokens / 1_000_000m * verifierPricing.InputPerMillion;
+                    verifierOutCost = run.TotalClaimVerificationOutputTokens / 1_000_000m * verifierPricing.OutputPerMillion;
+                    verifierTotalCost = verifierInCost + verifierOutCost;
+                }
+
+                decimal totalCost = candidateTotalCost + assessorTotalCost + verifierTotalCost;
+
+                sb.AppendLine($"- **Estimated Cost:** ${Inv(totalCost, "F2")} total");
+                if (candidatePricing.CachedInputPerMillion.HasValue && cachedInTokens > 0)
+                {
+                    decimal uncachedCost = uncachedInTokens / 1_000_000m * candidatePricing.InputPerMillion;
+                    decimal cachedCost = cachedInTokens / 1_000_000m * candidatePricing.CachedInputPerMillion.Value;
+                    sb.AppendLine($"  - Candidate ({run.TestedModelIdUsed}): ${Inv(candidateTotalCost, "F2")} (uncached in: ${Inv(uncachedCost, "F2")}, cached in: ${Inv(cachedCost, "F2")}, out: ${Inv(candidateOutCost, "F2")})");
+                }
+                else
+                {
+                    sb.AppendLine($"  - Candidate ({run.TestedModelIdUsed}): ${Inv(candidateTotalCost, "F2")} (in: ${Inv(candidateInCost, "F2")}, out: ${Inv(candidateOutCost, "F2")})");
+                }
+
+                if (hasAssessor)
+                {
+                    sb.AppendLine($"  - Assessor ({run.AssessorModelIdUsed}): ${Inv(assessorTotalCost, "F2")} (in: ${Inv(assessorInCost, "F2")}, out: ${Inv(assessorOutCost, "F2")})");
+                }
+
+                if (hasVerifier)
+                {
+                    sb.AppendLine($"  - Claim Verifier ({run.ClaimVerifierModelIdUsed}): ${Inv(verifierTotalCost, "F2")} (in: ${Inv(verifierInCost, "F2")}, out: ${Inv(verifierOutCost, "F2")})");
+                }
+            }
+            else
+            {
+                sb.AppendLine("- **Estimated Cost:** not configured (configure `ModelPricing` in appsettings.json)");
+            }
+
             sb.AppendLine("*Assessment runs pipelined behind each answer, so assessment time overlaps the candidate's and the two do not sum to the wall time.*");
             sb.AppendLine();
         }
@@ -916,15 +1040,15 @@ public static class BenchmarkReportBuilder
             {
                 string directionSuffix = string.Empty;
                 var deltas = graded.Select(a => a.SecondOpinionQualityScore!.Value - a.QualityScore!.Value).ToList();
-                if (deltas.Count > 0 && deltas.All(d => d < 0))
+                if (deltas.Count >= 3 && deltas.All(d => d < 0))
                 {
                     directionSuffix = " — the second reader graded **lower** on every re-graded answer. A one-directional gap of this size is a statement about the grader whose verdict scores, not about noise between two readers.";
                 }
-                else if (deltas.Count > 0 && deltas.All(d => d > 0))
+                else if (deltas.Count >= 3 && deltas.All(d => d > 0))
                 {
                     directionSuffix = " — the second reader graded **higher** on every re-graded answer. A one-directional gap of this size is a statement about the grader whose verdict scores, not about noise between two readers.";
                 }
-                sb.AppendLine($"- **Mean signed difference:** {Inv(meanSignedDelta.Value, "F1")} points{directionSuffix}");
+                sb.AppendLine($"- **Mean signed difference:** {Inv(meanSignedDelta.Value, "F1")} points (over {deltas.Count} of {answeredForAgreement} answered){directionSuffix}");
             }
             else
             {
@@ -1296,8 +1420,14 @@ public static class BenchmarkReportBuilder
                 };
                 sb.AppendLine($"| {famName} | {fs.CallCount} | {Inv(fs.SharePercentage, "F1")}% |");
             }
-            sb.AppendLine();
-            sb.AppendLine($"- **Knowledge base under-use:** {routing.ZeroKnowledgeBaseAnswerCount} of {routing.AnsweredQuestionCount} answered question(s) made zero `get_knowledge_article` calls.");
+            if (HasKnowledgeBaseRoutingQuestion(answers))
+            {
+                sb.AppendLine($"- **Knowledge base under-use:** {routing.ZeroKnowledgeBaseAnswerCount} of {routing.AnsweredQuestionCount} answered question(s) made zero `get_knowledge_article` calls.");
+            }
+            else
+            {
+                sb.AppendLine($"- *Prompt observation:* {routing.ZeroKnowledgeBaseAnswerCount} of {routing.AnsweredQuestionCount} answered question(s) made zero `get_knowledge_article` calls. Per `Overseer/Services/ChatService.cs` § \"Information Routing\" and `Overseer/ToolGuides/get_knowledge_article.md`, the knowledge base is scoped to app navigation, settings, troubleshooting and platform documentation; for game mechanics, monsters, items, spells, or other topics not listed there, the prompt instructs the model to skip the knowledge base entirely.");
+            }
             if (routing.CorrelationSampleSize >= 2)
             {
                 string rTimeStr = routing.SourceShareModelTimeCorrelation.HasValue
@@ -1807,5 +1937,37 @@ public static class BenchmarkReportBuilder
             return $"{ts.Minutes}m {ts.Seconds}s";
         }
         return $"{ts.Seconds}.{ts.Milliseconds / 100}s";
+    }
+
+    private static readonly string[] KnowledgeBaseTopicKeywords = new[]
+    {
+        "navigation", "settings", "options", "troubleshooting", "crash",
+        "account", "controls", "replay", "save management", "import", "export",
+        "system requirements", "developer tools", "vault", "get_knowledge_article"
+    };
+
+    private static bool HasKnowledgeBaseRoutingQuestion(IEnumerable<BenchmarkRunAnswer> answers)
+    {
+        foreach (var a in answers)
+        {
+            if (IsKnowledgeBaseTopicText(a.QuestionText) || IsKnowledgeBaseTopicText(a.BenchmarkQuestion?.ExpectedPoints))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static bool IsKnowledgeBaseTopicText(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return false;
+        foreach (var kw in KnowledgeBaseTopicKeywords)
+        {
+            if (Regex.IsMatch(text, $@"\b{Regex.Escape(kw)}\b", RegexOptions.IgnoreCase))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 }

@@ -40,6 +40,7 @@ public class AdminBenchmarkController : ControllerBase
     private readonly BenchmarkGenerationService _generationService;
     private readonly BenchmarkRubricCheckJobManager _rubricCheckJobManager;
     private readonly BenchmarkRubricCheckService _rubricCheckService;
+    private readonly ModelPricingService? _modelPricingService;
 
     public AdminBenchmarkController(
         ApplicationDbContext dbContext,
@@ -56,7 +57,8 @@ public class AdminBenchmarkController : ControllerBase
         BenchmarkGenerationJobManager generationJobManager,
         BenchmarkGenerationService generationService,
         BenchmarkRubricCheckJobManager rubricCheckJobManager,
-        BenchmarkRubricCheckService rubricCheckService)
+        BenchmarkRubricCheckService rubricCheckService,
+        ModelPricingService? modelPricingService = null)
     {
         _dbContext = dbContext;
         _benchmarkService = benchmarkService;
@@ -73,6 +75,7 @@ public class AdminBenchmarkController : ControllerBase
         _generationService = generationService;
         _rubricCheckJobManager = rubricCheckJobManager;
         _rubricCheckService = rubricCheckService;
+        _modelPricingService = modelPricingService;
     }
 
     private static BenchmarkSuiteDto ToSuiteDto(BenchmarkSuite s) => new()
@@ -2023,6 +2026,9 @@ public class AdminBenchmarkController : ControllerBase
             SecondOpinionCriticalErrorSplitCount = run.SecondOpinionCriticalErrorSplitCount,
             CandidatePromptOptionsJson = run.CandidatePromptOptionsJson,
             CandidatePromptSourceUsed = run.CandidatePromptSourceUsed,
+            CandidateSystemPromptSha256 = run.CandidateSystemPromptSha256,
+            ToolGuidesSha256 = run.ToolGuidesSha256,
+            KnowledgeBaseHeadSha = run.KnowledgeBaseHeadSha,
 
             // Manual verdicts are trials an operator ran by hand against a prospective assessor;
             // the agreement figures are about the run's own two graders.
@@ -2647,7 +2653,7 @@ public class AdminBenchmarkController : ControllerBase
 
         // The report's provenance line is worthless as a hard-coded fallback: every report ever
         // produced claimed "1.0.0" because this caller never passed a version.
-        string markdown = BenchmarkReportBuilder.BuildMarkdownReport(run, GetOverseerVersion());
+        string markdown = BenchmarkReportBuilder.BuildMarkdownReport(run, GetOverseerVersion(), _modelPricingService);
         string filename = $"{SanitizeFilename(run.SuiteName)}_{SanitizeFilename(run.TestedModelDisplayNameUsed)}_{run.StartedAtUtc:yyyyMMdd_HHmmss}.md";
 
         return File(Encoding.UTF8.GetBytes(markdown), "text/markdown; charset=utf-8", filename);

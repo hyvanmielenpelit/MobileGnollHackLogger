@@ -442,6 +442,29 @@ public class BenchmarkRun
     [MaxLength(256)]
     public string? CandidatePromptSourceUsed { get; set; }
 
+    /// <summary>
+    /// SHA-256 of the exact candidate system prompt string (lower-case hex).
+    /// </summary>
+    [MaxLength(64)]
+    public string? CandidateSystemPromptSha256 { get; set; }
+
+    /// <summary>
+    /// Full candidate system prompt text stored when Benchmark:StoreSystemPromptText is enabled.
+    /// </summary>
+    public string? CandidateSystemPromptText { get; set; }
+
+    /// <summary>
+    /// SHA-256 over sorted relative path and file SHA-256 pairs under ToolGuides.
+    /// </summary>
+    [MaxLength(64)]
+    public string? ToolGuidesSha256 { get; set; }
+
+    /// <summary>
+    /// Git commit HEAD SHA of the knowledge base repository at run time.
+    /// </summary>
+    [MaxLength(40)]
+    public string? KnowledgeBaseHeadSha { get; set; }
+
     // Total wall-clock time spent executing tool batches across the run. Subtracting this
     // from TotalAnswerDurationMs gives the model-attributable time that speed is scored on.
     public long? ToolOverheadMs { get; set; }
