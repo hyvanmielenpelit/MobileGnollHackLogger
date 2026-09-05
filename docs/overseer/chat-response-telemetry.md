@@ -43,6 +43,13 @@ When a chat turn completes, `ModelPricingService` resolves pricing in priority o
 2. **Provider Catalog Default**: The `pricing` object declared in `OpenAiModelCatalog.json`, `AnthropicModelCatalog.json`, or `GoogleModelCatalog.json`.
 3. **null (Not Available)**: If neither exists, cost estimation is omitted (never treated as zero).
 
+> [!IMPORTANT]
+> **USD-only policy.** Overseer prices exclusively in **USD**. The provider catalogs carry no
+> `currency` field, custom prices entered on a model are always USD, and `ModelPricingService`
+> supplies the literal `"USD"` at every resolution path. `ModelPricing.Currency` and
+> `ChatMessage.CostCurrency` are retained as constants — they keep historical rows readable and
+> feed benchmark reporting, but no code path can produce any other value.
+
 ### Streaming `cost` Event
 
 During stream completion (in `ChatService.cs`), Overseer broadcasts a dedicated streaming event alongside the existing `context` event:
@@ -71,10 +78,10 @@ The `cost` event is separated from the `context` event because context window me
 
 When an assistant turn executes using an operator-provided system model (`systemModelId.HasValue`):
 - `isOperatorCost` is set to `true`.
-- The chat UI displays an `(operator)` badge next to the cost figure (e.g. `$0.04 (operator)`).
+- The chat UI displays an `(operator)` suffix next to the cost figure (e.g. `4.00¢ (operator)`).
 - This explicitly signals that the hosting operator absorbed the API charges, preventing end users from misunderstanding the figure as a personal charge or billing deduction.
 
-When executing via a user's personal API key (`UserAiModel`), `isOperatorCost` is `false`, displaying the personal cost (e.g. `$0.04`).
+When executing via a user's personal API key (`UserAiModel`), `isOperatorCost` is `false`, displaying the personal cost (e.g. `4.00¢`).
 
 ### Database Persistence Model
 
@@ -91,6 +98,21 @@ public long? CacheCreationTokens { get; set; }
 
 Costs and token counts are **snapshotted at turn completion and never recomputed on read**. If catalog pricing or configuration overrides change in the future, historical message costs remain accurate to the time of generation.
 
+### Session-Level Cost Persistence
+
+`ChatSession.TotalEstimatedCost` (`decimal(18, 8)`, nullable) holds the running total of the
+session's assistant turns in USD. `ChatSessionCostAccumulator.Apply` folds each completed turn's
+cost into it inside the **same** `SaveChangesAsync` that persists the assistant message, so the
+message and the total cannot drift apart. An unpriced turn is skipped entirely: the total is
+never nudged to zero by a model with no configured pricing, and a session with no priced turn at
+all stays `NULL`.
+
+Like per-message costs, the total is **snapshotted and never recomputed**. It is deliberately
+**not** backfilled — every chat predating the column reads `NULL`, and the client falls back to
+summing the per-message costs it has loaded. The column is denormalized on purpose: it must
+survive independently of which messages a client happens to load, and it is removed together with
+the session by the existing retention purge path.
+
 ---
 
 ## 3. UI Display & Settings Lifecycle
@@ -99,26 +121,47 @@ Costs and token counts are **snapshotted at turn completion and never recomputed
 
 Under **Settings → Preferences**:
 - **Show context window usage**: Controls display of the context usage progress bar in the chat footer.
-- **Show estimated cost**: Controls visibility of all cost indicators (per-message header, live streaming cost, and conversation total).
+- **Show chat cost**: Controls visibility of every cost indicator at once — the per-reply figure on each assistant message, the live streaming cost, and the chat total above the prompt box.
+
+### Cost Formatting Rule
+
+All three surfaces share **one** formatter, `ChatComponent.formatCost`:
+
+| Cost | Rendered as |
+|------|-------------|
+| At or above $1 | `$1.23` |
+| Below $1 | `0.85¢` — cents, two decimals |
+| Above zero but below a hundredth of a cent | `<0.01¢` |
+| Unknown (`null`) | nothing at all — the surface is hidden |
+
+A single reply, and often a whole short chat, costs a fraction of a cent; rendering that as
+`$0.00` would read as free. The dollar form takes over at $1, where the distinction starts to
+matter. A legacy row carrying a non-USD `CostCurrency` falls through to `0.0500 EUR` form; no
+current code path can produce one.
 
 ### UI Presentation Surfaces
 
-1. **Per-Message Subtext**:
-   In `chat.component.html` within `.ttft-container`:
+1. **Per-Reply Cost**:
+   The bottom-left corner of each assistant message box, in `.msg-cost-footer`, with an
+   `(operator)` suffix when the hosting operator paid. It is **no longer** in the top-right
+   `.ttft-container`, which now carries timing only:
    ```html
-   @if (showChatCost && msg.estimatedCost != null) {
-     <span class="cost-subtext"> · {{ formatCost(msg.estimatedCost, msg.costCurrency) }}</span>
-     @if (msg.isOperatorCost) {
-       <span class="operator-cost-badge" title="Cost was paid by the system operator">(operator)</span>
-     }
+   @if (msg.role === 'assistant' && showChatCost && msg.estimatedCost != null) {
+     <div class="msg-cost-footer" title="Estimated cost of this response">
+       {{ formatCost(msg.estimatedCost, msg.costCurrency) }}@if (msg.isOperatorCost) {<span class="msg-cost-operator">(operator)</span>}
+     </div>
    }
    ```
-2. **Live Streaming Footer**:
-   While the response streams, the streaming footer shows the live estimated cost once the `cost` event arrives, next to the live TTFT and elapsed duration.
-3. **Loaded Conversation Total**:
-   Next to the context window indicator in the chat footer, Overseer renders:
-   `Total cost (loaded): $0.12`
-   The total is explicitly labelled **(loaded)** because chat retention policies or soft-deletion may prune earlier messages in long sessions, and the displayed total accurately reflects the sum of currently loaded messages.
+2. **Live Streaming Cost**:
+   The same `.msg-cost-footer`, on the streaming message box, driven by `liveCost` /
+   `liveCostCurrency` / `liveIsOperatorCost` once the `cost` event arrives.
+3. **Chat Total**:
+   `Chat cost 1.85¢` in the telemetry bar above the prompt box, sharing the row with the
+   context window indicator. The value is `ChatSession.TotalEstimatedCost` plus the in-flight
+   turn, falling back to the sum of loaded per-message costs for a chat saved before that column
+   existed. A **PARTIAL** badge marks a chat in which some assistant turn ran unpriced, with a
+   tooltip saying so. When no cost is known anywhere the whole indicator is hidden — there is no
+   "not available" text, and the context indicator stays right-aligned.
 
 ---
 

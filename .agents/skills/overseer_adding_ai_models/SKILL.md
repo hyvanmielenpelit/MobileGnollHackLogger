@@ -58,7 +58,7 @@ and GPT Nano entries carry them.
 
 ### The `pricing` Object
 
-Published list rates are declared per 1,000,000 tokens. When a model has no published price, omit the `pricing` block entirely; Overseer treats absent pricing as "price not available", never as zero.
+Published list rates are declared per 1,000,000 tokens. **All catalog prices are in USD** — Overseer supports no other currency, so the catalog has no currency field. When a model has no published price, omit the `pricing` block entirely; Overseer treats absent pricing as "price not available", never as zero.
 
 ```json
 "pricing": {
@@ -66,7 +66,6 @@ Published list rates are declared per 1,000,000 tokens. When a model has no publ
   "outputPerMillion": 22.50,
   "cachedInputPerMillion": 2.50,
   "cacheWritePerMillion": null,
-  "currency": "USD",
   "asOf": "2026-09-05"
 }
 ```
@@ -75,7 +74,6 @@ Published list rates are declared per 1,000,000 tokens. When a model has no publ
 - `outputPerMillion` (decimal, required): Price per 1M output tokens.
 - `cachedInputPerMillion` (decimal, optional): Price per 1M cached prompt tokens. If omitted, prompt cache reads are costed at `inputPerMillion`.
 - `cacheWritePerMillion` (decimal, optional): Price per 1M cache creation/write tokens (e.g. Anthropic). If omitted or null, cache write cost is omitted.
-- `currency` (string, optional): ISO currency code (defaults to `"USD"` if omitted).
 - `asOf` (string, required if pricing is present): ISO date (`YYYY-MM-DD`) when published list pricing was verified. Ensures operators know how fresh the pricing metadata is.
 
 ## Per-Provider Conventions

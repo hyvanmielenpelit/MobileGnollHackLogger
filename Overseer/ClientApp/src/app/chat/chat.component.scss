@@ -475,6 +475,26 @@
 .copy-btn { inset-inline-end: 5px; }
 .report-btn { inset-inline-end: 40px; }
 .copy-btn:hover, .report-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
+
+.msg-cost-footer {
+  position: absolute;
+  inset-block-end: 8px;
+  inset-inline-start: 18px;
+  max-inline-size: calc(100% - 110px); // keep clear of the copy and report buttons
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--nav-color);
+  opacity: 0.8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  .msg-cost-operator {
+    margin-inline-start: 5px;
+    font-family: inherit;
+    opacity: 0.75;
+  }
+}
 .message-header {
   display: flex;
   align-items: center;
@@ -528,6 +548,41 @@
 
 .input-area-container { border-block-start: 1px solid var(--border-glass); background: rgba(0,0,0,0.3); display: flex; flex-direction: column; }
 
+.chat-telemetry-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  inline-size: 100%;
+}
+
+.chat-cost-indicator {
+  margin-inline-end: auto;
+  align-self: flex-end;
+  padding: 6px 0 0 20px;
+  font-size: 11px;
+  color: var(--nav-color);
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+
+  .cost-label { opacity: 0.75; }
+  .cost-value {
+    font-family: monospace;
+    white-space: nowrap;
+    color: inherit;
+    cursor: help;
+  }
+  .cost-partial-badge {
+    font-size: 9px;
+    letter-spacing: 0.5px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    border: 1px solid var(--border-glass);
+    opacity: 0.8;
+    cursor: help;
+  }
+}
+
 .context-window-indicator {
   align-self: flex-end;
   inline-size: min(320px, 100%);
@@ -575,6 +630,14 @@
 @media (max-width: 480px) {
   .context-window-indicator {
     padding-inline: 12px;
+    font-size: 10px;
+  }
+  .chat-cost-indicator {
+    padding-inline-start: 12px;
+    font-size: 10px;
+  }
+  .msg-cost-footer {
+    inset-inline-start: 12px;
     font-size: 10px;
   }
 }

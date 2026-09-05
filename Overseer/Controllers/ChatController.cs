@@ -398,6 +398,7 @@ public class ChatController : ControllerBase
             session.Id,
             session.Title,
             session.IsGnollHackSession,
+            session.TotalEstimatedCost,
             hasGameSnapshot,
             Messages = formattedMessages,
             HasOngoingGeneration = hasOngoing,

@@ -971,8 +971,8 @@ A board snapshot (`BenchmarkGameSnapshot`) captures the complete, authentic text
 - **Provenance Tracking**: Each snapshot records `CaptureMethod`, `SourceChatSessionId`, `SourceGnollHackVersion`, `Notes`, `DigestText`, and `CapturedAtUtc`.
 - **Automatic Name Disambiguation**: Duplicate board names are automatically disambiguated with an incrementing numeric counter suffix (e.g. `Board Name (2)`, `Board Name (3)`) rather than rejected with an error, keeping the bound question suite name synchronized with the board.
 - **Chat UI Controls & Gating**:
-  - **Capture Live Board**: Displayed in the chat header actions and sidebar whenever an active session is open.
-  - **Save Attached Game Snapshot**: Displayed in the chat header actions whenever an active session has an attached snapshot (`hasGameSnapshot`).
+  - **Capture Live Board**: Displayed in the chat header actions only while the chat runs embedded in the GnollHack client (`clientBridge.isEmbedded()`) **and** a game snapshot is attached to the session (`hasGameSnapshot`). No longer offered in the sidebar, and no longer shown in an ordinary browser session, where the underlying `refresh_snapshot` client-bridge round trip cannot complete.
+  - **Save Attached Game Snapshot**: Unchanged — displayed whenever an active session has an attached snapshot (`hasGameSnapshot`), including in an ordinary browser session, because it reads the snapshot text from the session's own stored messages.
   - **Attach Game Snapshot to Chat**: Displayed in the composer input container whenever running embedded inside the GnollHack game client (`clientBridge.isEmbedded()`) and no snapshot is attached yet (`!hasGameSnapshot`).
   - Both capture buttons are strictly gated by administrator privileges (`isAdmin`) and do **not** depend on `ShowDebugLog` or any build configuration flags.
 - **Immutability & Safety**: Board text is immutable after creation. Only metadata (`Name`, `SourceGnollHackVersion`, `Notes`, `DigestText`) can be edited. A board snapshot cannot be deleted if any benchmark suites or runs reference it.

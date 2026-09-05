@@ -401,9 +401,44 @@ describe('ChatComponent session loading and exclusivity', () => {
       }
     });
 
+    it('should carry the cost onto the completed message and fold it into the session total exactly once', () => {
+      jasmine.clock().install();
+      try {
+        component.sessionTotalCost = 0.01;
+        component.showChatCost = true;
+        component.isStreaming = true;
+        component.streamingMessage = 'Hello from Overseer';
+        component.liveCost = 0.005;
+        component.liveCostCurrency = 'USD';
+        component.liveIsOperatorCost = true;
+
+        component.processChatEvent({ type: 'done', data: '' });
+        jasmine.clock().tick(2000);
+
+        expect(component.messages.length).toBe(1);
+        expect(component.messages[0].estimatedCost).toBe(0.005);
+        expect(component.messages[0].costCurrency).toBe('USD');
+        expect(component.messages[0].isOperatorCost).toBeTrue();
+
+        // Folded once, and only once: the live figure is cleared straight after.
+        expect(component.sessionTotalCost).toBeCloseTo(0.015, 6);
+        expect(component.liveCost).toBeNull();
+        expect(component.totalChatCost).toBeCloseTo(0.015, 6);
+
+        fixture.detectChanges();
+        const compiled = fixture.nativeElement as HTMLElement;
+        const footer = compiled.querySelector('.message-box.assistant .msg-cost-footer');
+        expect(footer).toBeTruthy();
+        expect(footer?.textContent).toContain('0.50¢');
+      } finally {
+        jasmine.clock().uninstall();
+      }
+    });
+
     it('should update liveCost, liveCostCurrency, and liveIsOperatorCost when cost event is received', () => {
       expect(component.liveCost).toBeNull();
-      component.processChatEvent({ type: 'cost', data: JSON.stringify({ cost: 0.0015, currency: 'USD', isOperatorCost: true }) });
+      // The wire format ChatService actually serializes: estimatedCost, not cost.
+      component.processChatEvent({ type: 'cost', data: JSON.stringify({ estimatedCost: 0.0015, currency: 'USD', isOperatorCost: true }) });
       expect(component.liveCost).toBe(0.0015);
       expect(component.liveCostCurrency).toBe('USD');
       expect(component.liveIsOperatorCost).toBeTrue();
@@ -419,24 +454,117 @@ describe('ChatComponent session loading and exclusivity', () => {
       expect(component.totalLoadedCost).toBeCloseTo(0.035, 4);
     });
 
-    it('should format cost correctly based on value and currency', () => {
+    it('should format cost in dollars at or above $1 and in cents below it', () => {
       expect(component.formatCost(null)).toBe('');
-      expect(component.formatCost(0.005, 'USD')).toBe('$0.0050');
-      expect(component.formatCost(0.05, 'USD')).toBe('$0.05');
-      expect(component.formatCost(0, 'USD')).toBe('$0.00');
-      expect(component.formatCost(0.005, 'EUR')).toBe('0.0050 EUR');
-      expect(component.formatCost(0.05, 'EUR')).toBe('0.05 EUR');
+      expect(component.formatCost(0, 'USD')).toBe('0.00¢');
+      expect(component.formatCost(0.000005, 'USD')).toBe('<0.01¢');
+      expect(component.formatCost(0.0001, 'USD')).toBe('0.01¢');
+      expect(component.formatCost(0.005, 'USD')).toBe('0.50¢');
+      expect(component.formatCost(0.05, 'USD')).toBe('5.00¢');
+      expect(component.formatCost(0.99, 'USD')).toBe('99.00¢');
+      expect(component.formatCost(1, 'USD')).toBe('$1.00');
+      expect(component.formatCost(1.235, 'USD')).toBe('$1.24');
     });
 
-    it('should render estimatedCost in the TTFT container for a loaded message', () => {
+    it('should format a legacy non-USD cost with its currency code', () => {
+      expect(component.formatCost(0.05, 'EUR')).toBe('0.0500 EUR');
+    });
+
+    it('should format the chat total with the same dollars-or-cents rule', () => {
+      component.sessionTotalCost = 0.015;
+      expect(component.formattedChatCost).toBe('1.50¢');
+      component.sessionTotalCost = 0.004;
+      expect(component.formattedChatCost).toBe('0.40¢');
+      component.sessionTotalCost = 1.2;
+      expect(component.formattedChatCost).toBe('$1.20');
+      component.sessionTotalCost = 0;
+      expect(component.formattedChatCost).toBe('0.00¢');
+    });
+
+    it('should render the persisted session total for a restored chat with no live turn', () => {
+      component.messages = [{ role: 'assistant', content: 'test', estimatedCost: 0.01, costCurrency: 'USD' } as any];
+      component.sessionTotalCost = 0.0185;
+      component.liveCost = null;
+      component.showChatCost = true;
+      fixture.detectChanges();
+      const compiled = fixture.nativeElement as HTMLElement;
+      const value = compiled.querySelector('.chat-cost-indicator .cost-value');
+      expect(value).toBeTruthy();
+      expect(value?.textContent?.trim()).toBe('1.85¢');
+    });
+
+    it('should fall back to the loaded-message sum when no session total was persisted', () => {
+      component.messages = [
+        { role: 'assistant', content: 'a', estimatedCost: 0.01, costCurrency: 'USD' } as any,
+        { role: 'assistant', content: 'b', estimatedCost: 0.02, costCurrency: 'USD' } as any,
+      ];
+      component.sessionTotalCost = null;
+      expect(component.totalChatCost).toBeCloseTo(0.03, 6);
+      expect(component.formattedChatCost).toBe('3.00¢');
+    });
+
+    it('should hide the cost indicator entirely when nothing is priced', () => {
+      component.messages = [{ role: 'assistant', content: 'test' } as any];
+      component.sessionTotalCost = null;
+      component.liveCost = null;
+      component.showChatCost = true;
+      component.showContextWindowUsage = true;
+      component.contextUsage = { usedTokens: 1000, windowTokens: 200000, promptTokens: 900, outputTokens: 100 } as any;
+      fixture.detectChanges();
+      const compiled = fixture.nativeElement as HTMLElement;
+      expect(component.totalChatCost).toBeNull();
+      expect(compiled.querySelector('.chat-cost-indicator')).toBeFalsy();
+      expect(compiled.querySelector('.chat-telemetry-bar .context-window-indicator')).toBeTruthy();
+    });
+
+    it('should mark a partially priced chat with a PARTIAL badge', () => {
+      component.messages = [
+        { role: 'assistant', content: 'a', estimatedCost: 0.01, costCurrency: 'USD' } as any,
+        { role: 'assistant', content: 'b' } as any,
+      ];
+      component.sessionTotalCost = 0.01;
+      component.showChatCost = true;
+      fixture.detectChanges();
+      const compiled = fixture.nativeElement as HTMLElement;
+      expect(component.isChatCostPartial).toBeTrue();
+      expect(compiled.querySelector('.cost-partial-badge')).toBeTruthy();
+      expect(component.chatCostTooltip).toContain('not included');
+    });
+
+    it('should not mark a fully priced chat as partial', () => {
+      component.messages = [
+        { role: 'assistant', content: 'a', estimatedCost: 0.01, costCurrency: 'USD' } as any,
+        { role: 'assistant', content: 'b', estimatedCost: 0.02, costCurrency: 'USD' } as any,
+      ];
+      component.sessionTotalCost = 0.03;
+      component.showChatCost = true;
+      fixture.detectChanges();
+      const compiled = fixture.nativeElement as HTMLElement;
+      expect(component.isChatCostPartial).toBeFalse();
+      expect(compiled.querySelector('.cost-partial-badge')).toBeFalsy();
+    });
+
+    it('should render estimatedCost in the bottom-left footer of a loaded message', () => {
       component.messages = [{ role: 'assistant', content: 'test', timeToFirstTokenMs: 1000, estimatedCost: 0.015, costCurrency: 'USD', isOperatorCost: true } as any];
       component.showChatCost = true;
       fixture.detectChanges();
       const compiled = fixture.nativeElement as HTMLElement;
-      const costBadge = compiled.querySelector('.message-box.assistant .cost-badge');
-      expect(costBadge).toBeTruthy();
-      expect(costBadge?.textContent).toContain('$0.01');
-      expect(costBadge?.textContent).toContain('(operator)');
+      const footer = compiled.querySelector('.message-box.assistant .msg-cost-footer');
+      expect(footer).toBeTruthy();
+      expect(footer?.textContent).toContain('1.50¢');
+      expect(footer?.querySelector('.msg-cost-operator')).toBeTruthy();
+
+      // The cost has left the top-right timing line entirely.
+      const ttft = compiled.querySelector('.message-box.assistant .ttft-container');
+      expect(ttft?.textContent).not.toContain('¢');
+    });
+
+    it('should omit the per-reply footer for an unpriced message', () => {
+      component.messages = [{ role: 'assistant', content: 'test', timeToFirstTokenMs: 1000 } as any];
+      component.showChatCost = true;
+      fixture.detectChanges();
+      const compiled = fixture.nativeElement as HTMLElement;
+      expect(compiled.querySelector('.message-box.assistant .msg-cost-footer')).toBeFalsy();
     });
 
     it('should update the live footer with cost when streaming', () => {
@@ -449,10 +577,10 @@ describe('ChatComponent session loading and exclusivity', () => {
       const compiled = fixture.nativeElement as HTMLElement;
       const messageBoxes = compiled.querySelectorAll('.message-box.assistant');
       const liveBox = messageBoxes[messageBoxes.length - 1];
-      const costBadge = liveBox?.querySelector('.cost-badge');
-      expect(costBadge).toBeTruthy();
-      expect(costBadge?.textContent).toContain('$0.0050');
-      expect(costBadge?.textContent).not.toContain('(operator)');
+      const footer = liveBox?.querySelector('.msg-cost-footer');
+      expect(footer).toBeTruthy();
+      expect(footer?.textContent).toContain('0.50¢');
+      expect(footer?.querySelector('.msg-cost-operator')).toBeFalsy();
     });
 
     it('should not render chat costs when showChatCost is false', () => {
@@ -463,8 +591,8 @@ describe('ChatComponent session loading and exclusivity', () => {
       component.showChatCost = false;
       fixture.detectChanges();
       const compiled = fixture.nativeElement as HTMLElement;
-      const costBadges = compiled.querySelectorAll('.cost-badge');
-      expect(costBadges.length).toBe(0);
+      const footers = compiled.querySelectorAll('.msg-cost-footer');
+      expect(footers.length).toBe(0);
       
       const totalCostIndicator = compiled.querySelector('.chat-cost-indicator');
       expect(totalCostIndicator).toBeFalsy();
@@ -1078,7 +1206,8 @@ describe('ChatComponent context window indicator', () => {
       clientBridge = TestBed.inject(ClientBridgeService);
     });
 
-    it('should render header save-attached button when isAdmin and currentSessionId and hasGameSnapshot are true', () => {
+    it('should render both header capture buttons when isAdmin, currentSessionId, hasGameSnapshot and the embedded client are all true', () => {
+      spyOn(clientBridge, 'isEmbedded').and.returnValue(true);
       (authService as any).userSubject.next({
         userName: 'admin',
         email: 'admin@example.com',
@@ -1098,7 +1227,8 @@ describe('ChatComponent context window indicator', () => {
       expect(liveBtn).toBeTruthy();
     });
 
-    it('should omit header save-attached button when hasGameSnapshot is false, but still render live capture button', () => {
+    it('should omit both header capture buttons when hasGameSnapshot is false', () => {
+      spyOn(clientBridge, 'isEmbedded').and.returnValue(true);
       (authService as any).userSubject.next({
         userName: 'admin',
         email: 'admin@example.com',
@@ -1115,7 +1245,46 @@ describe('ChatComponent context window indicator', () => {
       const liveBtn = compiled.querySelector('button[aria-label="Capture Live Game Board for Benchmarking"]');
 
       expect(attachedBtn).toBeFalsy();
-      expect(liveBtn).toBeTruthy();
+      expect(liveBtn).toBeFalsy();
+    });
+
+    it('should offer only the attached-snapshot button in an ordinary browser session', () => {
+      spyOn(clientBridge, 'isEmbedded').and.returnValue(false);
+      (authService as any).userSubject.next({
+        userName: 'admin',
+        email: 'admin@example.com',
+        hasApiKey: true,
+        isAdmin: true
+      });
+      component.currentSessionId = 42;
+      component.hasGameSnapshot = true;
+      component.showDebugLog = false;
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      const attachedBtn = compiled.querySelector('button[aria-label="Save attached game snapshot of this chat for benchmarking"]');
+      const liveBtn = compiled.querySelector('button[aria-label="Capture Live Game Board for Benchmarking"]');
+
+      expect(attachedBtn).toBeTruthy();
+      expect(liveBtn).toBeFalsy();
+    });
+
+    it('should no longer offer the live capture link in the sidebar', () => {
+      spyOn(clientBridge, 'isEmbedded').and.returnValue(true);
+      (authService as any).userSubject.next({
+        userName: 'admin',
+        email: 'admin@example.com',
+        hasApiKey: true,
+        isAdmin: true
+      });
+      component.currentSessionId = 42;
+      component.hasGameSnapshot = true;
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      const sidebarLink = compiled.querySelector('.bottom-links a[title="Capture Live Game Board for Benchmarking"]');
+
+      expect(sidebarLink).toBeFalsy();
     });
 
     it('should omit benchmark buttons when user is not admin', () => {

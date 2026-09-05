@@ -96,7 +96,7 @@ public class ModelPricingService
             dp.CachedInputPerMillion,
             dp.CacheWritePerMillion,
             ModelPricingSource.Catalog,
-            string.IsNullOrWhiteSpace(dp.Currency) ? "USD" : dp.Currency,
+            "USD", // Overseer prices exclusively in USD; the catalog carries no currency field.
             dp.AsOf);
     }
 

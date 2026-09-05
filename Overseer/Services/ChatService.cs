@@ -998,6 +998,7 @@ public class ChatService
                 };
                 dbContext.ChatMessage.Add(asstMsg);
                 session.LastMessageUtc = DateTime.UtcNow;
+                ChatSessionCostAccumulator.Apply(session, estimatedCost);
 
                 if (systemModelId.HasValue)
                 {

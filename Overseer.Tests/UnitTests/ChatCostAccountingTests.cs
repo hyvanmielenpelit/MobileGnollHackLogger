@@ -162,4 +162,77 @@ public class ChatCostAccountingTests
         Assert.Null(message.PricingSource);
         Assert.Null(message.CostCurrency);
     }
+    [Fact]
+    public void Accumulator_FirstPricedTurn_SetsTotalFromNull()
+    {
+        var session = new ChatSession { Title = "S", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow };
+        Assert.Null(session.TotalEstimatedCost);
+
+        ChatSessionCostAccumulator.Apply(session, 0.02m);
+
+        Assert.Equal(0.02m, session.TotalEstimatedCost);
+    }
+
+    [Fact]
+    public void Accumulator_TwoPricedTurns_Accumulate()
+    {
+        var session = new ChatSession { Title = "S", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow };
+
+        ChatSessionCostAccumulator.Apply(session, 0.02m);
+        ChatSessionCostAccumulator.Apply(session, 0.03m);
+
+        Assert.Equal(0.05m, session.TotalEstimatedCost);
+    }
+
+    [Fact]
+    public void Accumulator_UnpricedTurn_LeavesTotalUntouched()
+    {
+        // A null total must stay null: an unpriced turn is not a free turn.
+        var fresh = new ChatSession { Title = "S", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow };
+        ChatSessionCostAccumulator.Apply(fresh, null);
+        Assert.Null(fresh.TotalEstimatedCost);
+
+        // An existing total must not move either.
+        var priced = new ChatSession { Title = "S", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow };
+        ChatSessionCostAccumulator.Apply(priced, 0.04m);
+        ChatSessionCostAccumulator.Apply(priced, null);
+        Assert.Equal(0.04m, priced.TotalEstimatedCost);
+    }
+
+    [Fact]
+    public async Task ChatSession_TotalEstimatedCost_RoundTripsThroughTheContext()
+    {
+        using var db = CreateInMemoryDbContext();
+        var ct = TestContext.Current.CancellationToken;
+
+        var session = new ChatSession
+        {
+            AspNetUserId = "test-user-id",
+            Title = "Test Session",
+            CreatedUtc = DateTime.UtcNow,
+            LastMessageUtc = DateTime.UtcNow
+        };
+        ChatSessionCostAccumulator.Apply(session, 0.01234567m);
+        db.ChatSession.Add(session);
+        await db.SaveChangesAsync(ct);
+
+        var reloaded = await db.ChatSession.FindAsync(new object?[] { session.Id }, ct);
+        Assert.NotNull(reloaded);
+        Assert.Equal(0.01234567m, reloaded.TotalEstimatedCost);
+    }
+
+    [Fact]
+    public void ResolveDefault_CatalogEntry_IsPricedInUsd()
+    {
+        // The catalog no longer carries a currency field; ResolveDefault supplies the literal.
+        using var db = CreateInMemoryDbContext();
+        var metadataService = new ModelMetadataService();
+        var pricingService = new ModelPricingService(metadataService, db);
+
+        var pricing = pricingService.ResolveDefault("Anthropic", "claude-opus-4-6");
+
+        Assert.NotNull(pricing);
+        Assert.Equal("USD", pricing.Currency);
+        Assert.Equal(ModelPricingSource.Catalog, pricing.Source);
+    }
 }

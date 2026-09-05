@@ -205,7 +205,7 @@
               @if (p.cachedInputPerMillion != null) {
                 <span> ({{ p.cachedInputPerMillion }} cached)</span>
               }
-              <span> {{ p.currency ?? 'USD' }} per 1M tokens (catalog, as of {{ p.asOf }})</span>
+              <span> USD per 1M tokens (catalog, as of {{ p.asOf }})</span>
             } @else {
               <span style="color: #b8b8b8; font-style: italic;">No price published in the model catalog</span>
             }
@@ -226,6 +226,7 @@
                 <input type="number" class="gh-input w-100" [(ngModel)]="cachedInputPricePerMillion" step="0.01" min="0">
               </div>
             </div>
+            <div class="form-hint mt-5">Prices are per 1,000,000 tokens in USD. Convert other currencies before entering them.</div>
           </div>
         }
       </div>

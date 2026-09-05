@@ -46,6 +46,7 @@ describe('SettingsComponent', () => {
         showParallelBadge: false,
         parallelBadgeEnabled: true,
         showContextWindowUsage: false,
+        showChatCost: false,
         requestTimeout: 60
       };
       spyOn(settingsService, 'getSettings').and.returnValue(of(mockSettings));
@@ -59,6 +60,7 @@ describe('SettingsComponent', () => {
       expect(component.showParallelBadge).toBeFalse();
       expect(component.parallelBadgeEnabled).toBeTrue();
       expect(component.showContextWindowUsage).toBeFalse();
+      expect(component.showChatCost).toBeFalse();
       expect(component.showThoughtsAndTools).toBe(1);
       expect(component.enableSubAgents).toBeFalse();
       expect(component.enableClientTools).toBeFalse();
@@ -101,6 +103,30 @@ describe('SettingsComponent', () => {
       component = fixture.componentInstance;
       fixture.detectChanges();
     });
+
+    it('should default showChatCost to true and bind it to its checkbox', async () => {
+      expect(component.showChatCost).toBeTrue();
+
+      // ngModel writes the value to the DOM asynchronously, so let it settle first.
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      const checkbox = compiled.querySelector('input[name="showChatCost"]') as HTMLInputElement;
+      expect(checkbox).toBeTruthy();
+      expect(checkbox.checked).toBeTrue();
+    });
+
+    it('should forward showChatCost as the sixteenth saveSettings argument', fakeAsync(() => {
+      const saveSpy = spyOn(settingsService, 'saveSettings').and.returnValue(of({ message: 'Saved' } as any));
+
+      component.showChatCost = false;
+      component.onSettingChange();
+      tick();
+
+      expect(saveSpy).toHaveBeenCalled();
+      expect(saveSpy.calls.mostRecent().args[15]).toBeFalse();
+    }));
 
     it('should not trigger save on initial data load', fakeAsync(() => {
       const saveSpy = spyOn(settingsService, 'saveSettings').and.returnValue(of({ message: 'Saved' } as any));

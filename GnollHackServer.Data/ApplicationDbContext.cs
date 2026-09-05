@@ -263,6 +263,9 @@ namespace MobileGnollHackLogger.Data
             // decimal(18,2) would store every one of them as 0.00.
             modelBuilder.Entity<ChatMessage>()
                 .Property(m => m.EstimatedCost).HasPrecision(18, 8);
+
+            modelBuilder.Entity<ChatSession>()
+                .Property(s => s.TotalEstimatedCost).HasPrecision(18, 8);
         }
 
         public async Task<TopScoreNumberData> GetTopScoreNumberAsync(long databaseId, string? mode, string? death = null)

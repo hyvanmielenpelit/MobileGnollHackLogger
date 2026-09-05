@@ -133,6 +133,7 @@ export interface ChatSessionDetailResponse {
   title: string;
   isGnollHackSession?: boolean;
   hasGameSnapshot?: boolean;
+  totalEstimatedCost?: number | null;
   messages: ChatMessage[];
   hasOngoingGeneration?: boolean;
   ongoingGeneration?: { events: ChatStreamEvent[] };

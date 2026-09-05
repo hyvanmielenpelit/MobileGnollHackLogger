@@ -113,9 +113,6 @@
         @if (authService.user$ | async; as user) {
           @if (user.isAdmin) {
             <a routerLink="/admin" queryParamsHandling="preserve">Admin</a>
-            @if (currentSessionId) {
-              <a href="#" (click)="openCaptureBoardModal($event, 'live')" title="Capture Live Game Board for Benchmarking">Capture Live Game Board for Benchmarking</a>
-            }
           }
         }
         @if (showDebugLog) {
@@ -162,25 +159,26 @@
           </div>
         }
         @if (authService.user$ | async; as user) {
-          @if (user.isAdmin && currentSessionId) {
+          @if (user.isAdmin && currentSessionId && hasGameSnapshot) {
             <div class="chat-header-actions">
-              @if (hasGameSnapshot) {
-                <button type="button" class="action-btn" (click)="openCaptureBoardModal(undefined, 'attached')" aria-label="Save attached game snapshot of this chat for benchmarking" [attr.style]="'anchor-name: --tip-save-attached-snapshot'" interestfor="tip-save-attached-snapshot">
-                  <svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <line x1="4" y1="20" x2="4" y2="15"></line>
-                    <line x1="9" y1="20" x2="9" y2="11"></line>
-                    <line x1="14" y1="20" x2="14" y2="7"></line>
-                    <line x1="19" y1="2" x2="19" y2="8"></line>
-                    <line x1="16" y1="5" x2="22" y2="5"></line>
-                  </svg>
-                </button>
-                <div id="tip-save-attached-snapshot" class="gh-tooltip" popover="hint" [attr.style]="'position-anchor: --tip-save-attached-snapshot'">
-                  Save Attached Game Snapshot for Benchmarking
-                </div>
-              }
-              <button type="button" class="btn-gh btn-sm" (click)="openCaptureBoardModal(undefined, 'live')" aria-label="Capture Live Game Board for Benchmarking">
-                <span>🎮</span> Capture Live Board
+              <!-- Save Attached Game Snapshot: server-side read, no client bridge needed -->
+              <button type="button" class="action-btn" (click)="openCaptureBoardModal(undefined, 'attached')" aria-label="Save attached game snapshot of this chat for benchmarking" [attr.style]="'anchor-name: --tip-save-attached-snapshot'" interestfor="tip-save-attached-snapshot">
+                <svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <line x1="4" y1="20" x2="4" y2="15"></line>
+                  <line x1="9" y1="20" x2="9" y2="11"></line>
+                  <line x1="14" y1="20" x2="14" y2="7"></line>
+                  <line x1="19" y1="2" x2="19" y2="8"></line>
+                  <line x1="16" y1="5" x2="22" y2="5"></line>
+                </svg>
               </button>
+              <div id="tip-save-attached-snapshot" class="gh-tooltip" popover="hint" [attr.style]="'position-anchor: --tip-save-attached-snapshot'">
+                Save Attached Game Snapshot for Benchmarking
+              </div>
+              @if (clientBridge.isEmbedded()) {
+                <button type="button" class="btn-gh btn-sm" (click)="openCaptureBoardModal(undefined, 'live')" aria-label="Capture Live Game Board for Benchmarking">
+                  <span>🎮</span> Capture Live Board
+                </button>
+              }
             </div>
           }
         }
@@ -255,14 +253,9 @@
                       }
                     </div>
                   }
-                  @if (msg.role === 'assistant' && (msg.timeToFirstTokenMs != null || msg.totalDurationMs != null || (showChatCost && msg.estimatedCost != null))) {
+                  @if (msg.role === 'assistant' && (msg.timeToFirstTokenMs != null || msg.totalDurationMs != null)) {
                     <div class="ttft-container" style="text-align: right; margin-top: 2px;">
-                      @if (showChatCost && msg.estimatedCost != null) {
-                        <span class="model-name-subtext cost-badge">{{ formatCost(msg.estimatedCost, msg.costCurrency) }}@if(msg.isOperatorCost){ (operator)} &bull; </span>
-                      }
-                      @if (msg.timeToFirstTokenMs != null || msg.totalDurationMs != null) {
-                        <span class="model-name-subtext">{{ formatDuration(msg.timeToFirstTokenMs, msg.totalDurationMs) }}</span>
-                      }
+                      <span class="model-name-subtext">{{ formatDuration(msg.timeToFirstTokenMs, msg.totalDurationMs) }}</span>
                     </div>
                   }
                 </div>
@@ -362,6 +355,11 @@
                 </div>
               }
               <div [innerHTML]="msg.content | markdown" class="markdown-body"></div>
+              @if (msg.role === 'assistant' && showChatCost && msg.estimatedCost != null) {
+                <div class="msg-cost-footer" title="Estimated cost of this response">
+                  {{ formatCost(msg.estimatedCost, msg.costCurrency) }}@if (msg.isOperatorCost) {<span class="msg-cost-operator">(operator)</span>}
+                </div>
+              }
               @if (msg.role === 'assistant' && msg.id) {
                 <button class="report-btn" (click)="requestReportMessage(msg.id, i)" title="Report message">
                   @if (reportSuccessIndex === i) {
@@ -404,9 +402,6 @@
                     </div>
                   }
                   <div class="ttft-container" style="text-align: right; margin-top: 2px;">
-                    @if (showChatCost && liveCost != null) {
-                      <span class="model-name-subtext cost-badge">{{ formatCost(liveCost, liveCostCurrency) }}@if(liveIsOperatorCost){ (operator)} &bull; </span>
-                    }
                     @if (timeToFirstTokenMs === null) {
                       <span class="model-name-subtext"><span class="gh-spinner-small" style="display:inline-block; width: 10px; height: 10px; border-width: 1.5px;"></span></span>
                     }
@@ -499,6 +494,11 @@
                 </div>
               }
               <div [innerHTML]="streamingMessage | markdown" class="markdown-body" [style.display]="(isStreaming && (showThoughtsAndTools === 0 || showThoughtsAndTools === 1) && !hasRealContent) ? 'none' : 'block'"></div>
+              @if (showChatCost && liveCost != null) {
+                <div class="msg-cost-footer" title="Estimated cost of this response">
+                  {{ formatCost(liveCost, liveCostCurrency) }}@if (liveIsOperatorCost) {<span class="msg-cost-operator">(operator)</span>}
+                </div>
+              }
               <button class="copy-btn" (click)="copyToClipboard(streamingMessage, null)" title="Copy">
                 @if (copiedStreamMsg) {
                   <span>✅</span>
@@ -512,17 +512,20 @@
         }
       </div>
       <div class="input-area-container">
-        <!-- Context window consumption and total cost -->
-        <div style="display: flex; justify-content: space-between; align-items: flex-end; width: 100%;">
-          @if (showChatCost && totalLoadedCost > 0) {
-            <div class="chat-cost-indicator" style="padding: 6px 0 0 20px; font-size: 11px; color: var(--nav-color); opacity: 0.85;">
-              Total cost (loaded): {{ formatCost(totalLoadedCost, firstCurrency) }}
+        <!-- Context window consumption and total chat cost -->
+        @if ((showChatCost && totalChatCost != null) || (contextUsage && showContextWindowUsage)) {
+          <div class="chat-telemetry-bar">
+          @if (showChatCost && totalChatCost != null) {
+            <div class="chat-cost-indicator">
+              <span class="cost-label">Chat cost</span>
+              <span class="cost-value" [title]="chatCostTooltip">{{ formattedChatCost }}</span>
+              @if (isChatCostPartial) {
+                <span class="cost-partial-badge" [title]="chatCostTooltip">PARTIAL</span>
+              }
             </div>
-          } @else {
-            <div></div>
           }
           @if (contextUsage && showContextWindowUsage) {
-            <div class="context-window-indicator" [class.near-full]="contextUsagePercent >= 90" style="padding-left: 20px;">
+            <div class="context-window-indicator" [class.near-full]="contextUsagePercent >= 90">
               <div class="cw-text">
                 <span class="cw-label">Context window</span>
               <button type="button" class="cw-value"
@@ -554,7 +557,8 @@
             }
           </div>
         }
-        </div>
+          </div>
+        }
         <!-- Progress Indicator at the top of the prompt box -->
         @if (isStreaming || currentStatusText) {
           <div class="progress-bar">

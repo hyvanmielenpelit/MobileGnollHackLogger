@@ -21,6 +21,8 @@ public class ModelCatalogEntry
 /// Published list price for one catalog entry, per million tokens. Null on the entry means
 /// the price is not known to the catalog — a different fact from a price of zero, and
 /// rendered as "not published" rather than "0.00".
+/// All catalog prices are in USD. Overseer supports no other currency, so the catalog does
+/// not carry a currency field.
 /// </summary>
 public class ModelCatalogPricing
 {
@@ -36,9 +38,6 @@ public class ModelCatalogPricing
     /// not bill cache writes separately; costing then omits them rather than guessing.
     /// </summary>
     public decimal? CacheWritePerMillion { get; set; }
-
-    /// <summary>ISO 4217, e.g. "USD". Costs are only ever summed within one currency.</summary>
-    public string Currency { get; set; } = "USD";
 
     /// <summary>
     /// YYYY-MM-DD the figures were read from the provider's pricing page. Printed beside

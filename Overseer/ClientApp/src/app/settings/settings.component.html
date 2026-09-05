@@ -62,6 +62,16 @@
         </label>
       </div>
 
+      <div class="margin-y-20">
+        <label class="checkbox-label align-start">
+          <input type="checkbox" [(ngModel)]="showChatCost" (ngModelChange)="onSettingChange()" name="showChatCost" class="w-auto m-0" aria-describedby="chatCostHint" />
+          <span class="d-block">
+            <span>Show chat cost</span>
+            <span id="chatCostHint" class="form-hint mt-5 d-block">Display the estimated cost of the chat above the prompt box, and of each response in its bottom-left corner.</span>
+          </span>
+        </label>
+      </div>
+
       @if (parallelBadgeEnabled) {
         <div class="margin-y-20">
           <label class="checkbox-label align-start">

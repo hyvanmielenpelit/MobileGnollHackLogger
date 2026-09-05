@@ -179,6 +179,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   liveCost: number | null = null;
   liveCostCurrency: string | null = null;
   liveIsOperatorCost: boolean = false;
+  sessionTotalCost: number | null = null;
   
   @ViewChild('messagesContainer') messagesContainer!: ElementRef;
   @ViewChild('deleteConfirmDialog') deleteConfirmDialog!: ElementRef<HTMLDialogElement>;
@@ -376,17 +377,60 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     return this.liveCostCurrency || 'USD';
   }
 
+  /**
+   * Every cost figure in the chat: per reply, live, and the conversation total.
+   * Dollars at or above $1, cents below it — a single reply, and often a whole short chat,
+   * costs a fraction of a cent, and "$0.00" would read as free. Two decimals of a cent
+   * resolve to $0.0001; anything smaller but non-zero prints "<0.01¢" rather than
+   * rounding to zero.
+   */
   formatCost(cost: number | null | undefined, currency?: string | null): string {
     if (cost == null) return '';
     const c = currency ? currency.toUpperCase() : 'USD';
-    let formatted: string;
-    if (cost < 0.01 && cost > 0) {
-      formatted = cost.toFixed(4);
-    } else {
-      formatted = cost.toFixed(2);
+    if (c !== 'USD') {
+      // Legacy rows only. Overseer prices exclusively in USD.
+      return `${cost.toFixed(4)} ${c}`;
     }
-    if (c === 'USD') return `$${formatted}`;
-    return `${formatted} ${c}`;
+    if (cost >= 1) return `$${cost.toFixed(2)}`;
+    const cents = cost * 100;
+    if (cost > 0 && cents < 0.01) return '<0.01¢';
+    return `${cents.toFixed(2)}¢`;
+  }
+
+  /** True if any loaded assistant turn, or the in-flight turn, carries a resolved price. */
+  get hasAnyLoadedCost(): boolean {
+    return this.liveCost != null
+      || this.messages.some(m => m.role === 'assistant' && m.estimatedCost != null);
+  }
+
+  /** True if some assistant turn ran unpriced, so the total is real but incomplete. */
+  get isChatCostPartial(): boolean {
+    return this.messages.some(m => m.role === 'assistant' && m.estimatedCost == null);
+  }
+
+  /**
+   * Authoritative chat cost in USD: the persisted session total plus the in-flight turn.
+   * Falls back to summing loaded per-message costs for chats saved before the session total
+   * existed. Null means "no cost is known" — the indicator is hidden entirely.
+   */
+  get totalChatCost(): number | null {
+    if (this.sessionTotalCost == null) {
+      return this.hasAnyLoadedCost ? this.totalLoadedCost : null;
+    }
+    return this.sessionTotalCost + (this.liveCost ?? 0);
+  }
+
+  /** The chat total as displayed: same dollars-or-cents rule as every per-reply figure. */
+  get formattedChatCost(): string {
+    return this.formatCost(this.totalChatCost, 'USD');
+  }
+
+  get chatCostTooltip(): string {
+    let tip = 'Total estimated cost of this chat.';
+    if (this.isChatCostPartial) {
+      tip += ' Some responses ran on a model with no configured pricing and are not included.';
+    }
+    return tip;
   }
 
   /**
@@ -1419,7 +1463,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     } else if (evt.type === 'cost') {
       try {
         const d = JSON.parse(evt.data);
-        this.liveCost = d.cost;
+        this.liveCost = d.estimatedCost ?? null;
         this.liveCostCurrency = d.currency;
         this.liveIsOperatorCost = d.isOperatorCost;
         this.cdr.detectChanges();
@@ -1646,9 +1690,19 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
             contextPromptTokens: this.contextUsage?.promptTokens,
             contextOutputTokens: this.contextUsage?.outputTokens,
             contextWindowTokens: this.contextUsage?.windowTokens,
-            contextInputLimitTokens: this.contextUsage?.inputLimitTokens
+            contextInputLimitTokens: this.contextUsage?.inputLimitTokens,
+            estimatedCost: this.liveCost,
+            costCurrency: this.liveCostCurrency,
+            isOperatorCost: this.liveIsOperatorCost
           });
-          
+
+          // Fold only here, on normal completion. Cancel and error paths deliberately do not
+          // fold: the server's stored total is authoritative on the next load, and a second
+          // fold would double-count.
+          if (this.liveCost != null) {
+            this.sessionTotalCost = (this.sessionTotalCost ?? 0) + this.liveCost;
+          }
+
           this.isStreaming = false;
           this.hasRealContent = false;
           this.streamingMessage = '';
@@ -1990,6 +2044,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.sessionLoadSub?.unsubscribe();
     this.currentSessionId = null;
     this.hasGameSnapshot = false;
+    this.sessionTotalCost = null;
     this.clientBridge.notifySessionChanged(null);
     this.lastSeenSeqNo = -1;
     this.messages = [];
@@ -2073,6 +2128,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
     this.messages = [];
     this.hasGameSnapshot = false;
+    this.sessionTotalCost = null;
     this.autoScrollEnabled = true;
     this.lastSeenSeqNo = -1;
     this.clearStreamingState();
@@ -2145,6 +2201,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
         this.messages = s.messages || [];
         this.hasGameSnapshot = !!s.hasGameSnapshot;
+        this.sessionTotalCost = s.totalEstimatedCost ?? null;
         this.hasOngoingGeneration = s.hasOngoingGeneration === true;
         this.formatMessageToolCalls(this.messages);
         this.recomputeContextUsage();

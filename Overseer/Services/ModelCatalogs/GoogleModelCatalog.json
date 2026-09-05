@@ -10,7 +10,6 @@
       "inputPerMillion": 2.00,
       "outputPerMillion": 12.00,
       "cachedInputPerMillion": 0.20,
-      "currency": "USD",
       "asOf": "2026-09-05"
     }
   },
@@ -27,7 +26,6 @@
       "inputPerMillion": 0.25,
       "outputPerMillion": 1.50,
       "cachedInputPerMillion": 0.025,
-      "currency": "USD",
       "asOf": "2026-09-05"
     }
   },
@@ -44,7 +42,6 @@
       "inputPerMillion": 0.30,
       "outputPerMillion": 2.50,
       "cachedInputPerMillion": 0.03,
-      "currency": "USD",
       "asOf": "2026-09-05"
     }
   },
@@ -59,7 +56,6 @@
       "inputPerMillion": 1.50,
       "outputPerMillion": 9.00,
       "cachedInputPerMillion": 0.15,
-      "currency": "USD",
       "asOf": "2026-09-05"
     }
   },
@@ -74,7 +70,6 @@
       "inputPerMillion": 1.50,
       "outputPerMillion": 7.50,
       "cachedInputPerMillion": 0.15,
-      "currency": "USD",
       "asOf": "2026-09-05"
     }
   },
@@ -89,7 +84,6 @@
       "inputPerMillion": 0.75,
       "outputPerMillion": 3.75,
       "cachedInputPerMillion": 0.075,
-      "currency": "USD",
       "asOf": "2026-09-05"
     }
   },
@@ -104,7 +98,6 @@
       "inputPerMillion": 0.75,
       "outputPerMillion": 3.75,
       "cachedInputPerMillion": 0.075,
-      "currency": "USD",
       "asOf": "2026-09-05"
     }
   }

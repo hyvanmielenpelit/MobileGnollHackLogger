@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -46,18 +45,6 @@ public class ModelMetadataService
             if (entries == null) continue;
 
             _providerCatalogs[provider] = entries;
-        }
-
-        var currencies = _providerCatalogs.Values
-            .SelectMany(entries => entries)
-            .Where(e => e.Pricing != null && !string.IsNullOrWhiteSpace(e.Pricing.Currency))
-            .Select(e => e.Pricing!.Currency)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        if (currencies.Count > 1)
-        {
-            _logger?.LogWarning("Model catalogs contain multiple distinct pricing currencies: {Currencies}", string.Join(", ", currencies));
         }
     }
 

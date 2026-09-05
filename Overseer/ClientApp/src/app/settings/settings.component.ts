@@ -53,6 +53,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
   showParallelBadge = true;
   parallelBadgeEnabled = true;
   showContextWindowUsage = true;
+  showChatCost = true;
 
   enableWebSearch = true;
   enableToolUse = true;
@@ -206,7 +207,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
           Number(this.showThoughtsAndTools),
           this.requestTimeout,
           this.showParallelBadge,
-          this.showContextWindowUsage
+          this.showContextWindowUsage,
+          this.showChatCost
         ).pipe(
           tap(() => {
             this.hasPendingChanges = false;
@@ -243,6 +245,9 @@ export class SettingsComponent implements OnInit, OnDestroy {
           }
           if (s.showContextWindowUsage !== undefined) {
             this.showContextWindowUsage = s.showContextWindowUsage;
+          }
+          if (s.showChatCost !== undefined) {
+            this.showChatCost = s.showChatCost;
           }
           if (s.enableWebSearch !== undefined) {
             this.enableWebSearch = s.enableWebSearch;
