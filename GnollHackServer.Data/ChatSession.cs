@@ -38,4 +38,14 @@ public class ChatSession
     /// survive independently of which messages a client happens to load.
     /// </summary>
     public decimal? TotalEstimatedCost { get; set; }
+
+    /// <summary>
+    /// The part of <see cref="TotalEstimatedCost"/> that the user's own models produced, in USD. Turns
+    /// funded by a system AI configuration are excluded: the operator pays for those, so they are not part
+    /// of what this chat cost the user. Denormalized for the same reason as
+    /// <see cref="TotalEstimatedCost"/> — it must survive independently of which messages a client loads.
+    /// Null until the first priced user-model turn; absent pricing is never treated as zero.
+    /// Invariant: never greater than <see cref="TotalEstimatedCost"/>.
+    /// </summary>
+    public decimal? TotalUserEstimatedCost { get; set; }
 }

@@ -278,6 +278,12 @@
                             </span>
                           </div>
                         }
+                        @if (formatLongContextPrice(config)) {
+                          <div class="model-price-long-context">{{ formatLongContextPrice(config) }}</div>
+                        }
+                        @if (formatPricingSchedule(config)) {
+                          <div class="model-price-schedule" [class.elapsed]="config.pricingScheduleElapsed">{{ formatPricingSchedule(config) }}</div>
+                        }
                       </div>
                     </div>
                     <div class="model-actions">

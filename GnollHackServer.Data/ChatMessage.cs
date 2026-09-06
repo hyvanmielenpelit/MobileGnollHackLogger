@@ -107,4 +107,12 @@ public class ChatMessage
     /// <summary>"custom" or "catalog" — which price produced <see cref="EstimatedCost"/>.</summary>
     [MaxLength(16)]
     public string? PricingSource { get; set; }
+
+    /// <summary>
+    /// The system AI configuration that funded this turn, or null when it ran on one of the user's own
+    /// models. Null on rows saved before this column existed, which are therefore treated as user-funded.
+    /// Deliberately not a foreign key: this is a historical attribution, and deleting a configuration must
+    /// not cascade into chat history or rewrite what a reply cost.
+    /// </summary>
+    public long? SystemAiConfigurationIdUsed { get; set; }
 }

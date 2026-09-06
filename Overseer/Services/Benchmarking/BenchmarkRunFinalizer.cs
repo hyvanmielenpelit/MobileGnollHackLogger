@@ -162,6 +162,39 @@ public static class BenchmarkRunFinalizer
         );
     }
 
+    /// <summary>
+    /// Run-level sums of the per-answer long-context buckets — a subset of the candidate totals above, not
+    /// tokens in addition to them. All zero for a flat-rate model and for every answer recorded before
+    /// tiered pricing existed, whose columns are null.
+    /// </summary>
+    public static (long TotalLongContextInputTokens, long TotalLongContextOutputTokens, long TotalLongContextCacheReadTokens, long TotalLongContextCacheCreationTokens) ComputeCandidateLongContextTotals(IEnumerable<BenchmarkRunAnswer> answers)
+    {
+        return (
+            answers.Sum(a => (long)(a.LongContextInputTokens ?? 0)),
+            answers.Sum(a => (long)(a.LongContextOutputTokens ?? 0)),
+            answers.Sum(a => (long)(a.LongContextCacheReadTokens ?? 0)),
+            answers.Sum(a => (long)(a.LongContextCacheCreationTokens ?? 0))
+        );
+    }
+
+    /// <summary>
+    /// The service tier the provider actually served for this run's candidate answers — the most common
+    /// non-null ActualServiceTierUsed. Costing needs the served tier, not the requested one: OpenAI
+    /// requests "auto"/"fast" and serves "default"/"priority", and a priority request that was served
+    /// default must be billed as default. Null when no answer reported one, in which case costing falls
+    /// back to the requested tier and then to a 1.0x multiplier.
+    /// </summary>
+    public static string? ResolveServedServiceTier(IEnumerable<BenchmarkRunAnswer> answers)
+    {
+        return answers
+            .Select(a => a.ActualServiceTierUsed)
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .GroupBy(t => t!, StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(g => g.Count())
+            .Select(g => g.Key)
+            .FirstOrDefault();
+    }
+
     public static void Apply(BenchmarkRun run, IReadOnlyCollection<BenchmarkRunAnswer> answers)
     {
         var candidateTotals = ComputeCandidateTotals(answers);
@@ -170,6 +203,12 @@ public static class BenchmarkRunFinalizer
         run.TotalCacheReadTokens = candidateTotals.TotalCacheReadTokens;
         run.TotalCacheCreationTokens = candidateTotals.TotalCacheCreationTokens;
         run.TotalAnswerDurationMs = candidateTotals.TotalAnswerDurationMs;
+
+        var longContextTotals = ComputeCandidateLongContextTotals(answers);
+        run.TotalLongContextInputTokens = longContextTotals.TotalLongContextInputTokens;
+        run.TotalLongContextOutputTokens = longContextTotals.TotalLongContextOutputTokens;
+        run.TotalLongContextCacheReadTokens = longContextTotals.TotalLongContextCacheReadTokens;
+        run.TotalLongContextCacheCreationTokens = longContextTotals.TotalLongContextCacheCreationTokens;
 
         // Assessor side, kept separate from the candidate totals above: the run's cost is the
         // two together, and the model under test must not be charged for its grader.

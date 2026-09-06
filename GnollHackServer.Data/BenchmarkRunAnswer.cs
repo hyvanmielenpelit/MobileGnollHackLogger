@@ -279,6 +279,18 @@ public class BenchmarkRunAnswer
     public int? CacheReadInputTokens { get; set; }
     public int? CacheCreationInputTokens { get; set; }
 
+    /// <summary>
+    /// The subset of the four token columns above that came from model calls large enough to bill at the
+    /// model's long-context rate. Not additional tokens — a portion of the same ones. Null for answers
+    /// recorded before tiered pricing existed, and zero for a flat-rate model. Persisted because benchmark
+    /// cost is recomputed from stored totals rather than snapshotted, so without these the surcharge could
+    /// not be reproduced after the run.
+    /// </summary>
+    public int? LongContextInputTokens { get; set; }
+    public int? LongContextOutputTokens { get; set; }
+    public int? LongContextCacheReadTokens { get; set; }
+    public int? LongContextCacheCreationTokens { get; set; }
+
     public int? ModelCallCount { get; set; }
     public int? ToolCallCount { get; set; }
     public bool ToolBudgetExhausted { get; set; }

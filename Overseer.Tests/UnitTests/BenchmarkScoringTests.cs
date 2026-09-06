@@ -274,30 +274,30 @@ public class BenchmarkScoringTests
             $"inside the band's {timeoutSeconds} s timeout — the Speed Index would flatten");
     }
 
-    [Theory]
-    [InlineData(BenchmarkDifficulty.Simple)]
-    [InlineData(BenchmarkDifficulty.Intermediate)]
-    [InlineData(BenchmarkDifficulty.Advanced)]
-    public void PerQuestionCapBands_AreOrderedSoTheToolBudgetBindsFirst(BenchmarkDifficulty band)
+    [Fact]
+    public void PerQuestionCaps_AreOrderedSoTheToolBudgetBindsFirst()
     {
         // Three caps can stop a question, and only one of them explains itself to a reader. The
         // tool call budget blocks further calls, flags the answer ToolBudgetExhausted, and is
         // reported; the iteration cap yields a terse "Tool call limit reached"; the model-call
         // cap is a runaway-loop net that leaves only a debug line. So the budget must be the one
         // that normally binds.
-        int budget = BenchmarkService.DefaultToolCallBudget(band);
-        int iterations = BenchmarkService.DefaultToolIterations(band);
-        int modelCalls = BenchmarkService.DefaultTotalModelCalls(band);
+        //
+        // A [Fact] rather than a [Theory] since harness 13: the three resource caps are flat, so there
+        // is one ordering to check rather than one per difficulty band.
+        int budget = BenchmarkService.DefaultToolCallBudget();
+        int iterations = BenchmarkService.DefaultToolIterations();
+        int modelCalls = BenchmarkService.DefaultTotalModelCalls();
 
         // An iteration consumes one model call, plus one more for the forced tool-free final
         // turn. Anything tighter makes the safety net fire on a healthy question.
         Assert.True(modelCalls > iterations + 1,
-            $"{band}: {modelCalls} model calls cannot cover {iterations} iterations plus a final turn");
+            $"{modelCalls} model calls cannot cover {iterations} iterations plus a final turn");
 
         // At the 2026-09-03 run's saturated batching rate of roughly three calls per round, this
         // leaves the budget reachable; at two per round it is reachable exactly.
         Assert.True(iterations >= budget / 3,
-            $"{band}: {iterations} iterations cannot spend a {budget}-call budget, so the " +
+            $"{iterations} iterations cannot spend a {budget}-call budget, so the " +
             "iteration cap would bind before the budget it exists to serve");
     }
 

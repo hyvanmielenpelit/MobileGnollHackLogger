@@ -88,6 +88,25 @@ public class SystemAiApiConfigurationDto
     /// <summary>"custom", "catalog", or "unknown" when no price resolves at all.</summary>
     public string PricingSource { get; set; } = "unknown";
     public string? PricingAsOf { get; set; }
+
+    /// <summary>The model's long-prompt rate card, or null for a flat-rate model — which is every
+    /// Anthropic model, every Gemini Flash model, and every custom price override.</summary>
+    public int? EffectiveLongContextThresholdTokens { get; set; }
+    public decimal? EffectiveLongContextInputPricePerMillion { get; set; }
+    public decimal? EffectiveLongContextOutputPricePerMillion { get; set; }
+
+    /// <summary>Price multipliers keyed by the provider's served service tier. A tier not listed —
+    /// including "default" and "standard" — costs 1.0.</summary>
+    public IReadOnlyDictionary<string, decimal>? EffectiveServiceTierMultipliers { get; set; }
+
+    /// <summary>An already-announced future price change, or null. <see cref="PricingScheduleElapsed"/>
+    /// says the date has passed and the rates above are already the scheduled ones — not an error, but a
+    /// sign the catalog entry should be folded down and re-verified.</summary>
+    public string? PricingScheduledChangeFrom { get; set; }
+    public decimal? PricingScheduledChangeInputPricePerMillion { get; set; }
+    public decimal? PricingScheduledChangeOutputPricePerMillion { get; set; }
+    public string? PricingScheduledChangeNote { get; set; }
+    public bool PricingScheduleElapsed { get; set; }
 }
 
 public class CreateSystemAiApiConfigurationRequest

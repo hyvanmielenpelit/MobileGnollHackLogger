@@ -1,10 +1,12 @@
 namespace Overseer.Tests.UnitTests;
 
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
 using Overseer.Services;
+using Overseer.Services.Providers;
 using Xunit;
 
 public class ChatCostAccountingTests
@@ -161,7 +163,7 @@ public class ChatCostAccountingTests
         var session = new ChatSession { Title = "S", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow };
         Assert.Null(session.TotalEstimatedCost);
 
-        ChatSessionCostAccumulator.Apply(session, 0.02m);
+        ChatSessionCostAccumulator.Apply(session, 0.02m, isOperatorFunded: false);
 
         Assert.Equal(0.02m, session.TotalEstimatedCost);
     }
@@ -171,8 +173,8 @@ public class ChatCostAccountingTests
     {
         var session = new ChatSession { Title = "S", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow };
 
-        ChatSessionCostAccumulator.Apply(session, 0.02m);
-        ChatSessionCostAccumulator.Apply(session, 0.03m);
+        ChatSessionCostAccumulator.Apply(session, 0.02m, isOperatorFunded: false);
+        ChatSessionCostAccumulator.Apply(session, 0.03m, isOperatorFunded: false);
 
         Assert.Equal(0.05m, session.TotalEstimatedCost);
     }
@@ -182,14 +184,59 @@ public class ChatCostAccountingTests
     {
         // A null total must stay null: an unpriced turn is not a free turn.
         var fresh = new ChatSession { Title = "S", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow };
-        ChatSessionCostAccumulator.Apply(fresh, null);
+        ChatSessionCostAccumulator.Apply(fresh, null, isOperatorFunded: false);
         Assert.Null(fresh.TotalEstimatedCost);
+        Assert.Null(fresh.TotalUserEstimatedCost);
 
         // An existing total must not move either.
         var priced = new ChatSession { Title = "S", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow };
-        ChatSessionCostAccumulator.Apply(priced, 0.04m);
-        ChatSessionCostAccumulator.Apply(priced, null);
+        ChatSessionCostAccumulator.Apply(priced, 0.04m, isOperatorFunded: false);
+        ChatSessionCostAccumulator.Apply(priced, null, isOperatorFunded: false);
         Assert.Equal(0.04m, priced.TotalEstimatedCost);
+        Assert.Equal(0.04m, priced.TotalUserEstimatedCost);
+    }
+
+    [Fact]
+    public void Accumulator_OperatorFundedTurn_CountsInTheFullTotalOnly()
+    {
+        // R1: the operator paid for this turn, so it belongs in the session's full total but not in what
+        // the chat cost the user. Scrubbing the cost for display must never reach this arithmetic.
+        var session = new ChatSession { Title = "S", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow };
+
+        ChatSessionCostAccumulator.Apply(session, 0.05m, isOperatorFunded: true);
+
+        Assert.Equal(0.05m, session.TotalEstimatedCost);
+        Assert.Null(session.TotalUserEstimatedCost);
+    }
+
+    [Fact]
+    public void Accumulator_UserModelTurn_CountsInBothTotals()
+    {
+        var session = new ChatSession { Title = "S", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow };
+
+        ChatSessionCostAccumulator.Apply(session, 0.05m, isOperatorFunded: false);
+
+        Assert.Equal(0.05m, session.TotalEstimatedCost);
+        Assert.Equal(0.05m, session.TotalUserEstimatedCost);
+    }
+
+    [Fact]
+    public void Accumulator_MixedSequence_KeepsUserTotalAtOrBelowTheFullTotal()
+    {
+        // R9: TotalUserEstimatedCost must never exceed TotalEstimatedCost, and the difference must be
+        // exactly the operator-funded sum.
+        var session = new ChatSession { Title = "S", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow };
+
+        ChatSessionCostAccumulator.Apply(session, 0.01m, isOperatorFunded: false);
+        ChatSessionCostAccumulator.Apply(session, 0.02m, isOperatorFunded: true);
+        ChatSessionCostAccumulator.Apply(session, 0.04m, isOperatorFunded: false);
+        ChatSessionCostAccumulator.Apply(session, null, isOperatorFunded: true);
+        ChatSessionCostAccumulator.Apply(session, 0.08m, isOperatorFunded: true);
+
+        Assert.Equal(0.15m, session.TotalEstimatedCost);
+        Assert.Equal(0.05m, session.TotalUserEstimatedCost);
+        Assert.True(session.TotalUserEstimatedCost <= session.TotalEstimatedCost);
+        Assert.Equal(0.10m, session.TotalEstimatedCost - session.TotalUserEstimatedCost);
     }
 
     [Fact]
@@ -205,12 +252,31 @@ public class ChatCostAccountingTests
             CreatedUtc = DateTime.UtcNow,
             LastMessageUtc = DateTime.UtcNow
         };
-        ChatSessionCostAccumulator.Apply(session, 0.01234567m);
+        ChatSessionCostAccumulator.Apply(session, 0.01234567m, isOperatorFunded: false);
         db.ChatSession.Add(session);
         await db.SaveChangesAsync(ct);
 
         var reloaded = await db.ChatSession.FindAsync(new object?[] { session.Id }, ct);
         Assert.NotNull(reloaded);
         Assert.Equal(0.01234567m, reloaded.TotalEstimatedCost);
+        Assert.Equal(0.01234567m, reloaded.TotalUserEstimatedCost);
+    }
+
+    [Fact]
+    public void ComputeCost_WithNoPerCallUsage_FallsBackToTheAggregateOverloadExactly()
+    {
+        // A turn whose provider reported no per-call usage must cost exactly what it costed before per-call
+        // costing existed. The per-call overload returns 0 for an empty list precisely so the caller has to
+        // choose the aggregate path rather than silently charging nothing.
+        var pricing = new ModelPricing(10m, 50m, 1m, 12.5m);
+
+        decimal aggregate = ModelPricingService.ComputeCost(pricing, 1_100_000, 15_000, 200_000, 50_000);
+        decimal perCallOnEmpty = ModelPricingService.ComputeCost(pricing, new List<TokenUsageReport>());
+
+        Assert.Equal(0m, perCallOnEmpty);
+        Assert.Equal(
+            (1_100_000 / 1_000_000m * 10m) + (15_000 / 1_000_000m * 50m) +
+            (200_000 / 1_000_000m * 1m) + (50_000 / 1_000_000m * 12.5m),
+            aggregate);
     }
 }

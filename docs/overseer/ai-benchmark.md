@@ -368,6 +368,35 @@ Prompted by the 2026-09-04 GPT-5.6 Luna benchmark run (run 11), which revealed e
 - **Heading-Scoped Wiki Snippet Retrieval (T8)**:
   `wiki_search` returns heading-scoped excerpts (`WikiSnippetExtractor`) scored by distinct query-term frequency with 10× heading weighting, rather than concatenating whole articles. Each hit is bounded by `Tools:wiki_search:PerResultChars` (default 2,500) and includes omission markers (`[article: {filename} — {n} further section(s) omitted; use wiki_view for the full text]`) or complete markers, preventing large articles from evicting later search hits. Default result count is raised to 5 (`Tools:wiki_search:MaxResults`).
 
+### Harness Version 13 Updates
+
+Prompted by the 2026-09-05 GPT-5.6 Luna benchmark run (run 13), which produced five harness findings (**H1–H5**) and one suite finding about per-question resource caps (**S2**).
+
+- **Model Calls in the Report and Diagnostics (H1)**:
+  `BenchmarkRunAnswer.ModelCallCount` has been persisted since harness 11 but appeared in no artifact an analyst reads, so input-token growth could not be attributed: many small calls and a few large-context calls produce the same total and call for opposite responses. § 2 of the report now carries **Model Calls** (total, mean, and the question with the maximum) and **Input Tokens per Model Call**; § 3's per-question `Tool Budget` line carries `model calls: {n}`; and the copyable diagnostics carry `modelCalls=` on each `[Qn]` line plus a run-level model-call total under `--- TOKENS ---`.
+- **Instrument Fingerprint in the Run History (H2)**:
+  The three instrument hashes now travel on the run **summary** DTO, not only the detail. The run list shows the first eight hex characters of `CandidateSystemPromptSha256` per row, and badges a row **INSTRUMENT CHANGED** when its triple differs from the next older completed run of the same suite, with a tooltip naming which hash moved. Comparison is client-side over the already-loaded history; no new endpoint. This is the fact that tells an operator at a glance whether two runs form a reproduction — the rule the report already states but the list could not support.
+- **One Tool-Family Classifier (H3)**:
+  The tool-family counts and the zero-knowledge-base answer count are computed once on the server by `BenchmarkChatTransfer.ClassifyTool` and projected on the run detail DTO. The diagnostics builder reads them instead of its own hard-coded copy of the tool-name lists, which drifted silently every time a tool was added; the client-side loop survives only as a fallback for run details served before the projection existed. The knowledge-base line is also qualified to match the report: a game-mechanics suite making no knowledge-base calls is prompt compliance, not under-use.
+- **Assessor Agreement Coverage Advisory (H4)**:
+  The Assessor Agreement card carries the same `*` advisory marker the Speed Index card uses whenever the second-opinion mode is not `All` **or** fewer than five answers were graded twice. At n = 1 a displayed `0.0` is the arithmetic of a single point and reads as strong agreement; the tooltip states the coverage and that the figure is conditioned on the first assessor's own uncertainty rather than an unbiased agreement rate.
+- **Estimated Cost Breakdown (H5)**:
+  The Estimated Cost card gains an interest-triggered tooltip carrying the candidate, assessor and claim-verifier shares of the total. On run 13 this surfaces what the single figure hides: the candidate was 28 % of the cost and grading plus verification 72 %.
+- **Unbanded Per-Question Resource Caps (S2)**:
+  Run 13 had two Intermediate questions stop at 32 of 35 tool calls while running below the run's own mean, so the band was binding on questions a production chat session would have let run. The three resource caps are now **flat**: `ToolCallBudget` 45, `ToolIterations` 22, `TotalModelCalls` 28 — the Advanced band's figures, for every question. Their configuration keys became plain values (`Benchmark:ToolCallBudget`, not `Benchmark:ToolCallBudget:{Band}`), and the banded sections were **deleted**: a .NET configuration key cannot be both a value and a section, and `GetValue<int>` on a key that has children returns `0`, so a leftover banded key makes the flat read fall through to the compiled default and silently ignores the operator's override.
+  `QuestionTimeoutSeconds` **stays banded** at 420 / 600 / 720. It is pinned to the speed-score floor by an invariant `BenchmarkScoringTests` asserts: the binding case inside a band is its lowest difficulty, which has the smallest speed target and so the earliest floor, and a flat 720 s would put the Simple band's floor about 300 s inside the timeout and flatten the Speed Index.
+  **Comparability**: runs from harness 13 on are **not** strictly comparable with runs 1–13 on Completeness, because Simple and Intermediate questions now get materially larger allowances. Historical runs keep their own per-answer `ToolCallBudgetUsed` values, and the report still prints the joined `25 / 35 / 45 (per difficulty band)` form for them.
+- **Long-Context, Service-Tier and Scheduled Pricing in Run Costing**:
+  A model catalog entry may now carry a `longContext` rate card (a second set of absolute rates above a per-request prompt-token threshold), `serviceTierMultipliers` (a scalar per served service tier), and a `scheduledChange` (an announced future price change). Run costing is affected in three ways:
+  - The candidate's long-context portion is bucketed **per model call** at answer time — never from an answer's summed tokens, which an agentic answer pushes over any threshold routinely while no single request comes close — and persisted in `BenchmarkRunAnswer.LongContext*Tokens` and `BenchmarkRun.TotalLongContext*Tokens`, because benchmark cost is recomputed from stored totals rather than snapshotted.
+  - Candidate costing charges the long-context portion at its own card and the remainder at the base card, then scales by the tier the provider actually **served** (the modal non-null `ActualServiceTierUsed`), never the requested one. Assessor and claim-verifier costing stays flat: no per-call usage is recorded for either role.
+  - `PricingSnapshotJson` records `longContext` and `serviceTierMultipliers` beside the already-resolved rates. It deliberately does **not** record `scheduledChange`: the snapshot's job is to record what applied when the run started, so replaying it must never re-evaluate a date.
+  Under `### Harness Cost` the report prints a **Long-context surcharge** line and a **Service tier** line, each only when it applies — an absent tier is omitted rather than shown as 1.0×, so a reader never has to tell "no surcharge" from "a surcharge of zero". Runs recorded before this existed have zero long-context tokens and recost to exactly what they did before.
+
+**Deferred, with reasons:**
+- **H6 — a deliberative-latency scoring profile.** The Speed Index remains structurally advisory whenever a candidate running at a high thinking level is measured against an interactive-latency target. Recording the mismatch (harness 12) is not the same as scoring the candidate against a target that fits it.
+- **T11 — a partial-retrieval clause in `Overseer/ToolGuides/_policy.md`.** Confident fabrication under *partial* retrieval failure has been observed twice (run 12 Q12, run 13 Q1), but the two runs differ on `ToolGuidesSha256` — T8 moved it — so for a tool-guide-sensitive finding they are a controlled pair, not a reproduction. Awaiting run 14.
+
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).
 - **Model Time**: $\text{ModelTime} = \max(0, \text{DurationMs} - \text{ToolTimeMs})$ — the turn duration with harness tool I/O removed. This, not `DurationMs`, is what speed is scored on.
@@ -846,14 +875,16 @@ Compliance review must be revisited if:
 
 The benchmark measures what the Overseer chat can do, so the chat's own defaults must not be tighter than the caps the harness grants its hardest questions. They were: before harness version 6 the chat allowed 15 tool iterations against the Advanced band's 22, and 50 tool calls against the Advanced band's 45.
 
-**The scope difference is the part that is easy to misread.** `ToolExecutor` keys its counter on `ToolBudgetScopeId ?? SessionId`. The benchmark sets a per-question scope (`bench_{runId}_q{orderIndex}`), so `Benchmark:ToolCallBudget:Advanced` is a **per-question** allowance. Chat sets none, so `AiPerformanceSettings:MaxCallsPerSession` is the allowance for an **entire chat session** across a four-hour window. Comparing the two numbers directly makes the chat look generous when it is not.
+**The scope difference is the part that is easy to misread.** `ToolExecutor` keys its counter on `ToolBudgetScopeId ?? SessionId`. The benchmark sets a per-question scope (`bench_{runId}_q{orderIndex}`), so `Benchmark:ToolCallBudget` is a **per-question** allowance. Chat sets none, so `AiPerformanceSettings:MaxCallsPerSession` is the allowance for an **entire chat session** across a four-hour window. Comparing the two numbers directly makes the chat look generous when it is not.
 
-Two invariants, to be re-checked whenever the benchmark bands are retuned:
+Two invariants, to be re-checked whenever the benchmark caps are retuned. Since harness 13 the three resource caps are flat, so the first invariant holds by construction rather than by coincidence — it applies to **every** question, not only to the Advanced band's:
 
-| Invariant | Today |
-|---|---|
-| `AiPerformanceSettings:MaxToolIterations:Default` **equals** `Benchmark:ToolIterations:Advanced` | 22 = 22 |
-| `AiPerformanceSettings:MaxCallsPerSession:Default` is **at least 3x** `Benchmark:ToolCallBudget:Advanced` | 150 ≥ 3 × 45 |
+| Invariant | Before harness 13 | Today |
+|---|---|---|
+| `AiPerformanceSettings:MaxToolIterations:Default` **equals** `Benchmark:ToolIterations` | 22 = 22 (Advanced band only) | 22 = 22 (every question) |
+| `AiPerformanceSettings:MaxCallsPerSession:Default` is **at least 3x** `Benchmark:ToolCallBudget` | 150 ≥ 3 × 45 | 150 ≥ 3 × 45 |
+
+The cap keys are **flat values** since harness 13 (`Benchmark:ToolCallBudget`, `Benchmark:ToolIterations`, `Benchmark:TotalModelCalls`); only `Benchmark:QuestionTimeoutSeconds` is still a per-band section. A leftover banded key from an older deployment fails silently rather than loudly — `GetValue<int>` on a key that has children returns `0` — so an upgrade must delete it, and the Run Manifest is the place to confirm the flat key is being read.
 
 The 3x factor is empirical, not arbitrary: on the 2026-09-03 run a single Advanced question executed up to **39** tool calls (Q13 and Q18, each 39 of 45), so a session budget has to cover several such questions rather than one. At the old default of 50, the second hard question in a session was refused mid-investigation with "Maximum tool calls per session exceeded."
 

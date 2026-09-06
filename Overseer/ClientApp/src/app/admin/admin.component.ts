@@ -1013,14 +1013,7 @@ export class AdminComponent implements OnInit, OnDestroy {
       return '';
     }
 
-    const curr = '$';
-    const fmt = (val: number) => {
-      const formatted = new Intl.NumberFormat('en-US', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 6
-      }).format(val);
-      return `${curr}${formatted}`;
-    };
+    const fmt = (val: number) => this.formatRate(val);
 
     let result = `${fmt(input)} in / ${fmt(output)} out`;
     if (cached != null) {
@@ -1028,6 +1021,49 @@ export class AdminComponent implements OnInit, OnDestroy {
     }
     result += ' per 1M';
     return result;
+  }
+
+  private formatRate(val: number): string {
+    const formatted = new Intl.NumberFormat('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 6
+    }).format(val);
+    return `$${formatted}`;
+  }
+
+  /**
+   * The model's long-prompt rate card, shown beside the base price. Empty for a flat-rate model — which
+   * is every Anthropic model, every Gemini Flash model, and every custom price override.
+   */
+  formatLongContextPrice(config: SystemAiConfigDto): string {
+    const threshold = config.effectiveLongContextThresholdTokens;
+    const input = config.effectiveLongContextInputPricePerMillion;
+    const output = config.effectiveLongContextOutputPricePerMillion;
+    if (threshold == null || input == null || output == null) {
+      return '';
+    }
+    const tokens = new Intl.NumberFormat('en-US').format(threshold);
+    return `Prompts over ${tokens} tokens: ${this.formatRate(input)} in / ${this.formatRate(output)} out per 1M`;
+  }
+
+  /**
+   * A quiet note about an announced future price change, or — once its date has passed — the advisory
+   * that the base rates already carry it. The cost is correct either way; the advisory exists so the
+   * catalog does not silently turn into a changelog of elapsed schedules.
+   */
+  formatPricingSchedule(config: SystemAiConfigDto): string {
+    if (config.pricingScheduleElapsed) {
+      return 'A scheduled price change is in effect — fold it into the base rates and re-verify.';
+    }
+    if (!config.pricingScheduledChangeFrom) {
+      return '';
+    }
+    const input = config.pricingScheduledChangeInputPricePerMillion;
+    const output = config.pricingScheduledChangeOutputPricePerMillion;
+    const change = (input != null && output != null)
+      ? `Price changes to ${this.formatRate(input)} in / ${this.formatRate(output)} out per 1M on ${config.pricingScheduledChangeFrom}.`
+      : `Price changes on ${config.pricingScheduledChangeFrom}.`;
+    return config.pricingScheduledChangeNote ? `${change} ${config.pricingScheduledChangeNote}` : change;
   }
 
   getPricingBadge(config: SystemAiConfigDto): 'Custom' | 'Catalog' {

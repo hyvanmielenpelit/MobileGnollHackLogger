@@ -552,6 +552,50 @@ describe('ChatComponent session loading and exclusivity', () => {
       expect(ttft?.textContent).not.toContain('¢');
     });
 
+    it('should render no footer, and no PARTIAL badge, for an operator-funded reply a regular user may not price', () => {
+      // The server sends estimatedCost: null with isOperatorCost: true when the viewer is a regular user
+      // and the operator's configuration funded the turn. The pair distinguishes "withheld" from
+      // "unpriced": a withheld price must not appear as $0.00, and must not raise the PARTIAL badge,
+      // because the turn is correctly outside the user's total rather than missing from it.
+      component.messages = [
+        { role: 'assistant', content: 'a', estimatedCost: null, isOperatorCost: true } as any
+      ];
+      component.sessionTotalCost = null;
+      component.showChatCost = true;
+      fixture.detectChanges();
+      const compiled = fixture.nativeElement as HTMLElement;
+
+      expect(compiled.querySelector('.message-box.assistant .msg-cost-footer')).toBeFalsy();
+      expect(component.isChatCostPartial).toBeFalse();
+      expect(compiled.querySelector('.cost-partial-badge')).toBeFalsy();
+    });
+
+    it('should still mark a genuinely unpriced user-model reply as partial', () => {
+      component.messages = [
+        { role: 'assistant', content: 'a', estimatedCost: 0.01, isOperatorCost: false } as any,
+        { role: 'assistant', content: 'b', estimatedCost: null, isOperatorCost: false } as any
+      ];
+      component.sessionTotalCost = 0.01;
+      component.showChatCost = true;
+      fixture.detectChanges();
+
+      expect(component.isChatCostPartial).toBeTrue();
+    });
+
+    it('should leave liveCost null and the session total unchanged on a withheld cost event', () => {
+      component.sessionTotalCost = 0.02;
+      component.liveCost = null;
+
+      component.processChatEvent({
+        type: 'cost',
+        data: JSON.stringify({ estimatedCost: null, source: null, isOperatorCost: true })
+      });
+
+      expect(component.liveCost).toBeNull();
+      expect(component.liveIsOperatorCost).toBeTrue();
+      expect(component.sessionTotalCost).toBe(0.02);
+    });
+
     it('should omit the per-reply footer for an unpriced message', () => {
       component.messages = [{ role: 'assistant', content: 'test', timeToFirstTokenMs: 1000 } as any];
       component.showChatCost = true;

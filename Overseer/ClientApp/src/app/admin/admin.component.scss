@@ -1305,6 +1305,27 @@ progress.telemetry-progress-bar {
   flex-wrap: wrap;
 }
 
+// The long-prompt rate card, shown only for the models that publish one.
+.model-price-long-context {
+  font-size: 0.8em;
+  margin-top: 2px;
+  color: var(--gh-text-secondary);
+}
+
+// An announced future price change reads as a quiet note; one whose date has already passed is an
+// advisory, because the catalog entry now needs folding down even though the price it produces is right.
+.model-price-schedule {
+  font-size: 0.8em;
+  margin-top: 2px;
+  color: var(--gh-text-secondary);
+  font-style: italic;
+
+  &.elapsed {
+    color: #f1c40f;
+    font-style: normal;
+  }
+}
+
 .status-badge {
   &.badge-custom {
     background-color: rgba(241, 196, 15, 0.15);

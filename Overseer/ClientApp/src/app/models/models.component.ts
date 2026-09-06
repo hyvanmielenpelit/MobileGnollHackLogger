@@ -525,6 +525,14 @@ export class ModelsComponent implements OnInit {
     return lower !== 'default' && lower !== 'standard';
   }
 
+  private formatRate(val: number): string {
+    const formatted = new Intl.NumberFormat('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 6
+    }).format(val);
+    return `$${formatted}`;
+  }
+
   formatPrice(model: UserAiModel): string {
     const input = model.effectiveInputPricePerMillion ?? (model.pricingMode === 'custom' ? model.inputPricePerMillion : null);
     const output = model.effectiveOutputPricePerMillion ?? (model.pricingMode === 'custom' ? model.outputPricePerMillion : null);
@@ -534,14 +542,7 @@ export class ModelsComponent implements OnInit {
       return '';
     }
 
-    const curr = '$';
-    const fmt = (val: number) => {
-      const formatted = new Intl.NumberFormat('en-US', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 6
-      }).format(val);
-      return `${curr}${formatted}`;
-    };
+    const fmt = (val: number) => this.formatRate(val);
 
     let result = `${fmt(input)} in / ${fmt(output)} out`;
     if (cached != null) {
@@ -549,6 +550,41 @@ export class ModelsComponent implements OnInit {
     }
     result += ' per 1M';
     return result;
+  }
+
+  /**
+   * The model's long-prompt rate card, shown beside the base price. Empty for a flat-rate model — which
+   * is every Anthropic model, every Gemini Flash model, and every custom price override.
+   */
+  formatLongContextPrice(model: UserAiModel): string {
+    const threshold = model.effectiveLongContextThresholdTokens;
+    const input = model.effectiveLongContextInputPricePerMillion;
+    const output = model.effectiveLongContextOutputPricePerMillion;
+    if (threshold == null || input == null || output == null) {
+      return '';
+    }
+    const tokens = new Intl.NumberFormat('en-US').format(threshold);
+    return `Prompts over ${tokens} tokens: ${this.formatRate(input)} in / ${this.formatRate(output)} out per 1M`;
+  }
+
+  /**
+   * A quiet note about an announced future price change, or — once its date has passed — the advisory
+   * that the base rates already carry it. The cost is correct either way; the advisory exists so the
+   * catalog does not silently turn into a changelog of elapsed schedules.
+   */
+  formatPricingSchedule(model: UserAiModel): string {
+    if (model.pricingScheduleElapsed) {
+      return 'A scheduled price change is in effect — fold it into the base rates and re-verify.';
+    }
+    if (!model.pricingScheduledChangeFrom) {
+      return '';
+    }
+    const input = model.pricingScheduledChangeInputPricePerMillion;
+    const output = model.pricingScheduledChangeOutputPricePerMillion;
+    const change = (input != null && output != null)
+      ? `Price changes to ${this.formatRate(input)} in / ${this.formatRate(output)} out per 1M on ${model.pricingScheduledChangeFrom}.`
+      : `Price changes on ${model.pricingScheduledChangeFrom}.`;
+    return model.pricingScheduledChangeNote ? `${change} ${model.pricingScheduledChangeNote}` : change;
   }
 
   getPricingBadge(model: UserAiModel): 'Custom' | 'Catalog' {

@@ -60,6 +60,27 @@ export interface BenchmarkRunProgressRow {
   errorMessage: string | null;
 }
 
+/**
+ * The run setup an operator last started, remembered across reloads. Exactly the fields that make up a
+ * run: not the same-provider acknowledgement, which is a per-run safety gate, and not the
+ * difficulty-assessor, retry-assessor, generation-model or calibration-assessor selections, which belong
+ * to other workflows on the same screen.
+ *
+ * Every field is nullable because a stored blob may predate a field, and because every id is re-validated
+ * against the currently available list before it is applied.
+ */
+interface BenchmarkRunSettings {
+  suiteId: number | null;
+  testedConfigId: number | null;
+  assessorConfigId: number | null;
+  secondOpinionConfigId: number | null;
+  claimVerifierConfigId: number | null;
+  /** The operator's explicit override, or null to keep following the scoring profile's own default. */
+  secondOpinionMode: number | null;
+  scoringProfileId: number | null;
+  verboseMode: boolean | null;
+}
+
 @Component({
   selector: 'app-admin-benchmark',
   standalone: true,
@@ -413,6 +434,8 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
 
   ngOnInit() {
     ensureOverlayPolyfills();
+    // Read before the loaders run: each one applies the field it owns as it picks its own fallback.
+    this.restoreRunSettings();
     this.loadSuites();
     this.loadProfiles();
     this.loadHistory();
@@ -793,6 +816,61 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     return `$${formatted}`;
   }
 
+  /**
+   * H2. The first eight hex characters of a run's candidate system-prompt hash — enough to tell two
+   * instruments apart at a glance, and short enough to sit in a table cell. The full hash is on the title.
+   */
+  shortFingerprint(sha: string | null | undefined): string {
+    return sha ? sha.substring(0, 8) : '-';
+  }
+
+  /**
+   * H2. Whether this run's instrument differs from the next older completed run of the same suite, and
+   * which of the three hashes moved.
+   *
+   * Two runs form a reproduction only if the candidate prompt, the tool guides and the knowledge base all
+   * match. The report has stated that rule for some time, but the run list could not support it, so the
+   * check was done by hand — and run 13's T8 verification is exactly the case where getting it wrong
+   * misattributes a change. Compared client-side over the already-loaded history; no new endpoint.
+   *
+   * Returns null when there is no older run of the same suite, or when either run is missing a hash: "not
+   * recorded" is not "unchanged", and badging it as a change would be a claim the data cannot support.
+   */
+  instrumentChangeOf(run: BenchmarkRunSummaryDto): { comparedToRunId: number; description: string } | null {
+    if (!run.candidateSystemPromptSha256 && !run.toolGuidesSha256 && !run.knowledgeBaseHeadSha) {
+      return null;
+    }
+
+    const index = this.historyRuns.indexOf(run);
+    if (index < 0) return null;
+
+    const previous = this.historyRuns
+      .slice(index + 1)
+      .find(r => r.benchmarkSuiteId === run.benchmarkSuiteId && this.formatStatus(r.status) !== 'Running');
+    if (!previous) return null;
+
+    const moved: string[] = [];
+    if (run.candidateSystemPromptSha256 && previous.candidateSystemPromptSha256 &&
+        run.candidateSystemPromptSha256 !== previous.candidateSystemPromptSha256) {
+      moved.push('candidate system prompt');
+    }
+    if (run.toolGuidesSha256 && previous.toolGuidesSha256 &&
+        run.toolGuidesSha256 !== previous.toolGuidesSha256) {
+      moved.push('tool guides');
+    }
+    if (run.knowledgeBaseHeadSha && previous.knowledgeBaseHeadSha &&
+        run.knowledgeBaseHeadSha !== previous.knowledgeBaseHeadSha) {
+      moved.push('knowledge base');
+    }
+
+    if (moved.length === 0) return null;
+
+    return {
+      comparedToRunId: previous.id,
+      description: `Changed since run #${previous.id}: ${moved.join(', ')}. The two runs are a controlled pair, not a reproduction.`
+    };
+  }
+
   formatSecondOpinionMode(mode: number | null | undefined): string {
     const resolvedMode = mode ?? this.secondOpinionMode;
     const option = this.secondOpinionModeOptions.find(o => o.value === resolvedMode);
@@ -808,15 +886,48 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   private setDefaultModelSelections() {
     const benchmarkModels = this.benchmarkCapableConfigs;
     if (benchmarkModels.length > 0) {
-      if (!this.testedConfigId || !benchmarkModels.some(m => m.id === this.testedConfigId)) {
+      // A remembered configuration wins over the first one, but only while it still qualifies:
+      // benchmarkCapableConfigs filters on the Benchmark role bit, hasApiKey and isEnabled, so one that
+      // was disabled or lost its key falls back rather than leaving a selection the server would reject.
+      const remembered = this.pendingRunSettings;
+      const qualifies = (id: number | null | undefined): boolean =>
+        id != null && benchmarkModels.some(m => m.id === id);
+
+      if (qualifies(remembered?.testedConfigId)) {
+        this.testedConfigId = remembered!.testedConfigId;
+      } else if (!this.testedConfigId || !benchmarkModels.some(m => m.id === this.testedConfigId)) {
         this.testedConfigId = benchmarkModels[0].id;
       }
-      if (!this.assessorConfigId || !benchmarkModels.some(m => m.id === this.assessorConfigId)) {
+
+      if (qualifies(remembered?.assessorConfigId)) {
+        this.assessorConfigId = remembered!.assessorConfigId;
+      } else if (!this.assessorConfigId || !benchmarkModels.some(m => m.id === this.assessorConfigId)) {
         this.assessorConfigId = benchmarkModels[0].id;
+      }
+
+      // The two optional roles restore to null when their configuration no longer qualifies, which is the
+      // same as "not selected" and is what the run request already means by a null id.
+      if (remembered) {
+        if (remembered.secondOpinionConfigId != null) {
+          this.secondOpinionConfigId = qualifies(remembered.secondOpinionConfigId)
+            ? remembered.secondOpinionConfigId
+            : null;
+        }
+        if (remembered.claimVerifierConfigId != null) {
+          this.claimVerifierConfigId = qualifies(remembered.claimVerifierConfigId)
+            ? remembered.claimVerifierConfigId
+            : null;
+        }
       }
     } else {
       this.testedConfigId = null;
       this.assessorConfigId = null;
+    }
+
+    // Only counts as applied when there was actually a list to validate against: called from ngOnInit
+    // before the systemConfigs input has arrived, this method has done nothing.
+    if (benchmarkModels.length > 0) {
+      this.markRunSettingsApplied('configs');
     }
   }
 
@@ -828,12 +939,17 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       next: (data) => {
         this.scoringProfiles = data;
         this.loadingProfiles = false;
+        // A remembered profile wins over the default one, but only if it still exists.
+        const rememberedProfileId = this.pendingRunSettings?.scoringProfileId ?? null;
         const defaultProf = this.scoringProfiles.find(p => p.isDefault);
-        if (defaultProf && !this.selectedScoringProfileId) {
+        if (rememberedProfileId != null && this.scoringProfiles.some(p => p.id === rememberedProfileId)) {
+          this.selectedScoringProfileId = rememberedProfileId;
+        } else if (defaultProf && !this.selectedScoringProfileId) {
           this.selectedScoringProfileId = defaultProf.id;
         } else if (this.scoringProfiles.length > 0 && !this.selectedScoringProfileId) {
           this.selectedScoringProfileId = this.scoringProfiles[0].id;
         }
+        this.markRunSettingsApplied('profile');
         this.cdr.detectChanges();
       },
       error: (err) => {
@@ -1038,9 +1154,14 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       next: (data) => {
         this.suites = data;
         this.loadingSuites = false;
-        if (this.suites.length > 0 && (!this.selectedSuiteId || !this.suites.some(s => s.id === this.selectedSuiteId))) {
+        // A remembered suite wins over the first one, but only if it still exists.
+        const rememberedSuiteId = this.pendingRunSettings?.suiteId ?? null;
+        if (rememberedSuiteId != null && this.suites.some(s => s.id === rememberedSuiteId)) {
+          this.selectedSuiteId = rememberedSuiteId;
+        } else if (this.suites.length > 0 && (!this.selectedSuiteId || !this.suites.some(s => s.id === this.selectedSuiteId))) {
           this.selectedSuiteId = this.suites[0].id;
         }
+        this.markRunSettingsApplied('suite');
         this.loadLastAssessor();
         this.loadAllFootprints();
         this.cdr.detectChanges();
@@ -1558,6 +1679,117 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     }
   }
 
+  // --- Run setting recall ---
+  //
+  // Follows AdminComponent.persistConfigFilter / restoreConfigFilter: a private static key, try/catch
+  // around every localStorage access because it throws in private-browsing modes, and a whitelisting
+  // restore that drops anything unrecognised.
+  //
+  // Every restored id is validated against the list it must come from — benchmarkCapableConfigs filters on
+  // the Benchmark role bit, hasApiKey and isEnabled — so a configuration that was disabled, lost its key or
+  // lost its role falls back to the existing default rather than leaving a dangling selection that fails
+  // server-side at run time.
+
+  private static readonly RUN_SETTINGS_STORAGE_KEY = 'overseer_admin_benchmark_run_settings';
+
+  /**
+   * The stored settings, read once in ngOnInit and applied by whichever loader owns each field, because
+   * the restore cannot run before the data it validates against exists: suites arrive from loadSuites,
+   * profiles from loadProfiles, and configurations from the systemConfigs input via ngOnChanges.
+   *
+   * Cleared once applied, so a later ngOnChanges cannot resurrect a stale selection over one the operator
+   * has since made by hand.
+   */
+  private pendingRunSettings: BenchmarkRunSettings | null = null;
+
+  /**
+   * Saved in startBenchmark before the request is sent: the operator's choices are worth remembering
+   * whether or not the server accepts the run.
+   *
+   * acknowledgeSameProvider is deliberately not persisted. It is a per-run safety acknowledgement, and
+   * silently remembering it would defeat the warning dialog it exists to gate. Neither are the
+   * difficulty-assessor, retry-assessor, generation-model or calibration-assessor selections, which are
+   * not part of setting up a run.
+   */
+  private persistRunSettings(): void {
+    try {
+      const settings: BenchmarkRunSettings = {
+        suiteId: this.selectedSuiteId,
+        testedConfigId: this.testedConfigId,
+        assessorConfigId: this.assessorConfigId,
+        secondOpinionConfigId: this.secondOpinionConfigId,
+        claimVerifierConfigId: this.claimVerifierConfigId,
+        // The override, not the getter: a run left on the profile default must keep following the
+        // profile, and persisting the resolved value would freeze it at whatever the profile said today.
+        secondOpinionMode: this.secondOpinionModeOverride,
+        scoringProfileId: this.selectedScoringProfileId,
+        verboseMode: this.candidateVerboseMode
+      };
+      localStorage.setItem(
+        AdminBenchmarkComponent.RUN_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+    } catch {
+      // Storage throws in private-browsing modes. Failing to remember a selection is not worth
+      // surfacing to the operator.
+    }
+  }
+
+  /** Reads the stored blob into pendingRunSettings, and restores the two fields no loader owns. */
+  private restoreRunSettings(): void {
+    let parsed: unknown;
+    try {
+      const stored = localStorage.getItem(AdminBenchmarkComponent.RUN_SETTINGS_STORAGE_KEY);
+      if (!stored) { return; }
+      parsed = JSON.parse(stored);
+    } catch {
+      return;                                   // every default stands
+    }
+
+    const raw = parsed as Partial<BenchmarkRunSettings> | null;
+    if (!raw || typeof raw !== 'object') { return; }
+
+    const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v)) ? v : null;
+
+    this.pendingRunSettings = {
+      suiteId: num(raw.suiteId),
+      testedConfigId: num(raw.testedConfigId),
+      assessorConfigId: num(raw.assessorConfigId),
+      secondOpinionConfigId: num(raw.secondOpinionConfigId),
+      claimVerifierConfigId: num(raw.claimVerifierConfigId),
+      secondOpinionMode: num(raw.secondOpinionMode),
+      scoringProfileId: num(raw.scoringProfileId),
+      verboseMode: typeof raw.verboseMode === 'boolean' ? raw.verboseMode : null
+    };
+
+    // These two need no list to validate against, so they restore immediately.
+    if (this.pendingRunSettings.verboseMode !== null) {
+      this.candidateVerboseMode = this.pendingRunSettings.verboseMode;
+    }
+    const mode = this.pendingRunSettings.secondOpinionMode;
+    if (mode !== null && this.secondOpinionModeOptions.some(o => o.value === mode)) {
+      this.secondOpinionModeOverride = mode;
+    }
+  }
+
+  /**
+   * Which of the three list-backed fields have been applied. The loaders complete in whatever order their
+   * requests return, and setDefaultModelSelections runs from ngOnInit before either has answered, so the
+   * stored blob can only be dropped once all three have had their turn — dropping it as soon as any one of
+   * them finishes would leave the others falling back to their defaults.
+   */
+  private runSettingsApplied = { suite: false, profile: false, configs: false };
+
+  /** Marks one part applied, and drops the stored blob once all three are. */
+  private markRunSettingsApplied(part: 'suite' | 'profile' | 'configs'): void {
+    if (!this.pendingRunSettings) return;
+    this.runSettingsApplied[part] = true;
+    const done = this.runSettingsApplied;
+    if (done.suite && done.profile && done.configs) {
+      // Cleared so a later ngOnChanges cannot resurrect a stale selection over one the operator has
+      // since made by hand.
+      this.pendingRunSettings = null;
+    }
+  }
+
   // --- Run Execution ---
 
   startBenchmark(acknowledgeSameProvider: boolean = false) {
@@ -1579,6 +1811,10 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       scoringProfileId: this.selectedScoringProfileId,
       acknowledgeSameProvider: acknowledgeSameProvider
     };
+
+    // Before the request, not after it: the operator's choices are worth remembering whether or not the
+    // server accepts the run.
+    this.persistRunSettings();
 
     this.benchmarkService.startRun(req).subscribe({
       next: (res) => {
@@ -1939,7 +2175,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       // front of it rather than whatever the default profile says today.
       lines.push(`Speed: target ${run.scoringProfileSpeedTargetMs ?? 'n/a'} ms, decay k ${run.scoringProfileSpeedDecayK ?? 'n/a'}`);
       lines.push(`Second opinion: mode ${this.diagnosticsModeName(run.secondOpinionModeUsed)}, threshold ${run.scoringProfileSecondOpinionQualityThreshold ?? 'n/a'}, outlier delta ${run.scoringProfileSecondOpinionOutlierDeltaPoints ?? 'n/a'}`);
-      lines.push(`Tool call budget: ${run.maxToolCallsPerQuestionUsed ?? 'per difficulty band'}`);
+      lines.push(`Tool call budget: ${run.maxToolCallsPerQuestionUsed ?? 'not recorded'}`);
       lines.push('');
 
       // --- PROGRESS ---
@@ -1958,6 +2194,16 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       lines.push('--- TOKENS ---');
       lines.push(`input: ${run.totalInputTokens}, output: ${run.totalOutputTokens}, cache read: ${run.totalCacheReadTokens}, cache creation: ${run.totalCacheCreationTokens}`);
       lines.push(`total duration: ${this.formatDuration(run.totalDurationMs)}, total answer duration: ${this.formatDuration(run.totalAnswerDurationMs)}`);
+      // H1: the run-level model-call figure, and input tokens per call — the figure that attributes
+      // input-token growth to call count rather than context size. Omitted entirely for runs that never
+      // recorded a model-call count.
+      const modelCallAnswers = (run.answers ?? []).filter(a => a.modelCallCount != null && a.modelCallCount > 0);
+      if (modelCallAnswers.length > 0) {
+        const totalModelCalls = modelCallAnswers.reduce((sum, a) => sum + (a.modelCallCount ?? 0), 0);
+        const meanModelCalls = totalModelCalls / modelCallAnswers.length;
+        const perCall = totalModelCalls > 0 ? Math.round(run.totalInputTokens / totalModelCalls) : 0;
+        lines.push(`model calls: ${totalModelCalls} (mean ${meanModelCalls.toFixed(1)}), input tokens per model call: ${perCall}`);
+      }
       lines.push('');
 
       // --- SCORES --- (only when terminal)
@@ -2051,6 +2297,13 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
 
         // --- TOOL ROUTING ---
         lines.push('--- TOOL ROUTING ---');
+
+        // H3: read the server's classification. It comes from BenchmarkChatTransfer.ClassifyTool, which is
+        // also what the run report reads, so the two artifacts can no longer disagree about which family a
+        // tool belongs to. The client-side loop below survives only as a fallback for a run detail served
+        // before toolFamilyCounts existed; it is the copy that drifted every time a tool was added, and
+        // nothing new should be added to it.
+        const serverFamilies = run.toolFamilyCounts;
         let totalCalls = 0;
         let sourceCalls = 0;
         let wikiCalls = 0;
@@ -2059,35 +2312,51 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
         let otherCalls = 0;
         let zeroKbAnswers = 0;
 
-        for (const ans of run.answers) {
-          let ansKb = 0;
-          if (ans.toolCallSummary) {
-            const parts = ans.toolCallSummary.split(',').map(s => s.trim()).filter(s => s.length > 0);
-            for (const part of parts) {
-              const match = part.match(/^([a-zA-Z0-9_-]+)(?:×(\d+))?$/);
-              if (match) {
-                const name = match[1].toLowerCase();
-                const count = match[2] ? parseInt(match[2], 10) : 1;
-                totalCalls += count;
-                if (['source_code_search', 'source_code_view', 'search_definitions', 'get_function_definition', 'get_constants', 'list_indexed_files'].includes(name)) {
-                  sourceCalls += count;
-                } else if (['wiki_search', 'wiki_view', 'nethack_wiki_search', 'nethack_wiki_view'].includes(name)) {
-                  wikiCalls += count;
-                } else if (['monster_lookup', 'item_lookup', 'get_monster_stats', 'get_item_stats'].includes(name)) {
-                  lookupCalls += count;
-                } else if (['get_knowledge_article'].includes(name)) {
-                  kbCalls += count;
-                  ansKb += count;
-                } else {
-                  otherCalls += count;
+        if (serverFamilies) {
+          sourceCalls = serverFamilies['source'] ?? 0;
+          wikiCalls = serverFamilies['wiki'] ?? 0;
+          lookupCalls = serverFamilies['lookup'] ?? 0;
+          kbCalls = serverFamilies['knowledgeBase'] ?? 0;
+          otherCalls = serverFamilies['other'] ?? 0;
+          totalCalls = sourceCalls + wikiCalls + lookupCalls + kbCalls + otherCalls;
+          zeroKbAnswers = run.zeroKnowledgeBaseAnswerCount ?? 0;
+        } else {
+          for (const ans of run.answers) {
+            let ansKb = 0;
+            if (ans.toolCallSummary) {
+              const parts = ans.toolCallSummary.split(',').map(s => s.trim()).filter(s => s.length > 0);
+              for (const part of parts) {
+                const match = part.match(/^([a-zA-Z0-9_-]+)(?:×(\d+))?$/);
+                if (match) {
+                  const name = match[1].toLowerCase();
+                  const count = match[2] ? parseInt(match[2], 10) : 1;
+                  totalCalls += count;
+                  if (['source_code_search', 'source_code_view', 'search_definitions', 'get_function_definition', 'get_constants', 'list_indexed_files'].includes(name)) {
+                    sourceCalls += count;
+                  } else if (['wiki_search', 'wiki_view', 'nethack_wiki_search', 'nethack_wiki_view'].includes(name)) {
+                    wikiCalls += count;
+                  } else if (['monster_lookup', 'item_lookup', 'get_monster_stats', 'get_item_stats'].includes(name)) {
+                    lookupCalls += count;
+                  } else if (['get_knowledge_article'].includes(name)) {
+                    kbCalls += count;
+                    ansKb += count;
+                  } else {
+                    otherCalls += count;
+                  }
                 }
               }
             }
+            if (ansKb === 0) zeroKbAnswers++;
           }
-          if (ansKb === 0) zeroKbAnswers++;
         }
         lines.push(`total calls: ${totalCalls} (source: ${sourceCalls}, wiki: ${wikiCalls}, lookup: ${lookupCalls}, kb: ${kbCalls}, other: ${otherCalls})`);
+        // Qualified to match the report. Unqualified, this is the artifact most likely to be pasted into an
+        // analysis, and it reads as a knowledge-base under-use finding that the transfer skill has already
+        // withdrawn twice (run 11, T4): the prompt scopes the knowledge base away from game mechanics, so a
+        // game-mechanics suite making no knowledge-base calls is compliance, not under-use.
         lines.push(`answers with 0 knowledge base calls: ${zeroKbAnswers} of ${run.answers.length}`);
+        lines.push('  (prompt-compliant on game-mechanics topics — ChatService.cs "Information Routing" scopes the');
+        lines.push('   knowledge base to app navigation, settings, controls, replay, vault and troubleshooting)');
         lines.push('');
       }
 
@@ -2167,6 +2436,9 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
         const budget = ans.toolCallBudgetUsed != null ? ans.toolCallBudgetUsed : 'n/a';
         const blocked = this.blockedToolCallsOf(ans);
         parts.push(`tools=${ans.toolCallCount ?? 0}/${budget}${blocked > 0 ? ` (${blocked} blocked)` : ''}${ans.toolBudgetExhausted ? ' exhausted' : ''}`);
+        // H1: beside tools=, because "many calls" and "large context" produce the same input-token total
+        // and call for opposite responses. Omitted where it was never recorded, never printed as 0.
+        if (ans.modelCallCount != null) parts.push(`modelCalls=${ans.modelCallCount}`);
         if (ans.narrationBlockCount != null) parts.push(`narration=${ans.narrationBlockCount}`);
         if (ans.unverifiedClaimCount != null) parts.push(`unverified=${ans.unverifiedClaimCount}`);
         if ((ans.answerFlagNames ?? []).length > 0) parts.push(`flags=${(ans.answerFlagNames ?? []).join('|')}`);
@@ -3156,6 +3428,62 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     return this.showAgreementTile &&
       this.selectedRunDetail?.secondOpinionModeUsed !== BenchmarkSecondOpinionMode.All;
   }
+
+  /**
+   * H4. The agreement figure carries an advisory whenever it cannot be read as an inter-rater agreement
+   * rate: either coverage was selected by trigger, or the sample is too small for a mean to mean anything.
+   * At n = 1 a displayed 0.0 is the arithmetic of a single point and reads as perfect agreement.
+   */
+  static readonly AGREEMENT_MIN_SAMPLE = 5;
+
+  get showAgreementAdvisory(): boolean {
+    if (!this.showAgreementTile) return false;
+    const graded = this.selectedRunDetail?.secondOpinionGradedAnswerCount ?? 0;
+    return this.agreementIsSelective || graded < AdminBenchmarkComponent.AGREEMENT_MIN_SAMPLE;
+  }
+
+  get agreementAdvisoryTitle(): string {
+    const run = this.selectedRunDetail;
+    const graded = run?.secondOpinionGradedAnswerCount ?? 0;
+    const answered = run?.answeredQuestionCount ?? 0;
+    return 'Coverage is selected by trigger, so this is conditioned on the first assessor’s own ' +
+      `uncertainty, not an unbiased agreement rate. n = ${graded} of ${answered}.`;
+  }
+
+  /**
+   * H5. The per-role split behind the Estimated Cost figure, which the card otherwise hides. On run 13 it
+   * is the finding: the candidate was 28 % of the cost and grading plus verification 72 %, so the cost of
+   * a benchmark is mostly the harness, not the model under test.
+   *
+   * Empty when no per-role figure is available, in which case the tooltip is not rendered at all rather
+   * than shown with zeros.
+   */
+  get costBreakdownLabel(): string {
+    const run = this.selectedRunDetail;
+    if (!run) return '';
+
+    const candidate = run.estimatedCandidateCost;
+    const assessor = run.estimatedAssessorCost;
+    const verifier = run.estimatedVerifierCost;
+    if (candidate == null && assessor == null && verifier == null) return '';
+
+    const total = (candidate ?? 0) + (assessor ?? 0) + (verifier ?? 0);
+    const numPipe = new DecimalPipe('en-US');
+    const part = (label: string, value: number | null | undefined): string | null => {
+      if (value == null) return null;
+      const share = total > 0 ? ` (${Math.round((value / total) * 100)}%)` : '';
+      return `${label} $${numPipe.transform(value, '1.2-4')}${share}`;
+    };
+
+    const parts = [
+      part('Candidate', candidate),
+      part('Assessor', assessor),
+      part('Claim verifier', verifier)
+    ].filter((p): p is string => p !== null);
+
+    return parts.join(' · ');
+  }
+
 
   /**
    * Shown only where the two aggregations differ, following the Raw Quality Index tile. The gap

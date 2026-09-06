@@ -48,6 +48,18 @@ public class ModelMetadataService
         }
     }
 
+    /// <summary>
+    /// The loaded catalog entries for one provider, or an empty list for an unknown provider. Exposed so a
+    /// test can assert facts about what the shipped catalogs actually declare — a mistyped service-tier key,
+    /// for instance, produces no error at all, just quiet 1.0x mispricing.
+    /// </summary>
+    internal IReadOnlyList<ModelCatalogEntry> GetCatalogEntries(string provider)
+    {
+        return _providerCatalogs.TryGetValue(provider, out var entries)
+            ? entries
+            : Array.Empty<ModelCatalogEntry>();
+    }
+
     public bool IsWhitelisted(string provider, string modelId)
     {
         if (string.IsNullOrEmpty(provider) || string.IsNullOrEmpty(modelId))

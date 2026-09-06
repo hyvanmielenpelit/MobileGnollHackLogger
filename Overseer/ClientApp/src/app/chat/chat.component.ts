@@ -391,9 +391,14 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       || this.messages.some(m => m.role === 'assistant' && m.estimatedCost != null);
   }
 
-  /** True if some assistant turn ran unpriced, so the total is real but incomplete. */
+  /**
+   * True if some assistant turn ran unpriced, so the total is real but incomplete. An operator-funded
+   * turn whose price this viewer may not see is not "unpriced" — the operator paid for it and it is
+   * correctly outside the user's total, so it must not raise the PARTIAL badge.
+   */
   get isChatCostPartial(): boolean {
-    return this.messages.some(m => m.role === 'assistant' && m.estimatedCost == null);
+    return this.messages.some(m =>
+      m.role === 'assistant' && m.estimatedCost == null && !m.isOperatorCost);
   }
 
   /**

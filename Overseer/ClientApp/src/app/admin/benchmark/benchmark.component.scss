@@ -635,6 +635,33 @@
   cursor: help;
 }
 
+// H2. The instrument fingerprint sits in the run list so an operator can see at a glance whether two runs
+// form a reproduction. Monospaced because it is a hash prefix and is read character by character.
+.instrument-cell {
+  white-space: nowrap;
+}
+
+.instrument-fingerprint {
+  font-family: var(--gh-font-mono, ui-monospace, 'Cascadia Code', 'Consolas', monospace);
+  font-size: 0.85em;
+  color: var(--gh-text-secondary);
+  cursor: help;
+}
+
+.instrument-changed {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 0.7em;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  background-color: rgba(255, 183, 77, 0.15);
+  border: 1px solid rgba(255, 183, 77, 0.4);
+  color: #ffb74d;
+  cursor: help;
+}
+
 .difficulty-badge {
   display: inline-block;
   padding: 2px 6px;

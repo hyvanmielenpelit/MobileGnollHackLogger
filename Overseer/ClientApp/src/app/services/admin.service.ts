@@ -82,6 +82,22 @@ export interface SystemAiConfigDto {
   effectiveCachedInputPricePerMillion?: number | null;
   pricingSource?: string | null;
   pricingAsOf?: string | null;
+  /** Long-prompt rate card. Null for a flat-rate model and for every custom price override. */
+  effectiveLongContextThresholdTokens?: number | null;
+  effectiveLongContextInputPricePerMillion?: number | null;
+  effectiveLongContextOutputPricePerMillion?: number | null;
+  /** Multipliers keyed by the provider's served service tier. An unlisted tier costs 1.0. */
+  effectiveServiceTierMultipliers?: { [tier: string]: number } | null;
+  /**
+   * An already-announced future price change. `pricingScheduleElapsed` means its date has passed, so the
+   * effective rates above are already the scheduled ones — correct, but a sign the catalog entry should be
+   * folded down and re-verified.
+   */
+  pricingScheduledChangeFrom?: string | null;
+  pricingScheduledChangeInputPricePerMillion?: number | null;
+  pricingScheduledChangeOutputPricePerMillion?: number | null;
+  pricingScheduledChangeNote?: string | null;
+  pricingScheduleElapsed?: boolean;
 }
 
 export interface UserSystemAiConfigDto {

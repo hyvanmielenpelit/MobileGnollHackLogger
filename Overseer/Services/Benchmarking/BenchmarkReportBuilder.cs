@@ -187,9 +187,16 @@ public static class BenchmarkReportBuilder
             ? answer.ToolCallBudgetUsed.Value.ToString(CultureInfo.InvariantCulture)
             : "not recorded";
 
+        // H1: the model-call count is what separates "many calls" from "large context" as the cause of a
+        // question's input-token growth, and it is the fact the per-question line was missing. Omitted for
+        // answers recorded before it was persisted, which is "not recorded", never zero.
+        string modelCalls = answer.ModelCallCount.HasValue
+            ? $", model calls: {answer.ModelCallCount.Value.ToString(CultureInfo.InvariantCulture)}"
+            : string.Empty;
+
         return blocked > 0
-            ? $"{executed} executed, {blocked} blocked, budget {budget}"
-            : $"{executed} executed, budget {budget}";
+            ? $"{executed} executed, {blocked} blocked, budget {budget}{modelCalls}"
+            : $"{executed} executed, budget {budget}{modelCalls}";
     }
 
     /// <summary>
@@ -352,8 +359,12 @@ public static class BenchmarkReportBuilder
             0 => run.MaxToolCallsPerQuestionUsed.HasValue
                     ? $"{run.MaxToolCallsPerQuestionUsed.Value} (flat)"
                     : "unlimited (legacy)",
+            // The resource caps are flat from harness 13 on, so every answer of a current run carries the
+            // same figure and this is the branch that prints.
             1 => budgetsUsed[0].ToString(),
-            // Budgets are resolved per difficulty band, so a run has no single figure.
+            // Runs 1-13 resolved the budget per difficulty band and their answers carry the old per-band
+            // values, so the joined form is kept for them rather than collapsed into something they never
+            // ran under.
             _ => string.Join(" / ", budgetsUsed.Select(v => v.ToString())) + " (per difficulty band)"
         };
         sb.AppendLine($"- **Tool Call Budget per Question:** {budgetText}");
@@ -710,6 +721,29 @@ public static class BenchmarkReportBuilder
         sb.AppendLine(cacheCreationUnreported
             ? "- **Total Cache Creation Tokens:** n/a *(not reported by this provider)*"
             : $"- **Total Cache Creation Tokens:** {Inv(run.TotalCacheCreationTokens, "N0")}");
+
+        // H1. ModelCallCount has been persisted per answer since harness 11, but nothing an analyst reads
+        // carried it, so input-token growth could not be attributed: many calls and large context produce
+        // the same total and demand opposite responses. Input tokens per model call is the figure that
+        // separates them, and run 13 could not answer it.
+        var modelCallCounts = answers
+            .Where(a => a.ModelCallCount.HasValue && a.ModelCallCount.Value > 0)
+            .ToList();
+        if (modelCallCounts.Count > 0)
+        {
+            int totalModelCalls = modelCallCounts.Sum(a => a.ModelCallCount!.Value);
+            double meanModelCalls = (double)totalModelCalls / modelCallCounts.Count;
+            var maxAnswer = modelCallCounts.OrderByDescending(a => a.ModelCallCount!.Value).First();
+            sb.AppendLine(
+                $"- **Model Calls:** {Inv(totalModelCalls, "N0")} across {modelCallCounts.Count} answered question(s) " +
+                $"(mean {Inv(meanModelCalls, "F1")}, max {Inv(maxAnswer.ModelCallCount!.Value, "N0")} on Q{maxAnswer.OrderIndex})");
+
+            if (totalModelCalls > 0 && run.TotalInputTokens > 0)
+            {
+                sb.AppendLine(
+                    $"- **Input Tokens per Model Call:** {Inv(run.TotalInputTokens / totalModelCalls, "N0")}");
+            }
+        }
         sb.AppendLine();
 
         // Harness cost. The token totals above are the candidate's alone; grading an 18-question
@@ -761,7 +795,19 @@ public static class BenchmarkReportBuilder
                 decimal candidateCacheWriteCost = (run.TotalCacheCreationTokens > 0 && candidatePricing.CacheWritePerMillion.HasValue)
                     ? (run.TotalCacheCreationTokens / 1_000_000m * candidatePricing.CacheWritePerMillion.Value)
                     : 0m;
-                decimal candidateTotalCost = ModelPricingService.ComputeCost(candidatePricing, uncachedInTokens, run.TotalOutputTokens, cachedInTokens, run.TotalCacheCreationTokens);
+                // Costed from the persisted long-context buckets, which were partitioned per model call at
+                // answer time, and scaled by the tier the provider actually served. Both reduce to the flat
+                // arithmetic above for a flat-rate model and for every run that predates tiered pricing, so
+                // the component lines printed above stay correct in that case.
+                string? servedServiceTier = BenchmarkRunFinalizer.ResolveServedServiceTier(run.Answers);
+                decimal candidateTotalCost = ModelPricingService.ComputeCostFromTotals(
+                    candidatePricing,
+                    run.TotalInputTokens, run.TotalOutputTokens,
+                    run.TotalCacheReadTokens, run.TotalCacheCreationTokens,
+                    run.TotalLongContextInputTokens, run.TotalLongContextOutputTokens,
+                    run.TotalLongContextCacheReadTokens, run.TotalLongContextCacheCreationTokens,
+                    actualServiceTier: servedServiceTier,
+                    requestedServiceTier: run.TestedModelServiceTierUsed);
 
                 decimal assessorTotalCost = 0m;
                 decimal assessorInCost = 0m;
@@ -819,6 +865,28 @@ public static class BenchmarkReportBuilder
                 if (hasVerifier && verifierPricing != null)
                 {
                     sb.AppendLine($"  - Claim Verifier ({run.ClaimVerifierModelIdUsed}): ${Inv(verifierTotalCost, "F2")} (in: ${Inv(verifierInCost, "F2")}, out: ${Inv(verifierOutCost, "F2")})");
+                }
+
+                // Both lines are printed only when they apply. An absent tier is omitted entirely rather
+                // than shown as 1.0x, and a run with no long-context tokens prints no surcharge line — a
+                // reader must not have to tell "no surcharge" from "surcharge of zero".
+                if (run.TotalLongContextInputTokens > 0 && candidatePricing.LongContext != null)
+                {
+                    int longContextAnswerCount = run.Answers.Count(a => (a.LongContextInputTokens ?? 0) > 0);
+                    sb.AppendLine(
+                        $"- **Long-context surcharge:** applied to {Inv(longContextAnswerCount, "N0")} answer(s) — " +
+                        $"{Inv(run.TotalLongContextInputTokens, "N0")} input token(s) billed at the " +
+                        $">{Inv(candidatePricing.LongContext.ThresholdInputTokens, "N0")} rate " +
+                        $"(${Inv(candidatePricing.LongContext.InputPerMillion, "F2")}/M input vs " +
+                        $"${Inv(candidatePricing.InputPerMillion, "F2")}/M).");
+                }
+
+                decimal servedTierMultiplier = ModelPricingService.ResolveServiceTierMultiplier(
+                    candidatePricing, servedServiceTier, run.TestedModelServiceTierUsed);
+                if (servedTierMultiplier != 1.0m && !string.IsNullOrEmpty(servedServiceTier))
+                {
+                    sb.AppendLine(
+                        $"- **Service tier:** served {servedServiceTier} — prices scaled by {Inv(servedTierMultiplier, "0.##")}x.");
                 }
 
                 var provenanceParts = new List<string>();
@@ -1410,7 +1478,7 @@ public static class BenchmarkReportBuilder
             sb.AppendLine($"- **Budget/Quality Correlation:** {budgetConstrainedBelowMean.Count} budget-constrained question(s) scored below the run's unweighted mean of {unweightedMean!.Value} — " +
                 string.Join(", ", budgetConstrainedBelowMean.Select(a =>
                     $"Q{a.OrderIndex} ({a.QualityScore!.Value}, {(a.ToolBudgetExhausted || (a.ToolCallsBlocked ?? 0) > 0 ? "budget exhausted" : saturated.Contains(a) ? "budget saturated" : "budget pressured")})")) +
-                ". *The cap is a candidate explanation, not a demonstrated one — raise `Benchmark:ToolCallBudget:{Band}` for the affected band and re-run to test it.*");
+                ". *The cap is a candidate explanation, not a demonstrated one — raise `Benchmark:ToolCallBudget` and re-run to test it.*");
         }
 
         // Grounding. An Advanced question answered from memory is not necessarily wrong, but it

@@ -1163,7 +1163,7 @@ public class BenchmarkReportBuilderTests
         Assert.Contains("**Budget/Quality Correlation:** 2 budget-constrained question(s)", report);
         Assert.Contains("Q10 (60, budget pressured)", report);
         Assert.Contains("Q11 (84, budget exhausted)", report);
-        Assert.Contains("Benchmark:ToolCallBudget:{Band}", report);
+        Assert.Contains("Benchmark:ToolCallBudget", report);
     }
 
     [Fact]

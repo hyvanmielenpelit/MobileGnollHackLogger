@@ -61,6 +61,11 @@ export interface ModelPricingDto {
 }
 
 export interface ChatCostEventData {
+  /**
+   * Null when no price is known for the model, and **also** null when the viewer is a regular user and
+   * the turn was funded by a system AI configuration — in that case `isOperatorCost` is true. The pair
+   * distinguishes "unpriced" from "withheld"; never render a withheld price as 0.
+   */
   estimatedCost?: number | null;
   source?: string | null;
   inputTokens?: number;
@@ -91,6 +96,14 @@ export interface ChatMessage {
   outputTokens?: number;
   cacheReadTokens?: number;
   cacheCreationTokens?: number;
+  /**
+   * Null when no price is known for the model, and **also** null when the viewer is a regular user and
+   * the turn was funded by a system AI configuration — in that case `isOperatorCost` is true. The pair
+   * distinguishes "unpriced" from "withheld"; never render a withheld price as 0.
+   *
+   * Replies saved before cost attribution existed carry no attribution and are read as user-funded, so
+   * such a reply still shows operator cost to a regular user. Known and accepted (plan decision D1-A).
+   */
   estimatedCost?: number | null;
   pricingSource?: string | null;
   isOperatorCost?: boolean;

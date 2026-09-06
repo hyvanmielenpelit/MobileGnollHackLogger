@@ -269,6 +269,7 @@ public class AgentLoopRunner
                         var report = evt.UsageReport ?? (string.IsNullOrEmpty(evt.Data) ? null : JsonSerializer.Deserialize<TokenUsageReport>(evt.Data));
                         if (report != null)
                         {
+                            result.ModelCallUsages.Add(report);
                             result.TotalPromptTokens += report.TotalPromptTokens;
                             result.UncachedInputTokens += report.UncachedInputTokens;
                             result.CacheReadTokens += report.CacheReadTokens;

@@ -194,7 +194,8 @@ public class ChatController : ControllerBase
                 m.CacheReadTokens,
                 m.CacheCreationTokens,
                 m.EstimatedCost,
-                m.PricingSource
+                m.PricingSource,
+                m.SystemAiConfigurationIdUsed
             })
             .ToListAsync();
         swDb.Stop();
@@ -255,6 +256,10 @@ public class ChatController : ControllerBase
         }
         swDb.Stop();
         var modelsMs = swDb.ElapsedMilliseconds;
+
+        // ConfigurationExtensions.IsAdmin is the project's single definition of "admin" and is what
+        // AdminRequirement uses, so the read path and the authorization policy cannot drift apart.
+        bool isAdmin = _configuration.IsAdmin(User.Identity?.Name);
 
         var swAsm = Stopwatch.StartNew();
         var formattedMessages = messages.Select(m => {
@@ -334,8 +339,14 @@ public class ChatController : ControllerBase
                 m.OutputTokens,
                 m.CacheReadTokens,
                 m.CacheCreationTokens,
-                m.EstimatedCost,
-                m.PricingSource
+                // An operator-funded reply's cost is an operator figure: a regular user is shown no price at
+                // all for it, never zero, which would read as "this reply was free to produce". IsOperatorCost
+                // travels beside it so the client can tell "withheld" from "unpriced" and keep the PARTIAL
+                // badge off. Replies saved before SystemAiConfigurationIdUsed existed carry null attribution
+                // and are therefore treated as user-funded — the accepted D1-A limitation.
+                EstimatedCost = (isAdmin || !m.SystemAiConfigurationIdUsed.HasValue) ? m.EstimatedCost : null,
+                PricingSource = (isAdmin || !m.SystemAiConfigurationIdUsed.HasValue) ? m.PricingSource : null,
+                IsOperatorCost = m.SystemAiConfigurationIdUsed.HasValue
             };
         }).ToList();
         swAsm.Stop();
@@ -396,7 +407,10 @@ public class ChatController : ControllerBase
             session.Id,
             session.Title,
             session.IsGnollHackSession,
-            session.TotalEstimatedCost,
+            // The wire name stays totalEstimatedCost; its meaning is "the total this viewer is entitled to
+            // see". Renaming it would force a client change for no gain — the client already treats it as an
+            // opaque authoritative figure.
+            TotalEstimatedCost = isAdmin ? session.TotalEstimatedCost : session.TotalUserEstimatedCost,
             hasGameSnapshot,
             Messages = formattedMessages,
             HasOngoingGeneration = hasOngoing,

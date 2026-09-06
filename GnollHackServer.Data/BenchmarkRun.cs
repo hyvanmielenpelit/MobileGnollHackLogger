@@ -490,6 +490,17 @@ public class BenchmarkRun
     public long TotalOutputTokens { get; set; }
     public long TotalCacheReadTokens { get; set; }
     public long TotalCacheCreationTokens { get; set; }
+
+    /// <summary>
+    /// Run-level sums of the per-answer LongContext* columns — the subset of the totals above that was
+    /// billed at the model's long-context rate. Zero for a flat-rate model and for every run recorded
+    /// before tiered pricing existed. Denormalized exactly like the Total*Tokens columns beside them.
+    /// </summary>
+    public long TotalLongContextInputTokens { get; set; }
+    public long TotalLongContextOutputTokens { get; set; }
+    public long TotalLongContextCacheReadTokens { get; set; }
+    public long TotalLongContextCacheCreationTokens { get; set; }
+
     public long TotalDurationMs { get; set; }
 
     // Assessor-side usage, deliberately kept apart from the candidate totals above. Those

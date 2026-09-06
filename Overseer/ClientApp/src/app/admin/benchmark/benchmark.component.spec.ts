@@ -12,6 +12,19 @@ describe('AdminBenchmarkComponent', () => {
   let benchmarkServiceMock: jasmine.SpyObj<AdminBenchmarkService>;
   let systemServiceMock: jasmine.SpyObj<SystemService>;
 
+  /** The key AdminBenchmarkComponent remembers the last run setup under. */
+  const RUN_SETTINGS_KEY = 'overseer_admin_benchmark_run_settings';
+
+  beforeEach(() => {
+    // Run-setting recall is real browser state, so without this a spec that starts a run leaks its
+    // selections into every spec that constructs the component afterwards.
+    try { localStorage.removeItem(RUN_SETTINGS_KEY); } catch { /* private-browsing modes throw */ }
+  });
+
+  afterEach(() => {
+    try { localStorage.removeItem(RUN_SETTINGS_KEY); } catch { /* private-browsing modes throw */ }
+  });
+
   beforeEach(async () => {
     benchmarkServiceMock = jasmine.createSpyObj('AdminBenchmarkService', [
       'getSuites',
@@ -3348,6 +3361,136 @@ describe('AdminBenchmarkComponent', () => {
       const marker = row!.querySelector('.degraded-tag');
       expect(marker).toBeTruthy();
       expect(marker?.textContent?.trim()).toBe('*');
+    });
+  });
+
+  describe('run setting recall', () => {
+    /**
+     * The fixture's own configuration is id 1 with modelRole 7 (Chat + Title + Benchmark), so it is the
+     * only benchmark-capable configuration unless a spec adds another.
+     */
+    const secondConfig = (id: number) => ({ ...component.systemConfigs[0], id, displayName: `Model ${id}` });
+
+    it('should write the run settings to localStorage when a run is started', () => {
+      benchmarkServiceMock.startRun.and.returnValue(of({ runId: 99 }));
+      component.systemConfigs = [component.systemConfigs[0], secondConfig(2)];
+      component.selectedSuiteId = 1;
+      component.testedConfigId = 1;
+      component.assessorConfigId = 2;
+      component.secondOpinionConfigId = 2;
+      component.claimVerifierConfigId = 1;
+      component.selectedScoringProfileId = 1;
+      component.candidateVerboseMode = true;
+
+      component.startBenchmark();
+
+      const stored = JSON.parse(localStorage.getItem(RUN_SETTINGS_KEY)!);
+      expect(stored.suiteId).toBe(1);
+      expect(stored.testedConfigId).toBe(1);
+      expect(stored.assessorConfigId).toBe(2);
+      expect(stored.secondOpinionConfigId).toBe(2);
+      expect(stored.claimVerifierConfigId).toBe(1);
+      expect(stored.scoringProfileId).toBe(1);
+      expect(stored.verboseMode).toBeTrue();
+      component.ngOnDestroy();
+    });
+
+    it('should restore every remembered selection on the next construction', () => {
+      localStorage.setItem(RUN_SETTINGS_KEY, JSON.stringify({
+        suiteId: 1,
+        testedConfigId: 2,
+        assessorConfigId: 1,
+        secondOpinionConfigId: 2,
+        claimVerifierConfigId: 1,
+        secondOpinionMode: 3,
+        scoringProfileId: 1,
+        verboseMode: true
+      }));
+
+      const restored = TestBed.createComponent(AdminBenchmarkComponent);
+      restored.componentInstance.systemConfigs = [component.systemConfigs[0], secondConfig(2)];
+      restored.detectChanges();
+
+      const c = restored.componentInstance;
+      expect(c.selectedSuiteId).toBe(1);
+      expect(c.testedConfigId).toBe(2);
+      expect(c.assessorConfigId).toBe(1);
+      expect(c.secondOpinionConfigId).toBe(2);
+      expect(c.claimVerifierConfigId).toBe(1);
+      expect(c.secondOpinionMode).toBe(3);
+      expect(c.selectedScoringProfileId).toBe(1);
+      expect(c.candidateVerboseMode).toBeTrue();
+      c.ngOnDestroy();
+    });
+
+    it('should fall back to the default when a remembered configuration is no longer benchmark-capable', () => {
+      // Id 7 is not in systemConfigs at all, which is what a disabled configuration, one whose key was
+      // removed, or one that lost its Benchmark role looks like to this screen.
+      localStorage.setItem(RUN_SETTINGS_KEY, JSON.stringify({
+        suiteId: 1,
+        testedConfigId: 7,
+        assessorConfigId: 7,
+        secondOpinionConfigId: 7,
+        claimVerifierConfigId: 7,
+        secondOpinionMode: null,
+        scoringProfileId: 1,
+        verboseMode: false
+      }));
+
+      const restored = TestBed.createComponent(AdminBenchmarkComponent);
+      restored.componentInstance.systemConfigs = [component.systemConfigs[0]];
+      restored.detectChanges();
+
+      const c = restored.componentInstance;
+      expect(c.testedConfigId).toBe(1);
+      expect(c.assessorConfigId).toBe(1);
+      // The optional roles restore to "not selected" rather than to a dangling id.
+      expect(c.secondOpinionConfigId).toBeNull();
+      expect(c.claimVerifierConfigId).toBeNull();
+      c.ngOnDestroy();
+    });
+
+    it('should fall back to the first suite when the remembered suite no longer exists', () => {
+      localStorage.setItem(RUN_SETTINGS_KEY, JSON.stringify({
+        suiteId: 999, testedConfigId: null, assessorConfigId: null,
+        secondOpinionConfigId: null, claimVerifierConfigId: null,
+        secondOpinionMode: null, scoringProfileId: 999, verboseMode: null
+      }));
+
+      const restored = TestBed.createComponent(AdminBenchmarkComponent);
+      restored.componentInstance.systemConfigs = [component.systemConfigs[0]];
+      restored.detectChanges();
+
+      expect(restored.componentInstance.selectedSuiteId).toBe(1);
+      expect(restored.componentInstance.selectedScoringProfileId).toBe(1);
+      restored.componentInstance.ngOnDestroy();
+    });
+
+    it('should leave every default untouched when localStorage throws', () => {
+      spyOn(localStorage, 'getItem').and.throwError('SecurityError');
+
+      const restored = TestBed.createComponent(AdminBenchmarkComponent);
+      restored.componentInstance.systemConfigs = [component.systemConfigs[0]];
+
+      expect(() => restored.detectChanges()).not.toThrow();
+      expect(restored.componentInstance.selectedSuiteId).toBe(1);
+      expect(restored.componentInstance.testedConfigId).toBe(1);
+      expect(restored.componentInstance.candidateVerboseMode).toBeFalse();
+      restored.componentInstance.ngOnDestroy();
+    });
+
+    it('should not remember the same-provider acknowledgement', () => {
+      benchmarkServiceMock.startRun.and.returnValue(of({ runId: 99 }));
+      component.selectedSuiteId = 1;
+      component.testedConfigId = 1;
+      component.assessorConfigId = 1;
+
+      component.startBenchmark(true);
+
+      const stored = JSON.parse(localStorage.getItem(RUN_SETTINGS_KEY)!);
+      // A per-run safety acknowledgement: remembering it would silently defeat the warning dialog.
+      expect(stored.acknowledgeSameProvider).toBeUndefined();
+      component.ngOnDestroy();
     });
   });
 });

@@ -313,7 +313,18 @@ public class SettingsController : ControllerBase
                 EffectiveOutputPricePerMillion = resolvedPricing?.OutputPerMillion,
                 EffectiveCachedInputPricePerMillion = resolvedPricing?.CachedInputPerMillion,
                 PricingSource = resolvedPricing != null ? (resolvedPricing.Source == ModelPricingSource.Custom ? "custom" : "catalog") : "unknown",
-                PricingAsOf = resolvedPricing?.AsOf
+                PricingAsOf = resolvedPricing?.AsOf,
+                // All null / false for a flat, unscheduled model, which is most of them. A custom price
+                // override is always flat by design, so these are null there too.
+                EffectiveLongContextThresholdTokens = resolvedPricing?.LongContext?.ThresholdInputTokens,
+                EffectiveLongContextInputPricePerMillion = resolvedPricing?.LongContext?.InputPerMillion,
+                EffectiveLongContextOutputPricePerMillion = resolvedPricing?.LongContext?.OutputPerMillion,
+                EffectiveServiceTierMultipliers = resolvedPricing?.ServiceTierMultipliers,
+                PricingScheduledChangeFrom = resolvedPricing?.ScheduledChange?.EffectiveFrom.ToString("yyyy-MM-dd"),
+                PricingScheduledChangeInputPricePerMillion = resolvedPricing?.ScheduledChange?.InputPerMillion,
+                PricingScheduledChangeOutputPricePerMillion = resolvedPricing?.ScheduledChange?.OutputPerMillion,
+                PricingScheduledChangeNote = resolvedPricing?.ScheduledChange?.Note,
+                PricingScheduleElapsed = resolvedPricing?.ScheduleElapsed ?? false
             };
         }).ToList();
 
@@ -344,7 +355,18 @@ public class SettingsController : ControllerBase
                 EffectiveOutputPricePerMillion = resolvedPricing?.OutputPerMillion,
                 EffectiveCachedInputPricePerMillion = resolvedPricing?.CachedInputPerMillion,
                 PricingSource = resolvedPricing != null ? (resolvedPricing.Source == ModelPricingSource.Custom ? "custom" : "catalog") : "unknown",
-                PricingAsOf = resolvedPricing?.AsOf
+                PricingAsOf = resolvedPricing?.AsOf,
+                // All null / false for a flat, unscheduled model, which is most of them. A custom price
+                // override is always flat by design, so these are null there too.
+                EffectiveLongContextThresholdTokens = resolvedPricing?.LongContext?.ThresholdInputTokens,
+                EffectiveLongContextInputPricePerMillion = resolvedPricing?.LongContext?.InputPerMillion,
+                EffectiveLongContextOutputPricePerMillion = resolvedPricing?.LongContext?.OutputPerMillion,
+                EffectiveServiceTierMultipliers = resolvedPricing?.ServiceTierMultipliers,
+                PricingScheduledChangeFrom = resolvedPricing?.ScheduledChange?.EffectiveFrom.ToString("yyyy-MM-dd"),
+                PricingScheduledChangeInputPricePerMillion = resolvedPricing?.ScheduledChange?.InputPerMillion,
+                PricingScheduledChangeOutputPricePerMillion = resolvedPricing?.ScheduledChange?.OutputPerMillion,
+                PricingScheduledChangeNote = resolvedPricing?.ScheduledChange?.Note,
+                PricingScheduleElapsed = resolvedPricing?.ScheduleElapsed ?? false
             };
         });
 

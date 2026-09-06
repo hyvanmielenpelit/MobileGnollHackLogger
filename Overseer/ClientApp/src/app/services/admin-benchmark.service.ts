@@ -693,6 +693,13 @@ export interface BenchmarkRunDetailDto {
   candidateSystemPromptSha256?: string | null;
   toolGuidesSha256?: string | null;
   knowledgeBaseHeadSha?: string | null;
+  /**
+   * H3. Run-wide tool calls by family, classified once on the server by BenchmarkChatTransfer.ClassifyTool.
+   * Undefined on a run detail served before this existed; the diagnostics builder keeps its own loop only
+   * as a fallback for those.
+   */
+  toolFamilyCounts?: { [family: string]: number } | null;
+  zeroKnowledgeBaseAnswerCount?: number | null;
   secondOpinionDisagreementCount?: number;
   toolOverheadMs?: number | null;
   difficultyFallbackUsed: boolean;
@@ -921,6 +928,14 @@ export interface BenchmarkRunSummaryDto {
   candidatePromptSourceUsed?: string | null;
   harnessVersion?: string | null;
   totalDurationMs: number;
+  /**
+   * The instrument fingerprint. Two runs form a reproduction only if all three match; the run list uses
+   * them to badge a run whose instrument moved since the previous run of the same suite. Null on runs
+   * recorded before each hash was captured, which is "not recorded", never "unchanged".
+   */
+  candidateSystemPromptSha256?: string | null;
+  toolGuidesSha256?: string | null;
+  knowledgeBaseHeadSha?: string | null;
   estimatedCost?: number | null;
   pricingIncomplete?: boolean;
 }

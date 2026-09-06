@@ -1815,6 +1815,11 @@ public class AdminBenchmarkController : ControllerBase
             var secondOpinionPricing = secondOpinionConfig != null ? _modelPricingService.Resolve(secondOpinionConfig) : null;
             var claimVerifierPricing = claimVerifierConfig != null ? _modelPricingService.Resolve(claimVerifierConfig) : null;
 
+            // The rates written here are the *resolved* card — a scheduled change has already been folded
+            // into them by ResolveDefault. That is why scheduledChange is deliberately not serialised: the
+            // snapshot's job is to record what applied when the run started, so replaying it must never
+            // re-evaluate a date. longContext and serviceTierMultipliers are conditions of the request and
+            // the served tier, not of the calendar, so they do have to survive.
             object? ToSnapshotObj(ModelPricing? p) => p == null ? null : new
             {
                 inputPerMillion = p.InputPerMillion,
@@ -1822,7 +1827,16 @@ public class AdminBenchmarkController : ControllerBase
                 cachedInputPerMillion = p.CachedInputPerMillion,
                 cacheWritePerMillion = p.CacheWritePerMillion,
                 source = p.Source == ModelPricingSource.Custom ? "custom" : "catalog",
-                asOf = p.AsOf
+                asOf = p.AsOf,
+                longContext = p.LongContext == null ? null : new
+                {
+                    thresholdInputTokens = p.LongContext.ThresholdInputTokens,
+                    inputPerMillion = p.LongContext.InputPerMillion,
+                    outputPerMillion = p.LongContext.OutputPerMillion,
+                    cachedInputPerMillion = p.LongContext.CachedInputPerMillion,
+                    cacheWritePerMillion = p.LongContext.CacheWritePerMillion
+                },
+                serviceTierMultipliers = p.ServiceTierMultipliers
             };
 
             var snapshot = new
@@ -1967,6 +1981,16 @@ public class AdminBenchmarkController : ControllerBase
         long totalCacheCreationTokens = isLiveRun ? liveCandidateTotals.TotalCacheCreationTokens : run.TotalCacheCreationTokens;
         long totalAnswerDurationMs = isLiveRun ? liveCandidateTotals.TotalAnswerDurationMs : run.TotalAnswerDurationMs;
 
+        // The long-context portion of the totals above, and the tier the provider actually served. Both are
+        // zero / null for a flat-rate model and for every run recorded before tiered pricing existed, so the
+        // costing below reduces exactly to the flat-rate arithmetic it replaced.
+        var liveLongContextTotals = isLiveRun ? BenchmarkRunFinalizer.ComputeCandidateLongContextTotals(run.Answers) : default;
+        long totalLongContextInputTokens = isLiveRun ? liveLongContextTotals.TotalLongContextInputTokens : run.TotalLongContextInputTokens;
+        long totalLongContextOutputTokens = isLiveRun ? liveLongContextTotals.TotalLongContextOutputTokens : run.TotalLongContextOutputTokens;
+        long totalLongContextCacheReadTokens = isLiveRun ? liveLongContextTotals.TotalLongContextCacheReadTokens : run.TotalLongContextCacheReadTokens;
+        long totalLongContextCacheCreationTokens = isLiveRun ? liveLongContextTotals.TotalLongContextCacheCreationTokens : run.TotalLongContextCacheCreationTokens;
+        string? servedServiceTier = BenchmarkRunFinalizer.ResolveServedServiceTier(run.Answers);
+
         BenchmarkRunPricing? pricing = null;
         if (_modelPricingService != null)
         {
@@ -1996,10 +2020,19 @@ public class AdminBenchmarkController : ControllerBase
         {
             if (candidatePricing != null)
             {
-                long cachedIn = totalCacheReadTokens;
-                long uncachedIn = Math.Max(0, totalInputTokens - cachedIn);
-                candidateCost = ModelPricingService.ComputeCost(candidatePricing, uncachedIn, totalOutputTokens, cachedIn, totalCacheCreationTokens);
+                // The candidate is the only role costed from per-call evidence: its long-context portion was
+                // bucketed per model call at answer time and persisted, so the surcharge can be reproduced
+                // here without re-running anything.
+                candidateCost = ModelPricingService.ComputeCostFromTotals(
+                    candidatePricing,
+                    totalInputTokens, totalOutputTokens, totalCacheReadTokens, totalCacheCreationTokens,
+                    totalLongContextInputTokens, totalLongContextOutputTokens,
+                    totalLongContextCacheReadTokens, totalLongContextCacheCreationTokens,
+                    actualServiceTier: servedServiceTier,
+                    requestedServiceTier: run.TestedModelServiceTierUsed);
             }
+            // Assessor and verifier are costed flat, from aggregate totals only: no per-call usage is
+            // recorded for either role, so neither a long-context card nor a served tier is knowable here.
             if (hasAssessor && assessorPricing != null)
             {
                 assessorCost = ModelPricingService.ComputeCost(assessorPricing, run.TotalAssessmentInputTokens, run.TotalAssessmentOutputTokens);
@@ -2026,6 +2059,11 @@ public class AdminBenchmarkController : ControllerBase
                 totalEstimatedCost = (candidateCost ?? 0m) + (assessorCost ?? 0m) + (verifierCost ?? 0m);
             }
         }
+
+        // H3: one classifier, on the server. The report already reads these figures through
+        // BenchmarkChatTransfer; projecting them here is what lets the diagnostics stop keeping a second,
+        // hard-coded copy of the tool-name lists that drifted every time a tool was added.
+        var toolRouting = BenchmarkChatTransfer.AnalyzeToolRouting(run.Answers.ToList());
 
         var dto = new BenchmarkRunDetailDto
         {
@@ -2119,6 +2157,17 @@ public class AdminBenchmarkController : ControllerBase
             CandidateSystemPromptSha256 = run.CandidateSystemPromptSha256,
             ToolGuidesSha256 = run.ToolGuidesSha256,
             KnowledgeBaseHeadSha = run.KnowledgeBaseHeadSha,
+            ToolFamilyCounts = toolRouting.FamilyCalls.ToDictionary(
+                kv => kv.Key switch
+                {
+                    BenchmarkToolFamily.SourceCode => "source",
+                    BenchmarkToolFamily.Wiki => "wiki",
+                    BenchmarkToolFamily.StructuredLookup => "lookup",
+                    BenchmarkToolFamily.KnowledgeBase => "knowledgeBase",
+                    _ => "other"
+                },
+                kv => kv.Value),
+            ZeroKnowledgeBaseAnswerCount = toolRouting.ZeroKnowledgeBaseAnswerCount,
 
             // Manual verdicts are trials an operator ran by hand against a prospective assessor;
             // the agreement figures are about the run's own two graders.
@@ -2322,6 +2371,9 @@ public class AdminBenchmarkController : ControllerBase
                     SecondOpinionCriticalErrorSplitCount = r.SecondOpinionCriticalErrorSplitCount,
                     CandidatePromptOptionsJson = r.CandidatePromptOptionsJson,
                     CandidatePromptSourceUsed = r.CandidatePromptSourceUsed,
+                    CandidateSystemPromptSha256 = r.CandidateSystemPromptSha256,
+                    ToolGuidesSha256 = r.ToolGuidesSha256,
+                    KnowledgeBaseHeadSha = r.KnowledgeBaseHeadSha,
                     HarnessVersion = r.HarnessVersion,
                     TotalDurationMs = r.TotalDurationMs
                 },
@@ -2342,6 +2394,18 @@ public class AdminBenchmarkController : ControllerBase
                 r.TotalOutputTokens,
                 r.TotalCacheReadTokens,
                 r.TotalCacheCreationTokens,
+                r.TotalLongContextInputTokens,
+                r.TotalLongContextOutputTokens,
+                r.TotalLongContextCacheReadTokens,
+                r.TotalLongContextCacheCreationTokens,
+                r.TestedModelServiceTierUsed,
+                // The tier the provider actually served, pulled as a scalar subquery rather than by loading
+                // every answer: costing must use the served tier, and the history list has no other access
+                // to it. Null for a run whose provider reported none.
+                ServedServiceTier = r.Answers
+                    .Where(a => a.ActualServiceTierUsed != null)
+                    .Select(a => a.ActualServiceTierUsed)
+                    .FirstOrDefault(),
                 r.TotalAssessmentInputTokens,
                 r.TotalAssessmentOutputTokens,
                 r.TotalClaimVerificationInputTokens,
@@ -2372,6 +2436,11 @@ public class AdminBenchmarkController : ControllerBase
                     TotalOutputTokens = item.TotalOutputTokens,
                     TotalCacheReadTokens = item.TotalCacheReadTokens,
                     TotalCacheCreationTokens = item.TotalCacheCreationTokens,
+                    TotalLongContextInputTokens = item.TotalLongContextInputTokens,
+                    TotalLongContextOutputTokens = item.TotalLongContextOutputTokens,
+                    TotalLongContextCacheReadTokens = item.TotalLongContextCacheReadTokens,
+                    TotalLongContextCacheCreationTokens = item.TotalLongContextCacheCreationTokens,
+                    TestedModelServiceTierUsed = item.TestedModelServiceTierUsed,
                     TotalAssessmentInputTokens = item.TotalAssessmentInputTokens,
                     TotalAssessmentOutputTokens = item.TotalAssessmentOutputTokens,
                     TotalClaimVerificationInputTokens = item.TotalClaimVerificationInputTokens,
@@ -2398,9 +2467,14 @@ public class AdminBenchmarkController : ControllerBase
                 }
                 else
                 {
-                    long cachedIn = tempRun.TotalCacheReadTokens;
-                    long uncachedIn = Math.Max(0, tempRun.TotalInputTokens - cachedIn);
-                    decimal candCost = ModelPricingService.ComputeCost(candidatePricing!, uncachedIn, tempRun.TotalOutputTokens, cachedIn, tempRun.TotalCacheCreationTokens);
+                    decimal candCost = ModelPricingService.ComputeCostFromTotals(
+                        candidatePricing!,
+                        tempRun.TotalInputTokens, tempRun.TotalOutputTokens,
+                        tempRun.TotalCacheReadTokens, tempRun.TotalCacheCreationTokens,
+                        tempRun.TotalLongContextInputTokens, tempRun.TotalLongContextOutputTokens,
+                        tempRun.TotalLongContextCacheReadTokens, tempRun.TotalLongContextCacheCreationTokens,
+                        actualServiceTier: item.ServedServiceTier,
+                        requestedServiceTier: tempRun.TestedModelServiceTierUsed);
                     decimal assCost = hasAssessor && assessorPricing != null ? ModelPricingService.ComputeCost(assessorPricing, tempRun.TotalAssessmentInputTokens, tempRun.TotalAssessmentOutputTokens) : 0m;
                     decimal verCost = hasVerifier && verifierPricing != null ? ModelPricingService.ComputeCost(verifierPricing, tempRun.TotalClaimVerificationInputTokens, tempRun.TotalClaimVerificationOutputTokens) : 0m;
 

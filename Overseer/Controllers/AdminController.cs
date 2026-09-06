@@ -269,6 +269,15 @@ public class AdminController : ControllerBase
                     c.EffectiveCachedInputPricePerMillion = resolved.CachedInputPerMillion;
                     c.PricingSource = resolved.Source == ModelPricingSource.Custom ? "custom" : "catalog";
                     c.PricingAsOf = resolved.AsOf;
+                    c.EffectiveLongContextThresholdTokens = resolved.LongContext?.ThresholdInputTokens;
+                    c.EffectiveLongContextInputPricePerMillion = resolved.LongContext?.InputPerMillion;
+                    c.EffectiveLongContextOutputPricePerMillion = resolved.LongContext?.OutputPerMillion;
+                    c.EffectiveServiceTierMultipliers = resolved.ServiceTierMultipliers;
+                    c.PricingScheduledChangeFrom = resolved.ScheduledChange?.EffectiveFrom.ToString("yyyy-MM-dd");
+                    c.PricingScheduledChangeInputPricePerMillion = resolved.ScheduledChange?.InputPerMillion;
+                    c.PricingScheduledChangeOutputPricePerMillion = resolved.ScheduledChange?.OutputPerMillion;
+                    c.PricingScheduledChangeNote = resolved.ScheduledChange?.Note;
+                    c.PricingScheduleElapsed = resolved.ScheduleElapsed;
                 }
                 else
                 {

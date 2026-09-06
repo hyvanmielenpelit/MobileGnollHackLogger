@@ -252,12 +252,12 @@ public class BenchmarkService
             var allowedTools = _configuration.GetSection("Benchmark:AllowedTools").Get<List<string>>() ?? _defaultAllowedTools;
             int maxResultLength = _configuration.GetValue<int>("Benchmark:MaxResultLength", 10000);
             int maxCallsPerSession = _configuration.GetValue<int>("Benchmark:MaxCallsPerSession", 50);
-            // Budgets are resolved per band inside ExecuteSingleQuestionAsync; this run-level
-            // column records the largest of them, which is the Advanced band's. Resolving it
-            // through ResolveToolCallBudget rather than the band default keeps a configuration
-            // override visible here. BenchmarkRunAnswer.ToolCallBudgetUsed is the figure that
-            // actually applied to a given question.
-            int maxToolCallsPerQuestion = ResolveToolCallBudget(BenchmarkDifficulty.Advanced, null);
+            // The three resource caps are flat, so this run-level column records the single figure every
+            // question got rather than the largest of three bands. Resolving it through
+            // ResolveToolCallBudget rather than the compiled default keeps a configuration override
+            // visible here. BenchmarkRunAnswer.ToolCallBudgetUsed is still the figure that applied to a
+            // given question, and for runs 1-13 it carries the old per-band values.
+            int maxToolCallsPerQuestion = ResolveToolCallBudget();
             run.MaxToolCallsPerQuestionUsed = maxToolCallsPerQuestion;
             await db.SaveChangesAsync(cancellationToken);
 
@@ -557,6 +557,11 @@ public class BenchmarkService
     /// <summary>
     /// Reads a banded per-question cap, falling back to the supplied band default.
     ///
+    /// This now serves <c>QuestionTimeoutSeconds</c> alone. The three resource caps are no longer
+    /// banded — see <see cref="ResolveFlatCap"/> — and the timeout stays banded because it is pinned
+    /// to the speed-score floor by an invariant BenchmarkScoringTests asserts, which flattening
+    /// would break.
+    ///
     /// The banded keys sit under their own section prefix on purpose: a configuration key cannot
     /// be both a value and a section, so a flat <c>Benchmark:MaxFoo</c> and a banded
     /// <c>Benchmark:MaxFoo:{Band}</c> cannot coexist — whichever was read second would break.
@@ -572,16 +577,28 @@ public class BenchmarkService
     }
 
     /// <summary>
+    /// Reads a flat per-question cap, falling back to the compiled default.
+    ///
+    /// The three resource caps are no longer banded: every question gets what the Advanced band used
+    /// to get, so a benchmark question is never stopped by a limit a production chat session would
+    /// not have hit. Their configuration keys are plain values — a key cannot be both a value and a
+    /// section, so the banded sections were removed rather than kept as fallbacks, exactly as the
+    /// flat keys they had replaced were removed when banding was introduced. A leftover banded key
+    /// makes this read return 0 and silently fall through to the default, so upgrades must delete it.
+    /// </summary>
+    private int ResolveFlatCap(string key, int fallback)
+    {
+        int configured = _configuration.GetValue<int>($"Benchmark:{key}", 0);
+        return configured > 0 ? configured : fallback;
+    }
+
+    /// <summary>
     /// Total tool calls a question may execute. This is the cap that is meant to bind on a
     /// saturated question: exhausting it blocks further calls, flags the answer
     /// <c>ToolBudgetExhausted</c>, and is explained in the run report. The other three caps are
     /// sized so they do not bind first.
     /// </summary>
-    private int ResolveToolCallBudget(BenchmarkDifficulty authoredBand, int? assessedDifficulty)
-    {
-        var band = BandFor(authoredBand, assessedDifficulty);
-        return ResolveBandedCap("ToolCallBudget", band, DefaultToolCallBudget(band));
-    }
+    private int ResolveToolCallBudget() => ResolveFlatCap("ToolCallBudget", DefaultToolCallBudget());
 
     /// <summary>
     /// Sequential tool rounds — one model call plus the batch of tool calls it emitted, then the
@@ -590,11 +607,7 @@ public class BenchmarkService
     /// batched at roughly that rate when saturated. Sized at about half the tool call budget, so
     /// a model batching two calls per round can still spend the whole budget.
     /// </summary>
-    private int ResolveToolIterations(BenchmarkDifficulty authoredBand, int? assessedDifficulty)
-    {
-        var band = BandFor(authoredBand, assessedDifficulty);
-        return ResolveBandedCap("ToolIterations", band, DefaultToolIterations(band));
-    }
+    private int ResolveToolIterations() => ResolveFlatCap("ToolIterations", DefaultToolIterations());
 
     /// <summary>
     /// Total provider requests for the question. A runaway-loop safety net, not a tuning knob:
@@ -602,11 +615,7 @@ public class BenchmarkService
     /// four to six above the iteration cap and must never be the cap that stops a healthy
     /// question.
     /// </summary>
-    private int ResolveTotalModelCalls(BenchmarkDifficulty authoredBand, int? assessedDifficulty)
-    {
-        var band = BandFor(authoredBand, assessedDifficulty);
-        return ResolveBandedCap("TotalModelCalls", band, DefaultTotalModelCalls(band));
-    }
+    private int ResolveTotalModelCalls() => ResolveFlatCap("TotalModelCalls", DefaultTotalModelCalls());
 
     /// <summary>
     /// The per-question wall-clock timeout.
@@ -627,30 +636,16 @@ public class BenchmarkService
         return ResolveBandedCap("QuestionTimeoutSeconds", band, DefaultQuestionTimeoutSeconds(band));
     }
 
-    internal static int DefaultToolCallBudget(BenchmarkDifficulty band) => band switch
-    {
-        BenchmarkDifficulty.Simple => 25,
-        BenchmarkDifficulty.Intermediate => 35,
-        BenchmarkDifficulty.Advanced => 45,
-        _ => 35
-    };
-
-    internal static int DefaultToolIterations(BenchmarkDifficulty band) => band switch
-    {
-        BenchmarkDifficulty.Simple => 12,
-        BenchmarkDifficulty.Intermediate => 16,
-        BenchmarkDifficulty.Advanced => 22,
-        _ => 16
-    };
-
-    internal static int DefaultTotalModelCalls(BenchmarkDifficulty band) => band switch
-    {
-        BenchmarkDifficulty.Simple => 16,
-        BenchmarkDifficulty.Intermediate => 22,
-        BenchmarkDifficulty.Advanced => 28,
-        _ => 22
-    };
-
+    // The three resource caps are flat: every question now gets what the Advanced band used to get.
+    // Banding them was a response to a flat 25 starving Advanced questions on the 2026-09-03 run —
+    // that is the evidence for choosing 45, not an argument for banding. Run 13 then showed two
+    // Intermediate questions stopped at 32 of 35 while running below the run's mean, so the band was
+    // still binding on questions a production chat session would have let run. Production applies no
+    // per-question cap at these levels, so matching the Advanced figures everywhere is what makes the
+    // harness comparable to production. QuestionTimeoutSeconds stays banded — see ResolveBandedCap.
+    internal static int DefaultToolCallBudget() => 45;
+    internal static int DefaultToolIterations() => 22;
+    internal static int DefaultTotalModelCalls() => 28;
     internal static int DefaultQuestionTimeoutSeconds(BenchmarkDifficulty band) => band switch
     {
         BenchmarkDifficulty.Simple => 420,
@@ -658,6 +653,28 @@ public class BenchmarkService
         BenchmarkDifficulty.Advanced => 720,
         _ => 600
     };
+
+    /// <summary>
+    /// The candidate's pricing card, needed only for its long-context threshold when bucketing an answer's
+    /// model calls. Resolved per answer from its own scope because ModelPricingService is scoped and this
+    /// method runs on both the sequential and the parallel answer paths; the cost is negligible beside the
+    /// model call it accompanies. Null — an unpriced model — buckets to all zeros.
+    /// </summary>
+    private ModelPricing? ResolveCandidatePricing(SystemAiApiConfiguration testedConfig)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var pricingService = scope.ServiceProvider.GetRequiredService<ModelPricingService>();
+            return pricingService.Resolve(testedConfig);
+        }
+        catch (Exception ex)
+        {
+            // Bucketing is a costing refinement, never a reason to lose an answer that has already run.
+            _logger.LogWarning(ex, "Failed to resolve candidate pricing for long-context bucketing.");
+            return null;
+        }
+    }
 
     private static List<object> BuildCandidateSeedHistory(BenchmarkRun run, string questionText)
     {
@@ -688,13 +705,15 @@ public class BenchmarkService
         int maxCallsPerSession,
         CancellationToken cancellationToken)
     {
-        // All four caps are resolved per difficulty band, so they differ between questions in
-        // one run. A flat 25 starved advanced questions - Q11, Q16 and Q18 of the 2026-09-03 run
-        // each exhausted it and had further calls blocked mid-investigation, which alone moved
-        // an otherwise clean run to CompletedWithLimits.
-        int toolCallBudget = ResolveToolCallBudget(question.Difficulty, question.AssessedDifficulty);
-        int maxToolIterations = ResolveToolIterations(question.Difficulty, question.AssessedDifficulty);
-        int maxTotalModelCalls = ResolveTotalModelCalls(question.Difficulty, question.AssessedDifficulty);
+        // The three resource caps are the same for every question in a run; only the timeout is still
+        // resolved per difficulty band. A flat 25 starved advanced questions - Q11, Q16 and Q18 of the
+        // 2026-09-03 run each exhausted it and had further calls blocked mid-investigation, which alone
+        // moved an otherwise clean run to CompletedWithLimits. That is the evidence for 45, not for
+        // banding: run 13 then had two Intermediate questions stop at 32 of 35 while running below the
+        // run's mean, so the band was binding on questions production would have let run.
+        int toolCallBudget = ResolveToolCallBudget();
+        int maxToolIterations = ResolveToolIterations();
+        int maxTotalModelCalls = ResolveTotalModelCalls();
 
         var runRequest = new AgentRunRequest
         {
@@ -767,6 +786,12 @@ public class BenchmarkService
         var classification = BenchmarkProviderErrorClassifier.Classify(terminalError);
         var sanitized = BenchmarkAnswerSanitizer.Sanitize(runResult.FinalText);
 
+        // Bucketed per model call, never from the answer's summed tokens: an agentic answer's sum crosses
+        // any published threshold routinely while no single request comes close. All zero for a flat-rate
+        // candidate, which is what makes storing them unconditional safe.
+        var longContextBuckets = ModelPricingService.ComputeLongContextBuckets(
+            ResolveCandidatePricing(testedConfig), runResult.ModelCallUsages);
+
         var succeededCalls = runResult.ToolCalls
             .Where(tc => tc.Status == "completed" && string.IsNullOrEmpty(tc.Error) && !string.IsNullOrEmpty(tc.Name))
             .GroupBy(tc => tc.Name!)
@@ -830,6 +855,10 @@ public class BenchmarkService
             OutputTokens = runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens,
             CacheReadInputTokens = runResult.CacheReadTokens,
             CacheCreationInputTokens = runResult.CacheCreationTokens,
+            LongContextInputTokens = longContextBuckets.InputTokens,
+            LongContextOutputTokens = longContextBuckets.OutputTokens,
+            LongContextCacheReadTokens = longContextBuckets.CacheReadTokens,
+            LongContextCacheCreationTokens = longContextBuckets.CacheCreationTokens,
             ModelCallCount = runResult.ModelCallCount,
             ToolCallCount = runResult.ToolCallCount,
             ToolCallsBlocked = runResult.ToolCallsBlocked,
@@ -879,9 +908,9 @@ public class BenchmarkService
         int maxCallsPerSession,
         CancellationToken cancellationToken)
     {
-        int toolCallBudget = ResolveToolCallBudget(answer.Difficulty, answer.AssessedDifficulty);
-        int maxToolIterations = ResolveToolIterations(answer.Difficulty, answer.AssessedDifficulty);
-        int maxTotalModelCalls = ResolveTotalModelCalls(answer.Difficulty, answer.AssessedDifficulty);
+        int toolCallBudget = ResolveToolCallBudget();
+        int maxToolIterations = ResolveToolIterations();
+        int maxTotalModelCalls = ResolveTotalModelCalls();
 
         var runRequest = new AgentRunRequest
         {
@@ -952,6 +981,12 @@ public class BenchmarkService
         var classification = BenchmarkProviderErrorClassifier.Classify(terminalError);
         var sanitized = BenchmarkAnswerSanitizer.Sanitize(runResult.FinalText);
 
+        // Bucketed per model call, never from the answer's summed tokens: an agentic answer's sum crosses
+        // any published threshold routinely while no single request comes close. All zero for a flat-rate
+        // candidate, which is what makes storing them unconditional safe.
+        var longContextBuckets = ModelPricingService.ComputeLongContextBuckets(
+            ResolveCandidatePricing(testedConfig), runResult.ModelCallUsages);
+
         var succeededCalls = runResult.ToolCalls
             .Where(tc => tc.Status == "completed" && string.IsNullOrEmpty(tc.Error) && !string.IsNullOrEmpty(tc.Name))
             .GroupBy(tc => tc.Name!)
@@ -999,6 +1034,10 @@ public class BenchmarkService
         answer.OutputTokens = runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens;
         answer.CacheReadInputTokens = runResult.CacheReadTokens;
         answer.CacheCreationInputTokens = runResult.CacheCreationTokens;
+        answer.LongContextInputTokens = longContextBuckets.InputTokens;
+        answer.LongContextOutputTokens = longContextBuckets.OutputTokens;
+        answer.LongContextCacheReadTokens = longContextBuckets.CacheReadTokens;
+        answer.LongContextCacheCreationTokens = longContextBuckets.CacheCreationTokens;
         answer.ModelCallCount = runResult.ModelCallCount;
         answer.ToolCallCount = runResult.ToolCallCount;
         answer.ToolCallsBlocked = runResult.ToolCallsBlocked;
@@ -3595,7 +3634,7 @@ public class BenchmarkService
             var allowedTools = _configuration.GetSection("Benchmark:AllowedTools").Get<List<string>>() ?? _defaultAllowedTools;
             int maxResultLength = _configuration.GetValue<int>("Benchmark:MaxResultLength", 10000);
             int maxCallsPerSession = _configuration.GetValue<int>("Benchmark:MaxCallsPerSession", 50);
-            int maxToolCallsPerQuestion = ResolveToolCallBudget(BenchmarkDifficulty.Advanced, null);
+            int maxToolCallsPerQuestion = ResolveToolCallBudget();
 
             bool suiteHasBoard = run.BenchmarkSuite?.GameSnapshot != null;
             var promptOptions = !string.IsNullOrWhiteSpace(run.CandidatePromptOptionsJson)

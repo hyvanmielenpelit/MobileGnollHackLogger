@@ -528,6 +528,7 @@
                 <th>Status</th>
                 <th>Intelligence Index</th>
                 <th>Speed Index</th>
+                <th scope="col">Instrument</th>
                 <th>Duration</th>
                 <th scope="col">Cost</th>
                 <th>Date (UTC)</th>
@@ -572,6 +573,23 @@
                       }
                     } @else {
                       <span class="text-muted">-</span>
+                    }
+                  </td>
+                  <td class="instrument-cell">
+                    @if (run.candidateSystemPromptSha256) {
+                      <span class="instrument-fingerprint" [attr.title]="'Candidate system prompt SHA-256: ' + run.candidateSystemPromptSha256">
+                        {{ shortFingerprint(run.candidateSystemPromptSha256) }}
+                      </span>
+                    } @else {
+                      <span class="text-muted">-</span>
+                    }
+                    @if (instrumentChangeOf(run); as change) {
+                      <span class="instrument-changed"
+                            [attr.aria-label]="'Instrument changed since run ' + change.comparedToRunId"
+                            [attr.interestfor]="'tip-instr-' + run.id"
+                            [attr.style]="'anchor-name: --tip-instr-' + run.id">INSTRUMENT CHANGED</span>
+                      <div popover="hint" class="gh-tooltip" [id]="'tip-instr-' + run.id"
+                           [attr.style]="'position-anchor: --tip-instr-' + run.id">{{ change.description }}</div>
                     }
                   </td>
                   <td>{{ formatDuration(run.totalAnswerDurationMs || run.totalDurationMs) }}</td>
@@ -959,7 +977,17 @@
           @if (showAgreementTile) {
             <div class="score-card">
               <span class="score-label">Assessor Agreement</span>
-              <span class="score-subvalue">{{ agreementMeanAbsDeltaLabel }} pts{{ agreementMeanSignedDeltaLabel ? ' · ' + agreementMeanSignedDeltaLabel : '' }}</span>
+              <span class="score-subvalue">
+                {{ agreementMeanAbsDeltaLabel }} pts{{ agreementMeanSignedDeltaLabel ? ' · ' + agreementMeanSignedDeltaLabel : '' }}
+                <!--
+                  H4. At n = 1 a displayed 0.0 is the arithmetic of a single point and currently reads as
+                  strong agreement. The same marker the Speed Index card uses, for the same reason: the
+                  number is real but does not mean what it looks like.
+                -->
+                @if (showAgreementAdvisory) {
+                  <span class="degraded-tag" [title]="agreementAdvisoryTitle">*</span>
+                }
+              </span>
               <span class="score-note">{{ agreementCoverageLabel }} · {{ agreementModeLabel }} · {{ secondOpinionBlindLabel }}</span>
             </div>
           }
@@ -971,14 +999,25 @@
             <span class="score-label">Answer Duration</span>
             <span class="score-subvalue">{{ formatDuration(selectedRunDetail.totalAnswerDurationMs || selectedRunDetail.totalDurationMs) }}</span>
           </div>
+          <!--
+            H5. The card showed one figure, and the split it hides is the interesting one: on run 13 the
+            candidate is 28 % of the cost and grading plus verification is 72 %, which inverts the intuition
+            that a benchmark's cost is the model under test.
+          -->
           <div class="score-card">
             <span class="score-label">Estimated Cost</span>
-            <span class="score-subvalue">
+            <span class="score-subvalue"
+                  [attr.interestfor]="costBreakdownLabel ? 'tip-run-cost-breakdown' : null"
+                  [attr.style]="costBreakdownLabel ? 'anchor-name: --tip-run-cost-breakdown' : null">
               {{ formatRunEstimatedCost(selectedRunDetail) }}
               @if (selectedRunDetail.pricingIncomplete) {
                 <span class="degraded-tag" title="Some participating models lack pricing">*</span>
               }
             </span>
+            @if (costBreakdownLabel) {
+              <div popover="hint" class="gh-tooltip" id="tip-run-cost-breakdown"
+                   style="position-anchor: --tip-run-cost-breakdown">{{ costBreakdownLabel }}</div>
+            }
             <span class="score-note">{{ selectedRunDetail.pricingSource || 'Pricing unknown' }}</span>
           </div>
         </div>

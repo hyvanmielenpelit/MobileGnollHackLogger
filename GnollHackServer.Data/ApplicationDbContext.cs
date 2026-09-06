@@ -266,6 +266,9 @@ namespace MobileGnollHackLogger.Data
 
             modelBuilder.Entity<ChatSession>()
                 .Property(s => s.TotalEstimatedCost).HasPrecision(18, 8);
+
+            modelBuilder.Entity<ChatSession>()
+                .Property(s => s.TotalUserEstimatedCost).HasPrecision(18, 8);
         }
 
         public async Task<TopScoreNumberData> GetTopScoreNumberAsync(long databaseId, string? mode, string? death = null)

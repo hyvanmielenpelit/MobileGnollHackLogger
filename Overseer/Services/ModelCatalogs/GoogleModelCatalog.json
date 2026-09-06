@@ -10,7 +10,14 @@
       "inputPerMillion": 2.00,
       "outputPerMillion": 12.00,
       "cachedInputPerMillion": 0.20,
-      "asOf": "2026-09-05"
+      "asOf": "2026-09-06",
+      "longContext": {
+        "thresholdInputTokens": 200000,
+        "inputPerMillion": 4.00,
+        "outputPerMillion": 18.00,
+        "cachedInputPerMillion": 0.40
+      },
+      "serviceTierMultipliers": { "batch": 0.5, "flex": 0.5, "priority": 1.8 }
     }
   },
   {
@@ -26,7 +33,8 @@
       "inputPerMillion": 0.25,
       "outputPerMillion": 1.50,
       "cachedInputPerMillion": 0.025,
-      "asOf": "2026-09-05"
+      "asOf": "2026-09-06",
+      "serviceTierMultipliers": { "batch": 0.5, "flex": 0.5, "priority": 1.8 }
     }
   },
   {
@@ -42,7 +50,8 @@
       "inputPerMillion": 0.30,
       "outputPerMillion": 2.50,
       "cachedInputPerMillion": 0.03,
-      "asOf": "2026-09-05"
+      "asOf": "2026-09-06",
+      "serviceTierMultipliers": { "batch": 0.5, "flex": 0.5, "priority": 1.8 }
     }
   },
   {
@@ -56,7 +65,8 @@
       "inputPerMillion": 1.50,
       "outputPerMillion": 9.00,
       "cachedInputPerMillion": 0.15,
-      "asOf": "2026-09-05"
+      "asOf": "2026-09-06",
+      "serviceTierMultipliers": { "batch": 0.5, "flex": 0.5, "priority": 1.8 }
     }
   },
   {
@@ -67,10 +77,18 @@
     "contextWindowSize": 1048576,
     "maxOutputTokens": 65536,
     "pricing": {
-      "inputPerMillion": 1.50,
-      "outputPerMillion": 7.50,
-      "cachedInputPerMillion": 0.15,
-      "asOf": "2026-09-05"
+      "inputPerMillion": 0.75,
+      "outputPerMillion": 3.75,
+      "cachedInputPerMillion": 0.075,
+      "asOf": "2026-09-06",
+      "serviceTierMultipliers": { "batch": 0.5, "flex": 0.5, "priority": 1.8 },
+      "scheduledChange": {
+        "effectiveFrom": "2027-01-01",
+        "inputPerMillion": 1.50,
+        "outputPerMillion": 7.50,
+        "cachedInputPerMillion": 0.15,
+        "note": "Promotional pricing through 2026-12-31"
+      }
     }
   },
   {
@@ -84,7 +102,15 @@
       "inputPerMillion": 0.75,
       "outputPerMillion": 3.75,
       "cachedInputPerMillion": 0.075,
-      "asOf": "2026-09-05"
+      "asOf": "2026-09-06",
+      "serviceTierMultipliers": { "batch": 0.5, "flex": 0.5, "priority": 1.8 },
+      "scheduledChange": {
+        "effectiveFrom": "2027-01-01",
+        "inputPerMillion": 1.50,
+        "outputPerMillion": 7.50,
+        "cachedInputPerMillion": 0.15,
+        "note": "Promotional pricing through 2026-12-31"
+      }
     }
   },
   {
@@ -98,7 +124,15 @@
       "inputPerMillion": 0.75,
       "outputPerMillion": 3.75,
       "cachedInputPerMillion": 0.075,
-      "asOf": "2026-09-05"
+      "asOf": "2026-09-06",
+      "serviceTierMultipliers": { "batch": 0.5, "flex": 0.5, "priority": 1.8 },
+      "scheduledChange": {
+        "effectiveFrom": "2027-01-01",
+        "inputPerMillion": 1.50,
+        "outputPerMillion": 7.50,
+        "cachedInputPerMillion": 0.15,
+        "note": "Promotional pricing through 2026-12-31"
+      }
     }
   }
 ]

@@ -1,6 +1,7 @@
 namespace Overseer.Services.Agents;
 
 using MobileGnollHackLogger.Data;
+using Overseer.Services.Providers;
 
 public class AgentRunResult
 {
@@ -24,6 +25,15 @@ public class AgentRunResult
     public int ToolCallsBlocked { get; set; }
     public int ModelCallCount { get; set; }
     public int ToolCallCount { get; set; }
+
+    /// <summary>
+    /// One entry per model call of this turn, in call order. Exists so cost can be computed per request:
+    /// a long-context rate card is keyed on a single request's prompt size, and the aggregates above have
+    /// already lost that. Bounded by the run's MaxTotalModelCalls (48 by default), so it is a few dozen
+    /// small records and is never persisted as a list. Empty when the provider reported no usage; costing
+    /// then falls back to the aggregates.
+    /// </summary>
+    public List<TokenUsageReport> ModelCallUsages { get; set; } = new();
 
     /// <summary>
     /// Wall-clock time spent executing tool batches during this turn, summed per batch rather

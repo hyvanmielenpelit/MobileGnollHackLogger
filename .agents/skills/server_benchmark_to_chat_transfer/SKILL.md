@@ -367,6 +367,49 @@ Any implementation plan derived from a benchmark run must replicate this section
   - **T10**: Input token amplification (28.4:1) attacked via T8 and measured via H7 cost reporting.
 - **Verification Outcome**: Run 11 promoted T2 (`verboseMode: true`): criterion — Completeness rises materially under `verboseMode: true`; result — 83.0 → 83.8, inside noise, while Accuracy fell 4.2 and mean model time rose 28 %; hypothesis refuted, the concise default is kept.
 
+### Run 13 — 2026-09-05: GPT-5.6 Luna
+- **Candidate**: GPT-5.6 Luna, thinking level `max`. 18 questions (Default Suite 5).
+- **Prompt options**: `overseerMode: 0`, `verboseMode: true`, `spoilerFreeMode: false`,
+  `enableToolUse: true`, `enableWebSearch: false`, `allowSourceCodeReferences: true`,
+  `enableSubAgents: false`, `isGameOn: false`, `developerMode: false`, `hasMessageHistory: false`,
+  `hasWikiContext: false`, `hasGameSnapshot: false`. `parallelMode`: Enabled (2).
+- **Grading regime**: harness version 12; scoring method version 7; profile Standard Intelligence
+  Index (Default); assessor Gemini 3.7 Flash (`high`); second opinion Claude 5 Opus, blind, mode
+  Flagged, threshold 50, outlier delta 25; claim verifier Claude 5 Opus (`high`).
+- **Instrument SHAs**:
+  - `CandidateSystemPromptSha256`: `e9b3e9a75278a5cbd09fbe3afb270806a3be318863c9c3e1623897428a1c16c6`
+  - `ToolGuidesSha256`: `f59d8b30d2c2855931275fb0965f434db8ceb20feba84b4a5ac86eb65734f4a9`
+  - `KnowledgeBaseHeadSha`: `576ca5741d1bd79ef1cb2f7db575709cf0bb0db8`
+- **Quality**: Accuracy 95.7 / L 5.7; Completeness 84.8 / L 4.9; Conciseness 91.2; Readability
+  96.4. Intelligence Index 94 ± 4 (95 % CI); unweighted mean 91; holistic 91. Critical errors: 1
+  (Q1, fabricated lycanthropy immunity). Refuted claims 0; unverified claims 3 across Q1 and Q7,
+  all 3 supported by the verifier. Contested verdicts 0. Advisory flags 3 (reasoning bleed 3,
+  repeated fragments 1) on Q3, Q5, Q13.
+- **Speed**: mean model time 118.9 s (max 279.7 s, Q13); Speed Index 61 (advisory — profile targets
+  15 000 ms, candidate ran at `max`); median TTFT 2 931 ms. *r* = 0.68 source share vs. model time;
+  *r* = +0.11 vs. quality.
+- **Cost**: 305 tool calls — Source 198 (64.9 %), Wiki 98 (32.1 %), Structured Lookup 8 (2.6 %),
+  Knowledge Base 1 (0.3 %). Zero-KB answers 17 of 18 (prompt-compliant). Token ratio 33.5 : 1
+  (5 182 903 in / 154 555 out), cache-read share 90.5 %. Estimated run cost $1.38 — candidate
+  $0.38 (28 %), assessor $0.51, verifier $0.49.
+- **Limits change made after this run**: in response to S2 (Q7 and Q11 both at 32/35 and both below
+  the run mean), the per-question resource caps were **unbanded** — `ToolCallBudget` 25/35/45 → **45
+  flat**, `ToolIterations` 12/16/22 → **22 flat**, `TotalModelCalls` 16/22/28 → **28 flat**, matching
+  production. `QuestionTimeoutSeconds` stays banded at 420/600/720 because it is pinned to the
+  speed-score floor. **Runs after this point are not strictly comparable with runs 1–13 on
+  Completeness.**
+- **Transfer Action**: T11 (fabrication under *partial* retrieval failure) deferred — second
+  observation, but the pair is not a reproduction (`ToolGuidesSha256` moved with T8); prompt
+  already forbids it at `ChatService.cs:1220/1230/1241`, so no rung-7 edit. T12 handed to the wiki
+  repository (rung 2, exempt). T13/T14 answered with measurement (H1, H5) rather than instruction.
+- **Verification Outcome**: **T8 (heading-scoped wiki snippets, rung 3) — criterion met on 1 of 6
+  measures.** Wiki share 32.1 % (target ≥ 35 %), source share 64.9 % (≤ 60 %), tool calls 305
+  (≤ 300), input tokens 5.18 M (≤ 3.4 M, *wrong direction*), budget-pressured questions 2 (≤ 1);
+  Q12 100 with no fabrication ✔. Side-effect check clean in the candidate's favour (Accuracy +2.2,
+  Index +3). Rollback trigger fires as written; **kept** by explicit decision — four of five misses
+  moved the intended way and the input-token miss is on an axis T8 does not control. Criterion
+  re-baselined; input-token attribution moved to harness finding H1.
+
 ---
 
 ## 12. Cross-References

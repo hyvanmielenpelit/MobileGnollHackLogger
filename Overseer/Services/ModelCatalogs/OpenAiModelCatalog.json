@@ -9,10 +9,16 @@
     "contextWindowSize": 1050000,
     "maxOutputTokens": 128000,
     "pricing": {
-      "inputPerMillion": 5.00,
-      "outputPerMillion": 22.50,
-      "cachedInputPerMillion": 2.50,
-      "asOf": "2026-09-05"
+      "inputPerMillion": 2.50,
+      "outputPerMillion": 15.00,
+      "cachedInputPerMillion": 0.25,
+      "asOf": "2026-09-06",
+      "longContext": {
+        "thresholdInputTokens": 272000,
+        "inputPerMillion": 5.00,
+        "outputPerMillion": 22.50
+      },
+      "serviceTierMultipliers": { "batch": 0.5, "flex": 0.5, "priority": 2.0, "fast": 2.0 }
     }
   },
   {
@@ -27,8 +33,14 @@
     "pricing": {
       "inputPerMillion": 30.00,
       "outputPerMillion": 180.00,
-      "cachedInputPerMillion": 15.00,
-      "asOf": "2026-09-05"
+      "cachedInputPerMillion": null,
+      "asOf": "2026-09-06",
+      "longContext": {
+        "thresholdInputTokens": 272000,
+        "inputPerMillion": 60.00,
+        "outputPerMillion": 270.00
+      },
+      "serviceTierMultipliers": { "batch": 0.5, "flex": 0.5, "priority": 2.0, "fast": 2.0 }
     }
   },
   {
@@ -43,8 +55,9 @@
     "pricing": {
       "inputPerMillion": 0.75,
       "outputPerMillion": 4.50,
-      "cachedInputPerMillion": 0.375,
-      "asOf": "2026-09-05"
+      "cachedInputPerMillion": 0.075,
+      "asOf": "2026-09-06",
+      "serviceTierMultipliers": { "batch": 0.5, "flex": 0.5, "priority": 2.0, "fast": 2.0 }
     }
   },
   {
@@ -61,8 +74,9 @@
     "pricing": {
       "inputPerMillion": 0.20,
       "outputPerMillion": 1.25,
-      "cachedInputPerMillion": 0.10,
-      "asOf": "2026-09-05"
+      "cachedInputPerMillion": 0.02,
+      "asOf": "2026-09-06",
+      "serviceTierMultipliers": { "batch": 0.5, "flex": 0.5, "priority": 2.0, "fast": 2.0 }
     }
   },
   {
@@ -75,10 +89,16 @@
     "contextWindowSize": 1050000,
     "maxOutputTokens": 128000,
     "pricing": {
-      "inputPerMillion": 10.00,
-      "outputPerMillion": 45.00,
-      "cachedInputPerMillion": 5.00,
-      "asOf": "2026-09-05"
+      "inputPerMillion": 5.00,
+      "outputPerMillion": 30.00,
+      "cachedInputPerMillion": 0.50,
+      "asOf": "2026-09-06",
+      "longContext": {
+        "thresholdInputTokens": 272000,
+        "inputPerMillion": 10.00,
+        "outputPerMillion": 45.00
+      },
+      "serviceTierMultipliers": { "batch": 0.5, "flex": 0.5, "priority": 2.0, "fast": 2.0 }
     }
   },
   {
@@ -93,8 +113,9 @@
     "pricing": {
       "inputPerMillion": 30.00,
       "outputPerMillion": 180.00,
-      "cachedInputPerMillion": 15.00,
-      "asOf": "2026-09-05"
+      "cachedInputPerMillion": null,
+      "asOf": "2026-09-06",
+      "serviceTierMultipliers": { "batch": 0.5, "flex": 0.5, "priority": 2.0, "fast": 2.0 }
     }
   },
   {
@@ -111,7 +132,13 @@
       "outputPerMillion": 20.00,
       "cachedInputPerMillion": 0.40,
       "cacheWritePerMillion": 5.00,
-      "asOf": "2026-09-05"
+      "asOf": "2026-09-06",
+      "longContext": {
+        "thresholdInputTokens": 272000,
+        "inputPerMillion": 8.00,
+        "outputPerMillion": 30.00
+      },
+      "serviceTierMultipliers": { "batch": 0.5, "flex": 0.5, "priority": 2.0, "fast": 2.0 }
     }
   },
   {
@@ -128,7 +155,13 @@
       "outputPerMillion": 12.00,
       "cachedInputPerMillion": 0.20,
       "cacheWritePerMillion": 2.50,
-      "asOf": "2026-09-05"
+      "asOf": "2026-09-06",
+      "longContext": {
+        "thresholdInputTokens": 272000,
+        "inputPerMillion": 4.00,
+        "outputPerMillion": 18.00
+      },
+      "serviceTierMultipliers": { "batch": 0.5, "flex": 0.5, "priority": 2.0, "fast": 2.0 }
     }
   },
   {
@@ -145,7 +178,38 @@
       "outputPerMillion": 1.20,
       "cachedInputPerMillion": 0.02,
       "cacheWritePerMillion": 0.25,
-      "asOf": "2026-09-05"
+      "asOf": "2026-09-06",
+      "longContext": {
+        "thresholdInputTokens": 272000,
+        "inputPerMillion": 0.40,
+        "outputPerMillion": 1.80
+      },
+      "serviceTierMultipliers": { "batch": 0.5, "flex": 0.5, "priority": 2.0, "fast": 2.0 }
+    }
+  },
+  {
+    "prefixes": ["gpt-6-astra"],
+    "displayName": "GPT-6 Astra",
+    "releaseDate": "2026-09-04",
+    "thinkingLevels": ["low", "medium", "high", "xhigh", "max"],
+    "reasoningModes": [],
+    "reasoningSummaries": ["auto", "concise", "detailed"],
+    "contextWindowSize": 1050000,
+    "maxOutputTokens": 128000,
+    "pricing": {
+      "inputPerMillion": 10.00,
+      "outputPerMillion": 50.00,
+      "cachedInputPerMillion": 1.00,
+      "cacheWritePerMillion": 12.50,
+      "asOf": "2026-09-06",
+      "longContext": {
+        "thresholdInputTokens": 272000,
+        "inputPerMillion": 20.00,
+        "outputPerMillion": 75.00,
+        "cachedInputPerMillion": 2.00,
+        "cacheWritePerMillion": 25.00
+      },
+      "serviceTierMultipliers": { "batch": 0.5, "flex": 0.5, "priority": 2.0, "fast": 2.0 }
     }
   }
 ]

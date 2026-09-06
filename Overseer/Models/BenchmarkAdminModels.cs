@@ -613,6 +613,16 @@ public class BenchmarkRunDetailDto
     public string? ToolGuidesSha256 { get; set; }
     public string? KnowledgeBaseHeadSha { get; set; }
 
+    /// <summary>
+    /// H3. Run-wide tool calls by family, keyed "source", "wiki", "lookup", "knowledgeBase", "other", and
+    /// the count of answered questions that made no knowledge-base call. Classified once, on the server, by
+    /// BenchmarkChatTransfer.ClassifyTool — the client kept its own hard-coded copy of the tool-name lists,
+    /// which drifted silently every time a tool was added. Null on a run detail served before this existed;
+    /// the client keeps its own loop only as a fallback for those.
+    /// </summary>
+    public IReadOnlyDictionary<string, int>? ToolFamilyCounts { get; set; }
+    public int? ZeroKnowledgeBaseAnswerCount { get; set; }
+
     /// <summary>Answers whose two verdicts disagreed, among those graded twice.</summary>
     public int SecondOpinionDisagreementCount { get; set; }
 
@@ -897,6 +907,15 @@ public class BenchmarkRunSummaryDto
     public string? CandidatePromptSourceUsed { get; set; }
     public string? HarnessVersion { get; set; }
     public long TotalDurationMs { get; set; }
+
+    /// <summary>
+    /// H2. The instrument fingerprint, already on the detail model, carried on the summary as well so the
+    /// run list can say at a glance whether two runs form a reproduction. The report states that rule but
+    /// the list could not support it, and until now the check was done by hand.
+    /// </summary>
+    public string? CandidateSystemPromptSha256 { get; set; }
+    public string? ToolGuidesSha256 { get; set; }
+    public string? KnowledgeBaseHeadSha { get; set; }
 
     public decimal? EstimatedCost { get; set; }
     public bool PricingIncomplete { get; set; }

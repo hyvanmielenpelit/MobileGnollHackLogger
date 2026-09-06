@@ -2,11 +2,37 @@ namespace Overseer.Services;
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Text.Json;
 using System.Threading.Tasks;
 using MobileGnollHackLogger.Data;
+using Overseer.Services.Providers;
 
 public enum ModelPricingSource { Catalog, Custom }
+
+/// <summary>
+/// The second rate card a provider applies to a single request whose prompt exceeds
+/// <see cref="ThresholdInputTokens"/>. Absolute rates rather than a multiplier: providers surcharge
+/// input and output by different factors (OpenAI 2x/1.5x, Google Pro 2x/1.5x).
+/// </summary>
+public record LongContextPricing(
+    int ThresholdInputTokens,
+    decimal InputPerMillion,
+    decimal OutputPerMillion,
+    decimal? CachedInputPerMillion = null,
+    decimal? CacheWritePerMillion = null);
+
+/// <summary>
+/// A price change the provider has already announced for a future date. The base card is always the
+/// rate in force today; this is the card that takes over on <see cref="EffectiveFrom"/>.
+/// </summary>
+public record ScheduledPricingChange(
+    DateOnly EffectiveFrom,
+    decimal InputPerMillion,
+    decimal OutputPerMillion,
+    decimal? CachedInputPerMillion = null,
+    decimal? CacheWritePerMillion = null,
+    string? Note = null);
 
 public record ModelPricing(
     decimal InputPerMillion,
@@ -14,7 +40,11 @@ public record ModelPricing(
     decimal? CachedInputPerMillion = null,
     decimal? CacheWritePerMillion = null,
     ModelPricingSource Source = ModelPricingSource.Catalog,
-    string? AsOf = null);
+    string? AsOf = null,
+    LongContextPricing? LongContext = null,
+    IReadOnlyDictionary<string, decimal>? ServiceTierMultipliers = null,
+    ScheduledPricingChange? ScheduledChange = null,
+    bool ScheduleElapsed = false);
 
 public record BenchmarkRunPricing(
     ModelPricing? Candidate = null,
@@ -46,13 +76,20 @@ public class ModelPricingService
         if (string.Equals(config.PricingMode, "custom", StringComparison.OrdinalIgnoreCase) &&
             config.InputPricePerMillion.HasValue && config.OutputPricePerMillion.HasValue)
         {
+            // Custom overrides are flat-rate by design: no long-context card, no service-tier multiplier, no
+            // schedule. Supporting all three would need a threshold, four rates, a multiplier map and a date on
+            // both override entities; nobody has one. An operator who needs any of them sets the rate they want.
+            // The model form says so to the operator — see ai-model-form's pricing help text.
             return new ModelPricing(
                 config.InputPricePerMillion.Value,
                 config.OutputPricePerMillion.Value,
                 config.CachedInputPricePerMillion,
                 CacheWritePerMillion: null,
                 Source: ModelPricingSource.Custom,
-                AsOf: null);
+                AsOf: null,
+                LongContext: null,
+                ServiceTierMultipliers: null,
+                ScheduledChange: null);
         }
 
         return ResolveDefault(config.Provider, config.ModelId);
@@ -65,19 +102,28 @@ public class ModelPricingService
         if (string.Equals(model.PricingMode, "custom", StringComparison.OrdinalIgnoreCase) &&
             model.InputPricePerMillion.HasValue && model.OutputPricePerMillion.HasValue)
         {
+            // Custom overrides are flat-rate by design: no long-context card, no service-tier multiplier, no
+            // schedule. Supporting all three would need a threshold, four rates, a multiplier map and a date on
+            // both override entities; nobody has one. An operator who needs any of them sets the rate they want.
+            // The model form says so to the operator — see ai-model-form's pricing help text.
             return new ModelPricing(
                 model.InputPricePerMillion.Value,
                 model.OutputPricePerMillion.Value,
                 model.CachedInputPricePerMillion,
                 CacheWritePerMillion: null,
                 Source: ModelPricingSource.Custom,
-                AsOf: null);
+                AsOf: null,
+                LongContext: null,
+                ServiceTierMultipliers: null,
+                ScheduledChange: null);
         }
 
         return ResolveDefault(model.Provider, model.ModelId);
     }
 
-    public virtual ModelPricing? ResolveDefault(string? provider, string? modelId)
+    /// <param name="today">UTC today by default; injected only by tests, which must be able to stand
+    /// either side of a scheduled change without waiting for the calendar.</param>
+    public virtual ModelPricing? ResolveDefault(string? provider, string? modelId, DateOnly? today = null)
     {
         if (string.IsNullOrWhiteSpace(provider) || string.IsNullOrWhiteSpace(modelId))
             return null;
@@ -87,13 +133,99 @@ public class ModelPricingService
             return null;
 
         var dp = meta.DefaultPricing;
+        var scheduled = ParseScheduled(dp.ScheduledChange);   // null when absent or the date is unparseable
+        var now = today ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        bool elapsed = scheduled != null && now >= scheduled.EffectiveFrom;
+
+        // The base card is always the rate in force today, so an elapsed schedule replaces it outright.
+        // ScheduleElapsed is not an error: the price is correct, but the catalog entry now carries a
+        // change that has already happened and should be folded into the base rates and re-verified. The
+        // admin views surface it for exactly that reason.
         return new ModelPricing(
-            dp.InputPerMillion,
-            dp.OutputPerMillion,
-            dp.CachedInputPerMillion,
-            dp.CacheWritePerMillion,
+            elapsed ? scheduled!.InputPerMillion  : dp.InputPerMillion,
+            elapsed ? scheduled!.OutputPerMillion : dp.OutputPerMillion,
+            elapsed ? (scheduled!.CachedInputPerMillion ?? dp.CachedInputPerMillion) : dp.CachedInputPerMillion,
+            elapsed ? (scheduled!.CacheWritePerMillion  ?? dp.CacheWritePerMillion)  : dp.CacheWritePerMillion,
             ModelPricingSource.Catalog,
-            dp.AsOf);
+            dp.AsOf,
+            LongContext: ToLongContext(dp.LongContext),
+            ServiceTierMultipliers: dp.ServiceTierMultipliers,
+            ScheduledChange: scheduled,
+            ScheduleElapsed: elapsed);
+    }
+
+    /// <summary>
+    /// Converts a catalog long-context block to its runtime record, or null when the entry publishes a
+    /// single flat rate. Never inferred from a sibling model: a long-context tier exists only where the
+    /// provider's own page states one.
+    /// </summary>
+    internal static LongContextPricing? ToLongContext(ModelCatalogLongContextPricing? source)
+    {
+        if (source == null || source.ThresholdInputTokens <= 0) return null;
+
+        return new LongContextPricing(
+            source.ThresholdInputTokens,
+            source.InputPerMillion,
+            source.OutputPerMillion,
+            source.CachedInputPerMillion,
+            source.CacheWritePerMillion);
+    }
+
+    /// <summary>
+    /// Converts a catalog scheduled-change block to its runtime record. An unparseable or missing
+    /// <c>effectiveFrom</c> yields null — the base card, unchanged. A malformed date must never silently
+    /// change a price.
+    /// </summary>
+    internal static ScheduledPricingChange? ParseScheduled(ModelCatalogScheduledPricing? source)
+    {
+        if (source == null || string.IsNullOrWhiteSpace(source.EffectiveFrom)) return null;
+
+        if (!DateOnly.TryParseExact(
+                source.EffectiveFrom.Trim(), "yyyy-MM-dd",
+                CultureInfo.InvariantCulture, DateTimeStyles.None, out var effectiveFrom))
+        {
+            return null;
+        }
+
+        return new ScheduledPricingChange(
+            effectiveFrom,
+            source.InputPerMillion,
+            source.OutputPerMillion,
+            source.CachedInputPerMillion,
+            source.CacheWritePerMillion,
+            source.Note);
+    }
+
+    /// <summary>
+    /// The multiplier for the tier the provider actually served. Reads ActualServiceTierUsed first and
+    /// only falls back to the requested tier: the two use different value spaces (OpenAI requests
+    /// "auto"/"fast" and serves "default"/"priority"), and a priority request that was served default
+    /// must be billed as default. Unknown or unlisted tiers — including "default" and "standard" — are
+    /// 1.0, never zero.
+    /// </summary>
+    public static decimal ResolveServiceTierMultiplier(
+        ModelPricing pricing, string? actualServiceTier, string? requestedServiceTier)
+    {
+        if (pricing?.ServiceTierMultipliers == null) return 1.0m;
+
+        // Once the provider has reported a served tier, that tier is what was billed — listed or not.
+        // Falling through to the requested tier here would be exactly the R3 defect: OpenAI requests
+        // "auto"/"fast" and serves "default"/"priority", so a priority request served as default is
+        // reported as "default", which no catalog lists, and the fall-through would bill it at 2x.
+        var servedKey = ProviderHelper.NormalizeServiceTier(actualServiceTier);
+        if (servedKey != null)
+        {
+            return pricing.ServiceTierMultipliers.TryGetValue(servedKey, out var served) ? served : 1.0m;
+        }
+
+        // Only when the provider reported no tier at all does the requested one stand in for it.
+        var requestedKey = ProviderHelper.NormalizeServiceTier(requestedServiceTier);
+        if (requestedKey != null && pricing.ServiceTierMultipliers.TryGetValue(requestedKey, out var requested))
+        {
+            return requested;
+        }
+
+        return 1.0m;
     }
 
     public virtual async Task<ModelPricing?> ResolveForConfigurationAsync(
@@ -140,7 +272,44 @@ public class ModelPricingService
                         var source = string.Equals(sourceStr, "custom", StringComparison.OrdinalIgnoreCase) ? ModelPricingSource.Custom : ModelPricingSource.Catalog;
                         string? asOf = roleElem.TryGetProperty("asOf", out var pAsOf) ? pAsOf.GetString() : null;
 
-                        return new ModelPricing(inPrice, outPrice, cachedIn, cacheWrite, source, asOf);
+                        // The snapshot stores the *resolved* card, so a run started before a scheduled
+                        // change recosts at the rates that applied when it ran, and no schedule logic runs
+                        // on the replay path at all. A snapshot without these keys parses to flat pricing,
+                        // which every run recorded before tiered pricing existed is.
+                        LongContextPricing? longContext = null;
+                        if (roleElem.TryGetProperty("longContext", out var pLc) && pLc.ValueKind == JsonValueKind.Object)
+                        {
+                            int threshold = pLc.TryGetProperty("thresholdInputTokens", out var pTh) && pTh.ValueKind == JsonValueKind.Number
+                                ? pTh.GetInt32() : 0;
+                            if (threshold > 0)
+                            {
+                                longContext = new LongContextPricing(
+                                    threshold,
+                                    pLc.TryGetProperty("inputPerMillion", out var lIn) ? lIn.GetDecimal() : 0m,
+                                    pLc.TryGetProperty("outputPerMillion", out var lOut) ? lOut.GetDecimal() : 0m,
+                                    pLc.TryGetProperty("cachedInputPerMillion", out var lCIn) && lCIn.ValueKind == JsonValueKind.Number ? lCIn.GetDecimal() : null,
+                                    pLc.TryGetProperty("cacheWritePerMillion", out var lCW) && lCW.ValueKind == JsonValueKind.Number ? lCW.GetDecimal() : null);
+                            }
+                        }
+
+                        Dictionary<string, decimal>? tiers = null;
+                        if (roleElem.TryGetProperty("serviceTierMultipliers", out var pTiers) && pTiers.ValueKind == JsonValueKind.Object)
+                        {
+                            tiers = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+                            foreach (var tierProp in pTiers.EnumerateObject())
+                            {
+                                if (tierProp.Value.ValueKind == JsonValueKind.Number)
+                                {
+                                    tiers[tierProp.Name] = tierProp.Value.GetDecimal();
+                                }
+                            }
+                            if (tiers.Count == 0) tiers = null;
+                        }
+
+                        return new ModelPricing(
+                            inPrice, outPrice, cachedIn, cacheWrite, source, asOf,
+                            LongContext: longContext,
+                            ServiceTierMultipliers: tiers);
                     }
                     return null;
                 }
@@ -166,6 +335,11 @@ public class ModelPricingService
         return new BenchmarkRunPricing(liveCandidate, liveAssessor, liveVerifier, liveSecondOpinion, IsSnapshot: false);
     }
 
+    /// <summary>
+    /// Flat-rate costing. Ignores any long-context card and any service-tier multiplier — see the
+    /// per-call overload. Correct for roles costed from aggregate totals only (assessor, second
+    /// opinion, claim verifier).
+    /// </summary>
     public static decimal ComputeCost(
         ModelPricing pricing,
         long inputTokens, long outputTokens,
@@ -190,5 +364,159 @@ public class ModelPricingService
 
         return cost;
     }
+
+    /// <summary>
+    /// Costs one turn from its individual model calls, so a long-context card is applied per request,
+    /// which is how every provider that publishes one bills it, and then scaled by the served service
+    /// tier, which is a property of the turn. The schedule has already been applied: the ModelPricing
+    /// handed in is the card in force today.
+    ///
+    /// Prefer this over the aggregate overload wherever per-call usage survives. Passing a turn's summed
+    /// tokens to the aggregate overload is correct only for a flat-rate model: with a long-context card
+    /// it would surcharge the whole turn whenever the sum crossed the threshold, and an agentic turn's
+    /// sum crosses it routinely while no single request does. Run 13's Q18 reported 847,245 input tokens
+    /// across ~30 calls against a 272,000 threshold — not one of them was a long-context request.
+    /// </summary>
+    public static decimal ComputeCost(
+        ModelPricing pricing,
+        IReadOnlyList<TokenUsageReport> calls,
+        string? actualServiceTier = null,
+        string? requestedServiceTier = null)
+    {
+        if (pricing == null || calls == null || calls.Count == 0) return 0m;
+
+        decimal tierMultiplier =
+            ResolveServiceTierMultiplier(pricing, actualServiceTier, requestedServiceTier);
+
+        decimal total = 0m;
+        foreach (var call in calls)
+        {
+            bool longContext = pricing.LongContext != null
+                && call.TotalPromptTokens > pricing.LongContext.ThresholdInputTokens;
+
+            // The surcharge applies to the full request — input, cached input, cache writes and output
+            // alike — not only to the tokens above the threshold. A null CacheWritePerMillion on the
+            // long-context card falls back to the base rate, which is what a provider page that does not
+            // mention cache writes is saying.
+            var card = longContext
+                ? pricing with
+                  {
+                      InputPerMillion = pricing.LongContext!.InputPerMillion,
+                      OutputPerMillion = pricing.LongContext.OutputPerMillion,
+                      CachedInputPerMillion =
+                          pricing.LongContext.CachedInputPerMillion ?? pricing.CachedInputPerMillion,
+                      CacheWritePerMillion =
+                          pricing.LongContext.CacheWritePerMillion ?? pricing.CacheWritePerMillion
+                  }
+                : pricing;
+
+            total += ComputeCost(
+                card, call.UncachedInputTokens, call.OutputTokens,
+                call.CacheReadTokens, call.CacheCreationTokens);
+        }
+
+        // Multiplicative composition is what the providers document: Anthropic states fast-mode pricing
+        // "stacks with other pricing modifiers", and OpenAI's gpt-5.4 page applies the long-context
+        // surcharge "for standard, batch, and flex" — i.e. within whichever tier is in force.
+        return total * tierMultiplier;
+    }
+
+    /// <summary>
+    /// The portion of a turn's tokens that came from model calls large enough to bill at the long-context
+    /// rate. Not additional tokens — a subset of the same ones, which is what makes the split at costing
+    /// time a partition rather than a double count. All zero for a flat-rate model, so a caller may store
+    /// the result unconditionally.
+    /// </summary>
+    public static LongContextTokenBuckets ComputeLongContextBuckets(
+        ModelPricing? pricing, IReadOnlyList<TokenUsageReport>? calls)
+    {
+        if (pricing?.LongContext == null || calls == null || calls.Count == 0)
+        {
+            return default;
+        }
+
+        int threshold = pricing.LongContext.ThresholdInputTokens;
+        int input = 0, output = 0, cacheRead = 0, cacheCreation = 0, callCount = 0;
+        foreach (var call in calls)
+        {
+            if (call.TotalPromptTokens <= threshold) continue;
+            callCount++;
+            input += call.TotalPromptTokens;
+            output += call.OutputTokens;
+            cacheRead += call.CacheReadTokens;
+            cacheCreation += call.CacheCreationTokens;
+        }
+
+        return new LongContextTokenBuckets(input, output, cacheRead, cacheCreation, callCount);
+    }
+
+    /// <summary>
+    /// Costs a benchmark role from stored run totals, charging the long-context portion at its own card and
+    /// the remainder at the base card, then scaling by the served service tier.
+    ///
+    /// <paramref name="totalPromptTokens"/> and <paramref name="longContextPromptTokens"/> are <b>total</b>
+    /// prompt tokens including cache reads — the shape BenchmarkRun stores — not the uncached figure the
+    /// four-argument overload takes. The long-context figures are a subset of the totals, so subtracting
+    /// them leaves the standard portion.
+    ///
+    /// With no long-context tokens recorded this is exactly the flat-rate result, which is what every run
+    /// predating tiered pricing must still produce.
+    /// </summary>
+    public static decimal ComputeCostFromTotals(
+        ModelPricing pricing,
+        long totalPromptTokens, long totalOutputTokens,
+        long cacheReadTokens, long cacheCreationTokens,
+        long longContextPromptTokens = 0, long longContextOutputTokens = 0,
+        long longContextCacheReadTokens = 0, long longContextCacheCreationTokens = 0,
+        string? actualServiceTier = null, string? requestedServiceTier = null)
+    {
+        if (pricing == null) return 0m;
+
+        decimal tierMultiplier =
+            ResolveServiceTierMultiplier(pricing, actualServiceTier, requestedServiceTier);
+
+        long lcPrompt = Math.Clamp(longContextPromptTokens, 0, totalPromptTokens);
+        long lcCacheRead = Math.Clamp(longContextCacheReadTokens, 0, cacheReadTokens);
+        long lcOutput = Math.Clamp(longContextOutputTokens, 0, totalOutputTokens);
+        long lcCacheCreation = Math.Clamp(longContextCacheCreationTokens, 0, cacheCreationTokens);
+
+        long stdPrompt = totalPromptTokens - lcPrompt;
+        long stdCacheRead = cacheReadTokens - lcCacheRead;
+        long stdOutput = totalOutputTokens - lcOutput;
+        long stdCacheCreation = cacheCreationTokens - lcCacheCreation;
+
+        decimal cost = ComputeCost(
+            pricing,
+            Math.Max(0, stdPrompt - stdCacheRead), stdOutput, stdCacheRead, stdCacheCreation);
+
+        if (lcPrompt > 0 && pricing.LongContext != null)
+        {
+            var card = pricing with
+            {
+                InputPerMillion = pricing.LongContext.InputPerMillion,
+                OutputPerMillion = pricing.LongContext.OutputPerMillion,
+                CachedInputPerMillion =
+                    pricing.LongContext.CachedInputPerMillion ?? pricing.CachedInputPerMillion,
+                CacheWritePerMillion =
+                    pricing.LongContext.CacheWritePerMillion ?? pricing.CacheWritePerMillion
+            };
+
+            cost += ComputeCost(
+                card,
+                Math.Max(0, lcPrompt - lcCacheRead), lcOutput, lcCacheRead, lcCacheCreation);
+        }
+
+        return cost * tierMultiplier;
+    }
 }
 
+/// <summary>
+/// The subset of a turn's tokens billed at a model's long-context rate, plus how many calls produced it.
+/// All zero for a flat-rate model.
+/// </summary>
+public readonly record struct LongContextTokenBuckets(
+    int InputTokens,
+    int OutputTokens,
+    int CacheReadTokens,
+    int CacheCreationTokens,
+    int CallCount);
