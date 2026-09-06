@@ -124,6 +124,13 @@ builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkGeneration
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkGenerationService>();
 builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkRubricCheckJobManager>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkRubricCheckService>();
+builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkRubricGapAuthorJobManager>();
+builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkRubricGapAuthorService>();
+builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkGroupAnalysisService>();
+builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkRunLauncher>();
+// Singleton: it drives a series across many requests and outlives every one of them, creating its
+// own scope per member.
+builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkSeriesOrchestrator>();
 builder.Services.AddScoped<SettingsService>();
 builder.Services.AddScoped<Overseer.Services.ChatRetentionService>();
 builder.Services.AddScoped<Overseer.Services.DatabaseStorageMetricsService>();
@@ -271,6 +278,19 @@ using (var benchmarkCleanupScope = app.Services.CreateScope())
         .GetRequiredService<Overseer.Services.Benchmarking.BenchmarkService>();
     try { await benchmarkService.CleanupOrphanedRunsAsync(); }
     catch (Exception ex) { app.Logger.LogWarning(ex, "Benchmark orphaned-run cleanup failed."); }
+
+    // A series left Running by an unclean shutdown has no live orchestrator advancing it, so
+    // reconcile it to Stopped — otherwise the Continue button never appears and the series is
+    // unresumable for the reason the database was made its home in the first place.
+    try
+    {
+        var seriesOrchestrator = app.Services
+            .GetRequiredService<Overseer.Services.Benchmarking.BenchmarkSeriesOrchestrator>();
+        var db = benchmarkCleanupScope.ServiceProvider
+            .GetRequiredService<MobileGnollHackLogger.Data.ApplicationDbContext>();
+        await seriesOrchestrator.ReconcileOrphanedSeriesAsync(db);
+    }
+    catch (Exception ex) { app.Logger.LogWarning(ex, "Benchmark orphaned-series reconciliation failed."); }
 }
 
 app.Run();

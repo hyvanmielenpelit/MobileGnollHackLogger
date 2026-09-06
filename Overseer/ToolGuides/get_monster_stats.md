@@ -14,7 +14,13 @@ resistances, flags. Every monster in the game is indexed.
 
 For strategy advice, gameplay tips, or descriptions, use monster_lookup or
 wiki_search FIRST — they contain information not captured in raw struct fields.
-Only fall back to this tool if the wiki lacks data for the specific monster.
+
+Scope carve-out — exact numbers: whenever your answer will state exact numeric
+stats (level, hit dice, AC, MC, MR, speed, damage dice, resistances, flags), this
+tool is authoritative and you must call it, regardless of which branch the question
+routed to and regardless of whether the wiki already had a page. A "what am I up
+against" or strategy question that you then answer with exact numbers is an exact-stat
+question for those numbers. The wiki supplies context, not numbers.
 
 For the hero's **own pets**, prefer the snapshot's `Pets` section. This tool returns the
 species row from `src/monst.c`; a pet has its own level, HP, AC, equipment and

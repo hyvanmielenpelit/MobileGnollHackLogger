@@ -397,6 +397,90 @@ Prompted by the 2026-09-05 GPT-5.6 Luna benchmark run (run 13), which produced f
 - **H6 — a deliberative-latency scoring profile.** The Speed Index remains structurally advisory whenever a candidate running at a high thinking level is measured against an interactive-latency target. Recording the mismatch (harness 12) is not the same as scoring the candidate against a target that fits it.
 - **T11 — a partial-retrieval clause in `Overseer/ToolGuides/_policy.md`.** Confident fabrication under *partial* retrieval failure has been observed twice (run 12 Q12, run 13 Q1), but the two runs differ on `ToolGuidesSha256` — T8 moved it — so for a tool-guide-sensitive finding they are a controlled pair, not a reproduction. Awaiting run 14.
 
+### Harness Version 14 & Scoring Method Version 8 Updates
+
+Prompted by the 2026-09-06 GPT-5.6 Luna benchmark run (run 14). The run reproduced T16 for the fourth time and left the harness unable to say whether a one-run result would survive a re-run at all, so the largest change here is not a fix but an instrument: **replicate sets**.
+
+> [!IMPORTANT]
+> **Scoring method version 8 breaks comparability.** Runs before this version are **not** comparable with runs after it on any answer graded below level 6, because two grading rules changed. The **default scoring profile also changed in place** — see below — which resets comparability a second time. Runs 11–14 keep their value as observations and cease to be reproduction halves.
+
+- **Synthesis Accuracy Divergence (scoring method 8)**:
+  Run 14's final synthesis described the run as free of factual errors while two per-question verdicts (Q11, Q14) carried accuracy deductions whose evidence named a concrete false assertion. Nothing in scoring method 7 caught this: the guardrail covered refuted claims and critical-error splits, and neither applied.
+  Two additions close it. `BenchmarkVerdictConsistency.SynthesisClaimsNoFactualErrors` matches the no-factual-errors family **sentence-scoped, never paragraph-scoped** — the same discipline `FabricationRegex` already keeps, because a paragraph-scoped match accuses a clean verdict. `AnswersWithNamedAccuracyDefects` selects verdicts with `AccuracyLevel < 6` whose `AccuracyEvidence` is non-empty and **is not full-level boilerplate** (`"Matches rubric."` and its variants); that exclusion is what keeps it from firing on every level-5 answer of a strong run.
+  The report renders a **Synthesis Accuracy Divergence** advisory beside the existing Synthesis Divergence block. Like its neighbour it names the questions, states that the per-question verdict is what scored, and **changes no score**.
+  `BuildFinalSynthesisPrompt`'s CRITICAL INSTRUCTION 2 was widened to match: the prohibition now covers **any answer carrying an accuracy deduction whose evidence names a defect**, those questions must be named in `weaknesses`, and the affected question blocks carry an explicit `Accuracy defect recorded: yes` marker so the constraint is visible per question rather than only in the header.
+- **Completeness scope is now a grading rule (scoring method 8)**:
+  The COMPLETENESS section states the precedence rule outright — *the question defines the scope; a rubric point the question did not ask for is not an omission and must not lower the level* — and requires the assessor to record such a point in `completenessEvidence` prefixed `OUT-OF-SCOPE:`. The parser sets `BenchmarkRunAnswer.CompletenessOutOfScope` from that marker; a missing marker is the normal case and never an error, and a malformed one does not throw.
+  The report prints **Out-of-scope completeness deductions: N (Qx, Qy)** under Dimensional Score Averages. This counter exists to keep the rule honest: it measures exactly how much of any Completeness movement the rule itself can explain. **If Completeness rises by more than the out-of-scope count accounts for, the rule has changed grader behaviour beyond its remit and must be revisited** — it is the instrument's measurable share of the persistent Accuracy-to-Completeness gap, not a licence to flatter the model.
+- **`FlaggedPlusSample`, and the default profile's changed grading regime**:
+  `BenchmarkSecondOpinionMode` gains `FlaggedPlusSample = 4`: `Flagged`, plus a **deterministic** top-up to `BenchmarkScoringProfile.SecondOpinionMinimumSample`, taking the lowest quality score first with ties broken by ascending order index, so the same data selects the same answers on every run. It runs in two stages like `Flagged`, with no post-scoring sweep. The achieved count is persisted as `BenchmarkRun.SecondOpinionSampleCountUsed`, which may fall short of the target when fewer answers exist, and is meaningless under any other mode.
+  What it yields is a *conditioned-plus-sample* agreement rate. It is **still not** the unbiased rate `All` gives, because the flagged half remains conditioned on the first assessor's own uncertainty. It is a cheaper partial measurement, not a substitute.
+  The **Standard Intelligence Index (Default)** profile now uses this mode with a minimum sample of 4. Every other profile keeps `SecondOpinionMinimumSample = 0`, which is behaviour-identical to before.
+  > The column defaults to `0` and the default profile is set to `4` by an **explicit data step in the migration**, never by a column default. A non-zero column default would have silently changed the grading regime of every profile in the database — including ones created for unrelated experiments — with nothing in any later report saying so. That is the run-11 F1 defect, and this shape is the lesson from it.
+- **Claim Verification Yield and an optional verifier token budget**:
+  The Harness Cost section gains a **Claim Verification Yield** line: claims checked, supported, refuted, indeterminate, verifier cost, cost per claim, and the verifier's share of run cost. On run 14 that reads *10 claims, 0 refuted, $1.70, $0.17 per claim, 67 % of run cost* — a majority of the run's spend buying no refutation.
+  `Benchmark:ClaimVerificationInputTokenBudget` (**default `0` = unlimited**) caps verifier input tokens per run deterministically. When it is exhausted the remaining answers are marked `NotChecked` and the report says so **apart from a verifier failure**: no call was made, so it is not a failure, and the report must not read as though the verifier broke. The budget is seeded from what the run has already spent, so a second pass cannot spend it twice. It is deliberately not the recommended first lever — choosing a cheaper verifier is.
+- **Input-token concentration (T18)**:
+  The report carries each question's input tokens as a **share of the run total**, and a run-level line naming the top three answers and their combined share (run 14: Q18, Q16, Q13 — 50.8 %). `BenchmarkRunAnswerDto.InputTokenShare` is **computed** from the stored per-answer tokens and the run total, never a stored column.
+  This is measurement rather than instruction. Input-token cost is driven by **model-call count**, not tool-call count — the three concentrated answers ran 22–23 model calls each — so the existing batching policy is working, and adding to the chat prompt on the strength of it would be overfitting.
+- **Narration is prompt-compliant in production chat (H5)**:
+  The § 5 Issues narration line now states that narrating a lookup is what `Overseer/ToolGuides/_policy.md` **asks** the production chat agent to do (*"Briefly tell the player what you're looking up when using a tool"*), and that the benchmark strips it only so the graded text is the answer itself. Without that sentence a future reader would port the scrubber into chat and remove behaviour the prompt deliberately requires.
+
+### Multi-Run Replicate Sets (Harness Version 14)
+
+Four consecutive runs reproduced the same Completeness gap, and the harness still could not say whether any single figure would survive a re-run. A one-run result mixes the thing being measured with the noise of measuring it once, and no amount of care in the report separates them. Replicate sets do.
+
+The statistical method is documented in full in **[`ai-benchmark-multi-run.md`](ai-benchmark-multi-run.md)**; this section covers the machinery.
+
+#### Series: N runs of one identical request
+
+`BenchmarkRunSeries` is a launched series — *N* executions of one validated `StartBenchmarkRunRequest`, run **strictly one at a time**. `StartBenchmarkRunRequest` gains `RunCount` (default `1`) and `AllowCapWait`; a `RunCount` of 1 is the pre-multi-run path exactly, creating no series row and no group.
+
+- **Sequential is not merely a constraint.** `BenchmarkRunManager` permits one run at a time, so a series could not overlap members even if it wanted to. It is also correct: the report already calls this timing mode *"Sequential (comparable speed)"*, and replicate speed measurement is only meaningful when every member ran under the same contention.
+- **One launch path.** `BenchmarkRunLauncher.CreateAndLaunchRunAsync` owns every validation the single-run endpoint used to perform inline, and both `POST runs` and the orchestrator call it. Two copies of that validation would drift, and the drift would show up as a series whose members were admitted under different rules — precisely what a replicate set may not be.
+- **`RunCount` is bounded by the live configured `MaxRunsPerDay`, never by a constant.** Raising the series ceiling and raising the daily spend cap are then the same action. A series may never be a way around the cap.
+- **The cap is a rolling 24-hour window**, not a calendar day, and `GET runs/limits` reports it the same way `CanSpendAsync` counts it. `BenchmarkComplianceGuard.GetLimitsAsync` is the single owner of that arithmetic; no caller re-derives it, because a client that computed "today" as midnight-to-now would disagree with the guard that actually refuses the run. The arithmetic works out exactly: a series of *N* = `MaxRunsPerDay` launched from an empty window passes, because the guard tests the count *before* creating each run and the last member sees *N* − 1.
+
+**Status, stop reasons and resume.** Status is `Pending | Running | WaitingForCap | Stopped | Completed | CompletedWithErrors | Cancelled | Failed`, with `StopReason` ∈ `MemberFailed | RunCapReached | SpendDenied` set whenever the status is `Stopped`. A cap denial either parks the series in `WaitingForCap` with a bounded, cancellable retry (`AllowCapWait`) or stops it resumably. A member failure stops the series and **keeps the completed runs**. Cancellation cancels the in-flight member through the run manager — so the run's own finalisation path runs rather than being bypassed — and `Cancelled` is terminal and **not** resumable: the operator said stop, which is a different statement from a series that halted on its own.
+
+`POST runs/series/{id}/resume` continues from `CompletedRunCount + 1`, and:
+
+- **It works after a process restart.** The orchestrator is transient in-memory state; the series is a row. Resume reconstructs everything from the row, and `ReconcileOrphanedSeriesAsync` moves any series left `Running` by an unclean shutdown to `Stopped` at startup, so the Continue button appears instead of the row sitting in a state nothing is advancing.
+- **The instrument guard refuses by default.** The series records member 1's `CandidateSystemPromptSha256`, `ToolGuidesSha256` and `KnowledgeBaseHeadSha`. Resume recomputes all three and **refuses when any has moved, naming which** — a replicate set whose members straddle a deployment is not a replicate set, and the failure is silent: every downstream statistic would still compute, confidently, over incomparable runs. An explicit `acknowledgeInstrumentChange` override continues and marks the series, which forces the auto-created group to **Tier C**, making pooling impossible by construction rather than by discipline.
+- Resume is refused for `Cancelled`, `Completed` and `Failed`, goes through `BenchmarkRunManager.TryStart` like every other launch (so pressing Continue twice cannot double-start a member), and re-checks `CanSpendAsync()` first: a resume is a new run and is capped like one.
+
+On completion with two or more successful members, a `BenchmarkRunGroup` is created automatically, named `<Suite> · <Model> · <date> · R=<n>`, with its tier **resolved from the runs and asserted** rather than assumed. A series is Tier A by construction — but "by construction" is an argument, and the whole point of the tier machinery is that the argument is checked. Any disagreement that is not an acknowledged instrument change is logged as a harness defect.
+
+#### Comparability tiers: what may be computed over which set
+
+`BenchmarkComparabilityKey` extracts the keys from a run and resolves a set's tier. This is the guard against this feature's worst failure — a confident pooled index computed over runs that were never comparable.
+
+| Tier | Meaning | Pooling |
+|---|---|---|
+| **A — Replicate** | Every key matches: suite **and every question's item revision**; the full candidate specification and prompt options; all three instrument hashes; harness and scoring-method versions; scoring profile **and its snapshot**; assessor, second-opinion and claim-verifier configurations; per-question budgets; question parallelism | **Yes** — the only tier at which a pooled index is sound |
+| **B — Quality-comparable** | Tier A relaxed on question parallelism and the pricing snapshot, which affect speed and cost only | Quality yes; **speed and cost aggregates carry a degraded flag** |
+| **C — Cross-condition** | Candidate identical, exactly one instrument key deliberately moved | **Never.** Such a set is two groups, and the tool's job is to *compare* them |
+| Below B | The runs measure different things | No aggregate over them means anything |
+
+The scoring profile is keyed by its **snapshot**, not its id, because scoring method 8 edits the default profile in place. Item revisions are keyed because a rubric edit changes the answer key — which is exactly what the Rubric Gap Author does on purpose.
+
+The resolver returns, for a set that fails a tier, **which keys differ and on which runs**. A boolean verdict with no reason is unusable in a dialog or a bug report, so the reasons travel to the UI, into the group's `TierReasonsJson`, and into the copyable diagnostics.
+
+**Enforcement**: a group below Tier B **cannot be persisted**, and Tier C requires an explicit `crossCondition` flag. These rules live in the controller rather than the UI, because the UI is not the thing that must not be bypassed.
+
+#### Groups, analysis and the report
+
+`BenchmarkRunGroup` ↔ `BenchmarkRunGroupMember` is many-to-many: a run may sit in several analysis groups — a baseline run belongs both to its own replicate set and to the cross-condition pair it anchors — while belonging to at most one series. `BenchmarkGroupAnalysis` persists a computed result with its member run ids and versions, so a group report stays reproducible after a run is deleted or the membership changes. A group whose membership moved since its last analysis is **badged stale rather than discarded**: a stale analysis is not wrong, it is a correct statement about a different set of runs.
+
+`BenchmarkGroupStatistics` is pure arithmetic — no I/O, no AI. `BenchmarkGroupReportBuilder` renders it as Markdown with **no AI-written synthesis**: every figure is reproducible arithmetic, which is what makes the report usable as an instrument rather than as another opinion. `GET runs/groups/{id}/report` mirrors `GET runs/{id}/report` exactly, and is built from the **persisted analysis** rather than recomputed.
+
+Two points the report and the UI both state explicitly, because both are misread otherwise:
+
+- **The item-sampling interval does not shrink with *R*.** The two variance components answer different questions and are rendered separately before being combined. Reproducibility SE = SD(run indices)/√*R* answers *"would a re-run move this?"* and **does** shrink with *R*. Item-sampling SE answers *"would a different set of questions move this?"* and **does not**, because every run uses the same items. A reader who expects it to shrink will report the code as broken.
+- **Multi-run cannot separate candidate noise from grader noise.** Run-to-run variance mixes the two, because each run produces a new answer graded once. Separating them requires re-grading identical answers (`SecondOpinionMode = All`, or a re-assessment pass); `FlaggedPlusSample` is the partial answer. Without this stated, an operator will attribute item instability to the model when it may be the grader.
+
+Per-item differences in a group comparison are **exploratory, under Benjamini–Hochberg FDR control**, and labelled as such everywhere they appear. Eighteen simultaneous item tests without correction would manufacture findings.
+
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).
 - **Model Time**: $\text{ModelTime} = \max(0, \text{DurationMs} - \text{ToolTimeMs})$ — the turn duration with harness tool I/O removed. This, not `DurationMs`, is what speed is scored on.
@@ -817,6 +901,26 @@ All benchmark endpoints require the `AdminOnly` authorization policy:
 - `DELETE /api/admin/benchmark/runs/{id}`: Delete a single run.
 - `GET /api/admin/benchmark/suites/{id}/runs/footprint`: Return stored run count and total answer character footprint for a suite.
 - `DELETE /api/admin/benchmark/suites/{id}/runs`: Bulk delete all stored benchmark runs for a suite.
+
+#### Multi-Run: Limits, Series, Groups and Analysis
+- `GET /api/admin/benchmark/runs/limits`: The caps and the live **rolling-window** counts — `maxRunsPerHour`, `maxRunsPerDay`, `runsInLastHour`, `runsInLast24Hours`, `remainingDailyHeadroom` (never negative) and `maxRunCountPerSeries`. The Number of runs field binds its `max` to this rather than to a literal, so raising the configured cap raises the field with it.
+- `POST /api/admin/benchmark/runs/series`: Start a series of `RunCount` identical runs. `POST .../runs` with `runCount > 1` routes here too, so the two cannot diverge.
+- `GET /api/admin/benchmark/runs/series/{id}`: Series status, stop reason, per-member rows, and **both** the member-1 and current instrument hashes — which is what makes a refused resume self-explaining.
+- `GET /api/admin/benchmark/runs/series/active`: The series being driven, or the most recent resumable one; 204 when there is none.
+- `POST /api/admin/benchmark/runs/series/{id}/cancel`: Cancel the in-flight member and the series. Terminal, and not resumable.
+- `POST /api/admin/benchmark/runs/series/{id}/resume`: Continue from `CompletedRunCount + 1`. Answers **409** naming the moved hash when the instrument changed since member 1; `acknowledgeInstrumentChange` proceeds and forces the resulting group to Tier C.
+- `GET /api/admin/benchmark/runs/groups`, `GET .../groups/{id}`: Analysis groups, with tier, member rows, latest-analysis id and a staleness flag.
+- `POST /api/admin/benchmark/runs/groups/preview`: The tier a set of runs *would* resolve to, without creating anything. This is what the group builder shows while runs are still being selected.
+- `POST /api/admin/benchmark/runs/groups`, `PUT .../groups/{id}`, `DELETE .../groups/{id}`: Group CRUD. Creation and membership edits **refuse below Tier B** with the differing keys named, and permit Tier C only with an explicit `crossCondition`.
+- `POST /api/admin/benchmark/runs/groups/{id}/analysis`: Compute and persist the statistics; an optional `compareWithGroupId` adds the paired comparison. Refuses a Tier C set: such a set is two conditions, and a pooled index over it would describe neither.
+- `GET /api/admin/benchmark/runs/groups/{id}/analysis`: The most recent stored analysis, or 204.
+- `GET /api/admin/benchmark/runs/groups/{id}/report`: Download the multi-run Markdown report, built from the **persisted** analysis so it stays reproducible after a run is deleted.
+
+#### Rubric Gap Author
+- `POST /api/admin/benchmark/rubric-gap-author`, `GET .../{jobId}`, `GET .../active`, `POST .../{jobId}/cancel`: An AI job that **drafts** proposed rubric additions from verified claim clusters, using read-only tools to confirm each citation. It writes nothing.
+- `POST /api/admin/benchmark/questions/{id}/rubric-additions/accept`: Apply **one** operator-approved draft and bump that question's item revision. The request carries the **final text the human submits**, which may be the draft edited or replaced outright; the acceptance record stores the drafting model, the cluster, the citation, and whether the text was taken **verbatim or edited**.
+
+  > There is deliberately **no accept-all endpoint**. § 7 rung 1 of `server_benchmark_to_chat_transfer` requires human authorship of curated knowledge, and `BenchmarkRubricGapDetector`'s own documentation says a gap is *"surfaced for a human to fold into the rubric — never applied automatically"*. One endpoint, one draft, one click, one item-revision bump. Editing before accepting strengthens the authorship claim rather than weakening it.
 
 ---
 

@@ -39,6 +39,11 @@ namespace MobileGnollHackLogger.Data
         public DbSet<BenchmarkScoringProfile> BenchmarkScoringProfiles { get; set; } = null!;
         public DbSet<BenchmarkAssessorCalibration> BenchmarkAssessorCalibrations { get; set; } = null!;
         public DbSet<BenchmarkGameSnapshot> BenchmarkGameSnapshots { get; set; } = null!;
+        public DbSet<BenchmarkRubricAdditionAcceptance> BenchmarkRubricAdditionAcceptances { get; set; } = null!;
+        public DbSet<BenchmarkRunSeries> BenchmarkRunSeries { get; set; } = null!;
+        public DbSet<BenchmarkRunGroup> BenchmarkRunGroups { get; set; } = null!;
+        public DbSet<BenchmarkRunGroupMember> BenchmarkRunGroupMembers { get; set; } = null!;
+        public DbSet<BenchmarkGroupAnalysis> BenchmarkGroupAnalyses { get; set; } = null!;
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
@@ -229,6 +234,110 @@ namespace MobileGnollHackLogger.Data
 
             modelBuilder.Entity<BenchmarkAssessorCalibration>()
                 .HasIndex(c => new { c.BenchmarkRunId, c.CreatedAtUtc });
+
+            // Cascade with the question: the acceptance records how *this* question's rubric came to
+            // say what it says, so it has no meaning once the question is gone.
+            modelBuilder.Entity<BenchmarkRubricAdditionAcceptance>()
+                .HasOne(a => a.BenchmarkQuestion)
+                .WithMany()
+                .HasForeignKey(a => a.BenchmarkQuestionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<BenchmarkRubricAdditionAcceptance>()
+                .HasOne(a => a.AuthorModelConfiguration)
+                .WithMany()
+                .HasForeignKey(a => a.AuthorModelConfigurationId)
+                .OnDelete(DeleteBehavior.ClientSetNull);
+
+            modelBuilder.Entity<BenchmarkRubricAdditionAcceptance>()
+                .HasIndex(a => new { a.BenchmarkQuestionId, a.AcceptedAtUtc });
+
+            // --- Multi-run: series, groups and analyses ---
+
+            // A member run keeps its data when the series row is deleted: the run is the evidence,
+            // the series only records how it was launched. Hence ClientSetNull, not Cascade.
+            modelBuilder.Entity<BenchmarkRun>()
+                .HasOne(r => r.RunSeries)
+                .WithMany(s => s.Runs)
+                .HasForeignKey(r => r.RunSeriesId)
+                .OnDelete(DeleteBehavior.ClientSetNull);
+
+            // Resume reads the members of one series in launch order, and the progress dialog
+            // renders them in it.
+            modelBuilder.Entity<BenchmarkRun>()
+                .HasIndex(r => new { r.RunSeriesId, r.RunSeriesIndex });
+
+            modelBuilder.Entity<BenchmarkRunSeries>()
+                .HasOne(s => s.BenchmarkSuite)
+                .WithMany()
+                .HasForeignKey(s => s.BenchmarkSuiteId)
+                .OnDelete(DeleteBehavior.ClientSetNull);
+
+            modelBuilder.Entity<BenchmarkRunSeries>()
+                .HasOne(s => s.StartedByUser)
+                .WithMany()
+                .HasForeignKey(s => s.StartedByUserId)
+                .HasPrincipalKey(u => u.Id)
+                .OnDelete(DeleteBehavior.ClientSetNull);
+
+            modelBuilder.Entity<BenchmarkRunSeries>()
+                .HasIndex(s => s.StartedAtUtc);
+
+            // Startup reconciliation scans by status, and the Continue button lists by it.
+            modelBuilder.Entity<BenchmarkRunSeries>()
+                .HasIndex(s => s.Status);
+
+            modelBuilder.Entity<BenchmarkRunGroup>()
+                .HasOne(g => g.BenchmarkSuite)
+                .WithMany()
+                .HasForeignKey(g => g.BenchmarkSuiteId)
+                .OnDelete(DeleteBehavior.ClientSetNull);
+
+            modelBuilder.Entity<BenchmarkRunGroup>()
+                .HasOne(g => g.CreatedByUser)
+                .WithMany()
+                .HasForeignKey(g => g.CreatedByUserId)
+                .HasPrincipalKey(u => u.Id)
+                .OnDelete(DeleteBehavior.ClientSetNull);
+
+            modelBuilder.Entity<BenchmarkRunGroup>()
+                .HasIndex(g => g.CreatedAtUtc);
+
+            // Cascade with the group: a membership row is the group's own structure, not a record of
+            // the run. Deleting a group must never touch the runs it referenced.
+            modelBuilder.Entity<BenchmarkRunGroupMember>()
+                .HasOne(m => m.BenchmarkRunGroup)
+                .WithMany(g => g.Members)
+                .HasForeignKey(m => m.BenchmarkRunGroupId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<BenchmarkRunGroupMember>()
+                .HasOne(m => m.BenchmarkRun)
+                .WithMany()
+                .HasForeignKey(m => m.BenchmarkRunId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // A run appears at most once in a group. Enforced here rather than in the controller,
+            // because a duplicated member would silently double that run's weight in every statistic.
+            modelBuilder.Entity<BenchmarkRunGroupMember>()
+                .HasIndex(m => new { m.BenchmarkRunGroupId, m.BenchmarkRunId })
+                .IsUnique();
+
+            modelBuilder.Entity<BenchmarkGroupAnalysis>()
+                .HasOne(a => a.BenchmarkRunGroup)
+                .WithMany()
+                .HasForeignKey(a => a.BenchmarkRunGroupId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<BenchmarkGroupAnalysis>()
+                .HasOne(a => a.ComputedByUser)
+                .WithMany()
+                .HasForeignKey(a => a.ComputedByUserId)
+                .HasPrincipalKey(u => u.Id)
+                .OnDelete(DeleteBehavior.ClientSetNull);
+
+            modelBuilder.Entity<BenchmarkGroupAnalysis>()
+                .HasIndex(a => new { a.BenchmarkRunGroupId, a.ComputedAtUtc });
 
             modelBuilder.Entity<Bones>()
                 .Property(b => b.Created)

@@ -1,0 +1,323 @@
+namespace Overseer.Tests.UnitTests;
+
+using System.Collections.Generic;
+using System.Linq;
+using MobileGnollHackLogger.Data;
+using Overseer.Services.Benchmarking;
+using Xunit;
+
+/// <summary>
+/// The tier ladder. These fixtures are shaped like runs 13 and 14 — same suite, same candidate,
+/// same three instrument SHAs — because that pair is the case the feature exists to serve, and the
+/// failure it exists to prevent is a pooled index computed over runs that only look like a
+/// replicate set.
+/// </summary>
+public class BenchmarkComparabilityKeyTests
+{
+    private const string PromptSha = "e9b3e9a7c4d1b8f0a2e6c9d3b7f1a4e8c2d6b0f9a3e7c1d5b9f3a7e1c5d9b3f7";
+    private const string GuidesSha = "f59d8b30a1c7e4d2b6f0a8c3e9d5b1f7a3c9e5d1b7f3a9c5e1d7b3f9a5c1e7d3";
+    private const string KnowledgeSha = "576ca574b2e8d0f6a4c2e8d4b0f6a2c8";
+
+    private static BenchmarkRun Run(long id)
+    {
+        var run = new BenchmarkRun
+        {
+            Id = id,
+            BenchmarkSuiteId = 5,
+            SuiteName = "GnollHack Player Assistance Benchmark Suite",
+
+            TestedModelProviderUsed = "OpenAI",
+            TestedModelIdUsed = "gpt-5.6-luna",
+            TestedModelDisplayNameUsed = "GPT-5.6 Luna",
+            TestedModelThinkingLevelUsed = "high",
+            TestedModelReasoningModeUsed = "enabled",
+            TestedModelReasoningSummaryUsed = "auto",
+            TestedModelServiceTierUsed = "default",
+            TestedModelMaxOutputTokensUsed = 32000,
+            TestedModelParallelExecutionModeUsed = MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled,
+
+            AssessorModelProviderUsed = "Google",
+            AssessorModelIdUsed = "gemini-3.7-pro",
+            AssessorModelDisplayNameUsed = "Gemini 3.7 Pro",
+            AssessorModelParallelExecutionModeUsed = MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled,
+
+            SecondOpinionAssessorModelProviderUsed = "Anthropic",
+            SecondOpinionAssessorModelIdUsed = "claude-opus-5",
+            SecondOpinionModeUsed = 1,
+            SecondOpinionBlindUsed = true,
+
+            ClaimVerifierProviderUsed = "Anthropic",
+            ClaimVerifierModelIdUsed = "claude-opus-5",
+
+            CandidatePromptOptionsJson = "{\"verboseMode\":false,\"spoilerFreeMode\":false,\"overseerMode\":0}",
+            CandidateSystemPromptSha256 = PromptSha,
+            ToolGuidesSha256 = GuidesSha,
+            KnowledgeBaseHeadSha = KnowledgeSha,
+
+            HarnessVersion = "12",
+            ScoringMethodVersion = 8,
+            ScoringProfileId = 1,
+            ScoringProfileSnapshotJson = "{\"SpeedTargetMs\":15000,\"SpeedDecayK\":20.0}",
+
+            MaxToolCallsPerQuestionUsed = 45,
+            MaxParallelQuestionsUsed = 1,
+            PricingSnapshotJson = "{\"candidate\":{\"inputPerMillion\":1.25}}"
+        };
+
+        for (int q = 1; q <= 3; q++)
+        {
+            run.Answers.Add(new BenchmarkRunAnswer
+            {
+                Id = id * 100 + q,
+                BenchmarkRunId = id,
+                BenchmarkQuestionId = q,
+                ItemRevisionUsed = 1,
+                OrderIndex = q,
+                QuestionText = $"Q{q}",
+                Status = BenchmarkAnswerStatus.Ok,
+                QualityScore = 80
+            });
+        }
+
+        return run;
+    }
+
+    [Fact]
+    public void IdenticalRuns_ResolveTierA_AndMayBePooled()
+    {
+        var result = BenchmarkComparabilityKey.Resolve(new[] { Run(13), Run(14) });
+
+        Assert.Equal(BenchmarkComparabilityTier.Replicate, result.Tier);
+        Assert.True(result.PoolingPermitted);
+        Assert.Empty(result.Differences);
+        Assert.False(result.SpeedAggregatesDegraded);
+        Assert.False(result.CostAggregatesDegraded);
+        Assert.Equal(new long[] { 13, 14 }, result.RunIds);
+
+        // Same keys, therefore the same per-run hash. The set hash is derived from those.
+        Assert.Equal(result.MemberKeyHashes[13], result.MemberKeyHashes[14]);
+        Assert.NotEmpty(result.ComparabilityKeyHash);
+    }
+
+    [Fact]
+    public void ChangingQuestionParallelism_ResolvesTierB_WithSpeedAndCostFlagged()
+    {
+        var a = Run(13);
+        var b = Run(14);
+        b.MaxParallelQuestionsUsed = 3;
+
+        var result = BenchmarkComparabilityKey.Resolve(new[] { a, b });
+
+        Assert.Equal(BenchmarkComparabilityTier.QualityComparable, result.Tier);
+
+        // Quality still pools. Speed and cost do not, and say so.
+        Assert.True(result.PoolingPermitted);
+        Assert.True(result.SpeedAggregatesDegraded);
+        Assert.True(result.CostAggregatesDegraded);
+
+        var difference = Assert.Single(result.Differences);
+        Assert.Equal(BenchmarkComparabilityKey.QuestionParallelismKey, difference.Name);
+        Assert.Equal(BenchmarkComparabilityKeyKind.SpeedAndCost, difference.Kind);
+
+        // The values, and which runs carry them: a boolean verdict would be unusable in a dialog.
+        Assert.Equal(2, difference.Variants.Count);
+        Assert.Equal(new long[] { 13 }, difference.Variants.Single(v => v.Value == "1").RunIds);
+        Assert.Equal(new long[] { 14 }, difference.Variants.Single(v => v.Value == "3").RunIds);
+        Assert.Contains(BenchmarkComparabilityKey.QuestionParallelismKey, result.Explanation);
+    }
+
+    [Fact]
+    public void ChangingToolGuides_ResolvesTierC_AndRefusesAPooledIndex()
+    {
+        // This is T15: the candidate is untouched and exactly one instrument key moved.
+        var baseline = Run(15);
+        var treatment = Run(16);
+        treatment.ToolGuidesSha256 = "0000000000000000000000000000000000000000000000000000000000000000";
+
+        var result = BenchmarkComparabilityKey.Resolve(new[] { baseline, treatment });
+
+        Assert.Equal(BenchmarkComparabilityTier.CrossCondition, result.Tier);
+
+        // The whole point of Tier C: these runs may be compared and may never be averaged.
+        Assert.False(result.PoolingPermitted);
+        Assert.False(BenchmarkComparabilityKey.IsPoolable(result.Tier));
+
+        var difference = Assert.Single(result.Differences);
+        Assert.Equal(BenchmarkComparabilityKey.ToolGuidesKey, difference.Name);
+        Assert.Equal(BenchmarkComparabilityKeyKind.Instrument, difference.Kind);
+        Assert.Contains("Tier C", result.Explanation);
+        Assert.Contains(BenchmarkComparabilityKey.ToolGuidesKey, result.Explanation);
+    }
+
+    [Fact]
+    public void ChangingTheSuite_ResolvesBelowTierB_AndNamesTheDifferingKey()
+    {
+        var a = Run(13);
+        var b = Run(14);
+        b.BenchmarkSuiteId = 6;
+
+        var result = BenchmarkComparabilityKey.Resolve(new[] { a, b });
+
+        Assert.Equal(BenchmarkComparabilityTier.NotComparable, result.Tier);
+        Assert.False(result.PoolingPermitted);
+        Assert.Contains(result.Differences, d => d.Name == BenchmarkComparabilityKey.SuiteKey);
+        Assert.Contains(BenchmarkComparabilityKey.SuiteKey, result.Explanation);
+
+        // A group at this tier has no valid aggregates at all, so half-reporting a degraded speed
+        // figure would be worse than reporting none.
+        Assert.False(result.SpeedAggregatesDegraded);
+        Assert.False(result.CostAggregatesDegraded);
+    }
+
+    [Fact]
+    public void ARubricEditEndsTheReplicateSet()
+    {
+        // A bumped item revision is a changed answer key. It is Fundamental, not Instrument: there
+        // is no cross-condition reading of "the same questions, marked differently".
+        var a = Run(13);
+        var b = Run(14);
+        b.Answers[1].ItemRevisionUsed = 2;
+
+        var result = BenchmarkComparabilityKey.Resolve(new[] { a, b });
+
+        Assert.Equal(BenchmarkComparabilityTier.NotComparable, result.Tier);
+        Assert.Contains(result.Differences, d => d.Name == BenchmarkComparabilityKey.ItemRevisionsKey);
+    }
+
+    [Fact]
+    public void TwoInstrumentDifferences_AreNotACrossConditionExperiment()
+    {
+        var a = Run(13);
+        var b = Run(14);
+        b.ToolGuidesSha256 = "1111111111111111111111111111111111111111111111111111111111111111";
+        b.KnowledgeBaseHeadSha = "2222222222222222222222222222222222222222";
+
+        var result = BenchmarkComparabilityKey.Resolve(new[] { a, b });
+
+        Assert.Equal(BenchmarkComparabilityTier.NotComparable, result.Tier);
+        Assert.Equal(2, result.Differences.Count);
+        Assert.Contains("2 instrument keys differ", result.Explanation);
+    }
+
+    [Fact]
+    public void ADifferentCandidateIsNotAGroup_ItIsTwoGroups()
+    {
+        var a = Run(13);
+        var b = Run(14);
+        b.TestedModelIdUsed = "claude-opus-5";
+
+        var result = BenchmarkComparabilityKey.Resolve(new[] { a, b });
+
+        Assert.Equal(BenchmarkComparabilityTier.NotComparable, result.Tier);
+        Assert.Contains(result.Differences, d => d.Kind == BenchmarkComparabilityKeyKind.Candidate);
+    }
+
+    [Fact]
+    public void TheDefaultProfileEditedInPlace_IsCaughtBySnapshotRatherThanId()
+    {
+        // Phase 3 edits the Default profile in place, so two runs can both name profile 1 and have
+        // been scored under two different definitions of it. The id alone would miss this.
+        var a = Run(13);
+        var b = Run(14);
+        b.ScoringProfileSnapshotJson = "{\"SpeedTargetMs\":15000,\"SpeedDecayK\":22.0}";
+
+        var result = BenchmarkComparabilityKey.Resolve(new[] { a, b });
+
+        Assert.Equal(BenchmarkComparabilityTier.CrossCondition, result.Tier);
+        var difference = Assert.Single(result.Differences);
+        Assert.Equal(BenchmarkComparabilityKey.ScoringProfileKey, difference.Name);
+    }
+
+    [Fact]
+    public void ASingleRun_IsTierATrivially_AndAnEmptySetIsNotComparable()
+    {
+        // The series orchestrator asserts the tier of its group as it grows, so one member must
+        // resolve rather than throw.
+        var single = BenchmarkComparabilityKey.Resolve(new[] { Run(13) });
+        Assert.Equal(BenchmarkComparabilityTier.Replicate, single.Tier);
+
+        var empty = BenchmarkComparabilityKey.Resolve(System.Array.Empty<BenchmarkRun>());
+        Assert.Equal(BenchmarkComparabilityTier.NotComparable, empty.Tier);
+        Assert.False(empty.PoolingPermitted);
+    }
+
+    [Fact]
+    public void KeyHash_IsStableAcrossInstancesAndMovesWithAnyKey()
+    {
+        Assert.Equal(BenchmarkComparabilityKey.ComputeKeyHash(Run(13)), BenchmarkComparabilityKey.ComputeKeyHash(Run(13)));
+
+        var moved = Run(13);
+        moved.HarnessVersion = "13";
+        Assert.NotEqual(BenchmarkComparabilityKey.ComputeKeyHash(Run(13)), BenchmarkComparabilityKey.ComputeKeyHash(moved));
+
+        // The set hash does not depend on the order the members were passed in.
+        var forwards = BenchmarkComparabilityKey.Resolve(new[] { Run(13), Run(14) }).ComparabilityKeyHash;
+        var backwards = BenchmarkComparabilityKey.Resolve(new[] { Run(14), Run(13) }).ComparabilityKeyHash;
+        Assert.Equal(forwards, backwards);
+    }
+
+    [Fact]
+    public void Extract_CoversEveryTierAKeyTheTierModelNames()
+    {
+        var names = BenchmarkComparabilityKey.Extract(Run(13)).Select(k => k.Name).ToList();
+
+        foreach (var expected in new[]
+        {
+            BenchmarkComparabilityKey.SuiteKey,
+            BenchmarkComparabilityKey.ItemRevisionsKey,
+            BenchmarkComparabilityKey.CandidateProviderKey,
+            BenchmarkComparabilityKey.CandidateModelKey,
+            BenchmarkComparabilityKey.CandidateThinkingLevelKey,
+            BenchmarkComparabilityKey.CandidateReasoningModeKey,
+            BenchmarkComparabilityKey.CandidateReasoningSummaryKey,
+            BenchmarkComparabilityKey.CandidateServiceTierKey,
+            BenchmarkComparabilityKey.CandidateMaxOutputTokensKey,
+            BenchmarkComparabilityKey.CandidateParallelExecutionModeKey,
+            BenchmarkComparabilityKey.CandidatePromptOptionsKey,
+            BenchmarkComparabilityKey.CandidateSystemPromptKey,
+            BenchmarkComparabilityKey.ToolGuidesKey,
+            BenchmarkComparabilityKey.KnowledgeBaseKey,
+            BenchmarkComparabilityKey.HarnessVersionKey,
+            BenchmarkComparabilityKey.ScoringMethodVersionKey,
+            BenchmarkComparabilityKey.ScoringProfileKey,
+            BenchmarkComparabilityKey.AssessorConfigurationKey,
+            BenchmarkComparabilityKey.SecondOpinionConfigurationKey,
+            BenchmarkComparabilityKey.ClaimVerifierConfigurationKey,
+            BenchmarkComparabilityKey.PerQuestionBudgetsKey,
+            BenchmarkComparabilityKey.QuestionParallelismKey,
+            BenchmarkComparabilityKey.PricingSnapshotKey
+        })
+        {
+            Assert.Contains(expected, names);
+        }
+
+        Assert.Equal(names.Count, names.Distinct().Count());
+    }
+
+    [Fact]
+    public void SecondOpinionSettings_AreTierAKeys()
+    {
+        var a = Run(13);
+        var b = Run(14);
+        b.SecondOpinionBlindUsed = false;
+
+        var result = BenchmarkComparabilityKey.Resolve(new[] { a, b });
+
+        Assert.Equal(BenchmarkComparabilityTier.CrossCondition, result.Tier);
+        Assert.Equal(BenchmarkComparabilityKey.SecondOpinionConfigurationKey, Assert.Single(result.Differences).Name);
+    }
+
+    [Fact]
+    public void PricingSnapshot_DegradesCostAlone()
+    {
+        var a = Run(13);
+        var b = Run(14);
+        b.PricingSnapshotJson = "{\"candidate\":{\"inputPerMillion\":2.50}}";
+
+        var result = BenchmarkComparabilityKey.Resolve(new[] { a, b });
+
+        Assert.Equal(BenchmarkComparabilityTier.QualityComparable, result.Tier);
+        Assert.True(result.CostAggregatesDegraded);
+        Assert.False(result.SpeedAggregatesDegraded);
+    }
+}

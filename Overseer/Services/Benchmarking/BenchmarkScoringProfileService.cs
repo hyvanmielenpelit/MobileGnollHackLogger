@@ -153,6 +153,7 @@ public class BenchmarkScoringProfileService
         existing.SecondOpinionQualityThreshold = profile.SecondOpinionQualityThreshold;
         existing.SecondOpinionMode = profile.SecondOpinionMode;
         existing.SecondOpinionOutlierDeltaPoints = profile.SecondOpinionOutlierDeltaPoints;
+        existing.SecondOpinionMinimumSample = profile.SecondOpinionMinimumSample;
         existing.SecondOpinionBlind = profile.SecondOpinionBlind;
         existing.SpeedTargetMs = profile.SpeedTargetMs;
         existing.SpeedDecayK = profile.SpeedDecayK;
@@ -277,7 +278,7 @@ public class BenchmarkScoringProfileService
 
         if (!Enum.IsDefined(typeof(BenchmarkSecondOpinionMode), profile.SecondOpinionMode))
         {
-            errors.Add("SecondOpinionMode must be Off (0), Flagged (1), FlaggedAndOutliers (2), or All (3).");
+            errors.Add("SecondOpinionMode must be Off (0), Flagged (1), FlaggedAndOutliers (2), All (3), or FlaggedPlusSample (4).");
         }
 
         // Only binding in FlaggedAndOutliers. A zero delta there would select nothing, which
@@ -287,6 +288,16 @@ public class BenchmarkScoringProfileService
             (profile.SecondOpinionOutlierDeltaPoints <= 0 || profile.SecondOpinionOutlierDeltaPoints > 100))
         {
             errors.Add("SecondOpinionOutlierDeltaPoints must be between 1 and 100 when SecondOpinionMode is FlaggedAndOutliers.");
+        }
+
+        // Only binding in FlaggedPlusSample, for the same reason as the delta above: a zero target
+        // there would top up nothing, contradicting the mode the operator chose. Outside that mode
+        // the field is inert, so an arbitrary stored value (including the 0 every other profile
+        // carries) must not fail validation.
+        if (profile.SecondOpinionMode == (int)BenchmarkSecondOpinionMode.FlaggedPlusSample &&
+            profile.SecondOpinionMinimumSample <= 0)
+        {
+            errors.Add("SecondOpinionMinimumSample must be greater than 0 when SecondOpinionMode is FlaggedPlusSample.");
         }
 
         if (profile.SpeedTargetMs <= 0)
@@ -368,10 +379,14 @@ public class BenchmarkScoringProfileService
             LevelScoresJson = "[1, 15, 35, 55, 72, 87, 100]",
             CriticalErrorCeiling = 25,
             SecondOpinionQualityThreshold = 50,
-            // Flagged, not All: a seeded default must reproduce existing behaviour rather than
-            // silently double every future run's assessor spend. The editor recommends All.
-            SecondOpinionMode = (int)BenchmarkSecondOpinionMode.Flagged,
+            // FlaggedPlusSample, with a minimum sample of 4: a fresh install's Default profile
+            // should measure grader agreement on every run, not only on runs where the candidate
+            // did badly (H3). This is the fresh-install seed only; an *existing* database's
+            // Default profile is moved to this same pair by an explicit migration data step, never
+            // by a column default — see BenchmarkScoringProfile.SecondOpinionMinimumSample.
+            SecondOpinionMode = (int)BenchmarkSecondOpinionMode.FlaggedPlusSample,
             SecondOpinionOutlierDeltaPoints = 25,
+            SecondOpinionMinimumSample = 4,
             SecondOpinionBlind = true,
             // Recalibrated: the old 5000 ms / k=25 pair drove the speed score to its floor at
             // roughly 78 s, tying together every slower answer on an agentic run. See

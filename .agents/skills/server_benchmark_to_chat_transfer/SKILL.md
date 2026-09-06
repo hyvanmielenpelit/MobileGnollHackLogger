@@ -410,6 +410,61 @@ Any implementation plan derived from a benchmark run must replicate this section
   moved the intended way and the input-token miss is on an axis T8 does not control. Criterion
   re-baselined; input-token attribution moved to harness finding H1.
 
+### Run 14 — 2026-09-06: GPT-5.6 Luna
+- **Candidate**: GPT-5.6 Luna (`gpt-5.6-luna`), thinking level `max`, reasoning `standard`, service
+  tier Default, parallel tool calls on. 18 questions (Default Suite 5).
+- **Prompt options**: `overseerMode: 0`, `verboseMode: true`, `spoilerFreeMode: false`,
+  `enableToolUse: true`, `enableWebSearch: false`, `allowSourceCodeReferences: true`,
+  `enableSubAgents: false`, `isGameOn: false`, `developerMode: false`, `hasMessageHistory: false`,
+  `hasWikiContext: false`, `hasGameSnapshot: false`. `parallelMode`: Enabled (2).
+- **Grading regime**: harness version 12; scoring method version 7; profile Standard Intelligence
+  Index (Default); assessor Gemini 3.7 Flash (`high`); second opinion Claude 5 Opus, blind, mode
+  Flagged, threshold 50, outlier delta 25; claim verifier Claude 5 Opus (`high`). Per-question caps
+  unbanded (ToolCallBudget 45, ToolIterations 22, TotalModelCalls 28 flat) as of the post-run-13
+  change.
+- **Instrument SHAs** — identical to run 13 on all three:
+  - `CandidateSystemPromptSha256`: `e9b3e9a75278a5cbd09fbe3afb270806a3be318863c9c3e1623897428a1c16c6`
+  - `ToolGuidesSha256`: `f59d8b30d2c2855931275fb0965f434db8ceb20feba84b4a5ac86eb65734f4a9`
+  - `KnowledgeBaseHeadSha`: `576ca5741d1bd79ef1cb2f7db575709cf0bb0db8`
+- **Quality**: Accuracy 96.3; Completeness 86.2; Conciseness 90.5; Readability 96.4. Intelligence
+  Index **94 ± 3** (95 % CI); unweighted mean 93; holistic 93. Critical errors 0; refuted claims 0;
+  10 unverified claims across Q1, Q4 and Q5, **all 10 returned supported** by the verifier.
+  Accuracy deductions with named defects on **Q11** (0-turn weapon swap) and **Q14** (difficulty 40
+  reported as level, against `LVL(25, 16, -10, 15, 10, -20)`). Completeness was again the lowest
+  dimension — a fourth consecutive run — trailing Accuracy by 10.1 points.
+- **Speed**: mean model time 82.6 s (run 13: 118.9 s, −30 % on an unchanged instrument); Speed
+  Index 72 (advisory). *r* = **0.86** source-family share vs. model time (run 13: 0.68);
+  *r* = **−0.05** vs. quality — more source calls buy time, not accuracy.
+- **Cost**: 281 tool calls — Source 56.2 %, Wiki 40.9 %, Structured Lookup 2.5 %, Knowledge Base
+  0.4 %. Input 4.21 M (−18.8 %), output 117.6 k (−24 %), ratio 35.8 : 1, cache-read share 90.4 %.
+  Q18, Q16 and Q13 alone are **50.8 %** of input tokens at 22–23 model calls each. Estimated run
+  cost **$2.53** — candidate $0.30 (12 %), assessor $0.54 (21 %), **claim verifier $1.70 (67 %)**
+  for 10 claims checked and 0 refuted.
+- **Transfer Action**:
+  - **T15**: `get_monster_stats.md`'s *"only fall back to this tool if the wiki lacks data"* clause
+    contradicts `_policy.md`'s exact-stats routing rule; Q14 routed to `monster_lookup` alone and
+    reported Master Kaen's difficulty as his level. **Promoted at rung 3** (tool guide text), with
+    the four § 9 obligations discharged against **3-run replicate sets on both sides** rather than
+    one run per side.
+  - **T16**: Completeness lowest in all four runs. **Deferred, no chat prompt change** — the cause
+    is unattributed and `verboseMode: true` was already refuted at run 12 (T7). The instrument side
+    is attacked by the completeness-scope grading rule and its out-of-scope counter; the model side
+    stays unaddressed until multi-run says the gap survives with the instrument corrected.
+  - **T18**: chat input-token cost is driven by model-call count, not tool-call count. **Answered
+    with measurement, not instruction** — the batching policy is working and adding to it would be
+    overfitting.
+- **Verification Outcome**: **T8 (heading-scoped wiki snippets, rung 3) — kept.** Criterion now met
+  on **four of six** measures where run 13 met one: wiki share 40.9 % (≥ 35 % ✔), source share
+  56.2 % (≤ 60 % ✔), tool calls 281 (≤ 300 ✔), Q12 97 with no fabrication (✔); input tokens 4.21 M
+  (≤ 3.4 M ✘, −18.8 %, right direction) and budget-pressured questions 2 (≤ 1 ✘, both now well
+  inside a 45-call flat budget). Side-effect check clean and in the candidate's favour: Accuracy
+  +0.6, Completeness +1.4, Index unchanged at 94 with a tighter interval, mean model time −30 %,
+  cache-read share flat. **Both remaining misses moved the intended way.**
+- **Comparability reset.** The plan derived from this run bumps `ScoringMethodVersion` **7 → 8** and
+  edits the *Standard Intelligence Index (Default)* profile in place. Runs 11–14 therefore keep
+  their value as **observations** and cease to be usable as **reproduction halves**: the two-run bar
+  in § 6 resets, and the runs 12–14 comparable series ends here.
+
 ---
 
 ## 12. Cross-References

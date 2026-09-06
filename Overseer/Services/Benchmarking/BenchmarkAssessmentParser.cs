@@ -89,6 +89,19 @@ public class BenchmarkPerQuestionAssessmentResult
     /// </summary>
     [JsonIgnore]
     public bool OmissionAsAccuracy { get; set; }
+
+    /// <summary>
+    /// The assessor recorded a rubric point that lies outside what the question asked, under the
+    /// <c>OUT-OF-SCOPE:</c> marker scoring method v8 requires of it.
+    ///
+    /// Not a defect and not advisory in the sense the flags above are: it is a measurement. The
+    /// persistent ~10-point gap between this suite's Accuracy and Completeness averages is part
+    /// model and part instrument, and counting the points the assessor itself placed outside the
+    /// question's scope is what separates the two. Not from the model as a field — it is derived
+    /// from <see cref="CompletenessEvidence"/>, which is where the assessor writes it.
+    /// </summary>
+    [JsonIgnore]
+    public bool CompletenessOutOfScope { get; set; }
 }
 
 public class PerQuestionAssessmentParseResult
@@ -280,6 +293,11 @@ public static class BenchmarkAssessmentParser
             bool omissionAsAccuracy = BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(
                 Math.Clamp(accuracyLevel, 0, 6), accuracyEvidence);
 
+            // Scoring method v8's out-of-scope marker. A missing marker is the normal case — most
+            // rubrics ask for nothing the question did not — so its absence is never an error, and
+            // a marker the assessor mangled costs the measurement and nothing else.
+            bool completenessOutOfScope = HasOutOfScopeMarker(completenessEvidence);
+
             var result = new BenchmarkPerQuestionAssessmentResult
             {
                 AccuracyLevel = Math.Clamp(accuracyLevel, 0, 6),
@@ -296,7 +314,8 @@ public static class BenchmarkAssessmentParser
                 UnverifiedClaimsDropped = unverifiedClaimsDropped,
                 ContestedVerdict = contestedVerdict,
                 UnevidencedDeduction = unevidencedDeduction,
-                OmissionAsAccuracy = omissionAsAccuracy
+                OmissionAsAccuracy = omissionAsAccuracy,
+                CompletenessOutOfScope = completenessOutOfScope
             };
 
             return new PerQuestionAssessmentParseResult
@@ -419,6 +438,36 @@ public static class BenchmarkAssessmentParser
                 ErrorMessage = $"JSON parse error: {ex.Message}"
             };
         }
+    }
+
+    /// <summary>
+    /// The prefix scoring method v8 asks the assessor to put in front of a rubric point that falls
+    /// outside what the question asked. Public because the prompt, the parser and the tests must
+    /// all mean the same string by it.
+    /// </summary>
+    public const string OutOfScopeCompletenessMarker = "OUT-OF-SCOPE:";
+
+    /// <summary>
+    /// The marker as models actually write it: hyphens or spaces between the words, any casing, and
+    /// the colon possibly spaced away from it. The colon is the one part that is required — without
+    /// it the pattern would be the ordinary English phrase, which appears in evidence strings that
+    /// are describing something else. Matched anywhere in the string rather than only at the start,
+    /// because an assessor that records a deduction and an out-of-scope point in one evidence string
+    /// puts the marker in front of the second half.
+    /// </summary>
+    private static readonly Regex OutOfScopeMarkerRegex = new(
+        @"\bout[-\s]?of[-\s]?scope\s*:",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// True when completeness evidence carries the out-of-scope marker. Total on its input: a null,
+    /// an empty string or a marker the assessor mangled all return false rather than failing the
+    /// parse — absence is the normal case, and one lost measurement must never cost a verdict.
+    /// </summary>
+    private static bool HasOutOfScopeMarker(string? completenessEvidence)
+    {
+        return !string.IsNullOrWhiteSpace(completenessEvidence)
+            && OutOfScopeMarkerRegex.IsMatch(completenessEvidence);
     }
 
     private static int GetIntProperty(JsonElement element, params string[] propertyNames)

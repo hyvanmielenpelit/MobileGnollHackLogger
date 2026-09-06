@@ -369,6 +369,59 @@ public class BenchmarkItemAnalysisTests
     }
 
     [Fact]
+    public void Compute_RestrictsToAnExplicitRunSetWhenOneIsGiven()
+    {
+        // A multi-run group is a membership decision, and the analysis must reflect exactly that
+        // membership rather than whatever query loaded the runs.
+        var question = Question(1, 1);
+        var runs = new[] { Run(1, 1, 60), Run(2, 1, 80), Run(3, 1, 100) };
+
+        var analysis = BenchmarkItemAnalysis.Compute(Suite(), new[] { question }, runs, new long[] { 1, 2 });
+
+        Assert.True(analysis.ExplicitRunSet);
+        Assert.Equal(1, analysis.ExcludedRunCount);
+        Assert.Equal(2, analysis.RunCount);
+
+        var item = Assert.Single(analysis.Items);
+        Assert.Equal(2, item.RunCount);
+        Assert.Equal(70.0, item.MeanQuality);
+    }
+
+    [Fact]
+    public void Compute_WithoutAnExplicitRunSet_BehavesExactlyAsBefore()
+    {
+        var question = Question(1, 1);
+        var runs = new[] { Run(1, 1, 60), Run(2, 1, 80), Run(3, 1, 100) };
+
+        var analysis = BenchmarkItemAnalysis.Compute(Suite(), new[] { question }, runs);
+
+        Assert.False(analysis.ExplicitRunSet);
+        Assert.Equal(0, analysis.ExcludedRunCount);
+        Assert.Equal(3, analysis.RunCount);
+        Assert.Equal(80.0, Assert.Single(analysis.Items).MeanQuality);
+    }
+
+    [Fact]
+    public void Samples_AppliesTheSamePredicateTheItemTableDoes()
+    {
+        // BenchmarkGroupStatistics computes its cross-run figures over exactly this sample, so two
+        // definitions of "an answer that counts" would put two denominators on one table.
+        var question = Question(1, 1, itemRevision: 2);
+        var runs = new[]
+        {
+            Run(1, 1, 90, itemRevisionUsed: 2),
+            Run(2, 1, 70, itemRevisionUsed: 1),                               // answered a different rubric
+            Run(3, 1, 0, status: BenchmarkAnswerStatus.ProviderError),        // never scored
+            Run(4, 1, 50, itemRevisionUsed: null)                             // revision unknowable, kept
+        };
+
+        var samples = BenchmarkItemAnalysis.Samples(question, runs);
+
+        Assert.Equal(new long[] { 1, 4 }, samples.Select(s => s.Run.Id));
+        Assert.Equal(samples.Count, BenchmarkItemAnalysis.Compute(Suite(), new[] { question }, runs).Items[0].RunCount);
+    }
+
+    [Fact]
     public void EmpiricalDifficulty_IsNeverWrittenBackIntoTheQuestion()
     {
         // The rule this asserts is the whole reason the delta is reported rather than applied:

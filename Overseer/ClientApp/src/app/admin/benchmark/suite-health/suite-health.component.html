@@ -374,6 +374,182 @@
           <p class="text-muted">No unverified claims have been recorded for this suite.</p>
         }
 
+        <!-- Rubric Gap Author -->
+        <h4 class="mt-25">Rubric Gap Author</h4>
+        <p class="section-note">
+          Drafts a proposed rubric addition for each verified gap cluster above, with the citation
+          the claim verifier supported it with. Every draft is editable, and each one is accepted on
+          its own: the text that reaches the rubric is the text in its box when you press Accept, so
+          the addition stays yours rather than the model's. There is no accept-all.
+        </p>
+
+        <div class="rubric-check-controls gap-author-controls">
+          <div class="form-group">
+            <label id="rubricGapAuthorModelLabel">Rubric gap author model</label>
+            <div class="custom-model-selector rubric-gap-author-selector">
+              <button type="button" id="rubricGapAuthorModelTrigger" class="selector-trigger"
+                      (click)="toggleRubricGapAuthorDropdown($event)"
+                      [class.open]="isRubricGapAuthorDropdownOpen"
+                      [attr.aria-expanded]="isRubricGapAuthorDropdownOpen"
+                      aria-haspopup="listbox"
+                      aria-labelledby="rubricGapAuthorModelLabel rubricGapAuthorModelTrigger">
+                <span class="model-name" [class.text-muted]="!selectedRubricGapAuthorModel">{{ selectedRubricGapAuthorModel?.displayName || selectedRubricGapAuthorModel?.modelId || 'Select Model' }}</span>
+                @if (selectedRubricGapAuthorModel?.thinkingLevel) {
+                  <span class="thinking-badge">{{ formatThinkingLevel(selectedRubricGapAuthorModel?.thinkingLevel) }}</span>
+                }
+                @if (showReasoningBadge(selectedRubricGapAuthorModel?.reasoningMode)) {
+                  <span class="reasoning-badge">{{ selectedRubricGapAuthorModel?.reasoningMode }}</span>
+                }
+                @if (selectedRubricGapAuthorModel?.provider) {
+                  <span class="provider-badge">{{ selectedRubricGapAuthorModel?.provider }}</span>
+                }
+                <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </button>
+              @if (isRubricGapAuthorDropdownOpen) {
+                <div class="selector-dropdown" role="listbox" aria-labelledby="rubricGapAuthorModelLabel">
+                  @if (benchmarkCapableConfigs.length === 0) {
+                    <div class="empty-dropdown-hint">No system AI configs with the Benchmark role are enabled.</div>
+                  }
+                  @for (model of benchmarkCapableConfigs; track model.id) {
+                    <div class="model-option" role="option" tabindex="0"
+                         [attr.aria-selected]="rubricGapAuthorConfigId === model.id"
+                         [class.selected]="rubricGapAuthorConfigId === model.id"
+                         (click)="selectRubricGapAuthorModel(model)">
+                      <span class="model-name">{{ model.displayName || model.modelId }}</span>
+                      @if (model.thinkingLevel) {
+                        <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
+                      }
+                      <span class="provider-badge">{{ model.provider }}</span>
+                    </div>
+                  }
+                </div>
+              }
+            </div>
+
+            <label for="rubricGapAuthorInstructions">Instructions to the drafting model</label>
+            <textarea id="rubricGapAuthorInstructions" class="gap-author-instructions" rows="3"
+                      [(ngModel)]="rubricGapAuthorInstructions"
+                      aria-describedby="rubricGapAuthorInstructionsHint"></textarea>
+            <span class="form-hint" id="rubricGapAuthorInstructionsHint">
+              Optional, passed to the prompt verbatim — house style, wording to avoid, how much
+              detail a rubric point should carry. Only clusters a claim verifier supported with a
+              citation are eligible; nothing here is written to a rubric.
+            </span>
+          </div>
+          <div class="rubric-check-actions">
+            @if (runningRubricGapAuthor) {
+              <button type="button" class="btn-gh btn-gh-cancel" (click)="cancelRubricGapAuthor()" [disabled]="cancellingRubricGapAuthor">
+                {{ cancellingRubricGapAuthor ? 'Cancelling...' : 'Cancel Drafting' }}
+              </button>
+            } @else {
+              <button type="button" class="btn-gh" (click)="startRubricGapAuthor()" [disabled]="rubricGapAuthorConfigId == null">
+                Draft Rubric Additions
+              </button>
+            }
+          </div>
+        </div>
+
+        @if (rubricGapAuthorError) {
+          <div class="alert alert-warning" role="alert">
+            <div class="alert-content"><div class="alert-body">{{ rubricGapAuthorError }}</div></div>
+          </div>
+        }
+
+        @if (runningRubricGapAuthor && rubricGapAuthorJob) {
+          <div class="rubric-check-progress">
+            <div class="progress-bar-container">
+              <div class="spinner"></div>
+              <span>Drafting rubric additions... ({{ rubricGapAuthorJob.drafts.length }} cluster(s))</span>
+            </div>
+          </div>
+        }
+
+        @if (rubricGapAuthorJob && rubricGapAuthorJob.drafts.length > 0) {
+          <div class="gap-author-results">
+            <div class="results-header">
+              <span class="results-summary">
+                Status: <strong>{{ rubricGapAuthorJob.status }}</strong>
+                — drafted by <strong>{{ rubricGapAuthorJob.authorDisplayName }}</strong>
+                ({{ rubricGapAuthorJob.promptTokens }} prompt / {{ rubricGapAuthorJob.outputTokens }} output tokens)
+              </span>
+            </div>
+
+            @for (draft of rubricGapAuthorJob.drafts; track draft.clusterKey) {
+              <div class="gap-author-draft" [class.is-accepted]="isDraftAccepted(draft)">
+                <div class="gap-header">
+                  <strong>Q{{ draft.questionOrderIndex }}</strong>
+                  <span class="gap-verdict">{{ verdictLabel(draft.clusterVerdict) }}</span>
+                  <span class="draft-status">{{ draftStatusLabel(draft) }}</span>
+                  <span class="text-muted">
+                    {{ draft.occurrences }} occurrence(s), {{ draft.modelFamilies.length }} family(ies)
+                  </span>
+                </div>
+                <div class="draft-question text-muted">{{ draft.questionTextExcerpt }}</div>
+                <ul class="gap-claims">
+                  @for (claim of draft.claims; track claim) {
+                    <li>“{{ claim }}”</li>
+                  }
+                </ul>
+
+                @if (draft.errorMessage) {
+                  <div class="finding-error">{{ draft.errorMessage }}</div>
+                }
+
+                @if (draft.status === 'Completed') {
+                  <div class="draft-editor">
+                    <div class="draft-editor-label">
+                      <label [attr.for]="draftTextareaId(draft)">Proposed rubric addition for Q{{ draft.questionOrderIndex }}</label>
+                      @if (isDraftModified(draft)) {
+                        <span class="draft-modified" role="status">modified</span>
+                      }
+                    </div>
+                    <textarea class="draft-textarea" rows="4"
+                              [id]="draftTextareaId(draft)"
+                              [value]="draftTextFor(draft)"
+                              [disabled]="isDraftAccepted(draft)"
+                              (input)="onDraftTextInput(draft, $event)"></textarea>
+                  </div>
+
+                  @if (draft.citation) {
+                    <div class="draft-meta"><strong>Citation:</strong> <code>{{ draft.citation }}</code></div>
+                  }
+                  @if (draft.justification) {
+                    <div class="draft-meta"><strong>Why:</strong> {{ draft.justification }}</div>
+                  }
+                  @if (draft.confidenceNote) {
+                    <div class="draft-meta text-muted"><strong>Confidence:</strong> {{ draft.confidenceNote }}</div>
+                  }
+
+                  @if (draftAcceptErrors[draft.clusterKey]) {
+                    <div class="finding-error" role="alert">{{ draftAcceptErrors[draft.clusterKey] }}</div>
+                  }
+
+                  @if (isDraftAccepted(draft)) {
+                    <div class="draft-accepted-note" role="status">
+                      Accepted {{ acceptanceFor(draft)?.acceptedVerbatim ? 'verbatim' : 'as edited' }}.
+                      Q{{ acceptanceFor(draft)?.questionOrderIndex }} is now at item revision
+                      {{ acceptanceFor(draft)?.itemRevisionAfter }}.
+                    </div>
+                  } @else {
+                    <div class="draft-actions">
+                      <button type="button" class="btn-gh btn-gh-cancel"
+                              (click)="revertDraft(draft)"
+                              [disabled]="!isDraftModified(draft)">
+                        Revert to draft
+                      </button>
+                      <button type="button" class="btn-gh"
+                              (click)="acceptDraft(draft)"
+                              [disabled]="!canAcceptDraft(draft)">
+                        {{ acceptingClusterKey === draft.clusterKey ? 'Accepting...' : 'Accept this addition' }}
+                      </button>
+                    </div>
+                  }
+                }
+              </div>
+            }
+          </div>
+        }
+
         <!-- Knowledge Base Gaps -->
         <h4 class="mt-25">Knowledge Base Gaps</h4>
         <p class="section-note">

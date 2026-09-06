@@ -17,6 +17,16 @@ public static class BenchmarkReportBuilder
     }
 
     /// <summary>
+    /// True when a stored <see cref="BenchmarkRunAnswer.ClaimVerificationError"/> is the
+    /// deterministic token-budget skip written by
+    /// <see cref="BenchmarkService.BenchmarkClaimVerificationNotCheckedReason"/> rather than a real
+    /// verifier failure — no call was made for this answer, so it must not be reported as one.
+    /// </summary>
+    private static bool IsClaimVerificationBudgetNotChecked(string? claimVerificationError) =>
+        claimVerificationError != null &&
+        claimVerificationError.StartsWith(BenchmarkService.ClaimVerificationNotCheckedPrefix, StringComparison.Ordinal);
+
+    /// <summary>
     /// A UTC timestamp in the report's own fixed shape. Needed because ":" in a custom format
     /// string is the culture's *time separator* rather than a literal, so an interpolated
     /// "{d:yyyy-MM-dd HH:mm:ss}" renders "08.30.00" under fi-FI — the culture these machines
@@ -744,6 +754,25 @@ public static class BenchmarkReportBuilder
                     $"- **Input Tokens per Model Call:** {Inv(run.TotalInputTokens / totalModelCalls, "N0")}");
             }
         }
+
+        // T18. Input-token cost is driven by model-call count (rounds re-send every prior tool
+        // result in that answer), not tool-call count, and it concentrates: on run 14 three answers
+        // were half the run's input tokens. InputTokenShare is computed here, never stored — see
+        // the "Note on InputTokenShare" in the implementation plan.
+        var byInputTokens = answers
+            .Where(a => a.InputTokens.HasValue && a.InputTokens.Value > 0)
+            .OrderByDescending(a => a.InputTokens!.Value)
+            .ToList();
+        if (byInputTokens.Count > 0 && run.TotalInputTokens > 0)
+        {
+            var topAnswers = byInputTokens.Take(3).ToList();
+            long topSum = topAnswers.Sum(a => (long)a.InputTokens!.Value);
+            double topShare = (double)topSum / run.TotalInputTokens * 100.0;
+            string topList = string.Join(", ", topAnswers.Select(a =>
+                $"Q{a.OrderIndex} ({Inv(a.InputTokens!.Value, "N0")}, {Inv((double)a.InputTokens!.Value / run.TotalInputTokens * 100.0, "F1")}%)"));
+            sb.AppendLine(
+                $"- **Highest Input-Token Answers:** {topList} — together {Inv(topShare, "F1")}% of the run's input tokens.");
+        }
         sb.AppendLine();
 
         // Harness cost. The token totals above are the candidate's alone; grading an 18-question
@@ -757,7 +786,8 @@ public static class BenchmarkReportBuilder
             sb.AppendLine($"- **Assessor Tokens:** {Inv(run.TotalAssessmentInputTokens, "N0")} in / {Inv(run.TotalAssessmentOutputTokens, "N0")} out");
             if (run.TotalClaimVerificationInputTokens > 0 || run.TotalClaimVerificationOutputTokens > 0 || run.ClaimVerifierModelConfigurationId.HasValue)
             {
-                bool allVerificationAttemptsFailed = answers.Any(a => !string.IsNullOrWhiteSpace(a.ClaimVerificationError)) &&
+                bool allVerificationAttemptsFailed =
+                    answers.Any(a => !string.IsNullOrWhiteSpace(a.ClaimVerificationError) && !IsClaimVerificationBudgetNotChecked(a.ClaimVerificationError)) &&
                     !answers.Any(a => string.IsNullOrWhiteSpace(a.ClaimVerificationError) && (a.ClaimsSupportedCount.HasValue || a.ClaimsRefutedCount.HasValue || a.ClaimsIndeterminateCount.HasValue));
                 string failedCaveat = allVerificationAttemptsFailed ? " — *every attempt failed; see Issues*" : string.Empty;
                 sb.AppendLine($"- **Claim Verifier Tokens:** {Inv(run.TotalClaimVerificationInputTokens, "N0")} in / {Inv(run.TotalClaimVerificationOutputTokens, "N0")} out{failedCaveat}");
@@ -865,6 +895,23 @@ public static class BenchmarkReportBuilder
                 if (hasVerifier && verifierPricing != null)
                 {
                     sb.AppendLine($"  - Claim Verifier ({run.ClaimVerifierModelIdUsed}): ${Inv(verifierTotalCost, "F2")} (in: ${Inv(verifierInCost, "F2")}, out: ${Inv(verifierOutCost, "F2")})");
+
+                    // H4. The verifier's own yield — what its dollars actually bought — was
+                    // previously unreported: run 13 to run 14 alone it grew from 36% to 67% of run
+                    // cost with no figure an operator could steer by. "Checked" excludes answers the
+                    // token budget stopped before a call was made (BenchmarkClaimVerificationNotCheckedReason),
+                    // so this line never counts a claim the verifier never saw.
+                    int claimsChecked = run.ClaimsSupportedCount + run.ClaimsRefutedCount + run.ClaimsIndeterminateCount;
+                    if (claimsChecked > 0)
+                    {
+                        decimal costPerClaim = verifierTotalCost / claimsChecked;
+                        decimal verifierCostShare = totalCost > 0 ? verifierTotalCost / totalCost * 100m : 0m;
+                        sb.AppendLine(
+                            $"- **Claim Verification Yield:** {Inv(claimsChecked, "N0")} claim(s) checked — " +
+                            $"{Inv(run.ClaimsSupportedCount, "N0")} supported, {Inv(run.ClaimsRefutedCount, "N0")} refuted, " +
+                            $"{Inv(run.ClaimsIndeterminateCount, "N0")} indeterminate. " +
+                            $"${Inv(verifierTotalCost, "F2")} (${Inv(costPerClaim, "F2")}/claim), {Inv(verifierCostShare, "F0")}% of run cost.");
+                    }
                 }
 
                 // Both lines are printed only when they apply. An absent tier is omitted entirely rather
@@ -1022,12 +1069,21 @@ public static class BenchmarkReportBuilder
             .Where(a => (a.ClaimsRefutedCount ?? 0) > 0 && !string.IsNullOrWhiteSpace(a.ClaimVerificationJson))
             .OrderBy(a => a.OrderIndex)
             .ToList();
+        // Distinguishes "the verifier ran and returned no verdict" from "the deterministic token
+        // budget stopped the run before a call was made for this answer" — the same
+        // ClaimVerificationError field carries both (see BenchmarkService.RunClaimVerificationAsync
+        // / BenchmarkClaimVerificationNotCheckedReason), and conflating them would report a budget
+        // cutoff as a verifier defect.
+        var notCheckedAnswers = answers
+            .Where(a => IsClaimVerificationBudgetNotChecked(a.ClaimVerificationError))
+            .OrderBy(a => a.OrderIndex)
+            .ToList();
         var verificationFailedAnswers = answers
-            .Where(a => !string.IsNullOrWhiteSpace(a.ClaimVerificationError))
+            .Where(a => !string.IsNullOrWhiteSpace(a.ClaimVerificationError) && !IsClaimVerificationBudgetNotChecked(a.ClaimVerificationError))
             .OrderBy(a => a.OrderIndex)
             .ToList();
 
-        if (!claimsRecorded || unverifiedTotal > 0 || contestedAnswers.Count > 0 || omissionAnswers.Count > 0 || refutedAnswers.Count > 0 || verificationFailedAnswers.Count > 0)
+        if (!claimsRecorded || unverifiedTotal > 0 || contestedAnswers.Count > 0 || omissionAnswers.Count > 0 || refutedAnswers.Count > 0 || verificationFailedAnswers.Count > 0 || notCheckedAnswers.Count > 0)
         {
             sb.AppendLine("### Assessor Findings");
             if (!claimsRecorded)
@@ -1058,6 +1114,10 @@ public static class BenchmarkReportBuilder
             {
                 string firstError = BenchmarkAssessmentFailure.Truncate(verificationFailedAnswers[0].ClaimVerificationError, 200) ?? string.Empty;
                 sb.AppendLine($"- **Claim Verification Failed:** {verificationFailedAnswers.Count} answer(s) ({string.Join(", ", verificationFailedAnswers.Select(a => $"Q{a.OrderIndex}"))}) — the verifier was configured but returned no verdict. First error: `{firstError}`.");
+            }
+            if (notCheckedAnswers.Count > 0)
+            {
+                sb.AppendLine($"- **Claim Verification Not Checked (budget):** {notCheckedAnswers.Count} answer(s) ({string.Join(", ", notCheckedAnswers.Select(a => $"Q{a.OrderIndex}"))}) — the configured `Benchmark:ClaimVerificationInputTokenBudget` was exhausted before these were checked. Not a verifier failure: no call was made.");
             }
             if (contestedAnswers.Count > 0)
             {
@@ -1254,6 +1314,24 @@ public static class BenchmarkReportBuilder
             sb.AppendLine($"- **Completeness (Weight 25%):** {Inv(scoredAnswers.Average(a => a.CompletenessScore ?? 0), "F1")} / 100 (Avg Level: {Inv(scoredAnswers.Average(a => a.CompletenessLevel ?? 0), "F1")} / 6)");
             sb.AppendLine($"- **Conciseness (Weight 10%):** {Inv(scoredAnswers.Average(a => a.ConcisenessScore ?? 0), "F1")} / 100 (Avg Level: {Inv(scoredAnswers.Average(a => a.ConcisenessLevel ?? 0), "F1")} / 6)");
             sb.AppendLine($"- **Readability (Weight 10%):** {Inv(scoredAnswers.Average(a => a.ReadabilityScore ?? 0), "F1")} / 100 (Avg Level: {Inv(scoredAnswers.Average(a => a.ReadabilityLevel ?? 0), "F1")} / 6)");
+
+            // The instrument's own share of the Accuracy→Completeness gap, as a measured figure.
+            // Scoring method v8 tells the assessor that the question defines the scope and that a
+            // rubric point the question did not ask for must be recorded rather than deducted for;
+            // this counts what it recorded. Printed only when there is something to print — a zero
+            // on a v8 run and a zero on a run graded before the marker existed look identical, and
+            // asserting "none found" for a grader that was never asked would be the same mistake
+            // NarrationBlockCount exists to avoid.
+            var outOfScopeAnswers = scoredAnswers.Where(a => a.CompletenessOutOfScope)
+                .OrderBy(a => a.OrderIndex)
+                .ToList();
+            if (outOfScopeAnswers.Count > 0)
+            {
+                string questionList = string.Join(", ", outOfScopeAnswers.Select(a => $"Q{a.OrderIndex}"));
+                sb.AppendLine($"- **Out-of-scope completeness deductions:** {outOfScopeAnswers.Count} ({questionList})");
+                sb.AppendLine($"  - These are rubric points the assessor itself placed outside what the question asked, recorded under the `OUT-OF-SCOPE:` marker and **not** deducted for. They are the instrument's share of the Accuracy→Completeness gap: the part of that gap the rubric caused rather than the answer.");
+            }
+
             sb.AppendLine();
             if (BenchmarkChatTransfer.HasResponseStyleConflict(run, scoredAnswers, out double gap))
             {
@@ -1889,6 +1967,17 @@ public static class BenchmarkReportBuilder
                     : string.Empty;
                 sb.AppendLine($"- **Question {ia.OrderIndex}:** Status {ia.Status} — {desc}.{note}");
             }
+
+            // Why the narration lines above are not a chat defect. The scrubber lives entirely in
+            // the benchmark path, and it must stay there: a reader who sees "reasoning narration
+            // removed" enough times will eventually propose removing it in production too, which
+            // would make the chat agent violate its own prompt. Stated here, beside the finding,
+            // because that is where the reader who would draw the wrong conclusion is standing.
+            if (issueAnswers.Any(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.ReasoningBleed)))
+            {
+                sb.AppendLine();
+                sb.AppendLine("> **Reasoning narration is a benchmark-only removal, not a production defect.** Narrating a lookup is prompt-compliant in production chat — `Overseer/ToolGuides/_policy.md` instructs the agent to *\"Briefly tell the player what you're looking up when using a tool\"* — and the harness strips it here only so that the graded text is the answer rather than the commentary around it. `BenchmarkArtifactScrubber` has no equivalent in the chat path by design, and must not acquire one.");
+            }
         }
         sb.AppendLine();
 
@@ -1946,6 +2035,47 @@ public static class BenchmarkReportBuilder
                 sb.AppendLine($"- **Question {d.OrderIndex}:** the run synthesis reports a hallucination that the per-question verdict did not flag as a critical error. Advisory — the per-question verdict is what scored.");
             }
             sb.AppendLine();
+        }
+
+        // Synthesis accuracy divergence — the same defect as its neighbour above, from the other
+        // direction: there the synthesis said more than the verdicts, here it says less. On the
+        // 2026-09-06 run the synthesis reported the run's weaknesses as "confined to secondary
+        // omissions rather than factual errors" while Q11's and Q14's own accuracyEvidence each
+        // named a concrete false assertion. Neither had a refuted claim or a critical-error split,
+        // which is all the scoring method v7 guardrail covered, so nothing said so.
+        //
+        // Rendered only when both halves hold: the claim was made, and there is evidence against
+        // it. Either alone is ordinary — a clean run makes the claim honestly, and a run with
+        // accuracy deductions whose synthesis reports them is doing its job. Advisory; changes no
+        // score, exactly like its neighbour.
+        if (BenchmarkVerdictConsistency.SynthesisClaimsNoFactualErrors(run.AssessmentText))
+        {
+            // Materialised once: the evidence lives in a JSON blob per answer, and the list below
+            // needs both the order index it selects on and the string it prints.
+            var accuracyVerdicts = answers
+                .Select(a => (
+                    OrderIndex: a.OrderIndex,
+                    AccuracyLevel: a.AccuracyLevel,
+                    AccuracyEvidence: ReadEvidence(a).Accuracy))
+                .ToList();
+
+            var namedAccuracyDefects = BenchmarkVerdictConsistency.AnswersWithNamedAccuracyDefects(accuracyVerdicts);
+
+            if (namedAccuracyDefects.Count > 0)
+            {
+                sb.AppendLine("### Synthesis Accuracy Divergence");
+                sb.AppendLine();
+                sb.AppendLine($"The run synthesis describes this run as free of factual errors, while {namedAccuracyDefects.Count} answer(s) carry an accuracy deduction whose own evidence names a defect. Advisory — the per-question verdicts below are what scored, and no score changes here.");
+                sb.AppendLine();
+                foreach (int index in namedAccuracyDefects)
+                {
+                    var v = accuracyVerdicts.First(x => x.OrderIndex == index);
+                    string level = v.AccuracyLevel?.ToString(CultureInfo.InvariantCulture) ?? "?";
+                    string evidence = BenchmarkAssessmentFailure.Truncate(v.AccuracyEvidence, 300) ?? string.Empty;
+                    sb.AppendLine($"- **Question {index}:** Accuracy {level} / 6 — {evidence}");
+                }
+                sb.AppendLine();
+            }
         }
 
         // Disputed assessments. A single grader deciding a low score is the least reproducible

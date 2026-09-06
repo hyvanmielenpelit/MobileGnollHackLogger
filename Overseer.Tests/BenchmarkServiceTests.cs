@@ -3,10 +3,13 @@ namespace Overseer.Tests;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using MobileGnollHackLogger.Data;
 using Overseer.Services;
@@ -1096,6 +1099,344 @@ public class BenchmarkServiceTests
         Assert.NotEmpty(claims);
         Assert.Contains(claims, c => c.Contains("+2 AC"));
         Assert.Contains(claims, c => c.Contains("-4 AC"));
+    }
+
+    // --- 12. Second-Opinion Sample Top-Up (FlaggedPlusSample) ---
+
+    [Fact]
+    public async Task SecondOpinionSampleTopUp_SelectsTheLowestScoringAnswers_TiesByOrderIndex()
+    {
+        // Scores 40, 40, 55 are the three lowest; the pair at 40 must resolve Q2 before Q4, which
+        // is the tie-break that makes the selection reproducible rather than merely small.
+        var (run, attempted) = await RunSampleTopUpAsync(
+            BenchmarkSecondOpinionMode.FlaggedPlusSample,
+            minimumSample: 3,
+            answers: new[] { (1, 90), (2, 40), (3, 70), (4, 40), (5, 55) });
+
+        Assert.Equal(new[] { 2, 4, 5 }, attempted);
+        Assert.Equal(3, run.SecondOpinionSampleCountUsed);
+    }
+
+    [Fact]
+    public async Task SecondOpinionSampleTopUp_IsStableUnderReorderingOfTheInput()
+    {
+        // Same answers, inserted in a different order, so the underlying query returns them in a
+        // different order too. Selection must not move: a re-run that reshuffled the sample could
+        // be used to fish for a different agreement figure.
+        var (run, attempted) = await RunSampleTopUpAsync(
+            BenchmarkSecondOpinionMode.FlaggedPlusSample,
+            minimumSample: 3,
+            answers: new[] { (5, 55), (3, 70), (1, 90), (4, 40), (2, 40) });
+
+        Assert.Equal(new[] { 2, 4, 5 }, attempted);
+        Assert.Equal(3, run.SecondOpinionSampleCountUsed);
+    }
+
+    [Fact]
+    public async Task SecondOpinionSampleTopUp_IsANoOp_UnderFlagged()
+    {
+        // Flagged is the mode every pre-existing profile carries. The top-up must not reach it,
+        // or the migration would have changed what every existing profile costs per run.
+        var (run, attempted) = await RunSampleTopUpAsync(
+            BenchmarkSecondOpinionMode.Flagged,
+            minimumSample: 3,
+            answers: new[] { (1, 90), (2, 40), (3, 70), (4, 40), (5, 55) });
+
+        Assert.Empty(attempted);
+        Assert.Equal(0, run.SecondOpinionSampleCountUsed);
+    }
+
+    [Fact]
+    public async Task SecondOpinionSampleTopUp_CountsAnswersAlreadyGradedTwice_TowardTheTarget()
+    {
+        // The trigger path may already have covered part of the target. Topping up to the full
+        // minimum on top of those would over-spend on a run that was already sampled.
+        var (run, attempted) = await RunSampleTopUpAsync(
+            BenchmarkSecondOpinionMode.FlaggedPlusSample,
+            minimumSample: 3,
+            answers: new[] { (1, 90), (2, 40), (3, 70), (4, 40), (5, 55) },
+            alreadyGradedOrderIndexes: new[] { 2, 4 });
+
+        Assert.Equal(new[] { 5 }, attempted);
+        Assert.Equal(3, run.SecondOpinionSampleCountUsed);
+    }
+
+    /// <summary>
+    /// Drives <c>RunSecondOpinionSampleTopUpAsync</c> and reports, in selection order, the order
+    /// indexes it actually attempted to re-grade.
+    ///
+    /// The stage is private and has no seam of its own, so it is reached by reflection rather than
+    /// by changing production code for a test's convenience. The run's second-opinion assessor
+    /// points at a configuration id that does not exist, which makes <c>ResolveAssessorAsync</c>
+    /// return its "not found" error before any model call: each selected answer then produces one
+    /// warning naming its order index, and nothing leaves the process. That warning is the only
+    /// per-answer trace the stage leaves, which is why the logger is captured here.
+    /// </summary>
+    private static async Task<(BenchmarkRun Run, List<int> Attempted)> RunSampleTopUpAsync(
+        BenchmarkSecondOpinionMode mode,
+        int minimumSample,
+        (int OrderIndex, int QualityScore)[] answers,
+        int[]? alreadyGradedOrderIndexes = null)
+    {
+        var dbOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+
+        long runId;
+        await using (var seedDb = new ApplicationDbContext(dbOptions))
+        {
+            var seededRun = new BenchmarkRun
+            {
+                SuiteName = "Suite",
+                TestedModelDisplayNameUsed = "Model T",
+                TestedModelProviderUsed = "Provider T",
+                TestedModelIdUsed = "model-t",
+                AssessorModelDisplayNameUsed = "Model A",
+                AssessorModelProviderUsed = "Provider A",
+                AssessorModelIdUsed = "model-a",
+                SecondOpinionAssessorModelConfigurationId = 999,
+                SecondOpinionModeUsed = (int)mode,
+                Status = BenchmarkRunStatus.Running,
+                StartedAtUtc = DateTime.UtcNow
+            };
+            seedDb.BenchmarkRuns.Add(seededRun);
+            await seedDb.SaveChangesAsync();
+            runId = seededRun.Id;
+
+            foreach (var (orderIndex, qualityScore) in answers)
+            {
+                seedDb.BenchmarkRunAnswers.Add(new BenchmarkRunAnswer
+                {
+                    BenchmarkRunId = runId,
+                    OrderIndex = orderIndex,
+                    QuestionText = $"Q{orderIndex}",
+                    AnswerText = $"Answer {orderIndex}",
+                    Status = BenchmarkAnswerStatus.Ok,
+                    AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+                    QualityScore = qualityScore,
+                    RawQualityScore = qualityScore,
+                    SecondOpinionQualityScore = (alreadyGradedOrderIndexes?.Contains(orderIndex) ?? false)
+                        ? qualityScore
+                        : null
+                });
+            }
+
+            await seedDb.SaveChangesAsync();
+        }
+
+        var logger = new RecordingLogger<BenchmarkService>();
+        var benchmarkService = new BenchmarkService(
+            null!, null!, null!, null!, null!, null!, null!,
+            new ConfigurationBuilder().Build(),
+            logger);
+
+        var topUp = typeof(BenchmarkService).GetMethod(
+            "RunSecondOpinionSampleTopUpAsync",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(topUp);
+
+        var profile = new BenchmarkScoringProfile
+        {
+            Name = "Profile Under Test",
+            SecondOpinionMode = (int)mode,
+            SecondOpinionMinimumSample = minimumSample
+        };
+
+        await using var db = new ApplicationDbContext(dbOptions);
+        var run = await db.BenchmarkRuns.FirstAsync(r => r.Id == runId);
+
+        await (Task)topUp!.Invoke(benchmarkService, new object?[]
+        {
+            db,
+            null,
+            run,
+            profile,
+            BenchmarkScoringConstants.Default,
+            CancellationToken.None
+        })!;
+
+        var attempted = logger.Messages
+            .Select(m => Regex.Match(m, @"answer (\d+): second-opinion assessor"))
+            .Where(m => m.Success)
+            .Select(m => int.Parse(m.Groups[1].Value))
+            .ToList();
+
+        return (run, attempted);
+    }
+
+    /// <summary>
+    /// Records formatted log messages so a test can assert which answers a stage acted on. Kept
+    /// deliberately minimal: nothing here filters, so a message the production code stops writing
+    /// fails the assertion rather than silently passing it.
+    /// </summary>
+    private sealed class RecordingLogger<T> : ILogger<T>
+    {
+        public List<string> Messages { get; } = new List<string>();
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        // Fully qualified: MobileGnollHackLogger.Data also declares a LogLevel, and this file
+        // has both namespaces in scope.
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            Microsoft.Extensions.Logging.LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            Messages.Add(formatter(state, exception));
+        }
+    }
+
+    // --- 13. Claim Verification Token Budget ---
+
+    [Fact]
+    public async Task RunClaimVerificationAsync_ExhaustedTokenBudget_MarksRemainingAnswersNotChecked()
+    {
+        // Q1 has already spent 5,000 verifier input tokens on this run, which is past the 1,000
+        // budget, so Q2 and Q3 must be marked before any call is made. The budget is seeded from
+        // what the *run* has spent, not from zero, so a second pass cannot spend it twice.
+        var answers = await RunClaimVerificationWithBudgetAsync(tokenBudget: 1000);
+
+        var notChecked = answers.Where(a => a.OrderIndex > 1).ToList();
+        Assert.Equal(2, notChecked.Count);
+        Assert.All(notChecked, a =>
+        {
+            Assert.NotNull(a.ClaimVerificationError);
+            Assert.StartsWith(BenchmarkService.ClaimVerificationNotCheckedPrefix, a.ClaimVerificationError, StringComparison.Ordinal);
+            Assert.Contains("1,000", a.ClaimVerificationError!, StringComparison.Ordinal);
+        });
+    }
+
+    [Fact]
+    public async Task RunClaimVerificationAsync_ZeroTokenBudget_SkipsNoAnswer()
+    {
+        // 0 is "unlimited", the default, and it is what every existing run and every operator who
+        // never sets the key gets: no answer may be stamped NotChecked under it.
+        var answers = await RunClaimVerificationWithBudgetAsync(tokenBudget: 0);
+
+        Assert.All(answers.Where(a => a.OrderIndex > 1), a => Assert.Null(a.ClaimVerificationError));
+    }
+
+    /// <summary>
+    /// Runs claim verification over three answers — Q1 already verified and carrying the run's
+    /// spent verifier tokens, Q2 and Q3 pending — under the given
+    /// <c>Benchmark:ClaimVerificationInputTokenBudget</c>.
+    ///
+    /// The pending answers declare claims but carry an empty claims array, so an answer the budget
+    /// does *not* stop returns before reaching the agent loop. That is what lets the loop runner be
+    /// null: if the budget check ever let an answer through to a real verifier call, the test would
+    /// fail with a NullReferenceException rather than pass quietly.
+    /// </summary>
+    private static async Task<List<BenchmarkRunAnswer>> RunClaimVerificationWithBudgetAsync(int tokenBudget)
+    {
+        var dbOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+
+        var dummyKey = Convert.ToBase64String(new byte[32]);
+        var settings = new Dictionary<string, string?>
+        {
+            ["AesEncryptionKey"] = dummyKey
+        };
+        if (tokenBudget > 0)
+        {
+            settings["Benchmark:ClaimVerificationInputTokenBudget"] = tokenBudget.ToString();
+        }
+
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
+        var crypto = new CryptoService(configuration);
+        var (cipher, nonce, tag) = crypto.Encrypt("test-api-key", "SYSTEM_API_KEY");
+
+        long runId;
+        await using (var seedDb = new ApplicationDbContext(dbOptions))
+        {
+            seedDb.SystemAiApiConfigurations.Add(new SystemAiApiConfiguration
+            {
+                Id = 10,
+                DisplayName = "Verifier Model",
+                ModelId = "model-v",
+                Provider = "Anthropic",
+                ModelRole = 4, // Assessor / verifier
+                IsEnabled = true,
+                EncryptedApiKey = cipher,
+                ApiKeyNonce = nonce,
+                ApiKeyTag = tag
+            });
+
+            var run = new BenchmarkRun
+            {
+                SuiteName = "Suite",
+                TestedModelDisplayNameUsed = "Model T",
+                TestedModelProviderUsed = "Provider T",
+                TestedModelIdUsed = "model-t",
+                AssessorModelDisplayNameUsed = "Model A",
+                AssessorModelProviderUsed = "Provider A",
+                AssessorModelIdUsed = "model-a",
+                ClaimVerifierModelConfigurationId = 10,
+                Status = BenchmarkRunStatus.Running,
+                StartedAtUtc = DateTime.UtcNow
+            };
+            seedDb.BenchmarkRuns.Add(run);
+            await seedDb.SaveChangesAsync();
+            runId = run.Id;
+
+            seedDb.BenchmarkRunAnswers.Add(new BenchmarkRunAnswer
+            {
+                BenchmarkRunId = runId,
+                OrderIndex = 1,
+                QuestionText = "Question 1",
+                AnswerText = "Answer 1",
+                Status = BenchmarkAnswerStatus.Ok,
+                UnverifiedClaimCount = 2,
+                UnverifiedClaimsJson = "[]",
+                ClaimVerificationJson = "[]",
+                ClaimVerificationInputTokens = 5000
+            });
+
+            foreach (int orderIndex in new[] { 2, 3 })
+            {
+                seedDb.BenchmarkRunAnswers.Add(new BenchmarkRunAnswer
+                {
+                    BenchmarkRunId = runId,
+                    OrderIndex = orderIndex,
+                    QuestionText = $"Question {orderIndex}",
+                    AnswerText = $"Answer {orderIndex}",
+                    Status = BenchmarkAnswerStatus.Ok,
+                    UnverifiedClaimCount = 2,
+                    UnverifiedClaimsJson = "[]"
+                });
+            }
+
+            await seedDb.SaveChangesAsync();
+        }
+
+        var services = new ServiceCollection();
+        services.AddScoped(_ => new ApplicationDbContext(dbOptions));
+        var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+
+        var benchmarkService = new BenchmarkService(
+            scopeFactory,
+            null!,
+            null!,
+            crypto,
+            new BenchmarkRunManager(),
+            new BenchmarkDifficultyJobManager(),
+            null!,
+            configuration,
+            NullLogger<BenchmarkService>.Instance);
+
+        await using var db = new ApplicationDbContext(dbOptions);
+        var loadedRun = await db.BenchmarkRuns.FirstAsync(r => r.Id == runId);
+
+        await benchmarkService.RunClaimVerificationAsync(db, null!, loadedRun, CancellationToken.None);
+
+        return await db.BenchmarkRunAnswers
+            .Where(a => a.BenchmarkRunId == runId)
+            .OrderBy(a => a.OrderIndex)
+            .ToListAsync();
     }
 }
 

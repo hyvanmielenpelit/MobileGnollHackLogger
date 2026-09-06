@@ -253,11 +253,19 @@ public class BenchmarkComplianceGuardTests
             config,
             NullLogger<BenchmarkService>.Instance);
 
+        // StartRun delegates every validation to the launcher, so this one must be real: it is
+        // the code path these tests are about. The orchestrator is only entered when RunCount > 1,
+        // which these tests do not do, but it is cheap to build and a null would be a trap.
+        var runLauncher = new BenchmarkRunLauncher(db, benchmarkService, runManager, guard);
+        var seriesOrchestrator = new BenchmarkSeriesOrchestrator(
+            scopeFactory, runManager, NullLogger<BenchmarkSeriesOrchestrator>.Instance);
+
         // The source and wiki indexes are only reached by the suite-health citation endpoint,
         // which these tests do not exercise — same reason the two nulls above are safe.
         var controller = new AdminBenchmarkController(
             db, benchmarkService, scoringProfileService, runManager, difficultyJobManager, guard, scopeFactory,
-            null!, null!, null!, null!, null!, null!, null!, null!)
+            null!, null!, null!, null!, null!, null!, null!, null!, null!, null!,
+            runLauncher, seriesOrchestrator, null!)
         {
             ControllerContext = new ControllerContext
             {

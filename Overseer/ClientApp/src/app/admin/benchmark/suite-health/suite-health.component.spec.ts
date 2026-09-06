@@ -8,11 +8,17 @@ import {
   BenchmarkSuiteItemAnalysisDto
 } from '../../../services/admin-benchmark.service';
 import { SystemAiConfigDto } from '../../../services/admin.service';
+import {
+  RubricGapAuthorService,
+  RubricGapAuthorDraftDto,
+  RubricGapAuthorJobDto
+} from './rubric-gap-author.service';
 
 describe('SuiteHealthComponent', () => {
   let component: SuiteHealthComponent;
   let fixture: ComponentFixture<SuiteHealthComponent>;
   let serviceMock: jasmine.SpyObj<AdminBenchmarkService>;
+  let gapAuthorMock: jasmine.SpyObj<RubricGapAuthorService>;
 
   function buildItem(overrides: Partial<BenchmarkItemStatisticsDto> = {}): BenchmarkItemStatisticsDto {
     return {
@@ -69,9 +75,17 @@ describe('SuiteHealthComponent', () => {
     serviceMock.getItemAnalysis.and.returnValue(of(buildAnalysis()));
     serviceMock.getRubricGaps.and.returnValue(of({ suiteId: 5, runCount: 0, claimCount: 0, clusters: [] }));
 
+    gapAuthorMock = jasmine.createSpyObj('RubricGapAuthorService', [
+      'startRubricGapAuthor', 'getRubricGapAuthor', 'getActiveRubricGapAuthor',
+      'cancelRubricGapAuthor', 'acceptRubricAddition'
+    ]);
+
     await TestBed.configureTestingModule({
       imports: [SuiteHealthComponent],
-      providers: [{ provide: AdminBenchmarkService, useValue: serviceMock }]
+      providers: [
+        { provide: AdminBenchmarkService, useValue: serviceMock },
+        { provide: RubricGapAuthorService, useValue: gapAuthorMock }
+      ]
     }).compileComponents();
 
     fixture = TestBed.createComponent(SuiteHealthComponent);
@@ -498,6 +512,252 @@ describe('SuiteHealthComponent', () => {
       });
       expect(serviceMock.getRubricCheck).toHaveBeenCalledWith('rubric-job-1');
       expect(component.rubricCheckJob?.status).toBe('Completed');
+    });
+  });
+
+  describe('Rubric Gap Author', () => {
+    function buildDraft(overrides: Partial<RubricGapAuthorDraftDto> = {}): RubricGapAuthorDraftDto {
+      return {
+        clusterKey: '7:0',
+        questionId: 7,
+        questionOrderIndex: 3,
+        questionTextExcerpt: 'What happens when a gnoll eats a wraith corpse?',
+        claims: ['Wraith corpses grant a level in GnollHack as in NetHack.'],
+        clusterVerdict: 'VerifiedRubricGap',
+        occurrences: 2,
+        modelFamilies: ['Anthropic', 'OpenAI'],
+        status: 'Completed',
+        proposedText: 'Notes that eating a wraith corpse grants one experience level.',
+        citation: 'src/eat.c:1841',
+        justification: 'The verifier confirmed the mechanic against the source.',
+        confidenceNote: 'High: the citation is an exact match.',
+        errorMessage: null,
+        ...overrides
+      };
+    }
+
+    function buildJob(overrides: Partial<RubricGapAuthorJobDto> = {}): RubricGapAuthorJobDto {
+      return {
+        id: 'gap-job-1',
+        suiteId: 5,
+        suiteName: 'Suite',
+        authorConfigId: 42,
+        authorDisplayName: 'Claude Opus 5',
+        instructions: null,
+        startedByUserId: null,
+        startedAtUtc: '2026-09-06T08:00:00Z',
+        completedAtUtc: '2026-09-06T08:02:00Z',
+        status: 'Completed',
+        totalModelCalls: 1,
+        promptTokens: 900,
+        outputTokens: 120,
+        drafts: [buildDraft()],
+        log: [],
+        ...overrides
+      };
+    }
+
+    /** Puts a finished job on the Rubric Gaps panel and renders it. */
+    function showJob(job: RubricGapAuthorJobDto = buildJob()): void {
+      open();
+      component.benchmarkCapableConfigs = [buildConfig({ id: 42 })];
+      component.rubricGapAuthorConfigId = 42;
+      gapAuthorMock.startRubricGapAuthor.and.returnValue(of({ jobId: job.id }));
+      gapAuthorMock.getRubricGapAuthor.and.returnValue(of(job));
+
+      component.selectTab('gaps');
+      component.startRubricGapAuthor();
+      fixture.detectChanges();
+    }
+
+    function textareaFor(clusterKey: string): HTMLTextAreaElement {
+      const id = 'sh-draft-' + clusterKey.replace(/[^A-Za-z0-9_-]/g, '-');
+      return fixture.nativeElement.querySelector('#' + id) as HTMLTextAreaElement;
+    }
+
+    function type(area: HTMLTextAreaElement, value: string): void {
+      area.value = value;
+      area.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+    }
+
+    it('should send the operator instructions and stop polling once the job is terminal', () => {
+      showJob();
+
+      expect(gapAuthorMock.startRubricGapAuthor).toHaveBeenCalledWith({
+        suiteId: 5,
+        authorModelConfigurationId: 42,
+        instructions: null,
+        clusterKeys: null
+      });
+      expect(component.rubricGapAuthorJob?.status).toBe('Completed');
+      expect(component.runningRubricGapAuthor).toBeFalse();
+
+      component.rubricGapAuthorInstructions = '  Keep additions to one sentence.  ';
+      component.startRubricGapAuthor();
+      expect(gapAuthorMock.startRubricGapAuthor.calls.mostRecent().args[0].instructions)
+        .toBe('Keep additions to one sentence.');
+    });
+
+    it('should render each draft into an editable textarea carrying a real label', () => {
+      showJob();
+
+      const area = textareaFor('7:0');
+      expect(area).withContext('the draft is rendered as a textarea, not as static text').toBeTruthy();
+      expect(area.value).toBe('Notes that eating a wraith corpse grants one experience level.');
+      expect(area.disabled).toBeFalse();
+
+      // A placeholder is not a name: it disappears on first keystroke and several screen readers
+      // never announce it, so the association has to be a real <label for>.
+      const label = fixture.nativeElement.querySelector(`label[for="${area.id}"]`) as HTMLLabelElement;
+      expect(label).toBeTruthy();
+      expect(label.textContent).toContain('Proposed rubric addition for Q3');
+      expect(area.getAttribute('placeholder')).toBeNull();
+
+      // The citation and the confidence note travel with the draft; without them the operator is
+      // being asked to vouch for a claim on the model's say-so.
+      const text = (fixture.nativeElement.textContent || '').replace(/\s+/g, ' ');
+      expect(text).toContain('src/eat.c:1841');
+      expect(text).toContain('The verifier confirmed the mechanic against the source.');
+      expect(text).toContain('High: the citation is an exact match.');
+    });
+
+    it('should accept the textarea contents rather than the model\'s draft', () => {
+      showJob();
+      gapAuthorMock.acceptRubricAddition.and.returnValue(of({
+        id: 1,
+        questionId: 7,
+        questionOrderIndex: 3,
+        itemRevisionAfter: 4,
+        acceptedVerbatim: false,
+        citation: 'src/eat.c:1841',
+        authorModelDisplayName: 'Claude Opus 5',
+        acceptedAtUtc: '2026-09-06T08:05:00Z',
+        expectedPoints: 'existing\nStates that eating a wraith corpse grants one experience level.'
+      }));
+
+      type(textareaFor('7:0'), 'States that eating a wraith corpse grants one experience level.');
+
+      const accept = Array.from(fixture.nativeElement.querySelectorAll('.draft-actions button'))
+        .find(b => ((b as HTMLElement).textContent || '').includes('Accept')) as HTMLButtonElement;
+      accept.click();
+      fixture.detectChanges();
+
+      expect(gapAuthorMock.acceptRubricAddition).toHaveBeenCalledWith(7, {
+        acceptedText: 'States that eating a wraith corpse grants one experience level.',
+        jobId: 'gap-job-1',
+        clusterKey: '7:0'
+      });
+
+      // The acceptance changed the answer key, so the reports that describe the previous revision
+      // are re-fetched rather than left on screen.
+      expect(serviceMock.getRubricGaps).toHaveBeenCalledTimes(2);
+      expect(serviceMock.getItemAnalysis).toHaveBeenCalledTimes(2);
+
+      const text = (fixture.nativeElement.textContent || '').replace(/\s+/g, ' ');
+      expect(text).toContain('Accepted as edited');
+      expect(text).toContain('item revision 4');
+    });
+
+    it('should mark a draft modified once it diverges, and revert it on request', () => {
+      showJob();
+
+      expect(component.isDraftModified(component.rubricGapAuthorJob!.drafts[0])).toBeFalse();
+      expect(fixture.nativeElement.querySelector('.draft-modified')).toBeNull();
+
+      type(textareaFor('7:0'), 'Rewritten by the operator.');
+
+      expect(component.isDraftModified(component.rubricGapAuthorJob!.drafts[0])).toBeTrue();
+      expect((fixture.nativeElement.querySelector('.draft-modified') as HTMLElement).textContent?.trim())
+        .toBe('modified');
+
+      const revert = Array.from(fixture.nativeElement.querySelectorAll('.draft-actions button'))
+        .find(b => ((b as HTMLElement).textContent || '').includes('Revert')) as HTMLButtonElement;
+      expect(revert.disabled).withContext('Revert is live only while there is something to revert').toBeFalse();
+
+      revert.click();
+      fixture.detectChanges();
+
+      expect(textareaFor('7:0').value).toBe('Notes that eating a wraith corpse grants one experience level.');
+      expect(component.isDraftModified(component.rubricGapAuthorJob!.drafts[0])).toBeFalse();
+      expect(fixture.nativeElement.querySelector('.draft-modified')).toBeNull();
+    });
+
+    it('should keep an edit across a poll rather than overwriting it with the draft', () => {
+      showJob();
+      type(textareaFor('7:0'), 'Half-typed edit');
+
+      component.pollRubricGapAuthor('gap-job-1');
+      fixture.detectChanges();
+
+      expect(textareaFor('7:0').value).toBe('Half-typed edit');
+    });
+
+    it('should offer no bulk acceptance of any kind', () => {
+      // One endpoint, one draft, one click, one item-revision bump. Curated knowledge has to be
+      // human-authored, so a control that accepted several drafts at once would leave the same
+      // rows behind while making that authorship claim false.
+      showJob(buildJob({
+        drafts: [
+          buildDraft(),
+          buildDraft({ clusterKey: '9:0', questionId: 9, questionOrderIndex: 5, proposedText: 'A second addition.' })
+        ]
+      }));
+
+      const buttons: HTMLElement[] = Array.from(fixture.nativeElement.querySelectorAll('button'));
+      const labels = buttons.map(b => (b.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase());
+
+      expect(labels.some(l => /accept all|accept every|accept selected|apply all|accept remaining/.test(l)))
+        .withContext('no bulk-accept control exists').toBeFalse();
+
+      // Exactly one Accept per draft, and no multi-select to feed one.
+      expect(labels.filter(l => l.startsWith('accept')).length).toBe(2);
+      expect(fixture.nativeElement.querySelectorAll('.gap-author-results input[type="checkbox"]').length).toBe(0);
+
+      // The service exposes no list form either, so a bulk control could not be wired even by
+      // accident.
+      expect((gapAuthorMock as any).acceptRubricAdditions).toBeUndefined();
+    });
+
+    it('should surface an acceptance failure against the draft it belongs to', () => {
+      showJob();
+      gapAuthorMock.acceptRubricAddition.and.returnValue(
+        throwError(() => ({ error: { error: 'That draft belongs to a different question.' } })));
+
+      component.acceptDraft(component.rubricGapAuthorJob!.drafts[0]);
+      fixture.detectChanges();
+
+      expect(component.draftAcceptErrors['7:0']).toBe('That draft belongs to a different question.');
+      expect(component.isDraftAccepted(component.rubricGapAuthorJob!.drafts[0])).toBeFalse();
+      expect(fixture.nativeElement.textContent).toContain('That draft belongs to a different question.');
+    });
+
+    it('should pick the drafting model from the same badge dropdown the checker uses', () => {
+      open();
+      component.benchmarkCapableConfigs = [
+        buildConfig(),
+        buildConfig({ id: 2, displayName: 'Gemini 3 Pro', provider: 'Google', modelId: 'gemini-3-pro', thinkingLevel: 'low' })
+      ];
+      component.selectTab('gaps');
+      fixture.detectChanges();
+
+      const trigger = fixture.nativeElement.querySelector('.rubric-gap-author-selector .selector-trigger') as HTMLElement;
+      expect(trigger).toBeTruthy();
+
+      trigger.click();
+      fixture.detectChanges();
+      expect(component.isRubricGapAuthorDropdownOpen).toBeTrue();
+
+      const options: HTMLElement[] = Array.from(
+        fixture.nativeElement.querySelectorAll('.rubric-gap-author-selector .model-option'));
+      expect(options.length).toBe(2);
+
+      options[1].click();
+      fixture.detectChanges();
+
+      expect(component.isRubricGapAuthorDropdownOpen).toBeFalse();
+      expect(component.rubricGapAuthorConfigId).toBe(2);
+      expect(trigger.querySelector('.provider-badge')?.textContent?.trim()).toBe('Google');
     });
   });
 

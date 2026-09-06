@@ -140,6 +140,20 @@ public sealed record BenchmarkSuiteItemAnalysis
     public int LinkedAnswerCount { get; init; }
     public int UnlinkedAnswerCount { get; init; }
 
+    /// <summary>
+    /// The caller restricted the analysis to an explicit set of runs rather than passing every run
+    /// of the suite. True for a multi-run group, which is precisely the confound-free input the
+    /// three <c>Distinct*Count</c> fields above exist to report the absence of: in a Tier A group
+    /// they are 1 by construction, and a reader should know that was arranged rather than lucky.
+    /// </summary>
+    public bool ExplicitRunSet { get; init; }
+
+    /// <summary>
+    /// Runs the caller passed that the explicit run set excluded. Zero when no restriction was
+    /// applied. Reported so a group analysis can say it looked at exactly its members.
+    /// </summary>
+    public int ExcludedRunCount { get; init; }
+
     public IReadOnlyList<BenchmarkItemStatistics> Items { get; init; } = Array.Empty<BenchmarkItemStatistics>();
 }
 
@@ -184,18 +198,32 @@ public static class BenchmarkItemAnalysis
     public const int MinRunsForMeasurement = 4;
 
     /// <summary>
-    /// Computes the table. <paramref name="runs"/> must have their <c>Answers</c> loaded; only
-    /// runs of this suite are considered, and only answers linked to one of
-    /// <paramref name="questions"/>.
+    /// Computes the table. <paramref name="runs"/> must have their <c>Answers</c> loaded, and only
+    /// answers linked to one of <paramref name="questions"/> are considered.
+    ///
+    /// <paramref name="runIds"/> restricts the analysis to an explicit set of runs — a multi-run
+    /// group's members — instead of whatever the caller happened to load. It is additive and
+    /// optional: passing null keeps the historical behaviour of analysing every run given, which
+    /// is what the suite-health panel wants. A group wants the opposite, because a group is a
+    /// membership decision and the analysis must reflect exactly that membership, not the query
+    /// that fetched it.
     /// </summary>
     public static BenchmarkSuiteItemAnalysis Compute(
         BenchmarkSuite suite,
         IReadOnlyCollection<BenchmarkQuestion> questions,
-        IReadOnlyCollection<BenchmarkRun> runs)
+        IReadOnlyCollection<BenchmarkRun> runs,
+        IReadOnlyCollection<long>? runIds = null)
     {
         ArgumentNullException.ThrowIfNull(suite);
         questions ??= Array.Empty<BenchmarkQuestion>();
         runs ??= Array.Empty<BenchmarkRun>();
+
+        int suppliedRunCount = runs.Count;
+        if (runIds != null)
+        {
+            var wanted = new HashSet<long>(runIds);
+            runs = runs.Where(r => wanted.Contains(r.Id)).ToList();
+        }
 
         var questionIds = new HashSet<long>(questions.Select(q => q.Id));
 
@@ -222,23 +250,35 @@ public static class BenchmarkItemAnalysis
             DistinctScoringMethodVersionCount = runs.Select(r => r.ScoringMethodVersion).Distinct().Count(),
             LinkedAnswerCount = linked,
             UnlinkedAnswerCount = unlinked,
+            ExplicitRunSet = runIds != null,
+            ExcludedRunCount = suppliedRunCount - runs.Count,
             Items = items.OrderByDescending(i => Math.Abs(i.DifficultyDelta ?? 0))
                 .ThenBy(i => i.OrderIndex)
                 .ToList()
         };
     }
 
-    private static BenchmarkItemStatistics ComputeItem(
+    /// <summary>
+    /// One sample per run: the run, and its scored answer to <paramref name="question"/>.
+    ///
+    /// An answer counts only when it is <c>Ok</c>, carries a quality score, and was answered
+    /// against the question's current revision. A null <c>ItemRevisionUsed</c> is included and
+    /// counted, not dropped: it means the answer predates the column, so the revision it was
+    /// written against is unknowable. Dropping those would leave the table empty for every suite
+    /// that already has runs, and assuming they match the current revision would be a claim the
+    /// data does not support — so the count is reported instead.
+    ///
+    /// Public because <see cref="BenchmarkGroupStatistics"/> computes cross-run figures over
+    /// exactly this sample and must not re-derive the predicate. Two definitions of "an answer
+    /// that counts" would put two different denominators on the same table.
+    /// </summary>
+    public static IReadOnlyList<(BenchmarkRun Run, BenchmarkRunAnswer Answer)> Samples(
         BenchmarkQuestion question,
         IReadOnlyCollection<BenchmarkRun> runs)
     {
-        // One sample per run: the run, and its scored answer to this question.
-        //
-        // A null ItemRevisionUsed is included and counted, not dropped: it means the answer
-        // predates the column, so the revision it was written against is unknowable. Dropping
-        // those would leave the table empty for every suite that already has runs, and assuming
-        // they match the current revision would be a claim the data does not support — so the
-        // count is reported instead and the banner says what fraction of the sample it is.
+        ArgumentNullException.ThrowIfNull(question);
+        runs ??= Array.Empty<BenchmarkRun>();
+
         var samples = new List<(BenchmarkRun Run, BenchmarkRunAnswer Answer)>();
         foreach (var run in runs)
         {
@@ -253,6 +293,15 @@ public static class BenchmarkItemAnalysis
                 samples.Add((run, answer));
             }
         }
+
+        return samples;
+    }
+
+    private static BenchmarkItemStatistics ComputeItem(
+        BenchmarkQuestion question,
+        IReadOnlyCollection<BenchmarkRun> runs)
+    {
+        var samples = Samples(question, runs).ToList();
 
         int runCount = samples.Count;
         if (runCount == 0)

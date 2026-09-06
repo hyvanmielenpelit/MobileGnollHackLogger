@@ -136,6 +136,24 @@ public class BenchmarkRunAnswer
     public string? AssessmentEvidenceJson { get; set; }
 
     /// <summary>
+    /// The assessor recorded a rubric point that lies outside what the question asked, under the
+    /// <c>OUT-OF-SCOPE:</c> marker scoring method v8 requires, and did not deduct for it.
+    ///
+    /// Not a defect: a measurement. Completeness has been this suite's weakest dimension on every
+    /// run, roughly ten points below Accuracy, and that gap is part model and part instrument —
+    /// a rubric enumerating more ground truth than its question asked for. Counting the points the
+    /// assessor itself placed out of scope is what separates the two halves, and without the count
+    /// no Completeness prompt change could be justified against the gap.
+    ///
+    /// Non-nullable, unlike <see cref="NarrationBlockCount"/> and <see cref="UnverifiedClaimCount"/>:
+    /// an answer graded before scoring method v8 reads false because the marker did not exist, and
+    /// <c>BenchmarkRun.ScoringMethodVersion</c> is what tells those runs apart from a v8 run whose
+    /// assessor genuinely found nothing out of scope. A nullable column would duplicate a fact the
+    /// run already carries.
+    /// </summary>
+    public bool CompletenessOutOfScope { get; set; }
+
+    /// <summary>
     /// The verbatim claim the assessor says is a critical error, quoted from the graded answer.
     /// A critical error caps quality at 25, so it must point at text the answer actually
     /// asserts; an unquoted one is demoted by the parser.

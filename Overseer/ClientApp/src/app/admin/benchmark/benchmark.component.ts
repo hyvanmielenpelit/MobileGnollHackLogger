@@ -29,12 +29,19 @@ import {
   BenchmarkGameSnapshotDto,
   QuestionGenerationJobDto,
   QuestionGenerationJobItemDto,
-  QuestionGenerationJobLogEntryDto
+  QuestionGenerationJobLogEntryDto,
+  BenchmarkRunLimitsDto,
+  BenchmarkRunSeriesDto,
+  BenchmarkRunGroupDto,
+  BenchmarkRunGroupTierPreviewDto,
+  BenchmarkComparabilityResultDto
 } from '../../services/admin-benchmark.service';
 import { SystemAiConfigDto } from '../../services/admin.service';
 
 import { CollapsibleMarkdownComponent } from '../../shared/collapsible-markdown/collapsible-markdown.component';
 import { SuiteHealthComponent, SuiteHealthTab } from './suite-health/suite-health.component';
+import { MultiRunComponent } from './multi-run/multi-run.component';
+import { MultiRunProgressDialogComponent } from './multi-run/multi-run-progress-dialog.component';
 import { SnapshotViewerComponent } from '../../shared/snapshot-viewer/snapshot-viewer.component';
 import { ensureOverlayPolyfills } from '../../utils/polyfills.util';
 import { SystemService } from '../../services/system.service';
@@ -61,6 +68,69 @@ export interface BenchmarkRunProgressRow {
 }
 
 /**
+ * The functional families a benchmark tool belongs to. Mirrors `BenchmarkToolFamily` in
+ * `Overseer/Services/Benchmarking/BenchmarkChatTransfer.cs`, which is what the report builder's
+ * Tool Routing table classifies against.
+ */
+export type BenchmarkToolFamilyName =
+  'SourceCode' | 'Wiki' | 'StructuredLookup' | 'KnowledgeBase' | 'Other';
+
+/**
+ * U1. The one place tool-name membership is written on the client.
+ *
+ * This is a deliberate mirror of `BenchmarkChatTransfer.ClassifyTool`, and it exists as a single
+ * exported constant rather than as lists spelled out at each call site because the report and this
+ * screen must classify the same call the same way. Two inline copies of "which tools are source
+ * tools" would agree on the day they were written and disagree the first time a tool is added — and
+ * the disagreement would surface as an operator reading two different source shares for one run.
+ *
+ * When a tool is added on the server, it is added here in the same change.
+ */
+export const BENCHMARK_TOOL_FAMILY_MEMBERSHIP: ReadonlyArray<readonly [BenchmarkToolFamilyName, readonly string[]]> = [
+  ['SourceCode', ['source_code_search', 'source_code_view', 'search_definitions',
+    'get_function_definition', 'get_constants', 'list_indexed_files']],
+  ['Wiki', ['wiki_search', 'wiki_view', 'nethack_wiki_search', 'nethack_wiki_view']],
+  ['StructuredLookup', ['monster_lookup', 'item_lookup', 'get_monster_stats', 'get_item_stats']],
+  ['KnowledgeBase', ['get_knowledge_article']]
+];
+
+/** Display order and labels, matching the report's Tool Routing table exactly. */
+export const BENCHMARK_TOOL_FAMILY_LABELS: ReadonlyArray<readonly [BenchmarkToolFamilyName, string]> = [
+  ['SourceCode', 'Source Code'],
+  ['Wiki', 'Wiki'],
+  ['StructuredLookup', 'Structured Lookup'],
+  ['KnowledgeBase', 'Knowledge Base'],
+  ['Other', 'Other']
+];
+
+/** One tool name to its family. Case- and whitespace-insensitive, as the server's switch is. */
+export function classifyBenchmarkTool(toolName: string | null | undefined): BenchmarkToolFamilyName {
+  const key = (toolName ?? '').trim().toLowerCase();
+  for (const [family, members] of BENCHMARK_TOOL_FAMILY_MEMBERSHIP) {
+    if (members.includes(key)) return family;
+  }
+  return 'Other';
+}
+
+/** One row of the Tool Routing block: a family, its call count, and its share of the run. */
+export interface BenchmarkToolFamilyRow {
+  family: BenchmarkToolFamilyName;
+  label: string;
+  count: number;
+  sharePercentage: number;
+}
+
+/**
+ * U1. Pearson *r* of per-answer source-family share against model time and against quality, with
+ * the sample size that produced them. A correlation without its *n* is not a finding.
+ */
+export interface BenchmarkSourceShareCorrelations {
+  modelTimeR: number | null;
+  qualityR: number | null;
+  sampleSize: number;
+}
+
+/**
  * The run setup an operator last started, remembered across reloads. Exactly the fields that make up a
  * run: not the same-provider acknowledgement, which is a per-run safety gate, and not the
  * difficulty-assessor, retry-assessor, generation-model or calibration-assessor selections, which belong
@@ -84,7 +154,10 @@ interface BenchmarkRunSettings {
 @Component({
   selector: 'app-admin-benchmark',
   standalone: true,
-  imports: [CommonModule, DecimalPipe, FormsModule, CollapsibleMarkdownComponent, SuiteHealthComponent, SnapshotViewerComponent],
+  imports: [
+    CommonModule, DecimalPipe, FormsModule, CollapsibleMarkdownComponent, SuiteHealthComponent,
+    SnapshotViewerComponent, MultiRunComponent, MultiRunProgressDialogComponent
+  ],
   templateUrl: './benchmark.component.html',
   styleUrls: ['./benchmark.component.scss']
 })
@@ -131,10 +204,14 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   private systemService = inject(SystemService);
   private cdr = inject(ChangeDetectorRef);
 
-  activeSubTab: 'run' | 'history' | 'suites' = 'run';
+  activeSubTab: 'run' | 'history' | 'multirun' | 'suites' = 'run';
 
-  /** Tab order, and the source of truth for arrow-key navigation indices. */
-  readonly subTabs = ['run', 'history', 'suites'] as const;
+  /**
+   * Tab order, and the source of truth for arrow-key navigation indices. Multi-Run Analysis sits
+   * immediately right of Run History because a group is built out of the runs listed there, so the
+   * two are read in that order.
+   */
+  readonly subTabs = ['run', 'history', 'multirun', 'suites'] as const;
 
   /**
    * BenchmarkAnswerFlags bits that mean the graded text was corrupted in transport:
@@ -276,10 +353,76 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   copiedRunDiagnostics = false;
   private copiedRunDiagnosticsTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // --- Multi-run series ---
+  //
+  // A series is N executions of one identical request, strictly one at a time. Everything here is
+  // inert at runCount 1: no series row is created, startRun() is posted exactly as before, and the
+  // single-run banner and dialog are the only progress surfaces. That is the regression that
+  // matters most about this feature, so the branch is one `if` in startBenchmark and nowhere else.
+
+  private static readonly SERIES_POLL_INTERVAL_MS = 5000;
+
+  /**
+   * How many times to execute the configured request. Bound to a `type="number"` field whose max is
+   * `runLimits.maxRunCountPerSeries`, never a literal: raising the configured daily cap must raise
+   * the field with it, and the server re-checks against the live guard regardless.
+   */
+  runCount = 1;
+
+  /**
+   * On a cap denial: pause the series in WaitingForCap and retry, rather than stopping it. Either
+   * way every completed member is kept and the series stays resumable.
+   */
+  allowCapWait = false;
+
+  /** The caps and the live rolling-window counts. Null until GET runs/limits answers. */
+  runLimits: BenchmarkRunLimitsDto | null = null;
+
+  activeSeriesId: number | null = null;
+  activeSeries: BenchmarkRunSeriesDto | null = null;
+  private seriesPollInterval: any = null;
+  private seriesVisibilityChangeHandler: (() => void) | null = null;
+
+  /** The Multi-Run Progress dialog's visibility. The dialog element itself belongs to that component. */
+  multiRunDialogVisible = false;
+
+  seriesErrorMessage: string | null = null;
+  resumingSeries = false;
+
   // History
   historyRuns: BenchmarkRunSummaryDto[] = [];
   historySuiteFilter: number | null = null;
   loadingHistory = false;
+
+  // --- Run History: series badge, group column and the group builder ---
+  //
+  // A run belongs to at most one series and to any number of analysis groups, so the badge is a
+  // property of the row while the group column is a lookup over the loaded groups.
+
+  runGroups: BenchmarkRunGroupDto[] = [];
+  loadingRunGroups = false;
+
+  /** Runs ticked in the history table, in selection order. A group is built out of exactly these. */
+  selectedRunIds = new Set<number>();
+
+  /**
+   * The tier the current selection would resolve to, previewed before anything is created. On a
+   * refusal it carries the keys that differ and the runs carrying them: a "no" with no reason is
+   * unusable in a group builder, which is why the preview endpoint exists at all.
+   */
+  groupTierPreview: BenchmarkComparabilityResultDto | null = null;
+  groupPreviewError: string | null = null;
+  previewingGroupTier = false;
+
+  groupBuilderName = '';
+  groupBuilderNotes = '';
+  /** Required to persist a Tier C group. Without it a cross-condition set is refused server-side. */
+  groupBuilderCrossCondition = false;
+  /** An existing group to add the selection to, or null to create a new one. */
+  groupBuilderTargetId: number | null = null;
+  creatingGroup = false;
+  groupBuilderError: string | null = null;
+  groupBuilderSuccess: string | null = null;
 
   // Detail Modal
   selectedRunDetail: BenchmarkRunDetailDto | null = null;
@@ -442,6 +585,10 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     this.setDefaultModelSelections();
     this.checkActiveDifficultyAssessment();
     this.checkActiveRun();
+    // The Number of runs field cannot bound itself until the caps arrive, and a series already
+    // running must reattach its banner exactly as a single run does.
+    this.loadRunLimits();
+    this.checkActiveRunSeries();
   }
 
   checkActiveDifficultyAssessment(): void {
@@ -464,14 +611,19 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
    * loads live here rather than in the template so the tab row carries one
    * statement per handler.
    */
-  selectSubTab(tab: 'run' | 'history' | 'suites'): void {
+  selectSubTab(tab: 'run' | 'history' | 'multirun' | 'suites'): void {
     this.activeSubTab = tab;
     if (tab === 'history') {
       this.loadHistory();
+      // The group column needs the groups, and the panel is where a group is built from a
+      // selection, so both loads belong to entering the tab rather than to the first click.
+      this.loadRunGroups();
     }
     if (tab === 'suites') {
       this.loadSuites();
     }
+    // 'multirun' loads nothing here: the panel is the MultiRunComponent's own, and it owns its
+    // fetches. Loading them from the host would give that data two owners.
   }
 
   /**
@@ -512,6 +664,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     this.stopRunElapsedTicker();
     this.stopDetailPolling();
     this.stopDifficultyPolling();
+    this.stopSeriesPolling();
     if (this.copiedDiagnosticsTimer) { clearTimeout(this.copiedDiagnosticsTimer); }
     if (this.copiedRunDiagnosticsTimer) { clearTimeout(this.copiedRunDiagnosticsTimer); }
   }
@@ -809,11 +962,23 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     return cost;
   }
 
-  formatRunEstimatedCost(run: BenchmarkRunSummaryDto | BenchmarkRunDetailDto): string {
-    if (run.estimatedCost == null) return '-';
+  /**
+   * U3. A dollar amount at the precision the figure deserves.
+   *
+   * `'1.2-4'` everywhere rendered a $2.5311 run as `$2.5311` while the Markdown report read $2.53,
+   * and two different-looking numbers for one run is a defect whichever of them is "right". Four
+   * decimals exist for the sub-cent case — a cancelled run costing $0.0007 must not collapse to
+   * `$0.00` — so the rule is precision by magnitude: two decimals at or above a dollar, four below.
+   */
+  formatCostAmount(amount: number | null | undefined): string {
+    if (amount == null || !Number.isFinite(amount)) return '-';
     const numPipe = new DecimalPipe('en-US');
-    const formatted = numPipe.transform(run.estimatedCost, '1.2-4');
-    return `$${formatted}`;
+    const digits = Math.abs(amount) >= 1 ? '1.2-2' : '1.2-4';
+    return `$${numPipe.transform(amount, digits)}`;
+  }
+
+  formatRunEstimatedCost(run: BenchmarkRunSummaryDto | BenchmarkRunDetailDto): string {
+    return this.formatCostAmount(run.estimatedCost);
   }
 
   /**
@@ -1797,6 +1962,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
 
     this.startingRun = true;
     this.runErrorMessage = null;
+    this.seriesErrorMessage = null;
 
     const req: StartBenchmarkRunRequest = {
       suiteId: this.selectedSuiteId,
@@ -1815,6 +1981,18 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     // Before the request, not after it: the operator's choices are worth remembering whether or not the
     // server accepts the run.
     this.persistRunSettings();
+
+    // The one branch multi-run adds to the start path. At 1 the request is posted to the same
+    // endpoint with the same body it has always carried — runCount and allowCapWait are not even
+    // sent — so a single run creates no series and no group, exactly as before.
+    if (this.effectiveRunCount > 1) {
+      this.startBenchmarkSeries({
+        ...req,
+        runCount: this.effectiveRunCount,
+        allowCapWait: this.allowCapWait
+      });
+      return;
+    }
 
     this.benchmarkService.startRun(req).subscribe({
       next: (res) => {
@@ -1842,6 +2020,325 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
         this.cdr.detectChanges();
       }
     });
+  }
+
+  // --- Multi-run series execution ---
+
+  /**
+   * The run count actually in force. A non-numeric or out-of-range field value resolves to 1 rather
+   * than to an error, because the field is a courtesy and the server is the authority: the worst a
+   * bad value here may do is start one run, never N of them.
+   */
+  get effectiveRunCount(): number {
+    const n = Math.floor(Number(this.runCount));
+    if (!Number.isFinite(n) || n < 1) return 1;
+    const max = this.maxRunCountPerSeries;
+    return max != null && n > max ? max : n;
+  }
+
+  /**
+   * The Number of runs field's `max`, from GET runs/limits. Null until the caps arrive, which
+   * leaves the field unbounded on the client and bounded on the server — the safe direction, since
+   * an unknown cap must not silently become 1.
+   */
+  get maxRunCountPerSeries(): number | null {
+    return this.runLimits?.maxRunCountPerSeries ?? null;
+  }
+
+  /** True once the operator has asked for more than one run, which is what reveals the projections. */
+  get isMultiRunRequested(): boolean {
+    return this.effectiveRunCount > 1;
+  }
+
+  loadRunLimits(): void {
+    this.benchmarkService.getRunLimits().subscribe({
+      next: (limits) => {
+        this.runLimits = limits;
+        this.cdr.detectChanges();
+      },
+      // A field that cannot bound itself is still usable, because the server re-checks. Blocking the
+      // run because a courtesy lookup failed would be the wrong trade.
+      error: (err) => console.error('Failed to load benchmark run limits', err)
+    });
+  }
+
+  /**
+   * The suite's recent mean run duration, in milliseconds, over its completed runs in the loaded
+   * history. Null when the history holds none: a projection with no basis is worse than no
+   * projection, because it looks like a measurement.
+   */
+  get recentMeanRunDurationMs(): number | null {
+    const runs = this.completedRunsOfSelectedSuite;
+    if (runs.length === 0) return null;
+    const total = runs.reduce((sum, r) => sum + (r.totalDurationMs || r.totalAnswerDurationMs || 0), 0);
+    return total > 0 ? Math.round(total / runs.length) : null;
+  }
+
+  /** The same basis for money: the mean estimated cost of the suite's recent completed runs. */
+  get recentMeanRunCost(): number | null {
+    const priced = this.completedRunsOfSelectedSuite.filter(r => r.estimatedCost != null);
+    if (priced.length === 0) return null;
+    return priced.reduce((sum, r) => sum + (r.estimatedCost ?? 0), 0) / priced.length;
+  }
+
+  /**
+   * Completed runs of the selected suite, newest first, capped at five. Five rather than all of
+   * them because a projection should describe the instrument as it is now, and a run from before a
+   * model change says nothing useful about how long the next one takes.
+   */
+  private get completedRunsOfSelectedSuite(): BenchmarkRunSummaryDto[] {
+    const suiteId = this.selectedSuiteId;
+    if (suiteId == null) return [];
+    return this.historyRuns
+      .filter(r => r.benchmarkSuiteId === suiteId)
+      .filter(r => {
+        const s = this.formatStatus(r.status);
+        return s === 'Completed' || s === 'CompletedWithErrors' || s === 'CompletedWithLimits';
+      })
+      .slice(0, 5);
+  }
+
+  /** RunCount × the suite's recent mean run duration, or null when there is nothing to project from. */
+  get projectedSeriesDurationLabel(): string | null {
+    const mean = this.recentMeanRunDurationMs;
+    if (mean == null) return null;
+    return this.formatElapsed(mean * this.effectiveRunCount);
+  }
+
+  /** RunCount × the suite's recent mean run cost. Formatted like every other cost on this screen. */
+  get projectedSeriesCostLabel(): string | null {
+    const mean = this.recentMeanRunCost;
+    if (mean == null) return null;
+    return this.formatCostAmount(mean * this.effectiveRunCount);
+  }
+
+  /**
+   * Whether the requested series exceeds what the rolling 24-hour window still allows. Advisory: the
+   * guard is re-checked per member, and with AllowCapWait a series that outruns the window pauses
+   * rather than failing.
+   */
+  get seriesExceedsDailyHeadroom(): boolean {
+    const headroom = this.runLimits?.remainingDailyHeadroom;
+    return headroom != null && this.effectiveRunCount > headroom;
+  }
+
+  private startBenchmarkSeries(req: StartBenchmarkRunRequest): void {
+    this.benchmarkService.startRunSeries(req).subscribe({
+      next: (res) => {
+        this.startingRun = false;
+        this.sameProviderDialog?.nativeElement.close();
+        this.sameProviderWarning = null;
+        this.lastRunPollError = null;
+        this.runQuestionsLoadError = null;
+        this.runDiagnosticsCopyFailed = false;
+        this.activeSeriesId = res.seriesId;
+        this.startSeriesPolling(res.seriesId);
+        this.loadHistory();
+        this.loadAllFootprints();
+        this.loadRunLimits();
+        this.cdr.detectChanges();
+        this.openMultiRunDialog();
+      },
+      error: (err) => {
+        this.startingRun = false;
+        if (err?.status === 409 && err.error?.sameProvider) {
+          this.sameProviderWarning = err.error as SameProviderWarningDto;
+          this.sameProviderDialog?.nativeElement.showModal();
+        } else {
+          this.runErrorMessage = err?.error?.message || err?.error || 'Failed to start benchmark run series.';
+        }
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  /**
+   * Reattaches the series banner to a series already executing when the page loads, mirroring
+   * checkActiveRun. The dialog stays closed for the same reason: opening a modal unbidden steals
+   * focus from whatever the operator was doing.
+   */
+  checkActiveRunSeries(): void {
+    this.benchmarkService.getActiveRunSeries().subscribe({
+      next: (series) => {
+        if (series) {
+          this.activeSeries = series;
+          this.activeSeriesId = series.id;
+          if (this.seriesIsLive) {
+            this.startSeriesPolling(series.id);
+          }
+          this.cdr.detectChanges();
+        }
+      },
+      error: (err) => console.error('Failed to check active benchmark run series', err)
+    });
+  }
+
+  private startSeriesPolling(seriesId: number): void {
+    this.stopSeriesPolling();
+    this.pollSeries(seriesId);
+    this.seriesPollInterval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) {
+        return;
+      }
+      this.pollSeries(seriesId);
+    }, AdminBenchmarkComponent.SERIES_POLL_INTERVAL_MS);
+
+    if (typeof document !== 'undefined') {
+      this.seriesVisibilityChangeHandler = () => {
+        if (!document.hidden) {
+          this.pollSeries(seriesId);
+        }
+      };
+      document.addEventListener('visibilitychange', this.seriesVisibilityChangeHandler);
+    }
+  }
+
+  private stopSeriesPolling(): void {
+    if (this.seriesPollInterval) {
+      clearInterval(this.seriesPollInterval);
+      this.seriesPollInterval = null;
+    }
+    if (this.seriesVisibilityChangeHandler && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.seriesVisibilityChangeHandler);
+      this.seriesVisibilityChangeHandler = null;
+    }
+  }
+
+  private pollSeries(seriesId: number): void {
+    this.benchmarkService.getRunSeries(seriesId).subscribe({
+      next: (series) => {
+        this.activeSeries = series;
+        // The member currently running is what the single-run banner and dialog describe, so the
+        // run poller follows the series rather than being started again per member.
+        const running = series.members.find(m => this.formatStatus(m.status) === 'Running');
+        if (running && running.runId !== this.activeRunId) {
+          this.activeRunId = running.runId;
+          this.startPolling(running.runId);
+        }
+        if (!this.seriesIsLive) {
+          this.stopSeriesPolling();
+          this.loadHistory();
+          this.loadRunGroups();
+          this.loadRunLimits();
+        }
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        console.error('Failed to poll benchmark run series', err);
+        this.stopSeriesPolling();
+      }
+    });
+  }
+
+  /** Running, launching or waiting for the cap — anything that is still going to produce members. */
+  get seriesIsLive(): boolean {
+    const status = this.activeSeries?.status;
+    return status === 'Pending' || status === 'Running' || status === 'WaitingForCap';
+  }
+
+  /** Stopped is the one non-terminal end state, and the only one the Continue button appears for. */
+  get seriesIsStopped(): boolean {
+    return this.activeSeries?.status === 'Stopped';
+  }
+
+  get seriesIsWaitingForCap(): boolean {
+    return this.activeSeries?.status === 'WaitingForCap';
+  }
+
+  /** *Run n of N* — the count the operator actually watches, rather than a bare percentage. */
+  get seriesProgressLabel(): string {
+    const series = this.activeSeries;
+    if (!series) return '';
+    const current = Math.min(series.completedRunCount + 1, series.requestedRunCount);
+    switch (series.status) {
+      case 'WaitingForCap':
+        return `Waiting for run cap — ${series.completedRunCount} of ${series.requestedRunCount} runs completed.`;
+      case 'Stopped':
+        return `Stopped — ${series.stopReasonText || series.stopReason || 'reason not recorded'}. `
+          + `${series.completedRunCount} of ${series.requestedRunCount} runs completed.`;
+      case 'Pending':
+        return `Launching run 1 of ${series.requestedRunCount}.`;
+      case 'Running':
+        return `Run ${current} of ${series.requestedRunCount}.`;
+      default:
+        return `${series.status} — ${series.completedRunCount} of ${series.requestedRunCount} runs completed.`;
+    }
+  }
+
+  /** The Continue button's label, which names the stop reason rather than hiding it behind a verb. */
+  get seriesContinueLabel(): string {
+    const reason = this.activeSeries?.stopReasonText || this.activeSeries?.stopReason;
+    return reason ? `Continue (${reason})` : 'Continue';
+  }
+
+  openMultiRunDialog(): void {
+    this.multiRunDialogVisible = true;
+    this.cdr.detectChanges();
+  }
+
+  onMultiRunDialogClosed(): void {
+    this.multiRunDialogVisible = false;
+    this.cdr.detectChanges();
+  }
+
+  /**
+   * The hand-off the multi-run dialog makes rather than embedding a second per-question view. Two
+   * stacked native dialogs trap focus in the inner one, so this closes the multi-run dialog as it
+   * opens the single-run one — never both at once.
+   */
+  onOpenRunProgressFromSeries(runId: number): void {
+    this.multiRunDialogVisible = false;
+    this.activeRunId = runId;
+    this.startPolling(runId);
+    this.openRunProgressDialog();
+  }
+
+  cancelActiveSeries(): void {
+    const seriesId = this.activeSeriesId;
+    if (seriesId == null) return;
+    this.benchmarkService.cancelRunSeries(seriesId).subscribe({
+      next: () => this.pollSeries(seriesId),
+      error: (err) => {
+        console.error('Failed to cancel benchmark run series', err);
+        this.pollSeries(seriesId);
+      }
+    });
+  }
+
+  /**
+   * Continues a stopped series. A 409 carrying `instrumentChanged` is not a failure to report as
+   * one: the instrument moved while the series was stopped, and continuing anyway is a decision the
+   * operator makes with the changed hash named, which is what `acknowledgeInstrumentChange` records.
+   */
+  resumeActiveSeries(acknowledgeInstrumentChange = false): void {
+    const seriesId = this.activeSeriesId;
+    if (seriesId == null) return;
+    this.resumingSeries = true;
+    this.seriesErrorMessage = null;
+    this.benchmarkService.resumeRunSeries(seriesId, { acknowledgeInstrumentChange }).subscribe({
+      next: () => {
+        this.resumingSeries = false;
+        this.startSeriesPolling(seriesId);
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.resumingSeries = false;
+        if (err?.status === 409 && err.error?.instrumentChanged) {
+          const changed: string[] = err.error.changedHashes ?? [];
+          this.seriesErrorMessage = err.error.message
+            || `The instrument changed since this series began (${changed.join(', ')}). `
+              + 'Start a new series, or continue anyway — which marks the resulting group cross-condition.';
+        } else {
+          this.seriesErrorMessage = err?.error?.message || err?.error || 'Failed to continue the series.';
+        }
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  /** True once a refused resume has named a moved hash, which is what offers the override. */
+  get seriesInstrumentChanged(): boolean {
+    return (this.activeSeries?.changedInstrumentHashes?.length ?? 0) > 0;
   }
 
   closeSameProviderDialog() {
@@ -2636,6 +3133,190 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     });
   }
 
+  // --- Run History: series badge, group column, group builder ---
+
+  loadRunGroups(): void {
+    this.loadingRunGroups = true;
+    this.benchmarkService.getRunGroups().subscribe({
+      next: (groups) => {
+        this.runGroups = groups;
+        this.loadingRunGroups = false;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.loadingRunGroups = false;
+        console.error('Failed to load benchmark run groups', err);
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  /**
+   * The analysis groups a run belongs to. A run may sit in several — a replicate set and a
+   * cross-condition comparison, say — so this is a list rather than a single value.
+   */
+  groupsOfRun(runId: number): BenchmarkRunGroupDto[] {
+    return this.runGroups.filter(g => g.members.some(m => m.runId === runId));
+  }
+
+  /**
+   * The series a run belongs to, or null.
+   *
+   * Derived rather than read off the row: `BenchmarkRunSummaryDto` carries no `runSeriesId`, so the
+   * two available sources are the series-created group's `createdFromSeriesId` and the live series'
+   * own member list. Together those cover every series a member can be in — one that finished (its
+   * group exists) and the one currently executing (it is the active series) — but a series that
+   * stopped before producing a group is invisible here. Reading a series id off the run row would
+   * be the direct answer and needs a DTO field that does not exist yet.
+   */
+  seriesIdOfRun(runId: number): number | null {
+    const fromGroup = this.runGroups.find(
+      g => g.createdFromSeriesId != null && g.members.some(m => m.runId === runId));
+    if (fromGroup?.createdFromSeriesId != null) return fromGroup.createdFromSeriesId;
+    if (this.activeSeries?.members.some(m => m.runId === runId)) return this.activeSeries.id;
+    return null;
+  }
+
+  /** The member's 1-based position in its series, for the badge's *n of N*. */
+  seriesBadgeLabelOf(runId: number): string | null {
+    const seriesId = this.seriesIdOfRun(runId);
+    if (seriesId == null) return null;
+    const member = this.activeSeries?.id === seriesId
+      ? this.activeSeries.members.find(m => m.runId === runId)
+      : undefined;
+    return member
+      ? `Series #${seriesId} · run ${member.index} of ${this.activeSeries!.requestedRunCount}`
+      : `Series #${seriesId}`;
+  }
+
+  isRunSelected(runId: number): boolean {
+    return this.selectedRunIds.has(runId);
+  }
+
+  /**
+   * Ticking a row re-previews the tier. The preview is a server call because comparability spans
+   * keys the summary row does not carry — the profile snapshot, the assessor configuration, the
+   * per-question budgets — so deciding it client-side would decide it on a subset of the evidence.
+   */
+  toggleRunSelection(runId: number): void {
+    if (this.selectedRunIds.has(runId)) {
+      this.selectedRunIds.delete(runId);
+    } else {
+      this.selectedRunIds.add(runId);
+    }
+    this.groupBuilderError = null;
+    this.groupBuilderSuccess = null;
+    this.previewGroupTier();
+  }
+
+  clearRunSelection(): void {
+    this.selectedRunIds.clear();
+    this.groupTierPreview = null;
+    this.groupPreviewError = null;
+    this.groupBuilderError = null;
+    this.groupBuilderSuccess = null;
+  }
+
+  get selectedRunIdList(): number[] {
+    return Array.from(this.selectedRunIds).sort((a, b) => a - b);
+  }
+
+  /** Two runs is the smallest set a comparability verdict says anything about. */
+  get canBuildGroup(): boolean {
+    return this.selectedRunIds.size >= 2 && !this.creatingGroup;
+  }
+
+  previewGroupTier(): void {
+    const runIds = this.selectedRunIdList;
+    if (runIds.length < 2) {
+      this.groupTierPreview = null;
+      this.groupPreviewError = null;
+      return;
+    }
+
+    this.previewingGroupTier = true;
+    this.benchmarkService.previewRunGroupTier({
+      name: this.groupBuilderName.trim() || 'Preview',
+      runIds,
+      crossCondition: this.groupBuilderCrossCondition
+    }).subscribe({
+      next: (preview) => {
+        this.previewingGroupTier = false;
+        this.groupTierPreview = preview.comparability ?? null;
+        this.groupPreviewError = preview.accepted ? null : (preview.error ?? null);
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.previewingGroupTier = false;
+        this.groupTierPreview = null;
+        this.groupPreviewError = err?.error?.message || err?.error || 'Could not compute the tier for this selection.';
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  /**
+   * Creates a group from the selection, or adds the selection to an existing one. A refusal is
+   * rendered with the differing keys the server named, never as a bare "rejected": the operator's
+   * next action depends entirely on *which* key differs.
+   */
+  addSelectionToGroup(): void {
+    const runIds = this.selectedRunIdList;
+    if (runIds.length < 2) return;
+
+    this.creatingGroup = true;
+    this.groupBuilderError = null;
+    this.groupBuilderSuccess = null;
+
+    const targetId = this.groupBuilderTargetId;
+    const request$ = targetId != null
+      ? this.benchmarkService.updateRunGroup(targetId, {
+          runIds: Array.from(new Set([
+            ...runIds,
+            ...(this.runGroups.find(g => g.id === targetId)?.members.map(m => m.runId) ?? [])
+          ])).sort((a, b) => a - b),
+          crossCondition: this.groupBuilderCrossCondition
+        })
+      : this.benchmarkService.createRunGroup({
+          name: this.groupBuilderName.trim() || this.defaultGroupName,
+          runIds,
+          notes: this.groupBuilderNotes.trim() || null,
+          crossCondition: this.groupBuilderCrossCondition
+        });
+
+    request$.subscribe({
+      next: (result: BenchmarkRunGroupTierPreviewDto) => {
+        this.creatingGroup = false;
+        this.groupTierPreview = result.comparability ?? this.groupTierPreview;
+        if (!result.accepted) {
+          this.groupBuilderError = result.error ?? 'The selected runs are not comparable enough to form a group.';
+        } else {
+          this.groupBuilderSuccess = result.group
+            ? `${result.group.name} — ${result.group.tierLabel}, ${result.group.runCount} run(s).`
+            : 'Group saved.';
+          this.selectedRunIds.clear();
+          this.groupBuilderName = '';
+          this.groupBuilderNotes = '';
+          this.loadRunGroups();
+        }
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.creatingGroup = false;
+        this.groupBuilderError = err?.error?.message || err?.error || 'Failed to save the group.';
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  /** `<Suite> · R=<n>` — the same shape the orchestrator names an auto-created series group. */
+  private get defaultGroupName(): string {
+    const suite = this.selectedSuite?.name
+      ?? this.historyRuns.find(r => this.selectedRunIds.has(r.id))?.suiteName
+      ?? 'Runs';
+    return `${suite} · R=${this.selectedRunIds.size}`;
+  }
+
   viewRunDetail(runId: number) {
     this.loadingDetail = true;
     this.selectedRunDetail = null;
@@ -3049,23 +3730,36 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     const counts = new Map<string, number>();
 
     for (const ans of this.selectedRunDetail?.answers ?? []) {
-      if (!ans.toolCallSummary) continue;
-
-      for (const entry of ans.toolCallSummary.split(',')) {
-        const trimmed = entry.trim();
-        const sep = trimmed.indexOf('×');
-        if (sep <= 0 || trimmed.startsWith('(')) continue;
-
-        const name = trimmed.substring(0, sep).trim();
-        const digits = trimmed.substring(sep + 1).match(/^\d+/);
-        if (!name || !digits) continue;
-
-        counts.set(name, (counts.get(name) ?? 0) + parseInt(digits[0], 10));
+      for (const [name, count] of this.parseToolCallSummary(ans.toolCallSummary)) {
+        counts.set(name, (counts.get(name) ?? 0) + count);
       }
     }
 
     return Array.from(counts, ([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  }
+
+  /**
+   * One answer's `toolCallSummary` as tool name to call count. Extracted so the usage table and the
+   * routing families below parse the summary in exactly one place — mirroring
+   * `BenchmarkChatTransfer.ParseToolCallCounts`, which the report builder uses for the same reason.
+   */
+  private parseToolCallSummary(summary: string | null | undefined): Map<string, number> {
+    const counts = new Map<string, number>();
+    if (!summary) return counts;
+
+    for (const entry of summary.split(',')) {
+      const trimmed = entry.trim();
+      const sep = trimmed.indexOf('×');
+      if (sep <= 0 || trimmed.startsWith('(')) continue;
+
+      const name = trimmed.substring(0, sep).trim();
+      const digits = trimmed.substring(sep + 1).match(/^\d+/);
+      if (!name || !digits) continue;
+
+      counts.set(name, (counts.get(name) ?? 0) + parseInt(digits[0], 10));
+    }
+    return counts;
   }
 
   totalToolCalls(): number {
@@ -3080,6 +3774,252 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   /** Answers that reached their tool call budget, for the tool usage panel. */
   budgetExhaustedAnswers(): BenchmarkRunAnswerDto[] {
     return (this.selectedRunDetail?.answers ?? []).filter(a => !!a.toolBudgetExhausted);
+  }
+
+  // --- U1: the four report lines this screen used to omit ---
+  //
+  // Every figure below is computed from answer DTOs already loaded for the run detail dialog, so no
+  // endpoint was added for any of it. They exist because the Markdown report carried four lines the
+  // page did not, and on run 14 those four lines are where both accuracy defects and the lowest
+  // Intermediate answer live: an operator reading only this screen saw none of it.
+
+  /**
+   * Mirrors `BenchmarkReportBuilder.BudgetPressureFraction`. A question that stopped one call short
+   * of its cap is not "exhausted" and is flagged nowhere, yet it may have been cut off
+   * mid-investigation — an outcome indistinguishable from a model choosing to stop.
+   */
+  private static readonly BUDGET_PRESSURE_FRACTION = 0.90;
+
+  /** Answers the run actually produced, which is what every routing figure is computed over. */
+  private get answeredRunAnswers(): BenchmarkRunAnswerDto[] {
+    return (this.selectedRunDetail?.answers ?? []).filter(a => this.formatAnswerStatus(a.status) === 'Ok');
+  }
+
+  /**
+   * Tool calls by functional family, with each family's share of the run.
+   *
+   * Membership comes from {@link BENCHMARK_TOOL_FAMILY_MEMBERSHIP}, the same single list the
+   * classification is written in once — not from tool names spelled out here, which would drift
+   * from the report's table the first time a tool was added on one side only. Families with no
+   * calls are omitted, exactly as the report's Tool Routing table omits them.
+   */
+  toolRoutingFamilies(): BenchmarkToolFamilyRow[] {
+    const counts = new Map<BenchmarkToolFamilyName, number>();
+    for (const [family] of BENCHMARK_TOOL_FAMILY_LABELS) {
+      counts.set(family, 0);
+    }
+
+    let total = 0;
+    for (const ans of this.answeredRunAnswers) {
+      for (const [tool, count] of this.parseToolCallSummary(ans.toolCallSummary)) {
+        const family = classifyBenchmarkTool(tool);
+        counts.set(family, (counts.get(family) ?? 0) + count);
+        total += count;
+      }
+    }
+
+    return BENCHMARK_TOOL_FAMILY_LABELS
+      .map(([family, label]) => ({
+        family,
+        label,
+        count: counts.get(family) ?? 0,
+        sharePercentage: total > 0 ? ((counts.get(family) ?? 0) * 100) / total : 0
+      }))
+      .filter(row => row.count > 0);
+  }
+
+  /** The denominator behind the family shares, so a reader can check the arithmetic. */
+  totalRoutedToolCalls(): number {
+    return this.toolRoutingFamilies().reduce((sum, row) => sum + row.count, 0);
+  }
+
+  /**
+   * Answers that used at least 90 % of their tool call budget **without** reaching it.
+   *
+   * Rendered in addition to the exhausted list rather than instead of it: the two describe different
+   * outcomes, and on run 14 the exhausted list was empty while Q11 (41/45, scored 81) and Q16
+   * (43/45) sat just under the cap — so the page showed nothing at all about the run's two most
+   * budget-constrained questions. The filter mirrors the report builder's exactly, including the
+   * exclusions: an answer with blocked calls is exhausted, not pressured.
+   */
+  budgetPressuredAnswers(): BenchmarkRunAnswerDto[] {
+    return (this.selectedRunDetail?.answers ?? [])
+      .filter(a => !a.toolBudgetExhausted
+        && this.blockedToolCallsOf(a) === 0
+        && a.toolCallBudgetUsed != null && a.toolCallBudgetUsed > 0
+        && a.toolCallCount != null
+        && a.toolCallCount >= a.toolCallBudgetUsed * AdminBenchmarkComponent.BUDGET_PRESSURE_FRACTION
+        && a.toolCallCount < a.toolCallBudgetUsed)
+      .sort((a, b) => a.orderIndex - b.orderIndex);
+  }
+
+  /**
+   * Advanced-band answers produced with one tool call or fewer.
+   *
+   * Answering from memory is not necessarily wrong, but such a question is no longer testing source
+   * retrieval — which is what the Advanced band exists for. This is a signal about the suite, not
+   * about the model, and it is why it is reported rather than penalised.
+   */
+  ungroundedAdvancedAnswers(): BenchmarkRunAnswerDto[] {
+    return (this.selectedRunDetail?.answers ?? [])
+      .filter(a => this.bandOfDifficulty(this.assessedDifficultyOf(a)) === 'Advanced'
+        && (a.toolCallCount ?? 0) <= 1)
+      .sort((a, b) => a.orderIndex - b.orderIndex);
+  }
+
+  /**
+   * The assessed difficulty an answer is banded by, falling back to the authored band's midpoint
+   * when the assessor never rated it. The fallbacks are `BenchmarkRunFinalizer.FallbackDifficulty`'s
+   * — 25 / 55 / 85 — so this screen bands an unrated answer exactly where the report bands it.
+   */
+  private assessedDifficultyOf(ans: BenchmarkRunAnswerDto): number {
+    if (ans.assessedDifficulty != null) return ans.assessedDifficulty;
+    switch (this.formatDifficulty(ans.difficulty)) {
+      case 'Simple': return 25;
+      case 'Intermediate': return 55;
+      case 'Advanced': return 85;
+      default: return 50;
+    }
+  }
+
+  /**
+   * Pearson *r* of each answer's source-family share against its model time and against its quality,
+   * with the sample size that produced them.
+   *
+   * The pairing is the finding: on run 14 more source calls bought time (*r* = 0.86) and not
+   * accuracy (*r* = −0.05). Either coefficient alone would be a different, weaker claim, so both are
+   * computed over one sample and the *n* is rendered beside them.
+   *
+   * Scope matches `BenchmarkChatTransfer.AnalyzeToolRouting`: answered answers carrying a quality
+   * score. An unscored answer has no y value for one of the two correlations, and dropping it from
+   * one but not the other would compute the pair over two different samples.
+   */
+  sourceShareCorrelations(): BenchmarkSourceShareCorrelations {
+    const shares: number[] = [];
+    const modelTimes: number[] = [];
+    const qualities: number[] = [];
+
+    for (const ans of this.answeredRunAnswers) {
+      if (ans.qualityScore == null) continue;
+
+      const counts = this.parseToolCallSummary(ans.toolCallSummary);
+      let total = 0;
+      let source = 0;
+      for (const [tool, count] of counts) {
+        total += count;
+        if (classifyBenchmarkTool(tool) === 'SourceCode') source += count;
+      }
+
+      shares.push(total > 0 ? source / total : 0);
+      modelTimes.push(this.modelTimeOf(ans));
+      qualities.push(ans.qualityScore);
+    }
+
+    return {
+      modelTimeR: this.pearson(shares, modelTimes),
+      qualityR: this.pearson(shares, qualities),
+      sampleSize: shares.length
+    };
+  }
+
+  /**
+   * Turn duration with tool I/O removed — what speed is scored on, and the right x-axis for "did
+   * source calls cost time?". `modelTimeMs` is the recorded figure; the subtraction is the fallback
+   * for a run recorded before it existed, where leaving the answer out would silently shrink the
+   * sample rather than reporting it.
+   */
+  private modelTimeOf(ans: BenchmarkRunAnswerDto): number {
+    if (ans.modelTimeMs > 0) return ans.modelTimeMs;
+    return Math.max(0, (ans.durationMs ?? 0) - (ans.toolTimeMs ?? 0));
+  }
+
+  /** Null on fewer than two points or on a constant vector, where *r* is undefined rather than 0. */
+  private pearson(xs: number[], ys: number[]): number | null {
+    const n = Math.min(xs.length, ys.length);
+    if (n < 2) return null;
+
+    let mx = 0;
+    let my = 0;
+    for (let i = 0; i < n; i++) { mx += xs[i]; my += ys[i]; }
+    mx /= n;
+    my /= n;
+
+    let sxy = 0;
+    let sxx = 0;
+    let syy = 0;
+    for (let i = 0; i < n; i++) {
+      const dx = xs[i] - mx;
+      const dy = ys[i] - my;
+      sxy += dx * dy;
+      sxx += dx * dx;
+      syy += dy * dy;
+    }
+    if (sxx <= 0 || syy <= 0) return null;
+    return sxy / Math.sqrt(sxx * syy);
+  }
+
+  // --- U2: stable anchors for in-page question references ---
+
+  /**
+   * The DOM id of an answer's card. Stable across renders because it is derived from the order
+   * index the whole screen already labels answers by, so a link written into the Run Integrity
+   * Notice keeps working when the dialog is reopened.
+   *
+   * New ids only: nothing that already carried an id was renamed, because an existing id may be the
+   * target of a link or a test somewhere this change cannot see.
+   */
+  answerAnchorId(orderIndex: number): string {
+    return `bm-answer-${orderIndex}`;
+  }
+
+  /**
+   * Scrolls to an answer and expands it, so a question reference lands on the answer's *content*
+   * rather than on a collapsed header the reader then has to find and open.
+   *
+   * The default is prevented because this is in-page movement inside a modal dialog: letting the
+   * fragment reach the router would navigate the application away from the run being read.
+   */
+  jumpToAnswer(orderIndex: number, event?: Event): void {
+    event?.preventDefault();
+    this.expandedQuestions.add(orderIndex);
+    this.cdr.detectChanges();
+    if (typeof document === 'undefined') return;
+    const target = document.getElementById(this.answerAnchorId(orderIndex));
+    target?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    target?.focus?.();
+  }
+
+  // The Run Integrity Notice's question references as numbers rather than as a joined string, so
+  // each one can be rendered as its own link. The joined getters stay: they are what the
+  // diagnostics capture and the plain-text clauses use, and one of the two shapes had to remain.
+
+  get criticalErrorQuestionIndexes(): number[] {
+    return (this.selectedRunDetail?.answers ?? []).filter(a => a.criticalError).map(a => a.orderIndex);
+  }
+
+  get advisoryFlagQuestionIndexes(): number[] {
+    return (this.selectedRunDetail?.answers ?? []).filter(a => this.hasAdvisoryFlag(a)).map(a => a.orderIndex);
+  }
+
+  get toolBudgetQuestionIndexes(): number[] {
+    return (this.selectedRunDetail?.answers ?? []).filter(a => a.toolBudgetExhausted).map(a => a.orderIndex);
+  }
+
+  // --- U4: the run's wall-clock duration ---
+
+  /**
+   * Wall-clock time from start to completion, which the Answer Duration card renders as its note.
+   *
+   * The card's headline is the summed answer duration; on run 14 that read 25 m 29 s while the run
+   * itself took 29 m 33 s, and nothing on the screen said the two were different quantities. The
+   * gap is grading, verification and synthesis, and reading the first figure as the second
+   * understates every one of them.
+   */
+  get runWallClockDurationLabel(): string | null {
+    const run = this.selectedRunDetail;
+    if (!run?.startedAtUtc) return null;
+    const ms = elapsedMsBetween(run.startedAtUtc, run.completedAtUtc);
+    return ms > 0 ? this.formatElapsed(ms) : null;
   }
 
   isAssessmentFailed(ans: BenchmarkRunAnswerDto): boolean {

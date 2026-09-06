@@ -1,9 +1,11 @@
 import { ComponentFixture, TestBed, fakeAsync, tick, discardPeriodicTasks } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { By } from '@angular/platform-browser';
 import { of, throwError } from 'rxjs';
 import { AdminBenchmarkComponent } from './benchmark.component';
-import { AdminBenchmarkService } from '../../services/admin-benchmark.service';
+import { MultiRunComponent } from './multi-run/multi-run.component';
+import { AdminBenchmarkService, BenchmarkRunAnswerDto } from '../../services/admin-benchmark.service';
 import { SystemService } from '../../services/system.service';
 
 describe('AdminBenchmarkComponent', () => {
@@ -60,11 +62,34 @@ describe('AdminBenchmarkComponent', () => {
       'calibrateAssessor',
       'getCalibrations',
       'getLastAssessor',
-      'retryClaimVerification'
+      'retryClaimVerification',
+      'getRunLimits',
+      'startRunSeries',
+      'getRunSeries',
+      'getActiveRunSeries',
+      'cancelRunSeries',
+      'resumeRunSeries',
+      'getRunGroups',
+      'createRunGroup',
+      'updateRunGroup',
+      'previewRunGroupTier',
+      'getRunReportUrl'
     ]);
 
     benchmarkServiceMock.getActiveDifficultyAssessment.and.returnValue(of(null));
     benchmarkServiceMock.getActiveRun.and.returnValue(of(null));
+    // ngOnInit reads the caps and reattaches a live series, and entering Run History loads the
+    // groups for the group column. All three run on paths every test in this file goes through.
+    benchmarkServiceMock.getActiveRunSeries.and.returnValue(of(null));
+    benchmarkServiceMock.getRunGroups.and.returnValue(of([]));
+    benchmarkServiceMock.getRunLimits.and.returnValue(of({
+      maxRunsPerHour: 4,
+      maxRunsPerDay: 20,
+      runsInLastHour: 0,
+      runsInLast24Hours: 0,
+      remainingDailyHeadroom: 20,
+      maxRunCountPerSeries: 20
+    }));
     benchmarkServiceMock.getRun.and.returnValue(of({ id: 1, answers: [] } as any));
     benchmarkServiceMock.getQuestions.and.returnValue(of([]));
     benchmarkServiceMock.getSuiteRunsFootprint.and.returnValue(of({ runCount: 0, totalAnswerCharacters: 0 }));
@@ -885,7 +910,7 @@ describe('AdminBenchmarkComponent', () => {
     it('should expose the sub-navigation as a labelled tablist', () => {
       expect(tabList()).toBeTruthy();
       expect(tabList().getAttribute('aria-label')).toBe('Benchmark sections');
-      expect(tabs().length).toBe(3);
+      expect(tabs().length).toBe(4);
     });
 
     it('should mark exactly one tab selected, matching activeSubTab', () => {
@@ -897,12 +922,12 @@ describe('AdminBenchmarkComponent', () => {
     it('should give exactly one tab tabindex="0" and the rest tabindex="-1"', () => {
       const all = tabs();
       expect(all.filter(t => t.getAttribute('tabindex') === '0').length).toBe(1);
-      expect(all.filter(t => t.getAttribute('tabindex') === '-1').length).toBe(2);
+      expect(all.filter(t => t.getAttribute('tabindex') === '-1').length).toBe(3);
     });
 
     it('should wrap forward from the last tab to the first with ArrowRight', () => {
       component.activeSubTab = 'suites';
-      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowRight' }), 2);
+      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowRight' }), 3);
       expect(component.activeSubTab).toBe('run');
     });
 
@@ -917,7 +942,7 @@ describe('AdminBenchmarkComponent', () => {
       component.onTabKeydown(new KeyboardEvent('keydown', { key: 'End' }), 1);
       expect(component.activeSubTab).toBe('suites');
 
-      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'Home' }), 2);
+      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'Home' }), 3);
       expect(component.activeSubTab).toBe('run');
     });
 
@@ -943,6 +968,29 @@ describe('AdminBenchmarkComponent', () => {
       expect(panel.getAttribute('aria-labelledby')).toBe('bm-tab-run');
       expect(panel.getAttribute('tabindex')).toBe('0');
       expect(fixture.nativeElement.querySelector('#bm-tab-run')).toBeTruthy();
+    });
+
+    it('should render the Multi-Run Analysis panel, and nothing else, on the multirun tab', () => {
+      // Clicked rather than assigned: the click is what marks the view dirty, so the panel this
+      // asserts on is the one an operator actually gets.
+      fixture.nativeElement.querySelector('#bm-tab-multirun').click();
+      fixture.detectChanges();
+
+      const panel = fixture.nativeElement.querySelector('[role="tabpanel"]');
+      expect(panel.id).toBe('bm-panel-multirun');
+      expect(panel.getAttribute('aria-labelledby')).toBe('bm-tab-multirun');
+      // The panel is the MultiRunComponent's own; the host contributes no data loading of its own.
+      expect(panel.querySelector('app-benchmark-multi-run')).toBeTruthy();
+    });
+
+    it('should hand the selected suite to the Multi-Run Analysis panel', () => {
+      component.selectedSuiteId = 5;
+      fixture.nativeElement.querySelector('#bm-tab-multirun').click();
+      fixture.detectChanges();
+
+      const multiRun = fixture.debugElement.query(By.directive(MultiRunComponent));
+      expect(multiRun).toBeTruthy();
+      expect((multiRun.componentInstance as MultiRunComponent).suiteId).toBe(5);
     });
 
     it('should load history when the history tab is selected', () => {
@@ -2375,15 +2423,18 @@ describe('AdminBenchmarkComponent', () => {
       return fixture.nativeElement.querySelector('#secondOpinionModeSelect') as HTMLSelectElement | null;
     }
 
-    it('should offer the four modes in coverage order', fakeAsync(() => {
+    it('should offer the five modes in coverage order', fakeAsync(() => {
       const select = modeSelect();
       expect(select).toBeTruthy();
 
+      // FlaggedPlusSample sits between the outlier mode and All because that is where it falls on
+      // coverage: more than flagged-plus-outliers, less than every answer.
       const labels = Array.from(select!.querySelectorAll('option')).map(o => (o.textContent || '').trim());
       expect(labels).toEqual([
         'Never',
         'Only flagged answers',
         'Flagged answers and statistical outliers',
+        'Flagged answers plus a sample',
         'Every answer (double grading)'
       ]);
       discardPeriodicTasks();
@@ -3307,7 +3358,220 @@ describe('AdminBenchmarkComponent', () => {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // U1. Tool routing, budget pressure, ungrounded Advanced answers and the
+  // source-share correlations, all computed client-side from answer DTOs the run
+  // detail dialog already holds. No endpoint backs any of it.
+  // ---------------------------------------------------------------------------
+  describe('run answer analytics (U1)', () => {
+    /** Only the fields the four analytics read; everything else is filler the DTO demands. */
+    function answer(overrides: Partial<BenchmarkRunAnswerDto> = {}): BenchmarkRunAnswerDto {
+      return {
+        id: 1,
+        benchmarkRunId: 14,
+        orderIndex: 1,
+        questionText: 'Q',
+        difficulty: 'Intermediate',
+        assessedDifficulty: 55,
+        answerText: 'A',
+        status: 'Ok',
+        durationMs: 20000,
+        modelTimeMs: 15000,
+        toolTimeMs: 5000,
+        toolCallCount: 0,
+        toolCallBudgetUsed: 45,
+        toolBudgetExhausted: false,
+        toolCallsBlocked: 0,
+        toolCallSummary: null,
+        qualityScore: 70,
+        ...overrides
+      } as BenchmarkRunAnswerDto;
+    }
+
+    function withAnswers(answers: BenchmarkRunAnswerDto[]): void {
+      component.selectedRunDetail = { id: 14, answers } as any;
+    }
+
+    // --- Tool routing families ---
+
+    it('should count tool calls by family and report each family share of the run', () => {
+      withAnswers([
+        answer({ orderIndex: 1, toolCallSummary: 'source_code_search×6, wiki_search×4' }),
+        answer({
+          orderIndex: 2,
+          toolCallSummary: 'source_code_view×4, wiki_view×2, monster_lookup×3, get_knowledge_article×1'
+        })
+      ]);
+
+      const rows = component.toolRoutingFamilies();
+
+      expect(component.totalRoutedToolCalls()).toBe(20);
+      expect(rows.map(r => r.label)).toEqual(['Source Code', 'Wiki', 'Structured Lookup', 'Knowledge Base']);
+      expect(rows.map(r => r.count)).toEqual([10, 6, 3, 1]);
+      expect(rows.map(r => r.sharePercentage)).toEqual([50, 30, 15, 5]);
+    });
+
+    it('should omit families with no calls, exactly as the report table does', () => {
+      withAnswers([answer({ toolCallSummary: 'wiki_search×2' })]);
+
+      const rows = component.toolRoutingFamilies();
+
+      expect(rows.length).toBe(1);
+      expect(rows[0].label).toBe('Wiki');
+      expect(rows[0].sharePercentage).toBe(100);
+    });
+
+    it('should classify an unlisted tool as Other rather than dropping its calls', () => {
+      withAnswers([answer({ toolCallSummary: 'wiki_search×3, some_new_tool×1' })]);
+
+      const rows = component.toolRoutingFamilies();
+
+      // Dropping it would make the shares sum to 100 % of a total that is not the run's.
+      expect(component.totalRoutedToolCalls()).toBe(4);
+      expect(rows.find(r => r.family === 'Other')?.count).toBe(1);
+    });
+
+    it('should route only answers the run actually produced', () => {
+      withAnswers([
+        answer({ orderIndex: 1, toolCallSummary: 'wiki_search×2' }),
+        answer({ orderIndex: 2, status: 'Failed', toolCallSummary: 'source_code_search×9' })
+      ]);
+
+      expect(component.totalRoutedToolCalls()).toBe(2);
+      expect(component.toolRoutingFamilies().map(r => r.family)).toEqual(['Wiki']);
+    });
+
+    // --- Budget pressure ---
+
+    it('should select answers at or above 90 % of budget that never reached it', () => {
+      withAnswers([
+        answer({ orderIndex: 11, toolCallCount: 41, toolCallBudgetUsed: 45 }),
+        answer({ orderIndex: 16, toolCallCount: 43, toolCallBudgetUsed: 45 }),
+        answer({ orderIndex: 1, toolCallCount: 10, toolCallBudgetUsed: 45 })
+      ]);
+
+      expect(component.budgetPressuredAnswers().map(a => a.orderIndex)).toEqual([11, 16]);
+    });
+
+    it('should treat the 90 % threshold as inclusive and the budget itself as exclusive', () => {
+      withAnswers([
+        // 40.5 is the threshold: 40 is below it, 41 is not.
+        answer({ orderIndex: 1, toolCallCount: 40, toolCallBudgetUsed: 45 }),
+        answer({ orderIndex: 2, toolCallCount: 41, toolCallBudgetUsed: 45 }),
+        // Reaching the budget is exhaustion, which the exhausted list already reports.
+        answer({ orderIndex: 3, toolCallCount: 45, toolCallBudgetUsed: 45 })
+      ]);
+
+      expect(component.budgetPressuredAnswers().map(a => a.orderIndex)).toEqual([2]);
+    });
+
+    it('should exclude exhausted answers and answers with blocked calls', () => {
+      withAnswers([
+        answer({ orderIndex: 1, toolCallCount: 44, toolCallBudgetUsed: 45, toolBudgetExhausted: true }),
+        // An answer whose calls were blocked is exhausted, not pressured.
+        answer({ orderIndex: 2, toolCallCount: 44, toolCallBudgetUsed: 45, toolCallsBlocked: 2 }),
+        answer({ orderIndex: 3, toolCallCount: 44, toolCallBudgetUsed: 45 })
+      ]);
+
+      expect(component.budgetPressuredAnswers().map(a => a.orderIndex)).toEqual([3]);
+    });
+
+    // --- Ungrounded Advanced answers ---
+
+    it('should select Advanced answers produced with one tool call or fewer', () => {
+      withAnswers([
+        answer({ orderIndex: 14, assessedDifficulty: 85, toolCallCount: 1 }),
+        answer({ orderIndex: 15, assessedDifficulty: 85, toolCallCount: 0 }),
+        answer({ orderIndex: 16, assessedDifficulty: 85, toolCallCount: 5 }),
+        answer({ orderIndex: 17, assessedDifficulty: 55, toolCallCount: 0 })
+      ]);
+
+      expect(component.ungroundedAdvancedAnswers().map(a => a.orderIndex)).toEqual([14, 15]);
+    });
+
+    it('should band an unrated answer by its authored band midpoint', () => {
+      withAnswers([
+        // No assessed difficulty: authored Advanced falls back to 85, which bands Advanced.
+        answer({ orderIndex: 1, assessedDifficulty: null, difficulty: 'Advanced', toolCallCount: 1 }),
+        answer({ orderIndex: 2, assessedDifficulty: null, difficulty: 'Intermediate', toolCallCount: 1 })
+      ]);
+
+      expect(component.ungroundedAdvancedAnswers().map(a => a.orderIndex)).toEqual([1]);
+    });
+
+    // --- Source-share correlations ---
+
+    it('should pair the two correlations over one sample of scored answers', () => {
+      withAnswers([
+        answer({ orderIndex: 1, toolCallSummary: 'wiki_search×4', modelTimeMs: 10000, qualityScore: 50 }),
+        answer({ orderIndex: 2, toolCallSummary: 'source_code_search×2, wiki_search×2', modelTimeMs: 20000, qualityScore: 70 }),
+        answer({ orderIndex: 3, toolCallSummary: 'source_code_search×4', modelTimeMs: 30000, qualityScore: 50 })
+      ]);
+
+      const correlations = component.sourceShareCorrelations();
+
+      // Shares 0, 0.5, 1 against times 10k, 20k, 30k are exactly linear.
+      expect(correlations.modelTimeR).toBeCloseTo(1, 10);
+      // The same shares against qualities 50, 70, 50 have zero covariance: this is run 14's shape,
+      // where source calls bought time and not accuracy.
+      expect(correlations.qualityR).toBeCloseTo(0, 10);
+      expect(correlations.sampleSize).toBe(3);
+    });
+
+    it('should drop an unscored answer from both correlations, not from one', () => {
+      withAnswers([
+        answer({ orderIndex: 1, toolCallSummary: 'wiki_search×4', modelTimeMs: 10000, qualityScore: 50 }),
+        answer({ orderIndex: 2, toolCallSummary: 'source_code_search×2, wiki_search×2', modelTimeMs: 20000, qualityScore: 70 }),
+        answer({ orderIndex: 3, toolCallSummary: 'source_code_search×4', modelTimeMs: 30000, qualityScore: 50 }),
+        answer({ orderIndex: 4, toolCallSummary: 'source_code_search×4', modelTimeMs: 99000, qualityScore: null })
+      ]);
+
+      const correlations = component.sourceShareCorrelations();
+
+      expect(correlations.sampleSize).toBe(3);
+      expect(correlations.modelTimeR).toBeCloseTo(1, 10);
+    });
+
+    it('should fall back to duration minus tool time when model time was never recorded', () => {
+      withAnswers([
+        answer({ orderIndex: 1, toolCallSummary: 'wiki_search×4', modelTimeMs: 0, durationMs: 15000, toolTimeMs: 5000, qualityScore: 50 }),
+        answer({ orderIndex: 2, toolCallSummary: 'source_code_search×2, wiki_search×2', modelTimeMs: 0, durationMs: 25000, toolTimeMs: 5000, qualityScore: 70 }),
+        answer({ orderIndex: 3, toolCallSummary: 'source_code_search×4', modelTimeMs: 0, durationMs: 35000, toolTimeMs: 5000, qualityScore: 50 })
+      ]);
+
+      const correlations = component.sourceShareCorrelations();
+
+      // 10k, 20k, 30k again: leaving these out would shrink the sample silently instead.
+      expect(correlations.sampleSize).toBe(3);
+      expect(correlations.modelTimeR).toBeCloseTo(1, 10);
+    });
+
+    it('should report no coefficient where r is undefined rather than calling it zero', () => {
+      withAnswers([answer({ toolCallSummary: 'wiki_search×2', qualityScore: 50 })]);
+
+      const correlations = component.sourceShareCorrelations();
+
+      expect(correlations.sampleSize).toBe(1);
+      expect(correlations.modelTimeR).toBeNull();
+      expect(correlations.qualityR).toBeNull();
+    });
+  });
   describe('Model Pricing Feature', () => {
+    // U3. Two decimals at or above $1 so the card reads the same as the report; four below it so a
+    // sub-cent run still resolves to something other than $0.00.
+    it('should format a cost at or above $1 with two decimals and below it with four', () => {
+      expect(component.formatCostAmount(2.5312)).toBe('$2.53');
+      expect(component.formatCostAmount(1)).toBe('$1.00');
+      expect(component.formatCostAmount(0.9912)).toBe('$0.9912');
+      expect(component.formatCostAmount(0.0004)).toBe('$0.0004');
+    });
+
+    it('should render a missing or non-finite cost as a dash rather than $0', () => {
+      expect(component.formatCostAmount(null)).toBe('-');
+      expect(component.formatCostAmount(undefined)).toBe('-');
+      expect(component.formatCostAmount(Number.NaN)).toBe('-');
+    });
+
     it('should render Estimated Cost card with the incomplete-pricing marker when pricingIncomplete is true', () => {
       component.activeSubTab = 'run';
       component.selectedRunDetail = {
@@ -3327,7 +3591,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(card).toBeTruthy();
       
       const content = card!.textContent?.replace(/\s+/g, ' ').trim() || '';
-      expect(content).toContain('$1.2345');
+      expect(content).toContain('$1.23');
       expect(content).toContain('Anthropic API');
       
       const marker = card!.querySelector('.degraded-tag');

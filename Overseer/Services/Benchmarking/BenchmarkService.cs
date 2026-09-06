@@ -376,6 +376,12 @@ public class BenchmarkService
             // synthesis so the synthesis sees the run in its final graded state.
             await RunOutlierSweepAsync(db, configService, run, scoringConstants, cancellationToken);
 
+            // FlaggedPlusSample only: top up second-opinion coverage to the profile's configured
+            // minimum sample, deterministically, so a run that graded well still yields a grader
+            // agreement figure (H3). Also waits for every answer, for the same reason as the
+            // outlier sweep above: "lowest quality score first" needs the full set of scores.
+            await RunSecondOpinionSampleTopUpAsync(db, configService, run, profile, scoringConstants, cancellationToken);
+
             // Claim Verification Stage: checks unverified claims against source and wiki
             await RunClaimVerificationAsync(db, configService, run, cancellationToken);
 
@@ -1201,6 +1207,15 @@ public class BenchmarkService
             answer.CriticalErrorQuote = BenchmarkAssessmentFailure.Truncate(res.CriticalErrorQuote, 2048);
             answer.AssessmentEvidenceJson = BuildEvidenceJson(res);
 
+            // Scoring method v8: the assessor records a rubric point it placed outside the
+            // question's scope under the OUT-OF-SCOPE: marker rather than deducting for it. Set on
+            // every (re-)assessment through this path, mirroring every other per-verdict field
+            // above; a re-assessment must not inherit the previous verdict's marker if the new one
+            // did not repeat it. The second-opinion and trial paths never write this: they persist
+            // an advisory JSON blob rather than replacing the primary verdict's fields, so there is
+            // nothing on the answer entity for them to correct here.
+            answer.CompletenessOutOfScope = res.CompletenessOutOfScope;
+
             // Scoring method v6: recorded, never deducted for. The count is set even when the
             // list is empty, because for these runs "the assessor found none" is a real finding;
             // null is reserved for runs that predate the field and were never asked.
@@ -1593,6 +1608,106 @@ public class BenchmarkService
     }
 
     /// <summary>
+    /// <see cref="BenchmarkSecondOpinionMode.FlaggedPlusSample"/> only: tops up second-opinion
+    /// coverage to <see cref="BenchmarkScoringProfile.SecondOpinionMinimumSample"/> after the
+    /// per-answer triggers have resolved, so a run where nothing tripped a trigger still yields a
+    /// grader agreement figure (H3) — under <see cref="BenchmarkSecondOpinionMode.Flagged"/> alone,
+    /// coverage falls to zero exactly as a candidate gets good.
+    ///
+    /// Selection is deterministic on purpose: lowest quality score first, ties broken by ascending
+    /// order index, so the same data selects the same answers on every run and a re-run cannot be
+    /// used to fish for a different sample. Answers already graded twice (by any trigger, including
+    /// a prior call to this method) count toward the target and are never re-selected.
+    ///
+    /// A failure here never fails the run: an answer keeps exactly the verdict it has, exactly like
+    /// <see cref="RunOutlierSweepAsync"/>.
+    /// </summary>
+    private async Task RunSecondOpinionSampleTopUpAsync(
+        ApplicationDbContext db,
+        SystemAiConfigService configService,
+        BenchmarkRun run,
+        BenchmarkScoringProfile profile,
+        BenchmarkScoringConstants constants,
+        CancellationToken cancellationToken)
+    {
+        if (!run.SecondOpinionAssessorModelConfigurationId.HasValue) return;
+        if (ResolveSecondOpinionMode(run, constants) != BenchmarkSecondOpinionMode.FlaggedPlusSample) return;
+
+        int minimumSample = profile.SecondOpinionMinimumSample;
+        if (minimumSample <= 0)
+        {
+            // Misconfigured (FlaggedPlusSample with no target): behave like Flagged alone rather
+            // than throw, and report zero achieved rather than leaving the column at its default,
+            // which would be indistinguishable from "never ran".
+            run.SecondOpinionSampleCountUsed = 0;
+            return;
+        }
+
+        var scored = await db.BenchmarkRunAnswers
+            .Where(a => a.BenchmarkRunId == run.Id &&
+                        a.Status == BenchmarkAnswerStatus.Ok &&
+                        a.QualityScore.HasValue)
+            .ToListAsync(cancellationToken);
+
+        int alreadyGraded = scored.Count(a => a.SecondOpinionQualityScore != null);
+        int needed = minimumSample - alreadyGraded;
+
+        if (needed <= 0)
+        {
+            run.SecondOpinionSampleCountUsed = alreadyGraded;
+            return;
+        }
+
+        var candidates = scored
+            .Where(a => a.SecondOpinionQualityScore == null)
+            .OrderBy(a => a.QualityScore!.Value)
+            .ThenBy(a => a.OrderIndex)
+            .Take(needed)
+            .ToList();
+
+        if (candidates.Count == 0)
+        {
+            run.SecondOpinionSampleCountUsed = alreadyGraded;
+            return;
+        }
+
+        _logger.LogInformation(
+            "Benchmark run {RunId}: sample top-up re-grading {Count} answer(s) to reach the configured minimum sample of {MinimumSample} ({AlreadyGraded} already graded twice).",
+            run.Id, candidates.Count, minimumSample, alreadyGraded);
+
+        var suiteQuestions = await db.BenchmarkQuestions
+            .Where(q => q.BenchmarkSuiteId == run.BenchmarkSuiteId)
+            .ToDictionaryAsync(q => q.OrderIndex, q => q.ExpectedPoints, cancellationToken);
+
+        int gradedThisPass = 0;
+        foreach (var answer in candidates)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            suiteQuestions.TryGetValue(answer.OrderIndex, out var expectedPoints);
+
+            try
+            {
+                await RunSecondOpinionAsync(
+                    db, configService, run, answer, expectedPoints, constants,
+                    SecondOpinionTriggers.Sample, cancellationToken);
+                gradedThisPass++;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Benchmark run {RunId} answer {OrderIndex}: sample top-up second opinion failed. The first verdict stands.",
+                    run.Id, answer.OrderIndex);
+            }
+        }
+
+        run.SecondOpinionSampleCountUsed = alreadyGraded + gradedThisPass;
+    }
+
+    /// <summary>
     /// Below this, "the run's median" is not a meaningful reference point and the sweep would be
     /// re-grading against noise.
     /// </summary>
@@ -1662,15 +1777,77 @@ public class BenchmarkService
             .Where(q => q.BenchmarkSuiteId == run.BenchmarkSuiteId)
             .ToDictionaryAsync(q => q.OrderIndex, q => q.ExpectedPoints, cancellationToken);
 
+        // Optional deterministic verifier token budget (analysis_v4.md § 8.2): cost is unbounded
+        // by default because a run-level cap on claim *count* would still let one expensive answer
+        // (run 14: ~103 k input tokens per answer) blow the budget alone. Default 0 = unlimited, so
+        // every existing run and every operator who never sets the key behaves exactly as before.
+        int tokenBudget = _configuration.GetValue<int>("Benchmark:ClaimVerificationInputTokenBudget", 0);
+        long tokensSpent = 0;
+        if (tokenBudget > 0)
+        {
+            // Seeded from what this run has already spent verifying claims (e.g. a prior call to
+            // this method after a failure retry), not from zero, so the budget is a true run total
+            // rather than a per-call allowance that could be circumvented by calling this twice.
+            tokensSpent = await db.BenchmarkRunAnswers
+                .Where(a => a.BenchmarkRunId == run.Id)
+                .SumAsync(a => a.ClaimVerificationInputTokens ?? 0, cancellationToken);
+        }
+
         foreach (var answer in candidateAnswers)
         {
             cancellationToken.ThrowIfCancellationRequested();
+
+            if (tokenBudget > 0 && tokensSpent >= tokenBudget)
+            {
+                answer.ClaimVerificationError = BenchmarkClaimVerificationNotCheckedReason(tokenBudget);
+                _logger.LogInformation(
+                    "Benchmark run {RunId} answer {OrderIndex}: claim verification input token budget ({Budget:N0}) exhausted after {Spent:N0} token(s); not checked.",
+                    run.Id, answer.OrderIndex, tokenBudget, tokensSpent);
+                await db.SaveChangesAsync(cancellationToken);
+                continue;
+            }
+
             suiteQuestions.TryGetValue(answer.OrderIndex, out var expectedPoints);
 
             await VerifyAnswerClaimsAsync(
                 db, configService, run, answer, verifierConfig, verifierApiKey, expectedPoints, cancellationToken);
+
+            if (tokenBudget > 0)
+            {
+                tokensSpent += answer.ClaimVerificationInputTokens ?? 0;
+            }
         }
     }
+
+    /// <summary>
+    /// The sentinel written to <see cref="BenchmarkRunAnswer.ClaimVerificationError"/> when the
+    /// deterministic verifier token budget is exhausted before an answer's claims were checked.
+    ///
+    /// This deliberately reuses the existing error field rather than adding a schema column: the
+    /// distinguishing substring below lets <c>BenchmarkReportBuilder</c> (and a test) tell "not
+    /// checked — budget" apart from "checked and the call failed" without a new
+    /// <see cref="BenchmarkClaimVerdict"/> value or a new persisted count. Keep the two files in
+    /// step if this text changes.
+    /// </summary>
+    /// <remarks>
+    /// Invariant-formatted deliberately. This string is <b>persisted</b> and read back by the report
+    /// builder, so a server whose culture groups digits differently would write rows the same build
+    /// renders inconsistently — and a database would end up holding both shapes. Every figure the
+    /// report builder emits goes through its own <c>Inv</c> helper for the same reason.
+    /// </remarks>
+    internal static string BenchmarkClaimVerificationNotCheckedReason(int tokenBudget) =>
+        string.Format(
+            System.Globalization.CultureInfo.InvariantCulture,
+            "{0} claim verification input token budget ({1:N0} tokens) exhausted for this run.",
+            ClaimVerificationNotCheckedPrefix,
+            tokenBudget);
+
+    /// <summary>
+    /// The prefix that marks a <see cref="BenchmarkRunAnswer.ClaimVerificationError"/> value as a
+    /// budget skip rather than a real verifier failure. <c>BenchmarkReportBuilder</c> checks for it
+    /// to keep the two apart in the report.
+    /// </summary>
+    internal const string ClaimVerificationNotCheckedPrefix = "NotChecked:";
 
     internal async Task VerifyAnswerClaimsAsync(
         ApplicationDbContext db,
@@ -2610,6 +2787,7 @@ public class BenchmarkService
         public const string Outlier = "Outlier";
         public const string All = "All";
         public const string Manual = "Manual";
+        public const string Sample = "Sample";
     }
 
     /// <summary>
@@ -4096,6 +4274,53 @@ public class BenchmarkService
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// The three instrument hashes as they would be stamped on a run launched <b>right now</b> from
+    /// this request, without launching one.
+    ///
+    /// <para>This is the resume guard's other half. A series records member 1's fingerprint; before
+    /// continuing it, the orchestrator recomputes the same three values here and refuses when any has
+    /// moved. A replicate set whose members straddle a deployment is not a replicate set, and nothing
+    /// downstream would notice — every statistic would still compute, confidently, over runs that
+    /// answered under different instruments.</para>
+    ///
+    /// <para>It deliberately reuses <see cref="PopulateInstrumentFingerprint"/> against a throwaway
+    /// <see cref="BenchmarkRun"/> rather than recomputing the three values independently: a guard that
+    /// derived its hashes differently from the code that stamps them would compare two things that
+    /// were never the same measurement.</para>
+    /// </summary>
+    /// <returns>Null when the suite or the tested configuration no longer exists.</returns>
+    internal async Task<(string? CandidateSystemPromptSha256, string? ToolGuidesSha256, string? KnowledgeBaseHeadSha)?>
+        ComputeCurrentInstrumentFingerprintAsync(
+            ApplicationDbContext db,
+            long suiteId,
+            long testedModelConfigurationId,
+            bool verboseMode,
+            CancellationToken ct = default)
+    {
+        var suite = await db.BenchmarkSuites
+            .Include(s => s.GameSnapshot)
+            .FirstOrDefaultAsync(s => s.Id == suiteId, ct);
+        if (suite == null) return null;
+
+        var testedConfig = await db.SystemAiApiConfigurations
+            .FirstOrDefaultAsync(c => c.Id == testedModelConfigurationId, ct);
+        if (testedConfig == null) return null;
+
+        var promptOptions = new BenchmarkCandidatePromptOptions
+        {
+            VerboseMode = verboseMode,
+            HasGameSnapshot = suite.GameSnapshot != null
+        };
+
+        string systemPrompt = promptOptions.BuildSystemPrompt(_chatService, testedConfig.ParallelExecutionMode);
+
+        var probe = new BenchmarkRun();
+        PopulateInstrumentFingerprint(probe, systemPrompt);
+
+        return (probe.CandidateSystemPromptSha256, probe.ToolGuidesSha256, probe.KnowledgeBaseHeadSha);
     }
 
     internal static List<string> ExtractDisputedClaims(BenchmarkRunAnswer answer, string? accuracyEvidence)

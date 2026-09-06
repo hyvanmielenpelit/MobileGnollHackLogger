@@ -1,0 +1,651 @@
+// Multi-Run Analysis. Reuses .gh-table, .gh-input, .btn-gh, .action-btn, .alert, .gh-tooltip and
+// .visually-hidden from styles.scss; this file carries only the panel's own layout and the few
+// pieces of vocabulary that exist nowhere else — the tier badge, the two interval cards and the
+// run picker.
+//
+// Nothing here re-declares a shared class. Angular's emulated encapsulation would rewrite such a
+// rule to match this component's elements only, so the button would keep working while quietly
+// looking like nothing else in the application — which is how .gh-table came to be broken in the
+// Suite Health panel before it was promoted to styles.scss.
+
+:host {
+  display: block;
+  min-width: 0;
+}
+
+.multi-run {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding: 20px 24px 32px;
+
+  // Layout reacts to the panel's own width rather than the viewport's: this component is embedded
+  // in a tab panel whose width has nothing to do with the window's.
+  container-type: inline-size;
+  container-name: mr-panel-width;
+
+  .text-muted { color: #888; }
+
+  p { margin: 0; }
+
+  h3 {
+    margin: 0;
+    font-size: 16px;
+    color: #eee;
+  }
+
+  h4 {
+    margin: 0;
+    font-size: 14px;
+    color: #ddd;
+  }
+
+  h5 {
+    margin: 0 0 4px;
+    font-size: 13px;
+    color: #ddd;
+  }
+
+  .section-note {
+    margin: 0;
+    color: #bbb;
+    font-size: 13px;
+    line-height: 1.5;
+    max-width: 110ch;
+    text-wrap: pretty;
+  }
+
+  .alert {
+    max-width: 110ch;
+  }
+}
+
+.mr-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.mr-section-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+// A table wider than the panel scrolls inside its own box. The page itself must never scroll
+// sideways — a horizontal scrollbar on the document moves every other panel with it.
+.mr-table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+// --- Tier badge ---
+//
+// Colour reinforces the tier; the word carries it. A reader who cannot distinguish the two greens
+// still reads "Tier A — Replicate", which is the only thing that decides whether pooling is legal.
+.mr-tier {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+
+  &.tier-replicate {
+    border-color: rgba(120, 200, 130, 0.5);
+    background: rgba(120, 200, 130, 0.12);
+    color: #a8dcb0;
+  }
+
+  &.tier-quality {
+    border-color: rgba(224, 186, 109, 0.5);
+    background: rgba(224, 186, 109, 0.12);
+    color: var(--primary-color, #e0ba6d);
+  }
+
+  &.tier-cross {
+    border-color: rgba(214, 150, 90, 0.5);
+    background: rgba(214, 150, 90, 0.12);
+    color: #e0a878;
+  }
+
+  &.tier-none {
+    border-color: rgba(220, 110, 110, 0.5);
+    background: rgba(220, 110, 110, 0.12);
+    color: #e09090;
+  }
+}
+
+.mr-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #bbb;
+  white-space: nowrap;
+
+  &.mr-badge-stale {
+    border-color: rgba(224, 186, 109, 0.5);
+    color: var(--primary-color, #e0ba6d);
+  }
+
+  &.mr-badge-warn {
+    border-color: rgba(214, 150, 90, 0.5);
+    color: #e0a878;
+  }
+
+  &.mr-badge-ok {
+    border-color: rgba(120, 200, 130, 0.4);
+    color: #a8dcb0;
+  }
+
+  &.mr-badge-muted {
+    color: #888;
+  }
+
+  &.mr-badge-series {
+    color: #9fb6d0;
+  }
+}
+
+// --- Group list ---
+
+.mr-group-table {
+  .col-name {
+    text-align: left;
+  }
+
+  .mr-group-name {
+    font-weight: 600;
+  }
+
+  tr.is-selected {
+    background: rgba(224, 186, 109, 0.06);
+  }
+
+  .col-actions {
+    white-space: nowrap;
+  }
+}
+
+// An unavailable action stays visible, focusable and hoverable so its tooltip can explain itself.
+// `disabled` would drop it out of the focus order and take the explanation with it.
+.mr-download.is-unavailable,
+.mr-download-detail.is-unavailable {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+// --- Group builder ---
+
+.mr-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 60ch;
+  width: 100%;
+
+  label {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #999;
+  }
+
+  .mr-field-note {
+    font-size: 12px;
+    color: #999;
+  }
+}
+
+.mr-run-picker {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  max-height: 280px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+
+  legend {
+    padding: 0 6px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #999;
+  }
+}
+
+.mr-run-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 0;
+
+  label {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    font-size: 13px;
+    color: #ccc;
+    cursor: pointer;
+  }
+}
+
+.mr-run-id {
+  font-variant-numeric: tabular-nums;
+  color: #eee;
+  font-weight: 600;
+}
+
+.mr-run-fingerprint,
+.mr-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: #9aa;
+}
+
+// --- Tier preview ---
+
+.mr-preview {
+  padding: 12px 14px;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  max-width: 110ch;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+
+  &.is-refused {
+    border-color: rgba(220, 110, 110, 0.45);
+  }
+}
+
+.mr-preview-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mr-preview-explanation {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #ccc;
+}
+
+.mr-preview-error {
+  font-size: 13px;
+  color: #e09090;
+}
+
+// The reasons behind a tier verdict. A refusal without them cannot be acted on, so they get the
+// space of a list rather than the space of a sentence.
+.mr-differences {
+  h4 {
+    margin-bottom: 6px;
+  }
+
+  .mr-difference-list {
+    margin: 0;
+    padding-left: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .mr-difference-name {
+    font-weight: 600;
+    color: #eee;
+    font-size: 13px;
+  }
+
+  .mr-difference-kind {
+    margin-left: 8px;
+    font-weight: 400;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #888;
+  }
+
+  .mr-difference-description {
+    font-size: 13px;
+    line-height: 1.5;
+    color: #ccc;
+  }
+
+  .mr-variant-list {
+    margin: 4px 0 0;
+    padding-left: 16px;
+    list-style: circle;
+  }
+
+  .mr-variant {
+    font-size: 12px;
+    color: #bbb;
+  }
+
+  .mr-variant-value {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: #ddd;
+  }
+
+  .mr-variant-runs {
+    margin-left: 8px;
+    color: #999;
+  }
+}
+
+.mr-matched-keys {
+  font-size: 12px;
+
+  summary {
+    cursor: pointer;
+    color: #999;
+  }
+
+  &:focus-visible,
+  summary:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+.mr-cross-condition {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+
+  label {
+    font-size: 13px;
+    line-height: 1.5;
+    color: #ccc;
+  }
+}
+
+.mr-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+// --- Group detail ---
+
+.mr-manifest {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 110ch;
+
+  .mr-manifest-row {
+    display: flex;
+    gap: 12px;
+    align-items: baseline;
+  }
+
+  dt {
+    flex: 0 0 160px;
+    margin: 0;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #888;
+  }
+
+  dd {
+    margin: 0;
+    font-size: 13px;
+    color: #ddd;
+    min-width: 0;
+  }
+}
+
+.mr-member-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  li {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    font-size: 12px;
+    color: #bbb;
+  }
+}
+
+.mr-analysis-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mr-provenance {
+  font-size: 12px;
+  color: #999;
+  max-width: 110ch;
+  line-height: 1.5;
+}
+
+// --- Aggregates ---
+
+.mr-aggregates {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 110ch;
+}
+
+.mr-point {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+
+  .mr-point-value {
+    font-size: 34px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--primary-color, #e0ba6d);
+  }
+
+  .mr-point-label {
+    font-size: 12px;
+    color: #999;
+  }
+}
+
+// The two components sit side by side, each with the question it answers and the way it behaves
+// as runs are added. Side by side rather than stacked because the contrast between "shrinks" and
+// "does not shrink" is the whole message, and a reader who scrolls past one of them loses it.
+.mr-interval-components {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+
+  @container mr-panel-width (max-width: 720px) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.mr-interval {
+  padding: 12px 14px;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  .mr-interval-question {
+    font-size: 13px;
+    font-style: italic;
+    color: #bbb;
+  }
+
+  .mr-interval-value {
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    color: #ddd;
+  }
+
+  .mr-interval-behaviour {
+    font-size: 12px;
+    line-height: 1.5;
+    color: #bbb;
+    padding-top: 6px;
+    border-top: 1px solid var(--border-glass, rgba(255, 255, 255, 0.08));
+  }
+
+  .mr-shrinks strong { color: #a8dcb0; }
+
+  .mr-does-not-shrink strong { color: #e0a878; }
+}
+
+.mr-combined {
+  padding: 12px 14px;
+  border: 1px solid rgba(224, 186, 109, 0.35);
+  border-radius: 8px;
+  background: rgba(224, 186, 109, 0.05);
+
+  .mr-combined-value {
+    font-size: 18px;
+    font-variant-numeric: tabular-nums;
+    color: #eee;
+  }
+
+  .mr-combined-range {
+    margin-left: 8px;
+    font-size: 14px;
+    color: #bbb;
+  }
+
+  .mr-combined-note {
+    margin-top: 6px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #bbb;
+  }
+}
+
+.mr-cross-check {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.mr-caveat {
+  max-width: 110ch;
+}
+
+// --- Sub-sections, stat tiles and tables ---
+
+.mr-subsection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.mr-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0;
+  max-width: 110ch;
+
+  .mr-stat {
+    flex: 1 1 150px;
+    padding: 10px 14px;
+    border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.02);
+
+    dt {
+      margin: 0 0 2px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #888;
+    }
+
+    dd {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      color: #eee;
+    }
+  }
+}
+
+.mr-role-split {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  font-size: 13px;
+  color: #ccc;
+
+  .mr-role-name {
+    color: #999;
+    margin-right: 6px;
+  }
+}
+
+.mr-item-table,
+.mr-comparison-table {
+  .col-center { text-align: center; }
+
+  .col-q {
+    text-align: left;
+    max-width: 42ch;
+  }
+
+  .item-order {
+    display: inline-block;
+    margin-right: 8px;
+    font-weight: 600;
+    color: var(--primary-color, #e0ba6d);
+  }
+
+  .item-text {
+    color: #bbb;
+    font-weight: 400;
+  }
+
+  td { font-variant-numeric: tabular-nums; }
+
+  tr.is-unstable {
+    background: rgba(214, 150, 90, 0.06);
+  }
+
+  tr.is-rejected {
+    background: rgba(224, 186, 109, 0.06);
+  }
+}
+
+.mr-exploratory {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}

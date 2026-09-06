@@ -1202,6 +1202,158 @@ public class BenchmarkReportBuilderTests
         Assert.DoesNotContain("### Synthesis Divergence", report);
     }
 
+    /// <summary>The assessor evidence blob as the harness stores it.</summary>
+    private static string EvidenceJson(string? accuracy, string? completeness = null)
+    {
+        string Field(string? value) => value == null
+            ? "null"
+            : "\"" + value.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+
+        return $"{{\"accuracy\":{Field(accuracy)},\"completeness\":{Field(completeness)}}}";
+    }
+
+    /// <summary>
+    /// The 2026-09-06 run in miniature: two answers docked to Accuracy 5 with evidence naming a
+    /// concrete false assertion, beside answers whose evidence is the full-level boilerplate.
+    /// </summary>
+    private static BenchmarkRun Run14ShapedRun()
+    {
+        var q11 = ScoredAnswer(11, BenchmarkDifficulty.Intermediate, 55, 92);
+        q11.AccuracyLevel = 5;
+        q11.AssessmentEvidenceJson = EvidenceJson(
+            "The answer overlooks that weapon swapping between sets takes 0 turns in GnollHack, suggesting instead that switching weapons requires extra equipment management overhead.");
+
+        var q12 = ScoredAnswer(12, BenchmarkDifficulty.Intermediate, 60, 95);
+        q12.AccuracyLevel = 5;
+        q12.AssessmentEvidenceJson = EvidenceJson("Matches rubric.");
+
+        var q14 = ScoredAnswer(14, BenchmarkDifficulty.Advanced, 85, 90);
+        q14.AccuracyLevel = 5;
+        q14.AssessmentEvidenceJson = EvidenceJson(
+            "The answer lists Level as 40 and Hit dice as 25; in the monster definition LVL(25, 16, -10, 15, 10, -20), his level/HD is 25, while 40 is his monster difficulty.");
+
+        var q15 = ScoredAnswer(15, BenchmarkDifficulty.Advanced, 80, 99);
+        q15.AccuracyLevel = 6;
+        q15.AssessmentEvidenceJson = EvidenceJson("Aligns with rubric.");
+
+        return HarnessV7Run(BenchmarkSecondOpinionMode.Off, q11, q12, q14, q15);
+    }
+
+    [Fact]
+    public void SynthesisAccuracyDivergence_NamesTheQuestionsWhoseEvidenceTheSynthesisContradicts()
+    {
+        var run = Run14ShapedRun();
+        run.AssessmentText =
+            "The model demonstrates an elite command of GnollHack's mechanics across the suite.\n" +
+            "Identified weaknesses were confined to secondary omissions rather than factual errors or critical rubric failures.";
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("### Synthesis Accuracy Divergence", report);
+        Assert.Contains("**Question 11:** Accuracy 5 / 6", report);
+        Assert.Contains("**Question 14:** Accuracy 5 / 6", report);
+        Assert.Contains("40 is his monster difficulty", report);
+
+        // The boilerplate-evidence answers are not accusations, and the level-6 one is faultless
+        // by definition. Naming them would fire this block on every strong run.
+        Assert.DoesNotContain("**Question 12:** Accuracy", report);
+        Assert.DoesNotContain("**Question 15:** Accuracy", report);
+
+        // Advisory, exactly like its neighbour: it says so, and changes no score.
+        Assert.Contains("no score changes here", report);
+    }
+
+    [Fact]
+    public void SynthesisAccuracyDivergence_IsSilentWhenTheSynthesisMakesNoSuchClaim()
+    {
+        // The same verdicts, under a synthesis that reports its weaknesses honestly. Accuracy
+        // deductions alone are not a divergence — a run is allowed to have them.
+        var run = Run14ShapedRun();
+        run.AssessmentText =
+            "The model demonstrates an elite command of GnollHack's mechanics across the suite.\n" +
+            "Question 14 misreports Master Kaen's level as his monster difficulty, and Question 11 misstates the cost of a weapon swap.";
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.DoesNotContain("### Synthesis Accuracy Divergence", report);
+    }
+
+    [Fact]
+    public void SynthesisAccuracyDivergence_IsSilentWhenNoVerdictNamesADefect()
+    {
+        // The claim, made honestly. Every deduction's evidence is the full-level boilerplate the
+        // prompt itself offers, so there is nothing for the claim to contradict.
+        var clean = ScoredAnswer(1, BenchmarkDifficulty.Simple, 30, 97);
+        clean.AccuracyLevel = 6;
+        clean.AssessmentEvidenceJson = EvidenceJson("Matches rubric.");
+
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, clean);
+        run.AssessmentText = "The run was free of factual errors throughout.";
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.DoesNotContain("### Synthesis Accuracy Divergence", report);
+    }
+
+    [Fact]
+    public void OutOfScopeCompletenessDeductions_AreCountedAndNamedUnderTheDimensionalAverages()
+    {
+        var q12 = ScoredAnswer(12, BenchmarkDifficulty.Intermediate, 60, 95);
+        q12.CompletenessLevel = 5;
+        q12.CompletenessOutOfScope = true;
+
+        var q18 = ScoredAnswer(18, BenchmarkDifficulty.Advanced, 85, 90);
+        q18.CompletenessLevel = 5;
+        q18.CompletenessOutOfScope = true;
+
+        var ordinary = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 70);
+        ordinary.CompletenessLevel = 3;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(
+            HarnessV7Run(BenchmarkSecondOpinionMode.Off, ordinary, q12, q18));
+
+        Assert.Contains("**Out-of-scope completeness deductions:** 2 (Q12, Q18)", report);
+        Assert.Contains("Accuracy→Completeness gap", report);
+    }
+
+    [Fact]
+    public void OutOfScopeCompletenessDeductions_AreNotReportedAsZeroWhenNoneWereRecorded()
+    {
+        // A run graded before the marker existed and a run whose assessor found nothing out of
+        // scope look identical here, so the report asserts neither.
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(
+            HarnessV7Run(
+                BenchmarkSecondOpinionMode.Off,
+                ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 90)));
+
+        Assert.DoesNotContain("Out-of-scope completeness deductions", report);
+    }
+
+    [Fact]
+    public void NarrationAdvisory_SaysThatNarrationIsPromptCompliantInProductionChat()
+    {
+        // H5. The scrubber is benchmark-only by design, and this note exists so that a reader of
+        // the Issues list does not "fix" chat by porting it there.
+        var removed = ScoredAnswer(18, BenchmarkDifficulty.Advanced, 85, 90);
+        removed.AnswerFlags = (int)BenchmarkAnswerFlags.ReasoningBleed;
+        removed.NarrationBlockCount = 1;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV6Run(removed));
+
+        Assert.Contains("Briefly tell the player what you're looking up when using a tool", report);
+        Assert.Contains("Overseer/ToolGuides/_policy.md", report);
+        Assert.Contains("must not acquire one", report);
+    }
+
+    [Fact]
+    public void NarrationAdvisory_PolicyNoteIsAbsentWhenNoAnswerCarriedNarration()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(
+            HarnessV6Run(ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 90)));
+
+        Assert.DoesNotContain("Briefly tell the player what you're looking up", report);
+    }
+
     [Fact]
     public void Reassessment_RecordsTheScoreItReplacedAndWhoReplacedIt()
     {
@@ -1658,5 +1810,106 @@ public class BenchmarkReportBuilderTests
         Assert.Contains("Assessor (gemini-3.7-flash): $0.04 (in: $0.03, out: $0.01)", report);
         Assert.Contains("Claim Verifier (gpt-5-mini): $0.12 (in: $0.10, out: $0.02)", report);
         Assert.Contains("- *Prices: candidate catalog (as of 2026-09-05); assessor catalog (as of 2026-09-05); verifier custom.*", report);
+    }
+
+    [Fact]
+    public void ClaimVerificationYield_ReportsWhatTheVerifiersDollarsBought()
+    {
+        // Run 14's shape: 10 claims checked, none refuted, $1.70 of verifier spend against a
+        // $2.52 run — two thirds of the run's cost for zero refutations. That ratio is the figure
+        // an operator steers by, and before H4 it appeared nowhere.
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        run.TestedModelIdUsed = "gpt-5.6";
+        run.AssessorModelIdUsed = "gemini-3.7-flash";
+        run.ClaimVerifierModelIdUsed = "gpt-5-mini";
+        run.TotalInputTokens = 200_000;
+        run.TotalOutputTokens = 30_000;
+        run.TotalAssessmentInputTokens = 100_000;
+        run.TotalAssessmentOutputTokens = 10_000;
+        run.TotalClaimVerificationInputTokens = 1_300_000;
+        run.TotalClaimVerificationOutputTokens = 100_000;
+        run.ClaimsSupportedCount = 7;
+        run.ClaimsRefutedCount = 0;
+        run.ClaimsIndeterminateCount = 3;
+
+        var runPricing = new BenchmarkRunPricing(
+            Candidate: new ModelPricing(2.50m, 10.00m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
+            Assessor: new ModelPricing(0.15m, 0.60m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
+            SecondOpinion: null,
+            ClaimVerifier: new ModelPricing(1.00m, 4.00m, Source: ModelPricingSource.Custom),
+            IsSnapshot: true
+        );
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run, runPricing: runPricing);
+
+        Assert.Contains(
+            "- **Claim Verification Yield:** 10 claim(s) checked — 7 supported, 0 refuted, 3 indeterminate. $1.70 ($0.17/claim), 67% of run cost.",
+            report);
+    }
+
+    [Fact]
+    public void ClaimVerificationYield_IsOmitted_WhenNoClaimWasChecked()
+    {
+        // A verifier that was configured, billed, and checked nothing must not render a yield line
+        // with a zero denominator — "no claims" and "no verifier" are different facts.
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        run.TestedModelIdUsed = "gpt-5.6";
+        run.AssessorModelIdUsed = "gemini-3.7-flash";
+        run.ClaimVerifierModelIdUsed = "gpt-5-mini";
+        run.TotalInputTokens = 200_000;
+        run.TotalOutputTokens = 30_000;
+        run.TotalAssessmentInputTokens = 100_000;
+        run.TotalAssessmentOutputTokens = 10_000;
+        run.TotalClaimVerificationInputTokens = 1_300_000;
+        run.TotalClaimVerificationOutputTokens = 100_000;
+
+        var runPricing = new BenchmarkRunPricing(
+            Candidate: new ModelPricing(2.50m, 10.00m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
+            Assessor: new ModelPricing(0.15m, 0.60m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
+            SecondOpinion: null,
+            ClaimVerifier: new ModelPricing(1.00m, 4.00m, Source: ModelPricingSource.Custom),
+            IsSnapshot: true
+        );
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run, runPricing: runPricing);
+
+        Assert.DoesNotContain("**Claim Verification Yield:**", report);
+    }
+
+    [Fact]
+    public void ClaimVerificationNotChecked_IsReportedApartFromAVerifierFailure()
+    {
+        // The budget skip and a real verifier failure share one field. Reporting a budget cutoff
+        // as a verifier defect would send an operator hunting a bug that is a setting.
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.UnverifiedClaimCount = 2;
+        var q2 = ScoredAnswer(2, BenchmarkDifficulty.Simple, 30, 75);
+        q2.UnverifiedClaimCount = 3;
+        q2.ClaimVerificationError = BenchmarkService.BenchmarkClaimVerificationNotCheckedReason(50000);
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(
+            HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1, q2));
+
+        Assert.Contains("- **Claim Verification Not Checked (budget):** 1 answer(s) (Q2)", report);
+        Assert.Contains("`Benchmark:ClaimVerificationInputTokenBudget` was exhausted", report);
+        Assert.DoesNotContain("**Claim Verification Failed:**", report);
+    }
+
+    [Fact]
+    public void ClaimVerificationFailure_IsStillReportedAsAFailure_NotAsABudgetSkip()
+    {
+        // The other half of the same distinction: an ordinary verifier error must keep reading as
+        // a failure once the budget sentinel exists.
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.UnverifiedClaimCount = 2;
+        q1.ClaimVerificationError = "The verifier returned no parsable verdict.";
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(
+            HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1));
+
+        Assert.Contains("**Claim Verification Failed:**", report);
+        Assert.DoesNotContain("**Claim Verification Not Checked (budget):**", report);
     }
 }

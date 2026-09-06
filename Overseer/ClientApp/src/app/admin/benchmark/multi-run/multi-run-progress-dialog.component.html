@@ -1,0 +1,422 @@
+<!-- MULTI-RUN SERIES PROGRESS DIALOG
+     Structured header / body / footer exactly as the single-run #runProgressDialog is, so an
+     operator who knows that dialog needs to learn nothing to read this one. -->
+<dialog #multiRunProgressDialog class="gh-dialog multi-run-progress-dialog"
+        aria-labelledby="multiRunProgressDialogTitle"
+        (cancel)="requestClose()">
+  <div class="dialog-content flex-col">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 id="multiRunProgressDialogTitle">Benchmark Series #{{ series?.id ?? seriesId }}</h3>
+        <p class="dialog-subtitle">
+          {{ series?.suiteName }} | {{ series?.requestedRunCount ?? 0 }} run(s)
+        </p>
+      </div>
+      <button type="button" class="btn-icon-action"
+              aria-label="Close benchmark series progress"
+              (click)="requestClose()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;"
+             aria-hidden="true">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+
+    <div class="dialog-body">
+      <h4 #multiRunProgressHeading tabindex="-1" class="progress-heading">
+        @if (series) {
+          {{ series.suiteName }} — replicate set of {{ series.requestedRunCount }}
+        } @else {
+          Starting benchmark series…
+        }
+      </h4>
+
+      <!-- The configuration under test, badged as the single-run dialog badges it. Read from
+           member 1's run detail: the series row records the suite and the counts, not the models. -->
+      @if (firstMemberRun; as run) {
+        <dl class="run-model-strip">
+          <div class="run-model-row">
+            <dt>Model under test</dt>
+            <dd>
+              <span class="model-name">{{ run.testedModelDisplayNameUsed || run.testedModelIdUsed }}</span>
+              @if (run.testedModelThinkingLevelUsed) {
+                <span class="thinking-badge">{{ formatThinkingLevel(run.testedModelThinkingLevelUsed) }}</span>
+              }
+              @if (showReasoningBadge(run.testedModelReasoningModeUsed)) {
+                <span class="reasoning-badge">{{ run.testedModelReasoningModeUsed }}</span>
+              }
+              @if (run.testedModelProviderUsed) {
+                <span class="provider-badge">{{ run.testedModelProviderUsed }}</span>
+              }
+              @if (run.testedModelServiceTierUsed) {
+                <span class="tier-badge">{{ formatServiceTier(run.testedModelServiceTierUsed) }}</span>
+              }
+              @if (run.testedModelParallelExecutionModeUsed === 0) {
+                <span class="parallel-badge badge-sequential">Sequential</span>
+              }
+              @if (run.testedModelParallelExecutionModeUsed === 1) {
+                <span class="parallel-badge badge-on-request">On request</span>
+              }
+            </dd>
+          </div>
+          <div class="run-model-row">
+            <dt>Evaluator</dt>
+            <dd>
+              <span class="model-name">{{ run.assessorModelDisplayNameUsed || run.assessorModelIdUsed }}</span>
+              @if (run.assessorModelThinkingLevelUsed) {
+                <span class="thinking-badge">{{ formatThinkingLevel(run.assessorModelThinkingLevelUsed) }}</span>
+              }
+              @if (showReasoningBadge(run.assessorModelReasoningModeUsed)) {
+                <span class="reasoning-badge">{{ run.assessorModelReasoningModeUsed }}</span>
+              }
+              @if (run.assessorModelProviderUsed) {
+                <span class="provider-badge">{{ run.assessorModelProviderUsed }}</span>
+              }
+            </dd>
+          </div>
+          @if ((run.secondOpinionAssessorModelDisplayNameUsed || run.secondOpinionAssessorModelIdUsed) && run.secondOpinionModeUsed !== 0) {
+            <div class="run-model-row">
+              <dt>Second opinion assessor</dt>
+              <dd>
+                <span class="model-name">{{ run.secondOpinionAssessorModelDisplayNameUsed || run.secondOpinionAssessorModelIdUsed }}</span>
+                @if (run.secondOpinionAssessorModelThinkingLevelUsed) {
+                  <span class="thinking-badge">{{ formatThinkingLevel(run.secondOpinionAssessorModelThinkingLevelUsed) }}</span>
+                }
+                @if (run.secondOpinionAssessorModelProviderUsed) {
+                  <span class="provider-badge">{{ run.secondOpinionAssessorModelProviderUsed }}</span>
+                }
+                @if (formatSecondOpinionMode(run.secondOpinionModeUsed)) {
+                  <span class="second-opinion-mode-badge"
+                        [title]="secondOpinionModeHintOf(run.secondOpinionModeUsed)">{{ formatSecondOpinionMode(run.secondOpinionModeUsed) }}</span>
+                }
+              </dd>
+            </div>
+          }
+          @if (run.claimVerifierDisplayNameUsed || run.claimVerifierModelIdUsed) {
+            <div class="run-model-row">
+              <dt>Claim verifier</dt>
+              <dd>
+                <span class="model-name">{{ run.claimVerifierDisplayNameUsed || run.claimVerifierModelIdUsed }}</span>
+                @if (run.claimVerifierThinkingLevelUsed) {
+                  <span class="thinking-badge">{{ formatThinkingLevel(run.claimVerifierThinkingLevelUsed) }}</span>
+                }
+                @if (run.claimVerifierProviderUsed) {
+                  <span class="provider-badge">{{ run.claimVerifierProviderUsed }}</span>
+                }
+              </dd>
+            </div>
+          }
+        </dl>
+      }
+
+      <!-- Four stages, because a multi-run operation has more than one. WaitingForCap and Stopped
+           keep step 2 lit and are named in the state block below: a paused series that showed only
+           a spinner would be indistinguishable from a hung one. -->
+      <ol class="run-stage-rail" aria-label="Series stages">
+        <li class="run-stage" data-stage="launching"
+            [class.is-current]="stageIndex === 0"
+            [class.is-done]="stageIndex > 0"
+            [attr.aria-current]="stageIndex === 0 ? 'step' : null">
+          <span class="run-stage-index" aria-hidden="true">1</span>
+          <span class="run-stage-name">Launching</span>
+        </li>
+        <li class="run-stage" data-stage="running"
+            [class.is-current]="stageIndex === 1"
+            [class.is-done]="stageIndex > 1"
+            [class.is-paused]="isNamedPause"
+            [attr.aria-current]="stageIndex === 1 ? 'step' : null">
+          <span class="run-stage-index" aria-hidden="true">2</span>
+          <span class="run-stage-name">
+            @if (stage === 'running') {
+              Running run {{ currentMemberIndex }} of {{ series?.requestedRunCount }}
+            } @else if (stage === 'waitingForCap') {
+              Waiting for run cap
+            } @else if (stage === 'stopped') {
+              Stopped
+            } @else {
+              Running runs
+            }
+          </span>
+        </li>
+        <li class="run-stage" data-stage="analysing"
+            [class.is-current]="stageIndex === 2"
+            [class.is-done]="stageIndex > 2"
+            [attr.aria-current]="stageIndex === 2 ? 'step' : null">
+          <span class="run-stage-index" aria-hidden="true">3</span>
+          <span class="run-stage-name">Analysing</span>
+        </li>
+        <li class="run-stage" data-stage="complete"
+            [class.is-current]="stageIndex === 3"
+            [attr.aria-current]="stageIndex === 3 ? 'step' : null">
+          <span class="run-stage-index" aria-hidden="true">4</span>
+          <span class="run-stage-name">Complete</span>
+        </li>
+      </ol>
+
+      <div class="job-progress-block">
+        <label class="progress-label" for="seriesProgressBar">Runs</label>
+        @if ((series?.requestedRunCount ?? 0) > 0) {
+          <progress id="seriesProgressBar" class="job-progress"
+                    [value]="series?.completedRunCount ?? 0"
+                    [max]="series?.requestedRunCount ?? 1"></progress>
+        } @else {
+          <progress id="seriesProgressBar" class="job-progress"></progress>
+        }
+        <!-- The dialog's only polling live region: one announcement per stage change. -->
+        <p class="progress-status" role="status" aria-live="polite">{{ stageLabel }}</p>
+      </div>
+
+      <!-- A named state, not a stalled spinner. -->
+      @if (isNamedPause) {
+        <div class="series-state-block" [class.state-waiting]="stage === 'waitingForCap'"
+             [class.state-stopped]="stage === 'stopped'">
+          <p class="series-state-name">
+            @if (stage === 'waitingForCap') { Waiting for run cap } @else { Stopped }
+          </p>
+          <p class="series-state-detail">{{ namedPauseDetail }}</p>
+        </div>
+      }
+
+      @if (instrumentChange) {
+        <!-- Resume refused: a replicate set whose members straddle a deployment is not a
+             replicate set, so the choice is made explicitly rather than defaulted. -->
+        <div class="alert alert-warning mt-15" role="alert">
+          <p class="instrument-change-message">{{ instrumentChange.message }}</p>
+          <p class="instrument-change-hashes">
+            Changed since member 1: <strong>{{ instrumentChange.changedHashes.join(', ') }}</strong>
+          </p>
+          <div class="instrument-change-actions">
+            <button type="button" class="btn-gh btn-gh-cancel" (click)="startNewSeriesInstead()">
+              Start a new series
+            </button>
+            <button type="button" class="btn-gh" [disabled]="resumeInFlight"
+                    (click)="continueSeries(true)">
+              Continue anyway (marks the group cross-condition)
+            </button>
+          </div>
+        </div>
+      }
+
+      <dl class="run-stat-strip">
+        <div class="run-stat">
+          <dt>Elapsed</dt>
+          <dd>{{ elapsedLabel }}</dd>
+        </div>
+        <div class="run-stat">
+          <dt>Completed</dt>
+          <dd>{{ series?.completedRunCount ?? 0 }} / {{ series?.requestedRunCount ?? 0 }}</dd>
+        </div>
+        <div class="run-stat">
+          <dt>Failed</dt>
+          <dd>{{ series?.failedRunCount ?? 0 }}</dd>
+        </div>
+        @if (totalEstimatedCost != null) {
+          <div class="run-stat">
+            <dt>Est. cost so far</dt>
+            <dd>${{ totalEstimatedCost | number:'1.2-4' }}</dd>
+          </div>
+        }
+        @if (series?.autoCreatedGroupId != null) {
+          <div class="run-stat">
+            <dt>Group</dt>
+            <dd>#{{ series?.autoCreatedGroupId }} · {{ series?.autoCreatedGroupTier || 'tier pending' }}</dd>
+          </div>
+        }
+      </dl>
+
+      <div class="series-member-table-wrap">
+        <table class="series-member-table">
+          <caption class="sr-only">Series members</caption>
+          <thead>
+            <tr>
+              <th scope="col">#</th>
+              <th scope="col">Run</th>
+              <th scope="col">Status</th>
+              <th scope="col">Intelligence</th>
+              <th scope="col">Speed</th>
+              <th scope="col">Duration</th>
+              <th scope="col">Cost</th>
+              <th scope="col">Instrument</th>
+              <th scope="col"><span class="sr-only">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (member of series?.members ?? []; track member.runId) {
+              <tr [class.is-running]="member.status === 'Running'">
+                <td>{{ member.index }}</td>
+                <td>#{{ member.runId }}</td>
+                <td>
+                  <span class="job-status-chip" [class]="memberStatusClass(member)">{{ member.status }}</span>
+                  @if (member.status === 'Running') {
+                    <span class="member-progress-line">
+                      {{ member.answeredQuestionCount }} of {{ member.totalQuestionCount }} questions answered
+                    </span>
+                  }
+                </td>
+                <td>{{ member.qualityIndex ?? '—' }}</td>
+                <td>{{ member.speedIndex ?? '—' }}</td>
+                <td>{{ member.durationMs != null ? formatDuration(member.durationMs) : '—' }}</td>
+                <td>{{ member.estimatedCost != null ? ('$' + (member.estimatedCost | number:'1.2-4')) : '—' }}</td>
+                <td><code class="fingerprint">{{ shortFingerprint(member.shortFingerprint) }}</code></td>
+                <td class="member-actions">
+                  @if (member.status === 'Running') {
+                    <!-- Hands off to the single-run dialog rather than embedding its per-question
+                         view: two modal dialogs in the top layer trap focus between them. -->
+                    <button type="button" class="action-btn"
+                            [attr.aria-label]="'Open run progress for run ' + member.runId"
+                            [attr.interestfor]="'tip-open-run-' + member.runId"
+                            [attr.style]="'anchor-name: --tip-open-run-' + member.runId"
+                            (click)="openMemberRunProgress(member)">
+                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                           viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                        <polyline points="15 3 21 3 21 9"></polyline>
+                        <line x1="10" y1="14" x2="21" y2="3"></line>
+                      </svg>
+                    </button>
+                    <div popover="hint" class="gh-tooltip" [id]="'tip-open-run-' + member.runId"
+                         [attr.style]="'position-anchor: --tip-open-run-' + member.runId">Open run progress</div>
+                  }
+                </td>
+              </tr>
+            } @empty {
+              <tr>
+                <td colspan="9" class="empty-members">No member runs have been launched yet.</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      @if (series?.errorMessage || errorMessage || analysisError) {
+        <div class="alert alert-danger mt-15" role="alert">
+          @if (series?.errorMessage) { <div>{{ series?.errorMessage }}</div> }
+          @if (errorMessage) { <div>{{ errorMessage }}</div> }
+          @if (analysisError) { <div>{{ analysisError }}</div> }
+        </div>
+      }
+
+      <details class="job-diagnostics mt-15">
+        <summary>
+          Series diagnostics
+          @if ((series?.failedRunCount ?? 0) > 0) {
+            <span class="job-diagnostics-count">{{ series?.failedRunCount }} failed</span>
+          }
+        </summary>
+        <div class="diagnostics-toolbar">
+          <button type="button" class="action-btn"
+                  aria-label="Copy benchmark series diagnostics"
+                  interestfor="tip-copy-series-diagnostics"
+                  style="anchor-name: --tip-copy-series-diagnostics"
+                  (click)="copySeriesDiagnostics()">
+            @if (copiedSeriesDiagnostics) {
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                   viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+            } @else {
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                   viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            }
+          </button>
+          <div popover="hint" class="gh-tooltip" id="tip-copy-series-diagnostics"
+               style="position-anchor: --tip-copy-series-diagnostics">Copy series diagnostics</div>
+          <p class="diagnostics-copy-status" role="status" aria-live="polite">
+            {{ seriesDiagnosticsCopyStatus }}
+          </p>
+        </div>
+        <pre tabindex="0"><code>{{ seriesDiagnosticsText }}</code></pre>
+      </details>
+
+      <details class="job-diagnostics mt-15">
+        <summary>
+          Group analysis diagnostics
+          @if (groupAnalysis) {
+            <span class="job-diagnostics-count analysis-count">R = {{ groupAnalysis.runCount }}</span>
+          }
+        </summary>
+        <div class="diagnostics-toolbar">
+          <button type="button" class="action-btn"
+                  aria-label="Copy benchmark group analysis diagnostics"
+                  interestfor="tip-copy-group-diagnostics"
+                  style="anchor-name: --tip-copy-group-diagnostics"
+                  (click)="copyGroupAnalysisDiagnostics()">
+            @if (copiedGroupDiagnostics) {
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                   viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+            } @else {
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                   viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            }
+          </button>
+          <div popover="hint" class="gh-tooltip" id="tip-copy-group-diagnostics"
+               style="position-anchor: --tip-copy-group-diagnostics">Copy group analysis diagnostics</div>
+          <p class="diagnostics-copy-status" role="status" aria-live="polite">
+            {{ groupDiagnosticsCopyStatus }}
+          </p>
+        </div>
+        <pre tabindex="0"><code>{{ groupAnalysisDiagnosticsText }}</code></pre>
+      </details>
+    </div>
+
+    <div class="dialog-footer">
+      @if (seriesIsLive) {
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="requestClose()">Run in Background</button>
+        <button type="button" class="btn-gh btn-gh-delete" [disabled]="cancelInFlight"
+                (click)="cancelSeries()">
+          Cancel Series
+        </button>
+      } @else {
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="requestClose()">Close</button>
+      }
+
+      @if (canContinue) {
+        <button type="button" class="btn-gh" [disabled]="resumeInFlight" (click)="continueSeries()">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+               viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="1 4 1 10 7 10"></polyline>
+            <polyline points="23 20 23 14 17 14"></polyline>
+            <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path>
+          </svg>
+          {{ continueLabel }}
+        </button>
+      }
+
+      <!-- aria-disabled rather than disabled: a disabled button cannot be focused, and the whole
+           point of the tooltip is to tell an operator why the report is not available yet. -->
+      <button type="button" class="btn-gh download-report-btn"
+              [class.is-unavailable]="!canDownloadReport"
+              [attr.aria-disabled]="canDownloadReport ? null : 'true'"
+              interestfor="tip-download-group-report"
+              style="anchor-name: --tip-download-group-report"
+              (click)="downloadGroupReport()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+             viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+        Download report
+      </button>
+      <div popover="hint" class="gh-tooltip" id="tip-download-group-report"
+           style="position-anchor: --tip-download-group-report">{{ downloadReportTooltip }}</div>
+    </div>
+  </div>
+</dialog>

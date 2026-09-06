@@ -200,4 +200,97 @@ public class BenchmarkAssessmentParserTests
         Assert.True(result.Success);
         Assert.False(result.Result!.OmissionAsAccuracy);
     }
+
+    /// <summary>A verdict whose completeness evidence is whatever the test needs it to be.</summary>
+    private static string VerdictWithCompletenessEvidence(string completenessEvidence)
+    {
+        return $$"""
+        {
+          "accuracyLevel": 5,
+          "completenessLevel": 5,
+          "concisenessLevel": 5,
+          "readabilityLevel": 5,
+          "criticalError": false,
+          "criticalErrorQuote": null,
+          "unverifiedClaims": [],
+          "accuracyEvidence": "Matches rubric.",
+          "completenessEvidence": "{{completenessEvidence}}",
+          "comment": "A reasonable answer."
+        }
+        """;
+    }
+
+    [Fact]
+    public void CompletenessOutOfScope_IsSetWhenTheMarkerIsPresent()
+    {
+        // Q12's shape on the 2026-09-06 run, as scoring method v8 asks the assessor to record it:
+        // the rubric enumerates more than the question asked for, and that is not an omission.
+        var result = BenchmarkAssessmentParser.ParsePerQuestion(
+            VerdictWithCompletenessEvidence(
+                "OUT-OF-SCOPE: the rubric lists Celestial/Primordial/Infernal modifiers; the question asked only for Exceptional and Elite."),
+            Answer);
+
+        Assert.True(result.Success);
+        Assert.True(result.Result!.CompletenessOutOfScope);
+    }
+
+    [Fact]
+    public void CompletenessOutOfScope_IsSetWhenTheMarkerFollowsARealDeduction()
+    {
+        // One evidence string can carry both a deduction and an out-of-scope note, so the marker is
+        // matched anywhere in the string rather than only at its start.
+        var result = BenchmarkAssessmentParser.ParsePerQuestion(
+            VerdictWithCompletenessEvidence(
+                "Rubric point 2: the answer omits the crowning penalty. OUT-OF-SCOPE: rubric point 5 covers Infernal armor, which the question did not ask about."),
+            Answer);
+
+        Assert.True(result.Result!.CompletenessOutOfScope);
+    }
+
+    [Fact]
+    public void CompletenessOutOfScope_IsNotSetWhenTheMarkerIsAbsent()
+    {
+        // The normal case. A missing marker is never an error: most rubrics ask for nothing the
+        // question did not.
+        var result = BenchmarkAssessmentParser.ParsePerQuestion(
+            VerdictWithCompletenessEvidence("Rubric point 2: the answer omits the crowning penalty."),
+            Answer);
+
+        Assert.True(result.Success);
+        Assert.False(result.Result!.CompletenessOutOfScope);
+    }
+
+    [Theory]
+    // A mangled marker costs the measurement and nothing else — never the verdict, and never an
+    // exception. The last case is the ordinary English phrase without the colon, which must not
+    // count as the marker: it appears in evidence strings that are describing something else.
+    [InlineData("OUT-OF-SCOPE")]
+    [InlineData("out_of_scope:")]
+    [InlineData("OUT-OF-SCOPE;")]
+    [InlineData("The rubric point is arguably out of scope for this question.")]
+    [InlineData("")]
+    public void CompletenessOutOfScope_MalformedMarker_ParsesWithoutThrowingAndDoesNotSetTheFlag(string evidence)
+    {
+        var result = BenchmarkAssessmentParser.ParsePerQuestion(
+            VerdictWithCompletenessEvidence(evidence),
+            Answer);
+
+        Assert.True(result.Success);
+        Assert.False(result.Result!.CompletenessOutOfScope);
+    }
+
+    [Theory]
+    // Casing and separator tolerance: models write the marker the way they feel like writing it.
+    [InlineData("OUT-OF-SCOPE: rubric point 5.")]
+    [InlineData("Out of scope: rubric point 5.")]
+    [InlineData("out-of-scope : rubric point 5.")]
+    [InlineData("OUTOFSCOPE: rubric point 5.")]
+    public void CompletenessOutOfScope_ToleratesTheFormsAssessorsActuallyWrite(string evidence)
+    {
+        var result = BenchmarkAssessmentParser.ParsePerQuestion(
+            VerdictWithCompletenessEvidence(evidence),
+            Answer);
+
+        Assert.True(result.Result!.CompletenessOutOfScope);
+    }
 }

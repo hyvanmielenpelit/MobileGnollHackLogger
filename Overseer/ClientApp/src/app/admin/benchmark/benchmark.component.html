@@ -31,11 +31,24 @@
       type="button"
       role="tab"
       class="gh-tab"
+      id="bm-tab-multirun"
+      aria-controls="bm-panel-multirun"
+      [attr.aria-selected]="activeSubTab === 'multirun'"
+      [attr.tabindex]="activeSubTab === 'multirun' ? 0 : -1"
+      (keydown)="onTabKeydown($event, 2)"
+      (click)="selectSubTab('multirun')">
+      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+      Multi-Run Analysis
+    </button>
+    <button
+      type="button"
+      role="tab"
+      class="gh-tab"
       id="bm-tab-suites"
       aria-controls="bm-panel-suites"
       [attr.aria-selected]="activeSubTab === 'suites'"
       [attr.tabindex]="activeSubTab === 'suites' ? 0 : -1"
-      (keydown)="onTabKeydown($event, 2)"
+      (keydown)="onTabKeydown($event, 3)"
       (click)="selectSubTab('suites')">
       <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
       Manage Suites
@@ -45,8 +58,67 @@
   <!-- TAB 1: RUN BENCHMARK -->
   @if (activeSubTab === 'run') {
     <div class="benchmark-tab-content" role="tabpanel" id="bm-panel-run" aria-labelledby="bm-tab-run" tabindex="0">
+      <!--
+        Active Series Banner. A series replaces the single-run banner rather than sitting beside it:
+        while a series is live the interesting unit is "run n of N", and two banners describing the
+        same execution at two scales is how an operator ends up cancelling the wrong thing. Waiting
+        for run cap and Stopped are named states here, never a stalled spinner.
+      -->
+      @if (activeSeries && !multiRunDialogVisible) {
+        <div class="active-run-banner series-banner">
+          <div class="banner-header">
+            @if (seriesIsLive) {
+              <div class="pulse-indicator" aria-hidden="true"></div>
+            }
+            <div>
+              <h4>Benchmark Series #{{ activeSeries.id }} ({{ activeSeries.suiteName }})</h4>
+              <p class="text-muted">{{ seriesProgressLabel }}</p>
+            </div>
+          </div>
+          @if (seriesErrorMessage) {
+            <div class="alert alert-warning mb-10" role="alert" aria-live="polite">
+              <div class="alert-content">
+                <div class="alert-body">{{ seriesErrorMessage }}</div>
+              </div>
+            </div>
+          }
+          <div class="banner-progress" role="status">
+            @if (seriesIsWaitingForCap) {
+              <span class="series-state-chip state-waiting">Waiting for run cap</span>
+            }
+            @if (seriesIsStopped) {
+              <span class="series-state-chip state-stopped">Stopped</span>
+            }
+            @if (activeRunDetail && formatStatus(activeRunDetail.status) === 'Running') {
+              <span>Run #{{ activeRunDetail.id }}: answered {{ activeRunDetail.answers.length }} of {{ activeRunDetail.totalQuestionCount }}</span>
+            }
+            <button type="button" class="btn-gh" (click)="openMultiRunDialog()">
+              Show Series Progress
+            </button>
+            @if (seriesIsStopped) {
+              <button type="button" class="btn-gh" [disabled]="resumingSeries || !activeSeries.resumable"
+                      (click)="resumeActiveSeries()">
+                {{ resumingSeries ? 'Continuing...' : seriesContinueLabel }}
+              </button>
+              @if (seriesInstrumentChanged) {
+                <button type="button" class="btn-gh btn-gh-delete" [disabled]="resumingSeries"
+                        (click)="resumeActiveSeries(true)">
+                  Continue anyway (marks the group cross-condition)
+                </button>
+              }
+            }
+            @if (seriesIsLive) {
+              <button type="button" class="btn-gh btn-gh-delete" (click)="cancelActiveSeries()">
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+                Cancel Series
+              </button>
+            }
+          </div>
+        </div>
+      }
+
       <!-- Active Run Banner -->
-      @if (activeRunDetail && formatStatus(activeRunDetail.status) === 'Running' && !isRunProgressDialogOpen) {
+      @if (!activeSeries && activeRunDetail && formatStatus(activeRunDetail.status) === 'Running' && !isRunProgressDialogOpen) {
         <div class="active-run-banner">
           <div class="banner-header">
             <div class="pulse-indicator" aria-hidden="true"></div>
@@ -464,6 +536,97 @@
               <span id="candidateResponseStyleHint" class="form-hint">{{ candidateResponseStyleHint }}</span>
             </div>
           </div>
+
+          <!--
+            Number of runs. The max is bound to the live configured MaxRunsPerDay from
+            GET runs/limits and never to a literal, so raising the cap raises this field with it —
+            and a series can never become a way around the spend guard, which is the point of
+            coupling the two. The server re-checks against the same guard; this bound is a courtesy.
+          -->
+          <div class="form-row two-cols">
+            <div class="form-group">
+              <label for="runCountInput">Number of runs</label>
+              <input id="runCountInput" type="number" class="gh-input"
+                     min="1"
+                     [attr.max]="maxRunCountPerSeries"
+                     [(ngModel)]="runCount"
+                     aria-describedby="runCountHint">
+              <span id="runCountHint" class="form-hint">
+                @if (maxRunCountPerSeries != null) {
+                  1 executes a single run exactly as before. Up to {{ maxRunCountPerSeries }} runs
+                  execute strictly one at a time as a series and are grouped into a replicate set.
+                } @else {
+                  1 executes a single run exactly as before. More than one executes a series, strictly
+                  one run at a time; the server bounds the count by the configured daily cap.
+                }
+              </span>
+            </div>
+
+            @if (isMultiRunRequested) {
+              <div class="form-group">
+                <label class="gh-checkbox" for="allowCapWaitInput">
+                  <input id="allowCapWaitInput" type="checkbox" [(ngModel)]="allowCapWait">
+                  <span>Wait when the run cap blocks the next run</span>
+                </label>
+                <span class="form-hint">
+                  On a cap denial the series pauses in <strong>Waiting for run cap</strong> and retries.
+                  Unticked, it stops with the reason recorded and a Continue button; either way every
+                  completed run is kept.
+                </span>
+              </div>
+            }
+          </div>
+
+          @if (isMultiRunRequested) {
+            <div class="series-projection" role="note">
+              <div class="series-projection-heading"><strong>Series projection ({{ effectiveRunCount }} runs)</strong></div>
+              <ul class="series-projection-list">
+                <li>
+                  Projected wall time:
+                  @if (projectedSeriesDurationLabel) {
+                    <strong>{{ projectedSeriesDurationLabel }}</strong>
+                    <span class="text-muted"> ({{ effectiveRunCount }} × this suite's recent mean run duration)</span>
+                  } @else {
+                    <span class="text-muted">no completed run of this suite to project from</span>
+                  }
+                </li>
+                <li>
+                  Projected cost:
+                  @if (projectedSeriesCostLabel) {
+                    <strong>{{ projectedSeriesCostLabel }}</strong>
+                    <span class="text-muted"> ({{ effectiveRunCount }} × this suite's recent mean run cost)</span>
+                  } @else {
+                    <span class="text-muted">no priced run of this suite to project from</span>
+                  }
+                </li>
+                @if (runLimits) {
+                  <li>
+                    Remaining daily headroom:
+                    <strong>{{ runLimits.remainingDailyHeadroom }}</strong> of {{ runLimits.maxRunsPerDay }}
+                    <span class="text-muted">
+                      ({{ runLimits.runsInLast24Hours }} run(s) in the last 24 hours,
+                      {{ runLimits.runsInLastHour }} in the last hour — both rolling windows, not calendar days)
+                    </span>
+                  </li>
+                }
+              </ul>
+              @if (seriesExceedsDailyHeadroom) {
+                <div class="alert alert-warning mt-10" role="alert">
+                  <div class="alert-content">
+                    <div class="alert-body">
+                      This series asks for more runs than the rolling 24-hour window currently allows.
+                      @if (allowCapWait) {
+                        It will pause at the cap and continue when the window frees up.
+                      } @else {
+                        It will stop at the cap with <strong>Run cap reached</strong> recorded, keeping every
+                        completed run and offering a Continue button.
+                      }
+                    </div>
+                  </div>
+                </div>
+              }
+            </div>
+          }
         </div>
 
         <div class="compliance-purpose-box mt-20">
@@ -639,7 +802,14 @@
     </div>
   }
 
-  <!-- TAB 3: MANAGE SUITES -->
+  <!-- TAB 3: MULTI-RUN ANALYSIS -->
+  @if (activeSubTab === 'multirun') {
+    <div class="benchmark-tab-content" role="tabpanel" id="bm-panel-multirun" aria-labelledby="bm-tab-multirun" tabindex="0">
+      <app-benchmark-multi-run [suiteId]="selectedSuiteId"></app-benchmark-multi-run>
+    </div>
+  }
+
+  <!-- TAB 4: MANAGE SUITES -->
   @if (activeSubTab === 'suites') {
     <div class="benchmark-tab-content" role="tabpanel" id="bm-panel-suites" aria-labelledby="bm-tab-suites" tabindex="0">
       @if (actionErrorMessage) {
@@ -2920,6 +3090,13 @@
     </div>
   </div>
 </dialog>
+
+<!-- MULTI-RUN PROGRESS DIALOG -->
+<app-multi-run-progress-dialog
+  [seriesId]="activeSeriesId"
+  [visible]="multiRunDialogVisible"
+  (closed)="onMultiRunDialogClosed()"
+  (openRunProgress)="onOpenRunProgressFromSeries($event)"></app-multi-run-progress-dialog>
 
 <!-- SNAPSHOT VIEWER COMPONENT -->
 <app-snapshot-viewer #snapshotViewer (snapshotUpdated)="onSnapshotUpdated($event)"></app-snapshot-viewer>

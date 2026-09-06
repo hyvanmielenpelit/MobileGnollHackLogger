@@ -918,3 +918,140 @@
     }
   }
 }
+
+/* --- Rubric Gap Author --- */
+/*
+ * Shares .rubric-check-controls with the rubric checker above so the two features read as one
+ * family; only the pieces the checker has no equivalent for are defined here.
+ */
+.gap-author-controls {
+  .rubric-gap-author-selector {
+    max-width: 480px;
+  }
+
+  .gap-author-instructions {
+    width: 100%;
+    max-width: 640px;
+    min-height: 64px;
+    resize: vertical;
+    padding: 8px 10px;
+    font-family: inherit;
+    font-size: 0.88rem;
+    color: var(--text-color, #e2e8f0);
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid var(--border-color, #334155);
+    border-radius: 6px;
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 2px;
+    }
+  }
+}
+
+.gap-author-results {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 16px;
+
+  .results-header {
+    font-size: 0.88rem;
+    color: var(--text-muted, #94a3b8);
+  }
+}
+
+.gap-author-draft {
+  padding: 14px 16px;
+  background: rgba(15, 23, 42, 0.4);
+  border: 1px solid var(--border-color, #334155);
+  border-left: 3px solid var(--primary-color);
+  border-radius: 8px;
+
+  &.is-accepted {
+    border-left-color: #81c784;
+  }
+
+  .draft-status {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted, #94a3b8);
+  }
+
+  .draft-question {
+    font-size: 0.85rem;
+    margin: 4px 0 6px;
+  }
+
+  .draft-meta {
+    font-size: 0.85rem;
+    margin-top: 6px;
+  }
+
+  .draft-editor {
+    margin-top: 10px;
+
+    .draft-editor-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+
+      label {
+        font-size: 0.85rem;
+        font-weight: 500;
+        color: var(--text-muted, #94a3b8);
+      }
+    }
+
+    /* The marker has to be readable without colour, so it carries the word as well as the tint. */
+    .draft-modified {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      padding: 1px 7px;
+      border-radius: 10px;
+      color: #fbbf24;
+      background: rgba(251, 191, 36, 0.12);
+      border: 1px solid rgba(251, 191, 36, 0.35);
+    }
+
+    .draft-textarea {
+      width: 100%;
+      min-height: 84px;
+      resize: vertical;
+      padding: 8px 10px;
+      font-family: inherit;
+      font-size: 0.88rem;
+      line-height: 1.45;
+      color: var(--text-color, #e2e8f0);
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid var(--border-color, #334155);
+      border-radius: 6px;
+
+      &:focus-visible {
+        outline: 2px solid var(--primary-color);
+        outline-offset: 2px;
+      }
+
+      &:disabled {
+        opacity: 0.7;
+      }
+    }
+  }
+
+  .draft-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+  }
+
+  .draft-accepted-note {
+    margin-top: 12px;
+    font-size: 0.85rem;
+    color: #81c784;
+  }
+}

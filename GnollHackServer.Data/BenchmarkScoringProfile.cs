@@ -56,6 +56,18 @@ public class BenchmarkScoringProfile
     // would select nothing, which contradicts the mode the operator chose.
     public int SecondOpinionOutlierDeltaPoints { get; set; } = 25;
 
+    // Target number of answers graded twice under BenchmarkSecondOpinionMode.FlaggedPlusSample:
+    // after the per-answer triggers resolve, the deterministic top-up grades additional answers
+    // (lowest quality score first, ties broken by ascending order index) until this many have been
+    // graded twice, or the run runs out of answers. Meaningless outside FlaggedPlusSample.
+    //
+    // Column default 0, deliberately: a non-zero default here would silently change the grading
+    // regime of every profile that predates this field the moment the migration ran, which is
+    // exactly the run-11 F1 mistake repeated at the schema level. Only the Standard Intelligence
+    // Index (Default) profile is set to 4, and only by an explicit data step in the migration —
+    // never by this default.
+    public int SecondOpinionMinimumSample { get; set; } = 0;
+
     // Speed constants are calibrated so that the score floor is unreachable within
     // Benchmark:PerQuestionTimeoutSeconds at every difficulty, which is what keeps the metric
     // from saturating on agentic turns that legitimately make many tool calls.

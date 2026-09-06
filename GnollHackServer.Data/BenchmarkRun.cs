@@ -127,7 +127,27 @@ public enum BenchmarkSecondOpinionMode
     /// the trigger-based modes the disagreement rate is conditioned on the first assessor's own
     /// uncertainty, so it measures nothing about the instrument.
     /// </summary>
-    All = 3
+    All = 3,
+
+    /// <summary>
+    /// <see cref="Flagged"/>, plus a deterministic top-up: after the per-answer triggers resolve,
+    /// if fewer than <see cref="BenchmarkScoringProfile.SecondOpinionMinimumSample"/> answers were
+    /// graded twice, the lowest-scoring untouched answers are graded twice as well, ties broken by
+    /// ascending order index so the same data selects the same answers on every run. Two execution
+    /// stages, like <see cref="Flagged"/> — there is no post-scoring sweep keyed off a run
+    /// statistic such as the median, unlike <see cref="FlaggedAndOutliers"/>; the top-up target is
+    /// a fixed count, not a computed one.
+    ///
+    /// This exists because under <see cref="Flagged"/> alone, coverage falls to zero exactly as a
+    /// candidate gets good — a run with no answer below the threshold and no critical error
+    /// produces no agreement figure at all. The top-up guarantees a sample every run, at a bounded
+    /// cost. It still yields a *conditioned-plus-sample* agreement rate, not the unbiased rate
+    /// <see cref="All"/> gives: the answers a run's own per-answer triggers pick are conditioned on
+    /// the first assessor's own uncertainty exactly as under <see cref="Flagged"/>, and the
+    /// deterministic top-up only adds a fixed number of the run's lowest scorers on top of that.
+    /// Measuring instrument reliability without that conditioning still requires <see cref="All"/>.
+    /// </summary>
+    FlaggedPlusSample = 4
 }
 
 /// <summary>
@@ -290,6 +310,20 @@ public class BenchmarkRun
     public string? StartedByUserId { get; set; }
     public ApplicationUser? StartedByUser { get; set; }
 
+    /// <summary>
+    /// The series this run was launched as a member of, or null for a standalone run. A run belongs
+    /// to at most one series — a series is how the run was produced, and that cannot change — while
+    /// it may sit in any number of analysis groups, which are how it is later read.
+    /// </summary>
+    public long? RunSeriesId { get; set; }
+    public BenchmarkRunSeries? RunSeries { get; set; }
+
+    /// <summary>
+    /// 1-based position within <see cref="RunSeriesId"/>. Null for a standalone run. Member 1 is the
+    /// run whose instrument hashes the series records for its resume guard.
+    /// </summary>
+    public int? RunSeriesIndex { get; set; }
+
     public DateTime StartedAtUtc { get; set; } = DateTime.UtcNow;
 
     public DateTime? CompletedAtUtc { get; set; }
@@ -430,6 +464,16 @@ public class BenchmarkRun
     /// Answers where the two readers disagreed on CriticalError.
     /// </summary>
     public int SecondOpinionCriticalErrorSplitCount { get; set; }
+
+    /// <summary>
+    /// The number of answers actually graded twice by the deterministic top-up under
+    /// <see cref="BenchmarkSecondOpinionMode.FlaggedPlusSample"/> — the achieved sample count,
+    /// which may fall short of <see cref="BenchmarkScoringProfile.SecondOpinionMinimumSample"/>
+    /// when fewer answers exist than the target. Zero under every other mode: this column is
+    /// meaningless outside <see cref="BenchmarkSecondOpinionMode.FlaggedPlusSample"/> and a report
+    /// must not read it under a different mode.
+    /// </summary>
+    public int SecondOpinionSampleCountUsed { get; set; }
 
     /// <summary>
     /// Canonical JSON representation of the candidate prompt options used to build the system prompt.

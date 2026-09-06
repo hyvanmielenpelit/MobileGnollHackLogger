@@ -1,5 +1,6 @@
 namespace Overseer.Tests.UnitTests;
 
+using System;
 using System.Collections.Generic;
 using MobileGnollHackLogger.Data;
 using Overseer.Services.Benchmarking;
@@ -191,16 +192,20 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void ScoringMethodVersion_IsSeven()
+    public void ScoringMethodVersion_IsEight()
     {
         // v4 was the artifact scrubbing and speed recalibration. v5 changed what a critical
         // error is — an omission can no longer be one, and the claim must be quoted. v6 changed
         // what an *accuracy deduction* is: a claim the rubric neither states nor contradicts is
         // declared rather than deducted for. v7 enforces evidence discipline: docking a level
         // requires stating what was wrong, and "Matches rubric." may only accompany level 6.
-        // Scores are not comparable across any of those boundaries on the answers they touch,
-        // and the report prints the version so a mixed comparison is visible rather than silent.
-        Assert.Equal(7, BenchmarkAssessmentPrompt.ScoringMethodVersion);
+        // v8 widens the synthesis factual-error guardrail to any answer whose accuracy evidence
+        // names a defect, and makes completeness scope a grading rule: the question defines the
+        // scope, and a rubric point it did not ask for is recorded under OUT-OF-SCOPE: rather than
+        // deducted for. Scores are not comparable across any of those boundaries on the answers
+        // they touch, and the report prints the version so a mixed comparison is visible rather
+        // than silent.
+        Assert.Equal(8, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 
     [Fact]
@@ -428,10 +433,10 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs12_ScoringMethodIs7()
+    public void Versions_HarnessIs12_ScoringMethodIs8()
     {
         Assert.Equal("12", BenchmarkAssessmentPrompt.HarnessVersion);
-        Assert.Equal(7, BenchmarkAssessmentPrompt.ScoringMethodVersion);
+        Assert.Equal(8, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 
     [Fact]
@@ -466,5 +471,100 @@ public class BenchmarkAssessmentPromptTests
         Assert.Contains("Refuted claim: \"Gnolls have infravision\" — refuted against src/role.c:10. Basis: Code shows gnolls do not have infravision", prompt);
         Assert.Contains("Second opinion (advisory, did not score): 40/100, critical error yes", prompt);
         Assert.Contains("must NOT be described as free of factual errors", prompt);
+    }
+
+    [Fact]
+    public void BuildFinalSynthesisPrompt_MarksTheQuestionsWhoseAccuracyEvidenceNamesADefect()
+    {
+        // Q14's shape on the 2026-09-06 run: Accuracy 5/6, no refuted claim, no critical error —
+        // so nothing in the scoring method v7 guardrail applied — with evidence naming a concrete
+        // false assertion. The synthesis then reported the run as free of factual errors.
+        var q14 = Verdict(14, accuracyLevel: 5,
+            accuracyEvidence: "The answer lists Level as 40 and Hit dice as 25; in the monster definition LVL(25, 16, -10, 15, 10, -20), his level/HD is 25, while 40 is his monster difficulty.");
+        var clean = Verdict(15, accuracyLevel: 6, accuracyEvidence: "Matches rubric.");
+
+        string prompt = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt("Suite", new[] { q14, clean });
+
+        // CRITICAL INSTRUCTION 2 quotes the marker verbatim so the two halves refer to each other,
+        // so the per-question search must start at the first question heading. Searching the whole
+        // prompt would find the instruction's own quotation and report a marker on no question.
+        string blocks = prompt.Substring(prompt.IndexOf("### Question #", StringComparison.Ordinal));
+
+        int markerIndex = blocks.IndexOf("Accuracy defect recorded: yes", StringComparison.Ordinal);
+        Assert.True(markerIndex > 0, "The affected question block must carry the marker.");
+
+        // Exactly one block carries it, and it is Q14's: the marker must sit after Q14's heading
+        // and before Q15's, or the constraint has been attached to the wrong question.
+        Assert.Equal(markerIndex, blocks.LastIndexOf("Accuracy defect recorded: yes", StringComparison.Ordinal));
+        Assert.InRange(
+            markerIndex,
+            blocks.IndexOf("### Question #14", StringComparison.Ordinal),
+            blocks.IndexOf("### Question #15", StringComparison.Ordinal));
+
+        // And the header constraint names the marker, so the two halves refer to each other.
+        Assert.Contains("Accuracy defect recorded: yes` below", prompt);
+        Assert.Contains("weaknesses", prompt);
+    }
+
+    [Fact]
+    public void BuildFinalSynthesisPrompt_DoesNotMarkALevelFiveVerdictWhoseEvidenceIsBoilerplate()
+    {
+        // The exclusion that keeps the marker from appearing on every answer of a strong run.
+        var boilerplate = Verdict(3, accuracyLevel: 5, accuracyEvidence: "Matches rubric.");
+        var aligns = Verdict(4, accuracyLevel: 5, accuracyEvidence: "Aligns with rubric.");
+        var none = Verdict(5, accuracyLevel: 5, accuracyEvidence: null);
+
+        string prompt = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt(
+            "Suite", new[] { boilerplate, aligns, none });
+
+        // Scoped past the header for the same reason as the test above: CRITICAL INSTRUCTION 2
+        // always quotes the marker, whether or not any question carries it.
+        string blocks = prompt.Substring(prompt.IndexOf("### Question #", StringComparison.Ordinal));
+
+        Assert.DoesNotContain("Accuracy defect recorded: yes", blocks);
+    }
+
+    [Fact]
+    public void PerQuestionPrompt_StatesTheCompletenessScopeRuleAndTheOutOfScopeMarker()
+    {
+        string prompt = BenchmarkAssessmentPrompt.BuildPerQuestionPrompt(
+            "Suite",
+            12,
+            "What are the Exceptional and Elite quality modifiers for body armor?",
+            BenchmarkDifficulty.Intermediate,
+            "Exceptional: -6 AC. Elite: -9 AC. Celestial/Primordial/Infernal: -12 AC/+4 MC.",
+            "Answer.",
+            BenchmarkAnswerStatus.Ok);
+
+        // Scoring method v8 states the precedence as a grading rule, not as advice: Q12 was docked
+        // on the 2026-09-06 run for rubric points its own question did not ask for.
+        Assert.Contains("The question defines the scope.", prompt);
+        Assert.Contains("must **not** lower the COMPLETENESS level", prompt);
+        Assert.Contains(BenchmarkAssessmentParser.OutOfScopeCompletenessMarker, prompt);
+        Assert.Contains("Record it and do not deduct for it", prompt);
+    }
+
+    /// <summary>A verdict summary carrying only the fields these tests turn on.</summary>
+    private static BenchmarkPerQuestionVerdictSummary Verdict(
+        int orderIndex,
+        int accuracyLevel,
+        string? accuracyEvidence)
+    {
+        return new BenchmarkPerQuestionVerdictSummary
+        {
+            OrderIndex = orderIndex,
+            QuestionText = $"Question {orderIndex}",
+            AccuracyLevel = accuracyLevel,
+            CompletenessLevel = 5,
+            ConcisenessLevel = 5,
+            ReadabilityLevel = 5,
+            QualityScore = 95,
+            SpeedScore = 80,
+            AssessedDifficulty = 60,
+            CriticalError = false,
+            AccuracyEvidence = accuracyEvidence,
+            ReviewComment = "Comment.",
+            Status = BenchmarkAnswerStatus.Ok
+        };
     }
 }

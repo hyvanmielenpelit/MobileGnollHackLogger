@@ -14,7 +14,12 @@ material type. Every item in the game is indexed.
 
 For descriptions, strategy tips, and usage advice, use item_lookup or
 wiki_search FIRST — they contain gameplay context not in raw struct fields.
-Only fall back to this tool if the wiki lacks data for the specific item.
+
+Scope carve-out — exact numbers: whenever your answer will state exact numeric
+stats (damage dice, weight, cost, AC, material, item flags), this tool is
+authoritative and you must call it, regardless of which branch the question routed
+to and regardless of whether the wiki already had a page. The wiki supplies context,
+not numbers.
 
 IMPORTANT: The appearance/description field in the raw definition (e.g. the second positional argument of SCROLL(), POTION(), WAND(), RING(), AMULET(), SPELL()) is an unidentified description template and is randomized per game. Report it only as "one of the possible appearances in the game pool", never as this game's assigned identity.
 

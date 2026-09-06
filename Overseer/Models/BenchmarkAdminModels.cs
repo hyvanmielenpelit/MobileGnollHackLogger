@@ -160,6 +160,25 @@ public class StartBenchmarkRunRequest
     /// rather than merely accepted.
     /// </summary>
     public bool? VerboseMode { get; set; }
+
+    /// <summary>
+    /// How many times to execute this identical request, strictly one at a time. <c>1</c> — the
+    /// default — is the single-run path exactly as it behaved before multi-run existed: no series
+    /// row and no auto-created group.
+    ///
+    /// <para>Validated against the <b>live</b> <c>Benchmark:Compliance:MaxRunsPerDay</c>, never a
+    /// constant. That coupling is deliberate: raising the series ceiling and raising the daily spend
+    /// cap are then the same action, so a series can never become a way around the cap.</para>
+    /// </summary>
+    public int RunCount { get; set; } = 1;
+
+    /// <summary>
+    /// When a member is refused by the rolling run cap: true pauses the series in
+    /// <c>WaitingForCap</c> and retries with a bounded back-off; false stops it with
+    /// <c>StopReason = RunCapReached</c>, keeping every completed member and leaving the series
+    /// resumable from the Continue button.
+    /// </summary>
+    public bool AllowCapWait { get; set; }
 }
 
 /// <summary>
@@ -282,6 +301,12 @@ public class BenchmarkScoringProfileDto
     /// <summary>Meaningful under FlaggedAndOutliers only; validated &gt; 0 there.</summary>
     public int SecondOpinionOutlierDeltaPoints { get; set; }
 
+    /// <summary>
+    /// Target number of answers graded twice under FlaggedPlusSample; validated &gt; 0 there. Zero
+    /// on every other profile, which is behaviour-identical to Flagged alone.
+    /// </summary>
+    public int SecondOpinionMinimumSample { get; set; }
+
     public bool SecondOpinionBlind { get; set; }
 
     public int SpeedTargetMs { get; set; }
@@ -305,6 +330,7 @@ public class CreateBenchmarkScoringProfileRequest
     public int SecondOpinionQualityThreshold { get; set; } = 50;
     public int SecondOpinionMode { get; set; } = (int)BenchmarkSecondOpinionMode.Flagged;
     public int SecondOpinionOutlierDeltaPoints { get; set; } = 25;
+    public int SecondOpinionMinimumSample { get; set; } = 0;
     public bool SecondOpinionBlind { get; set; } = true;
     public int SpeedTargetMs { get; set; } = 15000;
     public double SpeedDecayK { get; set; } = 20.0;
@@ -325,6 +351,7 @@ public class UpdateBenchmarkScoringProfileRequest
     public int SecondOpinionQualityThreshold { get; set; }
     public int SecondOpinionMode { get; set; }
     public int SecondOpinionOutlierDeltaPoints { get; set; }
+    public int SecondOpinionMinimumSample { get; set; }
     public bool SecondOpinionBlind { get; set; }
     public int SpeedTargetMs { get; set; }
     public double SpeedDecayK { get; set; }
@@ -378,6 +405,15 @@ public class BenchmarkRunAnswerDto
     public int? OutputTokens { get; set; }
     public int? CacheReadInputTokens { get; set; }
     public int? CacheCreationInputTokens { get; set; }
+
+    /// <summary>
+    /// This answer's <see cref="InputTokens"/> as a share (0-1) of the run's total input tokens.
+    /// Computed here, never stored: T18 found input-token cost concentrates in a few answers (run
+    /// 14: three answers were 50.8% of the run's input tokens), and the share is always derivable
+    /// from the stored per-answer tokens and the run total. Null when the run total is zero or this
+    /// answer's tokens were never recorded.
+    /// </summary>
+    public double? InputTokenShare { get; set; }
     public long? AssessedByModelConfigurationId { get; set; }
     public string? AssessedByModelDisplayNameUsed { get; set; }
     public string? AssessedByModelProviderUsed { get; set; }
@@ -585,18 +621,52 @@ public class BenchmarkRunDetailDto
     public int UnevidencedDeductionAnswerCount { get; set; }
     public int OmissionAsAccuracyAnswerCount { get; set; }
     public int RefutedClaimAnswerCount { get; set; }
+
+    /// <summary>
+    /// Answers where the assessor recorded a rubric point outside the question's scope under the
+    /// `OUT-OF-SCOPE:` marker (scoring method v8) rather than deducting for it — the instrument's
+    /// own share of the Accuracy→Completeness gap. Zero on a run graded before v8, same as a v8 run
+    /// where the assessor found none; the report distinguishes the two, this count does not.
+    /// </summary>
+    public int CompletenessOutOfScopeCount { get; set; }
+
     public int ClaimVerifiedAnswerCount { get; set; }
     public int ClaimsSupportedCount { get; set; }
     public int ClaimsRefutedCount { get; set; }
     public int ClaimsIndeterminateCount { get; set; }
+
+    /// <summary>Sum of the three counts above — what the verifier actually returned a verdict for.</summary>
+    public int ClaimsCheckedCount { get; set; }
+
+    /// <summary>
+    /// Answers the deterministic <c>Benchmark:ClaimVerificationInputTokenBudget</c> stopped before
+    /// a verifier call was made. Disjoint from the counts above: a not-checked claim was never
+    /// evaluated, so it is never supported, refuted or indeterminate.
+    /// </summary>
+    public int ClaimsNotCheckedAnswerCount { get; set; }
+
+    /// <summary>Null when cost cannot be estimated, or no claim was checked.</summary>
+    public decimal? ClaimVerificationCostPerClaimUsd { get; set; }
+
+    /// <summary>The verifier's share of <see cref="EstimatedCost"/>, 0-100. Null under the same conditions as the per-claim cost above.</summary>
+    public double? ClaimVerificationCostSharePercent { get; set; }
+
     public int ReassessedAnswerCount { get; set; }
 
     /// <summary>
     /// How the second-opinion assessor was used on this run: Off (0), Flagged (1),
-    /// FlaggedAndOutliers (2) or All (3), as stamped at run start.
+    /// FlaggedAndOutliers (2), All (3), or FlaggedPlusSample (4), as stamped at run start.
     /// </summary>
     public int SecondOpinionModeUsed { get; set; }
     public bool SecondOpinionBlindUsed { get; set; }
+
+    /// <summary>
+    /// Answers graded twice by the deterministic top-up under
+    /// <see cref="MobileGnollHackLogger.Data.BenchmarkSecondOpinionMode.FlaggedPlusSample"/> —
+    /// the achieved sample count, which may fall short of the profile's configured minimum when
+    /// fewer answers exist than the target. Zero under every other mode.
+    /// </summary>
+    public int SecondOpinionSampleCountUsed { get; set; }
 
     /// <summary>
     /// Grader agreement, which is only interpretable together with its coverage: a mean delta

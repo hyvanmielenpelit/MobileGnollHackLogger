@@ -7,6 +7,17 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using MobileGnollHackLogger.Data;
 
+/// <summary>
+/// A snapshot of the run caps and the rolling-window counts they are measured against.
+/// <paramref name="RemainingDailyHeadroom"/> never goes negative.
+/// </summary>
+public sealed record BenchmarkRunLimits(
+    int MaxRunsPerHour,
+    int MaxRunsPerDay,
+    int RunsInLastHour,
+    int RunsInLast24Hours,
+    int RemainingDailyHeadroom);
+
 public class BenchmarkComplianceGuard
 {
     private const string DefaultPurposeStatement =
@@ -36,6 +47,41 @@ public class BenchmarkComplianceGuard
     {
         var configured = _configuration["Benchmark:Compliance:PurposeStatement"];
         return !string.IsNullOrWhiteSpace(configured) ? configured : DefaultPurposeStatement;
+    }
+
+    /// <summary>
+    /// The caps and the live rolling-window counts behind them, as one snapshot.
+    ///
+    /// <para>This exists so the run-count field and the series orchestrator have something to bound
+    /// themselves by without re-deriving the window arithmetic. Both windows are <b>rolling</b> —
+    /// the last 60 minutes and the last 24 hours, counted from now — exactly as
+    /// <see cref="CanSpendAsync"/> counts them, and not calendar hours or calendar days. A caller
+    /// that reimplemented "today" as midnight-to-now would disagree with the guard that actually
+    /// refuses the run, which is the failure this method is here to prevent.</para>
+    ///
+    /// <para><c>RemainingDailyHeadroom</c> is clamped at zero: the daily count can exceed the cap
+    /// after the setting is lowered, and a negative headroom would render as a negative maximum on
+    /// the run-count field.</para>
+    /// </summary>
+    public async Task<BenchmarkRunLimits> GetLimitsAsync(ApplicationDbContext? db = null, CancellationToken ct = default)
+    {
+        var dbContext = db ?? _dbContext;
+        var now = DateTime.UtcNow;
+
+        var hourCutoff = now.AddHours(-1);
+        int hourlyCount = await dbContext.BenchmarkRuns
+            .CountAsync(r => r.StartedAtUtc >= hourCutoff, ct);
+
+        var dayCutoff = now.AddHours(-24);
+        int dailyCount = await dbContext.BenchmarkRuns
+            .CountAsync(r => r.StartedAtUtc >= dayCutoff, ct);
+
+        return new BenchmarkRunLimits(
+            MaxRunsPerHour,
+            MaxRunsPerDay,
+            hourlyCount,
+            dailyCount,
+            Math.Max(0, MaxRunsPerDay - dailyCount));
     }
 
     public async Task<(bool Allowed, string? DenialReason)> CanSpendAsync(ApplicationDbContext? db = null, CancellationToken ct = default)

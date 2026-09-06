@@ -14,6 +14,12 @@ import {
   RubricCheckFindingDto
 } from '../../../services/admin-benchmark.service';
 import { SystemAiConfigDto } from '../../../services/admin.service';
+import {
+  RubricGapAuthorService,
+  RubricGapAuthorJobDto,
+  RubricGapAuthorDraftDto,
+  RubricAdditionAcceptanceDto
+} from './rubric-gap-author.service';
 
 export type SuiteHealthTab = 'items' | 'gaps' | 'citations' | 'coverage' | 'board-facts';
 
@@ -34,12 +40,19 @@ export type SortDirection = 'asc' | 'desc';
 /**
  * Suite health: what the stored runs say about the *suite* rather than about the models.
  *
- * Read-only by construction. The panel's only outward action is
- * {@link SuiteHealthComponent.editQuestion}, which asks the host to open a question for editing —
- * there is no write endpoint behind any of these reports, and in particular no action that copies
- * an item's empirical difficulty into its assessed difficulty. That number weights the
- * Intelligence Index, so deriving it from the scores it weights would be circular, and it would
- * let a model that did badly on an item retroactively reduce that item's weight.
+ * Read-only by construction, with one deliberate exception named below. The panel's ordinary
+ * outward action is {@link SuiteHealthComponent.editQuestion}, which asks the host to open a
+ * question for editing — there is no write endpoint behind any of these reports, and in particular
+ * no action that copies an item's empirical difficulty into its assessed difficulty. That number
+ * weights the Intelligence Index, so deriving it from the scores it weights would be circular, and
+ * it would let a model that did badly on an item retroactively reduce that item's weight.
+ *
+ * The exception is {@link SuiteHealthComponent.acceptDraft}, which appends one rubric addition to
+ * one question. It is a write the *operator* performs, not one the panel derives: the text sent is
+ * whatever stands in that draft's textarea when Accept is pressed, and there is no control that
+ * accepts more than one draft. That restriction is the feature, not an omission — curated knowledge
+ * has to be human-authored, so an accept-all button would defeat the boundary the drafting job
+ * exists to respect.
  *
  * Statistical honesty is a requirement of this UI, not a nicety: every row carries its sample size
  * and both confound counts, discrimination reads "insufficient data" below four runs, and the
@@ -54,6 +67,7 @@ export type SortDirection = 'asc' | 'desc';
 })
 export class SuiteHealthComponent implements OnInit, OnChanges, OnDestroy {
   private benchmarkService = inject(AdminBenchmarkService);
+  private gapAuthorService = inject(RubricGapAuthorService);
   private cdr = inject(ChangeDetectorRef);
 
   @Input() suiteId: number | null = null;
@@ -77,6 +91,28 @@ export class SuiteHealthComponent implements OnInit, OnChanges, OnDestroy {
   isRubricCheckerDropdownOpen = false;
   cancellingRubricCheck = false;
   private rubricCheckPollInterval: any = null;
+
+  // --- Rubric Gap Author ---
+
+  rubricGapAuthorJob: RubricGapAuthorJobDto | null = null;
+  runningRubricGapAuthor = false;
+  rubricGapAuthorError: string | null = null;
+  rubricGapAuthorConfigId: number | null = null;
+  isRubricGapAuthorDropdownOpen = false;
+  cancellingRubricGapAuthor = false;
+  rubricGapAuthorInstructions = '';
+  private rubricGapAuthorPollInterval: any = null;
+
+  /**
+   * The live textarea contents per cluster key. This is the authoritative text an acceptance
+   * submits — the draft is only what seeded it — so polling must never overwrite a key the
+   * operator has already been given, or an edit would vanish mid-typing.
+   */
+  draftEdits: Record<string, string> = {};
+
+  acceptingClusterKey: string | null = null;
+  acceptedDrafts: Record<string, RubricAdditionAcceptanceDto> = {};
+  draftAcceptErrors: Record<string, string> = {};
 
   activeTab: SuiteHealthTab = 'items';
 
@@ -114,6 +150,7 @@ export class SuiteHealthComponent implements OnInit, OnChanges, OnDestroy {
 
   ngOnDestroy(): void {
     this.stopRubricCheckPolling();
+    this.stopRubricGapAuthorPolling();
   }
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -127,6 +164,9 @@ export class SuiteHealthComponent implements OnInit, OnChanges, OnDestroy {
     }
     if (changes['benchmarkCapableConfigs'] && this.rubricCheckerConfigId == null) {
       this.rubricCheckerConfigId = this.benchmarkCapableConfigs[0]?.id ?? null;
+    }
+    if (changes['benchmarkCapableConfigs'] && this.rubricGapAuthorConfigId == null) {
+      this.rubricGapAuthorConfigId = this.benchmarkCapableConfigs[0]?.id ?? null;
     }
     if (changes['initialTab'] && this.initialTab) {
       this.activeTab = this.initialTab;
@@ -148,6 +188,16 @@ export class SuiteHealthComponent implements OnInit, OnChanges, OnDestroy {
     this.rubricCheckError = null;
     this.isRubricCheckerDropdownOpen = false;
     this.stopRubricCheckPolling();
+    this.rubricGapAuthorJob = null;
+    this.runningRubricGapAuthor = false;
+    this.rubricGapAuthorError = null;
+    this.isRubricGapAuthorDropdownOpen = false;
+    this.rubricGapAuthorInstructions = '';
+    this.draftEdits = {};
+    this.acceptedDrafts = {};
+    this.draftAcceptErrors = {};
+    this.acceptingClusterKey = null;
+    this.stopRubricGapAuthorPolling();
     this.sortColumn = 'orderIndex';
     this.sortDirection = 'asc';
   }
@@ -166,6 +216,10 @@ export class SuiteHealthComponent implements OnInit, OnChanges, OnDestroy {
     }
     if (this.isRubricCheckerDropdownOpen && !target.closest('.rubric-checker-selector')) {
       this.isRubricCheckerDropdownOpen = false;
+      this.cdr.detectChanges();
+    }
+    if (this.isRubricGapAuthorDropdownOpen && !target.closest('.rubric-gap-author-selector')) {
+      this.isRubricGapAuthorDropdownOpen = false;
       this.cdr.detectChanges();
     }
   }
@@ -629,6 +683,231 @@ export class SuiteHealthComponent implements OnInit, OnChanges, OnDestroy {
         this.cdr.detectChanges();
       }
     });
+  }
+
+  // --- Rubric Gap Author ---
+  //
+  // The drafting half mirrors the rubric checker above: same selector markup, same single-job
+  // polling lifecycle, same cancel path. The acceptance half is what differs, and every difference
+  // is there to keep authorship with the operator — see acceptDraft.
+
+  toggleRubricGapAuthorDropdown(event: Event): void {
+    event.stopPropagation();
+    this.isRubricGapAuthorDropdownOpen = !this.isRubricGapAuthorDropdownOpen;
+    this.cdr.detectChanges();
+  }
+
+  selectRubricGapAuthorModel(config: SystemAiConfigDto): void {
+    this.rubricGapAuthorConfigId = config.id;
+    this.isRubricGapAuthorDropdownOpen = false;
+    this.cdr.detectChanges();
+  }
+
+  get selectedRubricGapAuthorModel(): SystemAiConfigDto | undefined {
+    return this.benchmarkCapableConfigs.find(c => c.id === this.rubricGapAuthorConfigId);
+  }
+
+  startRubricGapAuthor(clusterKeys?: string[]): void {
+    if (this.suiteId == null || this.rubricGapAuthorConfigId == null || this.runningRubricGapAuthor) return;
+
+    this.runningRubricGapAuthor = true;
+    this.rubricGapAuthorError = null;
+    this.draftAcceptErrors = {};
+
+    this.gapAuthorService.startRubricGapAuthor({
+      suiteId: this.suiteId,
+      authorModelConfigurationId: this.rubricGapAuthorConfigId,
+      instructions: this.rubricGapAuthorInstructions.trim() ? this.rubricGapAuthorInstructions.trim() : null,
+      clusterKeys: clusterKeys && clusterKeys.length > 0 ? clusterKeys : null
+    }).subscribe({
+      next: (res) => {
+        this.startRubricGapAuthorPolling(res.jobId);
+      },
+      error: (err) => {
+        this.runningRubricGapAuthor = false;
+        this.rubricGapAuthorError = err?.error?.error || err?.error?.message || err?.error
+          || 'Failed to start the rubric gap author.';
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  startRubricGapAuthorPolling(jobId: string): void {
+    this.stopRubricGapAuthorPolling();
+    this.pollRubricGapAuthor(jobId);
+
+    // Only arm the timer if that first poll did not already find a terminal job. Arming it
+    // unconditionally would install an interval the poll's own stop call had already run past,
+    // leaving a job that finished immediately being re-fetched forever.
+    if (!this.runningRubricGapAuthor) return;
+
+    this.rubricGapAuthorPollInterval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      this.pollRubricGapAuthor(jobId);
+    }, 2000);
+  }
+
+  stopRubricGapAuthorPolling(): void {
+    if (this.rubricGapAuthorPollInterval) {
+      clearInterval(this.rubricGapAuthorPollInterval);
+      this.rubricGapAuthorPollInterval = null;
+    }
+  }
+
+  pollRubricGapAuthor(jobId: string): void {
+    this.gapAuthorService.getRubricGapAuthor(jobId).subscribe({
+      next: (job) => {
+        this.applyRubricGapAuthorJob(job);
+        if (job.status !== 'Running') {
+          this.runningRubricGapAuthor = false;
+          this.stopRubricGapAuthorPolling();
+        }
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.rubricGapAuthorError = err?.error?.error || err?.error?.message || err?.error
+          || 'Failed to poll the rubric gap author job.';
+        this.runningRubricGapAuthor = false;
+        this.stopRubricGapAuthorPolling();
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  /**
+   * Seeds a textarea for every draft that has just acquired proposed text, and leaves every key
+   * that already exists alone. A poll arrives every two seconds; re-seeding unconditionally would
+   * throw away whatever the operator typed since the last one.
+   */
+  private applyRubricGapAuthorJob(job: RubricGapAuthorJobDto): void {
+    this.rubricGapAuthorJob = job;
+    for (const draft of job.drafts) {
+      if (draft.proposedText != null && !(draft.clusterKey in this.draftEdits)) {
+        this.draftEdits[draft.clusterKey] = draft.proposedText;
+      }
+    }
+  }
+
+  cancelRubricGapAuthor(): void {
+    if (!this.rubricGapAuthorJob || this.rubricGapAuthorJob.status !== 'Running') return;
+    this.cancellingRubricGapAuthor = true;
+    const jobId = this.rubricGapAuthorJob.id;
+    this.gapAuthorService.cancelRubricGapAuthor(jobId).subscribe({
+      next: () => {
+        this.cancellingRubricGapAuthor = false;
+        this.runningRubricGapAuthor = false;
+        this.stopRubricGapAuthorPolling();
+        this.pollRubricGapAuthor(jobId);
+      },
+      error: () => {
+        this.cancellingRubricGapAuthor = false;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  // --- Draft editing and acceptance ---
+
+  /**
+   * A cluster key is `questionId:index`, and a colon is legal in an id but has to be escaped in
+   * every selector that looks the element up. Sanitising here keeps the label/textarea pairing
+   * trivially addressable from tests and from the browser's own accessibility tooling.
+   */
+  draftTextareaId(draft: RubricGapAuthorDraftDto): string {
+    return 'sh-draft-' + draft.clusterKey.replace(/[^A-Za-z0-9_-]/g, '-');
+  }
+
+  /** The textarea's current contents: the operator's edit if there is one, else the draft. */
+  draftTextFor(draft: RubricGapAuthorDraftDto): string {
+    const edited = this.draftEdits[draft.clusterKey];
+    return edited !== undefined ? edited : (draft.proposedText ?? '');
+  }
+
+  onDraftTextInput(draft: RubricGapAuthorDraftDto, event: Event): void {
+    this.draftEdits[draft.clusterKey] = (event.target as HTMLTextAreaElement).value;
+    // Clearing the stale error here keeps a rejected acceptance from labelling text that has since
+    // been rewritten to fix exactly what the server complained about.
+    delete this.draftAcceptErrors[draft.clusterKey];
+  }
+
+  /**
+   * Compared on trimmed text with an exact match, because that is how the server decides whether an
+   * acceptance was verbatim. A marker that disagreed with the stored provenance flag would be worse
+   * than no marker at all.
+   */
+  isDraftModified(draft: RubricGapAuthorDraftDto): boolean {
+    return this.draftTextFor(draft).trim() !== (draft.proposedText ?? '').trim();
+  }
+
+  revertDraft(draft: RubricGapAuthorDraftDto): void {
+    this.draftEdits[draft.clusterKey] = draft.proposedText ?? '';
+    delete this.draftAcceptErrors[draft.clusterKey];
+    this.cdr.detectChanges();
+  }
+
+  isDraftAccepted(draft: RubricGapAuthorDraftDto): boolean {
+    return draft.clusterKey in this.acceptedDrafts;
+  }
+
+  acceptanceFor(draft: RubricGapAuthorDraftDto): RubricAdditionAcceptanceDto | undefined {
+    return this.acceptedDrafts[draft.clusterKey];
+  }
+
+  canAcceptDraft(draft: RubricGapAuthorDraftDto): boolean {
+    return draft.status === 'Completed'
+      && this.draftTextFor(draft).trim().length > 0
+      && !this.isDraftAccepted(draft)
+      && this.acceptingClusterKey == null;
+  }
+
+  /**
+   * Accepts exactly one draft, as the text currently standing in its textarea.
+   *
+   * There is no list form of this and there must not be one. The rubric is curated knowledge, and
+   * the authorship claim behind it rests on a human having read and submitted each addition
+   * individually; a bulk action would leave the same database rows behind while making that claim
+   * false. Sending the textarea rather than the draft is the other half of the same point — the
+   * server stores what was submitted and derives the verbatim-or-edited flag from it.
+   */
+  acceptDraft(draft: RubricGapAuthorDraftDto): void {
+    if (!this.canAcceptDraft(draft)) return;
+
+    const acceptedText = this.draftTextFor(draft).trim();
+    this.acceptingClusterKey = draft.clusterKey;
+    delete this.draftAcceptErrors[draft.clusterKey];
+
+    this.gapAuthorService.acceptRubricAddition(draft.questionId, {
+      acceptedText,
+      jobId: this.rubricGapAuthorJob?.id ?? null,
+      clusterKey: draft.clusterKey
+    }).subscribe({
+      next: (acceptance) => {
+        this.acceptedDrafts[draft.clusterKey] = acceptance;
+        this.acceptingClusterKey = null;
+        // The acceptance bumped the question's item revision, so the stored gap report and the item
+        // statistics both describe a suite that no longer exists. Re-fetch rather than let the
+        // panel keep rendering figures for the previous revision.
+        this.loadRubricGaps();
+        this.loadItemAnalysis();
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.acceptingClusterKey = null;
+        this.draftAcceptErrors[draft.clusterKey] = err?.error?.error || err?.error?.message || err?.error
+          || 'Failed to accept the rubric addition.';
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  draftStatusLabel(draft: RubricGapAuthorDraftDto): string {
+    switch (draft.status) {
+      case 'Pending': return 'Queued';
+      case 'Drafting': return 'Drafting';
+      case 'Completed': return 'Draft ready';
+      case 'Skipped': return 'Skipped';
+      default: return 'Failed';
+    }
   }
 
   onVerifyQuestion(questionId: number): void {

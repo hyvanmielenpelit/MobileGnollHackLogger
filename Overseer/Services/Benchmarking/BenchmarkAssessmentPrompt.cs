@@ -63,7 +63,29 @@ public static class BenchmarkAssessmentPrompt
     // the level or the evidence was the mistake. The harness verifies compliance through
     // BenchmarkAnswerFlags.UnevidencedDeduction and routes a violation to a second reader; it never
     // changes a level itself. Scores are not comparable with v6 on any answer graded below level 6.
-    public const int ScoringMethodVersion = 7;
+    // v8: two changes, both aimed at the gap between what a verdict recorded and what the report
+    // said about it.
+    //   1. The synthesis factual-error guardrail widened. v7 forbade "free of factual errors" prose
+    //      only for refuted claims and critical-error splits. The 2026-09-06 run had zero of both,
+    //      so the guardrail never engaged — and the synthesis reported the run's weaknesses as
+    //      "confined to secondary omissions rather than factual errors" while Q11's and Q14's own
+    //      accuracyEvidence named a concrete false assertion each ("weapon swapping between sets
+    //      takes 0 turns", "40 is his monster difficulty", both at Accuracy 5/6). The prohibition
+    //      now covers any answer carrying an accuracy deduction whose evidence names a defect, those
+    //      questions are marked as such on their own verdict blocks, and the synthesis must name
+    //      them in weaknesses.
+    //   2. Completeness scope became a grading rule rather than an ambiguity. The COMPLETENESS bars
+    //      scope the dimension to the question ("requested in the question"), while the rubric is an
+    //      enumerated ground-truth list that can exceed what the question asked, and v7 said nothing
+    //      about which wins. Q12 is the demonstration: Completeness 5/6 with completenessEvidence
+    //      noting the deduction rested on top-tier quality modifiers "though the prompt specifically
+    //      asked only for Exceptional and Elite" — the assessor deducted and said in the same
+    //      sentence that the point was out of scope. The question now defines the scope, and a
+    //      rubric point it did not ask for must be recorded under an OUT-OF-SCOPE: marker instead of
+    //      lowering the level, so the instrument's share of the persistent Accuracy→Completeness gap
+    //      is measurable rather than inferred.
+    // Scores are not comparable with v7 on any answer graded below level 6.
+    public const int ScoringMethodVersion = 8;
 
     /// <summary>
     /// The harness the run executed under. A constant rather than a configuration key: it exists
@@ -183,6 +205,15 @@ public static class BenchmarkAssessmentPrompt
         sb.AppendLine("- Level 4: Complete; covers all primary aspects requested in the question thoroughly.");
         sb.AppendLine("- Level 5: Thorough and comprehensive; addresses primary aspects and anticipates relevant edge cases or caveats.");
         sb.AppendLine("- Level 6: Exhaustively comprehensive; covers all nuances, conditions, exceptions, and implementation subtleties.");
+        // Scoring method v8. The bars above scope this dimension to the question ("requested in the
+        // question"); the rubric is an enumerated ground-truth list that can exceed what the
+        // question asked, and nothing said which wins. On the 2026-09-06 run Q12 was docked to 5/6
+        // over top-tier quality modifiers with completenessEvidence conceding "though the prompt
+        // specifically asked only for Exceptional and Elite" — a deduction the assessor described as
+        // out of scope in the same sentence. The precedence is now a rule, and the marker makes the
+        // instrument's share of the Accuracy→Completeness gap a measured figure instead of a guess.
+        sb.AppendLine("- **The question defines the scope.** A rubric point the question did not ask for is **not** an omission and must **not** lower the COMPLETENESS level. Grade what the question requested; the rubric is ground truth for the facts, not a checklist of everything the answer owed.");
+        sb.AppendLine("- When the rubric contains such a point, record it in `completenessEvidence` prefixed **`OUT-OF-SCOPE:`** — e.g. `OUT-OF-SCOPE: rubric lists Celestial/Primordial/Infernal modifiers; the question asked only for Exceptional and Elite.` Record it and do not deduct for it. The harness counts these to measure how much of the run's Completeness shortfall is the instrument rather than the answer, so an unrecorded out-of-scope point is a measurement lost.");
         sb.AppendLine();
         sb.AppendLine("### 3. CONCISENESS (Weight: 10%)");
         sb.AppendLine("- Level 0: Completely overwhelmed by filler, repetitive rambling, or unprompted tangents.");
@@ -437,7 +468,12 @@ public static class BenchmarkAssessmentPrompt
         sb.AppendLine();
         sb.AppendLine("CRITICAL INSTRUCTIONS:");
         sb.AppendLine("1. Review the per-question scores, levels, critical error flags, durations, and comments below.");
-        sb.AppendLine("2. Note any refuted claims and second-opinion verdicts. These findings are advisory and did not change any per-question score or level, so do not attempt to re-derive finalScore from them. However, a run containing refuted claims or critical-error splits must NOT be described as free of factual errors, and the synthesis must name them in weaknesses.");
+        // Scoring method v8 widened this. v7 named only refuted claims and critical-error splits, so
+        // a run with neither — the 2026-09-06 run — passed the guardrail while two of its verdicts
+        // recorded a concrete false assertion each at Accuracy 5/6. An accuracy deduction whose
+        // evidence names a defect IS a factual error the run's own grader found, whatever the level
+        // it left the answer at, and the paragraph a human reads first may not say otherwise.
+        sb.AppendLine("2. Note any refuted claims, second-opinion verdicts, and accuracy deductions. These findings are advisory and did not change any per-question score or level, so do not attempt to re-derive finalScore from them. However, a run containing refuted claims, critical-error splits, or **any answer marked `Accuracy defect recorded: yes` below** must NOT be described as free of factual errors, as having weaknesses confined to omissions, or in any equivalent wording — and the synthesis MUST name those questions in `weaknesses`. An accuracy deduction whose evidence names what the answer got wrong is a factual error this run's own grader found, regardless of the level it was left at.");
         sb.AppendLine("3. Produce a holistic finalScore (1-100), key strengths, key weaknesses, and a comprehensive overall review commentary.");
         sb.AppendLine("4. Output ONLY a valid JSON object matching the exact schema specified at the end.");
         sb.AppendLine();
@@ -478,6 +514,13 @@ public static class BenchmarkAssessmentPrompt
                 if (!string.IsNullOrWhiteSpace(v.AccuracyEvidence))
                 {
                     sb.AppendLine($"Accuracy Evidence: {v.AccuracyEvidence}");
+                }
+                // Scoring method v8. The header constraint alone was not enough: it asked the
+                // synthesis to re-derive, from eighteen evidence strings, which ones named a defect.
+                // The harness already knows, so it says so on the block the constraint applies to.
+                if (BenchmarkVerdictConsistency.NamesAnAccuracyDefect(v.AccuracyLevel, v.AccuracyEvidence))
+                {
+                    sb.AppendLine("Accuracy defect recorded: yes (CRITICAL INSTRUCTION 2 applies — this run may not be described as free of factual errors, and this question must be named in weaknesses)");
                 }
                 if (!string.IsNullOrWhiteSpace(v.CompletenessEvidence))
                 {

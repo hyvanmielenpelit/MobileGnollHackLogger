@@ -14,5 +14,11 @@ artifact flags, attack damage, alignment, role/race restrictions, invoke propert
 cost, and material. Every artifact in the game is indexed.
 
 For descriptions, strategy tips, and usage advice, use wiki_search FIRST — it contains
-gameplay context not in raw struct fields. Only fall back to this tool if the wiki
-lacks data for the specific artifact.
+gameplay context not in raw struct fields.
+
+Scope carve-out — exact numbers: whenever your answer will state exact numeric or
+enumerated artifact facts (attack damage, cost, alignment, base item type, spfx/cspfx
+values, artifact flags, role/race restrictions, invoke properties, material), this tool
+is authoritative and you must call it, regardless of which branch the question routed to
+and regardless of whether the wiki already had a page. The wiki supplies context, not
+numbers.

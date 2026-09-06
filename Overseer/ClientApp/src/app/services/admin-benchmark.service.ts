@@ -12,7 +12,12 @@ export enum BenchmarkSecondOpinionMode {
   Off = 0,
   Flagged = 1,
   FlaggedAndOutliers = 2,
-  All = 3
+  All = 3,
+  /**
+   * Flagged, plus a deterministic top-up to the profile's minimum sample. Yields a
+   * conditioned-plus-sample agreement rate, which is still not the unbiased rate All gives.
+   */
+  FlaggedPlusSample = 4
 }
 
 export interface BenchmarkSecondOpinionModeOption {
@@ -37,6 +42,12 @@ export const BENCHMARK_SECOND_OPINION_MODES: readonly BenchmarkSecondOpinionMode
     value: BenchmarkSecondOpinionMode.FlaggedAndOutliers,
     label: 'Flagged answers and statistical outliers',
     hint: "Adds answers far below the run's own median, found after scoring. Adds a stage to the run."
+  },
+  {
+    value: BenchmarkSecondOpinionMode.FlaggedPlusSample,
+    label: 'Flagged answers plus a sample',
+    hint: "Flagged answers, topped up to the profile's minimum sample by taking the lowest-scoring "
+      + 'answers first. Deterministic: the same data selects the same answers every run.'
   },
   {
     value: BenchmarkSecondOpinionMode.All,
@@ -392,6 +403,18 @@ export interface StartBenchmarkRunRequest {
   scoringProfileId?: number | null;
   acknowledgeSameProvider?: boolean;
   verboseMode?: boolean;
+  /**
+   * How many times to execute this identical request, strictly one at a time. 1 (the default)
+   * is the single-run path exactly as before multi-run existed: no series row, no auto-created
+   * group. Bounded by the live configured MaxRunsPerDay, which the server re-checks; the field's
+   * own max is a courtesy.
+   */
+  runCount?: number;
+  /**
+   * On a cap denial: true pauses the series in WaitingForCap and retries; false stops it with
+   * StopReason = RunCapReached, keeping every completed member and leaving it resumable.
+   */
+  allowCapWait?: boolean;
 }
 
 /**
@@ -454,6 +477,12 @@ export interface BenchmarkFootprintDto {
 export interface BenchmarkRunAnswerDto {
   id: number;
   benchmarkRunId: number;
+  /**
+   * This answer's input tokens as a share of the run total, 0-100. Computed server-side from the
+   * stored per-answer tokens and the run total, never a stored column. Input-token cost is driven
+   * by model-call count rather than tool-call count, and this is what makes that visible.
+   */
+  inputTokenShare?: number | null;
   /**
    * The suite question this answer was produced for. Null for a historical answer that could not
    * be matched unambiguously, and null once the question is deleted. Anything merging questions
@@ -676,7 +705,10 @@ export interface BenchmarkRunDetailDto {
   claimsRefutedCount?: number;
   claimsIndeterminateCount?: number;
   reassessedAnswerCount?: number;
-  /** How the second-opinion assessor was used: Off (0), Flagged (1), FlaggedAndOutliers (2), All (3). */
+  /**
+   * How the second-opinion assessor was used: Off (0), Flagged (1), FlaggedAndOutliers (2),
+   * All (3), FlaggedPlusSample (4).
+   */
   secondOpinionModeUsed?: number;
   secondOpinionBlindUsed?: boolean;
   /**
@@ -727,6 +759,26 @@ export interface BenchmarkRunDetailDto {
   totalClaimVerificationInputTokens?: number;
   totalClaimVerificationOutputTokens?: number;
   totalClaimVerificationDurationMs?: number;
+
+  /**
+   * Completeness deductions the assessor itself placed outside the question's scope. This is
+   * the instrument's measurable share of the Accuracy-to-Completeness gap: if Completeness rises
+   * by more than this count can explain, the scope rule changed grader behaviour beyond its remit.
+   */
+  completenessOutOfScopeCount?: number;
+
+  /**
+   * Answers actually graded twice by the deterministic top-up under FlaggedPlusSample. May fall
+   * short of the profile's target when fewer answers exist. Zero and meaningless under every
+   * other mode.
+   */
+  secondOpinionSampleCountUsed?: number;
+
+  /**
+   * Claims the verifier actually checked. With claimsRefutedCount above and the verifier's own
+   * cost, this is the yield line: what the verification spend bought.
+   */
+  claimsCheckedCount?: number;
 
   errorMessage?: string | null;
 
@@ -938,6 +990,267 @@ export interface BenchmarkRunSummaryDto {
   knowledgeBaseHeadSha?: string | null;
   estimatedCost?: number | null;
   pricingIncomplete?: boolean;
+}
+
+// =========================================================================================
+// Multi-run: limits, series, groups and group analysis
+// =========================================================================================
+
+/**
+ * The run caps and the live rolling-window counts behind them.
+ *
+ * Both windows are **rolling** — the last 60 minutes and the last 24 hours — not calendar hours
+ * or calendar days. The client must never re-derive them: the server's compliance guard owns the
+ * arithmetic, and a field that bounded itself by its own idea of "today" would disagree with the
+ * guard that actually refuses the run.
+ */
+export interface BenchmarkRunLimitsDto {
+  maxRunsPerHour: number;
+  maxRunsPerDay: number;
+  runsInLastHour: number;
+  runsInLast24Hours: number;
+  /** Never negative, even after the cap is lowered below the current count. */
+  remainingDailyHeadroom: number;
+  /** The ceiling for the Number of runs field. Equals maxRunsPerDay, not the current headroom. */
+  maxRunCountPerSeries: number;
+}
+
+export type BenchmarkRunSeriesStatus =
+  | 'Pending'
+  | 'Running'
+  | 'WaitingForCap'
+  | 'Stopped'
+  | 'Completed'
+  | 'CompletedWithErrors'
+  | 'Cancelled'
+  | 'Failed';
+
+export type BenchmarkRunSeriesStopReason = 'MemberFailed' | 'RunCapReached' | 'SpendDenied';
+
+export interface BenchmarkRunSeriesMemberDto {
+  index: number;
+  runId: number;
+  status: string;
+  startedAtUtc: string;
+  completedAtUtc?: string | null;
+  qualityIndex?: number | null;
+  speedIndex?: number | null;
+  estimatedCost?: number | null;
+  durationMs?: number | null;
+  answeredQuestionCount: number;
+  totalQuestionCount: number;
+  shortFingerprint?: string | null;
+}
+
+export interface BenchmarkRunSeriesDto {
+  id: number;
+  benchmarkSuiteId?: number | null;
+  suiteName: string;
+  requestedRunCount: number;
+  completedRunCount: number;
+  failedRunCount: number;
+  status: BenchmarkRunSeriesStatus;
+  stopReason?: BenchmarkRunSeriesStopReason | null;
+  /** The stop reason in words, for the Continue button's label. */
+  stopReasonText?: string | null;
+  allowCapWait: boolean;
+  /** True when the Continue button should be offered. Cancelled, Completed and Failed are never resumable. */
+  resumable: boolean;
+  startedAtUtc: string;
+  completedAtUtc?: string | null;
+  errorMessage?: string | null;
+
+  /** The instrument as it was at member 1, and as it is now. A refused resume is self-explaining from these. */
+  firstMemberCandidateSystemPromptSha256?: string | null;
+  firstMemberToolGuidesSha256?: string | null;
+  firstMemberKnowledgeBaseHeadSha?: string | null;
+  currentCandidateSystemPromptSha256?: string | null;
+  currentToolGuidesSha256?: string | null;
+  currentKnowledgeBaseHeadSha?: string | null;
+  /** Which of the three moved. Empty when the instrument has not changed. */
+  changedInstrumentHashes: string[];
+  instrumentChangeAcknowledged: boolean;
+
+  autoCreatedGroupId?: number | null;
+  autoCreatedGroupTier?: string | null;
+
+  members: BenchmarkRunSeriesMemberDto[];
+}
+
+export interface ResumeBenchmarkRunSeriesRequest {
+  /**
+   * Continues over a changed instrument. The resulting group is then Tier C and can never be
+   * pooled into one index — the dangerous case made impossible by construction rather than by
+   * discipline.
+   */
+  acknowledgeInstrumentChange?: boolean;
+}
+
+/** The 409 body a refused resume returns, so the dialog can name the hash that moved. */
+export interface BenchmarkInstrumentChangedDto {
+  instrumentChanged: true;
+  seriesId?: number | null;
+  changedHashes: string[];
+  message: string;
+}
+
+/**
+ * How comparable a set of runs is, and therefore what may be computed over it. Higher is more
+ * comparable; only `Replicate` may be pooled into one index.
+ */
+export type BenchmarkComparabilityTier =
+  | 'NotComparable'
+  | 'CrossCondition'
+  | 'QualityComparable'
+  | 'Replicate';
+
+export interface BenchmarkComparabilityVariantDto {
+  value: string;
+  runIds: number[];
+}
+
+export interface BenchmarkComparabilityDifferenceDto {
+  name: string;
+  kind: string;
+  description: string;
+  variants: BenchmarkComparabilityVariantDto[];
+}
+
+export interface BenchmarkComparabilityResultDto {
+  tier: BenchmarkComparabilityTier;
+  tierLabel: string;
+  poolingPermitted: boolean;
+  speedAggregatesDegraded: boolean;
+  costAggregatesDegraded: boolean;
+  explanation: string;
+  comparabilityKeyHash: string;
+  matchedKeys: string[];
+  differences: BenchmarkComparabilityDifferenceDto[];
+  runIds: number[];
+}
+
+export interface BenchmarkRunGroupMemberDto {
+  runId: number;
+  startedAtUtc: string;
+  status: string;
+  qualityIndex?: number | null;
+  speedIndex?: number | null;
+  testedModelDisplayName?: string | null;
+  shortFingerprint?: string | null;
+  addedAtUtc: string;
+}
+
+export interface BenchmarkRunGroupDto {
+  id: number;
+  name: string;
+  benchmarkSuiteId?: number | null;
+  suiteName?: string | null;
+  tier: BenchmarkComparabilityTier;
+  tierLabel: string;
+  comparabilityKeyHash?: string | null;
+  crossCondition: boolean;
+  notes?: string | null;
+  createdFromSeriesId?: number | null;
+  createdAtUtc: string;
+  modifiedAtUtc: string;
+  runCount: number;
+  members: BenchmarkRunGroupMemberDto[];
+  /** Null until an analysis has been computed. The report download stays disabled until then. */
+  latestAnalysisId?: number | null;
+  latestAnalysisAtUtc?: string | null;
+  /** The membership changed after the last analysis. Badged, not discarded: a stale analysis is not wrong. */
+  analysisStale: boolean;
+}
+
+export interface CreateBenchmarkRunGroupRequest {
+  name: string;
+  runIds: number[];
+  notes?: string | null;
+  /** Required to persist a Tier C group. Without it a cross-condition set is refused. */
+  crossCondition?: boolean;
+}
+
+export interface UpdateBenchmarkRunGroupRequest {
+  name?: string | null;
+  runIds?: number[] | null;
+  notes?: string | null;
+  crossCondition?: boolean | null;
+}
+
+/**
+ * The result of previewing, creating or editing a group. On refusal it carries the keys that
+ * differ and the runs carrying them — a "no" with no reason is unusable in the group builder.
+ */
+export interface BenchmarkRunGroupTierPreviewDto {
+  accepted: boolean;
+  error?: string | null;
+  comparability?: BenchmarkComparabilityResultDto | null;
+  group?: BenchmarkRunGroupDto | null;
+}
+
+export interface BenchmarkGroupAnalysisRequest {
+  /** Optional baseline group to pair this one against. Null computes the group alone. */
+  compareWithGroupId?: number | null;
+}
+
+/** Per-item statistics across the group's R runs. */
+export interface BenchmarkGroupItemStatisticsDto {
+  questionId: number;
+  orderIndex: number;
+  questionText?: string | null;
+  observationCount: number;
+  mean: number;
+  median: number;
+  /** Sample SD (n-1). Null when fewer than two observations exist. */
+  standardDeviation?: number | null;
+  min: number;
+  max: number;
+  interquartileRange?: number | null;
+  coefficientOfVariation?: number | null;
+  confidenceIntervalHalfWidth?: number | null;
+  /** k/R — how often this item produced a critical error. */
+  criticalErrorRate: number;
+  /** SD above the configured threshold: the items where one run's verdict is least trustworthy. */
+  unstable: boolean;
+}
+
+export interface BenchmarkGroupIndexStatisticsDto {
+  /** The mean of the R per-run indices. */
+  point: number;
+  runIndices: number[];
+  /** SD(run indices) / sqrt(R). Answers "would a re-run move this?" and shrinks with R. */
+  reproducibilityStandardError?: number | null;
+  reproducibilityStandardDeviation?: number | null;
+  /**
+   * Answers "would a different 18 questions move this?" and does **not** shrink with R, because
+   * every run uses the same items. The UI must say so, or a reader will report it as a bug.
+   */
+  itemSamplingStandardError?: number | null;
+  combinedIntervalHalfWidth?: number | null;
+  /** R < 3 yields no reproducibility figure, mirroring the existing n < 3 convention. */
+  reproducibilityReportable: boolean;
+}
+
+/**
+ * A persisted multi-run analysis. `result` and `comparison` are the server's statistics records
+ * passed through rather than mirrored field by field, so the two sides cannot drift.
+ */
+export interface BenchmarkGroupAnalysisDto {
+  id: number;
+  groupId: number;
+  groupName: string;
+  computedAtUtc: string;
+  runCount: number;
+  memberRunIds: number[];
+  tier: BenchmarkComparabilityTier;
+  tierLabel: string;
+  harnessVersion?: string | null;
+  scoringMethodVersion: number;
+  stale: boolean;
+  comparedWithGroupId?: number | null;
+  comparedWithGroupName?: string | null;
+  result?: any;
+  comparison?: any;
 }
 
 @Injectable({
@@ -1238,5 +1551,89 @@ export class AdminBenchmarkService {
 
   reviewAllQuestions(suiteId: number): Observable<{ reviewedCount: number, suite: BenchmarkSuiteDto }> {
     return this.http.post<{ reviewedCount: number, suite: BenchmarkSuiteDto }>(`/api/admin/benchmark/suites/${suiteId}/review-all`, {});
+  }
+
+  // Multi-run: limits, series, groups and group analysis
+
+  /**
+   * The caps and the live rolling-window counts. The Number of runs field binds its `max` to
+   * `maxRunCountPerSeries` from here rather than to a literal, so raising the configured cap raises
+   * the field with it.
+   */
+  getRunLimits(): Observable<BenchmarkRunLimitsDto> {
+    return this.http.get<BenchmarkRunLimitsDto>('/api/admin/benchmark/runs/limits');
+  }
+
+  startRunSeries(req: StartBenchmarkRunRequest): Observable<{ seriesId: number }> {
+    return this.http.post<{ seriesId: number }>('/api/admin/benchmark/runs/series', req);
+  }
+
+  getRunSeries(id: number): Observable<BenchmarkRunSeriesDto> {
+    return this.http.get<BenchmarkRunSeriesDto>(`/api/admin/benchmark/runs/series/${id}`);
+  }
+
+  /** A 204 arrives as null, the same shape getActiveRun() relies on. */
+  getActiveRunSeries(): Observable<BenchmarkRunSeriesDto | null> {
+    return this.http.get<BenchmarkRunSeriesDto | null>('/api/admin/benchmark/runs/series/active');
+  }
+
+  cancelRunSeries(id: number): Observable<void> {
+    return this.http.post<void>(`/api/admin/benchmark/runs/series/${id}/cancel`, {});
+  }
+
+  /**
+   * Continues a stopped series from its next member. Answers 409 with a
+   * {@link BenchmarkInstrumentChangedDto} body when an instrument hash moved since member 1; the
+   * caller may retry with `acknowledgeInstrumentChange`, which marks the resulting group Tier C.
+   */
+  resumeRunSeries(id: number, req?: ResumeBenchmarkRunSeriesRequest): Observable<{ seriesId: number }> {
+    return this.http.post<{ seriesId: number }>(
+      `/api/admin/benchmark/runs/series/${id}/resume`, req ?? {});
+  }
+
+  getRunGroups(): Observable<BenchmarkRunGroupDto[]> {
+    return this.http.get<BenchmarkRunGroupDto[]>('/api/admin/benchmark/runs/groups');
+  }
+
+  getRunGroup(id: number): Observable<BenchmarkRunGroupDto> {
+    return this.http.get<BenchmarkRunGroupDto>(`/api/admin/benchmark/runs/groups/${id}`);
+  }
+
+  /**
+   * The tier a set of runs would resolve to, without creating anything. This is what the group
+   * builder shows while the operator is still selecting runs.
+   */
+  previewRunGroupTier(req: CreateBenchmarkRunGroupRequest): Observable<BenchmarkRunGroupTierPreviewDto> {
+    return this.http.post<BenchmarkRunGroupTierPreviewDto>(
+      '/api/admin/benchmark/runs/groups/preview', req);
+  }
+
+  createRunGroup(req: CreateBenchmarkRunGroupRequest): Observable<BenchmarkRunGroupTierPreviewDto> {
+    return this.http.post<BenchmarkRunGroupTierPreviewDto>('/api/admin/benchmark/runs/groups', req);
+  }
+
+  updateRunGroup(id: number, req: UpdateBenchmarkRunGroupRequest): Observable<BenchmarkRunGroupTierPreviewDto> {
+    return this.http.put<BenchmarkRunGroupTierPreviewDto>(
+      `/api/admin/benchmark/runs/groups/${id}`, req);
+  }
+
+  deleteRunGroup(id: number): Observable<void> {
+    return this.http.delete<void>(`/api/admin/benchmark/runs/groups/${id}`);
+  }
+
+  analyseRunGroup(id: number, req?: BenchmarkGroupAnalysisRequest): Observable<BenchmarkGroupAnalysisDto> {
+    return this.http.post<BenchmarkGroupAnalysisDto>(
+      `/api/admin/benchmark/runs/groups/${id}/analysis`, req ?? {});
+  }
+
+  /** The most recent stored analysis, or null (204) when the group has never been analysed. */
+  getRunGroupAnalysis(id: number): Observable<BenchmarkGroupAnalysisDto | null> {
+    return this.http.get<BenchmarkGroupAnalysisDto | null>(
+      `/api/admin/benchmark/runs/groups/${id}/analysis`);
+  }
+
+  /** Beside getRunReportUrl, and used the same way: window.open, not an XHR. */
+  getGroupReportUrl(groupId: number): string {
+    return `/api/admin/benchmark/runs/groups/${groupId}/report`;
   }
 }

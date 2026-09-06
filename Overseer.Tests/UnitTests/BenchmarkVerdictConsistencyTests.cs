@@ -1,5 +1,6 @@
 namespace Overseer.Tests.UnitTests;
 
+using System;
 using System.Linq;
 using Overseer.Services.Benchmarking;
 using Xunit;
@@ -255,5 +256,127 @@ public class BenchmarkVerdictConsistencyTests
         Assert.False(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(3, null));
         Assert.False(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(3, ""));
         Assert.False(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(3, "   "));
+    }
+
+    /// <summary>
+    /// The 2026-09-06 run's synthesis, close to verbatim. It made two claims the same report's own
+    /// verdicts contradicted: that the weaknesses were omissions rather than factual errors, and
+    /// that the model avoided the single-turn weapon-swap error Q11's evidence says it made.
+    /// </summary>
+    private const string Run14Synthesis =
+        "The model demonstrates an elite command of GnollHack's mechanics across the suite.\n" +
+        "Identified weaknesses were confined to secondary omissions rather than factual errors or critical rubric failures.\n" +
+        "It also avoided several common NetHack hallucinations, including single-turn weapon swapping costs.";
+
+    /// <summary>
+    /// The 2026-09-03 run's synthesis shape: strong prose that never makes the no-factual-errors
+    /// claim. This is the string the detector must stay silent on, because a false positive here
+    /// prints an accusation against a synthesis that said nothing wrong.
+    /// </summary>
+    private const string Run13Synthesis =
+        "The model demonstrates an elite command of GnollHack's mechanics across the suite.\n" +
+        "Weaknesses cluster in the Advanced band, where the answers thin out on implementation detail.\n" +
+        "Question 4 understates the prayer timeout reset, which is the run's most consequential slip.";
+
+    [Fact]
+    public void SynthesisClaimsNoFactualErrors_FiresOnTheRun14Synthesis()
+    {
+        Assert.True(BenchmarkVerdictConsistency.SynthesisClaimsNoFactualErrors(Run14Synthesis));
+    }
+
+    [Fact]
+    public void SynthesisClaimsNoFactualErrors_IsSilentOnACleanSynthesis()
+    {
+        Assert.False(BenchmarkVerdictConsistency.SynthesisClaimsNoFactualErrors(Run13Synthesis));
+    }
+
+    [Theory]
+    [InlineData("The run was free of factual errors throughout.")]
+    [InlineData("There were no factual errors in any answer.")]
+    [InlineData("Weaknesses were omissions rather than factual errors.")]
+    [InlineData("The answers were thorough and without factual errors.")]
+    [InlineData("Identified weaknesses were confined to secondary omissions.")]
+    public void SynthesisClaimsNoFactualErrors_CoversTheVocabularyFamily(string synthesis)
+    {
+        Assert.True(BenchmarkVerdictConsistency.SynthesisClaimsNoFactualErrors(synthesis));
+    }
+
+    [Theory]
+    // A synthesis that admits factual errors is doing the opposite of the thing this detects.
+    [InlineData("The run was not free of factual errors: Q14 misreports Master Kaen's level.")]
+    [InlineData("Question 14 contains a factual error about monster difficulty.")]
+    [InlineData("Two factual errors were identified, both in the Advanced band.")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void SynthesisClaimsNoFactualErrors_DoesNotFireWhenTheSynthesisAdmitsThem(string? synthesis)
+    {
+        Assert.False(BenchmarkVerdictConsistency.SynthesisClaimsNoFactualErrors(synthesis));
+    }
+
+    [Fact]
+    public void SynthesisClaimsNoFactualErrors_DoesNotReachAcrossSentences()
+    {
+        // Sentence-scoped for the same reason QuestionsNamedWithFabrication is. This paragraph
+        // names an omission in one sentence and a factual error in the next, which is what an
+        // honest synthesis looks like; a paragraph-wide "confined to ... omissions" would match it.
+        const string synthesis =
+            "The weaknesses were confined to the Advanced band.\n" +
+            "Two answers carried omissions, and Q14 carried a factual error about monster difficulty.";
+
+        Assert.False(BenchmarkVerdictConsistency.SynthesisClaimsNoFactualErrors(synthesis));
+    }
+
+    /// <summary>
+    /// The 2026-09-06 run's verdict shape: Q11 and Q14 docked to Accuracy 5 with evidence naming a
+    /// concrete false assertion, beside answers whose evidence is the full-level boilerplate the
+    /// prompt itself offers.
+    /// </summary>
+    private static (int OrderIndex, int? AccuracyLevel, string? AccuracyEvidence)[] Run14Verdicts()
+    {
+        return new (int, int?, string?)[]
+        {
+            (1, 5, "Matches rubric."),
+            (2, 6, "Matches rubric."),
+            (5, 5, "Aligns with rubric."),
+            (9, 5, "Matches rubric"),
+            (11, 5, "The answer covers the set mechanics but overlooks that weapon swapping between sets takes 0 turns in GnollHack, suggesting instead that switching weapons requires extra equipment management overhead."),
+            (12, 6, null),
+            (14, 5, "The answer lists Level as 40 and Hit dice as 25; in the monster definition LVL(25, 16, -10, 15, 10, -20), his level/HD is 25, while 40 is his monster difficulty."),
+            (18, 5, "   ")
+        };
+    }
+
+    [Fact]
+    public void AnswersWithNamedAccuracyDefects_SelectsExactlyTheTwoQuestionsThatNameADefect()
+    {
+        var named = BenchmarkVerdictConsistency.AnswersWithNamedAccuracyDefects(Run14Verdicts());
+
+        Assert.Equal(new[] { 11, 14 }, named);
+    }
+
+    [Fact]
+    public void AnswersWithNamedAccuracyDefects_ExcludesFullLevelAndBoilerplateEvidence()
+    {
+        // The exclusion is what keeps this from firing on every level-5 answer of a strong run:
+        // level 6 is faultless by definition, and "Matches rubric." beside level 5 names nothing.
+        var verdicts = new (int, int?, string?)[]
+        {
+            (1, 6, "The answer is exact on every rubric point and adds the source line."),
+            (2, 5, "Matches rubric."),
+            (3, 5, "Matches rubric"),
+            (4, 5, "Aligns with rubric."),
+            (5, 5, null),
+            (6, 5, ""),
+            (7, null, "Excluded: Provider API error")
+        };
+
+        Assert.Empty(BenchmarkVerdictConsistency.AnswersWithNamedAccuracyDefects(verdicts));
+    }
+
+    [Fact]
+    public void AnswersWithNamedAccuracyDefects_ToleratesAnEmptySet()
+    {
+        Assert.Empty(BenchmarkVerdictConsistency.AnswersWithNamedAccuracyDefects(
+            Array.Empty<(int, int?, string?)>()));
     }
 }

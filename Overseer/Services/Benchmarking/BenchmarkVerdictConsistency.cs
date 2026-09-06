@@ -221,4 +221,124 @@ public static class BenchmarkVerdictConsistency
             && !FalsehoodRegex.IsMatch(accuracyEvidence)
             && !SubstitutionRegex.IsMatch(accuracyEvidence);
     }
+
+    /// <summary>
+    /// The level at which ACCURACY is faultless. Below it the assessor has recorded a defect, and
+    /// scoring method v7 onwards requires its evidence string to name what that defect was — which
+    /// is what makes <see cref="NamesAnAccuracyDefect"/> a usable signal rather than a guess.
+    /// </summary>
+    public const int FullAccuracyLevel = 6;
+
+    /// <summary>
+    /// Prose asserting that the run contained no false statements.
+    ///
+    /// Each alternative is a form a synthesis has actually produced, and each is here for a reason:
+    /// - "free of factual errors" / "devoid of factual errors" — the direct claim. "devoid" costs
+    ///   nothing and is the same assertion in a register these models reach for.
+    /// - "no factual errors" — the same claim in the negative, including "zero factual errors".
+    /// - "rather than factual errors" / "instead of factual errors" — the run 14 form: *"Identified
+    ///   weaknesses were confined to secondary omissions rather than factual errors"*. The claim is
+    ///   made by contrast rather than by assertion, which the first two alternatives do not catch.
+    /// - "without factual errors" — the participle form of the same contrast.
+    /// - "confined to … omissions" — the same sentence's other half, so the claim is still detected
+    ///   when the writer drops the words "factual errors" and says only that the weaknesses were
+    ///   omissions. The gap is bounded to 120 characters and excludes sentence punctuation for the
+    ///   same reason <see cref="SubstitutionRegex"/> bounds its own: an unbounded gap turns a
+    ///   two-word pattern into a paragraph-wide one.
+    /// </summary>
+    private static readonly Regex NoFactualErrorsRegex = new(
+        @"(?:free|devoid)\s+of\s+(?:any\s+)?factual\s+error|\b(?:no|zero)\s+(?:material\s+|significant\s+|outright\s+)?factual\s+error|(?:rather\s+than|instead\s+of)\s+(?:any\s+)?factual\s+error|without\s+(?:any\s+)?factual\s+error|confined\s+to\b[^.;!?]{0,120}?\bomission",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// The same vocabulary used to *admit* factual errors. A synthesis that writes "the run was not
+    /// free of factual errors" or "Q14 contains a factual error" is doing the opposite of the thing
+    /// this detector exists to catch, and matching it would accuse an honest synthesis — the
+    /// expensive direction, exactly as in <see cref="QuestionsNamedWithFabrication"/>. A sentence
+    /// matching this is disqualified even when it also matches <see cref="NoFactualErrorsRegex"/>.
+    /// </summary>
+    private static readonly Regex FactualErrorsAdmittedRegex = new(
+        @"\bnot\s+(?:entirely\s+|wholly\s+|completely\s+)?(?:free|devoid)\s+of\s+(?:any\s+)?factual\s+error|\bnot\s+without\s+(?:any\s+)?factual\s+error|\b(?:contains?|contained|carries|carried|includes?|included|exhibits?|exhibited)\s+(?:a\s+|some\s+|several\s+|two\s+|three\s+)?factual\s+error|\bfactual\s+errors?\s+(?:were|was|are|is)\s+(?:present|found|identified|recorded|noted)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// True when the run-level synthesis claims the run held no factual errors.
+    ///
+    /// Sentence-scoped, never paragraph-scoped, for the same reason
+    /// <see cref="QuestionsNamedWithFabrication"/> is: the synthesis is multi-paragraph prose, and
+    /// a paragraph-wide "confined to … omissions" would match a paragraph that names an omission in
+    /// one sentence and a factual error in the next — the shape of an *honest* synthesis. A missed
+    /// match costs an advisory line; a false match accuses a correct one.
+    ///
+    /// Advisory on both sides. This says only what the synthesis claimed; whether that claim is
+    /// contradicted takes <see cref="AnswersWithNamedAccuracyDefects"/> as well, and the caller
+    /// renders nothing unless both are true.
+    /// </summary>
+    public static bool SynthesisClaimsNoFactualErrors(string? synthesisText)
+    {
+        if (string.IsNullOrWhiteSpace(synthesisText))
+        {
+            return false;
+        }
+
+        foreach (string sentence in SplitSentences(synthesisText))
+        {
+            if (NoFactualErrorsRegex.IsMatch(sentence) && !FactualErrorsAdmittedRegex.IsMatch(sentence))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// True when this verdict docked ACCURACY and its own evidence string names the defect.
+    ///
+    /// The boilerplate exclusion is the whole point. Level 5 is the modal level of a strong run,
+    /// and a level-5 verdict whose evidence reads "Matches rubric." has named nothing — flagging it
+    /// would fire on most answers of most runs and devalue the signal. The exclusion reuses
+    /// <see cref="IsNoFaultEvidence"/> rather than a fresh string list, so "Matches rubric.",
+    /// "Matches rubric" and "Aligns with rubric." are covered along with the rest of the family the
+    /// prompt offers as the *full-level* form, and an absent evidence string is excluded with them.
+    /// </summary>
+    public static bool NamesAnAccuracyDefect(int? accuracyLevel, string? accuracyEvidence)
+    {
+        if (!accuracyLevel.HasValue || accuracyLevel.Value >= FullAccuracyLevel)
+        {
+            return false;
+        }
+
+        return !IsNoFaultEvidence(accuracyEvidence);
+    }
+
+    /// <summary>
+    /// The order indexes of the verdicts that docked ACCURACY with evidence naming a concrete
+    /// defect — the questions a synthesis may not describe the run as free of factual errors over.
+    ///
+    /// On the 2026-09-06 run this is exactly Q11 ("overlooks that weapon swapping between sets
+    /// takes 0 turns") and Q14 ("lists Level as 40 and Hit dice as 25; … his level/HD is 25, while
+    /// 40 is his monster difficulty"), both Accuracy 5/6, while the synthesis reported the run's
+    /// weaknesses as "confined to secondary omissions rather than factual errors".
+    ///
+    /// Takes a tuple sequence rather than a verdict type so that this class keeps its only
+    /// dependencies on <c>string</c> and <c>int</c>: both the synthesis prompt (which holds
+    /// <see cref="BenchmarkPerQuestionVerdictSummary"/>) and the report builder (which holds
+    /// answers plus their stored evidence JSON) project into it in one line.
+    /// </summary>
+    public static IReadOnlyList<int> AnswersWithNamedAccuracyDefects(
+        IEnumerable<(int OrderIndex, int? AccuracyLevel, string? AccuracyEvidence)> verdicts)
+    {
+        if (verdicts == null)
+        {
+            return Array.Empty<int>();
+        }
+
+        return verdicts
+            .Where(v => NamesAnAccuracyDefect(v.AccuracyLevel, v.AccuracyEvidence))
+            .Select(v => v.OrderIndex)
+            .Distinct()
+            .OrderBy(i => i)
+            .ToList();
+    }
 }

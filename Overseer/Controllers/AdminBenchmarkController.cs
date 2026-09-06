@@ -40,6 +40,11 @@ public class AdminBenchmarkController : ControllerBase
     private readonly BenchmarkGenerationService _generationService;
     private readonly BenchmarkRubricCheckJobManager _rubricCheckJobManager;
     private readonly BenchmarkRubricCheckService _rubricCheckService;
+    private readonly BenchmarkRubricGapAuthorJobManager _rubricGapAuthorJobManager;
+    private readonly BenchmarkRubricGapAuthorService _rubricGapAuthorService;
+    private readonly BenchmarkRunLauncher _runLauncher;
+    private readonly BenchmarkSeriesOrchestrator _seriesOrchestrator;
+    private readonly BenchmarkGroupAnalysisService _groupAnalysisService;
     private readonly ModelPricingService? _modelPricingService;
 
     public AdminBenchmarkController(
@@ -58,6 +63,11 @@ public class AdminBenchmarkController : ControllerBase
         BenchmarkGenerationService generationService,
         BenchmarkRubricCheckJobManager rubricCheckJobManager,
         BenchmarkRubricCheckService rubricCheckService,
+        BenchmarkRubricGapAuthorJobManager rubricGapAuthorJobManager,
+        BenchmarkRubricGapAuthorService rubricGapAuthorService,
+        BenchmarkRunLauncher runLauncher,
+        BenchmarkSeriesOrchestrator seriesOrchestrator,
+        BenchmarkGroupAnalysisService groupAnalysisService,
         ModelPricingService? modelPricingService = null)
     {
         _dbContext = dbContext;
@@ -75,6 +85,11 @@ public class AdminBenchmarkController : ControllerBase
         _generationService = generationService;
         _rubricCheckJobManager = rubricCheckJobManager;
         _rubricCheckService = rubricCheckService;
+        _rubricGapAuthorJobManager = rubricGapAuthorJobManager;
+        _rubricGapAuthorService = rubricGapAuthorService;
+        _runLauncher = runLauncher;
+        _seriesOrchestrator = seriesOrchestrator;
+        _groupAnalysisService = groupAnalysisService;
         _modelPricingService = modelPricingService;
     }
 
@@ -160,6 +175,11 @@ public class AdminBenchmarkController : ControllerBase
         {
             return Conflict(new { error = $"Cannot start {requestingJobName}: Rubric verification job '{rubJob.Id}' is currently running on this suite." });
         }
+        var gapJob = _rubricGapAuthorJobManager.Current;
+        if (gapJob != null && gapJob.Status == BenchmarkRubricGapAuthorJobStatus.Running && gapJob.SuiteId == suiteId)
+        {
+            return Conflict(new { error = $"Cannot start {requestingJobName}: Rubric gap author job '{gapJob.Id}' is currently running on this suite." });
+        }
         return null;
     }
 
@@ -183,6 +203,7 @@ public class AdminBenchmarkController : ControllerBase
             SecondOpinionQualityThreshold = p.SecondOpinionQualityThreshold,
             SecondOpinionMode = p.SecondOpinionMode,
             SecondOpinionOutlierDeltaPoints = p.SecondOpinionOutlierDeltaPoints,
+            SecondOpinionMinimumSample = p.SecondOpinionMinimumSample,
             SecondOpinionBlind = p.SecondOpinionBlind,
             SpeedTargetMs = p.SpeedTargetMs,
             SpeedDecayK = p.SpeedDecayK,
@@ -211,6 +232,7 @@ public class AdminBenchmarkController : ControllerBase
             SecondOpinionQualityThreshold = request.SecondOpinionQualityThreshold,
             SecondOpinionMode = request.SecondOpinionMode,
             SecondOpinionOutlierDeltaPoints = request.SecondOpinionOutlierDeltaPoints,
+            SecondOpinionMinimumSample = request.SecondOpinionMinimumSample,
             SecondOpinionBlind = request.SecondOpinionBlind,
             SpeedTargetMs = request.SpeedTargetMs,
             SpeedDecayK = request.SpeedDecayK,
@@ -238,6 +260,7 @@ public class AdminBenchmarkController : ControllerBase
             SecondOpinionQualityThreshold = created.SecondOpinionQualityThreshold,
             SecondOpinionMode = created.SecondOpinionMode,
             SecondOpinionOutlierDeltaPoints = created.SecondOpinionOutlierDeltaPoints,
+            SecondOpinionMinimumSample = created.SecondOpinionMinimumSample,
             SecondOpinionBlind = created.SecondOpinionBlind,
             SpeedTargetMs = created.SpeedTargetMs,
             SpeedDecayK = created.SpeedDecayK,
@@ -265,6 +288,7 @@ public class AdminBenchmarkController : ControllerBase
             SecondOpinionQualityThreshold = request.SecondOpinionQualityThreshold,
             SecondOpinionMode = request.SecondOpinionMode,
             SecondOpinionOutlierDeltaPoints = request.SecondOpinionOutlierDeltaPoints,
+            SecondOpinionMinimumSample = request.SecondOpinionMinimumSample,
             SecondOpinionBlind = request.SecondOpinionBlind,
             SpeedTargetMs = request.SpeedTargetMs,
             SpeedDecayK = request.SpeedDecayK,
@@ -292,6 +316,7 @@ public class AdminBenchmarkController : ControllerBase
             SecondOpinionQualityThreshold = updated.SecondOpinionQualityThreshold,
             SecondOpinionMode = updated.SecondOpinionMode,
             SecondOpinionOutlierDeltaPoints = updated.SecondOpinionOutlierDeltaPoints,
+            SecondOpinionMinimumSample = updated.SecondOpinionMinimumSample,
             SecondOpinionBlind = updated.SecondOpinionBlind,
             SpeedTargetMs = updated.SpeedTargetMs,
             SpeedDecayK = updated.SpeedDecayK,
@@ -793,12 +818,16 @@ public class AdminBenchmarkController : ControllerBase
     /// Clusters the unverified claims the suite's runs accumulated, and says which of them are
     /// evidence about the rubric rather than about one model. No AI calls.
     /// </summary>
-    [HttpGet("suites/{suiteId}/rubric-gaps")]
-    public async Task<IActionResult> GetRubricGaps(long suiteId)
+    /// <summary>
+    /// Every unverified claim recorded against a suite, with the claim verifier's verdict, citation
+    /// and basis attached. One owner for the projection: the gap report and the Rubric Gap Author
+    /// must see exactly the same claims, or an operator would be offered a draft for a cluster the
+    /// panel above it does not show.
+    /// </summary>
+    private async Task<(List<BenchmarkUnverifiedClaimSample> Samples, int RunCount)> LoadUnverifiedClaimSamplesAsync(
+        long suiteId,
+        CancellationToken ct = default)
     {
-        var suite = await _dbContext.BenchmarkSuites.FindAsync(suiteId);
-        if (suite == null) return NotFound();
-
         var rows = await _dbContext.BenchmarkRunAnswers
             .Where(a => a.BenchmarkRun.BenchmarkSuiteId == suiteId
                         && a.BenchmarkQuestionId != null
@@ -815,7 +844,7 @@ public class AdminBenchmarkController : ControllerBase
                 ModelId = a.BenchmarkRun.TestedModelIdUsed
             })
             .AsNoTracking()
-            .ToListAsync();
+            .ToListAsync(ct);
 
         var samples = new List<BenchmarkUnverifiedClaimSample>();
         foreach (var row in rows)
@@ -885,13 +914,24 @@ public class AdminBenchmarkController : ControllerBase
             }
         }
 
+        return (samples, rows.Select(r => r.BenchmarkRunId).Distinct().Count());
+    }
+
+    [HttpGet("suites/{suiteId}/rubric-gaps")]
+    public async Task<IActionResult> GetRubricGaps(long suiteId)
+    {
+        var suite = await _dbContext.BenchmarkSuites.FindAsync(suiteId);
+        if (suite == null) return NotFound();
+
+        var (samples, runCount) = await LoadUnverifiedClaimSamplesAsync(suiteId);
+
         var clusters = BenchmarkRubricGapDetector.Detect(samples);
         var kbGaps = BenchmarkRubricGapDetector.DetectKnowledgeBaseGaps(samples);
 
         return Ok(new BenchmarkRubricGapReportDto
         {
             SuiteId = suiteId,
-            RunCount = rows.Select(r => r.BenchmarkRunId).Distinct().Count(),
+            RunCount = runCount,
             ClaimCount = samples.Count,
             Clusters = clusters.Select(c => new BenchmarkRubricGapClusterDto
             {
@@ -1702,14 +1742,37 @@ public class AdminBenchmarkController : ControllerBase
         return Ok(new { cancelled });
     }
 
-    // --- Runs API ---
+    // --- Rubric Gap Author API ---
+    //
+    // The author *drafts*; a human accepts. Nothing in this section writes a rubric except
+    // AcceptRubricAddition, which applies one draft, as the operator submitted it, to one question.
+    // There is deliberately no accept-all endpoint: rung 1 of the benchmark-to-chat-transfer ladder
+    // requires human authorship of curated knowledge, and BenchmarkRubricGapDetector already
+    // documents that a gap is surfaced for a human and never applied automatically.
 
-    [HttpPost("runs")]
-    public async Task<IActionResult> StartRun([FromBody] StartBenchmarkRunRequest request)
+    [HttpPost("rubric-gap-author")]
+    public async Task<IActionResult> StartRubricGapAuthor([FromBody] StartRubricGapAuthorRequest request, CancellationToken ct)
     {
-        if (_runManager.CurrentRunId.HasValue)
+        var suite = await _dbContext.BenchmarkSuites
+            .Include(s => s.Questions)
+            .FirstOrDefaultAsync(s => s.Id == request.SuiteId, ct);
+        if (suite == null) return NotFound(new { error = "Suite not found." });
+
+        var conflict = CheckConflictingBenchmarkJob(suite.Id, "rubric gap authoring");
+        if (conflict != null) return conflict;
+
+        var authorConfig = await _dbContext.SystemAiApiConfigurations.FindAsync(new object[] { request.AuthorModelConfigurationId }, ct);
+        if (authorConfig == null || !authorConfig.IsEnabled)
         {
-            return Conflict("A benchmark run is already in progress.");
+            return BadRequest(new { error = "Author model configuration not found or disabled." });
+        }
+        if (string.IsNullOrWhiteSpace(authorConfig.EncryptedApiKey))
+        {
+            return BadRequest(new { error = "Author model configuration has no API key." });
+        }
+        if ((authorConfig.ModelRole & 4) != 4)
+        {
+            return BadRequest(new { error = "Author model configuration is not enabled for the benchmarking role." });
         }
 
         var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync();
@@ -1718,202 +1781,230 @@ public class AdminBenchmarkController : ControllerBase
             return StatusCode(StatusCodes.Status429TooManyRequests, denialReason);
         }
 
-        var suite = await _dbContext.BenchmarkSuites
-            .Include(s => s.Questions)
-            .FirstOrDefaultAsync(s => s.Id == request.SuiteId);
+        var (samples, _) = await LoadUnverifiedClaimSamplesAsync(suite.Id, ct);
+        var eligible = BenchmarkRubricGapAuthorService.BuildEligibleClusters(samples);
 
-        if (suite == null) return NotFound("Benchmark suite not found.");
-        if (suite.Questions.Count == 0) return BadRequest("Benchmark suite has no questions.");
-
-        int unassessedCount = suite.Questions.Count(q => q.AssessedDifficulty == null);
-        if (unassessedCount > 0)
+        if (request.ClusterKeys != null && request.ClusterKeys.Count > 0)
         {
-            return BadRequest(
-                $"Benchmark suite '{suite.Name}' has {unassessedCount} of {suite.Questions.Count} " +
-                "question(s) without an assessed difficulty. Assess question difficulty for the whole " +
-                "suite before running a benchmark.");
+            var wanted = new HashSet<string>(request.ClusterKeys, StringComparer.Ordinal);
+            eligible = eligible.Where(e => wanted.Contains(e.Evidence.ClusterKey)).ToList();
         }
 
-        var testedConfig = await _dbContext.SystemAiApiConfigurations.FindAsync(request.TestedModelConfigurationId);
-        var assessorConfig = await _dbContext.SystemAiApiConfigurations.FindAsync(request.AssessorModelConfigurationId);
-
-        if (testedConfig == null || string.IsNullOrWhiteSpace(testedConfig.EncryptedApiKey) || (testedConfig.ModelRole & 4) != 4)
-            return BadRequest("Tested model configuration is invalid, missing an API key, or not configured with the Benchmark role.");
-
-        if (assessorConfig == null || string.IsNullOrWhiteSpace(assessorConfig.EncryptedApiKey) || (assessorConfig.ModelRole & 4) != 4)
-            return BadRequest("Assessor model configuration is invalid, missing an API key, or not configured with the Benchmark role.");
-
-        // Optional: a second-opinion assessor re-grades severe verdicts. Held to the same bar as
-        // the assessor, and simply absent when the operator did not pick one.
-        SystemAiApiConfiguration? secondOpinionConfig = null;
-        if (request.SecondOpinionAssessorModelConfigurationId.HasValue)
+        if (eligible.Count == 0)
         {
-            secondOpinionConfig = await _dbContext.SystemAiApiConfigurations
-                .FindAsync(request.SecondOpinionAssessorModelConfigurationId.Value);
-
-            if (secondOpinionConfig == null || !secondOpinionConfig.IsEnabled ||
-                string.IsNullOrWhiteSpace(secondOpinionConfig.EncryptedApiKey) ||
-                (secondOpinionConfig.ModelRole & 4) != 4)
+            return BadRequest(new
             {
-                return BadRequest("Second opinion assessor configuration is invalid, disabled, missing an API key, or not configured with the Benchmark role.");
-            }
-        }
-
-        // Optional: a claim verifier checks unverified claims against source and wiki using read-only tools.
-        SystemAiApiConfiguration? claimVerifierConfig = null;
-        if (request.ClaimVerifierModelConfigurationId.HasValue)
-        {
-            claimVerifierConfig = await _dbContext.SystemAiApiConfigurations
-                .FindAsync(request.ClaimVerifierModelConfigurationId.Value);
-
-            if (claimVerifierConfig == null || !claimVerifierConfig.IsEnabled ||
-                string.IsNullOrWhiteSpace(claimVerifierConfig.EncryptedApiKey) ||
-                (claimVerifierConfig.ModelRole & 4) != 4)
-            {
-                return BadRequest("Claim verifier configuration is invalid, disabled, missing an API key, or not configured with the Benchmark role.");
-            }
-        }
-
-        // The mode that will actually apply, resolved here rather than in the service: only this
-        // method sees the start dialog's override, and only the service sees the profile. An
-        // explicit Off drops the second-opinion assessor from the run, because the enum defines
-        // the two as the same thing — the mode is inert without an assessor, and an assessor is
-        // inert under Off — and because the run column cannot otherwise distinguish "the operator
-        // chose Never" from "nothing was stamped yet", which is what the service's own fallback
-        // reads a zero as.
-        int? requestedMode = request.SecondOpinionMode;
-        if (requestedMode.HasValue && !Enum.IsDefined(typeof(BenchmarkSecondOpinionMode), requestedMode.Value))
-        {
-            return BadRequest("SecondOpinionMode must be Off (0), Flagged (1), FlaggedAndOutliers (2), or All (3).");
-        }
-
-        if (requestedMode == (int)BenchmarkSecondOpinionMode.Off)
-        {
-            secondOpinionConfig = null;
-        }
-
-        bool isSameProvider = _complianceGuard.IsSameProvider(testedConfig, assessorConfig);
-        if (isSameProvider && !request.AcknowledgeSameProvider)
-        {
-            return StatusCode(StatusCodes.Status409Conflict, new SameProviderWarningDto
-            {
-                SameProvider = true,
-                Provider = testedConfig.Provider,
-                TestedModelDisplayName = testedConfig.DisplayName,
-                AssessorModelDisplayName = assessorConfig.DisplayName,
-                Message = $"Both the model under test ({testedConfig.DisplayName}) and the assessor model ({assessorConfig.DisplayName}) belong to the same provider ({testedConfig.Provider}). Evaluation of a model by its own provider family may produce biased grading."
+                error = "No eligible rubric gap clusters. A cluster is eligible only when a claim verifier checked it and returned Supported with a citation."
             });
         }
 
-        string userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+        string startedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+        var cts = new CancellationTokenSource();
 
-        string? pricingSnapshotJson = null;
-        if (_modelPricingService != null)
+        var job = new BenchmarkRubricGapAuthorJob
         {
-            var candidatePricing = _modelPricingService.Resolve(testedConfig);
-            var assessorPricing = _modelPricingService.Resolve(assessorConfig);
-            var secondOpinionPricing = secondOpinionConfig != null ? _modelPricingService.Resolve(secondOpinionConfig) : null;
-            var claimVerifierPricing = claimVerifierConfig != null ? _modelPricingService.Resolve(claimVerifierConfig) : null;
-
-            // The rates written here are the *resolved* card — a scheduled change has already been folded
-            // into them by ResolveDefault. That is why scheduledChange is deliberately not serialised: the
-            // snapshot's job is to record what applied when the run started, so replaying it must never
-            // re-evaluate a date. longContext and serviceTierMultipliers are conditions of the request and
-            // the served tier, not of the calendar, so they do have to survive.
-            object? ToSnapshotObj(ModelPricing? p) => p == null ? null : new
-            {
-                inputPerMillion = p.InputPerMillion,
-                outputPerMillion = p.OutputPerMillion,
-                cachedInputPerMillion = p.CachedInputPerMillion,
-                cacheWritePerMillion = p.CacheWritePerMillion,
-                source = p.Source == ModelPricingSource.Custom ? "custom" : "catalog",
-                asOf = p.AsOf,
-                longContext = p.LongContext == null ? null : new
-                {
-                    thresholdInputTokens = p.LongContext.ThresholdInputTokens,
-                    inputPerMillion = p.LongContext.InputPerMillion,
-                    outputPerMillion = p.LongContext.OutputPerMillion,
-                    cachedInputPerMillion = p.LongContext.CachedInputPerMillion,
-                    cacheWritePerMillion = p.LongContext.CacheWritePerMillion
-                },
-                serviceTierMultipliers = p.ServiceTierMultipliers
-            };
-
-            var snapshot = new
-            {
-                capturedAtUtc = DateTime.UtcNow,
-                candidate = ToSnapshotObj(candidatePricing),
-                assessor = ToSnapshotObj(assessorPricing),
-                secondOpinion = ToSnapshotObj(secondOpinionPricing),
-                claimVerifier = ToSnapshotObj(claimVerifierPricing)
-            };
-            pricingSnapshotJson = JsonSerializer.Serialize(snapshot);
-        }
-
-        var run = new BenchmarkRun
-        {
-            BenchmarkSuiteId = suite.Id,
+            SuiteId = suite.Id,
             SuiteName = suite.Name,
-            TestedModelConfigurationId = testedConfig.Id,
-            TestedModelDisplayNameUsed = testedConfig.DisplayName,
-            TestedModelProviderUsed = testedConfig.Provider,
-            TestedModelIdUsed = testedConfig.ModelId,
-            TestedModelThinkingLevelUsed = testedConfig.ThinkingLevel,
-            TestedModelReasoningModeUsed = testedConfig.ReasoningMode,
-            TestedModelReasoningSummaryUsed = testedConfig.ReasoningSummary,
-            TestedModelServiceTierUsed = testedConfig.ServiceTier,
-            TestedModelMaxOutputTokensUsed = testedConfig.MaxOutputTokens,
-            TestedModelParallelExecutionModeUsed = testedConfig.ParallelExecutionMode,
-
-            AssessorModelConfigurationId = assessorConfig.Id,
-            AssessorModelDisplayNameUsed = assessorConfig.DisplayName,
-            AssessorModelProviderUsed = assessorConfig.Provider,
-            AssessorModelIdUsed = assessorConfig.ModelId,
-            AssessorModelThinkingLevelUsed = assessorConfig.ThinkingLevel,
-            AssessorModelReasoningModeUsed = assessorConfig.ReasoningMode,
-
-            SecondOpinionAssessorModelConfigurationId = secondOpinionConfig?.Id,
-            SecondOpinionAssessorModelDisplayNameUsed = secondOpinionConfig?.DisplayName,
-            SecondOpinionAssessorModelProviderUsed = secondOpinionConfig?.Provider,
-            SecondOpinionAssessorModelIdUsed = secondOpinionConfig?.ModelId,
-            SecondOpinionAssessorModelThinkingLevelUsed = secondOpinionConfig?.ThinkingLevel,
-            SecondOpinionAssessorModelReasoningModeUsed = secondOpinionConfig?.ReasoningMode,
-
-            ClaimVerifierModelConfigurationId = claimVerifierConfig?.Id,
-            ClaimVerifierDisplayNameUsed = claimVerifierConfig?.DisplayName,
-            ClaimVerifierProviderUsed = claimVerifierConfig?.Provider,
-            ClaimVerifierModelIdUsed = claimVerifierConfig?.ModelId,
-            ClaimVerifierThinkingLevelUsed = claimVerifierConfig?.ThinkingLevel,
-            ClaimVerifierReasoningModeUsed = claimVerifierConfig?.ReasoningMode,
-
-            // Left at Off (0) when the operator did not override, so the service stamps the
-            // scoring profile's own default at run start.
-            SecondOpinionModeUsed = secondOpinionConfig != null && requestedMode.HasValue
-                ? requestedMode.Value
-                : (int)BenchmarkSecondOpinionMode.Off,
-
-            ScoringProfileId = request.ScoringProfileId,
-            StartedByUserId = string.IsNullOrEmpty(userId) ? null : userId,
-            Status = BenchmarkRunStatus.Running,
-            StartedAtUtc = DateTime.UtcNow,
-            TotalQuestionCount = suite.Questions.Count,
-            PurposeStatementUsed = _complianceGuard.GetPurposeStatement(),
-            SameProviderAcknowledged = isSameProvider && request.AcknowledgeSameProvider,
-            PricingSnapshotJson = pricingSnapshotJson
+            AuthorConfigId = authorConfig.Id,
+            AuthorDisplayName = authorConfig.DisplayName,
+            AuthorProviderUsed = authorConfig.Provider,
+            AuthorModelIdUsed = authorConfig.ModelId,
+            Instructions = string.IsNullOrWhiteSpace(request.Instructions) ? null : request.Instructions.Trim(),
+            StartedByUserId = string.IsNullOrEmpty(startedByUserId) ? null : startedByUserId,
+            Cts = cts,
+            Drafts = eligible.Select(e =>
+            {
+                var question = suite.Questions.FirstOrDefault(q => q.Id == e.Cluster.QuestionId);
+                string text = question?.QuestionText ?? string.Empty;
+                return new BenchmarkRubricGapAuthorDraft
+                {
+                    ClusterKey = e.Evidence.ClusterKey,
+                    QuestionId = e.Cluster.QuestionId,
+                    QuestionOrderIndex = e.Cluster.QuestionOrderIndex,
+                    QuestionTextExcerpt = text.Length <= 160 ? text : text.Substring(0, 160) + "...",
+                    Claims = e.Cluster.Claims.ToList(),
+                    ModelFamilies = e.Cluster.ModelFamilies.ToList(),
+                    Occurrences = e.Cluster.Occurrences,
+                    ClusterVerdict = e.Cluster.Verdict,
+                    Status = BenchmarkRubricGapAuthorDraftStatus.Pending
+                };
+            }).ToList()
         };
 
-        _dbContext.BenchmarkRuns.Add(run);
-        await _dbContext.SaveChangesAsync();
-
-        var cts = new CancellationTokenSource();
-        if (!_runManager.TryStart(run.Id, cts, out _))
+        if (!_rubricGapAuthorJobManager.TryStart(job, out var existingJob))
         {
-            return Conflict("A benchmark run is already in progress.");
+            return StatusCode(StatusCodes.Status409Conflict, existingJob?.ToDto());
         }
 
-        _ = Task.Run(() => _benchmarkService.RunAsync(run.Id, cts.Token, request.VerboseMode ?? false));
+        var evidenceByKey = eligible.ToDictionary(e => e.Evidence.ClusterKey, e => e.Evidence, StringComparer.Ordinal);
 
-        return Accepted(new { runId = run.Id });
+        _ = Task.Run(async () =>
+        {
+            await _rubricGapAuthorService.RunRubricGapAuthorAsync(job.Id, evidenceByKey, cts.Token);
+        });
+
+        return Accepted(new { jobId = job.Id });
+    }
+
+    [HttpGet("rubric-gap-author/{jobId}")]
+    public IActionResult GetRubricGapAuthor(string jobId)
+    {
+        var job = _rubricGapAuthorJobManager.TryGet(jobId);
+        if (job == null) return NotFound();
+        return Ok(job.ToDto());
+    }
+
+    [HttpGet("rubric-gap-author/active")]
+    public IActionResult GetActiveRubricGapAuthor()
+    {
+        var current = _rubricGapAuthorJobManager.Current;
+        if (current == null || current.Status != BenchmarkRubricGapAuthorJobStatus.Running)
+        {
+            return NoContent();
+        }
+        return Ok(current.ToDto());
+    }
+
+    [HttpPost("rubric-gap-author/{jobId}/cancel")]
+    public IActionResult CancelRubricGapAuthor(string jobId)
+    {
+        var job = _rubricGapAuthorJobManager.TryGet(jobId);
+        if (job == null) return NotFound();
+        bool cancelled = _rubricGapAuthorJobManager.TryCancel(jobId);
+        return Ok(new { cancelled });
+    }
+
+    /// <summary>
+    /// Applies <b>one</b> operator-approved rubric addition to one question and bumps that
+    /// question's item revision.
+    ///
+    /// The text written is <see cref="AcceptRubricAdditionRequest.AcceptedText"/> -- whatever the
+    /// human submitted -- never the model's draft. The draft, the drafting model, the citation and a
+    /// verbatim-or-edited flag are stored alongside it, because an authorship claim needs a stored
+    /// fact rather than an assumption about who typed what.
+    /// </summary>
+    [HttpPost("questions/{id}/rubric-additions/accept")]
+    public async Task<IActionResult> AcceptRubricAddition(long id, [FromBody] AcceptRubricAdditionRequest request, CancellationToken ct)
+    {
+        if (request == null || string.IsNullOrWhiteSpace(request.AcceptedText))
+        {
+            return BadRequest(new { error = "The accepted rubric text is required." });
+        }
+
+        var question = await _dbContext.BenchmarkQuestions.FindAsync(new object[] { id }, ct);
+        if (question == null) return NotFound();
+
+        BenchmarkRubricGapAuthorDraft? draft = null;
+        BenchmarkRubricGapAuthorJob? job = null;
+        if (!string.IsNullOrWhiteSpace(request.JobId) && !string.IsNullOrWhiteSpace(request.ClusterKey))
+        {
+            job = _rubricGapAuthorJobManager.TryGet(request.JobId!);
+            draft = job?.TryGetDraft(request.ClusterKey!);
+            if (draft != null && draft.QuestionId != question.Id)
+            {
+                return BadRequest(new { error = "That draft belongs to a different question." });
+            }
+        }
+
+        string acceptedText = request.AcceptedText.Trim();
+        string draftText = draft?.ProposedText?.Trim() ?? string.Empty;
+
+        string existing = question.ExpectedPoints ?? string.Empty;
+        question.ExpectedPoints = string.IsNullOrWhiteSpace(existing)
+            ? acceptedText
+            : existing.TrimEnd() + Environment.NewLine + acceptedText;
+
+        // A rubric edit is a content change, so the same clear-and-bump the question editor performs
+        // applies here: an edited question is a different item and its statistics must not straddle
+        // the rewrite.
+        BenchmarkQuestionAssessment.Clear(question);
+        question.ModifiedAtUtc = DateTime.UtcNow;
+
+        var suite = await _dbContext.BenchmarkSuites.FindAsync(new object[] { question.BenchmarkSuiteId }, ct);
+        if (suite != null) suite.ModifiedAtUtc = DateTime.UtcNow;
+
+        string acceptedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+
+        var acceptance = new BenchmarkRubricAdditionAcceptance
+        {
+            BenchmarkQuestionId = question.Id,
+            ItemRevisionAfter = question.ItemRevision,
+            AcceptedText = acceptedText,
+            DraftText = draftText,
+            AcceptedVerbatim = draftText.Length > 0 && string.Equals(draftText, acceptedText, StringComparison.Ordinal),
+            Citation = draft?.Citation,
+            ClusterClaim = draft?.Claims.FirstOrDefault(),
+            AuthorModelConfigurationId = job?.AuthorConfigId,
+            AuthorProviderUsed = job?.AuthorProviderUsed,
+            AuthorModelIdUsed = job?.AuthorModelIdUsed,
+            AuthorModelDisplayName = job?.AuthorDisplayName,
+            AcceptedByUserId = string.IsNullOrEmpty(acceptedByUserId) ? null : acceptedByUserId,
+            AcceptedAtUtc = DateTime.UtcNow
+        };
+        _dbContext.BenchmarkRubricAdditionAcceptances.Add(acceptance);
+
+        await _dbContext.SaveChangesAsync(ct);
+
+        return Ok(new RubricAdditionAcceptanceDto
+        {
+            Id = acceptance.Id,
+            QuestionId = question.Id,
+            QuestionOrderIndex = question.OrderIndex,
+            ItemRevisionAfter = acceptance.ItemRevisionAfter,
+            AcceptedVerbatim = acceptance.AcceptedVerbatim,
+            Citation = acceptance.Citation,
+            AuthorModelDisplayName = acceptance.AuthorModelDisplayName,
+            AcceptedAtUtc = acceptance.AcceptedAtUtc,
+            ExpectedPoints = question.ExpectedPoints
+        });
+    }
+
+    // --- Runs API ---
+
+    /// <summary>
+    /// Starts one benchmark run, or - when <c>RunCount</c> is greater than 1 - a series of them.
+    ///
+    /// <para>Both paths go through <see cref="BenchmarkRunLauncher.CreateAndLaunchRunAsync"/>, which
+    /// owns every validation this endpoint used to perform inline. That extraction is the point: a
+    /// series must admit its members under exactly the rules a single run is admitted under, and two
+    /// copies of those rules would drift.</para>
+    ///
+    /// <para><c>RunCount</c> of 1 is the pre-multi-run behaviour exactly: no series row, no
+    /// auto-created group, the same <c>{ runId }</c> response body.</para>
+    /// </summary>
+    [HttpPost("runs")]
+    public async Task<IActionResult> StartRun([FromBody] StartBenchmarkRunRequest request)
+    {
+        string userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+
+        if (request.RunCount > 1)
+        {
+            var seriesResult = await _seriesOrchestrator.StartSeriesAsync(request, userId);
+            return SeriesResultToActionResult(seriesResult);
+        }
+
+        var result = await _runLauncher.CreateAndLaunchRunAsync(request, userId);
+
+        switch (result.Outcome)
+        {
+            case BenchmarkRunLaunchOutcome.Started:
+                return Accepted(new { runId = result.RunId!.Value });
+
+            case BenchmarkRunLaunchOutcome.Conflict:
+                return Conflict(result.Error);
+
+            case BenchmarkRunLaunchOutcome.NotFound:
+                return NotFound(result.Error);
+
+            case BenchmarkRunLaunchOutcome.SpendDenied:
+                return StatusCode(StatusCodes.Status429TooManyRequests, result.Error);
+
+            case BenchmarkRunLaunchOutcome.SameProviderNotAcknowledged:
+                return StatusCode(StatusCodes.Status409Conflict, result.SameProviderWarning);
+
+            default:
+                return BadRequest(result.Error);
+        }
     }
 
     /// <summary>
@@ -2060,6 +2151,19 @@ public class AdminBenchmarkController : ControllerBase
             }
         }
 
+        // H4. The verifier's own yield: what its dollars actually bought, and what the deterministic
+        // token budget (Benchmark:ClaimVerificationInputTokenBudget) stopped it from checking.
+        int claimsCheckedCount = run.ClaimsSupportedCount + run.ClaimsRefutedCount + run.ClaimsIndeterminateCount;
+        int claimsNotCheckedAnswerCount = run.Answers.Count(a =>
+            a.ClaimVerificationError != null &&
+            a.ClaimVerificationError.StartsWith(BenchmarkService.ClaimVerificationNotCheckedPrefix, StringComparison.Ordinal));
+        decimal? claimVerificationCostPerClaimUsd = (verifierCost.HasValue && claimsCheckedCount > 0)
+            ? verifierCost.Value / claimsCheckedCount
+            : null;
+        double? claimVerificationCostSharePercent = (verifierCost.HasValue && totalEstimatedCost.HasValue && totalEstimatedCost.Value > 0)
+            ? (double)(verifierCost.Value / totalEstimatedCost.Value) * 100.0
+            : null;
+
         // H3: one classifier, on the server. The report already reads these figures through
         // BenchmarkChatTransfer; projecting them here is what lets the diagnostics stop keeping a second,
         // hard-coded copy of the tool-name lists that drifted every time a tool was added.
@@ -2141,13 +2245,19 @@ public class AdminBenchmarkController : ControllerBase
             UnevidencedDeductionAnswerCount = run.UnevidencedDeductionAnswerCount,
             OmissionAsAccuracyAnswerCount = run.OmissionAsAccuracyAnswerCount,
             RefutedClaimAnswerCount = run.RefutedClaimAnswerCount,
+            CompletenessOutOfScopeCount = run.Answers.Count(a => a.CompletenessOutOfScope),
             ClaimVerifiedAnswerCount = run.ClaimVerifiedAnswerCount,
             ClaimsSupportedCount = run.ClaimsSupportedCount,
             ClaimsRefutedCount = run.ClaimsRefutedCount,
             ClaimsIndeterminateCount = run.ClaimsIndeterminateCount,
+            ClaimsCheckedCount = claimsCheckedCount,
+            ClaimsNotCheckedAnswerCount = claimsNotCheckedAnswerCount,
+            ClaimVerificationCostPerClaimUsd = claimVerificationCostPerClaimUsd,
+            ClaimVerificationCostSharePercent = claimVerificationCostSharePercent,
             ReassessedAnswerCount = run.ReassessedAnswerCount,
             SecondOpinionModeUsed = run.SecondOpinionModeUsed,
             SecondOpinionBlindUsed = run.SecondOpinionBlindUsed,
+            SecondOpinionSampleCountUsed = run.SecondOpinionSampleCountUsed,
             SecondOpinionGradedAnswerCount = run.SecondOpinionGradedAnswerCount,
             SecondOpinionMeanAbsDelta = run.SecondOpinionMeanAbsDelta,
             SecondOpinionMeanSignedDelta = run.SecondOpinionMeanSignedDelta,
@@ -2246,6 +2356,9 @@ public class AdminBenchmarkController : ControllerBase
                 OutputTokens = a.OutputTokens,
                 CacheReadInputTokens = a.CacheReadInputTokens,
                 CacheCreationInputTokens = a.CacheCreationInputTokens,
+                InputTokenShare = (a.InputTokens.HasValue && totalInputTokens > 0)
+                    ? (double)a.InputTokens.Value / totalInputTokens
+                    : null,
                 ModelCallCount = a.ModelCallCount,
                 ToolCallCount = a.ToolCallCount,
                 ToolBudgetExhausted = a.ToolBudgetExhausted,
@@ -3007,5 +3120,810 @@ public class AdminBenchmarkController : ControllerBase
         var invalid = Path.GetInvalidFileNameChars();
         var clean = new string(name.Where(c => !invalid.Contains(c)).ToArray());
         return string.IsNullOrWhiteSpace(clean) ? "benchmark" : clean.Replace(' ', '_');
+    }
+
+    // =======================================================================================
+    // Multi-run: limits, series, groups and group analysis
+    // =======================================================================================
+
+    /// <summary>
+    /// The run caps and the live rolling-window counts behind them.
+    ///
+    /// <para>Exists because the caps were not exposed at any endpoint, so the start dialog's
+    /// run-count field had nothing to bound itself by. The arithmetic is
+    /// <see cref="BenchmarkComplianceGuard"/>'s alone — this action must never re-derive the window,
+    /// or the client would disagree with the guard that actually refuses the run.</para>
+    /// </summary>
+    [HttpGet("runs/limits")]
+    public async Task<IActionResult> GetRunLimits()
+    {
+        var limits = await _complianceGuard.GetLimitsAsync();
+
+        return Ok(new BenchmarkRunLimitsDto
+        {
+            MaxRunsPerHour = limits.MaxRunsPerHour,
+            MaxRunsPerDay = limits.MaxRunsPerDay,
+            RunsInLastHour = limits.RunsInLastHour,
+            RunsInLast24Hours = limits.RunsInLast24Hours,
+            RemainingDailyHeadroom = limits.RemainingDailyHeadroom,
+
+            // The ceiling on a series is the daily cap itself, not the current headroom: a series
+            // launched from an empty window of exactly MaxRunsPerDay members passes, because the
+            // guard tests the count *before* creating each run and the last member sees Max - 1.
+            MaxRunCountPerSeries = limits.MaxRunsPerDay
+        });
+    }
+
+    [HttpPost("runs/series")]
+    public async Task<IActionResult> StartRunSeries([FromBody] StartBenchmarkRunRequest request)
+    {
+        string userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+        var result = await _seriesOrchestrator.StartSeriesAsync(request, userId);
+        return SeriesResultToActionResult(result);
+    }
+
+    [HttpGet("runs/series/{id}")]
+    public async Task<IActionResult> GetRunSeries(long id)
+    {
+        var dto = await BuildSeriesDtoAsync(id);
+        return dto == null ? NotFound() : Ok(dto);
+    }
+
+    /// <summary>
+    /// The series this process is driving, or the most recent one that is still resumable. Returns
+    /// <c>204 No Content</c> when there is nothing to show, so the client can poll it cheaply.
+    /// </summary>
+    [HttpGet("runs/series/active")]
+    public async Task<IActionResult> GetActiveRunSeries()
+    {
+        long? id = _seriesOrchestrator.ActiveSeriesId;
+
+        if (id == null)
+        {
+            id = await _dbContext.BenchmarkRunSeries
+                .Where(s => s.Status == BenchmarkRunSeriesStatus.Running
+                            || s.Status == BenchmarkRunSeriesStatus.WaitingForCap
+                            || s.Status == BenchmarkRunSeriesStatus.Pending
+                            || s.Status == BenchmarkRunSeriesStatus.Stopped)
+                .OrderByDescending(s => s.StartedAtUtc)
+                .Select(s => (long?)s.Id)
+                .FirstOrDefaultAsync();
+        }
+
+        if (id == null) return NoContent();
+
+        var dto = await BuildSeriesDtoAsync(id.Value);
+        return dto == null ? NoContent() : Ok(dto);
+    }
+
+    [HttpPost("runs/series/{id}/cancel")]
+    public async Task<IActionResult> CancelRunSeries(long id)
+    {
+        bool cancelled = await _seriesOrchestrator.CancelSeriesAsync(id);
+        return cancelled ? Ok() : NotFound();
+    }
+
+    [HttpPost("runs/series/{id}/resume")]
+    public async Task<IActionResult> ResumeRunSeries(long id, [FromBody] ResumeBenchmarkRunSeriesRequest? request)
+    {
+        var result = await _seriesOrchestrator.ResumeSeriesAsync(
+            id, request?.AcknowledgeInstrumentChange ?? false);
+
+        return SeriesResultToActionResult(result);
+    }
+
+    /// <summary>
+    /// One mapping from the orchestrator's outcome vocabulary to HTTP, so start and resume cannot
+    /// answer differently for the same condition.
+    /// </summary>
+    private IActionResult SeriesResultToActionResult(BenchmarkSeriesStartResult result)
+    {
+        switch (result.Outcome)
+        {
+            case BenchmarkSeriesStartOutcome.Started:
+                return Accepted(new { seriesId = result.SeriesId!.Value });
+
+            case BenchmarkSeriesStartOutcome.Conflict:
+                return Conflict(result.Error);
+
+            case BenchmarkSeriesStartOutcome.NotFound:
+                return NotFound(result.Error);
+
+            case BenchmarkSeriesStartOutcome.SpendDenied:
+                return StatusCode(StatusCodes.Status429TooManyRequests, result.Error);
+
+            case BenchmarkSeriesStartOutcome.SameProviderNotAcknowledged:
+                return StatusCode(StatusCodes.Status409Conflict, result.SameProviderWarning);
+
+            case BenchmarkSeriesStartOutcome.InstrumentChanged:
+                // 409, not 400: the request is well-formed and the operator may legitimately confirm
+                // through it with acknowledgeInstrumentChange, exactly as with the same-provider warning.
+                return StatusCode(StatusCodes.Status409Conflict, new
+                {
+                    instrumentChanged = true,
+                    seriesId = result.SeriesId,
+                    changedHashes = result.ChangedInstrumentHashes,
+                    message = result.Error
+                });
+
+            default:
+                return BadRequest(result.Error);
+        }
+    }
+
+    private async Task<BenchmarkRunSeriesDto?> BuildSeriesDtoAsync(long id)
+    {
+        var series = await _dbContext.BenchmarkRunSeries.FirstOrDefaultAsync(s => s.Id == id);
+        if (series == null) return null;
+
+        var members = await _dbContext.BenchmarkRuns
+            .Where(r => r.RunSeriesId == id)
+            .OrderBy(r => r.RunSeriesIndex)
+            .ToListAsync();
+
+        var memberIds = members.Select(m => m.Id).ToList();
+        var answeredCounts = await _dbContext.BenchmarkRunAnswers
+            .Where(a => memberIds.Contains(a.BenchmarkRunId))
+            .GroupBy(a => a.BenchmarkRunId)
+            .Select(g => new { RunId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.RunId, x => x.Count);
+
+        // The served tier, not the requested one, is what costing needs — a priority request served
+        // as default must be billed as default. Fetched for every member in one query rather than
+        // loading each member's answers, because this endpoint is polled while a series runs.
+        var servedTiers = (await _dbContext.BenchmarkRunAnswers
+                .Where(a => memberIds.Contains(a.BenchmarkRunId) && a.ActualServiceTierUsed != null)
+                .Select(a => new { a.BenchmarkRunId, a.ActualServiceTierUsed })
+                .ToListAsync())
+            .GroupBy(a => a.BenchmarkRunId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.GroupBy(x => x.ActualServiceTierUsed!, StringComparer.OrdinalIgnoreCase)
+                      .OrderByDescending(x => x.Count())
+                      .Select(x => x.Key)
+                      .FirstOrDefault());
+
+        var dto = new BenchmarkRunSeriesDto
+        {
+            Id = series.Id,
+            BenchmarkSuiteId = series.BenchmarkSuiteId,
+            SuiteName = series.SuiteName,
+            RequestedRunCount = series.RequestedRunCount,
+            CompletedRunCount = series.CompletedRunCount,
+            FailedRunCount = series.FailedRunCount,
+            Status = series.Status.ToString(),
+            StopReason = series.StopReason?.ToString(),
+            StopReasonText = DescribeStopReason(series.StopReason),
+            AllowCapWait = series.AllowCapWait,
+
+            // Cancelled, Completed and Failed are never resumable; the first by the operator's own
+            // decision, the others because there is nothing left to launch.
+            Resumable = (series.Status == BenchmarkRunSeriesStatus.Stopped
+                         || series.Status == BenchmarkRunSeriesStatus.CompletedWithErrors)
+                        && series.CompletedRunCount < series.RequestedRunCount,
+
+            StartedAtUtc = series.StartedAtUtc,
+            CompletedAtUtc = series.CompletedAtUtc,
+            ErrorMessage = series.ErrorMessage,
+
+            FirstMemberCandidateSystemPromptSha256 = series.FirstMemberCandidateSystemPromptSha256,
+            FirstMemberToolGuidesSha256 = series.FirstMemberToolGuidesSha256,
+            FirstMemberKnowledgeBaseHeadSha = series.FirstMemberKnowledgeBaseHeadSha,
+            InstrumentChangeAcknowledged = series.InstrumentChangeAcknowledged,
+            AutoCreatedGroupId = series.AutoCreatedGroupId
+        };
+
+        // The current fingerprint, so a refused resume is self-explaining in the diagnostics capture
+        // rather than requiring the operator to work out what moved.
+        var request = BenchmarkSeriesOrchestrator.DeserializeRequest(series);
+        if (request != null)
+        {
+            var current = await _benchmarkService.ComputeCurrentInstrumentFingerprintAsync(
+                _dbContext, request.SuiteId, request.TestedModelConfigurationId, request.VerboseMode ?? false);
+
+            if (current != null)
+            {
+                dto.CurrentCandidateSystemPromptSha256 = current.Value.CandidateSystemPromptSha256;
+                dto.CurrentToolGuidesSha256 = current.Value.ToolGuidesSha256;
+                dto.CurrentKnowledgeBaseHeadSha = current.Value.KnowledgeBaseHeadSha;
+
+                void Compare(string name, string? recorded, string? now)
+                {
+                    if (string.IsNullOrEmpty(recorded)) return;
+                    if (!string.Equals(recorded, now, StringComparison.OrdinalIgnoreCase))
+                    {
+                        dto.ChangedInstrumentHashes.Add(name);
+                    }
+                }
+
+                Compare("CandidateSystemPromptSha256", series.FirstMemberCandidateSystemPromptSha256, current.Value.CandidateSystemPromptSha256);
+                Compare("ToolGuidesSha256", series.FirstMemberToolGuidesSha256, current.Value.ToolGuidesSha256);
+                Compare("KnowledgeBaseHeadSha", series.FirstMemberKnowledgeBaseHeadSha, current.Value.KnowledgeBaseHeadSha);
+            }
+        }
+
+        if (series.AutoCreatedGroupId.HasValue)
+        {
+            var tier = await _dbContext.BenchmarkRunGroups
+                .Where(g => g.Id == series.AutoCreatedGroupId.Value)
+                .Select(g => (BenchmarkRunGroupTier?)g.Tier)
+                .FirstOrDefaultAsync();
+            dto.AutoCreatedGroupTier = tier?.ToString();
+        }
+
+        foreach (var run in members)
+        {
+            dto.Members.Add(new BenchmarkRunSeriesMemberDto
+            {
+                Index = run.RunSeriesIndex ?? 0,
+                RunId = run.Id,
+                Status = run.Status.ToString(),
+                StartedAtUtc = run.StartedAtUtc,
+                CompletedAtUtc = run.CompletedAtUtc,
+                QualityIndex = run.QualityIndex,
+                SpeedIndex = run.SpeedIndex,
+                EstimatedCost = (double?)await EstimateRunCostAsync(
+                    run, servedTiers.TryGetValue(run.Id, out var tier) ? tier : null),
+                DurationMs = run.CompletedAtUtc.HasValue
+                    ? (long)(run.CompletedAtUtc.Value - run.StartedAtUtc).TotalMilliseconds
+                    : null,
+                AnsweredQuestionCount = answeredCounts.TryGetValue(run.Id, out int answered) ? answered : 0,
+                TotalQuestionCount = run.TotalQuestionCount,
+                ShortFingerprint = ShortFingerprint(run.CandidateSystemPromptSha256)
+            });
+        }
+
+        return dto;
+    }
+
+    /// <summary>
+    /// A run's total estimated cost across all three roles, or null when pricing is unavailable for
+    /// any role that actually spent tokens. Null means "not known", never "free" — a partial figure
+    /// presented as a total is worse than no figure.
+    /// </summary>
+    private async Task<decimal?> EstimateRunCostAsync(BenchmarkRun run, string? servedServiceTier)
+    {
+        if (_modelPricingService == null) return null;
+
+        var pricing = await _modelPricingService.ResolveForRunAsync(run);
+        if (pricing?.Candidate == null) return null;
+
+        bool hasAssessor = run.TotalAssessmentInputTokens > 0 || run.TotalAssessmentOutputTokens > 0;
+        bool hasVerifier = run.TotalClaimVerificationInputTokens > 0 || run.TotalClaimVerificationOutputTokens > 0;
+
+        if (hasAssessor && pricing.Assessor == null) return null;
+        if (hasVerifier && pricing.ClaimVerifier == null) return null;
+
+        decimal candidateCost = ModelPricingService.ComputeCostFromTotals(
+            pricing.Candidate,
+            run.TotalInputTokens, run.TotalOutputTokens,
+            run.TotalCacheReadTokens, run.TotalCacheCreationTokens,
+            run.TotalLongContextInputTokens, run.TotalLongContextOutputTokens,
+            run.TotalLongContextCacheReadTokens, run.TotalLongContextCacheCreationTokens,
+            actualServiceTier: servedServiceTier,
+            requestedServiceTier: run.TestedModelServiceTierUsed);
+
+        decimal assessorCost = hasAssessor
+            ? ModelPricingService.ComputeCost(pricing.Assessor!, run.TotalAssessmentInputTokens, run.TotalAssessmentOutputTokens)
+            : 0m;
+
+        decimal verifierCost = hasVerifier
+            ? ModelPricingService.ComputeCost(pricing.ClaimVerifier!, run.TotalClaimVerificationInputTokens, run.TotalClaimVerificationOutputTokens)
+            : 0m;
+
+        return candidateCost + assessorCost + verifierCost;
+    }
+
+    private static string? DescribeStopReason(BenchmarkRunSeriesStopReason? reason) => reason switch
+    {
+        BenchmarkRunSeriesStopReason.MemberFailed => "A member run failed",
+        BenchmarkRunSeriesStopReason.RunCapReached => "Run cap reached",
+        BenchmarkRunSeriesStopReason.SpendDenied => "Spend guard denied the next run",
+        _ => null
+    };
+
+    private static string? ShortFingerprint(string? sha) =>
+        string.IsNullOrEmpty(sha) ? null : sha.Length <= 8 ? sha : sha.Substring(0, 8);
+
+    // --- Groups -----------------------------------------------------------------------------
+
+    [HttpGet("runs/groups")]
+    public async Task<IActionResult> GetRunGroups()
+    {
+        var groups = await _dbContext.BenchmarkRunGroups
+            .Include(g => g.Members)
+            .Include(g => g.BenchmarkSuite)
+            .OrderByDescending(g => g.CreatedAtUtc)
+            .ToListAsync();
+
+        var dtos = new List<BenchmarkRunGroupDto>(groups.Count);
+        foreach (var group in groups)
+        {
+            dtos.Add(await BuildGroupDtoAsync(group, includeMembers: false));
+        }
+
+        return Ok(dtos);
+    }
+
+    [HttpGet("runs/groups/{id}")]
+    public async Task<IActionResult> GetRunGroup(long id)
+    {
+        var group = await _dbContext.BenchmarkRunGroups
+            .Include(g => g.Members)
+            .Include(g => g.BenchmarkSuite)
+            .FirstOrDefaultAsync(g => g.Id == id);
+
+        if (group == null) return NotFound();
+
+        return Ok(await BuildGroupDtoAsync(group, includeMembers: true));
+    }
+
+    /// <summary>
+    /// Creates an analysis group, resolving its tier from the runs themselves.
+    ///
+    /// <para>Refuses to persist a set below Tier B and names the differing keys, and permits Tier C
+    /// only when the caller sets <c>crossCondition</c> explicitly. Those two rules are what keep a
+    /// pooled index from ever being computed over runs that were never comparable — the worst
+    /// failure this feature can have — and they live here rather than in the UI because the UI is
+    /// not the thing that must not be bypassed.</para>
+    /// </summary>
+    [HttpPost("runs/groups")]
+    public async Task<IActionResult> CreateRunGroup([FromBody] CreateBenchmarkRunGroupRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Name))
+        {
+            return BadRequest("A group needs a name.");
+        }
+
+        var (runs, error) = await LoadGroupCandidateRunsAsync(request.RunIds);
+        if (error != null) return BadRequest(error);
+
+        var comparability = BenchmarkComparabilityKey.Resolve(runs);
+        var refusal = RefuseGroupTier(comparability, request.CrossCondition);
+        if (refusal != null) return refusal;
+
+        string userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+
+        var group = new BenchmarkRunGroup
+        {
+            Name = request.Name.Trim(),
+            BenchmarkSuiteId = runs[0].BenchmarkSuiteId,
+            Tier = (BenchmarkRunGroupTier)(int)comparability.Tier,
+            ComparabilityKeyHash = comparability.ComparabilityKeyHash,
+            TierReasonsJson = BenchmarkGroupAnalysisService.SerialiseTierReasons(comparability),
+            CrossCondition = request.CrossCondition,
+            Notes = request.Notes,
+            CreatedByUserId = string.IsNullOrEmpty(userId) ? null : userId,
+            CreatedAtUtc = DateTime.UtcNow,
+            ModifiedAtUtc = DateTime.UtcNow
+        };
+
+        _dbContext.BenchmarkRunGroups.Add(group);
+        await _dbContext.SaveChangesAsync();
+
+        foreach (var run in runs)
+        {
+            _dbContext.BenchmarkRunGroupMembers.Add(new BenchmarkRunGroupMember
+            {
+                BenchmarkRunGroupId = group.Id,
+                BenchmarkRunId = run.Id,
+                AddedAtUtc = DateTime.UtcNow
+            });
+        }
+
+        await _dbContext.SaveChangesAsync();
+
+        await _dbContext.Entry(group).Collection(g => g.Members).LoadAsync();
+
+        return Ok(new BenchmarkRunGroupTierPreviewDto
+        {
+            Accepted = true,
+            Comparability = ToComparabilityDto(comparability),
+            Group = await BuildGroupDtoAsync(group, includeMembers: true)
+        });
+    }
+
+    [HttpPut("runs/groups/{id}")]
+    public async Task<IActionResult> UpdateRunGroup(long id, [FromBody] UpdateBenchmarkRunGroupRequest request)
+    {
+        var group = await _dbContext.BenchmarkRunGroups
+            .Include(g => g.Members)
+            .FirstOrDefaultAsync(g => g.Id == id);
+
+        if (group == null) return NotFound();
+
+        if (request.Name != null)
+        {
+            if (string.IsNullOrWhiteSpace(request.Name)) return BadRequest("A group needs a name.");
+            group.Name = request.Name.Trim();
+        }
+
+        if (request.Notes != null) group.Notes = request.Notes;
+
+        bool crossCondition = request.CrossCondition ?? group.CrossCondition;
+
+        if (request.RunIds != null)
+        {
+            var (runs, error) = await LoadGroupCandidateRunsAsync(request.RunIds);
+            if (error != null) return BadRequest(error);
+
+            var comparability = BenchmarkComparabilityKey.Resolve(runs);
+            var refusal = RefuseGroupTier(comparability, crossCondition);
+            if (refusal != null) return refusal;
+
+            _dbContext.BenchmarkRunGroupMembers.RemoveRange(group.Members);
+            await _dbContext.SaveChangesAsync();
+
+            foreach (var run in runs)
+            {
+                _dbContext.BenchmarkRunGroupMembers.Add(new BenchmarkRunGroupMember
+                {
+                    BenchmarkRunGroupId = group.Id,
+                    BenchmarkRunId = run.Id,
+                    AddedAtUtc = DateTime.UtcNow
+                });
+            }
+
+            group.BenchmarkSuiteId = runs[0].BenchmarkSuiteId;
+            group.Tier = (BenchmarkRunGroupTier)(int)comparability.Tier;
+            group.ComparabilityKeyHash = comparability.ComparabilityKeyHash;
+            group.TierReasonsJson = BenchmarkGroupAnalysisService.SerialiseTierReasons(comparability);
+        }
+
+        group.CrossCondition = crossCondition;
+        group.ModifiedAtUtc = DateTime.UtcNow;
+        await _dbContext.SaveChangesAsync();
+
+        await _dbContext.Entry(group).Collection(g => g.Members).LoadAsync();
+
+        return Ok(new BenchmarkRunGroupTierPreviewDto
+        {
+            Accepted = true,
+            Group = await BuildGroupDtoAsync(group, includeMembers: true)
+        });
+    }
+
+    [HttpDelete("runs/groups/{id}")]
+    public async Task<IActionResult> DeleteRunGroup(long id)
+    {
+        var group = await _dbContext.BenchmarkRunGroups.FirstOrDefaultAsync(g => g.Id == id);
+        if (group == null) return NotFound();
+
+        // Members and analyses cascade; the runs themselves are untouched, which is the whole point
+        // of the membership being a separate row.
+        _dbContext.BenchmarkRunGroups.Remove(group);
+        await _dbContext.SaveChangesAsync();
+        return Ok();
+    }
+
+    /// <summary>
+    /// The tier a set of runs would resolve to, without creating anything. This is what the group
+    /// builder shows while the operator is still selecting runs.
+    /// </summary>
+    [HttpPost("runs/groups/preview")]
+    public async Task<IActionResult> PreviewRunGroupTier([FromBody] CreateBenchmarkRunGroupRequest request)
+    {
+        var (runs, error) = await LoadGroupCandidateRunsAsync(request.RunIds);
+        if (error != null)
+        {
+            return Ok(new BenchmarkRunGroupTierPreviewDto { Accepted = false, Error = error });
+        }
+
+        var comparability = BenchmarkComparabilityKey.Resolve(runs);
+        var refusal = RefuseGroupTier(comparability, request.CrossCondition);
+
+        return Ok(new BenchmarkRunGroupTierPreviewDto
+        {
+            Accepted = refusal == null,
+            Error = refusal == null ? null : GroupTierRefusalMessage(comparability, request.CrossCondition),
+            Comparability = ToComparabilityDto(comparability)
+        });
+    }
+
+    private async Task<(List<BenchmarkRun> Runs, string? Error)> LoadGroupCandidateRunsAsync(List<long> runIds)
+    {
+        var distinct = (runIds ?? new List<long>()).Distinct().ToList();
+
+        if (distinct.Count < 2)
+        {
+            return (new List<BenchmarkRun>(), "A group needs at least two runs.");
+        }
+
+        var runs = await _dbContext.BenchmarkRuns
+            .Where(r => distinct.Contains(r.Id))
+            .OrderBy(r => r.StartedAtUtc)
+            .ToListAsync();
+
+        if (runs.Count != distinct.Count)
+        {
+            var missing = distinct.Except(runs.Select(r => r.Id)).ToList();
+            return (runs, $"Run(s) not found: {string.Join(", ", missing)}.");
+        }
+
+        return (runs, null);
+    }
+
+    /// <summary>
+    /// Null when the set may be persisted at the tier it resolved to; otherwise the refusal, with
+    /// the differing keys named. A "no" with no reason is unusable in the group builder.
+    /// </summary>
+    private IActionResult? RefuseGroupTier(BenchmarkComparabilityResult comparability, bool crossCondition)
+    {
+        if (comparability.Tier == BenchmarkComparabilityTier.NotComparable
+            || (comparability.Tier == BenchmarkComparabilityTier.CrossCondition && !crossCondition))
+        {
+            return BadRequest(new BenchmarkRunGroupTierPreviewDto
+            {
+                Accepted = false,
+                Error = GroupTierRefusalMessage(comparability, crossCondition),
+                Comparability = ToComparabilityDto(comparability)
+            });
+        }
+
+        return null;
+    }
+
+    private static string GroupTierRefusalMessage(BenchmarkComparabilityResult comparability, bool crossCondition)
+    {
+        string differing = comparability.Differences.Count == 0
+            ? "no key was identified as differing"
+            : string.Join("; ", comparability.Differences.Select(d => d.Describe()));
+
+        if (comparability.Tier == BenchmarkComparabilityTier.CrossCondition && !crossCondition)
+        {
+            return "These runs differ on exactly one instrument key, which makes them a cross-condition " +
+                   "comparison (Tier C) rather than a replicate set. A Tier C group is never pooled into one " +
+                   "index. Set crossCondition to create it as a comparison. Differing: " + differing + ".";
+        }
+
+        return "These runs are not comparable, so no aggregate over them would mean anything. " +
+               "Differing: " + differing + ".";
+    }
+
+    private static BenchmarkComparabilityResultDto ToComparabilityDto(BenchmarkComparabilityResult r) => new()
+    {
+        Tier = r.Tier.ToString(),
+        TierLabel = DescribeTier(r.Tier),
+        PoolingPermitted = r.PoolingPermitted,
+        SpeedAggregatesDegraded = r.SpeedAggregatesDegraded,
+        CostAggregatesDegraded = r.CostAggregatesDegraded,
+        Explanation = r.Explanation,
+        ComparabilityKeyHash = r.ComparabilityKeyHash,
+        MatchedKeys = r.MatchedKeys.ToList(),
+        RunIds = r.RunIds.ToList(),
+        Differences = r.Differences.Select(d => new BenchmarkComparabilityDifferenceDto
+        {
+            Name = d.Name,
+            Kind = d.Kind.ToString(),
+            Description = d.Describe(),
+            Variants = d.Variants.Select(v => new BenchmarkComparabilityVariantDto
+            {
+                Value = v.Value,
+                RunIds = v.RunIds.ToList()
+            }).ToList()
+        }).ToList()
+    };
+
+    private static string DescribeTier(BenchmarkComparabilityTier tier) => tier switch
+    {
+        BenchmarkComparabilityTier.Replicate => "Tier A — Replicate",
+        BenchmarkComparabilityTier.QualityComparable => "Tier B — Quality-comparable",
+        BenchmarkComparabilityTier.CrossCondition => "Tier C — Cross-condition",
+        _ => "Not comparable"
+    };
+
+    private static string DescribeTier(BenchmarkRunGroupTier tier) =>
+        DescribeTier((BenchmarkComparabilityTier)(int)tier);
+
+    private async Task<BenchmarkRunGroupDto> BuildGroupDtoAsync(BenchmarkRunGroup group, bool includeMembers)
+    {
+        var latest = await _groupAnalysisService.GetLatestAnalysisAsync(group.Id);
+
+        var dto = new BenchmarkRunGroupDto
+        {
+            Id = group.Id,
+            Name = group.Name,
+            BenchmarkSuiteId = group.BenchmarkSuiteId,
+            SuiteName = group.BenchmarkSuite?.Name,
+            Tier = group.Tier.ToString(),
+            TierLabel = DescribeTier(group.Tier),
+            ComparabilityKeyHash = group.ComparabilityKeyHash,
+            CrossCondition = group.CrossCondition,
+            Notes = group.Notes,
+            CreatedFromSeriesId = group.CreatedFromSeriesId,
+            CreatedAtUtc = group.CreatedAtUtc,
+            ModifiedAtUtc = group.ModifiedAtUtc,
+            RunCount = group.Members.Count,
+            LatestAnalysisId = latest?.Id,
+            LatestAnalysisAtUtc = latest?.ComputedAtUtc,
+            AnalysisStale = BenchmarkGroupAnalysisService.IsStale(group, latest)
+        };
+
+        if (includeMembers && group.Members.Count > 0)
+        {
+            var memberIds = group.Members.Select(m => m.BenchmarkRunId).ToList();
+            var runs = await _dbContext.BenchmarkRuns
+                .Where(r => memberIds.Contains(r.Id))
+                .ToListAsync();
+
+            foreach (var member in group.Members.OrderBy(m => m.AddedAtUtc))
+            {
+                var run = runs.FirstOrDefault(r => r.Id == member.BenchmarkRunId);
+                if (run == null) continue;
+
+                dto.Members.Add(new BenchmarkRunGroupMemberDto
+                {
+                    RunId = run.Id,
+                    StartedAtUtc = run.StartedAtUtc,
+                    Status = run.Status.ToString(),
+                    QualityIndex = run.QualityIndex,
+                    SpeedIndex = run.SpeedIndex,
+                    TestedModelDisplayName = run.TestedModelDisplayNameUsed,
+                    ShortFingerprint = ShortFingerprint(run.CandidateSystemPromptSha256),
+                    AddedAtUtc = member.AddedAtUtc
+                });
+            }
+        }
+
+        return dto;
+    }
+
+    // --- Group analysis ---------------------------------------------------------------------
+
+    [HttpPost("runs/groups/{id}/analysis")]
+    public async Task<IActionResult> AnalyseRunGroup(long id, [FromBody] BenchmarkGroupAnalysisRequest? request)
+    {
+        string userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+
+        var (analysis, _, error) = await _groupAnalysisService.AnalyseAsync(
+            id, string.IsNullOrEmpty(userId) ? null : userId, request?.CompareWithGroupId);
+
+        if (analysis == null)
+        {
+            return BadRequest(error ?? "The group could not be analysed.");
+        }
+
+        var dto = await BuildAnalysisDtoAsync(analysis);
+        return dto == null ? NotFound() : Ok(dto);
+    }
+
+    [HttpGet("runs/groups/{id}/analysis")]
+    public async Task<IActionResult> GetRunGroupAnalysis(long id)
+    {
+        var analysis = await _groupAnalysisService.GetLatestAnalysisAsync(id);
+        if (analysis == null) return NoContent();
+
+        var dto = await BuildAnalysisDtoAsync(analysis);
+        return dto == null ? NoContent() : Ok(dto);
+    }
+
+    private async Task<BenchmarkGroupAnalysisDto?> BuildAnalysisDtoAsync(BenchmarkGroupAnalysis analysis)
+    {
+        var group = await _dbContext.BenchmarkRunGroups
+            .Include(g => g.Members)
+            .FirstOrDefaultAsync(g => g.Id == analysis.BenchmarkRunGroupId);
+
+        if (group == null) return null;
+
+        long[] memberRunIds = DeserialiseMemberRunIds(analysis);
+
+        string? comparedName = null;
+        if (analysis.ComparedWithGroupId.HasValue)
+        {
+            comparedName = await _dbContext.BenchmarkRunGroups
+                .Where(g => g.Id == analysis.ComparedWithGroupId.Value)
+                .Select(g => g.Name)
+                .FirstOrDefaultAsync();
+        }
+
+        return new BenchmarkGroupAnalysisDto
+        {
+            Id = analysis.Id,
+            GroupId = group.Id,
+            GroupName = group.Name,
+            ComputedAtUtc = analysis.ComputedAtUtc,
+            RunCount = memberRunIds.Length,
+            MemberRunIds = memberRunIds.ToList(),
+            Tier = group.Tier.ToString(),
+            TierLabel = DescribeTier(group.Tier),
+            HarnessVersion = analysis.HarnessVersion,
+            ScoringMethodVersion = analysis.ScoringMethodVersion,
+            Stale = BenchmarkGroupAnalysisService.IsStale(group, analysis),
+            ComparedWithGroupId = analysis.ComparedWithGroupId,
+            ComparedWithGroupName = comparedName,
+            Result = BenchmarkGroupAnalysisService.DeserialiseResult(analysis),
+            Comparison = DeserialiseComparison(analysis)
+        };
+    }
+
+    private static long[] DeserialiseMemberRunIds(BenchmarkGroupAnalysis analysis)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<long[]>(analysis.MemberRunIdsJson) ?? Array.Empty<long>();
+        }
+        catch (JsonException)
+        {
+            return Array.Empty<long>();
+        }
+    }
+
+    private static BenchmarkGroupComparison? DeserialiseComparison(BenchmarkGroupAnalysis analysis)
+    {
+        if (string.IsNullOrWhiteSpace(analysis.ComparisonJson)) return null;
+        try
+        {
+            return JsonSerializer.Deserialize<BenchmarkGroupComparison>(analysis.ComparisonJson);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The multi-run Markdown report, mirroring <c>GET runs/{id}/report</c> exactly — same content
+    /// type, same sanitized-filename treatment, same real Overseer version rather than a hard-coded
+    /// fallback.
+    ///
+    /// <para>Built from the <b>persisted analysis</b>, not recomputed: the stored result records the
+    /// member run ids it covered, so the report stays reproducible after a run is deleted or the
+    /// group's membership changes.</para>
+    /// </summary>
+    [HttpGet("runs/groups/{id}/report")]
+    public async Task<IActionResult> GetRunGroupReport(long id)
+    {
+        var group = await _dbContext.BenchmarkRunGroups
+            .Include(g => g.Members)
+            .Include(g => g.BenchmarkSuite)
+            .FirstOrDefaultAsync(g => g.Id == id);
+
+        if (group == null) return NotFound();
+
+        var analysis = await _groupAnalysisService.GetLatestAnalysisAsync(id);
+        if (analysis == null)
+        {
+            return BadRequest("This group has no analysis yet. Run the analysis before downloading a report.");
+        }
+
+        var result = BenchmarkGroupAnalysisService.DeserialiseResult(analysis);
+        if (result == null)
+        {
+            return BadRequest("The stored analysis could not be read, so no report can be produced.");
+        }
+
+        long[] memberRunIds = DeserialiseMemberRunIds(analysis);
+
+        var members = await _dbContext.BenchmarkRuns
+            .Where(r => memberRunIds.Contains(r.Id))
+            .OrderBy(r => r.StartedAtUtc)
+            .ToListAsync();
+
+        BenchmarkComparabilityResult? comparability = members.Count >= 2
+            ? BenchmarkComparabilityKey.Resolve(members)
+            : null;
+
+        BenchmarkGroupComparison? comparison = DeserialiseComparison(analysis);
+        string? comparisonGroupName = null;
+        if (comparison != null && analysis.ComparedWithGroupId.HasValue)
+        {
+            comparisonGroupName = await _dbContext.BenchmarkRunGroups
+                .Where(g => g.Id == analysis.ComparedWithGroupId.Value)
+                .Select(g => g.Name)
+                .FirstOrDefaultAsync();
+        }
+
+        string markdown = BenchmarkGroupReportBuilder.BuildMarkdownReport(
+            group, result, comparability, members, comparison, comparisonGroupName,
+            GetOverseerVersion(), analysis.ComputedAtUtc);
+
+        string suiteName = group.BenchmarkSuite?.Name ?? "benchmark";
+        string modelName = members.FirstOrDefault()?.TestedModelDisplayNameUsed ?? "model";
+
+        string filename =
+            $"{SanitizeFilename(suiteName)}_{SanitizeFilename(modelName)}_multirun_R{members.Count}_" +
+            $"{analysis.ComputedAtUtc:yyyyMMdd_HHmmss}.md";
+
+        return File(Encoding.UTF8.GetBytes(markdown), "text/markdown; charset=utf-8", filename);
     }
 }
