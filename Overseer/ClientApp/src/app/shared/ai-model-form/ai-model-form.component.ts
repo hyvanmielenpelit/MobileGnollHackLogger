@@ -737,4 +737,12 @@ export class AiModelFormComponent implements OnInit {
       this.cachedInputPricePerMillion = this.selectedModelObj.defaultPricing.cachedInputPerMillion ?? null;
     }
   }
+
+  formatRate(val: number | null | undefined): string {
+    if (val == null) return '$0.00';
+    return `$${new Intl.NumberFormat('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 6
+    }).format(val)}`;
+  }
 }

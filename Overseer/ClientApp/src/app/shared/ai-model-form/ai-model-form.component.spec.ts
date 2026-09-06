@@ -613,11 +613,21 @@ describe('AiModelFormComponent', () => {
       component.onPickerModelSelect();
       fixture.detectChanges();
 
+      const fieldsets = fixture.nativeElement.querySelectorAll('fieldset.pricing-fieldset');
+      expect(fieldsets.length).toBe(1);
+      const legend = fieldsets[0].querySelector('legend');
+      expect(legend?.textContent?.trim()).toBe('Pricing');
+
       const html = fixture.nativeElement.innerHTML;
-      expect(html).toContain('Pricing');
-      expect(html).toContain('5 in / 15 out');
-      expect(html).toContain('(2.5 cached)');
-      expect(html).toContain('USD per 1M tokens (catalog, as of 2024-05-13)');
+      expect(html).toContain('Pricing Model');
+      expect(html).toContain('Input:');
+      expect(html).toContain('$5.00');
+      expect(html).toContain('Output:');
+      expect(html).toContain('$15.00');
+      expect(html).toContain('Cached Input:');
+      expect(html).toContain('$2.50');
+      expect(html).toContain('/ 1M tokens');
+      expect(html).toContain('Catalog pricing as of 2024-05-13 (USD)');
     });
 
     it('should render pricing block for admin too', () => {
@@ -629,8 +639,13 @@ describe('AiModelFormComponent', () => {
       component.onPickerModelSelect();
       fixture.detectChanges();
 
+      const fieldsets = fixture.nativeElement.querySelectorAll('fieldset.pricing-fieldset');
+      expect(fieldsets.length).toBe(1);
+      const legend = fieldsets[0].querySelector('legend');
+      expect(legend?.textContent?.trim()).toBe('Pricing');
+
       const html = fixture.nativeElement.innerHTML;
-      expect(html).toContain('Pricing');
+      expect(html).toContain('Pricing Model');
       expect(html).toContain('No price published in the model catalog');
     });
 
