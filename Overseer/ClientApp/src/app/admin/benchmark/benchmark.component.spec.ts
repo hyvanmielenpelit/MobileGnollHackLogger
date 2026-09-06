@@ -910,7 +910,7 @@ describe('AdminBenchmarkComponent', () => {
     it('should expose the sub-navigation as a labelled tablist', () => {
       expect(tabList()).toBeTruthy();
       expect(tabList().getAttribute('aria-label')).toBe('Benchmark sections');
-      expect(tabs().length).toBe(4);
+      expect(tabs().length).toBe(5);
     });
 
     it('should mark exactly one tab selected, matching activeSubTab', () => {
@@ -922,27 +922,27 @@ describe('AdminBenchmarkComponent', () => {
     it('should give exactly one tab tabindex="0" and the rest tabindex="-1"', () => {
       const all = tabs();
       expect(all.filter(t => t.getAttribute('tabindex') === '0').length).toBe(1);
-      expect(all.filter(t => t.getAttribute('tabindex') === '-1').length).toBe(3);
+      expect(all.filter(t => t.getAttribute('tabindex') === '-1').length).toBe(4);
     });
 
     it('should wrap forward from the last tab to the first with ArrowRight', () => {
-      component.activeSubTab = 'suites';
-      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowRight' }), 3);
+      component.activeSubTab = 'profiles';
+      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowRight' }), 4);
       expect(component.activeSubTab).toBe('run');
     });
 
     it('should wrap backward from the first tab to the last with ArrowLeft', () => {
       component.activeSubTab = 'run';
       component.onTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowLeft' }), 0);
-      expect(component.activeSubTab).toBe('suites');
+      expect(component.activeSubTab).toBe('profiles');
     });
 
     it('should select the first and last tab with Home and End', () => {
       component.activeSubTab = 'history';
       component.onTabKeydown(new KeyboardEvent('keydown', { key: 'End' }), 1);
-      expect(component.activeSubTab).toBe('suites');
+      expect(component.activeSubTab).toBe('profiles');
 
-      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'Home' }), 3);
+      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'Home' }), 4);
       expect(component.activeSubTab).toBe('run');
     });
 
@@ -1004,6 +1004,56 @@ describe('AdminBenchmarkComponent', () => {
       component.selectSubTab('suites');
       expect(benchmarkServiceMock.getSuites).toHaveBeenCalled();
     });
+
+    it('should render the Scoring Profiles panel on the profiles tab', () => {
+      fixture.nativeElement.querySelector('#bm-tab-profiles').click();
+      fixture.detectChanges();
+
+      const panel = fixture.nativeElement.querySelector('[role="tabpanel"]');
+      expect(panel).toBeTruthy();
+      expect(panel.id).toBe('bm-panel-profiles');
+      expect(panel.getAttribute('aria-labelledby')).toBe('bm-tab-profiles');
+      expect(panel.querySelector('.profiles-list')).toBeTruthy();
+    });
+
+    it('should load profiles when the profiles tab is selected', () => {
+      benchmarkServiceMock.getScoringProfiles.calls.reset();
+      component.selectSubTab('profiles');
+      expect(benchmarkServiceMock.getScoringProfiles).toHaveBeenCalled();
+    });
+  });
+
+  describe('formatStatusLabel', () => {
+    it('should format CompletedWithLimits as "Completed with limits"', () => {
+      expect(component.formatStatusLabel('CompletedWithLimits')).toBe('Completed with limits');
+      expect(component.formatStatusLabel(6)).toBe('Completed with limits');
+    });
+
+    it('should format CompletedWithErrors as "Completed with errors"', () => {
+      expect(component.formatStatusLabel('CompletedWithErrors')).toBe('Completed with errors');
+      expect(component.formatStatusLabel(3)).toBe('Completed with errors');
+    });
+
+    it('should return standard status for other values', () => {
+      expect(component.formatStatusLabel('Running')).toBe('Running');
+      expect(component.formatStatusLabel(1)).toBe('Running');
+      expect(component.formatStatusLabel('Completed')).toBe('Completed');
+      expect(component.formatStatusLabel(2)).toBe('Completed');
+      expect(component.formatStatusLabel('Failed')).toBe('Failed');
+      expect(component.formatStatusLabel(4)).toBe('Failed');
+      expect(component.formatStatusLabel('Canceled')).toBe('Canceled');
+      expect(component.formatStatusLabel(5)).toBe('Canceled');
+    });
+  });
+
+  describe('runCountInput layout', () => {
+    it('should render narrow run count input inside claim-verifier-row', () => {
+      fixture.detectChanges();
+      const input = fixture.nativeElement.querySelector('#runCountInput');
+      expect(input).toBeTruthy();
+      expect(input.classList.contains('run-count-input')).toBeTrue();
+      expect(input.closest('.claim-verifier-row')).toBeTruthy();
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -1013,7 +1063,7 @@ describe('AdminBenchmarkComponent', () => {
   describe('button harmonization', () => {
     /** Renders each sub-tab in turn so every button in the view is inspected. */
     function forEachSubTab(check: (where: string) => void): void {
-      for (const tab of ['run', 'history', 'suites'] as const) {
+      for (const tab of ['run', 'history', 'suites', 'profiles'] as const) {
         component.activeSubTab = tab;
         fixture.detectChanges();
         check(tab);

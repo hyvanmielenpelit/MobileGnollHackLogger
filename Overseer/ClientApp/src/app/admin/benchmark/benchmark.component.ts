@@ -168,7 +168,6 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   @ViewChild('questionsDialog') questionsDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('questionFormDialog') questionFormDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('runDetailDialog') runDetailDialog!: ElementRef<HTMLDialogElement>;
-  @ViewChild('scoringProfilesDialog') scoringProfilesDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('scoringProfileFormDialog') scoringProfileFormDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('sameProviderDialog') sameProviderDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('bulkDeleteDialog') bulkDeleteDialog!: ElementRef<HTMLDialogElement>;
@@ -204,14 +203,14 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   private systemService = inject(SystemService);
   private cdr = inject(ChangeDetectorRef);
 
-  activeSubTab: 'run' | 'history' | 'multirun' | 'suites' = 'run';
+  activeSubTab: 'run' | 'history' | 'multirun' | 'suites' | 'profiles' = 'run';
 
   /**
    * Tab order, and the source of truth for arrow-key navigation indices. Multi-Run Analysis sits
    * immediately right of Run History because a group is built out of the runs listed there, so the
-   * two are read in that order.
+   * two are read in that order. Scoring Profiles sits right of Manage Suites.
    */
-  readonly subTabs = ['run', 'history', 'multirun', 'suites'] as const;
+  readonly subTabs = ['run', 'history', 'multirun', 'suites', 'profiles'] as const;
 
   /**
    * BenchmarkAnswerFlags bits that mean the graded text was corrupted in transport:
@@ -611,7 +610,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
    * loads live here rather than in the template so the tab row carries one
    * statement per handler.
    */
-  selectSubTab(tab: 'run' | 'history' | 'multirun' | 'suites'): void {
+  selectSubTab(tab: 'run' | 'history' | 'multirun' | 'suites' | 'profiles'): void {
     this.activeSubTab = tab;
     if (tab === 'history') {
       this.loadHistory();
@@ -621,6 +620,9 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     }
     if (tab === 'suites') {
       this.loadSuites();
+    }
+    if (tab === 'profiles') {
+      this.loadProfiles();
     }
     // 'multirun' loads nothing here: the panel is the MultiRunComponent's own, and it owns its
     // fetches. Loading them from the host would give that data two owners.
@@ -1131,11 +1133,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   openManageProfiles() {
-    this.scoringProfilesDialog?.nativeElement.showModal();
-  }
-
-  closeManageProfiles() {
-    this.scoringProfilesDialog?.nativeElement.close();
+    this.selectSubTab('profiles');
   }
 
   openCreateProfile() {
@@ -4121,6 +4119,13 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     if (status === 5 || status === 'Canceled') return 'Canceled';
     if (status === 6 || status === 'CompletedWithLimits') return 'CompletedWithLimits';
     return String(status);
+  }
+
+  formatStatusLabel(status: string | number): string {
+    const s = this.formatStatus(status);
+    if (s === 'CompletedWithLimits') return 'Completed with limits';
+    if (s === 'CompletedWithErrors') return 'Completed with errors';
+    return s;
   }
 
   formatAnswerStatus(status: string | number): string {
