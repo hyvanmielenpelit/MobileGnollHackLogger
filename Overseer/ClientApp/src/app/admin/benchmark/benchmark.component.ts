@@ -284,15 +284,15 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   claimVerifierConfigId: number | null = null;
 
   /**
-   * Candidate system prompt response style: false for concise (default, comparable with runs 1–11),
-   * true for detailed.
+   * Candidate system prompt response style: false for concise (the production default), true for
+   * detailed.
    */
   candidateVerboseMode = false;
 
   get candidateResponseStyleHint(): string {
     return this.candidateVerboseMode
-      ? "The candidate is told to give detailed explanations with background, edge cases and headers. This run will NOT be comparable with previous runs on Completeness, Conciseness or Readability. Use it to test whether a completeness gap is the prompt or the model."
-      : "The candidate is told 'Default to 2–5 sentences per response' — the production chat default, and what every run so far used.";
+      ? "The candidate is told to give detailed explanations with background, edge cases and headers. This run will NOT be comparable with concise runs on Completeness, Conciseness or Readability — only Accuracy carries over. Use it to find out whether a completeness gap comes from the prompt or from the model."
+      : "The candidate is told 'Default to 2–5 sentences per response' — the production chat default, and what every run so far has used. Keep it here unless you are deliberately testing the other style.";
   }
 
   /**

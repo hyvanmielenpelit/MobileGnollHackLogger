@@ -2238,7 +2238,7 @@ describe('AdminBenchmarkComponent', () => {
       const groups = Array.from(rows[0].querySelectorAll(':scope > .form-group')) as HTMLElement[];
       expect(groups.length).toBe(3);
       expect(groups[0].querySelector('label')?.textContent?.trim()).toBe('Model Under Test');
-      expect(groups[1].querySelector('label')?.textContent?.trim()).toBe('Assessor Model (Evaluator)');
+      expect(groups[1].querySelector('label')?.textContent?.trim()).toBe('Assessor Model');
       expect(groups[2].querySelector('label')?.textContent?.trim()).toBe('Second Opinion Assessor (optional)');
 
       // The explanatory hint travels with the second-opinion selector, not loose in the row.
@@ -2249,7 +2249,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(hint!.textContent).toContain('Produces a second, independent verdict');
     });
 
-    it('should place Claim Verifier and Response Style in .form-row.claim-verifier-row in col 1 and col 2', () => {
+    it('should place Claim Verifier and Candidate Response Style in .form-row.claim-verifier-row in col 1 and col 2', () => {
       component.activeSubTab = 'run';
       fixture.detectChanges();
 
@@ -2259,7 +2259,7 @@ describe('AdminBenchmarkComponent', () => {
       const groups = Array.from(row.querySelectorAll(':scope > .form-group')) as HTMLElement[];
       expect(groups.length).toBe(2);
       expect(groups[0].querySelector('label')?.textContent?.trim()).toBe('Claim Verifier (optional)');
-      expect(groups[1].querySelector('label')?.textContent?.trim()).toBe('Response Style (candidate prompt)');
+      expect(groups[1].querySelector('label')?.textContent?.trim()).toBe('Candidate Response Style');
     });
 
     it('should render both dt/dd pairs and keep .run-model-row present in the run-model-strip', () => {
@@ -2394,6 +2394,46 @@ describe('AdminBenchmarkComponent', () => {
       expect(groups[1].querySelector('.form-hint')?.textContent)
         .toContain('four BARS dimensions');
     });
+
+    it('should describe the benchmark suite and the scoring profile', () => {
+      component.activeSubTab = 'run';
+      fixture.detectChanges();
+
+      // Both controls decide what a run's numbers mean, and both were undescribed: the suite had
+      // no hint at all, and the profile could only ever show the conditional fit advisory.
+      const suiteHint = fixture.nativeElement.querySelector('#suiteHint') as HTMLElement | null;
+      expect(suiteHint).toBeTruthy();
+      expect(suiteHint!.textContent).toContain('only comparable with other runs of the same');
+
+      const profileHint = fixture.nativeElement.querySelector('#profileHint') as HTMLElement | null;
+      expect(profileHint).toBeTruthy();
+      expect(profileHint!.textContent).toContain('Turns the four raw dimension grades into the indices');
+    });
+
+    it('should say what a second run buys rather than referring to previous behaviour', () => {
+      component.activeSubTab = 'run';
+      component.runLimits = {
+        maxRunsPerHour: 4,
+        maxRunsPerDay: 20,
+        runsInLastHour: 0,
+        runsInLast24Hours: 0,
+        remainingDailyHeadroom: 20,
+        maxRunCountPerSeries: 20
+      };
+      fixture.detectChanges();
+
+      const hint = fixture.nativeElement.querySelector('#runCountHint') as HTMLElement | null;
+      expect(hint).toBeTruthy();
+      const text = (hint!.textContent ?? '').replace(/\s+/g, ' ').trim();
+
+      expect(text).toContain('replicate set');
+      expect(text).toContain('run-to-run noise');
+      expect(text).toContain('20');
+
+      // The regression this wording exists to prevent: "exactly as before" described the
+      // pre-multi-run implementation, which tells an operator nothing about the field.
+      expect(text).not.toContain('as before');
+    });
   });
 
   describe('scoring profile fit advisory', () => {
@@ -2403,10 +2443,12 @@ describe('AdminBenchmarkComponent', () => {
       component.testedConfigId = component.systemConfigs[0].id;
     }
 
-    /** The hint rendered inside the scoring profile's own .form-group, if any. */
+    /**
+     * The fit advisory specifically, by its own id — not the first .form-hint in the profile's
+     * .form-group, which is the permanent description of what a scoring profile is.
+     */
     function profileFitHintText(): string {
-      const group = (fixture.nativeElement.querySelector('#profileSelect') as HTMLElement)?.parentElement;
-      const hint = group?.querySelector('.form-hint') as HTMLElement | null;
+      const hint = fixture.nativeElement.querySelector('#profileFitHint') as HTMLElement | null;
       return (hint?.textContent ?? '').replace(/\s+/g, ' ').trim();
     }
 

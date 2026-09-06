@@ -178,8 +178,12 @@
           <!-- Row 1: Suite and Scoring Profile -->
           <div class="form-row two-cols">
             <div class="form-group">
-              <label for="suiteSelect">Benchmark Suite</label>
-              <select id="suiteSelect" class="gh-input" [(ngModel)]="selectedSuiteId" (ngModelChange)="onSelectedSuiteChanged()">
+              <div class="label-with-action">
+                <label for="suiteSelect">Benchmark Suite</label>
+                <button type="button" class="link-subtle-btn" (click)="selectSubTab('suites')">Manage suites →</button>
+              </div>
+              <select id="suiteSelect" class="gh-input" [(ngModel)]="selectedSuiteId" (ngModelChange)="onSelectedSuiteChanged()"
+                      aria-describedby="suiteHint">
                 @if (suites.length === 0) {
                   <option [ngValue]="null" disabled>{{ loadingSuites ? 'Loading suites...' : 'No suites available' }}</option>
                 }
@@ -187,6 +191,11 @@
                   <option [ngValue]="suite.id">{{ suite.name }} ({{ suite.questionCount }} questions)</option>
                 }
               </select>
+              <span id="suiteHint" class="form-hint">
+                The questions and the rubrics they are graded against. Every question in the suite is
+                asked once per run, so a run's indices are only comparable with other runs of the same
+                suite — editing a question starts a new baseline.
+              </span>
               @if (selectedSuite && !selectedSuite.difficultyFullyAssessed) {
                 <div class="alert alert-warning mt-10" role="alert">
                   <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -216,19 +225,26 @@
                 <label for="profileSelect">Scoring Profile</label>
                 <button type="button" class="link-subtle-btn" (click)="selectSubTab('profiles')">Manage profiles →</button>
               </div>
-              <select id="profileSelect" class="gh-input" [(ngModel)]="selectedScoringProfileId">
+              <select id="profileSelect" class="gh-input" [(ngModel)]="selectedScoringProfileId"
+                      [attr.aria-describedby]="showProfileFitAdvisory ? 'profileHint profileFitHint' : 'profileHint'">
                 @for (profile of scoringProfiles; track profile.id) {
                   <option [ngValue]="profile.id">{{ formatProfileOption(profile) }}</option>
                 }
               </select>
+              <span id="profileHint" class="form-hint">
+                Turns the four raw dimension grades into the indices: it sets the dimension weights,
+                the critical-error ceiling, the speed target and the second-opinion thresholds. Runs
+                are only comparable on the indices when they were scored under the same profile.
+              </span>
               <!--
                 Profile fit. A high/max thinking model measured against a profile tuned for
                 interactive latency scores badly on Speed Index for a reason that has nothing to do
                 with the model being slow for its class, so the mismatch is called out before the
-                run rather than explained afterwards.
+                run rather than explained afterwards. It carries its own id: it is a second hint in
+                this group, and the one the profile-fit tests are about.
               -->
               @if (showProfileFitAdvisory) {
-                <span class="form-hint">
+                <span id="profileFitHint" class="form-hint">
                   This profile targets interactive latency. A high/max thinking model will score low
                   on Speed Index against it; consider a Reasoning Agent profile, or read the Speed
                   Index as advisory.
@@ -297,14 +313,14 @@
               <span class="form-hint">
                 The candidate. Every question in the suite is answered by this configuration, and its
                 thinking level, reasoning mode, service tier and parallel tool call setting are
-                snapshotted onto the run and printed in the report. Speed Index is only comparable
-                between runs at the same thinking level.
+                snapshotted onto the run and printed in the report.
+                Speed Index is only comparable between runs at the same thinking level.
               </span>
             </div>
 
             <!-- Assessor Model -->
             <div class="form-group">
-              <label>Assessor Model (Evaluator)</label>
+              <label>Assessor Model</label>
               <div class="custom-model-selector assessor-model-selector">
                 <button type="button" class="selector-trigger" (click)="toggleAssessorModelDropdown($event)" [class.open]="isAssessorModelDropdownOpen">
                   <span class="model-name" [class.text-muted]="!selectedAssessorModel">{{ selectedAssessorModel?.displayName || selectedAssessorModel?.modelId || 'Select Model' }}</span>
@@ -360,7 +376,7 @@
               <span class="form-hint">
                 Grades every answer against its rubric on four BARS dimensions and writes the closing
                 synthesis. It runs pipelined behind each answer, so a slow assessor rarely adds wall
-                time. Choosing the same provider as the model under test requires an explicit
+                time. Picking the same provider as the model under test needs an explicit
                 acknowledgement before the run starts.
               </span>
 
@@ -474,7 +490,7 @@
           <!-- Row 3: Claim Verifier and Candidate Prompt Configuration.
                Col 1 (under Model Under Test): Claim Verifier (optional) — checks factual claims against
                game source code and wiki using tools. Advisory: does not alter score.
-               Col 2 (under Assessor Model): Response Style (candidate prompt) — controls whether the
+               Col 2 (under Assessor Model): Candidate Response Style — controls whether the
                candidate is instructed to be concise (default, comparable) or detailed. -->
           <div class="form-row claim-verifier-row">
             <div class="form-group">
@@ -520,8 +536,9 @@
                 }
               </div>
               <span class="form-hint">
-                Verifies individual factual claims the rubric could not adjudicate against the game's source code
-                and wiki using read-only tools. Advisory; recorded after scoring and folded into no index.
+                Checks the individual factual claims the rubric could not settle, against the game's
+                source code and the wiki, using read-only tools. Advisory only: the result is recorded
+                after scoring and changes no index.
               </span>
 
               @if (showClaimVerifierCandidateAdvisory) {
@@ -539,12 +556,12 @@
             </div>
 
             <div class="form-group">
-              <label for="candidateResponseStyle">Response Style (candidate prompt)</label>
+              <label for="candidateResponseStyle">Candidate Response Style</label>
               <select id="candidateResponseStyle" class="gh-input"
                       [(ngModel)]="candidateVerboseMode"
                       aria-describedby="candidateResponseStyleHint">
-                <option [ngValue]="false">Concise — default; comparable with previous runs</option>
-                <option [ngValue]="true">Detailed — not comparable with previous runs</option>
+                <option [ngValue]="false">Concise — production default; comparable with previous runs</option>
+                <option [ngValue]="true">Detailed — diagnostic; not comparable with previous runs</option>
               </select>
               <span id="candidateResponseStyleHint" class="form-hint">{{ candidateResponseStyleHint }}</span>
             </div>
@@ -557,7 +574,7 @@
             -->
             <div>
               <div class="form-group">
-                <label for="runCountInput">Number of runs</label>
+                <label for="runCountInput">Number of Runs</label>
                 <input id="runCountInput" type="number" class="gh-input run-count-input"
                        min="1"
                        [attr.max]="maxRunCountPerSeries"
@@ -565,11 +582,14 @@
                        aria-describedby="runCountHint">
                 <span id="runCountHint" class="form-hint">
                   @if (maxRunCountPerSeries != null) {
-                    1 executes a single run exactly as before. Up to {{ maxRunCountPerSeries }} runs
-                    execute strictly one at a time as a series and are grouped into a replicate set.
+                    One run is the default. Set 2 or more — up to {{ maxRunCountPerSeries }} — to
+                    repeat this exact configuration; the runs execute strictly one at a time, never in
+                    parallel, and are grouped into a replicate set. The spread across a set is what
+                    shows whether a score difference is a real change or run-to-run noise.
                   } @else {
-                    1 executes a single run exactly as before. More than one executes a series, strictly
-                    one run at a time; the server bounds the count by the configured daily cap.
+                    One run is the default. Two or more repeat this exact configuration, strictly one
+                    run at a time, and are grouped into a replicate set; the server bounds the count by
+                    the configured daily run cap.
                   }
                 </span>
               </div>
@@ -581,9 +601,9 @@
                     <span>Wait when the run cap blocks the next run</span>
                   </label>
                   <span class="form-hint">
-                    On a cap denial the series pauses in <strong>Waiting for run cap</strong> and retries.
-                    Unticked, it stops with the reason recorded and a Continue button; either way every
-                    completed run is kept.
+                    On a cap denial the series pauses in <strong>Waiting for run cap</strong> and keeps
+                    retrying. Left unticked, it stops instead, with the reason recorded and a Continue
+                    button. Either way every completed run is kept.
                   </span>
                 </div>
               }
