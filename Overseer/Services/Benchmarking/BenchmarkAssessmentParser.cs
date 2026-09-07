@@ -41,6 +41,14 @@ public class BenchmarkPerQuestionAssessmentResult
     public string? CompletenessEvidence { get; set; }
 
     /// <summary>
+    /// Not a deduction basis, unlike the two above: scoring method v9 asks the assessor to write
+    /// here only when the rubric suggested a presentation the answer did not adopt, under the
+    /// <c>FORM:</c> marker, and to grade READABILITY on its level anchors alone. Normally null.
+    /// </summary>
+    [JsonPropertyName("readabilityEvidence")]
+    public string? ReadabilityEvidence { get; set; }
+
+    /// <summary>
     /// Claims the answer asserts that the rubric neither states nor contradicts, and that the
     /// assessor could not positively refute. Scoring method v6 forbids deducting ACCURACY for
     /// these; they are recorded so that a claim recurring across unrelated model families can be
@@ -102,6 +110,19 @@ public class BenchmarkPerQuestionAssessmentResult
     /// </summary>
     [JsonIgnore]
     public bool CompletenessOutOfScope { get; set; }
+
+    /// <summary>
+    /// The assessor recorded a rubric format suggestion the answer did not follow, under the
+    /// <c>FORM:</c> marker scoring method v9 requires of it, and did not deduct for it.
+    ///
+    /// A measurement of the same kind as <see cref="CompletenessOutOfScope"/>: Readability grades
+    /// how an answer reads, while a rubric FORM criterion states how its author would have laid it
+    /// out, and counting the second is what keeps it out of the first. Not from the model as a
+    /// field — it is derived from <see cref="ReadabilityEvidence"/>, which is where the assessor
+    /// writes it.
+    /// </summary>
+    [JsonIgnore]
+    public bool ReadabilityFormOnly { get; set; }
 }
 
 public class PerQuestionAssessmentParseResult
@@ -241,6 +262,7 @@ public static class BenchmarkAssessmentParser
             string? criticalErrorQuote = GetStringProperty(root, "criticalErrorQuote", "critical_error_quote");
             string? accuracyEvidence = GetStringProperty(root, "accuracyEvidence", "accuracy_evidence");
             string? completenessEvidence = GetStringProperty(root, "completenessEvidence", "completeness_evidence");
+            string? readabilityEvidence = GetStringProperty(root, "readabilityEvidence", "readability_evidence");
 
             bool demoted = false;
             if (criticalError && gradedAnswerText != null && !QuoteAppearsInAnswer(criticalErrorQuote, gradedAnswerText))
@@ -298,6 +320,10 @@ public static class BenchmarkAssessmentParser
             // a marker the assessor mangled costs the measurement and nothing else.
             bool completenessOutOfScope = HasOutOfScopeMarker(completenessEvidence);
 
+            // Scoring method v9's format marker, on the same terms: absent in the normal case,
+            // and worth a measurement rather than a verdict when the assessor mangles it.
+            bool readabilityFormOnly = HasFormOnlyMarker(readabilityEvidence);
+
             var result = new BenchmarkPerQuestionAssessmentResult
             {
                 AccuracyLevel = Math.Clamp(accuracyLevel, 0, 6),
@@ -308,6 +334,7 @@ public static class BenchmarkAssessmentParser
                 CriticalErrorQuote = criticalErrorQuote,
                 AccuracyEvidence = accuracyEvidence,
                 CompletenessEvidence = completenessEvidence,
+                ReadabilityEvidence = readabilityEvidence,
                 UnverifiedClaims = unverifiedClaims,
                 Comment = comment,
                 CriticalErrorDemoted = demoted,
@@ -315,7 +342,8 @@ public static class BenchmarkAssessmentParser
                 ContestedVerdict = contestedVerdict,
                 UnevidencedDeduction = unevidencedDeduction,
                 OmissionAsAccuracy = omissionAsAccuracy,
-                CompletenessOutOfScope = completenessOutOfScope
+                CompletenessOutOfScope = completenessOutOfScope,
+                ReadabilityFormOnly = readabilityFormOnly
             };
 
             return new PerQuestionAssessmentParseResult
@@ -468,6 +496,34 @@ public static class BenchmarkAssessmentParser
     {
         return !string.IsNullOrWhiteSpace(completenessEvidence)
             && OutOfScopeMarkerRegex.IsMatch(completenessEvidence);
+    }
+
+    /// <summary>
+    /// The prefix scoring method v9 asks the assessor to put in front of a rubric format suggestion
+    /// the answer did not follow. Public because the prompt, the parser and the tests must all mean
+    /// the same string by it.
+    /// </summary>
+    public const string FormOnlyReadabilityMarker = "FORM:";
+
+    /// <summary>
+    /// Anchored to the start of the evidence string, unlike <see cref="OutOfScopeMarkerRegex"/>.
+    /// The word is short enough to occur in ordinary prose about an answer's presentation, and
+    /// <c>readabilityEvidence</c> carries nothing but this marker, so there is no second half for
+    /// it to introduce. Leading whitespace and casing are tolerated; the colon is required.
+    /// </summary>
+    private static readonly Regex FormOnlyMarkerRegex = new(
+        @"^\s*form\s*:",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// True when readability evidence opens with the FORM marker. Total on its input, for the same
+    /// reason <see cref="HasOutOfScopeMarker"/> is: absence is the normal case, and one lost
+    /// measurement must never cost a verdict.
+    /// </summary>
+    private static bool HasFormOnlyMarker(string? readabilityEvidence)
+    {
+        return !string.IsNullOrWhiteSpace(readabilityEvidence)
+            && FormOnlyMarkerRegex.IsMatch(readabilityEvidence);
     }
 
     private static int GetIntProperty(JsonElement element, params string[] propertyNames)

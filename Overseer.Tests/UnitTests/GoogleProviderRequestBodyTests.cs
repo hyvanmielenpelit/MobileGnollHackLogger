@@ -129,4 +129,133 @@ public class GoogleProviderRequestBodyTests
         Assert.Contains("\"content\":\"hi\"", json);
         Assert.DoesNotContain("\"parts\"", json);
     }
+
+    // ---------------------------------------------------------------------------------------
+    // Prefix stability. Gemini's implicit cache keys on a request prefix, so everything that is
+    // identical from turn to turn has to be serialized before the turn list. Run 22 read a
+    // 21.1 % cache-read share against 90 % on Anthropic and OpenAI, with `contents` leading the
+    // body and nothing stable in front of it.
+    // ---------------------------------------------------------------------------------------
+
+    private static ToolsForRequest TwoTools() => new()
+    {
+        FunctionDeclarations = new List<object>
+        {
+            new { name = "get_wiki_article", description = "Fetch an article.", parameters = new { type = "object" } },
+            new { name = "search_wiki", description = "Search the wiki.", parameters = new { type = "object" } }
+        }
+    };
+
+    private static string SerializeTurn(GoogleProvider provider, SegmentedPrompt? segmented, string lastUserTurn)
+    {
+        var prepared = provider.PrepareMessageHistory(new List<object>
+        {
+            new { role = "system", content = segmented?.FullPrompt ?? "system text" },
+            new { role = "user", content = "first question" },
+            new { role = "assistant", content = "first answer" },
+            new { role = "user", content = lastUserTurn }
+        });
+
+        var body = provider.BuildChatRequestBody(
+            modelId: "gemini-3.7-flash",
+            messageHistory: prepared,
+            maxOutputTokens: 4096,
+            thinkingLevel: "high",
+            requestTools: TwoTools(),
+            segmentedPrompt: segmented,
+            promptCacheKey: "session-abc");
+
+        return JsonSerializer.Serialize(body);
+    }
+
+    private static string CommonPrefix(string a, string b)
+    {
+        int i = 0;
+        while (i < a.Length && i < b.Length && a[i] == b[i]) i++;
+        return a.Substring(0, i);
+    }
+
+    [Fact]
+    public void BuildChatRequestBody_TwoTurnsSharingAPrompt_ShareEverythingBeforeContents()
+    {
+        var provider = CreateProvider();
+        var segmented = new SegmentedPrompt("FROZEN RULES. ", "SESSION CONTEXT. ", "VOLATILE SUFFIX.");
+
+        string prefix = CommonPrefix(
+            SerializeTurn(provider, segmented, "what is a gnoll"),
+            SerializeTurn(provider, segmented, "what is a lich"));
+
+        // The whole of systemInstruction and the whole of the tool declarations, not a fragment
+        // of either: a prefix that stops mid-object caches nothing.
+        Assert.Contains("\"systemInstruction\"", prefix);
+        Assert.Contains("VOLATILE SUFFIX.", prefix);
+        Assert.Contains("\"tools\"", prefix);
+        Assert.Contains("get_wiki_article", prefix);
+        Assert.Contains("search_wiki", prefix);
+        Assert.Contains("\"toolConfig\"", prefix);
+
+        // And it runs all the way to the turn list, which is where the two bodies first differ.
+        Assert.EndsWith("\"contents\":[{\"role\":\"user\",\"parts\":[{\"text\":\"first question\"}]},{\"role\":\"model\",\"parts\":[{\"text\":\"first answer\"}]},{\"role\":\"user\",\"parts\":[{\"text\":\"what is a ", prefix);
+    }
+
+    [Fact]
+    public void BuildChatRequestBody_SegmentedPrompt_EmitsTheSegmentsInStabilityOrder()
+    {
+        var provider = CreateProvider();
+        var segmented = new SegmentedPrompt("FROZEN RULES. ", "SESSION CONTEXT. ", "VOLATILE SUFFIX.");
+
+        string json = SerializeTurn(provider, segmented, "q");
+
+        Assert.Contains(
+            "\"systemInstruction\":{\"parts\":[{\"text\":\"FROZEN RULES. \"},{\"text\":\"SESSION CONTEXT. \"},{\"text\":\"VOLATILE SUFFIX.\"}]}",
+            json);
+
+        // Same characters as the unsegmented prompt, split at the two stability boundaries.
+        Assert.DoesNotContain(segmented.FullPrompt, json);
+    }
+
+    [Fact]
+    public void BuildChatRequestBody_WithoutASegmentedPrompt_PassesSystemPartsThrough()
+    {
+        // The benchmark and sub-agent paths supply no segmented prompt, and must keep today's
+        // single-part systemInstruction.
+        var provider = CreateProvider();
+
+        string json = SerializeTurn(provider, segmented: null, lastUserTurn: "q");
+
+        Assert.Contains("\"systemInstruction\":{\"parts\":[{\"text\":\"system text\"}]}", json);
+    }
+
+    [Fact]
+    public void BuildChatRequestBody_HoistedSystemMessages_SitBeforeTheVolatileSuffix()
+    {
+        // A second system message is context hoisted by the caller, not the prompt the segments
+        // already carry. It has to survive, and it has to stay ahead of the volatile tail.
+        var provider = CreateProvider();
+        var segmented = new SegmentedPrompt("FROZEN. ", "SESSION. ", "VOLATILE.");
+
+        var prepared = provider.PrepareMessageHistory(new List<object>
+        {
+            new { role = "system", content = segmented.FullPrompt },
+            new { role = "system", content = "HOISTED SNAPSHOT." },
+            new { role = "user", content = "q" }
+        });
+
+        var body = provider.BuildChatRequestBody(
+            modelId: "gemini-3.7-flash",
+            messageHistory: prepared,
+            maxOutputTokens: 4096,
+            thinkingLevel: null,
+            requestTools: new ToolsForRequest(),
+            segmentedPrompt: segmented);
+
+        string json = JsonSerializer.Serialize(body);
+
+        Assert.Contains(
+            "\"systemInstruction\":{\"parts\":[{\"text\":\"FROZEN. \"},{\"text\":\"SESSION. \"},{\"text\":\"HOISTED SNAPSHOT.\"},{\"text\":\"VOLATILE.\"}]}",
+            json);
+
+        // The segments replace the first system message; they must not be emitted twice.
+        Assert.DoesNotContain(segmented.FullPrompt, json);
+    }
 }

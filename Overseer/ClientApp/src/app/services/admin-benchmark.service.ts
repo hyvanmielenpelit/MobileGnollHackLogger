@@ -768,6 +768,13 @@ export interface BenchmarkRunDetailDto {
   completenessOutOfScopeCount?: number;
 
   /**
+   * Rubric format suggestions the assessor recorded rather than deducting Readability for. The
+   * Readability counterpart of the count above: if Readability rises by more than this count can
+   * explain, the FORM rule changed grader behaviour beyond its remit.
+   */
+  readabilityFormOnlyCount?: number;
+
+  /**
    * Answers actually graded twice by the deterministic top-up under FlaggedPlusSample. May fall
    * short of the profile's target when fewer answers exist. Zero and meaningless under every
    * other mode.

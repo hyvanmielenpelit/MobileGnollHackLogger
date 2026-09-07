@@ -127,6 +127,7 @@ builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkRubricCheckSe
 builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkRubricGapAuthorJobManager>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkRubricGapAuthorService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkGroupAnalysisService>();
+builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkModelComparisonService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkRunLauncher>();
 // Singleton: it drives a series across many requests and outlives every one of them, creating its
 // own scope per member.

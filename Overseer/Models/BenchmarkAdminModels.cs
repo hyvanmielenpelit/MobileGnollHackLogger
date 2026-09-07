@@ -630,6 +630,14 @@ public class BenchmarkRunDetailDto
     /// </summary>
     public int CompletenessOutOfScopeCount { get; set; }
 
+    /// <summary>
+    /// Answers where the assessor recorded a rubric format suggestion under the `FORM:` marker
+    /// (scoring method v9) rather than deducting Readability for it — the rubric's own share of
+    /// the Readability shortfall. Zero on a run graded before v9, same as a v9 run where the
+    /// assessor found none; the report distinguishes the two, this count does not.
+    /// </summary>
+    public int ReadabilityFormOnlyCount { get; set; }
+
     public int ClaimVerifiedAnswerCount { get; set; }
     public int ClaimsSupportedCount { get; set; }
     public int ClaimsRefutedCount { get; set; }

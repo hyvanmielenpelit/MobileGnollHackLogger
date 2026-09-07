@@ -192,7 +192,7 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void ScoringMethodVersion_IsEight()
+    public void ScoringMethodVersion_IsNine()
     {
         // v4 was the artifact scrubbing and speed recalibration. v5 changed what a critical
         // error is — an omission can no longer be one, and the claim must be quoted. v6 changed
@@ -202,10 +202,12 @@ public class BenchmarkAssessmentPromptTests
         // v8 widens the synthesis factual-error guardrail to any answer whose accuracy evidence
         // names a defect, and makes completeness scope a grading rule: the question defines the
         // scope, and a rubric point it did not ask for is recorded under OUT-OF-SCOPE: rather than
-        // deducted for. Scores are not comparable across any of those boundaries on the answers
-        // they touch, and the report prints the version so a mixed comparison is visible rather
-        // than silent.
-        Assert.Equal(8, BenchmarkAssessmentPrompt.ScoringMethodVersion);
+        // deducted for. v9 does the same for Readability — a rubric FORM suggestion is recorded
+        // under FORM: rather than deducted for — and stops the synthesis accuracy-defect marker
+        // firing on sentence-form denials. Scores are not comparable across any of those
+        // boundaries on the answers they touch, and the report prints the version so a mixed
+        // comparison is visible rather than silent.
+        Assert.Equal(9, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 
     [Fact]
@@ -433,10 +435,10 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs12_ScoringMethodIs8()
+    public void Versions_HarnessIs12_ScoringMethodIs9()
     {
         Assert.Equal("12", BenchmarkAssessmentPrompt.HarnessVersion);
-        Assert.Equal(8, BenchmarkAssessmentPrompt.ScoringMethodVersion);
+        Assert.Equal(9, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 
     [Fact]
@@ -542,6 +544,27 @@ public class BenchmarkAssessmentPromptTests
         Assert.Contains("must **not** lower the COMPLETENESS level", prompt);
         Assert.Contains(BenchmarkAssessmentParser.OutOfScopeCompletenessMarker, prompt);
         Assert.Contains("Record it and do not deduct for it", prompt);
+    }
+
+    [Fact]
+    public void PerQuestionPrompt_StatesTheReadabilityFormRuleAndTheFormMarker()
+    {
+        string prompt = BenchmarkAssessmentPrompt.BuildPerQuestionPrompt(
+            "Suite",
+            1,
+            "Which weapon should a Ranger carry at experience level 5?",
+            BenchmarkDifficulty.Intermediate,
+            "**FORM** Present the options as a comparison table.",
+            "Answer.",
+            BenchmarkAnswerStatus.Ok);
+
+        // Scoring method v9. The level anchors are the whole dimension; a rubric FORM criterion is
+        // a presentation preference, and this suite grades a chat prompt that asks for prose.
+        Assert.Contains("A rubric FORM or format suggestion is not a READABILITY criterion.", prompt);
+        Assert.Contains("The level anchors above are the whole of this dimension.", prompt);
+        Assert.Contains(BenchmarkAssessmentParser.FormOnlyReadabilityMarker, prompt);
+        Assert.Contains("`readabilityEvidence`", prompt);
+        Assert.Contains("\"readabilityEvidence\": null", prompt);
     }
 
     /// <summary>A verdict summary carrying only the fields these tests turn on.</summary>

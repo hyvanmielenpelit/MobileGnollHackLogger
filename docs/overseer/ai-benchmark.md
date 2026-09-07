@@ -426,6 +426,21 @@ Prompted by the 2026-09-06 GPT-5.6 Luna benchmark run (run 14). The run reproduc
 - **Narration is prompt-compliant in production chat (H5)**:
   The § 5 Issues narration line now states that narrating a lookup is what `Overseer/ToolGuides/_policy.md` **asks** the production chat agent to do (*"Briefly tell the player what you're looking up when using a tool"*), and that the benchmark strips it only so the graded text is the answer itself. Without that sentence a future reader would port the scrubber into chat and remove behaviour the prompt deliberately requires.
 
+### Scoring Method Version 9 Updates
+
+Prompted by the 2026-09-07 `gemini-3.5-flash-lite` run (run 22), where Readability was the weakest dimension on several answers whose only stated fault was that the rubric had suggested a different layout.
+
+> [!IMPORTANT]
+> **Scoring method version 9 breaks comparability on Readability.** Runs graded under v8 and earlier are **not** comparable with v9 runs on that dimension. Accuracy, Completeness and Conciseness are unaffected.
+
+- **A rubric FORM criterion is no longer a Readability criterion (scoring method 9)**:
+  The READABILITY section states it outright — *the level anchors are the whole of this dimension; an answer that meets an anchor meets it regardless of whether the rubric proposed a different presentation* — and requires the assessor to record such a suggestion in `readabilityEvidence` prefixed `FORM:`. The parser sets `BenchmarkRunAnswer.ReadabilityFormOnly` from that marker.
+  The anchors already name bullet points and clean headings as the level-5 form, so a rubric FORM criterion was a second, unstated scale grading the same dimension. The suite grades the **production chat system prompt**, which asks for concise prose: a rubric asking for a comparison table therefore docked the candidate for obeying its own system prompt.
+  The marker is matched **anchored to the start** of the evidence string, unlike `OUT-OF-SCOPE:` — `form` is an ordinary word, and `readabilityEvidence` carries the marker and nothing else. A missing marker is the normal case and never an error, and a malformed one does not throw.
+  The counter this feeds serves the same purpose as the out-of-scope counter: it measures exactly how much of any Readability movement the rule itself can explain. **If Readability rises by more than the FORM count accounts for, the rule has changed grader behaviour beyond its remit and must be revisited.**
+- **The synthesis accuracy-defect marker no longer fires on denials (scoring method 9)**:
+  `BenchmarkVerdictConsistency.NamesAnAccuracyDefect` excluded only the anchored full-level boilerplate (`"Matches rubric."`), so a sentence-form denial such as *"No factual errors; the answer matches every rubric point"* was printed into the synthesis prompt as `Accuracy defect recorded: yes` and pulled a clean question into the run's stated weaknesses. The denial is now detected unanchored, and is itself disqualified whenever the same evidence names a falsehood, names an omission, or concedes one after a conjunction (`but`, `however`, `although`, …) — so *"no factual errors, but states the level as 40 when it is 25"* still counts as a defect.
+
 ### Multi-Run Replicate Sets (Harness Version 14)
 
 Four consecutive runs reproduced the same Completeness gap, and the harness still could not say whether any single figure would survive a re-run. A one-run result mixes the thing being measured with the noise of measuring it once, and no amount of care in the report separates them. Replicate sets do.
@@ -901,6 +916,7 @@ BenchmarkSuite (1) ────┴───< (N) BenchmarkQuestion
 Rendering policy strictly depends on content author:
 - **Administrator-Authored Content** (Suite descriptions, names, and question expected answer criteria/rubrics): Authored as Markdown and rendered as sanitized HTML via `MarkdownPipe` (`marked` + `DOMPurify`) inside `CollapsibleMarkdownComponent`.
 - **Rubric Authoring Conventions**: Rubrics should use bold section labels (`**REQUIRED**`, `**CRITICAL ERROR**`, `**SCOPE**`, `**FORM**`, `**SOURCE**`), bulleted lists (`- `), and inline code backticks (`` `symbol` ``). ATX headings (`#`, `##`, `###`) are avoided to prevent collisions with the prompt's outer sectioning hierarchy. In prompts, rubrics are safely fenced between `--- BEGIN RUBRIC ---` and `--- END RUBRIC ---` delimiters on separate lines.
+  - **A `**FORM**` section must not name a presentation the graded response style cannot produce.** The suite grades the production chat system prompt, which asks for concise prose, so a rubric demanding a comparison table or a multi-section layout asks the candidate to disobey the very prompt under test. Since scoring method version 9 the assessor records such a suggestion under a `FORM:` marker and does not deduct Readability for it, so the criterion no longer costs the candidate points — but it also no longer means anything, and a `**FORM**` section is worth writing only when the requested shape is one a concise answer could plausibly take.
 - **AI-Generated Content** (Candidate model answers, thought reasoning text, assessor evaluations): Untrusted external completions rendered strictly as **plain text** within `<pre>` containers, never through `[innerHTML]`.
 
 > **Note on Default Suite Re-Import:** Updating `BenchmarkDefaultSuite.json` does not automatically modify previously imported database rows. To reflect updated default suite descriptions or questions, re-import the default suite or edit existing suites manually.

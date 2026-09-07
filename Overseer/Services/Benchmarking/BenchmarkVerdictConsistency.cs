@@ -293,6 +293,45 @@ public static class BenchmarkVerdictConsistency
     }
 
     /// <summary>
+    /// An explicit denial that ACCURACY has any defect, written anywhere in the evidence sentence
+    /// rather than as the whole string <see cref="NoFaultEvidenceRegex"/> requires. Modelled on
+    /// <see cref="NoFactualErrorsRegex"/>, which encodes the same vocabulary for synthesis prose;
+    /// this is a separate regex because that one also matches "confined to ... omission", a
+    /// synthesis-level alternative that does not belong in a per-verdict evidence check.
+    ///
+    /// Each alternative is a denial form a grader has actually written:
+    /// - "no factual error(s)" / "zero factual errors" — the run 22 Q3/Q4/Q17 form: "All stated
+    ///   stats ... match the rubric with no factual errors."
+    /// - "no contradiction(s)" / "no contradicted claims" — the same denial aimed at the
+    ///   contradiction vocabulary instead of "factual error".
+    /// - "no error(s)" — the bare form, without "factual" in front.
+    /// - "no inaccurac(y|ies)" — the near neighbour of "error".
+    /// - "no false statement(s)" / "no misstatement(s)" — the remaining near neighbours in the
+    ///   family, included because they cost nothing once the others are here.
+    /// - "free of factual errors" / "devoid of factual errors" — the direct-claim form
+    ///   <see cref="NoFactualErrorsRegex"/> also carries.
+    /// - "without error(s)" / "without factual error(s)" — the participle form.
+    /// </summary>
+    private static readonly Regex DefectDenialRegex = new(
+        @"(?:free|devoid)\s+of\s+(?:any\s+)?factual\s+error|\b(?:no|zero)\s+(?:material\s+|significant\s+|outright\s+)?(?:factual\s+error|contradict(?:ion|ed\s+claim)|error|inaccurac|false\s+statement|misstatement)|\bwithout\s+(?:any\s+)?(?:factual\s+)?error",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// A clause boundary that turns a denial into a concession. "No factual errors, but states the
+    /// level as 40 when it is 25" denies one defect and charges another, and only the first half is
+    /// a denial — so any of these markers disqualifies <see cref="DefectDenialRegex"/> from
+    /// suppressing.
+    ///
+    /// Needed because <see cref="FalsehoodRegex"/> cannot carry this on its own. Its vocabulary is
+    /// the words that *assert* a falsehood, and a grader charging a defect in neutral prose
+    /// ("states the level as 40 when it is 25") uses none of them; the concession marker is then the
+    /// only signal that the sentence did not stop at its denial.
+    /// </summary>
+    private static readonly Regex ConcessionRegex = new(
+        @"\b(?:but|however|although|though|yet|except|aside\s+from|apart\s+from|other\s+than|save\s+for)\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
     /// True when this verdict docked ACCURACY and its own evidence string names the defect.
     ///
     /// The boilerplate exclusion is the whole point. Level 5 is the modal level of a strong run,
@@ -301,6 +340,16 @@ public static class BenchmarkVerdictConsistency
     /// <see cref="IsNoFaultEvidence"/> rather than a fresh string list, so "Matches rubric.",
     /// "Matches rubric" and "Aligns with rubric." are covered along with the rest of the family the
     /// prompt offers as the *full-level* form, and an absent evidence string is excluded with them.
+    ///
+    /// A second exclusion covers the same denial written as a sentence rather than as boilerplate —
+    /// run 22's Q3/Q4/Q17 evidence read "... match the rubric with no factual errors." — via the
+    /// unanchored <see cref="DefectDenialRegex"/>. That exclusion yields whenever the same evidence
+    /// also names a real defect: <see cref="FalsehoodRegex"/> overrides it exactly as it overrides
+    /// <see cref="OmissionRegex"/> in <see cref="IsOmissionGroundedAccuracyDeduction"/>, and
+    /// <see cref="OmissionRegex"/> overrides it too, so a denial paired with an admitted omission
+    /// ("no factual errors, but omits the weapon-swap cost") still names a defect.
+    /// <see cref="ConcessionRegex"/> covers the general shape of that sentence, where the defect
+    /// the grader went on to charge is written in prose neither of those two regexes recognises.
     /// </summary>
     public static bool NamesAnAccuracyDefect(int? accuracyLevel, string? accuracyEvidence)
     {
@@ -309,7 +358,18 @@ public static class BenchmarkVerdictConsistency
             return false;
         }
 
-        return !IsNoFaultEvidence(accuracyEvidence);
+        if (IsNoFaultEvidence(accuracyEvidence))
+        {
+            return false;
+        }
+
+        bool deniesDefect = !string.IsNullOrWhiteSpace(accuracyEvidence)
+            && DefectDenialRegex.IsMatch(accuracyEvidence)
+            && !FalsehoodRegex.IsMatch(accuracyEvidence)
+            && !OmissionRegex.IsMatch(accuracyEvidence)
+            && !ConcessionRegex.IsMatch(accuracyEvidence);
+
+        return !deniesDefect;
     }
 
     /// <summary>

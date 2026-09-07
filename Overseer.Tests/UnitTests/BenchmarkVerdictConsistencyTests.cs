@@ -379,4 +379,119 @@ public class BenchmarkVerdictConsistencyTests
         Assert.Empty(BenchmarkVerdictConsistency.AnswersWithNamedAccuracyDefects(
             Array.Empty<(int, int?, string?)>()));
     }
+
+    [Fact]
+    public void NamesAnAccuracyDefect_Run22Q3Q4Q17Shape_DoesNotFlag()
+    {
+        // Run 22's Q3/Q4/Q17 evidence: a sentence-form denial rather than the anchored
+        // boilerplate IsNoFaultEvidence recognises. Before DefectDenialRegex this returned
+        // true and stamped "Accuracy defect recorded: yes" onto an answer its own grader
+        // recorded no defect for.
+        const string evidence = "All stated stats and mechanics match the rubric with no factual errors.";
+        Assert.False(BenchmarkVerdictConsistency.NamesAnAccuracyDefect(5, evidence));
+    }
+
+    [Fact]
+    public void NamesAnAccuracyDefect_Run14Q11Shape_StillFlags()
+    {
+        const string evidence =
+            "The answer covers the set mechanics but overlooks that weapon swapping between sets takes 0 turns in GnollHack, suggesting instead that switching weapons requires extra equipment management overhead.";
+        Assert.True(BenchmarkVerdictConsistency.NamesAnAccuracyDefect(5, evidence));
+    }
+
+    [Fact]
+    public void NamesAnAccuracyDefect_Run14Q14Shape_StillFlags()
+    {
+        const string evidence =
+            "The answer lists Level as 40 and Hit dice as 25; in the monster definition LVL(25, 16, -10, 15, 10, -20), his level/HD is 25, while 40 is his monster difficulty.";
+        Assert.True(BenchmarkVerdictConsistency.NamesAnAccuracyDefect(5, evidence));
+    }
+
+    [Fact]
+    public void NamesAnAccuracyDefect_DenialAlongsideAFalsehood_StillFlags()
+    {
+        // FalsehoodRegex takes precedence over the denial, exactly as it does over
+        // OmissionRegex in IsOmissionGroundedAccuracyDeduction: a denial paired with an
+        // assertion that the answer stated something untrue still names a defect.
+        const string evidence = "no contradictions, but states the level as 40 when it is 25";
+        Assert.True(BenchmarkVerdictConsistency.NamesAnAccuracyDefect(5, evidence));
+    }
+
+    [Theory]
+    [InlineData("no factual errors, but states the level as 40 when it is 25")]
+    [InlineData("No inaccuracies, however the turn cost is given as 1 where the rubric has 0")]
+    [InlineData("Without error, except that the armour class is quoted for the wrong form")]
+    public void NamesAnAccuracyDefect_DenialConcededByALaterClause_StillFlags(string evidence)
+    {
+        // The defect these sentences go on to charge is neutral prose: it carries none of
+        // FalsehoodRegex's assertion vocabulary and names no omission, so the concession marker is
+        // the only thing separating them from a plain denial. Without it the run 14 guardrail holds
+        // for "no contradictions" only, and only because that phrase happens to share a stem with
+        // FalsehoodRegex.
+        Assert.True(BenchmarkVerdictConsistency.NamesAnAccuracyDefect(5, evidence));
+    }
+
+    [Fact]
+    public void NamesAnAccuracyDefect_DenialAlongsideAnOmission_StillFlags()
+    {
+        // OmissionRegex overrides the denial too: a bare omission (Q11's "overlooks that
+        // weapon swapping ... takes 0 turns") already counts as a named defect above, so a
+        // denial that sits beside an admitted omission cannot cancel it out either.
+        const string evidence = "no factual errors, but omits the weapon-swap cost";
+        Assert.True(BenchmarkVerdictConsistency.NamesAnAccuracyDefect(5, evidence));
+    }
+
+    [Theory]
+    [InlineData("no factual error")]
+    [InlineData("no factual errors")]
+    [InlineData("zero factual errors")]
+    [InlineData("no errors")]
+    [InlineData("no inaccuracies")]
+    [InlineData("free of factual errors")]
+    [InlineData("devoid of factual errors")]
+    [InlineData("without error")]
+    [InlineData("without errors")]
+    public void NamesAnAccuracyDefect_CoversTheDenialVocabularyFamily(string denial)
+    {
+        string evidence = $"Reviewed against the rubric point by point, {denial} were found in the answer.";
+        Assert.False(BenchmarkVerdictConsistency.NamesAnAccuracyDefect(5, evidence));
+    }
+
+    [Theory]
+    // These three DefectDenialRegex alternatives share a root with an existing FalsehoodRegex
+    // alternative — "contradic" with "contradiction(s)"/"contradicted claims", "\bfalse" with
+    // "false statements", "misstat" with "misstatements" — so evidence built from them always
+    // also matches FalsehoodRegex, and the precedence rule then names a defect regardless of
+    // whether a second, unrelated defect is actually present. DefectDenialRegex still recognises
+    // the phrase; the override just never yields for it. No regression: this is exactly the
+    // pre-existing behaviour for these three phrases before DefectDenialRegex existed.
+    [InlineData("no contradiction")]
+    [InlineData("no contradictions")]
+    [InlineData("no contradicted claims")]
+    [InlineData("no false statements")]
+    [InlineData("no misstatements")]
+    public void NamesAnAccuracyDefect_DenialSharingAFalsehoodRoot_StillFlags(string denial)
+    {
+        string evidence = $"Reviewed against the rubric point by point, {denial} were found in the answer.";
+        Assert.True(BenchmarkVerdictConsistency.NamesAnAccuracyDefect(5, evidence));
+    }
+
+    [Fact]
+    public void NamesAnAccuracyDefect_AccuracyLevelSixOrAbove_DoesNotFlag()
+    {
+        Assert.False(BenchmarkVerdictConsistency.NamesAnAccuracyDefect(6, "Overlooks a rubric point."));
+        Assert.False(BenchmarkVerdictConsistency.NamesAnAccuracyDefect(6, null));
+    }
+
+    [Fact]
+    public void NamesAnAccuracyDefect_TerseBoilerplateEvidence_DoesNotFlag()
+    {
+        Assert.False(BenchmarkVerdictConsistency.NamesAnAccuracyDefect(5, "Matches rubric"));
+    }
+
+    [Fact]
+    public void NamesAnAccuracyDefect_NullEvidence_DoesNotFlag()
+    {
+        Assert.False(BenchmarkVerdictConsistency.NamesAnAccuracyDefect(5, null));
+    }
 }

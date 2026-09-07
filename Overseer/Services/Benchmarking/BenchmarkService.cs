@@ -1246,6 +1246,11 @@ public class BenchmarkService
             // nothing on the answer entity for them to correct here.
             answer.CompletenessOutOfScope = res.CompletenessOutOfScope;
 
+            // Scoring method v9's Readability counterpart, written on the same terms and for the
+            // same reason: a rubric format suggestion the answer did not follow is recorded under
+            // the FORM: marker rather than deducted for.
+            answer.ReadabilityFormOnly = res.ReadabilityFormOnly;
+
             // Scoring method v6: recorded, never deducted for. The count is set even when the
             // list is empty, because for these runs "the assessor found none" is a real finding;
             // null is reserved for runs that predate the field and were never asked.

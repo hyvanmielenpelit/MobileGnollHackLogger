@@ -293,4 +293,97 @@ public class BenchmarkAssessmentParserTests
 
         Assert.True(result.Result!.CompletenessOutOfScope);
     }
+
+    /// <summary>A verdict whose readability evidence is whatever the test needs it to be.</summary>
+    private static string VerdictWithReadabilityEvidence(string readabilityEvidence)
+    {
+        return $$"""
+        {
+          "accuracyLevel": 5,
+          "completenessLevel": 5,
+          "concisenessLevel": 5,
+          "readabilityLevel": 5,
+          "criticalError": false,
+          "criticalErrorQuote": null,
+          "unverifiedClaims": [],
+          "accuracyEvidence": "Matches rubric.",
+          "completenessEvidence": "Matches rubric.",
+          "readabilityEvidence": "{{readabilityEvidence}}",
+          "comment": "A reasonable answer."
+        }
+        """;
+    }
+
+    [Fact]
+    public void ReadabilityFormOnly_IsSetWhenTheMarkerIsPresent()
+    {
+        // The shape scoring method v9 asks for: the rubric named a presentation, the answer used
+        // another, and the assessor records that instead of docking Readability for it.
+        var result = BenchmarkAssessmentParser.ParsePerQuestion(
+            VerdictWithReadabilityEvidence(
+                "FORM: the rubric suggests a comparison table; the answer covers the same material as prose."),
+            Answer);
+
+        Assert.True(result.Success);
+        Assert.True(result.Result!.ReadabilityFormOnly);
+    }
+
+    [Fact]
+    public void ReadabilityFormOnly_IsNotSetWhenTheMarkerIsAbsent()
+    {
+        // The normal case, and the one the field is normally null in.
+        var result = BenchmarkAssessmentParser.ParsePerQuestion(
+            VerdictWithReadabilityEvidence(""),
+            Answer);
+
+        Assert.True(result.Success);
+        Assert.False(result.Result!.ReadabilityFormOnly);
+    }
+
+    [Theory]
+    // Anchored, unlike the out-of-scope marker: 'form' is an ordinary word, and readabilityEvidence
+    // carries the marker and nothing else, so a mid-sentence occurrence is prose about the answer
+    // rather than a marker. A mangled marker costs the measurement and nothing else.
+    [InlineData("The rubric's FORM: section asks for a table, which is worth noting.")]
+    [InlineData("Deducted one level because the answer ignored the rubric FORM: guidance.")]
+    [InlineData("FORM")]
+    [InlineData("FORMAT: the rubric suggests a table.")]
+    [InlineData("Clear headings and short paragraphs throughout.")]
+    public void ReadabilityFormOnly_MarkerNotAtTheStart_DoesNotSetTheFlag(string evidence)
+    {
+        var result = BenchmarkAssessmentParser.ParsePerQuestion(
+            VerdictWithReadabilityEvidence(evidence),
+            Answer);
+
+        Assert.True(result.Success);
+        Assert.False(result.Result!.ReadabilityFormOnly);
+    }
+
+    [Theory]
+    // Casing and spacing tolerance: models write the marker the way they feel like writing it.
+    [InlineData("FORM: the rubric suggests a table.")]
+    [InlineData("Form: the rubric suggests a table.")]
+    [InlineData("form : the rubric suggests a table.")]
+    [InlineData("  FORM: the rubric suggests a table.")]
+    public void ReadabilityFormOnly_ToleratesTheFormsAssessorsActuallyWrite(string evidence)
+    {
+        var result = BenchmarkAssessmentParser.ParsePerQuestion(
+            VerdictWithReadabilityEvidence(evidence),
+            Answer);
+
+        Assert.True(result.Result!.ReadabilityFormOnly);
+    }
+
+    [Fact]
+    public void ReadabilityEvidence_IsAbsent_ParsesAndLeavesTheFlagClear()
+    {
+        // Every verdict graded before v9 has no such field at all, and re-parsing one must not fail.
+        var result = BenchmarkAssessmentParser.ParsePerQuestion(
+            VerdictWithCompletenessEvidence("Matches rubric."),
+            Answer);
+
+        Assert.True(result.Success);
+        Assert.Null(result.Result!.ReadabilityEvidence);
+        Assert.False(result.Result!.ReadabilityFormOnly);
+    }
 }

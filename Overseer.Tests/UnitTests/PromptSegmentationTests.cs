@@ -266,4 +266,88 @@ public class PromptSegmentationTests
             return Task.FromResult(new ToolResult { Success = true, Content = "ok" });
         }
     }
+
+    [Fact]
+    public void GoogleProvider_BuildChatRequestBody_WithSegmentedPrompt_OrdersSystemPartsBySegment()
+    {
+        // Gemini has no per-block cache_control and no prompt_cache_key. Its implicit cache keys
+        // on a request prefix instead, so the segments are honoured as part order rather than as
+        // breakpoints, and everything stable is serialized before the turn list.
+        var provider = new GoogleProvider(new ConfigurationBuilder().Build());
+
+        var segmentedPrompt = new SegmentedPrompt(
+            "Frozen Prefix Identity & Policy",
+            "Session Prefix Style",
+            "Volatile Wiki Context");
+
+        var prepared = provider.PrepareMessageHistory(new List<object>
+        {
+            provider.FormatMessage("system", segmentedPrompt.FullPrompt, null),
+            provider.FormatMessage("user", "What is my next tactical move?", null)
+        });
+
+        var tools = new ToolsForRequest
+        {
+            FunctionDeclarations = new List<object>
+            {
+                provider.BuildFunctionDeclaration("tool_a", "First tool", new { }),
+                provider.BuildFunctionDeclaration("tool_b", "Second tool", new { })
+            }
+        };
+
+        var requestBody = provider.BuildChatRequestBody(
+            "gemini-3.7-flash",
+            prepared,
+            1024,
+            null,
+            tools,
+            segmentedPrompt: segmentedPrompt,
+            promptCacheKey: "sample_cache_key_12345");
+
+        string json = JsonSerializer.Serialize(requestBody);
+
+        // The ampersand is & on the wire: System.Text.Json's default encoder escapes it, and
+        // a prefix test asserts the bytes rather than the characters they stand for.
+        Assert.Contains(
+            "\"systemInstruction\":{\"parts\":[{\"text\":\"Frozen Prefix Identity \\u0026 Policy\"},{\"text\":\"Session Prefix Style\"},{\"text\":\"Volatile Wiki Context\"}]}",
+            json);
+
+        // Serialization follows key insertion order, and `contents` is inserted last precisely so
+        // that the stable material can be a prefix.
+        Assert.True(json.IndexOf("\"systemInstruction\"", StringComparison.Ordinal) < json.IndexOf("\"contents\"", StringComparison.Ordinal));
+        Assert.True(json.IndexOf("\"tools\"", StringComparison.Ordinal) < json.IndexOf("\"contents\"", StringComparison.Ordinal));
+        Assert.True(json.IndexOf("\"toolConfig\"", StringComparison.Ordinal) < json.IndexOf("\"contents\"", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void GoogleProvider_BuildChatRequestBody_OrdersSafetySettingsDeterministically()
+    {
+        // Configuration section order is not a contract, and a set that reorders between two
+        // requests moves the byte where the prefix stops matching.
+        var forward = new Dictionary<string, string?>
+        {
+            { "SafetySettings:Gemini:HARM_CATEGORY_HARASSMENT", "BLOCK_NONE" },
+            { "SafetySettings:Gemini:HARM_CATEGORY_DANGEROUS_CONTENT", "BLOCK_NONE" }
+        };
+        var reversed = new Dictionary<string, string?>
+        {
+            { "SafetySettings:Gemini:HARM_CATEGORY_DANGEROUS_CONTENT", "BLOCK_NONE" },
+            { "SafetySettings:Gemini:HARM_CATEGORY_HARASSMENT", "BLOCK_NONE" }
+        };
+
+        static string Body(Dictionary<string, string?> settings)
+        {
+            var provider = new GoogleProvider(new ConfigurationBuilder().AddInMemoryCollection(settings).Build());
+            var prepared = provider.PrepareMessageHistory(new List<object>
+            {
+                provider.FormatMessage("user", "hi", null)
+            });
+
+            return JsonSerializer.Serialize(provider.BuildChatRequestBody(
+                "gemini-3.7-flash", prepared, 1024, null, new ToolsForRequest()));
+        }
+
+        Assert.Equal(Body(forward), Body(reversed));
+        Assert.Contains("HARM_CATEGORY_DANGEROUS_CONTENT", Body(forward));
+    }
 }

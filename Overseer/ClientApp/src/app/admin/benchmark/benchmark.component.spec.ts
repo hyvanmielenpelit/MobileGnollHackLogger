@@ -2023,9 +2023,9 @@ describe('AdminBenchmarkComponent', () => {
       component.selectedRunDetail = buildCompletedRun({
         advisoryFlagAnswerCount: 2,
         answers: [
-          buildScoredAnswer(1, { qualityScore: 25, criticalError: true }),
+          buildScoredAnswer(1, { qualityScore: 25, criticalError: true, rawQualityScore: 60 }),
           buildScoredAnswer(2),
-          buildScoredAnswer(3, { qualityScore: 25, criticalError: true, answerFlags: 8, answerFlagNames: ['ReasoningBleed'] }),
+          buildScoredAnswer(3, { qualityScore: 25, criticalError: true, rawQualityScore: 70, answerFlags: 8, answerFlagNames: ['ReasoningBleed'] }),
           buildScoredAnswer(4),
           buildScoredAnswer(5, { answerFlags: 16, answerFlagNames: ['RepeatedFragments'] })
         ]
@@ -2037,20 +2037,55 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.advisoryFlagQuestionNumbers).toBe('3, 5');
 
       const text = integrityNoticeText().replace(/\s+/g, ' ').trim();
-      expect(text).toContain('2 answer(s) capped by a critical error (question(s) 1, 3).');
+      expect(text).toContain('2 answer(s) flagged with a critical error (question(s) 1, 3).');
       expect(text).toContain('2 answer(s) carry advisory flags (question(s) 3, 5).');
     });
 
     it('should raise the integrity notice for a critical error that is the only cause', () => {
       component.selectedRunDetail = buildCompletedRun({
-        answers: [buildScoredAnswer(1, { qualityScore: 25, criticalError: true })]
+        answers: [buildScoredAnswer(1, { qualityScore: 25, criticalError: true, rawQualityScore: 60 })]
       });
       fixture.detectChanges();
 
       const text = integrityNoticeText().replace(/\s+/g, ' ').trim();
-      expect(text).toContain('1 answer(s) capped by a critical error (question(s) 1).');
+      expect(text).toContain('1 answer(s) flagged with a critical error (question(s) 1).');
       expect(text).toContain('read this count, not the index, for this failure mode.');
       expect(text).not.toContain('advisory flags');
+    });
+
+    it('should add the cap-binding clause only when it differs from the flagged count', () => {
+      component.selectedRunDetail = buildCompletedRun({
+        answers: [
+          // Flagged and genuinely capped: the raw score was above the ceiling the ceiling pulled it down to.
+          buildScoredAnswer(1, { qualityScore: 25, rawQualityScore: 60, criticalError: true }),
+          // Flagged but not capped in effect: the raw score already sat at or below the ceiling.
+          buildScoredAnswer(2, { qualityScore: 25, rawQualityScore: 25, criticalError: true })
+        ]
+      });
+      fixture.detectChanges();
+
+      expect(component.criticalErrorAnswerCount).toBe(2);
+      expect(component.criticalErrorCapBindingCount).toBe(1);
+
+      const text = integrityNoticeText().replace(/\s+/g, ' ').trim();
+      expect(text).toContain('2 answer(s) flagged with a critical error (question(s) 1, 2), of which 1 had their score lowered by the cap.');
+    });
+
+    it('should omit the cap-binding clause when every flagged answer was actually capped', () => {
+      component.selectedRunDetail = buildCompletedRun({
+        answers: [
+          buildScoredAnswer(1, { qualityScore: 25, rawQualityScore: 60, criticalError: true }),
+          buildScoredAnswer(2, { qualityScore: 25, rawQualityScore: 70, criticalError: true })
+        ]
+      });
+      fixture.detectChanges();
+
+      expect(component.criticalErrorAnswerCount).toBe(2);
+      expect(component.criticalErrorCapBindingCount).toBe(2);
+
+      const text = integrityNoticeText().replace(/\s+/g, ' ').trim();
+      expect(text).toContain('2 answer(s) flagged with a critical error (question(s) 1, 2).');
+      expect(text).not.toContain('had their score lowered by the cap');
     });
 
     it('should name no questions when there is no run detail or no flagged answer', () => {
@@ -2845,6 +2880,20 @@ describe('AdminBenchmarkComponent', () => {
       expect(scoreCardText('Assessor Agreement')).toContain('Every answer');
     });
 
+    it('should label FlaggedPlusSample rather than falling through to Manual only', () => {
+      component.selectedRunDetail = buildFinishedRun({
+        secondOpinionModeUsed: 4,
+        secondOpinionGradedAnswerCount: 6,
+        secondOpinionMeanAbsDelta: 2.5
+      });
+      fixture.detectChanges();
+
+      expect(component.agreementModeLabel).toBe('Flagged plus sample');
+      const text = scoreCardText('Assessor Agreement');
+      expect(text).toContain('Flagged plus sample');
+      expect(text).not.toContain('Manual only');
+    });
+
     it('should hide the agreement tile when nothing was graded twice', () => {
       component.selectedRunDetail = buildFinishedRun({ secondOpinionGradedAnswerCount: 0 });
       fixture.detectChanges();
@@ -2942,6 +2991,96 @@ describe('AdminBenchmarkComponent', () => {
       expect(pills[0].classList.contains('verdict-refuted')).toBeFalse();
       expect(pills[1].classList.contains('verdict-refuted')).toBeTrue();
       expect(pills[2].classList.contains('verdict-refuted')).toBeFalse();
+    });
+
+    describe('Speed Index saturation', () => {
+      function scoredAnswer(orderIndex: number, speedScore: number): any {
+        return {
+          id: orderIndex, orderIndex, questionText: `Q${orderIndex}`, difficulty: 1, answerText: 'a',
+          status: 'Ok', assessmentStatus: 'Scored', durationMs: 1, modelTimeMs: 1,
+          scrubbedArtifactCount: 0, answerFlags: 0, answerFlagNames: [], qualityScore: 80, speedScore
+        };
+      }
+
+      function speedIndexNoteText(): string {
+        const cards: HTMLElement[] = Array.from(fixture.nativeElement.querySelectorAll('.score-card'));
+        const card = cards.find(c => (c.querySelector('.score-label')?.textContent || '').trim() === 'Speed Index');
+        const notes: HTMLElement[] = Array.from(card?.querySelectorAll('.score-note') ?? []);
+        return notes.map(n => (n.textContent || '').trim()).join(' ');
+      }
+
+      it('should flag saturation once exactly half the scored answers sit at the ceiling', () => {
+        component.selectedRunDetail = buildFinishedRun({
+          scoringProfileSpeedTargetMs: 30000,
+          answers: [scoredAnswer(1, 100), scoredAnswer(2, 100), scoredAnswer(3, 50), scoredAnswer(4, 50)]
+        });
+        fixture.detectChanges();
+
+        expect(component.speedIndexScoredAnswerCount).toBe(4);
+        expect(component.speedIndexCeilingAnswerCount).toBe(2);
+        expect(component.showSpeedIndexSaturationAdvisory).toBeTrue();
+        expect(speedIndexNoteText()).toContain('saturated — 2 of 4 at the ceiling');
+      });
+
+      it('should not flag saturation just below half', () => {
+        component.selectedRunDetail = buildFinishedRun({
+          scoringProfileSpeedTargetMs: 30000,
+          answers: [scoredAnswer(1, 100), scoredAnswer(2, 100), scoredAnswer(3, 50), scoredAnswer(4, 50), scoredAnswer(5, 50)]
+        });
+        fixture.detectChanges();
+
+        expect(component.speedIndexScoredAnswerCount).toBe(5);
+        expect(component.speedIndexCeilingAnswerCount).toBe(2);
+        expect(component.showSpeedIndexSaturationAdvisory).toBeFalse();
+        expect(speedIndexNoteText()).not.toContain('saturated');
+      });
+    });
+
+    describe('instrument measurements', () => {
+      function measurementsText(): string {
+        const notes: HTMLElement[] = Array.from(fixture.nativeElement.querySelectorAll('.alert-info'));
+        const block = notes.find(n => (n.querySelector('.alert-heading')?.textContent || '')
+          .includes('Instrument Measurements'));
+        return (block?.textContent || '').replace(/\s+/g, ' ').trim();
+      }
+
+      it('should report both counts as measurements, outside the integrity notice', () => {
+        component.selectedRunDetail = buildFinishedRun({
+          completenessOutOfScopeCount: 2,
+          readabilityFormOnlyCount: 3
+        });
+        fixture.detectChanges();
+
+        expect(component.completenessOutOfScopeCount).toBe(2);
+        expect(component.readabilityFormOnlyCount).toBe(3);
+        expect(component.hasInstrumentMeasurements).toBeTrue();
+        expect(measurementsText()).toContain('2 out-of-scope completeness deduction(s)');
+        expect(measurementsText()).toContain('3 rubric format suggestion(s) not followed');
+      });
+
+      it('should show only the count that was recorded', () => {
+        component.selectedRunDetail = buildFinishedRun({
+          completenessOutOfScopeCount: 0,
+          readabilityFormOnlyCount: 1
+        });
+        fixture.detectChanges();
+
+        expect(component.hasInstrumentMeasurements).toBeTrue();
+        expect(measurementsText()).not.toContain('out-of-scope completeness deduction(s)');
+        expect(measurementsText()).toContain('1 rubric format suggestion(s) not followed');
+      });
+
+      it('should stay hidden when neither was recorded', () => {
+        // Zero is not a finding here: a run graded before either marker existed reports zero too.
+        component.selectedRunDetail = buildFinishedRun({
+          completenessOutOfScopeCount: 0,
+          readabilityFormOnlyCount: 0
+        });
+        fixture.detectChanges();
+
+        expect(component.hasInstrumentMeasurements).toBeFalse();
+        expect(measurementsText()).toBe('');
+      });
     });
   });
 

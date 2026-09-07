@@ -2246,6 +2246,7 @@ public class AdminBenchmarkController : ControllerBase
             OmissionAsAccuracyAnswerCount = run.OmissionAsAccuracyAnswerCount,
             RefutedClaimAnswerCount = run.RefutedClaimAnswerCount,
             CompletenessOutOfScopeCount = run.Answers.Count(a => a.CompletenessOutOfScope),
+            ReadabilityFormOnlyCount = run.Answers.Count(a => a.ReadabilityFormOnly),
             ClaimVerifiedAnswerCount = run.ClaimVerifiedAnswerCount,
             ClaimsSupportedCount = run.ClaimsSupportedCount,
             ClaimsRefutedCount = run.ClaimsRefutedCount,
@@ -3925,5 +3926,31 @@ public class AdminBenchmarkController : ControllerBase
             $"{analysis.ComputedAtUtc:yyyyMMdd_HHmmss}.md";
 
         return File(Encoding.UTF8.GetBytes(markdown), "text/markdown; charset=utf-8", filename);
+    }
+
+    // --- Cross-model comparison ----------------------------------------------------------------
+
+    /// <summary>
+    /// One point per candidate model — quality, speed and cost — over the runs and groups named in
+    /// the query. Read-only arithmetic over stored data, including the re-pricing, so nothing here
+    /// can trigger a run.
+    ///
+    /// <para>Models are never pooled: each run id and each group id contributes exactly one point.
+    /// Which points may share a chart is decided by <c>BenchmarkCrossModelComparability</c> inside
+    /// the service, and an entry produced by a different instrument comes back with its measures
+    /// withheld and the differing keys named — so a chart cannot render it even by ignoring a
+    /// flag.</para>
+    /// </summary>
+    [HttpGet("model-comparison")]
+    public async Task<IActionResult> GetModelComparison(
+        [FromQuery] BenchmarkModelComparisonRequest request,
+        [FromServices] BenchmarkModelComparisonService comparisonService,
+        CancellationToken ct)
+    {
+        var (result, error) = await comparisonService.CompareAsync(request, ct);
+
+        return result == null
+            ? BadRequest(error ?? "The comparison could not be computed.")
+            : Ok(result);
     }
 }

@@ -3,6 +3,7 @@ namespace Overseer.Tests.UnitTests;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Configuration;
 using MobileGnollHackLogger.Data;
 using Overseer.Services;
@@ -1007,7 +1008,7 @@ public class BenchmarkReportBuilderTests
             ScoredAnswer(4, BenchmarkDifficulty.Simple, 32, 97),
             ScoredAnswer(5, BenchmarkDifficulty.Simple, 30, 92)));
 
-        Assert.Contains("range 60–97, lowest Q1", report);
+        Assert.Contains("quality range 60–97, lowest Q1", report);
     }
 
     [Fact]
@@ -1327,6 +1328,40 @@ public class BenchmarkReportBuilderTests
                 ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 90)));
 
         Assert.DoesNotContain("Out-of-scope completeness deductions", report);
+    }
+
+    [Fact]
+    public void RubricFormSuggestions_AreCountedAndNamedUnderTheDimensionalAverages()
+    {
+        var q3 = ScoredAnswer(3, BenchmarkDifficulty.Simple, 30, 95);
+        q3.ReadabilityLevel = 5;
+        q3.ReadabilityFormOnly = true;
+
+        var q9 = ScoredAnswer(9, BenchmarkDifficulty.Intermediate, 60, 90);
+        q9.ReadabilityLevel = 5;
+        q9.ReadabilityFormOnly = true;
+
+        var ordinary = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 70);
+        ordinary.ReadabilityLevel = 4;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(
+            HarnessV7Run(BenchmarkSecondOpinionMode.Off, ordinary, q3, q9));
+
+        Assert.Contains("**Rubric format suggestions not followed:** 2 (Q3, Q9)", report);
+        Assert.Contains("Readability is graded on its level anchors alone", report);
+    }
+
+    [Fact]
+    public void RubricFormSuggestions_AreNotReportedAsZeroWhenNoneWereRecorded()
+    {
+        // Same silence as the out-of-scope line, for the same reason: a run graded before the
+        // FORM marker existed and a run whose rubrics suggested nothing look identical here.
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(
+            HarnessV7Run(
+                BenchmarkSecondOpinionMode.Off,
+                ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 90)));
+
+        Assert.DoesNotContain("Rubric format suggestions not followed", report);
     }
 
     [Fact]
@@ -1911,5 +1946,154 @@ public class BenchmarkReportBuilderTests
 
         Assert.Contains("**Claim Verification Failed:**", report);
         Assert.DoesNotContain("**Claim Verification Not Checked (budget):**", report);
+    }
+
+    // -------------------------------------------------------------------------------------
+    // Run 22 truthfulness fixes: each fixture below reproduces the shape of the defect the
+    // hand analysis of that run found.
+    // -------------------------------------------------------------------------------------
+
+    [Fact]
+    public void ModeGloss_DescribesFlaggedPlusSample_InsteadOfClaimingNoSecondVerdict()
+    {
+        // FlaggedPlusSample fell through ModeGloss's default arm, which reads as Off: a run
+        // configured with it was reported as having had no second verdict configured at all.
+        var run = HarnessV7Run(
+            BenchmarkSecondOpinionMode.FlaggedPlusSample,
+            ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 90));
+        run.SecondOpinionAssessorModelConfigurationId = 7;
+        run.SecondOpinionAssessorModelDisplayNameUsed = "Claude Reviewer";
+        run.SecondOpinionAssessorModelProviderUsed = "Anthropic";
+        run.SecondOpinionAssessorModelIdUsed = "claude-reviewer-1";
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("flagged answers, topped up to the profile's minimum sample", report);
+        Assert.DoesNotContain("no second verdict was configured", report);
+    }
+
+    [Fact]
+    public void RawQualityIndexHeadline_NamesWhatItCounts_NotCappedByCriticalError()
+    {
+        // cappedCount counts answers whose score the cap actually lowered, which is a different
+        // quantity from "carries the critical-error flag" — the two must not share one phrase.
+        var capped = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 25);
+        capped.RawQualityScore = 95;
+        capped.CriticalError = true;
+        var clean = ScoredAnswer(2, BenchmarkDifficulty.Simple, 30, 90);
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(
+            HarnessV7Run(BenchmarkSecondOpinionMode.Off, capped, clean));
+
+        Assert.Contains("question(s) whose score the cap lowered", report);
+        Assert.DoesNotContain("capped by critical error", report);
+    }
+
+    [Fact]
+    public void PerAnswerCapMarker_DistinguishesActualCappingFromCriticalErrorAlone()
+    {
+        // Run 22's shape: Q1 and Q16 scored 21 raw, already below the cap of 25, so the cap
+        // changed nothing even though both carry a critical error. The marker must say so
+        // instead of claiming the cap applied.
+        var capNotBinding = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 21);
+        capNotBinding.CriticalError = true;
+
+        var capBinding = ScoredAnswer(2, BenchmarkDifficulty.Simple, 25, 25);
+        capBinding.RawQualityScore = 95;
+        capBinding.CriticalError = true;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(
+            HarnessV7Run(BenchmarkSecondOpinionMode.Off, capNotBinding, capBinding));
+
+        Assert.Contains("*(CRITICAL ERROR — cap not binding)*", report);
+        Assert.Contains("*(CRITICAL ERROR CAP APPLIED)*", report);
+    }
+
+    [Fact]
+    public void BandRangeLabel_NamesQualityRange_NotDifficultyRange()
+    {
+        // 21 and 77 here are QualityScore values, not difficulty — the bare "range " literal
+        // printed right after "avg diff: 29" reads as a difficulty range instead.
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(
+            BenchmarkSecondOpinionMode.Off,
+            ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 21),
+            ScoredAnswer(2, BenchmarkDifficulty.Simple, 33, 77)));
+
+        Assert.Contains("avg diff: 29, quality range 21–77", report);
+    }
+
+    [Fact]
+    public void FinalIndices_CarriesContestedVerdictSensitivity_WhenContestedCriticalAnswersExist()
+    {
+        // Section 7 carries the headline figures; it must not drop the one number that says how
+        // fragile they are, and it must not recompute it — the same value has to appear in both
+        // places.
+        var clean = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 90);
+        var contested = ScoredAnswer(12, BenchmarkDifficulty.Intermediate, 55, 42);
+        contested.AnswerFlags = (int)BenchmarkAnswerFlags.ContestedVerdict;
+        contested.SecondOpinionCriticalError = true;
+        contested.SecondOpinionQualityScore = 25;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(
+            HarnessV7Run(BenchmarkSecondOpinionMode.Off, clean, contested));
+
+        int finalIndicesStart = report.IndexOf("## 7. Final Indices", StringComparison.Ordinal);
+        Assert.True(finalIndicesStart >= 0);
+
+        var matches = Regex.Matches(report, @"Contested-Verdict Sensitivity:\**\s*(\d+)\s*/\s*100");
+        Assert.Equal(2, matches.Count);
+        Assert.True(matches[0].Index < finalIndicesStart, "§ 2 must carry the sensitivity figure.");
+        Assert.True(matches[1].Index > finalIndicesStart, "§ 7 must carry the same sensitivity figure.");
+        Assert.Equal(matches[0].Groups[1].Value, matches[1].Groups[1].Value);
+    }
+
+    [Fact]
+    public void SpeedIndexSaturationNotice_AppearsWhenAtLeastHalfTheAnswersAreAtTheCeiling()
+    {
+        // Boundary case: exactly half at the ceiling, which the "at least half" predicate must
+        // still catch. Run 22's shape was 17 of 18 at 100 with a Speed Index that carried no
+        // discriminating information at all.
+        var a1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 90);
+        a1.SpeedScore = 100;
+        a1.DurationMs = 5000;
+        var a2 = ScoredAnswer(2, BenchmarkDifficulty.Simple, 25, 92);
+        a2.SpeedScore = 100;
+        a2.DurationMs = 7000;
+        var a3 = ScoredAnswer(3, BenchmarkDifficulty.Simple, 25, 88);
+        a3.SpeedScore = 60;
+        a3.DurationMs = 20000;
+        var a4 = ScoredAnswer(4, BenchmarkDifficulty.Simple, 25, 91);
+        a4.SpeedScore = 55;
+        a4.DurationMs = 25000;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(
+            HarnessV7Run(BenchmarkSecondOpinionMode.Off, a1, a2, a3, a4));
+
+        // Median model time over the four (sorted 5000, 7000, 20000, 25000) is 7,000 ms.
+        Assert.Contains(
+            "*Saturated — 2 of 4 answers finished inside their difficulty-scaled target, so this index cannot discriminate at this speed. Compare median model time (7,000 ms) instead.*",
+            report);
+    }
+
+    [Fact]
+    public void SpeedIndexSaturationNotice_IsAbsentWhenFewerThanHalfAreAtTheCeiling()
+    {
+        var a1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 90);
+        a1.SpeedScore = 100;
+        a1.DurationMs = 5000;
+        var a2 = ScoredAnswer(2, BenchmarkDifficulty.Simple, 25, 92);
+        a2.SpeedScore = 60;
+        a2.DurationMs = 20000;
+        var a3 = ScoredAnswer(3, BenchmarkDifficulty.Simple, 25, 88);
+        a3.SpeedScore = 55;
+        a3.DurationMs = 22000;
+        var a4 = ScoredAnswer(4, BenchmarkDifficulty.Simple, 25, 91);
+        a4.SpeedScore = 50;
+        a4.DurationMs = 25000;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(
+            HarnessV7Run(BenchmarkSecondOpinionMode.Off, a1, a2, a3, a4));
+
+        Assert.DoesNotContain("Saturated —", report);
     }
 }

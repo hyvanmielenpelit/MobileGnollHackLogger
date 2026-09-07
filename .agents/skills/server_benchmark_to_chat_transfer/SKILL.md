@@ -557,6 +557,66 @@ Any implementation plan derived from a benchmark run must replicate this section
     runs started afterwards**: extending this series past 2026-09-07 requires a fresh replicate set,
     not more members appended to it.
 
+### Run 22 — 2026-09-07: Gemini 3.5 Flash-Lite
+- **Candidate**: Gemini 3.5 Flash-Lite (`gemini-3.5-flash-lite`), thinking level `high`, reasoning
+  Default, service tier Default (served `standard`), parallel tool calls on. 18 questions (Suite 5).
+  **This was the model `RecommendedModels:Google` named for production chat** — see the Transfer
+  Action below.
+- **Prompt options**: `overseerMode: 0`, `verboseMode: false`, `spoilerFreeMode: false`,
+  `enableToolUse: true`, `enableWebSearch: false`, `allowSourceCodeReferences: true`,
+  `enableSubAgents: false`, `isGameOn: false`, `developerMode: false`, `hasMessageHistory: false`,
+  `hasWikiContext: false`, `hasGameSnapshot: false`. `parallelMode`: Enabled.
+- **Grading regime**: harness 12; scoring method 8; profile *Standard Intelligence Index*; assessor
+  Claude 5 Sonnet (`high`); second opinion GPT-5.6 Terra, **blind, FlaggedPlusSample** — the report
+  misrendered this as `Off`/"Manual only" (H1, since fixed); claim verifier GPT-5.6 Terra (`high`).
+  ToolCallBudget 45 flat. Three distinct providers across the three roles.
+- **Instrument SHAs** — **identical to runs 16–21 on all three**:
+  - `CandidateSystemPromptSha256`: `bb19dc24e28755228647960efc5c6aa70cfed64262da29a4a5079181acf5753b`
+  - `ToolGuidesSha256`: `9c79137965e4fe19e5cb2faea71ed29598ff032a7f3a653d8504ffd8a91ea168`
+  - `KnowledgeBaseHeadSha`: `576ca5741d1bd79ef1cb2f7db575709cf0bb0db8`
+- **Quality**: Intelligence Index **58 ± 10**; raw 59; unweighted mean 59; holistic 58.
+  Accuracy 62.8 / L 3.6; Completeness 48.6 / L 2.7; Conciseness 85.0 / L 4.9; Readability 75.2 / L 4.2.
+  Critical-error flags 4 (Q1, Q10, Q11, Q16), of which the cap bound on 2 (Q10, Q11). Contested-Verdict
+  Sensitivity 62. **11 refuted claims across 7 answers** (Q2 ×3, Q5, Q6, Q7 ×2, Q10, Q16 ×2, Q18) out
+  of 46 checked — a 24 % refutation rate against Luna's 0 %. Assessor mean absolute difference
+  13.0 pts, signed +7.2 over 10 of 18; 4 disagreements; **2 critical-error splits** (Q11 25↔68,
+  Q16 21↔48). 1 out-of-scope completeness deduction (Q12); 1 omission-as-accuracy (Q2).
+- **Speed**: median model time **7,192 ms**, P90 19,742 ms, max 20,080 ms; median TTFT 1,887 ms.
+  Speed Index 100 — **saturated**, 17 of 18 answers at the ceiling (H3, since fixed). Tool overhead
+  14.9 s total, 8 % of turn time. *r* = 0.90 source share vs. model time; *r* = −0.20 vs. quality.
+- **Cost**: 95 tool calls (5.3/question) — Source 67.4 %, Wiki 24.2 %, Structured 5.3 %, KB 3.2 %
+  (3 KB calls; 15 of 18 answers zero-KB, prompt-compliant per `ChatService.cs:1103`). 108 model calls,
+  83,437 input tokens per call. Input 9,011,289 / output 40,102 = 224.7 : 1; **cache-read share
+  21.1 %, cache-creation 0** — against 90–91 % on every Anthropic and OpenAI run. Run cost $5.50:
+  **candidate $2.29 (42 %)**, verifier $2.12 (38 %), assessor $1.09 (20 %).
+- **Transfer Action**: **T23** — Google prompt caching absent in `GoogleProvider`; implemented at
+  **rung 5**. `BuildChatRequestBody` now emits `systemInstruction`, `tools`, `toolConfig`,
+  `safetySettings`, `generationConfig` and `service_tier` **before** `contents`, giving the request a
+  stable byte prefix, with `safetySettings` ordered by ordinal key. Explicit `cachedContents` (4b) was
+  **deliberately not implemented**: Google documents implicit caching as on by default for Gemini
+  2.5-and-newer, keyed on the *prompt* prefix rather than the JSON byte prefix, so the token prefix
+  was probably already stable and 4a's measured effect is unknown. **The confirming run is
+  outstanding**, and until it lands the 21.1 % gap has no established cause.
+  **T24** (unscoped greeting instruction at `ChatService.cs:1125`, contradicting `:1373`) deferred,
+  rung 7, single observation, criterion recorded. **T25** — `RecommendedModels:Google` demoted from
+  this model to **`gemini-3.8-flash` @ `high`** at rung 6; that model also omits
+  `supportsSubAgentCoordination` / `supportsSubAgentExecution`, which default to `true` where
+  Flash-Lite set both `false`, so the recommended Google model became sub-agent eligible as a side
+  effect. Its price advantage is promotional and **doubles on 2027-01-01** ($0.75/$3.75/$0.075 →
+  $1.50/$7.50/$0.15); revisit before then. The confirming `gemini-3.8-flash` benchmark run is
+  outstanding. **T26** grading-role spend ruled not transferable. **S2/Q1** third confirmation of
+  the outstanding rung-1 knowledge base article — still human-authored, still not an agent task.
+- **Verification Outcome**: no prior chat change was under test. What the run verifies about the
+  instrument is that four report defects (H1–H5) and one grading defect (H7) are only observable in
+  the low-score, high-disagreement regime, and had survived eleven runs of frontier candidates
+  unnoticed. All five were fixed in the same round as this entry, together with **H6**: rubric FORM
+  criteria were being charged against Readability, which has no format anchor.
+- **Comparability reset in this round**: `ScoringMethodVersion` moved **8 → 9** with the H6 and H7
+  fixes. **Runs graded under v8 — this one included — are not comparable with v9 runs on
+  Readability**; Accuracy, Completeness and Conciseness are unaffected. This is the same kind of
+  deliberate break run 14's entry records, and it is stated here so that anyone extending the
+  series sees the reset rather than inferring an improvement from it.
+
 ---
 
 ## 12. Cross-References

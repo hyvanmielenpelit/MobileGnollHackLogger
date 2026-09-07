@@ -55,16 +55,41 @@ public class GoogleProvider : IAiProvider
         SegmentedPrompt? segmentedPrompt = null,
         string? promptCacheKey = null)
     {
-        var (systemParts, contents) = ExtractSystemAndContents(messageHistory);
+        var (systemParts, extraSystemParts, contents) = ExtractSystemAndContents(messageHistory);
 
-        var req = new Dictionary<string, object>
-        {
-            ["contents"] = contents
-        };
+        // Key insertion order is the serialization order, and it is the whole point of this
+        // method's layout: Gemini's implicit cache keys on a request prefix, so everything that
+        // is identical from turn to turn is emitted before `contents`, which changes every turn.
+        var req = new Dictionary<string, object>();
 
-        if (systemParts.Count > 0)
+        var orderedSystemParts = OrderSystemParts(segmentedPrompt, systemParts, extraSystemParts);
+        if (orderedSystemParts.Count > 0)
         {
-            req["systemInstruction"] = new { parts = systemParts };
+            req["systemInstruction"] = new { parts = orderedSystemParts };
+        }
+
+        var toolsPayload = BuildToolsPayload(requestTools.ProviderTools, requestTools.FunctionDeclarations);
+        if (toolsPayload != null)
+        {
+            req["tools"] = toolsPayload;
+            req["toolConfig"] = new Dictionary<string, object>
+            {
+                ["functionCallingConfig"] = new { mode = "AUTO" },
+                ["include_server_side_tool_invocations"] = true
+            };
+        }
+
+        var geminiSafetySettings = _configuration.GetSection("SafetySettings:Gemini").GetChildren()
+            .OrderBy(c => c.Key, StringComparer.Ordinal)
+            .Select(c => new
+            {
+                category = c.Key,
+                threshold = c.Value
+            }).ToList();
+
+        if (geminiSafetySettings.Any())
+        {
+            req["safetySettings"] = geminiSafetySettings;
         }
 
         var genConfig = new Dictionary<string, object>();
@@ -90,29 +115,52 @@ public class GoogleProvider : IAiProvider
             req["service_tier"] = serviceTier;
         }
 
-        var geminiSafetySettings = _configuration.GetSection("SafetySettings:Gemini").GetChildren().Select(c => new
-        {
-            category = c.Key,
-            threshold = c.Value
-        }).ToList();
-
-        if (geminiSafetySettings.Any())
-        {
-            req["safetySettings"] = geminiSafetySettings;
-        }
-
-        var toolsPayload = BuildToolsPayload(requestTools.ProviderTools, requestTools.FunctionDeclarations);
-        if (toolsPayload != null)
-        {
-            req["tools"] = toolsPayload;
-            req["toolConfig"] = new Dictionary<string, object>
-            {
-                ["functionCallingConfig"] = new { mode = "AUTO" },
-                ["include_server_side_tool_invocations"] = true
-            };
-        }
+        req["contents"] = contents;
 
         return req;
+    }
+
+    /// <summary>
+    /// The <c>systemInstruction</c> parts, ordered so that the text that survives a turn comes
+    /// first: frozen prefix, session prefix, hoisted system messages, volatile suffix.
+    /// </summary>
+    /// <remarks>
+    /// With a <paramref name="segmentedPrompt"/> the first system message of the history is
+    /// dropped in favour of the three segments. They are the same characters — ChatService builds
+    /// that message from <see cref="SegmentedPrompt.FullPrompt"/> — split at the two boundaries
+    /// that separate what is stable from what is not, which is what
+    /// <c>AgentLoopRunner</c> means by leaving the system prompt to the provider when a segmented
+    /// prompt is in play. Without one the parts are passed through untouched.
+    /// </remarks>
+    private static List<object> OrderSystemParts(
+        SegmentedPrompt? segmentedPrompt,
+        List<object> systemParts,
+        List<object> extraSystemParts)
+    {
+        if (segmentedPrompt == null)
+        {
+            return systemParts;
+        }
+
+        var ordered = new List<object>();
+        if (!string.IsNullOrEmpty(segmentedPrompt.FrozenPrefix))
+        {
+            ordered.Add(new { text = segmentedPrompt.FrozenPrefix });
+        }
+
+        if (!string.IsNullOrEmpty(segmentedPrompt.SessionPrefix))
+        {
+            ordered.Add(new { text = segmentedPrompt.SessionPrefix });
+        }
+
+        ordered.AddRange(extraSystemParts);
+
+        if (!string.IsNullOrEmpty(segmentedPrompt.VolatileSuffix))
+        {
+            ordered.Add(new { text = segmentedPrompt.VolatileSuffix });
+        }
+
+        return ordered;
     }
 
     public async IAsyncEnumerable<ChatEvent> ParseStreamAsync(
@@ -667,29 +715,49 @@ public class GoogleProvider : IAiProvider
         return null;
     }
 
-    private (List<object> systemParts, List<object> contents) ExtractSystemAndContents(List<object> messages)
+    /// <summary>
+    /// Splits the history into every system part, the parts from system messages after the first,
+    /// and the conversation turns.
+    /// </summary>
+    /// <remarks>
+    /// The second element exists for <see cref="OrderSystemParts"/>: with a segmented prompt the
+    /// first system message is the prompt the segments already carry, while later ones are hoisted
+    /// context that must survive. Mirrors the same split in <c>AnthropicProvider</c>.
+    /// </remarks>
+    private (List<object> systemParts, List<object> extraSystemParts, List<object> contents) ExtractSystemAndContents(List<object> messages)
     {
         var systemParts = new List<object>();
+        var extraSystemParts = new List<object>();
         var contents = new List<object>();
+        bool isFirstSystem = true;
 
         foreach (var msg in messages)
         {
             var role = ProviderHelper.GetProperty(msg, "role")?.ToString() ?? "user";
             if (role == "system")
             {
+                var messageParts = new List<object>();
                 var parts = ProviderHelper.GetProperty(msg, "parts");
                 if (parts != null)
                 {
                     if (parts is System.Collections.IEnumerable enumParts)
                     {
-                        foreach (var p in enumParts) systemParts.Add(p);
+                        foreach (var p in enumParts) messageParts.Add(p);
                     }
                 }
                 else
                 {
                     var content = ProviderHelper.GetProperty(msg, "content")?.ToString() ?? "";
-                    systemParts.Add(new { text = content });
+                    messageParts.Add(new { text = content });
                 }
+
+                systemParts.AddRange(messageParts);
+                if (!isFirstSystem)
+                {
+                    extraSystemParts.AddRange(messageParts);
+                }
+
+                isFirstSystem = false;
             }
             else
             {
@@ -697,6 +765,6 @@ public class GoogleProvider : IAiProvider
             }
         }
 
-        return (systemParts, contents);
+        return (systemParts, extraSystemParts, contents);
     }
 }

@@ -243,6 +243,7 @@ public static class BenchmarkReportBuilder
         BenchmarkSecondOpinionMode.All => " — every answer graded twice.",
         BenchmarkSecondOpinionMode.FlaggedAndOutliers => " — flagged answers, plus a post-scoring sweep for outliers.",
         BenchmarkSecondOpinionMode.Flagged => " — flagged answers only.",
+        BenchmarkSecondOpinionMode.FlaggedPlusSample => " — flagged answers, topped up to the profile's minimum sample.",
         _ => " — no second verdict was configured; anything recorded came from a manual re-grade."
     };
 
@@ -623,7 +624,7 @@ public static class BenchmarkReportBuilder
         // under a second heading told the reader nothing.
         if (rawQualityIndex.HasValue && rawQualityIndex.Value != (run.QualityIndex ?? 0))
         {
-            sb.AppendLine($"### **Raw Quality Index: {rawQualityIndex.Value} / 100 ({cappedCount} question(s) capped by critical error)**");
+            sb.AppendLine($"### **Raw Quality Index: {rawQualityIndex.Value} / 100 ({cappedCount} question(s) whose score the cap lowered)**");
         }
 
         // The gap between the difficulty-weighted index and the plain mean of the same scores is
@@ -642,7 +643,26 @@ public static class BenchmarkReportBuilder
             sb.AppendLine();
         }
 
+        // Shared by the saturation notice below and the Model Time Percentiles line further
+        // down; both must report the same median. ModelTimeMs falls back to DurationMs when a
+        // run predates the ToolTimeMs column, so this is available on the whole archive.
+        var okAnswers = answers.Where(a => a.Status == BenchmarkAnswerStatus.Ok).ToList();
+        var modelTimesSorted = okAnswers.Select(a => a.ModelTimeMs).OrderBy(d => d).ToList();
+        long? medianModelTimeMs = modelTimesSorted.Count > 0 ? Percentile(modelTimesSorted, 0.50) : (long?)null;
+
         sb.AppendLine($"### **Speed Index: {(run.SpeedIndex.HasValue ? $"{run.SpeedIndex.Value} / 100" : "Not Scored")}**" + (run.SpeedMeasurementDegraded ? " *(Advisory — measured under concurrency)*" : ""));
+        // A run whose Speed Index sits at the ceiling on most of its answers carries no
+        // discriminating information: every answer at 100 looks identical to the index whether
+        // it finished at the target or well inside it. Median model time still separates them.
+        int speedScoredCount = scoredAnswers.Count;
+        int speedCeilingCount = scoredAnswers.Count(a => a.SpeedScore.HasValue && a.SpeedScore.Value >= 100);
+        if (speedScoredCount > 0 && speedCeilingCount * 2 >= speedScoredCount)
+        {
+            string medianClause = medianModelTimeMs.HasValue
+                ? $"Compare median model time ({Inv(medianModelTimeMs.Value, "N0")} ms) instead."
+                : "Compare median model time instead.";
+            sb.AppendLine($"*Saturated — {speedCeilingCount} of {speedScoredCount} answers finished inside their difficulty-scaled target, so this index cannot discriminate at this speed. {medianClause}*");
+        }
         // A critical error caps Quality at 25 (see BenchmarkScoring), which the Raw/Intelligence
         // Index pair above already shows as a point delta — but that delta is diluted by every
         // *other* answer's difficulty weight, so a single hallucinated answer can move the index
@@ -658,6 +678,9 @@ public static class BenchmarkReportBuilder
 
         var criticalErrorAnswers = answers.Where(a => a.CriticalError).OrderBy(a => a.OrderIndex).ToList();
         var confirmedAnswers = criticalErrorAnswers.Where(a => !contestedCriticalAnswers.Any(ca => ca.OrderIndex == a.OrderIndex)).ToList();
+
+        // § 7 Final Indices prints this same figure; one computation, so the two cannot drift.
+        int? sensitivityIndex = null;
 
         if (contestedCriticalAnswers.Count > 0)
         {
@@ -676,7 +699,7 @@ public static class BenchmarkReportBuilder
                     return (score, a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty));
                 })
                 .ToList();
-            int? sensitivityIndex = BenchmarkScoring.QualityIndex(sensitivityScorableItems);
+            sensitivityIndex = BenchmarkScoring.QualityIndex(sensitivityScorableItems);
             if (sensitivityIndex.HasValue)
             {
                 sb.AppendLine($"- **Contested-Verdict Sensitivity:** {sensitivityIndex.Value} / 100 — Intelligence Index recomputed with each contested verdict upheld at the second reader's score.");
@@ -692,7 +715,6 @@ public static class BenchmarkReportBuilder
         sb.AppendLine($"- **Holistic Assessor Score:** {(run.FinalScore.HasValue ? $"{run.FinalScore.Value} / 100" : "N/A")}");
         sb.AppendLine($"- **Total Model Answer Duration:** {FormatDuration(run.TotalAnswerDurationMs)} ({Inv(run.TotalAnswerDurationMs, "N0")} ms)");
 
-        var okAnswers = answers.Where(a => a.Status == BenchmarkAnswerStatus.Ok).ToList();
         var durations = okAnswers.Select(a => a.DurationMs).OrderBy(d => d).ToList();
         if (durations.Count > 0)
         {
@@ -711,8 +733,7 @@ public static class BenchmarkReportBuilder
             sb.AppendLine($"- **Total Tool Overhead:** {FormatDuration(toolOverhead)} ({Inv(toolOverhead, "N0")} ms)");
             sb.AppendLine($"- **Total Model-Attributable Time:** {FormatDuration(modelTotal)} ({Inv(modelTotal, "N0")} ms)");
 
-            var modelTimes = okAnswers.Select(a => a.ModelTimeMs).OrderBy(d => d).ToList();
-            sb.AppendLine($"- **Model Time Percentiles:** Median (P50) = {Inv(Percentile(modelTimes, 0.50), "N0")} ms, P90 = {Inv(Percentile(modelTimes, 0.90), "N0")} ms, Max = {Inv(modelTimes[^1], "N0")} ms");
+            sb.AppendLine($"- **Model Time Percentiles:** Median (P50) = {Inv(medianModelTimeMs!.Value, "N0")} ms, P90 = {Inv(Percentile(modelTimesSorted, 0.90), "N0")} ms, Max = {Inv(modelTimesSorted[^1], "N0")} ms");
         }
         else
         {
@@ -1344,6 +1365,19 @@ public static class BenchmarkReportBuilder
                 sb.AppendLine($"  - These are rubric points the assessor itself placed outside what the question asked, recorded under the `OUT-OF-SCOPE:` marker and **not** deducted for. They are the instrument's share of the Accuracy→Completeness gap: the part of that gap the rubric caused rather than the answer.");
             }
 
+            // The Readability counterpart, printed on the same terms and suppressed at zero for the
+            // same reason: a v9 run where the assessor found nothing to set aside and a run graded
+            // before the marker existed are indistinguishable in this count.
+            var formOnlyAnswers = scoredAnswers.Where(a => a.ReadabilityFormOnly)
+                .OrderBy(a => a.OrderIndex)
+                .ToList();
+            if (formOnlyAnswers.Count > 0)
+            {
+                string questionList = string.Join(", ", formOnlyAnswers.Select(a => $"Q{a.OrderIndex}"));
+                sb.AppendLine($"- **Rubric format suggestions not followed:** {formOnlyAnswers.Count} ({questionList})");
+                sb.AppendLine($"  - These are rubric FORM criteria naming a presentation the answer did not adopt, recorded under the `FORM:` marker and **not** deducted for. Readability is graded on its level anchors alone, so this is the rubric's share of the Readability shortfall rather than the answer's.");
+            }
+
             sb.AppendLine();
             if (BenchmarkChatTransfer.HasResponseStyleConflict(run, scoredAnswers, out double gap))
             {
@@ -1372,7 +1406,7 @@ public static class BenchmarkReportBuilder
             // spread and the weakest question number say which of the two it was.
             var weakestInBand = bucket.OrderBy(a => a.QualityScore!.Value).ThenBy(a => a.OrderIndex).First();
             string dispersion = bucket.Count > 1
-                ? $", range {bucket.Min(a => a.QualityScore!.Value)}–{bucket.Max(a => a.QualityScore!.Value)}, lowest Q{weakestInBand.OrderIndex}"
+                ? $", quality range {bucket.Min(a => a.QualityScore!.Value)}–{bucket.Max(a => a.QualityScore!.Value)}, lowest Q{weakestInBand.OrderIndex}"
                 : string.Empty;
             return $"- **{name} ({range}):** {Inv(bucket.Average(a => a.QualityScore!.Value), "F1")} / 100 " +
                    $"({bucket.Count} answered, avg diff: {Inv(bucket.Average(a => (double)AssessedOf(a)), "F0")}{dispersion})";
@@ -1744,7 +1778,14 @@ public static class BenchmarkReportBuilder
                     string rawPart = (a.RawQualityScore.HasValue && a.RawQualityScore.Value != a.QualityScore.Value)
                         ? $" (raw: {a.RawQualityScore.Value})"
                         : string.Empty;
-                    sb.AppendLine($"> - **Quality Score:** {a.QualityScore.Value} / 100{rawPart}" + (a.CriticalError ? " *(CRITICAL ERROR CAP APPLIED)*" : ""));
+                    // Same guard as cappedCount above: the flag alone does not mean the cap
+                    // changed anything — an answer whose raw score already sat at or below the
+                    // cap is unaffected by it, and the report must not say otherwise.
+                    bool capLoweredScore = a.RawQualityScore.HasValue && a.RawQualityScore.Value > a.QualityScore.Value;
+                    string capNote = a.CriticalError
+                        ? (capLoweredScore ? " *(CRITICAL ERROR CAP APPLIED)*" : " *(CRITICAL ERROR — cap not binding)*")
+                        : string.Empty;
+                    sb.AppendLine($"> - **Quality Score:** {a.QualityScore.Value} / 100{rawPart}{capNote}");
                 }
                 else
                 {
@@ -2149,6 +2190,12 @@ public static class BenchmarkReportBuilder
         if (rawQualityIndex.HasValue && rawQualityIndex.Value != (run.QualityIndex ?? 0))
         {
             sb.AppendLine($"### Raw Quality Index: {rawQualityIndex.Value} / 100");
+        }
+        // Same value and clause as § 2 — this is where the headline figures live, and it is the
+        // one that says how fragile they are.
+        if (contestedCriticalAnswers.Count > 0 && sensitivityIndex.HasValue)
+        {
+            sb.AppendLine($"### Contested-Verdict Sensitivity: {sensitivityIndex.Value} / 100 — Intelligence Index recomputed with each contested verdict upheld at the second reader's score.");
         }
         sb.AppendLine($"### Speed Index: {run.SpeedIndex?.ToString() ?? "N/A"} / 100");
         sb.AppendLine($"### Holistic Assessor Score: {run.FinalScore?.ToString() ?? "N/A"} / 100");

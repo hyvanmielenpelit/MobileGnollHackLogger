@@ -1,0 +1,570 @@
+/*
+ * Layout for the cross-model comparison view.
+ *
+ * Everything here is view-specific: the shared button, tooltip, table and pager treatments come from
+ * `styles.scss` and are never redefined, because an emulated-encapsulation override would apply to
+ * this one component and to nothing else — an invisible divergence rather than a visible bug.
+ *
+ * The chart grid responds to `.mc-charts`, its own container, rather than to the viewport, so it
+ * lays out correctly inside a tab panel that is narrower than the window.
+ */
+
+.mc {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.mc-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mc-section-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+
+  h3 {
+    margin: 0;
+    font-family: "Cinzel", serif;
+    font-size: 20px;
+    color: var(--primary-color);
+  }
+}
+
+.mc-subheading {
+  margin: 0;
+  font-family: "Cinzel", serif;
+  font-size: 16px;
+  color: var(--primary-color);
+}
+
+.section-note,
+.mc-explanation {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #a1a1aa;
+  max-width: 90ch;
+}
+
+.mc-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+  margin: 0;
+
+  dt {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #898781;
+  }
+
+  dd {
+    margin: 0;
+    font-size: 14px;
+    color: #e4e4e7;
+  }
+}
+
+/* ==========================================================================
+   The filter row
+   ========================================================================== */
+
+.mc-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+  background: rgba(17, 17, 17, 0.65);
+}
+
+.mc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+
+  > label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #d4d4d8;
+  }
+}
+
+.mc-field-hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #898781;
+}
+
+.mc-entry-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mc-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.04);
+  color: #a1a1aa;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 3px;
+  }
+}
+
+/* Inclusion is carried by the border and the label weight as well as the fill, so a monochrome
+   rendering still says which entries are plotted. `aria-pressed` remains the announced truth. */
+.mc-chip-on {
+  border-color: var(--primary-color);
+  background: rgba(224, 186, 109, 0.14);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.mc-chip-excluded {
+  cursor: default;
+  border-style: dashed;
+  color: #898781;
+}
+
+.mc-glyph {
+  display: inline-block;
+  vertical-align: middle;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+}
+
+/* The shape half of the identity glyph, matching the chart core's point styles. */
+.mc-glyph-rectRot {
+  border-radius: 1px;
+  transform: rotate(45deg);
+}
+
+.mc-glyph-triangle {
+  border-radius: 0;
+  clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+}
+
+.mc-selection-note {
+  margin: 0;
+  font-size: 12px;
+  color: #c3c2b7;
+}
+
+/* ==========================================================================
+   Notices
+   ========================================================================== */
+
+.mc-notices {
+  list-style: none;
+  margin: 0;
+  padding: 12px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-left: 3px solid var(--primary-color);
+  border-radius: 6px;
+  background: rgba(20, 20, 20, 0.85);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  li {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #d4d4d8;
+
+    svg {
+      flex-shrink: 0;
+      margin-top: 3px;
+      color: var(--primary-color);
+    }
+  }
+}
+
+/* ==========================================================================
+   The figures
+   ========================================================================== */
+
+.mc-charts {
+  /* The queries below resolve against this box, not the window, so the grid responds to the tab
+     panel it sits in. */
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.mc-panels,
+.mc-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+/*
+ * 720px is `P1_STACK_BREAKPOINT_PX` in `model-comparison-charts.ts`, and the two must stay equal:
+ * below it the panels stack here and the component switches the bars to horizontal, so that eight
+ * model names read as left-aligned labels instead of colliding or being rotated past 45 degrees.
+ * A spec asserts the component flips orientation at exactly that width.
+ */
+@container (min-width: 720px) {
+  .mc-panels {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .mc-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@container (min-width: 1180px) {
+  .mc-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.mc-card {
+  margin: 0;
+  padding: 14px 16px 16px;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+  background: rgba(17, 17, 17, 0.65);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.mc-card-head {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.mc-card-title {
+  margin: 0;
+  font-family: "Cinzel", serif;
+  font-size: 15px;
+  color: #ffffff;
+}
+
+.mc-card-subtitle {
+  margin: 0;
+  font-size: 12px;
+  color: #c3c2b7;
+}
+
+.mc-card-corner {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #898781;
+}
+
+/*
+ * The canvas box is sized by the component to hold the plot *and* its axis label band. A box fitted
+ * to the plot alone clips the axis or produces a nested scrollbar, both of which are anti-patterns;
+ * nothing here may introduce an overflow of its own.
+ */
+.mc-canvas {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.mc-card-caption,
+.mc-axis-ends {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #898781;
+}
+
+.mc-axis-ends {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+
+  dt {
+    font-weight: 600;
+    color: #c3c2b7;
+  }
+
+  dd {
+    margin: 0;
+  }
+}
+
+.mc-card-notices {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  li {
+    font-size: 12px;
+    line-height: 1.45;
+    color: #e0ba6d;
+    border-left: 2px solid rgba(224, 186, 109, 0.5);
+    padding-left: 8px;
+  }
+}
+
+/* Every plotted entry rests on one run, so the intervals are the part worth looking at. */
+.mc-single-run .mc-card-notices li {
+  color: #ffffff;
+}
+
+/* ==========================================================================
+   The single-entry KPI row
+   ========================================================================== */
+
+.mc-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.mc-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+  background: rgba(17, 17, 17, 0.65);
+}
+
+.mc-kpi-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #898781;
+}
+
+.mc-kpi-value {
+  font-family: "Cinzel", serif;
+  font-size: 26px;
+  color: var(--primary-color);
+}
+
+.mc-kpi-detail {
+  font-size: 12px;
+  line-height: 1.45;
+  color: #a1a1aa;
+}
+
+/* ==========================================================================
+   Exclusions and refused measures
+   ========================================================================== */
+
+.mc-excluded {
+  padding: 12px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-left: 3px solid #d95926;
+  border-radius: 6px;
+  background: rgba(20, 20, 20, 0.85);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mc-excluded-title {
+  margin: 0;
+  font-size: 14px;
+  color: #ffffff;
+}
+
+.mc-excluded-explanation,
+.mc-excluded-keys {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #d4d4d8;
+}
+
+.mc-differences {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #a1a1aa;
+
+  ul {
+    padding-left: 18px;
+  }
+}
+
+.mc-measures {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+
+  dt {
+    font-size: 13px;
+    font-weight: 600;
+    color: #e4e4e7;
+  }
+
+  dd {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #a1a1aa;
+  }
+}
+
+.mc-measure-instead {
+  display: block;
+  margin-top: 3px;
+  color: #c3c2b7;
+}
+
+/* ==========================================================================
+   The table view
+   ========================================================================== */
+
+.mc-table-scroll {
+  max-height: 640px;
+}
+
+.mc-table {
+  .col-center {
+    text-align: center;
+  }
+
+  /* A cell keeps its table-cell display: a flex `<th>` drops out of the column grid entirely. */
+  .col-name {
+    text-align: left;
+    min-width: 200px;
+  }
+}
+
+.mc-row-highlighted > * {
+  background: rgba(224, 186, 109, 0.1);
+}
+
+.mc-name-btn {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.25);
+
+  &[aria-pressed="true"] {
+    color: var(--primary-color);
+    font-weight: 700;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+.mc-source {
+  font-size: 11px;
+  color: #898781;
+}
+
+/* State is icon plus word: colour reinforces it and never carries it alone. */
+.mc-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid currentColor;
+}
+
+.mc-state-comparable {
+  color: #199e70;
+}
+
+.mc-state-degraded {
+  color: #e0ba6d;
+}
+
+.mc-state-excluded {
+  color: #d95926;
+}
+
+.mc-degraded-axes,
+.mc-interval-basis,
+.mc-source,
+.mc-note-line {
+  display: block;
+  font-size: 11px;
+  color: #898781;
+}
+
+.mc-interval {
+  margin-left: 4px;
+  font-size: 12px;
+  color: #c3c2b7;
+}
+
+.mc-n1,
+.mc-saturated,
+.mc-unpriced,
+.mc-scheduled {
+  display: inline-block;
+  margin-left: 5px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: #e0ba6d;
+}
+
+.mc-notes {
+  min-width: 180px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mc-chip {
+    transition: none;
+  }
+}

@@ -4204,6 +4204,17 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     return (this.selectedRunDetail?.answers ?? []).filter(a => a.criticalError).length;
   }
 
+  /**
+   * Of the flagged answers above, the ones whose raw score the cap actually lowered. A flagged
+   * answer already at or below the ceiling before the cap applied is not counted here, so this
+   * figure can be smaller than criticalErrorAnswerCount — it is the one "capped by" describes.
+   */
+  get criticalErrorCapBindingCount(): number {
+    return (this.selectedRunDetail?.answers ?? [])
+      .filter(a => a.rawQualityScore != null && a.qualityScore != null && a.rawQualityScore > a.qualityScore)
+      .length;
+  }
+
   /** The question numbers of the critical-error answers, comma separated, for the integrity notice. */
   get criticalErrorQuestionNumbers(): string {
     return (this.selectedRunDetail?.answers ?? [])
@@ -4472,6 +4483,35 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     return this.selectedRunDetail?.speedMeasurementDegraded === true || this.showRunProfileFitAdvisory;
   }
 
+  /** Scored answers, mirroring the report's Speed Index denominator: Ok status with a quality score. */
+  private get speedIndexScoredAnswers(): BenchmarkRunAnswerDto[] {
+    return this.answeredRunAnswers.filter(a => a.qualityScore != null);
+  }
+
+  /** Denominator for the saturation check below: every answer the Speed Index is scored over. */
+  get speedIndexScoredAnswerCount(): number {
+    return this.speedIndexScoredAnswers.length;
+  }
+
+  /** Of the scored answers, those whose Speed Score sits at the ceiling. */
+  get speedIndexCeilingAnswerCount(): number {
+    return this.speedIndexScoredAnswers.filter(a => a.speedScore != null && a.speedScore >= 100).length;
+  }
+
+  /**
+   * True once at least half the scored answers sit at the Speed Index ceiling: every answer at
+   * 100 looks identical to the index whether it finished at the target or well inside it, so past
+   * this point the index cannot discriminate and median model time is the figure to read instead.
+   */
+  get showSpeedIndexSaturationAdvisory(): boolean {
+    const scored = this.speedIndexScoredAnswerCount;
+    return scored > 0 && this.speedIndexCeilingAnswerCount * 2 >= scored;
+  }
+
+  get speedIndexSaturationAdvisoryTitle(): string {
+    return `Saturated — ${this.speedIndexCeilingAnswerCount} of ${this.speedIndexScoredAnswerCount} answers finished inside their difficulty-scaled target, so this index cannot discriminate at this speed. Compare median model time instead.`;
+  }
+
   get showAgreementTile(): boolean {
     return (this.selectedRunDetail?.secondOpinionGradedAnswerCount ?? 0) > 0;
   }
@@ -4504,6 +4544,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     switch (this.selectedRunDetail?.secondOpinionModeUsed) {
       case BenchmarkSecondOpinionMode.All: return 'Every answer';
       case BenchmarkSecondOpinionMode.FlaggedAndOutliers: return 'Flagged and outliers';
+      case BenchmarkSecondOpinionMode.FlaggedPlusSample: return 'Flagged plus sample';
       case BenchmarkSecondOpinionMode.Flagged: return 'Flagged only';
       default: return 'Manual only';
     }
@@ -4637,6 +4678,25 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       return `Claim verification for Q${verified[0].orderIndex}: ${totalSupported} supported, ${totalRefuted} refuted, ${totalIndeterminate} indeterminate.`;
     }
     return `Claim verification for disputed answer(s): ${totalSupported} supported, ${totalRefuted} refuted, ${totalIndeterminate} indeterminate.`;
+  }
+
+  /**
+   * The two counts the grading rules produce as measurements rather than defects: rubric points
+   * the assessor placed outside the question's scope, and rubric format suggestions it set aside.
+   * They are deliberately kept out of the integrity notice, which lists things that went wrong —
+   * neither of these did. Each stays hidden at zero, because a run graded before its marker
+   * existed and a run whose assessor found nothing both report zero.
+   */
+  get completenessOutOfScopeCount(): number {
+    return this.selectedRunDetail?.completenessOutOfScopeCount ?? 0;
+  }
+
+  get readabilityFormOnlyCount(): number {
+    return this.selectedRunDetail?.readabilityFormOnlyCount ?? 0;
+  }
+
+  get hasInstrumentMeasurements(): boolean {
+    return this.completenessOutOfScopeCount > 0 || this.readabilityFormOnlyCount > 0;
   }
 
   get omissionAsAccuracyAnswerCount(): number {

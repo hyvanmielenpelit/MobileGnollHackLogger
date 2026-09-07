@@ -85,7 +85,26 @@ public static class BenchmarkAssessmentPrompt
     //      lowering the level, so the instrument's share of the persistent Accuracy→Completeness gap
     //      is measurable rather than inferred.
     // Scores are not comparable with v7 on any answer graded below level 6.
-    public const int ScoringMethodVersion = 8;
+    // v9: two changes, both about grading an answer for something that is not the answer's fault.
+    //   1. A rubric FORM or format suggestion is no longer a READABILITY criterion. The BARS
+    //      anchors are the whole of that dimension, and they already name bullet points and clean
+    //      headings as the level-5 form; a rubric proposing a comparison table where the answer
+    //      wrote prose describes a presentation preference, not a readability defect. The
+    //      production chat prompt this suite grades asks for concise prose, so a FORM criterion the
+    //      concise style cannot produce docked the candidate for obeying its own system prompt. The
+    //      assessor now records such a suggestion under a FORM: marker in readabilityEvidence and
+    //      does not deduct for it, which makes the rubric's share of the Readability shortfall a
+    //      measured figure rather than a guess — the same treatment v8 gave out-of-scope
+    //      completeness points.
+    //   2. The accuracy-defect marker printed into the synthesis prompt stopped firing on
+    //      denials. v8 asked NamesAnAccuracyDefect for evidence that names a defect, but its only
+    //      no-fault exclusion was the anchored "Matches rubric." boilerplate, so a sentence-form
+    //      denial such as "No factual errors; the answer matches every rubric point" was marked
+    //      "Accuracy defect recorded: yes" and dragged an innocent question into the synthesis
+    //      weaknesses. The denial is now detected unanchored, and is itself disqualified whenever
+    //      the same evidence names a falsehood, an omission, or concedes one after a conjunction.
+    // Scores are not comparable with v8 on Readability.
+    public const int ScoringMethodVersion = 9;
 
     /// <summary>
     /// The harness the run executed under. A constant rather than a configuration key: it exists
@@ -232,6 +251,14 @@ public static class BenchmarkAssessmentPrompt
         sb.AppendLine("- Level 4: Clear structure, logical flow, good use of formatting and markdown.");
         sb.AppendLine("- Level 5: Highly readable, clean headings, bullet points, intuitive flow.");
         sb.AppendLine("- Level 6: Masterful formatting, pristine layout, effortless to scan and comprehend.");
+        // Scoring method v9. The anchors above already name bullet points and clean headings as the
+        // level-5 form, so a rubric FORM criterion proposing some other presentation is a second,
+        // unstated scale. The suite grades the production chat prompt, which asks for concise prose;
+        // a rubric asking for a comparison table therefore docks the candidate for obeying its own
+        // system prompt. The marker keeps the rubric's share of the Readability shortfall measurable
+        // rather than inferred, exactly as OUT-OF-SCOPE: does for Completeness.
+        sb.AppendLine("- **A rubric FORM or format suggestion is not a READABILITY criterion.** The level anchors above are the whole of this dimension. An answer that meets an anchor meets it regardless of whether the rubric proposed a different presentation, so do **not** lower the level because the answer wrote prose where the rubric suggested a table, or a list where it suggested prose.");
+        sb.AppendLine($"- When the rubric suggests a format the answer did not follow, record it in `readabilityEvidence` prefixed **`{BenchmarkAssessmentParser.FormOnlyReadabilityMarker}`** — e.g. `{BenchmarkAssessmentParser.FormOnlyReadabilityMarker} the rubric suggests a comparison table; the answer covers the same material as prose.` Record it and do not deduct for it. The harness counts these to measure how much of the run's Readability shortfall is the rubric's presentation preference rather than the answer, so an unrecorded format suggestion is a measurement lost.");
         sb.AppendLine();
         sb.AppendLine("### 5. CRITICAL ERROR (Boolean: true / false)");
         sb.AppendLine("Definition: A confidently asserted, material falsehood or hallucination that a user/player would act upon to their direct detriment (e.g., fatal in-game action, inverted core mechanics).");
@@ -252,6 +279,7 @@ public static class BenchmarkAssessmentPrompt
         sb.AppendLine("- A no-fault evidence string such as 'Matches rubric' may accompany **level 6 only**. If you award any level below 6, the evidence string MUST name specifically what kept it below — the rubric point, the claim, or the missing element. 'Matches rubric' beside level 4 asserts both that the answer was faultless and that it was not; the harness records that contradiction and routes the answer to a second reader.");
         sb.AppendLine("- Never invent a rubric point that is not present above.");
         sb.AppendLine("- Never write \"unverified\", \"could not confirm\", or equivalent as the basis of an accuracy deduction. That finding belongs in `unverifiedClaims`.");
+        sb.AppendLine($"- `readabilityEvidence` is **not** a deduction basis. It exists to carry the `{BenchmarkAssessmentParser.FormOnlyReadabilityMarker}` marker described under READABILITY, and nothing else. Leave it null when the rubric suggested no format the answer declined to follow.");
         sb.AppendLine();
         sb.AppendLine("### 7. UNVERIFIED CLAIMS");
         sb.AppendLine("`unverifiedClaims` is a list of sentences the answer asserts that the rubric neither states nor contradicts, and that you cannot positively refute. Copy each one **verbatim** from the candidate answer — the harness checks that the text appears there and silently drops a paraphrase, exactly as it does for `criticalErrorQuote`.");
@@ -313,6 +341,7 @@ public static class BenchmarkAssessmentPrompt
   ""unverifiedClaims"": [""Verbatim sentence from the answer that you could neither confirm nor refute.""],
   ""accuracyEvidence"": ""Rubric point 2: prayer timeout reset amounts. The answer omits 350/175."",
   ""completenessEvidence"": ""Matches rubric."",
+  ""readabilityEvidence"": null,
   ""comment"": ""Brief 1-3 sentence evaluation explaining the ratings and noting any specific flaws.""
 }");
 

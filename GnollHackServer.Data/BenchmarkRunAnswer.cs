@@ -154,6 +154,25 @@ public class BenchmarkRunAnswer
     public bool CompletenessOutOfScope { get; set; }
 
     /// <summary>
+    /// The assessor recorded a rubric format suggestion the answer did not follow, under the
+    /// <c>FORM:</c> marker scoring method v9 requires, and did not deduct Readability for it.
+    ///
+    /// Not a defect: a measurement, and the Readability counterpart of
+    /// <see cref="CompletenessOutOfScope"/>. Readability's level anchors grade how an answer
+    /// reads; a rubric FORM criterion states how its author would have laid the material out, and
+    /// the suite grades a chat prompt that asks for concise prose — so a rubric asking for a table
+    /// docked the candidate for obeying its own system prompt. Counting the suggestions the
+    /// assessor set aside is what tells the rubric's share of a Readability shortfall from the
+    /// answer's.
+    ///
+    /// Non-nullable for the same reason as <see cref="CompletenessOutOfScope"/>: an answer graded
+    /// before scoring method v9 reads false because the marker did not exist, and
+    /// <c>BenchmarkRun.ScoringMethodVersion</c> is what tells those runs apart from a v9 run whose
+    /// assessor found no format suggestion to set aside.
+    /// </summary>
+    public bool ReadabilityFormOnly { get; set; }
+
+    /// <summary>
     /// The verbatim claim the assessor says is a critical error, quoted from the graded answer.
     /// A critical error caps quality at 25, so it must point at text the answer actually
     /// asserts; an unquoted one is demoted by the parser.
