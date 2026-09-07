@@ -241,10 +241,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   ngOnInit(): void {
     ensureOverlayPolyfills();
-    this.unsubscribeReducedMotion = this.reducedMotion.subscribe(() => {
-      this.rebuild();
-      this.cdr.markForCheck();
-    });
+    this.unsubscribeReducedMotion = this.reducedMotion.subscribe(() => this.rebuild());
     this.rebuild();
   }
 
@@ -738,6 +735,11 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
         costMeasure: this.costMeasure
       })
       : null;
+
+    // Every caller of this method changes what the template renders, and several of them are
+    // outside change detection: a filter control, the reduced-motion listener, the resize
+    // observer. Marking here is what makes the figures, the notices and the table agree.
+    this.cdr.markForCheck();
   }
 
   /**
