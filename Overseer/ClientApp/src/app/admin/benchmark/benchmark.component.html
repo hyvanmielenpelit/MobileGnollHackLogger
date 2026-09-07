@@ -611,38 +611,44 @@
           </div>
 
           @if (isMultiRunRequested) {
-            <div class="series-projection" role="note">
-              <div class="series-projection-heading"><strong>Series projection ({{ effectiveRunCount }} runs)</strong></div>
-              <ul class="series-projection-list">
-                <li>
-                  Projected wall time:
+            <fieldset class="series-projection-fieldset" role="region" aria-labelledby="seriesProjectionLegend">
+              <legend id="seriesProjectionLegend" class="series-projection-legend">
+                <svg class="projection-legend-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+                </svg>
+                <span>Series Projection ({{ effectiveRunCount }} runs)</span>
+              </legend>
+
+              <div class="projection-grid" role="list">
+                <div class="projection-row" role="listitem">
+                  <span class="projection-label">Projected wall time:</span>
                   @if (projectedSeriesDurationLabel) {
-                    <strong>{{ projectedSeriesDurationLabel }}</strong>
-                    <span class="text-muted"> ({{ effectiveRunCount }} × this suite's recent mean run duration)</span>
+                    <span class="projection-value"><strong>{{ projectedSeriesDurationLabel }}</strong></span>
+                    <span class="projection-note text-muted">({{ effectiveRunCount }} × this suite's recent mean run duration)</span>
                   } @else {
-                    <span class="text-muted">no completed run of this suite to project from</span>
+                    <span class="projection-empty text-muted">no completed run of this suite to project from</span>
                   }
-                </li>
-                <li>
-                  Projected cost:
+                </div>
+
+                <div class="projection-row" role="listitem">
+                  <span class="projection-label">Projected cost:</span>
                   @if (projectedSeriesCostLabel) {
-                    <strong>{{ projectedSeriesCostLabel }}</strong>
-                    <span class="text-muted"> ({{ effectiveRunCount }} × this suite's recent mean run cost)</span>
+                    <span class="projection-value"><strong>{{ projectedSeriesCostLabel }}</strong></span>
+                    <span class="projection-note text-muted">({{ effectiveRunCount }} × this suite's recent mean run cost)</span>
                   } @else {
-                    <span class="text-muted">no priced run of this suite to project from</span>
+                    <span class="projection-empty text-muted">no priced run of this suite to project from</span>
                   }
-                </li>
+                </div>
+
                 @if (runLimits) {
-                  <li>
-                    Remaining daily headroom:
-                    <strong>{{ runLimits.remainingDailyHeadroom }}</strong> of {{ runLimits.maxRunsPerDay }}
-                    <span class="text-muted">
-                      ({{ runLimits.runsInLast24Hours }} run(s) in the last 24 hours,
-                      {{ runLimits.runsInLastHour }} in the last hour — both rolling windows, not calendar days)
-                    </span>
-                  </li>
+                  <div class="projection-row" role="listitem">
+                    <span class="projection-label">Remaining daily headroom:</span>
+                    <span class="projection-value"><strong>{{ runLimits.remainingDailyHeadroom }}</strong> of {{ runLimits.maxRunsPerDay }}</span>
+                    <span class="projection-note text-muted">({{ runLimits.runsInLast24Hours }} run(s) in the last 24 hours, {{ runLimits.runsInLastHour }} in the last hour — both rolling windows, not calendar days)</span>
+                  </div>
                 }
-              </ul>
+              </div>
+
               @if (seriesExceedsDailyHeadroom) {
                 <div class="alert alert-warning mt-10" role="alert">
                   <div class="alert-content">
@@ -658,7 +664,7 @@
                   </div>
                 </div>
               }
-            </div>
+            </fieldset>
           }
         </div>
 
@@ -2853,7 +2859,7 @@
           {{ activeRunDetail?.suiteName }} | Profile: {{ activeRunDetail?.scoringProfileName || 'Default' }}
         </p>
       </div>
-      <button type="button" class="btn-icon-action" aria-label="Close benchmark run progress" (click)="closeRunProgressDialog()">
+      <button type="button" class="btn-icon-action" [attr.aria-label]="returnToSeriesOnClose ? 'Return to series progress' : 'Close benchmark run progress'" (click)="closeRunProgressDialog()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
           <line x1="18" y1="6" x2="6" y2="18"></line>
           <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -3091,10 +3097,10 @@
     </div>
     <div class="dialog-footer">
       @if (!runIsTerminal) {
-        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeRunProgressDialog()">Run in Background</button>
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeRunProgressDialog()">{{ returnToSeriesOnClose ? 'Back to Series' : 'Run in Background' }}</button>
         <button type="button" class="btn-gh btn-gh-delete" (click)="cancelActiveRun()">Cancel Run</button>
       } @else {
-        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeRunProgressDialog()">Close</button>
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeRunProgressDialog()">{{ returnToSeriesOnClose ? 'Back to Series' : 'Close' }}</button>
         <button type="button" class="btn-gh" (click)="viewActiveRunDetail()">View Full Report</button>
         @if (runFailedAnswerCount > 0) {
           <button type="button" class="btn-gh" (click)="rerunFailedFromProgress()">

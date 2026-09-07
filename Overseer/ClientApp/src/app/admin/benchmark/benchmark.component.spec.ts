@@ -81,6 +81,7 @@ describe('AdminBenchmarkComponent', () => {
     // ngOnInit reads the caps and reattaches a live series, and entering Run History loads the
     // groups for the group column. All three run on paths every test in this file goes through.
     benchmarkServiceMock.getActiveRunSeries.and.returnValue(of(null));
+    benchmarkServiceMock.getRunSeries.and.returnValue(of({ id: 1, status: 'Running', completedRunCount: 0, requestedRunCount: 1, members: [] } as any));
     benchmarkServiceMock.getRunGroups.and.returnValue(of([]));
     benchmarkServiceMock.getRunLimits.and.returnValue(of({
       maxRunsPerHour: 4,
@@ -1639,6 +1640,86 @@ describe('AdminBenchmarkComponent', () => {
       expect(pre.getAttribute('tabindex')).toBe('0');
       const code = pre.querySelector('code');
       expect(code).toBeTruthy();
+    });
+
+    it('should set returnToSeriesOnClose to true when opened from a series', () => {
+      spyOn(component.runProgressDialog.nativeElement, 'showModal');
+      expect(component.returnToSeriesOnClose).toBeFalse();
+
+      component.onOpenRunProgressFromSeries(42);
+
+      expect(component.returnToSeriesOnClose).toBeTrue();
+      expect(component.isRunProgressDialogOpen).toBeTrue();
+      expect(component.multiRunDialogVisible).toBeFalse();
+    });
+
+    it('should reopen multi-run dialog when closing single-run progress with returnToSeriesOnClose true', () => {
+      spyOn(component.runProgressDialog.nativeElement, 'showModal');
+      spyOn(component.runProgressDialog.nativeElement, 'close');
+      component.activeSeriesId = 10;
+      component.onOpenRunProgressFromSeries(42);
+
+      expect(component.multiRunDialogVisible).toBeFalse();
+      expect(component.returnToSeriesOnClose).toBeTrue();
+
+      component.closeRunProgressDialog();
+
+      expect(component.multiRunDialogVisible).toBeTrue();
+      expect(component.returnToSeriesOnClose).toBeFalse();
+      expect(component.isRunProgressDialogOpen).toBeFalse();
+    });
+
+    it('should not reopen multi-run dialog when closing single-run progress with returnToSeriesOnClose false', () => {
+      spyOn(component.runProgressDialog.nativeElement, 'showModal');
+      spyOn(component.runProgressDialog.nativeElement, 'close');
+      component.activeSeriesId = 10;
+      component.openRunProgressDialog();
+
+      expect(component.returnToSeriesOnClose).toBeFalse();
+      expect(component.multiRunDialogVisible).toBeFalse();
+
+      component.closeRunProgressDialog();
+
+      expect(component.multiRunDialogVisible).toBeFalse();
+      expect(component.returnToSeriesOnClose).toBeFalse();
+    });
+
+    it('should not reopen multi-run dialog when viewing full report detail from progress dialog', () => {
+      spyOn(component.runProgressDialog.nativeElement, 'showModal');
+      spyOn(component.runProgressDialog.nativeElement, 'close');
+      spyOn(component, 'viewRunDetail');
+      benchmarkServiceMock.getRun.and.returnValue(of(buildRun({ id: 42 })));
+      component.activeSeriesId = 10;
+      component.onOpenRunProgressFromSeries(42);
+
+      expect(component.returnToSeriesOnClose).toBeTrue();
+
+      component.viewActiveRunDetail();
+
+      expect(component.multiRunDialogVisible).toBeFalse();
+      expect(component.returnToSeriesOnClose).toBeFalse();
+      expect(component.viewRunDetail).toHaveBeenCalledWith(42);
+    });
+
+    it('should render Back to Series and updated aria-label when returnToSeriesOnClose is true', () => {
+      component.activeRunDetail = buildRun({ status: 'Running', answers: [] });
+      component.returnToSeriesOnClose = true;
+      component.isRunProgressDialogOpen = true;
+      fixture.detectChanges();
+
+      const dialogEl = component.runProgressDialog.nativeElement;
+      const closeBtn = dialogEl.querySelector('.dialog-header .btn-icon-action') as HTMLButtonElement;
+      expect(closeBtn.getAttribute('aria-label')).toBe('Return to series progress');
+
+      const cancelBtn = dialogEl.querySelector('.dialog-footer .btn-gh-cancel') as HTMLButtonElement;
+      expect(cancelBtn.textContent?.trim()).toBe('Back to Series');
+
+      // Check when terminal
+      component.activeRunDetail = buildRun({ status: 'Completed', answers: [] });
+      fixture.detectChanges();
+
+      const terminalCancelBtn = dialogEl.querySelector('.dialog-footer .btn-gh-cancel') as HTMLButtonElement;
+      expect(terminalCancelBtn.textContent?.trim()).toBe('Back to Series');
     });
   });
 

@@ -342,6 +342,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
 
   // Run Progress Dialog
   isRunProgressDialogOpen = false;
+  returnToSeriesOnClose = false;
   runProgressQuestions: BenchmarkQuestionDto[] = [];
   /**
    * Suite the cached runProgressQuestions belong to; null means nothing is loaded. This,
@@ -2275,6 +2276,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   onMultiRunDialogClosed(): void {
+    this.returnToSeriesOnClose = false;
     this.multiRunDialogVisible = false;
     this.cdr.detectChanges();
   }
@@ -2288,7 +2290,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     this.multiRunDialogVisible = false;
     this.activeRunId = runId;
     this.startPolling(runId);
-    this.openRunProgressDialog();
+    this.openRunProgressDialog(true);
   }
 
   cancelActiveSeries(): void {
@@ -3010,7 +3012,8 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     }
   }
 
-  openRunProgressDialog(): void {
+  openRunProgressDialog(fromSeries = false): void {
+    this.returnToSeriesOnClose = fromSeries;
     this.isRunProgressDialogOpen = true;
     this.runDiagnosticsCopyFailed = false;
 
@@ -3042,10 +3045,15 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     this.runProgressHeading?.nativeElement.focus();
   }
 
-  closeRunProgressDialog(): void {
+  closeRunProgressDialog(returnToSeries: boolean = this.returnToSeriesOnClose): void {
+    const shouldReturn = returnToSeries;
+    this.returnToSeriesOnClose = false;
     this.isRunProgressDialogOpen = false;
     this.stopRunElapsedTicker();
     this.runProgressDialog?.nativeElement.close();
+    if (shouldReturn && this.activeSeriesId != null) {
+      this.openMultiRunDialog();
+    }
     this.cdr.detectChanges();
   }
 
@@ -3090,7 +3098,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   viewActiveRunDetail(): void {
     const runId = this.activeRunDetail?.id ?? this.activeRunId;
     if (runId == null) return;
-    this.closeRunProgressDialog();
+    this.closeRunProgressDialog(false);
     this.viewRunDetail(runId);
   }
 
