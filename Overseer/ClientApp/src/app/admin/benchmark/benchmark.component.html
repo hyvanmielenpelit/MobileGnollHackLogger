@@ -66,6 +66,19 @@
       <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>
       Scoring Profiles
     </button>
+    <button
+      type="button"
+      role="tab"
+      class="gh-tab"
+      id="bm-tab-modelcomparison"
+      aria-controls="bm-panel-modelcomparison"
+      [attr.aria-selected]="activeSubTab === 'modelcomparison'"
+      [attr.tabindex]="activeSubTab === 'modelcomparison' ? 0 : -1"
+      (keydown)="onTabKeydown($event, 5)"
+      (click)="selectSubTab('modelcomparison')">
+      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+      Model Comparison
+    </button>
   </div>
 
   <!-- TAB 1: RUN BENCHMARK -->
@@ -1173,6 +1186,13 @@
     </div>
   }
 </div>
+
+<!-- TAB 6: MODEL COMPARISON -->
+@if (activeSubTab === 'modelcomparison') {
+  <div class="gh-tab-panel" id="bm-panel-modelcomparison" role="tabpanel" aria-labelledby="bm-tab-modelcomparison" tabindex="0">
+    <app-benchmark-model-comparison></app-benchmark-model-comparison>
+  </div>
+}
 
 <!--
   SUITE HEALTH DIALOG

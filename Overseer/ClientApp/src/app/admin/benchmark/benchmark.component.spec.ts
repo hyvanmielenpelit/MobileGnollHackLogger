@@ -911,7 +911,7 @@ describe('AdminBenchmarkComponent', () => {
     it('should expose the sub-navigation as a labelled tablist', () => {
       expect(tabList()).toBeTruthy();
       expect(tabList().getAttribute('aria-label')).toBe('Benchmark sections');
-      expect(tabs().length).toBe(5);
+      expect(tabs().length).toBe(6);
     });
 
     it('should mark exactly one tab selected, matching activeSubTab', () => {
@@ -923,27 +923,27 @@ describe('AdminBenchmarkComponent', () => {
     it('should give exactly one tab tabindex="0" and the rest tabindex="-1"', () => {
       const all = tabs();
       expect(all.filter(t => t.getAttribute('tabindex') === '0').length).toBe(1);
-      expect(all.filter(t => t.getAttribute('tabindex') === '-1').length).toBe(4);
+      expect(all.filter(t => t.getAttribute('tabindex') === '-1').length).toBe(5);
     });
 
     it('should wrap forward from the last tab to the first with ArrowRight', () => {
-      component.activeSubTab = 'profiles';
-      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowRight' }), 4);
+      component.activeSubTab = 'modelcomparison';
+      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowRight' }), 5);
       expect(component.activeSubTab).toBe('run');
     });
 
     it('should wrap backward from the first tab to the last with ArrowLeft', () => {
       component.activeSubTab = 'run';
       component.onTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowLeft' }), 0);
-      expect(component.activeSubTab).toBe('profiles');
+      expect(component.activeSubTab).toBe('modelcomparison');
     });
 
     it('should select the first and last tab with Home and End', () => {
       component.activeSubTab = 'history';
       component.onTabKeydown(new KeyboardEvent('keydown', { key: 'End' }), 1);
-      expect(component.activeSubTab).toBe('profiles');
+      expect(component.activeSubTab).toBe('modelcomparison');
 
-      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'Home' }), 4);
+      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'Home' }), 5);
       expect(component.activeSubTab).toBe('run');
     });
 

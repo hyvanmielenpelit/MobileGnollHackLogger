@@ -2,7 +2,7 @@ import { ApplicationConfig, provideZoneChangeDetection, ErrorHandler } from '@an
 import { provideRouter, RouteReuseStrategy } from '@angular/router';
 import { provideHttpClient, withFetch, withInterceptors, withXsrfConfiguration } from '@angular/common/http';
 import { provideCharts } from 'ng2-charts';
-import { BarController, BarElement, CategoryScale, LinearScale, Legend, Tooltip } from 'chart.js';
+import { BarController, BarElement, CategoryScale, LinearScale, Legend, Tooltip, ScatterController, PointElement, LineElement, LogarithmicScale, Title, SubTitle } from 'chart.js';
 import * as Sentry from '@sentry/angular';
 
 import { routes } from './app.routes';
@@ -20,6 +20,6 @@ export const appConfig: ApplicationConfig = {
       withXsrfConfiguration({ cookieName: 'XSRF-TOKEN', headerName: 'X-XSRF-TOKEN' }),
       withInterceptors([authInterceptor])
     ),
-    provideCharts({ registerables: [BarController, BarElement, CategoryScale, LinearScale, Legend, Tooltip] })
+    provideCharts({ registerables: [BarController, BarElement, CategoryScale, LinearScale, Legend, Tooltip, ScatterController, PointElement, LineElement, LogarithmicScale, Title, SubTitle] })
   ]
 };

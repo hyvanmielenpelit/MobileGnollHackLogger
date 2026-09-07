@@ -49,6 +49,7 @@ import { parseServerUtcDate, elapsedMsBetween } from '../../utils/date.util';
 import { TableState, exactFilter } from '../../shared/data-table/table-state';
 import { SortHeaderComponent } from '../../shared/data-table/sort-header.component';
 import { TablePagerComponent } from '../../shared/data-table/table-pager.component';
+import { ModelComparisonComponent } from './model-comparison/model-comparison.component';
 
 /**
  * One row of the run progress list: a suite question merged with its answer, if the run
@@ -161,7 +162,7 @@ interface BenchmarkRunSettings {
   imports: [
     CommonModule, DecimalPipe, FormsModule, CollapsibleMarkdownComponent, SuiteHealthComponent,
     SnapshotViewerComponent, MultiRunComponent, MultiRunProgressDialogComponent,
-    SortHeaderComponent, TablePagerComponent
+    SortHeaderComponent, TablePagerComponent, ModelComparisonComponent
   ],
   templateUrl: './benchmark.component.html',
   styleUrls: ['./benchmark.component.scss']
@@ -209,14 +210,14 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   private systemService = inject(SystemService);
   private cdr = inject(ChangeDetectorRef);
 
-  activeSubTab: 'run' | 'history' | 'multirun' | 'suites' | 'profiles' = 'run';
+  activeSubTab: 'run' | 'history' | 'multirun' | 'suites' | 'profiles' | 'modelcomparison' = 'run';
 
   /**
    * Tab order, and the source of truth for arrow-key navigation indices. Multi-Run Analysis sits
    * immediately right of Run History because a group is built out of the runs listed there, so the
    * two are read in that order. Scoring Profiles sits right of Manage Suites.
    */
-  readonly subTabs = ['run', 'history', 'multirun', 'suites', 'profiles'] as const;
+  readonly subTabs = ['run', 'history', 'multirun', 'suites', 'profiles', 'modelcomparison'] as const;
 
   /**
    * BenchmarkAnswerFlags bits that mean the graded text was corrupted in transport:
@@ -678,7 +679,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
    * loads live here rather than in the template so the tab row carries one
    * statement per handler.
    */
-  selectSubTab(tab: 'run' | 'history' | 'multirun' | 'suites' | 'profiles'): void {
+  selectSubTab(tab: 'run' | 'history' | 'multirun' | 'suites' | 'profiles' | 'modelcomparison'): void {
     this.activeSubTab = tab;
     if (tab === 'history') {
       this.loadHistory();

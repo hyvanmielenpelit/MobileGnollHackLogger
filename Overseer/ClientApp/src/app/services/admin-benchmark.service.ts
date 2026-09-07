@@ -1274,6 +1274,128 @@ export interface BenchmarkGroupAnalysisDto {
   comparison?: any;
 }
 
+export enum BenchmarkModelComparisonPricingBasis {
+  AsRun = 0,
+  Current = 1
+}
+
+export interface BenchmarkModelComparisonRequest {
+  runIds: number[];
+  groupIds: number[];
+  pricingBasis: BenchmarkModelComparisonPricingBasis;
+}
+
+export interface BenchmarkModelComparisonQualityDto {
+  pointEstimate: number;
+  itemCount: number;
+  intervalHalfWidth?: number | null;
+  intervalLower?: number | null;
+  intervalUpper?: number | null;
+  intervalTruncated: boolean;
+  itemSamplingHalfWidth?: number | null;
+  reproducibilityHalfWidth?: number | null;
+  reproducibilityStandardDeviation?: number | null;
+  reproducibilityAvailable: boolean;
+  intervalBasis: string;
+}
+
+export interface BenchmarkModelComparisonSpeedDto {
+  ttftP50Ms?: number | null;
+  ttftP90Ms?: number | null;
+  ttftAnswerCount: number;
+  modelTimeP50Ms?: number | null;
+  modelTimeP90Ms?: number | null;
+  pooledAnswerCount: number;
+  degraded: boolean;
+  degradedReason?: string | null;
+  caveat: string;
+}
+
+export interface BenchmarkModelComparisonCostDto {
+  candidateCostPerQuestionUsd?: number | null;
+  candidateCostPerRunUsd?: number | null;
+  candidateTotalCostUsd?: number | null;
+  basis: string;
+  pricingAsOf?: string | null;
+  pricingResolved: boolean;
+  degraded: boolean;
+  degradedReason?: string | null;
+  scheduledChangeEffectiveFrom?: string | null;
+  scheduledChangeNote?: string | null;
+}
+
+export interface BenchmarkModelComparisonTableDto {
+  meanSpeedIndex?: number | null;
+  speedIndexSaturated: boolean;
+  speedIndexCeilingAnswerCount: number;
+  speedIndexScoredAnswerCount: number;
+  costPerIndexPointUsd?: number | null;
+  meanStoredQualityIndex?: number | null;
+  unstableItemCount: number;
+}
+
+export interface BenchmarkModelComparisonEntryDto {
+  key: string;
+  sourceKind: string;
+  sourceId: number;
+  sourceName?: string | null;
+  runIds: number[];
+  runCount: number;
+  suiteId?: number | null;
+  suiteName?: string | null;
+  provider: string;
+  modelId: string;
+  modelDisplayName: string;
+  thinkingLevel?: string | null;
+  reasoningMode?: string | null;
+  reasoningSummary?: string | null;
+  serviceTier?: string | null;
+  maxOutputTokens?: number | null;
+  parallelExecutionMode: string;
+  label: string;
+  firstRunStartedAtUtc: string;
+  lastRunStartedAtUtc: string;
+  state: string;
+  comparable: boolean;
+  excluded: boolean;
+  speedDegraded: boolean;
+  costDegraded: boolean;
+  excludingKeys: string[];
+  speedDegradingKeys: string[];
+  costDegradingKeys: string[];
+  differences: BenchmarkComparabilityDifferenceDto[];
+  explanation: string;
+  quality?: BenchmarkModelComparisonQualityDto | null;
+  speed?: BenchmarkModelComparisonSpeedDto | null;
+  cost?: BenchmarkModelComparisonCostDto | null;
+  table?: BenchmarkModelComparisonTableDto | null;
+}
+
+export interface BenchmarkModelComparisonExcludedMeasureDto {
+  measure: string;
+  reason: string;
+  instead: string;
+}
+
+export interface BenchmarkModelComparisonDto {
+  pricingBasis: string;
+  pricingBasisLabel: string;
+  computedAtUtc: string;
+  baselineSuiteId?: number | null;
+  baselineSuiteName?: string | null;
+  baselineEntryKeys: string[];
+  baselineKeyValues: { [key: string]: string };
+  modelAxisKeys: string[];
+  entries: BenchmarkModelComparisonEntryDto[];
+  comparableCount: number;
+  excludedCount: number;
+  thinkingLevelsDiffer: boolean;
+  speedAxisCaveat?: string | null;
+  explanation: string;
+  excludedMeasures: BenchmarkModelComparisonExcludedMeasureDto[];
+}
+
+
 @Injectable({
   providedIn: 'root'
 })
@@ -1656,5 +1778,13 @@ export class AdminBenchmarkService {
   /** Beside getRunReportUrl, and used the same way: window.open, not an XHR. */
   getGroupReportUrl(groupId: number): string {
     return `/api/admin/benchmark/runs/groups/${groupId}/report`;
+  }
+
+  compareModels(req: BenchmarkModelComparisonRequest): Observable<BenchmarkModelComparisonDto> {
+    let params: any = {};
+    if (req.runIds?.length) params.runIds = req.runIds;
+    if (req.groupIds?.length) params.groupIds = req.groupIds;
+    if (req.pricingBasis != null) params.pricingBasis = req.pricingBasis;
+    return this.http.get<BenchmarkModelComparisonDto>('/api/admin/benchmark/models/compare', { params });
   }
 }
