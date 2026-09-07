@@ -3829,6 +3829,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(stored.claimVerifierConfigId).toBe(1);
       expect(stored.scoringProfileId).toBe(1);
       expect(stored.verboseMode).toBeTrue();
+      expect(stored.runCount).toBe(1);
       component.ngOnDestroy();
     });
 
@@ -3841,7 +3842,8 @@ describe('AdminBenchmarkComponent', () => {
         claimVerifierConfigId: 1,
         secondOpinionMode: 3,
         scoringProfileId: 1,
-        verboseMode: true
+        verboseMode: true,
+        runCount: 5
       }));
 
       const restored = TestBed.createComponent(AdminBenchmarkComponent);
@@ -3857,7 +3859,49 @@ describe('AdminBenchmarkComponent', () => {
       expect(c.secondOpinionMode).toBe(3);
       expect(c.selectedScoringProfileId).toBe(1);
       expect(c.candidateVerboseMode).toBeTrue();
+      expect(c.runCount).toBe(5);
       c.ngOnDestroy();
+    });
+
+    it('should fall back to default runCount of 1 when stored runCount is invalid or non-positive', () => {
+      localStorage.setItem(RUN_SETTINGS_KEY, JSON.stringify({
+        suiteId: 1,
+        testedConfigId: 1,
+        assessorConfigId: 1,
+        runCount: -3
+      }));
+
+      const restored = TestBed.createComponent(AdminBenchmarkComponent);
+      restored.componentInstance.systemConfigs = [component.systemConfigs[0]];
+      restored.detectChanges();
+
+      expect(restored.componentInstance.runCount).toBe(1);
+      restored.componentInstance.ngOnDestroy();
+    });
+
+    it('should clamp remembered runCount when loadRunLimits receives a lower maxRunCountPerSeries', () => {
+      localStorage.setItem(RUN_SETTINGS_KEY, JSON.stringify({
+        suiteId: 1,
+        testedConfigId: 1,
+        assessorConfigId: 1,
+        runCount: 25
+      }));
+
+      benchmarkServiceMock.getRunLimits.and.returnValue(of({
+        maxRunsPerHour: 4,
+        maxRunsPerDay: 20,
+        runsInLastHour: 0,
+        runsInLast24Hours: 0,
+        remainingDailyHeadroom: 20,
+        maxRunCountPerSeries: 10
+      }));
+
+      const restored = TestBed.createComponent(AdminBenchmarkComponent);
+      restored.componentInstance.systemConfigs = [component.systemConfigs[0]];
+      restored.detectChanges();
+
+      expect(restored.componentInstance.runCount).toBe(10);
+      restored.componentInstance.ngOnDestroy();
     });
 
     it('should fall back to the default when a remembered configuration is no longer benchmark-capable', () => {

@@ -364,6 +364,31 @@ When configuring or editing AI models in `AiModelFormComponent` (used across `/m
 - **Provider Immutability**: In Edit Mode (`mode === 'edit'`), the Provider dropdown is disabled (`[disabled]="mode === 'edit'"`) and programmatic provider changes via `onProviderChange()` are ignored. The AI Provider can only be chosen during creation in Add Mode (`mode === 'add'`).
 - Because the provider cannot change during edits, property preservation always operates within models of the same provider.
 
+## AI Benchmark Configuration Persistence
+
+In the AI Benchmark tab (`/admin` -> AI Benchmark), the settings in the **Configure & Execute Benchmark** card (`.setup-card`) must be remembered across page reloads and tab navigations using `localStorage` under the key `'overseer_admin_benchmark_run_settings'`.
+
+### 1. Stored Setting Fields (`BenchmarkRunSettings`)
+Whenever modifying or extending the benchmark setup form, ensure the following fields are preserved in `BenchmarkRunSettings`:
+- **`suiteId`**: Selected benchmark question suite ID.
+- **`scoringProfileId`**: Selected scoring profile ID.
+- **`testedConfigId`**: Target/candidate model configuration ID.
+- **`assessorConfigId`**: Evaluator/assessor model configuration ID.
+- **`secondOpinionConfigId`**: Second opinion model configuration ID (or `null`).
+- **`secondOpinionMode`**: Explicit second opinion mode override (or `null` to follow the profile default).
+- **`claimVerifierConfigId`**: Claim verifier model configuration ID (or `null`).
+- **`verboseMode`**: Candidate response style (`false` for concise / production default, `true` for detailed / diagnostic).
+- **`runCount`**: Number of runs (`1` for a single run, or `≥ 2` for a replicate multi-run series).
+
+### 2. Persistence Lifecycle & Invariants
+- **Persisted on Execution**: Settings are saved via `persistRunSettings()` when the operator initiates a run or multi-run series (`startBenchmark()`), capturing the exact configuration that was dispatched.
+- **Immediate vs. List-Backed Restorations**:
+  - `restoreRunSettings()` reads from `localStorage` during `ngOnInit()`.
+  - Fields not backed by asynchronous lists (`verboseMode`, `runCount`) restore immediately.
+  - Number of runs (`runCount`) must be validated to be a positive integer (`≥ 1`, floored). It is clamped against `maxRunCountPerSeries` both upon restoration (if limits are already available) and in `loadRunLimits()` when the server limits response arrives.
+  - List-backed fields (`suiteId`, `scoringProfileId`, `testedConfigId`, `assessorConfigId`, etc.) are validated against their asynchronously loaded datasets before being applied. If a saved ID no longer exists or a configuration is disabled or lost its `Benchmark` role, it must fall back gracefully to the default rather than leaving a dangling ID.
+- **Safety Acknowledgments Excluded**: Transient safety gates (such as `acknowledgeSameProvider`) must NEVER be persisted across sessions, ensuring the warning dialog cannot be silently bypassed.
+
 ## Angular Unit Testing
 
 Always execute unit tests before completing frontend modifications in Overseer. Refer to [`testing_guidelines`](file:///c:/hmp/MobileGnollHackLogger/.agents/skills/testing_guidelines/SKILL.md) for full instructions.

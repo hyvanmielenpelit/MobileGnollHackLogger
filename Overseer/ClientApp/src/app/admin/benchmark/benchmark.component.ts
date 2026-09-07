@@ -149,6 +149,7 @@ interface BenchmarkRunSettings {
   secondOpinionMode: number | null;
   scoringProfileId: number | null;
   verboseMode: boolean | null;
+  runCount: number | null;
 }
 
 @Component({
@@ -1887,7 +1888,8 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
         // profile, and persisting the resolved value would freeze it at whatever the profile said today.
         secondOpinionMode: this.secondOpinionModeOverride,
         scoringProfileId: this.selectedScoringProfileId,
-        verboseMode: this.candidateVerboseMode
+        verboseMode: this.candidateVerboseMode,
+        runCount: this.effectiveRunCount
       };
       localStorage.setItem(
         AdminBenchmarkComponent.RUN_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
@@ -1897,7 +1899,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     }
   }
 
-  /** Reads the stored blob into pendingRunSettings, and restores the two fields no loader owns. */
+  /** Reads the stored blob into pendingRunSettings, and restores the fields no loader owns. */
   private restoreRunSettings(): void {
     let parsed: unknown;
     try {
@@ -1921,12 +1923,20 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       claimVerifierConfigId: num(raw.claimVerifierConfigId),
       secondOpinionMode: num(raw.secondOpinionMode),
       scoringProfileId: num(raw.scoringProfileId),
-      verboseMode: typeof raw.verboseMode === 'boolean' ? raw.verboseMode : null
+      verboseMode: typeof raw.verboseMode === 'boolean' ? raw.verboseMode : null,
+      runCount: num(raw.runCount)
     };
 
-    // These two need no list to validate against, so they restore immediately.
+    // These need no list to validate against, so they restore immediately.
     if (this.pendingRunSettings.verboseMode !== null) {
       this.candidateVerboseMode = this.pendingRunSettings.verboseMode;
+    }
+    const count = this.pendingRunSettings.runCount;
+    if (count !== null && count >= 1) {
+      const intCount = Math.floor(count);
+      this.runCount = (this.maxRunCountPerSeries != null && intCount > this.maxRunCountPerSeries)
+        ? this.maxRunCountPerSeries
+        : intCount;
     }
     const mode = this.pendingRunSettings.secondOpinionMode;
     if (mode !== null && this.secondOpinionModeOptions.some(o => o.value === mode)) {
@@ -2053,6 +2063,9 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     this.benchmarkService.getRunLimits().subscribe({
       next: (limits) => {
         this.runLimits = limits;
+        if (limits?.maxRunCountPerSeries != null && this.runCount > limits.maxRunCountPerSeries) {
+          this.runCount = limits.maxRunCountPerSeries;
+        }
         this.cdr.detectChanges();
       },
       // A field that cannot bound itself is still usable, because the server re-checks. Blocking the
