@@ -253,8 +253,15 @@ public class BenchmarkGroupStatisticsTests
             index.ItemSamplingHalfWidth!.Value * index.ItemSamplingHalfWidth!.Value);
 
         Assert.Equal(expected, index.CombinedHalfWidth!.Value, 9);
-        Assert.Equal(index.PointEstimate - expected, index.CombinedLower!.Value, 9);
-        Assert.Equal(index.PointEstimate + expected, index.CombinedUpper!.Value, 9);
+
+        // The half-width is the quantity in quadrature and is never clamped. The reported bounds
+        // are, because a quality score cannot leave [0, 100] — three items give an interval wide
+        // enough to reach both ends here, so both are pinned and the truncation is flagged.
+        Assert.Equal(
+            Math.Clamp(index.PointEstimate - expected, 0.0, 100.0), index.CombinedLower!.Value, 9);
+        Assert.Equal(
+            Math.Clamp(index.PointEstimate + expected, 0.0, 100.0), index.CombinedUpper!.Value, 9);
+        Assert.True(index.CombinedIntervalTruncated);
 
         // SD of {74, 84, 94} is 10, so the reproducibility SE is 10 / sqrt(3) with t(2) = 4.3027.
         Assert.Equal(10.0, index.ReproducibilityStandardDeviation!.Value, 9);
@@ -728,5 +735,414 @@ public class BenchmarkGroupStatisticsTests
         Assert.Equal(4, comparison.PairedT.SampleSize);
         Assert.NotNull(comparison.PairedT.PValue);
         Assert.Equal(BenchmarkGroupStatistics.DefaultFalseDiscoveryRate, comparison.FalseDiscoveryRate);
+    }
+
+    // --- The speed caveat describes the group, not its tier -------------------------------------
+
+    /// <summary>
+    /// A group can sit at Tier B on a key that degrades cost alone. Saying its speed aggregates are
+    /// degraded because it is Tier B is false, and it is the reason this text is built rather than
+    /// printed from a constant.
+    /// </summary>
+    [Fact]
+    public void SpeedCaveat_SaysNothingMoved_WhenSpeedIsNotDegraded()
+    {
+        var questions = Questions(50, 50);
+        var result = BenchmarkGroupStatistics.Compute(Suite(), questions, new[]
+        {
+            Run(1, questions, new[] { 80, 90 }),
+            Run(2, questions, new[] { 82, 92 })
+        });
+
+        Assert.False(result.Speed.Degraded);
+        Assert.Contains("No comparability key affecting timing differs", result.Speed.Caveat);
+        Assert.DoesNotContain("Tier B", result.Speed.Caveat);
+    }
+
+    [Fact]
+    public void SpeedCaveat_NamesTheReason_WhenSpeedIsDegraded()
+    {
+        var questions = Questions(50, 50);
+        var options = new BenchmarkGroupStatisticsOptions
+        {
+            SpeedDegraded = true,
+            SpeedDegradedReason = "QuestionParallelism: 1 (runs 1) vs 3 (runs 2)"
+        };
+
+        var result = BenchmarkGroupStatistics.Compute(Suite(), questions, new[]
+        {
+            Run(1, questions, new[] { 80, 90 }),
+            Run(2, questions, new[] { 82, 92 })
+        }, costs: null, options: options);
+
+        Assert.True(result.Speed.Degraded);
+        Assert.Contains("mix timing conditions", result.Speed.Caveat);
+        Assert.Contains("QuestionParallelism", result.Speed.Caveat);
+    }
+
+    // --- Intervals stay inside the score range ---------------------------------------------------
+
+    /// <summary>
+    /// Runs 16–18 scored Q1 at 45, 78 and 90: mean 71.0, SD 23.3, and a half-width of about 57.9,
+    /// which put the reported upper bound at 128.9 on a scale that stops at 100. The half-width is
+    /// the real quantity and is left alone; the bound is clamped and the truncation is flagged.
+    /// </summary>
+    [Fact]
+    public void ItemInterval_IsClampedToTheScoreRange_AndFlaggedTruncated()
+    {
+        var questions = Questions(50);
+        var result = BenchmarkGroupStatistics.Compute(Suite(), questions, new[]
+        {
+            Run(1, questions, new[] { 45 }),
+            Run(2, questions, new[] { 78 }),
+            Run(3, questions, new[] { 90 })
+        });
+
+        var item = Assert.Single(result.Items);
+
+        // SD = 23.302, SE = 13.454, t(2) = 4.3027 → half-width 57.887.
+        Assert.Equal(71.0, item.Mean, 9);
+        Assert.Equal(57.887, item.MeanConfidenceHalfWidth!.Value, 3);
+
+        // Only the upper bound leaves the range: 71 − 57.887 is still above zero.
+        Assert.Equal(13.113, item.MeanConfidenceLower!.Value, 3);
+        Assert.Equal(100.0, item.MeanConfidenceUpper!.Value, 9);
+        Assert.True(item.MeanConfidenceTruncated);
+    }
+
+    [Fact]
+    public void ItemInterval_IsNotFlaggedTruncated_WhenItFitsInTheScoreRange()
+    {
+        var questions = Questions(50);
+        var result = BenchmarkGroupStatistics.Compute(Suite(), questions, new[]
+        {
+            Run(1, questions, new[] { 70 }),
+            Run(2, questions, new[] { 71 }),
+            Run(3, questions, new[] { 72 })
+        });
+
+        var item = Assert.Single(result.Items);
+
+        Assert.False(item.MeanConfidenceTruncated);
+        Assert.True(item.MeanConfidenceUpper < 100.0);
+    }
+
+    [Fact]
+    public void CombinedIndexInterval_IsClampedAndFlagged_AtTheCeiling()
+    {
+        var questions = Questions(50, 50);
+        var result = BenchmarkGroupStatistics.Compute(Suite(), questions, new[]
+        {
+            Run(1, questions, new[] { 100, 100 }),
+            Run(2, questions, new[] { 100, 100 }),
+            Run(3, questions, new[] { 100, 99 })
+        });
+
+        Assert.Equal(100.0, result.Index.CombinedUpper!.Value, 9);
+        Assert.True(result.Index.CombinedIntervalTruncated);
+    }
+
+    // --- Per-dimension statistics ----------------------------------------------------------------
+
+    /// <summary>
+    /// The measurement four consecutive single runs said was needed and no replicate set could
+    /// supply: whether the Completeness gap survives across runs.
+    /// </summary>
+    [Fact]
+    public void Dimensions_PoolPerRunMeansAndPerItemMeans()
+    {
+        var questions = Questions(50, 50);
+
+        var a = Run(1, questions, new[] { 90, 80 });
+        Score(a, accuracy: new[] { 96, 94 }, completeness: new[] { 84, 80 });
+        var b = Run(2, questions, new[] { 92, 82 });
+        Score(b, accuracy: new[] { 98, 96 }, completeness: new[] { 86, 82 });
+        var c = Run(3, questions, new[] { 94, 84 });
+        Score(c, accuracy: new[] { 97, 95 }, completeness: new[] { 88, 84 });
+
+        var result = BenchmarkGroupStatistics.Compute(Suite(), questions, new[] { a, b, c });
+
+        Assert.Equal(4, result.Dimensions.Count);
+        Assert.Equal(
+            new[] { "Accuracy", "Completeness", "Conciseness", "Readability" },
+            result.Dimensions.Select(d => d.Dimension));
+
+        var accuracyStats = result.Dimensions.Single(d => d.Dimension == "Accuracy");
+        // Per-run unweighted means: 95, 97, 96 → mean 96.
+        Assert.Equal(new[] { 95.0, 97.0, 96.0 }, accuracyStats.PerRunMeans);
+        Assert.Equal(96.0, accuracyStats.Mean!.Value, 9);
+        Assert.Equal(1.0, accuracyStats.StandardDeviation!.Value, 9);
+        Assert.Equal(95.0, accuracyStats.Min!.Value, 9);
+        Assert.Equal(97.0, accuracyStats.Max!.Value, 9);
+        Assert.NotNull(accuracyStats.ConfidenceHalfWidth);
+
+        // Q1's accuracy across the three runs: 96, 98, 97 → 97.
+        Assert.Equal(97.0, accuracyStats.ItemMeans[questions[0].Id], 9);
+
+        var completenessStats = result.Dimensions.Single(d => d.Dimension == "Completeness");
+        // 82, 84, 86 → 84. Completeness trails Accuracy by 12 points, which is the finding.
+        Assert.Equal(84.0, completenessStats.Mean!.Value, 9);
+        Assert.True(completenessStats.Mean < accuracyStats.Mean);
+    }
+
+    /// <summary>
+    /// A dimension nothing scored is emitted empty rather than omitted, so a consumer never has to
+    /// tell "absent" from "unscored".
+    /// </summary>
+    [Fact]
+    public void Dimensions_AreAllPresent_EvenWhenNothingScoredThem()
+    {
+        var questions = Questions(50);
+        var result = BenchmarkGroupStatistics.Compute(Suite(), questions, new[]
+        {
+            Run(1, questions, new[] { 90 }),
+            Run(2, questions, new[] { 92 })
+        });
+
+        Assert.Equal(4, result.Dimensions.Count);
+        Assert.All(result.Dimensions, d =>
+        {
+            Assert.Empty(d.PerRunMeans);
+            Assert.Null(d.Mean);
+            Assert.Null(d.StandardDeviation);
+            Assert.Null(d.ConfidenceHalfWidth);
+        });
+    }
+
+    [Fact]
+    public void Dimensions_ReportNoHalfWidth_BelowThreeRuns()
+    {
+        var questions = Questions(50);
+
+        var a = Run(1, questions, new[] { 90 });
+        Score(a, accuracy: new[] { 96 });
+        var b = Run(2, questions, new[] { 92 });
+        Score(b, accuracy: new[] { 98 });
+
+        var result = BenchmarkGroupStatistics.Compute(Suite(), questions, new[] { a, b });
+
+        var accuracyStats = result.Dimensions.Single(d => d.Dimension == "Accuracy");
+        Assert.Equal(97.0, accuracyStats.Mean!.Value, 9);
+        Assert.NotNull(accuracyStats.StandardDeviation);
+        Assert.Null(accuracyStats.ConfidenceHalfWidth);
+    }
+
+    // --- Token, tool and claim-verification usage ------------------------------------------------
+
+    [Fact]
+    public void Usage_PoolsTokensToolFamiliesAndClaimCounts()
+    {
+        var questions = Questions(50, 50);
+
+        var a = Run(1, questions, new[] { 90, 80 });
+        a.TotalInputTokens = 1_000_000;
+        a.TotalOutputTokens = 40_000;
+        a.TotalCacheReadTokens = 900_000;
+        a.TotalAssessmentInputTokens = 50_000;
+        a.TotalClaimVerificationInputTokens = 70_000;
+        a.ClaimsSupportedCount = 3;
+        a.ClaimsRefutedCount = 1;
+        a.ClaimVerifiedAnswerCount = 2;
+        // The stored format is name×count with no spaces, as BenchmarkService writes it.
+        a.Answers[0].ToolCallSummary = "source_code_search×4, wiki_search×1";
+        a.Answers[1].ToolCallSummary = "monster_lookup×1";
+
+        var b = Run(2, questions, new[] { 92, 82 });
+        b.TotalInputTokens = 1_200_000;
+        b.TotalOutputTokens = 60_000;
+        b.TotalCacheReadTokens = 1_100_000;
+        b.ClaimsIndeterminateCount = 2;
+        b.ClaimVerifiedAnswerCount = 1;
+        b.Answers[0].ToolCallSummary = "wiki_search×3";
+        b.Answers[1].ToolCallSummary = "get_knowledge_article×1";
+
+        var result = BenchmarkGroupStatistics.Compute(Suite(), questions, new[] { a, b });
+        var usage = Assert.IsType<BenchmarkGroupUsageStatistics>(result.Usage);
+
+        Assert.Equal(2_200_000, usage.TotalInputTokens);
+        Assert.Equal(100_000, usage.TotalOutputTokens);
+        Assert.Equal(2_000_000, usage.TotalCacheReadTokens);
+        Assert.Equal(2_000_000 * 100.0 / 2_200_000, usage.CacheReadSharePercentage!.Value, 9);
+        Assert.Equal(22.0, usage.InputOutputRatio!.Value, 9);
+
+        // The grader totals stay out of the candidate's.
+        Assert.Equal(50_000, usage.TotalAssessmentInputTokens);
+        Assert.Equal(70_000, usage.TotalClaimVerificationInputTokens);
+
+        // 4 source + 4 wiki + 1 structured + 1 knowledge base = 10.
+        Assert.Equal(10, usage.TotalToolCalls);
+        Assert.Equal(4, usage.ToolCallsByFamily["SourceCode"]);
+        Assert.Equal(4, usage.ToolCallsByFamily["Wiki"]);
+        Assert.Equal(1, usage.ToolCallsByFamily["StructuredLookup"]);
+        Assert.Equal(1, usage.ToolCallsByFamily["KnowledgeBase"]);
+        Assert.Equal(100.0, usage.ToolFamilyShares.Values.Sum(), 9);
+        Assert.Equal(5.0, usage.MeanToolCallsPerRun!.Value, 9);
+
+        Assert.Equal(3, usage.ClaimsSupported);
+        Assert.Equal(1, usage.ClaimsRefuted);
+        Assert.Equal(2, usage.ClaimsIndeterminate);
+        Assert.Equal(6, usage.ClaimsChecked);
+        Assert.Equal(3, usage.AnswersWithVerification);
+    }
+
+    /// <summary>An all-zero usage block reads as a measurement. A run that recorded none is null.</summary>
+    [Fact]
+    public void Usage_IsNull_WhenNoMemberRecordedAny()
+    {
+        var questions = Questions(50);
+        var result = BenchmarkGroupStatistics.Compute(Suite(), questions, new[]
+        {
+            Run(1, questions, new[] { 90 }),
+            Run(2, questions, new[] { 92 })
+        });
+
+        Assert.Null(result.Usage);
+    }
+
+    // --- Per-role cost dispersion ----------------------------------------------------------------
+
+    /// <summary>
+    /// Runs 16–18 cost $3.46, $3.00 and $5.92 on a configuration whose comparability keys all
+    /// matched, and the spread sat entirely in the claim verifier. A mean with one standard
+    /// deviation on the total cannot show that; per-role dispersion can.
+    /// </summary>
+    [Fact]
+    public void Cost_ReportsPerRoleDispersionAndPerRunTotals()
+    {
+        var questions = Questions(50);
+        var costs = new[]
+        {
+            RunCost(1, candidate: 0.30, assessor: 0.50, claimVerifier: 2.00),
+            RunCost(2, candidate: 0.30, assessor: 0.50, claimVerifier: 5.00)
+        };
+
+        var result = BenchmarkGroupStatistics.Compute(Suite(), questions, new[]
+        {
+            Run(1, questions, new[] { 90 }),
+            Run(2, questions, new[] { 92 })
+        }, costs);
+
+        var cost = Assert.IsType<BenchmarkGroupCostStatistics>(result.Cost);
+
+        Assert.Equal(new[] { 2.80, 5.80 }, cost.PerRunTotals.Select(t => Math.Round(t, 9)));
+
+        // The two fixed roles have no spread; the verifier carries all of it.
+        Assert.Equal(0.0, cost.CostStandardDeviationByRole["candidate"]!.Value, 9);
+        Assert.Equal(0.0, cost.CostStandardDeviationByRole["assessor"]!.Value, 9);
+        Assert.True(cost.CostStandardDeviationByRole["claimVerifier"]!.Value > 2.0);
+
+        Assert.Equal(2.00, cost.MinCostByRole["claimVerifier"], 9);
+        Assert.Equal(5.00, cost.MaxCostByRole["claimVerifier"], 9);
+    }
+
+    /// <summary>A role one run never spent on contributes zero to the spread, not a skipped sample.</summary>
+    [Fact]
+    public void Cost_TreatsAnAbsentRoleAsZeroSpend()
+    {
+        var questions = Questions(50);
+        var costs = new[]
+        {
+            RunCost(1, candidate: 0.30, assessor: 0.50, claimVerifier: 2.00),
+            RunCost(2, candidate: 0.30, assessor: 0.50)
+        };
+
+        var result = BenchmarkGroupStatistics.Compute(Suite(), questions, new[]
+        {
+            Run(1, questions, new[] { 90 }),
+            Run(2, questions, new[] { 92 })
+        }, costs);
+
+        var cost = Assert.IsType<BenchmarkGroupCostStatistics>(result.Cost);
+
+        Assert.Equal(0.0, cost.MinCostByRole["claimVerifier"], 9);
+        Assert.Equal(2.00, cost.MaxCostByRole["claimVerifier"], 9);
+        Assert.True(cost.CostStandardDeviationByRole["claimVerifier"]!.Value > 0.0);
+    }
+
+    // --- The prompt the group was graded under ---------------------------------------------------
+
+    [Fact]
+    public void PromptUnderTest_DecodesTheFirstMemberAndIsNotDivergent_ForIdenticalMembers()
+    {
+        var questions = Questions(50);
+        const string Options = "{\"verboseMode\":true,\"overseerMode\":0,\"enableToolUse\":true,"
+            + "\"allowSourceCodeReferences\":true,\"hasWikiContext\":false}";
+
+        var a = Run(1, questions, new[] { 90 });
+        a.CandidatePromptOptionsJson = Options;
+        var b = Run(2, questions, new[] { 92 });
+        b.CandidatePromptOptionsJson = Options;
+
+        var result = BenchmarkGroupStatistics.Compute(Suite(), questions, new[] { a, b });
+        var prompt = Assert.IsType<BenchmarkGroupPromptUnderTest>(result.PromptUnderTest);
+
+        Assert.True(prompt.Recorded);
+        Assert.False(prompt.Divergent);
+        Assert.True(prompt.VerboseMode);
+        Assert.True(prompt.EnableToolUse);
+        Assert.True(prompt.AllowSourceCodeReferences);
+
+        // The permanent divergence from live chat, which every routing finding is measured under.
+        Assert.False(prompt.HasWikiContext);
+    }
+
+    [Fact]
+    public void PromptUnderTest_IsFlaggedDivergent_WhenMembersDisagree()
+    {
+        var questions = Questions(50);
+
+        var a = Run(1, questions, new[] { 90 });
+        a.CandidatePromptOptionsJson = "{\"verboseMode\":true}";
+        var b = Run(2, questions, new[] { 92 });
+        b.CandidatePromptOptionsJson = "{\"verboseMode\":false}";
+
+        var result = BenchmarkGroupStatistics.Compute(Suite(), questions, new[] { a, b });
+
+        Assert.True(result.PromptUnderTest!.Divergent);
+    }
+
+    [Fact]
+    public void PromptUnderTest_SaysSoWhenTheConfigurationWasNotRecorded()
+    {
+        var questions = Questions(50);
+        var result = BenchmarkGroupStatistics.Compute(Suite(), questions, new[]
+        {
+            Run(1, questions, new[] { 90 })
+        });
+
+        Assert.False(result.PromptUnderTest!.Recorded);
+    }
+
+    // --- Fixture helpers -------------------------------------------------------------------------
+
+    /// <summary>Adds dimension scores to a run built by <see cref="Run"/>, per answer in order.</summary>
+    private static void Score(
+        BenchmarkRun run,
+        int[]? accuracy = null,
+        int[]? completeness = null,
+        int[]? conciseness = null,
+        int[]? readability = null)
+    {
+        for (int i = 0; i < run.Answers.Count; i++)
+        {
+            if (accuracy != null) run.Answers[i].AccuracyScore = accuracy[i];
+            if (completeness != null) run.Answers[i].CompletenessScore = completeness[i];
+            if (conciseness != null) run.Answers[i].ConcisenessScore = conciseness[i];
+            if (readability != null) run.Answers[i].ReadabilityScore = readability[i];
+        }
+    }
+
+    private static BenchmarkGroupRunCost RunCost(
+        long runId, double candidate, double assessor, double? claimVerifier = null)
+    {
+        var byRole = new Dictionary<string, double>
+        {
+            ["candidate"] = candidate,
+            ["assessor"] = assessor
+        };
+
+        if (claimVerifier.HasValue) byRole["claimVerifier"] = claimVerifier.Value;
+
+        return new BenchmarkGroupRunCost { RunId = runId, CostByRole = byRole };
     }
 }

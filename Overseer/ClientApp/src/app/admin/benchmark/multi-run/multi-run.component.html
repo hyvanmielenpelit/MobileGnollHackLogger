@@ -55,9 +55,20 @@
               @for (group of groups; track group.id) {
                 <tr [class.is-selected]="selectedGroup?.id === group.id">
                   <th scope="row" class="col-name">
-                    <button type="button" class="btn-link mr-group-name" (click)="selectGroup(group)">{{ group.name }}</button>
+                    <span class="mr-group-name">{{ group.name }}</span>
+                    <!--
+                      The permanent route to a finished series. The Run Benchmark banner that used to
+                      carry the only one disappears when the series ends, and the series dialog is
+                      where both diagnostics captures are copied from.
+                    -->
                     @if (group.createdFromSeriesId != null) {
-                      <span class="mr-badge mr-badge-series">Series {{ group.createdFromSeriesId }}</span>
+                      <button type="button" class="mr-badge mr-badge-series mr-badge-button"
+                              (click)="viewSeries(group)"
+                              [attr.aria-label]="'Show progress for series ' + group.createdFromSeriesId"
+                              [attr.interestfor]="seriesTipId(group.id)"
+                              [attr.style]="'anchor-name: --' + seriesTipId(group.id)">Series {{ group.createdFromSeriesId }}</button>
+                      <div popover="hint" class="gh-tooltip" [id]="seriesTipId(group.id)"
+                           [attr.style]="'position-anchor: --' + seriesTipId(group.id)">Show this series' progress and diagnostics</div>
                     }
                   </th>
                   <td>
@@ -83,6 +94,20 @@
                     }
                   </td>
                   <td class="col-actions">
+                    <!-- View first, matching the Run History row's order. -->
+                    <button type="button" class="action-btn" (click)="openGroup(group)"
+                            [attr.aria-label]="'View analysis for group ' + group.name"
+                            [attr.interestfor]="viewTipId(group.id)"
+                            [attr.style]="'anchor-name: --' + viewTipId(group.id)">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                        <circle cx="12" cy="12" r="3"></circle>
+                      </svg>
+                      <span class="visually-hidden">View analysis</span>
+                    </button>
+                    <div popover="hint" class="gh-tooltip" [id]="viewTipId(group.id)"
+                         [attr.style]="'position-anchor: --' + viewTipId(group.id)">View analysis</div>
+
                     <!--
                       aria-disabled rather than disabled: a disabled control leaves the focus order
                       entirely, so a keyboard user cannot land on it and read the tooltip that says
@@ -277,21 +302,45 @@
         <button type="button" class="btn-gh btn-gh-cancel" (click)="clearSelection()">Clear Selection</button>
       </div>
     </section>
+  }
+</div>
 
-    <!-- ===================================================================================
-         GROUP DETAIL
-         =================================================================================== -->
-    @if (selectedGroup) {
-      <section class="mr-section mr-detail" aria-labelledby="mr-detail-heading">
-        <div class="mr-section-head">
+<!--
+  The analysis opens as a modal, like a single run's report, rather than unrolling below the group
+  list: it is a document, and a document that starts three screens down the page is one nobody
+  reads.
+
+  The dialog is a sibling of .multi-run rather than a child. A modal dialog's containing block is
+  the viewport, so it would not inherit the panel's inline-size container even nested — the body
+  below declares its own, which is also the right measurement: the queries want the dialog's width.
+-->
+<dialog #groupDetailDialog class="gh-dialog mr-analysis-dialog" (cancel)="closeGroup()">
+  @if (selectedGroup) {
+    <div class="dialog-content flex-col">
+      <div class="dialog-header">
+        <div class="dialog-title-group">
           <h3 id="mr-detail-heading">{{ selectedGroup.name }}</h3>
+          <p class="dialog-subtitle">
+            {{ selectedGroup.suiteName || 'Suite unknown' }} · R = {{ selectedGroup.runCount }}
+          </p>
+        </div>
+        <div class="mr-dialog-header-badges">
           <span class="mr-tier" [class]="'mr-tier ' + tierClass(selectedGroup.tier)">
             {{ selectedGroup.tierLabel || tierName(selectedGroup.tier) }}
           </span>
           @if (selectedGroup.analysisStale) {
             <span class="mr-badge mr-badge-stale">Stale analysis</span>
           }
+          <button type="button" class="btn-icon-action" aria-label="Close multi-run analysis" (click)="closeGroup()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;" aria-hidden="true">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
         </div>
+      </div>
+
+      <div class="dialog-body mr-dialog-body">
 
         @if (groupError) {
           <div class="alert alert-warning" role="alert">
@@ -329,6 +378,63 @@
             <dt>Comparability key</dt>
             <dd class="mr-mono">{{ selectedGroup.comparabilityKeyHash ? shortFingerprint(selectedGroup.comparabilityKeyHash) : '—' }}</dd>
           </div>
+          <!--
+            What the candidate was told to do. Without it a reader cannot tell prompt adherence
+            from a model weakness — a concise response instruction caps Completeness by design —
+            and that attribution check is what every dimensional figure below depends on.
+          -->
+          @if (promptStats; as prompt) {
+            <div class="mr-manifest-row">
+              <dt>Prompt under test</dt>
+              <dd>
+                @if (!prompt.recorded) {
+                  <span class="text-muted">Not recorded for these runs. No figure below can be
+                  attributed to the model until it is: the options that cap a dimension are unknown
+                  for this group.</span>
+                } @else {
+                  <ul class="mr-prompt-list">
+                    <li>
+                      <span class="mr-prompt-label">Style</span>
+                      <span>{{ prompt.verboseMode ? 'Detailed' : 'Concise' }} · Mode {{ prompt.overseerMode }}{{ prompt.overseerMode === 0 ? ' (Gameplay Help)' : '' }}</span>
+                    </li>
+                    <li>
+                      <span class="mr-prompt-label">Tools</span>
+                      <span>
+                        {{ prompt.enableToolUse ? 'enabled' : 'disabled' }} ·
+                        web search {{ prompt.enableWebSearch ? 'on' : 'off' }} ·
+                        subagents {{ prompt.enableSubAgents ? 'on' : 'off' }} ·
+                        source refs {{ prompt.allowSourceCodeReferences ? 'allowed' : 'disallowed' }} ·
+                        batching {{ parallelModeLabel(prompt.parallelMode) }}
+                      </span>
+                    </li>
+                    <li>
+                      <span class="mr-prompt-label">Context</span>
+                      <span>
+                        spoiler-free {{ prompt.spoilerFreeMode ? 'on' : 'off' }} ·
+                        active game {{ prompt.isGameOn ? 'yes' : 'no' }} ·
+                        history {{ prompt.hasMessageHistory ? 'yes' : 'no' }} ·
+                        wiki context {{ prompt.hasWikiContext ? 'yes' : 'no' }} ·
+                        snapshot {{ prompt.hasGameSnapshot ? 'yes' : 'no' }}
+                      </span>
+                    </li>
+                  </ul>
+                  @if (prompt.divergent) {
+                    <p class="mr-prompt-note mr-prompt-note-warning">
+                      <strong>The members disagree on these options.</strong> The values above are
+                      the first member's. A group graded under two prompts cannot support a pooled
+                      dimensional claim, whatever its tier says.
+                    </p>
+                  } @else if (!prompt.hasWikiContext) {
+                    <p class="mr-prompt-note">
+                      Live chat pre-injects wiki articles and the benchmark does not, so every
+                      retrieval and tool-routing figure below was measured under a condition
+                      production does not share.
+                    </p>
+                  }
+                }
+              </dd>
+            </div>
+          }
           @if (selectedGroup.notes) {
             <div class="mr-manifest-row">
               <dt>Notes</dt>
@@ -491,7 +597,17 @@
                   @if (indexStats.combinedLower != null && indexStats.combinedUpper != null) {
                     <span class="mr-combined-range">({{ formatNumber(indexStats.combinedLower, 1) }} – {{ formatNumber(indexStats.combinedUpper, 1) }})</span>
                   }
+                  @if (indexStats.combinedIntervalTruncated) {
+                    <span class="mr-truncated-marker" title="Truncated at the score bound">†</span>
+                  }
                 </p>
+                @if (indexStats.combinedIntervalTruncated) {
+                  <p class="mr-combined-note">
+                    † The half-width is the honest one; the interval reaches past 0 or 100, where no
+                    score can go, so the reported bound is pinned there. The interval is not as
+                    tight as it looks.
+                  </p>
+                }
                 <p class="mr-combined-note">
                   @if (indexStats.reproducibilityAvailable) {
                     Covers <strong>both</strong> sources — run-to-run variation and item selection —
@@ -524,6 +640,76 @@
               <div class="alert-body">{{ varianceCaveat }}</div>
             </div>
           </div>
+
+          <!-- ================= QUALITY DIMENSIONS =================
+               A composite index cannot say which dimension moved, and a single run cannot say
+               whether a dimensional gap survives a re-run. This is where a replicate set answers
+               both, which is the reason it was worth adding. -->
+          @if (dimensionStats.length > 0) {
+            <div class="mr-subsection">
+              <h4>Quality dimensions</h4>
+              <p class="section-note">
+                Per-run means, pooled across the group. These are <strong>unweighted</strong> while
+                the index above is difficulty-weighted — there are no per-dimension difficulty
+                weights to apply, so the two are not expected to agree.
+              </p>
+              <div class="mr-table-scroll">
+                <table class="gh-table mr-dimension-table">
+                  <caption class="visually-hidden">Each scoring dimension's mean, spread and weakest items across the group's runs.</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Dimension</th>
+                      <th scope="col" class="col-num">Mean</th>
+                      <th scope="col" class="col-num">SD</th>
+                      <th scope="col" class="col-num">95 % ±</th>
+                      <th scope="col" class="col-num">Min</th>
+                      <th scope="col" class="col-num">Max</th>
+                      <th scope="col">Per-run means</th>
+                      <th scope="col">Lowest items</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (dim of dimensionStats; track dim.dimension) {
+                      <tr>
+                        <th scope="row">{{ dim.dimension }}</th>
+                        <td class="col-num">{{ formatNumber(dim.mean, 1) }}</td>
+                        <td class="col-num">{{ formatNumber(dim.standardDeviation, 1) }}</td>
+                        <td class="col-num">{{ formatNumber(dim.confidenceHalfWidth, 1) }}</td>
+                        <td class="col-num">{{ formatNumber(dim.min, 1) }}</td>
+                        <td class="col-num">{{ formatNumber(dim.max, 1) }}</td>
+                        <td>{{ (dim.perRunMeans ?? []).length > 0 ? (dim.perRunMeans ?? []).join(', ') : '—' }}</td>
+                        <td>{{ lowestItemsFor(dim) }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+
+              @if (lowestDimension; as lowest) {
+                <p class="mr-dimension-gap">
+                  <strong>Lowest dimension:</strong> {{ lowest.dimension }} at
+                  {{ formatNumber(lowest.mean, 1) }}, trailing the strongest by
+                  {{ formatNumber(lowest.gap, 1) }} points.
+                </p>
+                <div class="alert alert-info" role="note">
+                  <div class="alert-content">
+                    <div class="alert-body">
+                      A dimension can be low because the prompt instructed the model to answer that
+                      way. Check the response style in the manifest above before reading a low
+                      figure here as a model weakness.
+                    </div>
+                  </div>
+                </div>
+              }
+
+              @if (!(result?.pooledIndexReportable)) {
+                <p class="section-note">
+                  Below three runs no half-width is reported for a dimension, on the same rule the
+                  index uses: a standard deviation over two runs is arithmetic rather than evidence.
+                </p>
+              }
+            </div>
+          }
 
           <!-- ================= PER-ITEM TABLE ================= -->
           @if (itemStats.length > 0) {
@@ -655,12 +841,150 @@
                   <dd>{{ formatCost(costStats.costPerIndexPoint) }}</dd>
                 </div>
               </dl>
-              @if (costStats.totalCostByRole) {
-                <ul class="mr-role-split">
-                  @for (role of costStats.totalCostByRole | keyvalue; track role.key) {
-                    <li><span class="mr-role-name">{{ role.key }}</span> {{ formatCost(role.value) }}</li>
+              @if ((costStats.perRunTotals ?? []).length > 0) {
+                <p class="section-note">
+                  <strong>Per-run totals:</strong>
+                  @for (total of costStats.perRunTotals ?? []; track $index) {
+                    <span class="mr-run-total">{{ formatCost(total) }}</span>
                   }
-                </ul>
+                </p>
+              }
+
+              @if (costRoleRows.length > 0) {
+                <div class="mr-table-scroll">
+                  <table class="gh-table mr-cost-role-table">
+                    <caption class="visually-hidden">Cost by role: total, mean per run, spread and share.</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Role</th>
+                        <th scope="col" class="col-num">Total</th>
+                        <th scope="col" class="col-num">Mean per run</th>
+                        <th scope="col" class="col-num">SD</th>
+                        <th scope="col" class="col-num">Min</th>
+                        <th scope="col" class="col-num">Max</th>
+                        <th scope="col" class="col-num">Share</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (row of costRoleRows; track row.role) {
+                        <tr>
+                          <th scope="row">{{ row.role }}</th>
+                          <td class="col-num">{{ formatCost(row.total) }}</td>
+                          <td class="col-num">{{ formatCost(row.mean) }}</td>
+                          <td class="col-num">{{ formatCost(row.sd) }}</td>
+                          <td class="col-num">{{ formatCost(row.min) }}</td>
+                          <td class="col-num">{{ formatCost(row.max) }}</td>
+                          <td class="col-num">{{ formatPercent(row.share, 0) }}</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              }
+
+              <!--
+                Which role carries the spread is the actionable half. A set whose quality reproduces
+                to a tenth of a point can still spend twice as much on one member as another, and a
+                mean with one SD on the total does not say where that came from.
+              -->
+              @if (widestCostRole; as widest) {
+                <p class="section-note">
+                  <strong>Cost dispersion sits mostly in {{ widest.role }}</strong>
+                  (SD {{ formatCost(widest.sd) }} across {{ costStats.runCount }} runs). Cost is the
+                  least reproducible quantity a replicate set measures, so a cost difference between
+                  two groups needs the same spread treatment a quality difference gets.
+                </p>
+              }
+            </div>
+          }
+
+          <!-- ================= TOKENS AND TOOLS =================
+               The claim verifier can be most of a set's cost, and a cost table that names it
+               without naming how many claims it checked leaves the reader unable to judge whether
+               the spend bought anything. -->
+          @if (usageStats; as usage) {
+            <div class="mr-subsection">
+              <h4>Tokens and tool usage</h4>
+              <dl class="mr-stats">
+                <div class="mr-stat">
+                  <dt>Candidate input</dt>
+                  <dd>{{ formatTokens(usage.totalInputTokens) }}</dd>
+                </div>
+                <div class="mr-stat">
+                  <dt>Candidate output</dt>
+                  <dd>{{ formatTokens(usage.totalOutputTokens) }}</dd>
+                </div>
+                <div class="mr-stat">
+                  <dt>Input : output</dt>
+                  <dd>{{ usage.inputOutputRatio != null ? formatNumber(usage.inputOutputRatio, 1) + ' : 1' : '—' }}</dd>
+                </div>
+                <div class="mr-stat">
+                  <dt>Cache-read share</dt>
+                  <dd>{{ formatPercent(usage.cacheReadSharePercentage, 1) }}</dd>
+                </div>
+                <div class="mr-stat">
+                  <dt>Tool calls</dt>
+                  <dd>{{ usage.totalToolCalls }}</dd>
+                </div>
+                <div class="mr-stat">
+                  <dt>Tool calls per run</dt>
+                  <dd>{{ formatNumber(usage.meanToolCallsPerRun, 1) }}</dd>
+                </div>
+              </dl>
+
+              <p class="section-note">
+                <strong>Grader tokens, kept separate:</strong>
+                assessor {{ formatTokens(usage.totalAssessmentInputTokens) }} in /
+                {{ formatTokens(usage.totalAssessmentOutputTokens) }} out ·
+                claim verifier {{ formatTokens(usage.totalClaimVerificationInputTokens) }} in /
+                {{ formatTokens(usage.totalClaimVerificationOutputTokens) }} out.
+                Never folded into the candidate's totals above: those measure the model under test.
+              </p>
+
+              @if (toolFamilyRows.length > 0) {
+                <div class="mr-table-scroll">
+                  <table class="gh-table mr-tool-family-table">
+                    <caption class="visually-hidden">Tool calls by family, pooled across the group's runs.</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Tool family</th>
+                        <th scope="col" class="col-num">Calls</th>
+                        <th scope="col" class="col-num">Share</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (row of toolFamilyRows; track row.family) {
+                        <tr>
+                          <th scope="row">{{ row.family }}</th>
+                          <td class="col-num">{{ row.calls }}</td>
+                          <td class="col-num">{{ formatPercent(row.share, 1) }}</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+                <p class="section-note">
+                  A family's share is prompt-compliant or not only against the tool preference
+                  hierarchy in <code>_policy.md</code>. A high source-code share on a suite weighted
+                  toward exact mechanics is what that policy asks for, not a routing defect.
+                </p>
+              }
+
+              @if (usage.claimsChecked > 0 || usage.answersWithVerification > 0) {
+                <p class="mr-claim-line">
+                  <strong>Claim verification:</strong>
+                  {{ usage.claimsChecked }} claims checked across
+                  {{ usage.answersWithVerification }} answers —
+                  {{ usage.claimsSupported }} supported,
+                  <strong>{{ usage.claimsRefuted }} refuted</strong>,
+                  {{ usage.claimsIndeterminate }} indeterminate.
+                </p>
+                <p class="section-note">
+                  Read this beside the verifier's share of the cost table above: it is what that
+                  spend bought. A verifier that refutes nothing across a whole replicate set is
+                  either confirming the candidate is accurate or failing to test it, and the claim
+                  count is what separates those.
+                </p>
               }
             </div>
           }
@@ -765,7 +1089,11 @@
             </div>
           }
         }
-      </section>
-    }
+      </div>
+
+      <div class="dialog-footer">
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeGroup()">Close</button>
+      </div>
+    </div>
   }
-</div>
+</dialog>

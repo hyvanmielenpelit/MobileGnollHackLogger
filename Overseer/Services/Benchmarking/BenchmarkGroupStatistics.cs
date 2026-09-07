@@ -157,8 +157,24 @@ public sealed record BenchmarkGroupItemStatistics
     /// </summary>
     public double? MeanConfidenceHalfWidth { get; init; }
 
+    /// <summary>
+    /// The interval bounds, clamped to the score range [0, 100]. A quality score cannot leave that
+    /// range, so an unclamped bound is not a wider claim — it is an impossible one.
+    /// <see cref="MeanConfidenceHalfWidth"/> is deliberately left unclamped: it is the quantity
+    /// that carries the spread, and clamping it would corrupt the quadrature in
+    /// <see cref="BenchmarkGroupIndexStatistics"/>.
+    /// </summary>
     public double? MeanConfidenceLower { get; init; }
+
+    /// <inheritdoc cref="MeanConfidenceLower"/>
     public double? MeanConfidenceUpper { get; init; }
+
+    /// <summary>
+    /// Either bound hit the score range and was clamped, so the interval as reported is narrower
+    /// than <see cref="MeanConfidenceHalfWidth"/> implies. Reports say so rather than presenting a
+    /// truncated interval as a tight one.
+    /// </summary>
+    public bool MeanConfidenceTruncated { get; init; }
 
     /// <summary>Runs in which the assessor flagged a critical error on this item.</summary>
     public int CriticalErrorCount { get; init; }
@@ -289,8 +305,17 @@ public sealed record BenchmarkGroupIndexStatistics
     /// </summary>
     public double? CombinedHalfWidth { get; init; }
 
+    /// <summary>
+    /// The combined interval's bounds, clamped to the score range [0, 100] for the same reason the
+    /// per-item bounds are. <see cref="CombinedHalfWidth"/> stays unclamped.
+    /// </summary>
     public double? CombinedLower { get; init; }
+
+    /// <inheritdoc cref="CombinedLower"/>
     public double? CombinedUpper { get; init; }
+
+    /// <summary>Either combined bound hit the score range and was clamped.</summary>
+    public bool CombinedIntervalTruncated { get; init; }
 
     /// <summary>False below three runs, where no reproducibility figure is reported at all.</summary>
     public bool ReproducibilityAvailable { get; init; }
@@ -352,6 +377,29 @@ public sealed record BenchmarkGroupCostStatistics
     public IReadOnlyDictionary<string, double> MeanCostByRole { get; init; }
         = new Dictionary<string, double>();
 
+    /// <summary>
+    /// The per-run totals, in member order. Cost is the least reproducible quantity a replicate set
+    /// measures — a set whose 22 comparability keys match can still spend twice as much on one
+    /// member as another — so the individual figures are carried rather than only their mean.
+    /// </summary>
+    public IReadOnlyList<double> PerRunTotals { get; init; } = Array.Empty<double>();
+
+    /// <summary>
+    /// Sample standard deviation of each role's per-run cost. Null per role below two runs.
+    ///
+    /// <para>Without this the reader sees a spread on the total and cannot tell which role carries
+    /// it. A run absent from one member's cost dictionary contributes <c>0.0</c> rather than being
+    /// skipped: a run that spent nothing on a role did spend nothing.</para>
+    /// </summary>
+    public IReadOnlyDictionary<string, double?> CostStandardDeviationByRole { get; init; }
+        = new Dictionary<string, double?>();
+
+    public IReadOnlyDictionary<string, double> MinCostByRole { get; init; }
+        = new Dictionary<string, double>();
+
+    public IReadOnlyDictionary<string, double> MaxCostByRole { get; init; }
+        = new Dictionary<string, double>();
+
     /// <summary>Mean cost per run divided by the number of items. Null when there are no items.</summary>
     public double? CostPerQuestion { get; init; }
 
@@ -368,6 +416,156 @@ public sealed record BenchmarkGroupCostStatistics
     public bool Degraded { get; init; }
 
     public string? DegradedReason { get; init; }
+}
+
+/// <summary>
+/// One scoring dimension across the runs of a group.
+///
+/// <para>These means are <b>unweighted</b>, unlike the Intelligence Index, which weights each item
+/// by its assessed difficulty. There are no per-dimension difficulty weights to apply, so a reader
+/// comparing a dimension mean against the index must be able to see that the two are differently
+/// weighted by design rather than inconsistent.</para>
+/// </summary>
+public sealed record BenchmarkGroupDimensionStatistics
+{
+    /// <summary><c>Accuracy</c>, <c>Completeness</c>, <c>Conciseness</c> or <c>Readability</c>.</summary>
+    public string Dimension { get; init; } = string.Empty;
+
+    /// <summary>
+    /// One unweighted mean per member, over that member's scored answers. Empty when no member
+    /// recorded this dimension — emitted as an empty list rather than omitting the dimension, so a
+    /// consumer never has to distinguish "absent" from "unscored".
+    /// </summary>
+    public IReadOnlyList<double> PerRunMeans { get; init; } = Array.Empty<double>();
+
+    /// <summary>Mean of <see cref="PerRunMeans"/>. Null when nothing was scored.</summary>
+    public double? Mean { get; init; }
+
+    /// <summary>Sample standard deviation of <see cref="PerRunMeans"/>. Null below two runs.</summary>
+    public double? StandardDeviation { get; init; }
+
+    /// <summary>
+    /// <c>t(R−1) · SD / √R</c>. Null below
+    /// <see cref="BenchmarkGroupStatistics.MinRunsForReproducibility"/> runs, matching the
+    /// reproducibility rule on the index: below three runs a standard deviation over runs is
+    /// arithmetic rather than evidence.
+    /// </summary>
+    public double? ConfidenceHalfWidth { get; init; }
+
+    public double? Min { get; init; }
+
+    public double? Max { get; init; }
+
+    /// <summary>
+    /// Cross-run mean of this dimension per item, keyed by question id. Carried so a consumer can
+    /// name the weakest items on a dimension without a second pass over every answer.
+    /// </summary>
+    public IReadOnlyDictionary<long, double> ItemMeans { get; init; }
+        = new Dictionary<long, double>();
+}
+
+/// <summary>
+/// Token, tool and claim-verification totals pooled across the runs of a group.
+///
+/// <para>The three role token totals are kept apart, exactly as the run row keeps them: the
+/// candidate's consumption measures the model under test and must never absorb a grader's. On a
+/// set where the claim verifier is most of the spend, that separation is the whole finding.</para>
+/// </summary>
+public sealed record BenchmarkGroupUsageStatistics
+{
+    public int RunCount { get; init; }
+
+    // --- Candidate ---
+    public long TotalInputTokens { get; init; }
+    public long TotalOutputTokens { get; init; }
+    public long TotalCacheReadTokens { get; init; }
+
+    /// <summary>Cache reads as a percentage of input tokens. Null at zero input.</summary>
+    public double? CacheReadSharePercentage { get; init; }
+
+    /// <summary>
+    /// Input divided by output, taken from the sums rather than averaged over runs: the question is
+    /// what the set consumed, and a mean of per-run ratios answers a different one. Null at zero
+    /// output.
+    /// </summary>
+    public double? InputOutputRatio { get; init; }
+
+    public IReadOnlyList<long> PerRunInputTokens { get; init; } = Array.Empty<long>();
+
+    /// <summary>Sample standard deviation of the per-run candidate input totals. Null below two runs.</summary>
+    public double? InputTokenStandardDeviation { get; init; }
+
+    // --- Graders, never folded into the candidate totals above ---
+    public long TotalAssessmentInputTokens { get; init; }
+    public long TotalAssessmentOutputTokens { get; init; }
+    public long TotalClaimVerificationInputTokens { get; init; }
+    public long TotalClaimVerificationOutputTokens { get; init; }
+
+    // --- Tool routing, pooled over every member's answers ---
+    public int TotalToolCalls { get; init; }
+
+    public double? MeanToolCallsPerRun { get; init; }
+
+    /// <summary>Sample standard deviation of the per-run tool-call counts. Null below two runs.</summary>
+    public double? ToolCallStandardDeviation { get; init; }
+
+    public IReadOnlyDictionary<string, int> ToolCallsByFamily { get; init; }
+        = new Dictionary<string, int>();
+
+    /// <summary>Each family's share of <see cref="TotalToolCalls"/>, as a percentage.</summary>
+    public IReadOnlyDictionary<string, double> ToolFamilyShares { get; init; }
+        = new Dictionary<string, double>();
+
+    // --- Claim verification: what the verifier's spend bought ---
+    public int ClaimsSupported { get; init; }
+    public int ClaimsRefuted { get; init; }
+    public int ClaimsIndeterminate { get; init; }
+
+    /// <summary>The three counts above, summed.</summary>
+    public int ClaimsChecked { get; init; }
+
+    /// <summary>Answers for which a claim verification was recorded, pooled across members.</summary>
+    public int AnswersWithVerification { get; init; }
+}
+
+/// <summary>
+/// The candidate prompt configuration the group was graded under, decoded from the first member.
+///
+/// <para>Reading one member is sound because the group's comparability key covers
+/// <c>CandidatePromptOptions</c>: a poolable group cannot disagree on it.
+/// <see cref="Divergent"/> asserts that rather than assuming it.</para>
+///
+/// <para>This exists because attributing any dimensional result to a model requires knowing what
+/// the model was told to do — a concise instruction caps Completeness by design — and a report that
+/// omits the configuration cannot support that check.</para>
+/// </summary>
+public sealed record BenchmarkGroupPromptUnderTest
+{
+    /// <summary>False when the first member recorded no prompt options. Nothing below is meaningful.</summary>
+    public bool Recorded { get; init; }
+
+    /// <summary>Any member's prompt signature differs from the first member's.</summary>
+    public bool Divergent { get; init; }
+
+    public int OverseerMode { get; init; }
+    public bool VerboseMode { get; init; }
+    public bool SpoilerFreeMode { get; init; }
+    public bool EnableToolUse { get; init; }
+    public bool EnableWebSearch { get; init; }
+    public bool EnableSubAgents { get; init; }
+    public bool AllowSourceCodeReferences { get; init; }
+    public bool IsGameOn { get; init; }
+    public bool DeveloperMode { get; init; }
+    public bool HasMessageHistory { get; init; }
+    public bool HasWikiContext { get; init; }
+    public bool HasGameSnapshot { get; init; }
+
+    /// <summary>
+    /// The tool batching mode, which selects a policy file and is therefore part of the prompt
+    /// text rather than a setting beside it.
+    /// </summary>
+    /// <remarks>Qualified: <c>System.Linq</c> declares a type of the same name.</remarks>
+    public MobileGnollHackLogger.Data.ParallelExecutionMode ParallelMode { get; init; }
 }
 
 /// <summary>The whole group analysis. Pure arithmetic; every figure is reproducible.</summary>
@@ -397,6 +595,19 @@ public sealed record BenchmarkGroupStatisticsResult
 
     /// <summary>Null when the caller supplied no costs.</summary>
     public BenchmarkGroupCostStatistics? Cost { get; init; }
+
+    /// <summary>
+    /// The four scoring dimensions, always in Accuracy, Completeness, Conciseness, Readability
+    /// order. A dimension no member scored is present with empty <c>PerRunMeans</c>.
+    /// </summary>
+    public IReadOnlyList<BenchmarkGroupDimensionStatistics> Dimensions { get; init; }
+        = Array.Empty<BenchmarkGroupDimensionStatistics>();
+
+    /// <summary>Null when no member recorded any token or tool usage.</summary>
+    public BenchmarkGroupUsageStatistics? Usage { get; init; }
+
+    /// <summary>The prompt configuration the members were graded under. Null when there are none.</summary>
+    public BenchmarkGroupPromptUnderTest? PromptUnderTest { get; init; }
 
     /// <summary>The suite-health analysis over exactly this group's members.</summary>
     public BenchmarkSuiteItemAnalysis ItemAnalysis { get; init; } = new();
@@ -604,6 +815,12 @@ public static class BenchmarkGroupStatistics
     /// <summary>The two-sided 95 % normal critical value.</summary>
     public const double NormalCritical95 = 1.959963984540054;
 
+    /// <summary>The bounds a quality score, and therefore any interval reported on one, lives in.</summary>
+    public const double MinScore = 0.0;
+
+    /// <inheritdoc cref="MinScore"/>
+    public const double MaxScore = 100.0;
+
     /// <summary>
     /// At or below this many non-zero pairs the Wilcoxon p-value is exact — the full conditional
     /// permutation distribution over the observed ranks, enumerated by dynamic programming over
@@ -615,10 +832,29 @@ public static class BenchmarkGroupStatistics
     /// <summary>Default false discovery rate for the exploratory per-item tests.</summary>
     public const double DefaultFalseDiscoveryRate = 0.05;
 
+    /// <summary>
+    /// The part of the speed caveat that is true of every group. What a <i>particular</i> group's
+    /// timing conditions did is appended by <see cref="BuildSpeedCaveat"/> from its own degraded
+    /// flags — never asserted from its tier, which does not imply it.
+    /// </summary>
     public const string SpeedCaveat =
-        "Speed figures are comparable only within one thinking level and one timing mode. The Tier A "
-        + "comparability keys enforce both; a Tier B group relaxes the timing mode and its speed "
-        + "aggregates are flagged degraded.";
+        "Speed figures are comparable only within one thinking level and one timing mode. The "
+        + "comparability keys covering both are what enforce that.";
+
+    /// <summary>
+    /// Appended to <see cref="SpeedCaveat"/> when a group's speed aggregates are degraded, naming
+    /// the keys that moved.
+    /// </summary>
+    public const string SpeedDegradedCaveatPrefix =
+        " These figures mix timing conditions: ";
+
+    /// <summary>
+    /// Appended when nothing that affects timing differs. Stated positively on purpose — silence
+    /// reads as "not checked", and the check is the reassurance.
+    /// </summary>
+    public const string SpeedNotDegradedCaveat =
+        " No comparability key affecting timing differs across these runs, so the figures are "
+        + "measured under one condition.";
 
     public const string ExploratoryItemTestNote =
         "Per-item differences are exploratory. Each item is a separate test, so the set of them is "
@@ -687,6 +923,9 @@ public static class BenchmarkGroupStatistics
         var index = ComputeIndex(items, members);
         var speed = ComputeSpeed(members, items, cfg);
         var cost = ComputeCost(costs, items.Count, index.PointEstimate, cfg);
+        var dimensions = ComputeDimensions(members, items);
+        var usage = ComputeUsage(members, items);
+        var promptUnderTest = ComputePromptUnderTest(members);
 
         return new BenchmarkGroupStatisticsResult
         {
@@ -700,6 +939,9 @@ public static class BenchmarkGroupStatistics
             Index = index,
             Speed = speed,
             Cost = cost,
+            Dimensions = dimensions,
+            Usage = usage,
+            PromptUnderTest = promptUnderTest,
             ItemAnalysis = itemAnalysis,
             UnstableQuestionIds = items.Where(i => i.Unstable).Select(i => i.QuestionId).ToList(),
             PooledIndexReportable = members.Count >= MinRunsForReproducibility
@@ -761,8 +1003,9 @@ public static class BenchmarkGroupStatistics
             InterquartileRange = iqr,
             CoefficientOfVariation = cv,
             MeanConfidenceHalfWidth = half,
-            MeanConfidenceLower = half.HasValue ? mean - half.Value : null,
-            MeanConfidenceUpper = half.HasValue ? mean + half.Value : null,
+            MeanConfidenceLower = half.HasValue ? ClampScore(mean - half.Value) : null,
+            MeanConfidenceUpper = half.HasValue ? ClampScore(mean + half.Value) : null,
+            MeanConfidenceTruncated = half.HasValue && ScoreBoundExceeded(mean, half.Value),
             CriticalErrorCount = criticalErrors,
             CriticalErrorRate = criticalErrors / (double)runCount,
             MedianModelTimeMs = Median(modelTimes),
@@ -884,11 +1127,23 @@ public static class BenchmarkGroupStatistics
             ItemSamplingStandardError = itemSe,
             ItemSamplingHalfWidth = itemHalf,
             CombinedHalfWidth = combined,
-            CombinedLower = combined.HasValue ? point - combined.Value : null,
-            CombinedUpper = combined.HasValue ? point + combined.Value : null,
+            CombinedLower = combined.HasValue ? ClampScore(point - combined.Value) : null,
+            CombinedUpper = combined.HasValue ? ClampScore(point + combined.Value) : null,
+            CombinedIntervalTruncated = combined.HasValue && ScoreBoundExceeded(point, combined.Value),
             ReproducibilityAvailable = reproSd.HasValue
         };
     }
+
+    /// <summary>
+    /// Confines a reported interval bound to the score range. A quality score is bounded [0, 100],
+    /// so a bound outside it is not a wider claim but an impossible one — an item scoring 71 with a
+    /// half-width of 58 does not have an upper bound of 129.
+    /// </summary>
+    private static double ClampScore(double value) => Math.Clamp(value, MinScore, MaxScore);
+
+    /// <summary>Whether either end of <c>centre ± halfWidth</c> leaves the score range.</summary>
+    private static bool ScoreBoundExceeded(double centre, double halfWidth)
+        => centre - halfWidth < MinScore || centre + halfWidth > MaxScore;
 
     private static BenchmarkGroupSpeedStatistics ComputeSpeed(
         IReadOnlyList<BenchmarkRun> members,
@@ -920,8 +1175,230 @@ public static class BenchmarkGroupStatistics
             ModelTimeP90Ms = Percentile(pooled, 90.0),
             ModelTimeMaxMs = pooled.Count > 0 ? pooled.Max() : null,
             Degraded = cfg.SpeedDegraded,
-            DegradedReason = cfg.SpeedDegradedReason
+            DegradedReason = cfg.SpeedDegradedReason,
+            Caveat = BuildSpeedCaveat(cfg)
         };
+    }
+
+    /// <summary>
+    /// The four scoring dimensions across the members.
+    ///
+    /// Restricted to answered items in the group, exactly as the speed pool is: an item no member
+    /// answered is not part of the group's item set, so its absent dimension scores must not enter
+    /// a mean either. Every dimension is emitted whether or not it was scored.
+    /// </summary>
+    private static IReadOnlyList<BenchmarkGroupDimensionStatistics> ComputeDimensions(
+        IReadOnlyList<BenchmarkRun> members,
+        IReadOnlyList<BenchmarkGroupItemStatistics> items)
+    {
+        var questionIds = new HashSet<long>(items.Select(i => i.QuestionId));
+
+        var selectors = new (string Name, Func<BenchmarkRunAnswer, int?> Score)[]
+        {
+            ("Accuracy", a => a.AccuracyScore),
+            ("Completeness", a => a.CompletenessScore),
+            ("Conciseness", a => a.ConcisenessScore),
+            ("Readability", a => a.ReadabilityScore)
+        };
+
+        var result = new List<BenchmarkGroupDimensionStatistics>(selectors.Length);
+
+        foreach (var (name, score) in selectors)
+        {
+            var perRunMeans = new List<double>();
+            var byQuestion = new Dictionary<long, List<double>>();
+
+            foreach (var member in members)
+            {
+                var scored = (member.Answers ?? new List<BenchmarkRunAnswer>())
+                    .Where(a => a.Status == BenchmarkAnswerStatus.Ok
+                                && a.BenchmarkQuestionId.HasValue
+                                && questionIds.Contains(a.BenchmarkQuestionId.Value)
+                                && score(a).HasValue)
+                    .ToList();
+
+                if (scored.Count == 0) continue;
+
+                perRunMeans.Add(scored.Average(a => (double)score(a)!.Value));
+
+                foreach (var answer in scored)
+                {
+                    long questionId = answer.BenchmarkQuestionId!.Value;
+                    if (!byQuestion.TryGetValue(questionId, out var list))
+                    {
+                        list = new List<double>();
+                        byQuestion[questionId] = list;
+                    }
+
+                    list.Add(score(answer)!.Value);
+                }
+            }
+
+            double? sd = SampleStandardDeviation(perRunMeans);
+            double? half = null;
+            if (sd.HasValue && perRunMeans.Count >= MinRunsForReproducibility)
+            {
+                double se = sd.Value / Math.Sqrt(perRunMeans.Count);
+                half = StudentTCritical95(perRunMeans.Count - 1) * se;
+            }
+
+            result.Add(new BenchmarkGroupDimensionStatistics
+            {
+                Dimension = name,
+                PerRunMeans = perRunMeans,
+                Mean = perRunMeans.Count > 0 ? perRunMeans.Average() : null,
+                StandardDeviation = sd,
+                ConfidenceHalfWidth = half,
+                Min = perRunMeans.Count > 0 ? perRunMeans.Min() : null,
+                Max = perRunMeans.Count > 0 ? perRunMeans.Max() : null,
+                ItemMeans = byQuestion.ToDictionary(kv => kv.Key, kv => kv.Value.Average())
+            });
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Token, tool and claim-verification totals pooled over the members.
+    ///
+    /// Returns null when no member recorded any of it, which every run predating the token columns
+    /// is: an all-zero usage block reads as a measurement, and it is not one.
+    /// </summary>
+    private static BenchmarkGroupUsageStatistics? ComputeUsage(
+        IReadOnlyList<BenchmarkRun> members,
+        IReadOnlyList<BenchmarkGroupItemStatistics> items)
+    {
+        if (members.Count == 0) return null;
+
+        var questionIds = new HashSet<long>(items.Select(i => i.QuestionId));
+
+        long input = members.Sum(m => m.TotalInputTokens);
+        long output = members.Sum(m => m.TotalOutputTokens);
+        long cacheRead = members.Sum(m => m.TotalCacheReadTokens);
+
+        // Tool counts come from the per-answer summaries through the same classifier the single-run
+        // report uses, so a family share means the same thing on both surfaces.
+        var answers = members
+            .SelectMany(m => m.Answers ?? new List<BenchmarkRunAnswer>())
+            .Where(a => a.Status == BenchmarkAnswerStatus.Ok
+                        && a.BenchmarkQuestionId.HasValue
+                        && questionIds.Contains(a.BenchmarkQuestionId.Value))
+            .ToList();
+
+        var byFamily = new Dictionary<string, int>(StringComparer.Ordinal);
+        int totalToolCalls = 0;
+        foreach (var (tool, count) in BenchmarkChatTransfer.AggregateToolCounts(answers))
+        {
+            string family = BenchmarkChatTransfer.ClassifyTool(tool).ToString();
+            byFamily[family] = byFamily.GetValueOrDefault(family) + count;
+            totalToolCalls += count;
+        }
+
+        var perRunToolCalls = members
+            .Select(m => (double)BenchmarkChatTransfer.AggregateToolCounts(
+                (m.Answers ?? new List<BenchmarkRunAnswer>())
+                    .Where(a => a.Status == BenchmarkAnswerStatus.Ok)).Values.Sum())
+            .ToList();
+
+        int supported = members.Sum(m => m.ClaimsSupportedCount);
+        int refuted = members.Sum(m => m.ClaimsRefutedCount);
+        int indeterminate = members.Sum(m => m.ClaimsIndeterminateCount);
+
+        var usage = new BenchmarkGroupUsageStatistics
+        {
+            RunCount = members.Count,
+            TotalInputTokens = input,
+            TotalOutputTokens = output,
+            TotalCacheReadTokens = cacheRead,
+            CacheReadSharePercentage = input > 0 ? cacheRead * 100.0 / input : null,
+            InputOutputRatio = output > 0 ? input / (double)output : null,
+            PerRunInputTokens = members.Select(m => m.TotalInputTokens).ToList(),
+            InputTokenStandardDeviation =
+                SampleStandardDeviation(members.Select(m => (double)m.TotalInputTokens).ToList()),
+            TotalAssessmentInputTokens = members.Sum(m => m.TotalAssessmentInputTokens),
+            TotalAssessmentOutputTokens = members.Sum(m => m.TotalAssessmentOutputTokens),
+            TotalClaimVerificationInputTokens = members.Sum(m => m.TotalClaimVerificationInputTokens),
+            TotalClaimVerificationOutputTokens = members.Sum(m => m.TotalClaimVerificationOutputTokens),
+            TotalToolCalls = totalToolCalls,
+            MeanToolCallsPerRun = perRunToolCalls.Count > 0 ? perRunToolCalls.Average() : null,
+            ToolCallStandardDeviation = SampleStandardDeviation(perRunToolCalls),
+            ToolCallsByFamily = byFamily,
+            ToolFamilyShares = totalToolCalls > 0
+                ? byFamily.ToDictionary(kv => kv.Key, kv => kv.Value * 100.0 / totalToolCalls, StringComparer.Ordinal)
+                : new Dictionary<string, double>(StringComparer.Ordinal),
+            ClaimsSupported = supported,
+            ClaimsRefuted = refuted,
+            ClaimsIndeterminate = indeterminate,
+            ClaimsChecked = supported + refuted + indeterminate,
+            AnswersWithVerification = members.Sum(m => m.ClaimVerifiedAnswerCount)
+        };
+
+        bool anythingRecorded = input > 0 || output > 0 || totalToolCalls > 0
+            || usage.ClaimsChecked > 0 || usage.AnswersWithVerification > 0
+            || usage.TotalAssessmentInputTokens > 0 || usage.TotalClaimVerificationInputTokens > 0;
+
+        return anythingRecorded ? usage : null;
+    }
+
+    /// <summary>
+    /// The prompt configuration the members were graded under, decoded from the first member.
+    ///
+    /// The comparability key covers the prompt options, so a poolable group cannot disagree on
+    /// them; <c>Divergent</c> checks that rather than trusting it, because a group assembled by
+    /// hand at Tier C can.
+    /// </summary>
+    private static BenchmarkGroupPromptUnderTest? ComputePromptUnderTest(
+        IReadOnlyList<BenchmarkRun> members)
+    {
+        if (members.Count == 0) return null;
+
+        var first = members[0];
+        bool recorded = !string.IsNullOrWhiteSpace(first.CandidatePromptOptionsJson);
+        var options = BenchmarkCandidatePromptOptions.FromJson(first.CandidatePromptOptionsJson);
+
+        string signature = options.ComparabilitySignature(first.TestedModelParallelExecutionModeUsed);
+        bool divergent = members.Skip(1).Any(m =>
+            BenchmarkCandidatePromptOptions.FromJson(m.CandidatePromptOptionsJson)
+                .ComparabilitySignature(m.TestedModelParallelExecutionModeUsed) != signature);
+
+        return new BenchmarkGroupPromptUnderTest
+        {
+            Recorded = recorded,
+            Divergent = divergent,
+            OverseerMode = options.OverseerMode,
+            VerboseMode = options.VerboseMode,
+            SpoilerFreeMode = options.SpoilerFreeMode,
+            EnableToolUse = options.EnableToolUse,
+            EnableWebSearch = options.EnableWebSearch,
+            EnableSubAgents = options.EnableSubAgents,
+            AllowSourceCodeReferences = options.AllowSourceCodeReferences,
+            IsGameOn = options.IsGameOn,
+            DeveloperMode = options.DeveloperMode,
+            HasMessageHistory = options.HasMessageHistory,
+            HasWikiContext = options.HasWikiContext,
+            HasGameSnapshot = options.HasGameSnapshot,
+            ParallelMode = first.TestedModelParallelExecutionModeUsed
+        };
+    }
+
+    /// <summary>
+    /// The speed caveat for one group, built from that group's own degradation state.
+    ///
+    /// A tier is not a timing verdict: a group can sit at Tier B on a key that degrades cost alone
+    /// and have its speed figures measured under one condition throughout.
+    /// </summary>
+    private static string BuildSpeedCaveat(BenchmarkGroupStatisticsOptions cfg)
+    {
+        if (!cfg.SpeedDegraded)
+        {
+            return SpeedCaveat + SpeedNotDegradedCaveat;
+        }
+
+        string reason = string.IsNullOrWhiteSpace(cfg.SpeedDegradedReason)
+            ? "the comparability keys covering timing differ across the members."
+            : cfg.SpeedDegradedReason!.Trim();
+
+        return SpeedCaveat + SpeedDegradedCaveatPrefix + reason;
     }
 
     private static BenchmarkGroupCostStatistics? ComputeCost(
@@ -947,6 +1424,20 @@ public static class BenchmarkGroupStatistics
 
         var meanByRole = byRole.ToDictionary(kv => kv.Key, kv => kv.Value / costs.Count, StringComparer.Ordinal);
 
+        // Per-role dispersion. A role missing from one member's dictionary contributes 0.0 rather
+        // than being skipped: a run that spent nothing on a role did spend nothing, and dropping the
+        // sample would understate the spread of the role that actually varies.
+        var sdByRole = new Dictionary<string, double?>(StringComparer.Ordinal);
+        var minByRole = new Dictionary<string, double>(StringComparer.Ordinal);
+        var maxByRole = new Dictionary<string, double>(StringComparer.Ordinal);
+        foreach (string role in byRole.Keys)
+        {
+            var perRun = costs.Select(c => c.CostByRole.TryGetValue(role, out double v) ? v : 0.0).ToList();
+            sdByRole[role] = SampleStandardDeviation(perRun);
+            minByRole[role] = perRun.Min();
+            maxByRole[role] = perRun.Max();
+        }
+
         return new BenchmarkGroupCostStatistics
         {
             RunCount = costs.Count,
@@ -955,6 +1446,10 @@ public static class BenchmarkGroupStatistics
             CostStandardDeviation = SampleStandardDeviation(totals),
             TotalCostByRole = byRole,
             MeanCostByRole = meanByRole,
+            PerRunTotals = totals,
+            CostStandardDeviationByRole = sdByRole,
+            MinCostByRole = minByRole,
+            MaxCostByRole = maxByRole,
             CostPerQuestion = itemCount > 0 ? meanPerRun / itemCount : null,
             CostPerIndexPoint = pointEstimate > 0.0 ? meanPerRun / pointEstimate : null,
             Degraded = cfg.CostDegraded,

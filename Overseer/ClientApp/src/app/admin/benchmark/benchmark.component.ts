@@ -387,6 +387,19 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   /** The Multi-Run Progress dialog's visibility. The dialog element itself belongs to that component. */
   multiRunDialogVisible = false;
 
+  /**
+   * A series the operator asked to look at that this component is not driving — set by the
+   * Multi-Run Analysis tab's Series badge and cleared when the dialog closes. Kept apart from
+   * <see cref="activeSeriesId"/> so opening someone else's finished series cannot be mistaken for
+   * this page having one in flight.
+   */
+  seriesDialogId: number | null = null;
+
+  /** Which series the progress dialog shows: an explicitly opened one, else the live one. */
+  get dialogSeriesId(): number | null {
+    return this.seriesDialogId ?? this.activeSeriesId;
+  }
+
   seriesErrorMessage: string | null = null;
   resumingSeries = false;
 
@@ -2248,6 +2261,32 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     return status === 'Pending' || status === 'Running' || status === 'WaitingForCap';
   }
 
+  /**
+   * Terminal: the series will produce nothing more and there is no action left to offer for it.
+   * `Stopped` is deliberately not here — it is the one non-terminal end state, and the only one the
+   * Continue button exists for.
+   */
+  get seriesIsFinished(): boolean {
+    const status = this.activeSeries?.status;
+    return status === 'Completed' || status === 'Cancelled' || status === 'Failed';
+  }
+
+  /**
+   * Whether the Run Benchmark tab shows the series banner.
+   *
+   * <p>A banner describing a series that has finished is an alert with nothing to alert about, and
+   * it outlives the work by however long the page stays open. `activeSeries` itself is kept — the
+   * progress dialog and the run-to-series labelling read it after completion — so this gates the
+   * rendering rather than clearing the state.</p>
+   *
+   * <p>The completed series stays reachable from the Multi-Run Analysis tab, whose group rows carry
+   * a Series badge that opens the same dialog. That matters because the dialog is the only place
+   * either diagnostics capture can be copied from.</p>
+   */
+  get seriesBannerVisible(): boolean {
+    return this.activeSeries != null && !this.multiRunDialogVisible && !this.seriesIsFinished;
+  }
+
   /** Stopped is the one non-terminal end state, and the only one the Continue button appears for. */
   get seriesIsStopped(): boolean {
     return this.activeSeries?.status === 'Stopped';
@@ -2288,9 +2327,20 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     this.cdr.detectChanges();
   }
 
+  /**
+   * Opens the progress dialog for a series this component is not driving — the Multi-Run Analysis
+   * tab's Series badge, which is how a completed series is reached now that its banner hides itself.
+   */
+  openSeriesDialog(seriesId: number): void {
+    this.seriesDialogId = seriesId;
+    this.multiRunDialogVisible = true;
+    this.cdr.detectChanges();
+  }
+
   onMultiRunDialogClosed(): void {
     this.returnToSeriesOnClose = false;
     this.multiRunDialogVisible = false;
+    this.seriesDialogId = null;
     this.cdr.detectChanges();
   }
 

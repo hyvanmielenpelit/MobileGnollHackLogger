@@ -77,7 +77,9 @@
         same execution at two scales is how an operator ends up cancelling the wrong thing. Waiting
         for run cap and Stopped are named states here, never a stalled spinner.
       -->
-      @if (activeSeries && !multiRunDialogVisible) {
+      <!-- The second operand is what narrows activeSeries for the template checker; the getter
+           already covers it, but a getter's null check does not narrow a field. -->
+      @if (seriesBannerVisible && activeSeries) {
         <div class="active-run-banner series-banner">
           <div class="banner-header">
             @if (seriesIsLive) {
@@ -844,7 +846,8 @@
   <!-- TAB 3: MULTI-RUN ANALYSIS -->
   @if (activeSubTab === 'multirun') {
     <div class="benchmark-tab-content" role="tabpanel" id="bm-panel-multirun" aria-labelledby="bm-tab-multirun" tabindex="0">
-      <app-benchmark-multi-run [suiteId]="selectedSuiteId"></app-benchmark-multi-run>
+      <app-benchmark-multi-run [suiteId]="selectedSuiteId"
+                               (openSeries)="openSeriesDialog($event)"></app-benchmark-multi-run>
     </div>
   }
 
@@ -3115,7 +3118,7 @@
 
 <!-- MULTI-RUN PROGRESS DIALOG -->
 <app-multi-run-progress-dialog
-  [seriesId]="activeSeriesId"
+  [seriesId]="dialogSeriesId"
   [visible]="multiRunDialogVisible"
   (closed)="onMultiRunDialogClosed()"
   (openRunProgress)="onOpenRunProgressFromSeries($event)"></app-multi-run-progress-dialog>

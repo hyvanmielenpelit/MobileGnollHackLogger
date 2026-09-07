@@ -34,6 +34,17 @@ public static class BenchmarkGroupReportBuilder
     private static string Money(double? value)
         => value.HasValue ? "$" + Inv(value.Value, value.Value >= 1.0 ? "F2" : "F4") : "—";
 
+    /// <summary>
+    /// Token counts, abbreviated. A benchmark set runs to millions of input tokens, and eight raw
+    /// digits in a bullet list is a number nobody reads.
+    /// </summary>
+    private static string Tokens(long value)
+    {
+        if (value >= 1_000_000) return Inv(value / 1_000_000.0, "F2") + " M";
+        if (value >= 1_000) return Inv(value / 1_000.0, "F1") + " k";
+        return value.ToString(CultureInfo.InvariantCulture);
+    }
+
     private static string PValue(double? p)
     {
         if (!p.HasValue) return "—";
@@ -83,19 +94,30 @@ public static class BenchmarkGroupReportBuilder
 
         var sb = new StringBuilder();
 
+        // Sections are numbered by a running counter rather than by literals. Two of them are
+        // conditional, and hardcoded numbers had already produced one arithmetic expression in a
+        // heading string.
+        int section = 0;
+
         AppendHeader(sb, group, result, comparability, overseerVersion, computedAtUtc);
-        AppendManifest(sb, group, result, comparability, members);
-        AppendIndex(sb, result);
-        AppendItems(sb, result);
-        AppendSpeed(sb, result);
-        AppendCost(sb, result);
+        AppendManifest(sb, ++section, group, result, comparability, members);
+        AppendIndex(sb, ++section, result);
+        AppendDimensions(sb, ++section, result);
+        AppendItems(sb, ++section, result);
+        AppendSpeed(sb, ++section, result);
+        AppendCost(sb, ++section, result);
+
+        if (result.Usage != null)
+        {
+            AppendUsage(sb, ++section, result);
+        }
 
         if (comparison != null)
         {
-            AppendComparison(sb, comparison, group.Name, comparisonGroupName);
+            AppendComparison(sb, ++section, comparison, group.Name, comparisonGroupName);
         }
 
-        AppendLimits(sb, result, comparison);
+        AppendLimits(sb, ++section, result);
 
         return sb.ToString();
     }
@@ -136,12 +158,13 @@ public static class BenchmarkGroupReportBuilder
 
     private static void AppendManifest(
         StringBuilder sb,
+        int section,
         BenchmarkRunGroup group,
         BenchmarkGroupStatisticsResult result,
         BenchmarkComparabilityResult? comparability,
         IReadOnlyList<BenchmarkRun>? members)
     {
-        sb.AppendLine("## 1. Group Manifest");
+        sb.AppendLine($"## {section}. Group Manifest");
         sb.AppendLine();
 
         if (members != null && members.Count > 0)
@@ -201,18 +224,80 @@ public static class BenchmarkGroupReportBuilder
             sb.AppendLine();
         }
 
+        AppendPromptUnderTest(sb, section, result);
+
         sb.AppendLine("---");
         sb.AppendLine();
     }
 
+    /// <summary>
+    /// What the candidate was told to do.
+    ///
+    /// <para>Without this a reader cannot perform the attribution check every dimensional finding
+    /// depends on: a concise response instruction caps Completeness by design, so a low Completeness
+    /// under one is prompt adherence rather than a model weakness. The prompt SHA in the table above
+    /// proves the members agree; it does not say what they agreed on.</para>
+    /// </summary>
+    private static void AppendPromptUnderTest(
+        StringBuilder sb, int section, BenchmarkGroupStatisticsResult result)
+    {
+        var prompt = result.PromptUnderTest;
+        if (prompt == null) return;
+
+        sb.AppendLine($"### {section}.1 Chat Prompt Under Test");
+        sb.AppendLine();
+        sb.AppendLine("The candidates answered under the **production Overseer chat system prompt** (`ChatService.BuildSystemPrompt`), not a benchmark-specific prompt. Every quality verdict below is a verdict on the prompt real users receive.");
+        sb.AppendLine();
+
+        if (!prompt.Recorded)
+        {
+            sb.AppendLine("- *The prompt configuration was not recorded for these runs.* No dimensional result below can be attributed to the model until it is: the options that cap a dimension are unknown for this group.");
+            sb.AppendLine();
+            return;
+        }
+
+        string policyFile = prompt.ParallelMode == MobileGnollHackLogger.Data.ParallelExecutionMode.Disabled
+            ? "_policy_parallel_disabled.md"
+            : "_policy_parallel_on_request.md";
+
+        sb.AppendLine($"- **Mode:** {(prompt.OverseerMode == 0 ? "Gameplay Help" : $"Mode {prompt.OverseerMode}")} · " +
+                      $"**Response style:** {(prompt.VerboseMode ? "detailed (`verboseMode: true`)" : "concise (`verboseMode: false`)")}");
+        sb.AppendLine($"- **Tools:** {OnOff(prompt.EnableToolUse, "enabled", "disabled")} · " +
+                      $"**Web search:** {OnOff(prompt.EnableWebSearch, "enabled", "disabled")} · " +
+                      $"**Subagents:** {OnOff(prompt.EnableSubAgents, "enabled", "disabled")} · " +
+                      $"**Source code references:** {OnOff(prompt.AllowSourceCodeReferences, "allowed", "disallowed")}");
+        sb.AppendLine($"- **Spoiler-free mode:** {OnOff(prompt.SpoilerFreeMode, "on", "off")} · " +
+                      $"**Active game:** {OnOff(prompt.IsGameOn, "yes", "no")} · " +
+                      $"**Developer mode:** {OnOff(prompt.DeveloperMode, "on", "off")} · " +
+                      $"**Message history:** {OnOff(prompt.HasMessageHistory, "yes", "no")}");
+        sb.AppendLine($"- **Pre-injected wiki context:** {OnOff(prompt.HasWikiContext, "yes", "no")} · " +
+                      $"**Game snapshot:** {OnOff(prompt.HasGameSnapshot, "yes", "no")}");
+        sb.AppendLine($"- **Tool batching policy:** {prompt.ParallelMode} — selects `Overseer/ToolGuides/{policyFile}`, so this is part of the prompt text.");
+        sb.AppendLine();
+
+        sb.AppendLine(prompt.Divergent
+            ? "> **The members disagree on these options.** The values above are the first member's. A group whose members were graded under different prompts cannot support a pooled dimensional claim, whatever its tier says."
+            : "> The group's comparability key covers the prompt options, and the members were checked against each other: every one of them was graded under exactly this configuration.");
+        sb.AppendLine();
+
+        if (!prompt.HasWikiContext)
+        {
+            sb.AppendLine("> **Live chat pre-injects wiki articles and the benchmark does not.** Every retrieval and tool-routing figure in this report was therefore measured under a condition production does not share. Quality, speed and cost figures are unaffected as measurements; a *routing* conclusion drawn from them is evidence about the benchmark configuration until a run with wiki context says otherwise.");
+            sb.AppendLine();
+        }
+    }
+
+    private static string OnOff(bool value, string whenTrue, string whenFalse)
+        => value ? whenTrue : whenFalse;
+
     private static string Short(string? sha)
         => string.IsNullOrWhiteSpace(sha) ? "—" : (sha.Length <= 8 ? sha : sha[..8]);
 
-    private static void AppendIndex(StringBuilder sb, BenchmarkGroupStatisticsResult result)
+    private static void AppendIndex(StringBuilder sb, int section, BenchmarkGroupStatisticsResult result)
     {
         var ix = result.Index;
 
-        sb.AppendLine("## 2. Multi-Run Intelligence Index");
+        sb.AppendLine($"## {section}. Multi-Run Intelligence Index");
         sb.AppendLine();
         sb.AppendLine($"- **Point estimate:** {Inv(ix.PointEstimate, "F2")} / 100 — the mean of the {ix.RunCount} per-run difficulty-weighted indices.");
         sb.AppendLine($"- **Difficulty-weighted mean of per-item cross-run means:** {Inv(ix.WeightedMeanOfItemMeans, "F2")}");
@@ -226,7 +311,7 @@ public static class BenchmarkGroupReportBuilder
         sb.AppendLine($"- **Per-run indices:** {string.Join(", ", ix.PerRunIndices.Select(v => Inv(v, "F1")))}");
         sb.AppendLine();
 
-        sb.AppendLine("### 2.1 The two uncertainty components");
+        sb.AppendLine($"### {section}.1 The two uncertainty components");
         sb.AppendLine();
         sb.AppendLine("They are reported separately before they are combined because they answer different questions and behave differently as runs are added. Only one of them can be bought down with more runs.");
         sb.AppendLine();
@@ -259,6 +344,11 @@ public static class BenchmarkGroupReportBuilder
         sb.AppendLine(ix.ReproducibilityAvailable
             ? "  - Computed as √((*t*·SE_repro)² + (1.96·SE_item)²) — the two independent sources added in quadrature. It covers **both** run-to-run variation and item selection."
             : "  - This is the item-sampling half-width alone. It covers item selection only.");
+        if (ix.CombinedIntervalTruncated)
+        {
+            sb.AppendLine("  - **Truncated at the score bound.** The half-width above is the honest one; the interval reaches past 0 or 100, where no score can go, so the reported bound is pinned there. The interval is not as tight as it looks.");
+        }
+
         sb.AppendLine();
         sb.AppendLine("> **The item-sampling component does not shrink as more runs are added, and that is correct.** Every run answers the same items, so extra runs sharpen the estimate of each item's mean and do nothing whatever about the fact that the suite drew those particular questions. A reader who expects the whole interval to fall as √*R* will conclude the code is broken; it is not.");
         sb.AppendLine();
@@ -266,11 +356,86 @@ public static class BenchmarkGroupReportBuilder
         sb.AppendLine();
     }
 
-    private static void AppendItems(StringBuilder sb, BenchmarkGroupStatisticsResult result)
+    /// <summary>
+    /// The four dimensions across the runs.
+    ///
+    /// <para>A composite index cannot say which dimension moved, and a single run cannot say whether
+    /// a dimensional gap survives a re-run. This section is where a replicate set answers both.</para>
+    /// </summary>
+    private static void AppendDimensions(StringBuilder sb, int section, BenchmarkGroupStatisticsResult result)
     {
-        sb.AppendLine("## 3. Per-Item Statistics");
+        sb.AppendLine($"## {section}. Quality Dimensions");
         sb.AppendLine();
-        sb.AppendLine("Quality score per item across the group's runs. *CV* is SD / mean; *CE rate* is the share of runs in which the assessor flagged a critical error on this item.");
+
+        var scored = result.Dimensions.Where(d => d.PerRunMeans.Count > 0).ToList();
+        if (scored.Count == 0)
+        {
+            sb.AppendLine("*No member recorded per-dimension scores, so no dimensional aggregate is reported. An absent figure is reported as absent rather than as zero.*");
+            sb.AppendLine();
+            sb.AppendLine("---");
+            sb.AppendLine();
+            return;
+        }
+
+        sb.AppendLine("Each dimension's per-run mean, pooled across the group. These means are **unweighted**, while the Intelligence Index is difficulty-weighted — there are no per-dimension difficulty weights to apply, so the two are not expected to agree.");
+        sb.AppendLine();
+        sb.AppendLine("| Dimension | Mean | SD | 95 % half-width | Min | Max | Per-run means | Lowest items |");
+        sb.AppendLine("|---|---:|---:|---:|---:|---:|---|---|");
+
+        foreach (var dim in scored)
+        {
+            // The three weakest items on this dimension, named by the Q numbers the rest of the
+            // report uses rather than by question id.
+            var lowest = dim.ItemMeans
+                .OrderBy(kv => kv.Value)
+                .Take(3)
+                .Select(kv =>
+                {
+                    var item = result.Items.FirstOrDefault(i => i.QuestionId == kv.Key);
+                    string label = item != null ? $"Q{item.OrderIndex}" : $"id {kv.Key}";
+                    return $"{label} ({Inv(kv.Value, "F1")})";
+                })
+                .ToList();
+
+            sb.AppendLine(
+                $"| **{dim.Dimension}** " +
+                $"| {Inv(dim.Mean, "F1")} " +
+                $"| {Inv(dim.StandardDeviation, "F1")} " +
+                $"| {Inv(dim.ConfidenceHalfWidth, "F1")} " +
+                $"| {Inv(dim.Min, "F1")} " +
+                $"| {Inv(dim.Max, "F1")} " +
+                $"| {string.Join(", ", dim.PerRunMeans.Select(v => Inv(v, "F1")))} " +
+                $"| {(lowest.Count > 0 ? string.Join(", ", lowest) : "—")} |");
+        }
+
+        sb.AppendLine();
+
+        var weakest = scored.OrderBy(d => d.Mean ?? double.MaxValue).First();
+        var strongest = scored.OrderByDescending(d => d.Mean ?? double.MinValue).First();
+        if (weakest.Dimension != strongest.Dimension && weakest.Mean.HasValue && strongest.Mean.HasValue)
+        {
+            double gap = strongest.Mean.Value - weakest.Mean.Value;
+            sb.AppendLine($"**Lowest dimension:** {weakest.Dimension} at {Inv(weakest.Mean, "F1")}, trailing {strongest.Dimension} by {Inv(gap, "F1")} points.");
+            sb.AppendLine();
+            sb.AppendLine("> A dimension can be low because the prompt instructed the model to answer that way. Check the response style in the manifest before reading a low figure here as a model weakness.");
+            sb.AppendLine();
+        }
+
+        if (!result.PooledIndexReportable)
+        {
+            sb.AppendLine("> Below three runs no half-width is reported for a dimension, on the same rule the index uses: a standard deviation over two runs is arithmetic rather than evidence.");
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("---");
+        sb.AppendLine();
+    }
+
+    private static void AppendItems(StringBuilder sb, int section, BenchmarkGroupStatisticsResult result)
+    {
+        sb.AppendLine($"## {section}. Per-Item Statistics");
+        sb.AppendLine();
+        sb.AppendLine("Quality score per item across the group's runs. *CV* is SD / mean; *CE rate* is the share of runs in which the assessor flagged a critical error on this item. An interval marked † was truncated at the score bound.");
         sb.AppendLine();
         sb.AppendLine("| Q | Runs | Mean | Median | SD | Min | Max | IQR | CV | 95 % CI | CE rate | Stability | Question |");
         sb.AppendLine("|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---|---|");
@@ -279,6 +444,7 @@ public static class BenchmarkGroupReportBuilder
         {
             string ci = item.MeanConfidenceLower.HasValue && item.MeanConfidenceUpper.HasValue
                 ? $"[{Inv(item.MeanConfidenceLower, "F1")}, {Inv(item.MeanConfidenceUpper, "F1")}]"
+                  + (item.MeanConfidenceTruncated ? " †" : string.Empty)
                 : "—";
 
             string stability = item.InsufficientRuns
@@ -325,15 +491,21 @@ public static class BenchmarkGroupReportBuilder
             sb.AppendLine();
         }
 
+        if (result.Items.Any(i => i.MeanConfidenceTruncated))
+        {
+            sb.AppendLine("*† The interval reached past 0 or 100, where no score can go, so the reported bound is pinned there. The SD column is the unclamped spread and is the figure to read.*");
+            sb.AppendLine();
+        }
+
         sb.AppendLine("---");
         sb.AppendLine();
     }
 
-    private static void AppendSpeed(StringBuilder sb, BenchmarkGroupStatisticsResult result)
+    private static void AppendSpeed(StringBuilder sb, int section, BenchmarkGroupStatisticsResult result)
     {
         var sp = result.Speed;
 
-        sb.AppendLine("## 4. Speed");
+        sb.AppendLine($"## {section}. Speed");
         sb.AppendLine();
 
         if (sp.Degraded)
@@ -367,9 +539,9 @@ public static class BenchmarkGroupReportBuilder
         sb.AppendLine();
     }
 
-    private static void AppendCost(StringBuilder sb, BenchmarkGroupStatisticsResult result)
+    private static void AppendCost(StringBuilder sb, int section, BenchmarkGroupStatisticsResult result)
     {
-        sb.AppendLine("## 5. Cost");
+        sb.AppendLine($"## {section}. Cost");
         sb.AppendLine();
 
         if (result.Cost == null)
@@ -394,18 +566,107 @@ public static class BenchmarkGroupReportBuilder
                       (cost.CostStandardDeviation.HasValue ? $" ± {Money(cost.CostStandardDeviation)} (SD)" : string.Empty));
         sb.AppendLine($"- **Cost per question:** {Money(cost.CostPerQuestion)}");
         sb.AppendLine($"- **Cost per index point:** {Money(cost.CostPerIndexPoint)}");
+        if (cost.PerRunTotals.Count > 0)
+        {
+            sb.AppendLine($"- **Per-run totals:** {string.Join(", ", cost.PerRunTotals.Select(t => Money(t)))}");
+        }
+
         sb.AppendLine();
 
         if (cost.TotalCostByRole.Count > 0)
         {
-            sb.AppendLine("| Role | Total | Mean per run | Share |");
-            sb.AppendLine("|---|---:|---:|---:|");
+            sb.AppendLine("| Role | Total | Mean per run | SD | Min | Max | Share |");
+            sb.AppendLine("|---|---:|---:|---:|---:|---:|---:|");
             foreach (var kv in cost.TotalCostByRole.OrderByDescending(k => k.Value))
             {
                 double share = cost.TotalCost > 0 ? kv.Value / cost.TotalCost * 100.0 : 0.0;
                 cost.MeanCostByRole.TryGetValue(kv.Key, out double mean);
-                sb.AppendLine($"| {kv.Key} | {Money(kv.Value)} | {Money(mean)} | {Inv(share, "F0")} % |");
+                cost.CostStandardDeviationByRole.TryGetValue(kv.Key, out double? sd);
+                cost.MinCostByRole.TryGetValue(kv.Key, out double min);
+                cost.MaxCostByRole.TryGetValue(kv.Key, out double max);
+
+                sb.AppendLine($"| {kv.Key} | {Money(kv.Value)} | {Money(mean)} | {Money(sd)} " +
+                              $"| {Money(min)} | {Money(max)} | {Inv(share, "F0")} % |");
             }
+
+            sb.AppendLine();
+
+            // Which role carries the spread is the actionable half. A replicate set whose quality
+            // reproduces to a tenth of a point can still spend twice as much on one member as
+            // another, and a mean with one SD on the total does not say where that came from.
+            var widest = cost.CostStandardDeviationByRole
+                .Where(kv => kv.Value.HasValue)
+                .OrderByDescending(kv => kv.Value!.Value)
+                .FirstOrDefault();
+            if (widest.Key != null && widest.Value.HasValue && widest.Value.Value > 0.0)
+            {
+                sb.AppendLine($"**Cost dispersion sits mostly in `{widest.Key}`** (SD {Money(widest.Value)} across {cost.RunCount} runs). Cost is the least reproducible quantity a replicate set measures: an identical configuration can spend materially differently from run to run, so a cost difference between two groups needs the same spread treatment a quality difference gets.");
+                sb.AppendLine();
+            }
+        }
+
+        sb.AppendLine("---");
+        sb.AppendLine();
+    }
+
+    /// <summary>
+    /// Tokens, tool routing and what the claim verifier's spend bought.
+    ///
+    /// <para>Rendered only when a member recorded any of it. The verifier can be most of a set's
+    /// cost, and a cost table that names it without naming how many claims it checked leaves the
+    /// reader unable to judge whether the spend was worth it.</para>
+    /// </summary>
+    private static void AppendUsage(StringBuilder sb, int section, BenchmarkGroupStatisticsResult result)
+    {
+        var usage = result.Usage;
+        if (usage == null) return;
+
+        sb.AppendLine($"## {section}. Token and Tool Usage");
+        sb.AppendLine();
+
+        sb.AppendLine($"- **Candidate tokens:** {Tokens(usage.TotalInputTokens)} in / {Tokens(usage.TotalOutputTokens)} out" +
+                      (usage.InputOutputRatio.HasValue ? $" — a ratio of {Inv(usage.InputOutputRatio, "F1")} : 1" : string.Empty));
+        if (usage.CacheReadSharePercentage.HasValue)
+        {
+            sb.AppendLine($"- **Prompt cache reads:** {Tokens(usage.TotalCacheReadTokens)} — {Inv(usage.CacheReadSharePercentage, "F1")} % of input. The segmented system prompt is what makes that share possible, and anything that changes its frozen segment invalidates it.");
+        }
+
+        if (usage.PerRunInputTokens.Count > 0)
+        {
+            sb.AppendLine($"- **Per-run candidate input:** {string.Join(", ", usage.PerRunInputTokens.Select(Tokens))}" +
+                          (usage.InputTokenStandardDeviation.HasValue ? $" (SD {Tokens((long)Math.Round(usage.InputTokenStandardDeviation.Value))})" : string.Empty));
+        }
+
+        sb.AppendLine($"- **Grader tokens, kept separate:** assessor {Tokens(usage.TotalAssessmentInputTokens)} in / {Tokens(usage.TotalAssessmentOutputTokens)} out; " +
+                      $"claim verifier {Tokens(usage.TotalClaimVerificationInputTokens)} in / {Tokens(usage.TotalClaimVerificationOutputTokens)} out");
+        sb.AppendLine("  - Never folded into the candidate's totals above: those measure the model under test, and a grader's consumption is not the candidate's.");
+        sb.AppendLine();
+
+        if (usage.TotalToolCalls > 0)
+        {
+            sb.AppendLine($"**Tool calls:** {usage.TotalToolCalls} across {usage.RunCount} runs" +
+                          (usage.MeanToolCallsPerRun.HasValue ? $", {Inv(usage.MeanToolCallsPerRun, "F1")} per run" : string.Empty) +
+                          (usage.ToolCallStandardDeviation.HasValue ? $" (SD {Inv(usage.ToolCallStandardDeviation, "F1")})" : string.Empty));
+            sb.AppendLine();
+            sb.AppendLine("| Tool family | Calls | Share |");
+            sb.AppendLine("|---|---:|---:|");
+            foreach (var kv in usage.ToolCallsByFamily.OrderByDescending(k => k.Value))
+            {
+                usage.ToolFamilyShares.TryGetValue(kv.Key, out double share);
+                sb.AppendLine($"| {kv.Key} | {kv.Value} | {Inv(share, "F1")} % |");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("> A family's share is prompt-compliant or not only against the tool preference hierarchy in `Overseer/ToolGuides/_policy.md`. A high source-code share on a suite weighted toward exact mechanics is what that policy asks for, not a routing defect.");
+            sb.AppendLine();
+        }
+
+        if (usage.ClaimsChecked > 0 || usage.AnswersWithVerification > 0)
+        {
+            sb.AppendLine($"**Claim verification:** {usage.ClaimsChecked} claims checked across {usage.AnswersWithVerification} answers — " +
+                          $"{usage.ClaimsSupported} supported, **{usage.ClaimsRefuted} refuted**, {usage.ClaimsIndeterminate} indeterminate.");
+            sb.AppendLine();
+            sb.AppendLine("Read this beside the verifier's share of the cost table above: it is what that spend bought. A verifier that refutes nothing across a whole replicate set is either confirming the candidate is accurate or failing to test it, and the claim count is what separates those.");
             sb.AppendLine();
         }
 
@@ -415,11 +676,12 @@ public static class BenchmarkGroupReportBuilder
 
     private static void AppendComparison(
         StringBuilder sb,
+        int section,
         BenchmarkGroupComparison cmp,
         string treatmentName,
         string? baselineName)
     {
-        sb.AppendLine("## 6. Paired Group Comparison");
+        sb.AppendLine($"## {section}. Paired Group Comparison");
         sb.AppendLine();
         sb.AppendLine($"**Baseline:** {baselineName ?? "(unnamed group)"} — runs {string.Join(", ", cmp.BaselineRunIds)}  ");
         sb.AppendLine($"**Treatment:** {treatmentName} — runs {string.Join(", ", cmp.TreatmentRunIds)}");
@@ -482,10 +744,10 @@ public static class BenchmarkGroupReportBuilder
 
     private static void AppendLimits(
         StringBuilder sb,
-        BenchmarkGroupStatisticsResult result,
-        BenchmarkGroupComparison? comparison)
+        int section,
+        BenchmarkGroupStatisticsResult result)
     {
-        sb.AppendLine("## " + (comparison != null ? "7" : "6") + ". What This Analysis Cannot Decompose");
+        sb.AppendLine($"## {section}. What This Analysis Cannot Decompose");
         sb.AppendLine();
         sb.AppendLine($"> {result.VarianceDecompositionCaveat}");
         sb.AppendLine();

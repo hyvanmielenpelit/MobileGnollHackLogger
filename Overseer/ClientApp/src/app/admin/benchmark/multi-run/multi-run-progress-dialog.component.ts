@@ -1044,7 +1044,13 @@ export class MultiRunProgressDialogComponent implements OnInit, OnChanges, OnDes
     } else {
       lines.push(`Items with at least one scored answer: ${result.itemCount ?? 'n/a'}`);
       lines.push(`Items excluded because no member answered them: ${result.unansweredItemCount ?? 0}`);
-      const unstable = result.unstableQuestionIds ?? [];
+      // Labelled with the Q number, as the per-item lines below and the report both are. A bare
+      // list of question ids under this heading reads as a count: one unstable item with id 70
+      // printed as "70" says seventy items are unstable.
+      const unstable = (result.unstableQuestionIds ?? []).map(questionId => {
+        const item = (result.items ?? []).find(i => i.questionId === questionId);
+        return item?.orderIndex != null ? `Q${item.orderIndex} (id ${questionId})` : `id ${questionId}`;
+      });
       lines.push(`Unstable items (SD above threshold): ${unstable.length > 0 ? unstable.join(', ') : 'none'}`);
       lines.push(`Pooled index reportable: ${result.pooledIndexReportable ?? false}`);
       for (const item of result.items ?? []) {

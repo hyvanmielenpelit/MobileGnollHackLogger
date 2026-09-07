@@ -106,14 +106,34 @@ public class BenchmarkGroupReportBuilderTests
         string md = BenchmarkGroupReportBuilder.BuildMarkdownReport(
             group, result, BenchmarkComparabilityKey.Resolve(runs), runs, overseerVersion: "1.2.3");
 
+        // Sections are numbered by a running counter, so these assertions also pin the order.
         Assert.Contains("# Multi-Run Benchmark Analysis", md);
         Assert.Contains("## 1. Group Manifest", md);
         Assert.Contains("## 2. Multi-Run Intelligence Index", md);
-        Assert.Contains("## 3. Per-Item Statistics", md);
-        Assert.Contains("## 4. Speed", md);
-        Assert.Contains("## 5. Cost", md);
+        Assert.Contains("## 3. Quality Dimensions", md);
+        Assert.Contains("## 4. Per-Item Statistics", md);
+        Assert.Contains("## 5. Speed", md);
+        Assert.Contains("## 6. Cost", md);
         Assert.Contains("What This Analysis Cannot Decompose", md);
         Assert.Contains("1.2.3", md);
+    }
+
+    /// <summary>
+    /// The section counter, at the two shapes that broke the old hardcoded numbers: a report with
+    /// no comparison and no usage block, and one with both.
+    /// </summary>
+    [Fact]
+    public void Report_NumbersSectionsContiguously_WhateverTheOptionalOnesDo()
+    {
+        var (group, result, runs) = Fixture();
+
+        string withoutOptional = BenchmarkGroupReportBuilder.BuildMarkdownReport(
+            group, result, BenchmarkComparabilityKey.Resolve(runs), runs);
+
+        // No usage recorded and no comparison: Limits follows Cost directly.
+        Assert.Contains("## 6. Cost", withoutOptional);
+        Assert.Contains("## 7. What This Analysis Cannot Decompose", withoutOptional);
+        Assert.DoesNotContain("## 7. Token and Tool Usage", withoutOptional);
     }
 
     [Fact]
@@ -194,7 +214,9 @@ public class BenchmarkGroupReportBuilderTests
             group, treatment, BenchmarkComparabilityKey.Resolve(treatmentRuns), treatmentRuns,
             comparison, "Baseline");
 
-        Assert.Contains("## 6. Paired Group Comparison", md);
+        // Cost is 6 and no usage was recorded on this fixture, so the comparison lands at 7.
+        Assert.Contains("## 7. Paired Group Comparison", md);
+        Assert.Contains("## 8. What This Analysis Cannot Decompose", md);
         Assert.Contains("Wilcoxon signed-rank (primary)", md);
         Assert.Contains("Paired *t* (secondary)", md);
         Assert.Contains("Cohen's *d*z", md);
@@ -256,5 +278,226 @@ public class BenchmarkGroupReportBuilderTests
 
         Assert.Contains("one or more members have been deleted", md);
         Assert.Contains("## 2. Multi-Run Intelligence Index", md);
+    }
+
+    // --- The blocks the report was missing --------------------------------------------------------
+
+    /// <summary>
+    /// Without this block a reader cannot tell prompt adherence from a model weakness, which is the
+    /// attribution check every dimensional finding depends on.
+    /// </summary>
+    [Fact]
+    public void Report_RendersTheChatPromptUnderTest_FromTheMembers()
+    {
+        var suite = Suite();
+        var questions = Questions(50, 50);
+        const string Options = "{\"verboseMode\":false,\"overseerMode\":0,\"enableToolUse\":true,"
+            + "\"allowSourceCodeReferences\":true,\"enableWebSearch\":false,\"hasWikiContext\":false}";
+
+        var runs = new List<BenchmarkRun>
+        {
+            Run(1, questions, new[] { 90, 80 }),
+            Run(2, questions, new[] { 92, 82 })
+        };
+        foreach (var run in runs) run.CandidatePromptOptionsJson = Options;
+
+        var result = BenchmarkGroupStatistics.Compute(suite, questions, runs);
+        var group = new BenchmarkRunGroup { Id = 1, Name = "G", BenchmarkSuiteId = 5 };
+
+        string md = BenchmarkGroupReportBuilder.BuildMarkdownReport(
+            group, result, BenchmarkComparabilityKey.Resolve(runs), runs);
+
+        Assert.Contains("### 1.1 Chat Prompt Under Test", md);
+        Assert.Contains("ChatService.BuildSystemPrompt", md);
+        Assert.Contains("concise (`verboseMode: false`)", md);
+        Assert.Contains("Gameplay Help", md);
+
+        // The divergence from live chat that every routing figure is measured under.
+        Assert.Contains("Live chat pre-injects wiki articles and the benchmark does not", md);
+        Assert.Contains("every one of them was graded under exactly this configuration", md);
+    }
+
+    [Fact]
+    public void Report_SaysSo_WhenThePromptConfigurationWasNotRecorded()
+    {
+        var (group, result, runs) = Fixture();
+
+        string md = BenchmarkGroupReportBuilder.BuildMarkdownReport(
+            group, result, BenchmarkComparabilityKey.Resolve(runs), runs);
+
+        Assert.Contains("The prompt configuration was not recorded for these runs", md);
+    }
+
+    [Fact]
+    public void Report_RendersTheDimensionTable_AndNamesTheLowestDimension()
+    {
+        var suite = Suite();
+        var questions = Questions(50, 50);
+
+        var runs = new List<BenchmarkRun>
+        {
+            Run(1, questions, new[] { 90, 80 }),
+            Run(2, questions, new[] { 92, 82 }),
+            Run(3, questions, new[] { 94, 84 })
+        };
+
+        // Accuracy near the ceiling, Completeness well below it — the four-run-old finding this
+        // section exists to make measurable across runs.
+        int[][] accuracy = { new[] { 96, 94 }, new[] { 98, 96 }, new[] { 97, 95 } };
+        int[][] completeness = { new[] { 84, 80 }, new[] { 86, 82 }, new[] { 88, 84 } };
+        for (int r = 0; r < runs.Count; r++)
+        {
+            for (int i = 0; i < questions.Length; i++)
+            {
+                runs[r].Answers[i].AccuracyScore = accuracy[r][i];
+                runs[r].Answers[i].CompletenessScore = completeness[r][i];
+            }
+        }
+
+        var result = BenchmarkGroupStatistics.Compute(suite, questions, runs);
+        var group = new BenchmarkRunGroup { Id = 1, Name = "G", BenchmarkSuiteId = 5 };
+
+        string md = BenchmarkGroupReportBuilder.BuildMarkdownReport(
+            group, result, BenchmarkComparabilityKey.Resolve(runs), runs);
+
+        Assert.Contains("## 3. Quality Dimensions", md);
+        Assert.Contains("| **Accuracy** |", md);
+        Assert.Contains("| **Completeness** |", md);
+        Assert.Contains("**Lowest dimension:** Completeness", md);
+        Assert.Contains("trailing Accuracy by 12.0 points", md);
+
+        // The unweighted-versus-weighted warning, and the prompt-adherence one.
+        Assert.Contains("unweighted", md);
+        Assert.Contains("the prompt instructed the model to answer that way", md);
+    }
+
+    [Fact]
+    public void Report_SaysSo_WhenNoDimensionWasScored()
+    {
+        var (group, result, runs) = Fixture();
+
+        string md = BenchmarkGroupReportBuilder.BuildMarkdownReport(
+            group, result, BenchmarkComparabilityKey.Resolve(runs), runs);
+
+        Assert.Contains("No member recorded per-dimension scores", md);
+    }
+
+    [Fact]
+    public void Report_RendersTokenToolAndClaimUsage_WhenAnyWasRecorded()
+    {
+        var suite = Suite();
+        var questions = Questions(50, 50);
+
+        var runs = new List<BenchmarkRun>
+        {
+            Run(1, questions, new[] { 90, 80 }),
+            Run(2, questions, new[] { 92, 82 })
+        };
+
+        foreach (var run in runs)
+        {
+            run.TotalInputTokens = 2_100_000;
+            run.TotalOutputTokens = 60_000;
+            run.TotalCacheReadTokens = 1_900_000;
+            run.TotalClaimVerificationInputTokens = 400_000;
+            run.ClaimsSupportedCount = 5;
+            run.ClaimVerifiedAnswerCount = 2;
+            run.Answers[0].ToolCallSummary = "source_code_search×6, wiki_search×4";
+            run.Answers[1].ToolCallSummary = "get_monster_stats×2";
+        }
+
+        var result = BenchmarkGroupStatistics.Compute(suite, questions, runs);
+        var group = new BenchmarkRunGroup { Id = 1, Name = "G", BenchmarkSuiteId = 5 };
+
+        string md = BenchmarkGroupReportBuilder.BuildMarkdownReport(
+            group, result, BenchmarkComparabilityKey.Resolve(runs), runs);
+
+        Assert.Contains("## 7. Token and Tool Usage", md);
+        Assert.Contains("4.20 M", md);                       // pooled candidate input
+        Assert.Contains("Prompt cache reads", md);
+        Assert.Contains("Grader tokens, kept separate", md);
+        Assert.Contains("| SourceCode |", md);
+        Assert.Contains("| Wiki |", md);
+        Assert.Contains("10 claims checked across 4 answers", md);
+        Assert.Contains("**0 refuted**", md);
+    }
+
+    [Fact]
+    public void Report_OmitsTheUsageSection_WhenNothingWasRecorded()
+    {
+        var (group, result, runs) = Fixture();
+
+        string md = BenchmarkGroupReportBuilder.BuildMarkdownReport(
+            group, result, BenchmarkComparabilityKey.Resolve(runs), runs);
+
+        Assert.DoesNotContain("Token and Tool Usage", md);
+    }
+
+    [Fact]
+    public void Report_ShowsPerRoleCostDispersion_AndNamesTheRoleCarryingIt()
+    {
+        var suite = Suite();
+        var questions = Questions(50);
+        var runs = new List<BenchmarkRun>
+        {
+            Run(1, questions, new[] { 90 }),
+            Run(2, questions, new[] { 92 })
+        };
+
+        var result = BenchmarkGroupStatistics.Compute(suite, questions, runs, new[]
+        {
+            new BenchmarkGroupRunCost
+            {
+                RunId = 1,
+                CostByRole = new Dictionary<string, double>
+                {
+                    ["candidate"] = 0.30, ["assessor"] = 0.50, ["claimVerifier"] = 2.00
+                }
+            },
+            new BenchmarkGroupRunCost
+            {
+                RunId = 2,
+                CostByRole = new Dictionary<string, double>
+                {
+                    ["candidate"] = 0.30, ["assessor"] = 0.50, ["claimVerifier"] = 5.00
+                }
+            }
+        });
+
+        var group = new BenchmarkRunGroup { Id = 1, Name = "G", BenchmarkSuiteId = 5 };
+
+        string md = BenchmarkGroupReportBuilder.BuildMarkdownReport(
+            group, result, BenchmarkComparabilityKey.Resolve(runs), runs);
+
+        Assert.Contains("| Role | Total | Mean per run | SD | Min | Max | Share |", md);
+        Assert.Contains("**Per-run totals:**", md);
+        Assert.Contains("Cost dispersion sits mostly in `claimVerifier`", md);
+    }
+
+    /// <summary>
+    /// An interval that leaves the score range is reported at the bound and marked, rather than
+    /// printed as an impossible number or silently narrowed.
+    /// </summary>
+    [Fact]
+    public void Report_MarksIntervalsTruncatedAtTheScoreBound()
+    {
+        var suite = Suite();
+        var questions = Questions(50);
+        var runs = new List<BenchmarkRun>
+        {
+            Run(1, questions, new[] { 45 }),
+            Run(2, questions, new[] { 78 }),
+            Run(3, questions, new[] { 90 })
+        };
+
+        var result = BenchmarkGroupStatistics.Compute(suite, questions, runs);
+        var group = new BenchmarkRunGroup { Id = 1, Name = "G", BenchmarkSuiteId = 5 };
+
+        string md = BenchmarkGroupReportBuilder.BuildMarkdownReport(
+            group, result, BenchmarkComparabilityKey.Resolve(runs), runs);
+
+        Assert.Contains("†", md);
+        Assert.Contains("pinned there", md);
+        Assert.DoesNotContain("128.9", md);
     }
 }

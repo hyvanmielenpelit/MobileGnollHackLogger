@@ -3,6 +3,7 @@ namespace Overseer.Services.Benchmarking;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
@@ -12,6 +13,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
+using Sentry;
 
 /// <summary>
 /// The outcome of asking to start or resume a series, in the vocabulary the controller maps to HTTP.
@@ -483,6 +485,18 @@ public class BenchmarkSeriesOrchestrator
 
         _ = Task.Run(async () =>
         {
+            // The loop outlives the request that started it, and Sentry's scope stack is
+            // async-local: without a scope of its own it reports under the start request's context
+            // and accretes a tag from every log scope the run machinery opens beneath it, for the
+            // whole series. A borrowed provider URL also reaches AuthSentryEventProcessor, which
+            // reads the Uri tag and can drop a harness error as an upstream transient.
+            using var sentryScope = SentrySdk.PushScope();
+            SentrySdk.ConfigureScope(scope =>
+            {
+                scope.Clear();
+                scope.SetTag("SeriesId", seriesId.ToString(CultureInfo.InvariantCulture));
+            });
+
             try
             {
                 await DriveAsync(seriesId, cts.Token);
@@ -762,8 +776,9 @@ public class BenchmarkSeriesOrchestrator
     /// argument, and the whole point of the tier machinery is that this argument is checked against
     /// the runs rather than trusted. A series that resumed over an acknowledged instrument change is
     /// the case where the argument is knowingly false, and it is marked cross-condition so the group
-    /// resolves Tier C and can never be pooled. Any <i>other</i> disagreement is a defect, and is
-    /// logged loudly rather than silently persisted as a lower tier.</para>
+    /// resolves Tier C and can never be pooled. Any <i>other</i> disagreement is logged loudly
+    /// rather than silently persisted as a lower tier: it means either something outside the request
+    /// moved between members, or the harness is wrong. The differing keys distinguish the two.</para>
     /// </summary>
     /// <returns>The new group's id, or null when there were fewer than two successful members.</returns>
     private async Task<long?> CreateGroupForSeriesAsync(
@@ -799,8 +814,10 @@ public class BenchmarkSeriesOrchestrator
         {
             _logger.LogError(
                 "Benchmark run series {SeriesId} produced a group that resolved {Tier}, not Tier A, " +
-                "without an acknowledged instrument change. Differing keys: {Keys}. This is a harness " +
-                "defect: a series launches every member from one identical request.",
+                "without an acknowledged instrument change. Differing keys: {Keys}. A series launches " +
+                "every member from one identical request, so either something outside the request " +
+                "moved between members — a model pricing or catalog edit is the usual one — or this " +
+                "is a harness defect. The differing keys above say which.",
                 series.Id, tier, string.Join(", ", comparability.Differences.Select(d => d.Describe())));
         }
 

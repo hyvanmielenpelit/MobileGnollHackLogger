@@ -10,7 +10,23 @@
 }
 
 /* The sub-navigation uses the shared .gh-tabs / .gh-tabs-secondary tab widget
-   from styles.scss. Nothing tab-specific belongs here. */
+   from styles.scss. Only its stickiness is local.
+
+   The scrolling ancestor is .tab-content in admin.component.scss (overflow-y: auto, no
+   padding-top), and nothing between it and this row sets overflow, so top: 0 pins the row
+   directly beneath the primary admin tab row — which sits outside that scroller and is always
+   visible. The background has to be opaque: the panel is --bg-glass at 65 % over the page image,
+   so content would otherwise scroll through the tabs. z-index clears the sticky table headers in
+   the suite-health panel (2-3) without competing with dialogs, which are in the top layer and
+   above any z-index regardless. */
+.benchmark-container > .gh-tabs-secondary {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: rgba(17, 17, 17, 0.94);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
 
 .benchmark-tab-content {
   display: flex;

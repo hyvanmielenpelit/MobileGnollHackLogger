@@ -320,4 +320,67 @@ public class BenchmarkComparabilityKeyTests
         Assert.True(result.CostAggregatesDegraded);
         Assert.False(result.SpeedAggregatesDegraded);
     }
+
+    /// <summary>
+    /// The case Tier A depends on. Every member of a series is launched from one identical request,
+    /// minutes apart, so the snapshots agree on every price and disagree on the instant they were
+    /// taken. Keying on that instant put Tier A out of reach for every series ever run.
+    /// </summary>
+    [Fact]
+    public void PricingSnapshotsDifferingOnlyInCaptureInstant_ResolveTierA()
+    {
+        const string Prices =
+            "\"candidate\":{\"inputPerMillion\":1.25,\"outputPerMillion\":10.0,\"asOf\":\"2026-09-01\"},"
+            + "\"assessor\":{\"inputPerMillion\":0.30,\"outputPerMillion\":2.50,\"asOf\":\"2026-09-01\"}";
+
+        var a = Run(13);
+        var b = Run(14);
+        a.PricingSnapshotJson = "{\"capturedAtUtc\":\"2026-09-07T08:46:51.2836446Z\"," + Prices + "}";
+        b.PricingSnapshotJson = "{\"capturedAtUtc\":\"2026-09-07T09:19:44.1120983Z\"," + Prices + "}";
+
+        var result = BenchmarkComparabilityKey.Resolve(new[] { a, b });
+
+        Assert.Equal(BenchmarkComparabilityTier.Replicate, result.Tier);
+        Assert.Empty(result.Differences);
+        Assert.False(result.CostAggregatesDegraded);
+    }
+
+    /// <summary>
+    /// A price change under an identical capture instant must still degrade cost. This is the half
+    /// that stops the exclusion above from becoming a blanket suppression.
+    /// </summary>
+    [Fact]
+    public void PricingSnapshotsDifferingInPrice_StillDegradeCost_EvenAtOneCaptureInstant()
+    {
+        const string CapturedAt = "\"capturedAtUtc\":\"2026-09-07T08:46:51.2836446Z\"";
+
+        var a = Run(13);
+        var b = Run(14);
+        a.PricingSnapshotJson = "{" + CapturedAt + ",\"candidate\":{\"inputPerMillion\":1.25}}";
+        b.PricingSnapshotJson = "{" + CapturedAt + ",\"candidate\":{\"inputPerMillion\":2.50}}";
+
+        var result = BenchmarkComparabilityKey.Resolve(new[] { a, b });
+
+        Assert.Equal(BenchmarkComparabilityTier.QualityComparable, result.Tier);
+        Assert.Equal(BenchmarkComparabilityKey.PricingSnapshotKey, Assert.Single(result.Differences).Name);
+        Assert.True(result.CostAggregatesDegraded);
+        Assert.False(result.SpeedAggregatesDegraded);
+    }
+
+    /// <summary>A snapshot that will not parse still keys deterministically rather than to no value.</summary>
+    [Fact]
+    public void MalformedPricingSnapshot_KeysDeterministically()
+    {
+        var run = Run(13);
+        run.PricingSnapshotJson = "{not valid json";
+
+        string first = Value(BenchmarkComparabilityKey.Extract(run), BenchmarkComparabilityKey.PricingSnapshotKey);
+        string second = Value(BenchmarkComparabilityKey.Extract(run), BenchmarkComparabilityKey.PricingSnapshotKey);
+
+        Assert.Equal(first, second);
+        Assert.NotEqual(BenchmarkComparabilityKey.NoValue, first);
+    }
+
+    private static string Value(IReadOnlyList<BenchmarkComparabilityKeyEntry> keys, string name)
+        => keys.Single(k => k.Name == name).Value;
 }

@@ -13,17 +13,11 @@
   min-width: 0;
 }
 
-.multi-run {
-  display: flex;
-  flex-direction: column;
-  gap: 28px;
-  padding: 20px 24px 32px;
-
-  // Layout reacts to the panel's own width rather than the viewport's: this component is embedded
-  // in a tab panel whose width has nothing to do with the window's.
-  container-type: inline-size;
-  container-name: mr-panel-width;
-
+// The panel's type scale and resets. A mixin because the analysis content now renders in two
+// places — inline in the panel and inside the modal — and Angular's emulated encapsulation would
+// not carry a `.multi-run p { }` rule into a dialog that is a sibling of it. The failure is silent:
+// the content renders with the browser's default margins and nobody sees an error.
+@mixin mr-content-typography {
   .text-muted { color: #888; }
 
   p { margin: 0; }
@@ -58,6 +52,128 @@
   .alert {
     max-width: 110ch;
   }
+}
+
+.multi-run {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding: 20px 24px 32px;
+
+  // Layout reacts to the panel's own width rather than the viewport's: this component is embedded
+  // in a tab panel whose width has nothing to do with the window's.
+  container-type: inline-size;
+  container-name: mr-panel-width;
+
+  @include mr-content-typography;
+}
+
+// --- The analysis modal -----------------------------------------------------------------------
+//
+// Layout only. The controls themselves — .btn-gh and its variants, .action-btn, .btn-icon-action,
+// .gh-tooltip, .gh-dialog — come from styles.scss and are never redefined here: Angular's emulated
+// encapsulation would rewrite such a rule to match only this component, so the dialog would quietly
+// stop looking like the rest of the application while every other view stayed correct.
+//
+// The .dialog-* vocabulary below is duplicated from benchmark.component.scss and
+// multi-run-progress-dialog.component.scss, which own it as component-scoped styles. It belongs in
+// styles.scss so all three can share one definition; moving it is a change to files this component
+// does not own, so it is left as the same follow-up the progress dialog already records.
+.gh-dialog.mr-analysis-dialog {
+  // Sized like .benchmark-run-detail-dialog: this shows the same class of content, a report.
+  width: min(1150px, 94vw);
+  max-width: min(1150px, 94vw);
+  height: min(88dvh, 900px);
+  max-height: 88dvh;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.15));
+  background: rgba(20, 20, 20, 0.98);
+
+  &[open],
+  &:modal {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .dialog-content {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    width: 100%;
+    min-height: 0;
+    overflow: hidden;
+    padding: 0;
+  }
+
+  .dialog-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 24px;
+    margin: 0;
+    border-bottom: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+    flex-shrink: 0;
+
+    // Deliberately outside mr-content-typography: the heading here is the dialog's title and keeps
+    // the global .gh-dialog h3 treatment rather than the panel's 16px body scale.
+    .dialog-title-group {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+
+      h3 {
+        margin: 0;
+        font-size: 1.2em;
+        color: var(--title-color);
+      }
+
+      .dialog-subtitle {
+        margin: 0;
+        font-size: 0.85em;
+        color: #888;
+      }
+    }
+  }
+
+  .mr-dialog-header-badges {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .dialog-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 24px;
+    min-height: 0;
+
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .dialog-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    padding: 14px 24px;
+    border-top: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+    flex-shrink: 0;
+  }
+}
+
+// The container the moved content still queries. A modal dialog's containing block is the viewport,
+// so it inherits no container from .multi-run however it is nested — and the dialog's own width is
+// the right thing to measure anyway.
+.mr-dialog-body {
+  container-type: inline-size;
+  container-name: mr-panel-width;
+
+  @include mr-content-typography;
 }
 
 .mr-section {
@@ -151,6 +267,24 @@
 
   &.mr-badge-muted {
     color: #888;
+  }
+
+  // The series badge is a control: it opens that series' progress dialog, which is the only place
+  // a completed series' diagnostics can be copied from now that the Run Benchmark banner hides
+  // itself on completion.
+  &.mr-badge-button {
+    cursor: pointer;
+    font: inherit;
+    border-style: solid;
+
+    &:hover {
+      filter: brightness(1.25);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-color, #e0ba6d);
+      outline-offset: 2px;
+    }
   }
 
   &.mr-badge-series {
@@ -609,6 +743,85 @@
     color: #999;
     margin-right: 6px;
   }
+}
+
+// --- Prompt under test, in the manifest ---
+.mr-prompt-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+
+  li {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+}
+
+.mr-prompt-label {
+  color: #999;
+  min-width: 7ch;
+  flex-shrink: 0;
+}
+
+.mr-prompt-note {
+  margin-top: 8px !important;
+  font-size: 12px;
+  color: #bbb;
+  line-height: 1.5;
+  max-width: 100ch;
+  text-wrap: pretty;
+
+  &.mr-prompt-note-warning {
+    color: #fbbf24;
+  }
+}
+
+// --- Quality dimensions, cost roles and tool families ---
+.mr-dimension-table,
+.mr-cost-role-table,
+.mr-tool-family-table {
+  font-size: 13px;
+
+  .col-num {
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  th[scope="row"] {
+    text-align: left;
+    font-weight: 600;
+  }
+}
+
+.mr-dimension-gap {
+  font-size: 13px;
+  color: #ddd;
+}
+
+.mr-claim-line {
+  font-size: 13px;
+  color: #ddd;
+
+  strong { color: #eee; }
+}
+
+.mr-run-total {
+  display: inline-block;
+  margin-left: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+// The truncation marker on a clamped interval. Not decoration: the interval it sits beside is
+// narrower than its own half-width, and this is the only thing that says so.
+.mr-truncated-marker {
+  color: #fbbf24;
+  margin-left: 4px;
+  cursor: help;
 }
 
 .mr-item-table,

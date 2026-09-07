@@ -55,7 +55,17 @@ to its own replicate set and to the cross-condition pair it anchors — while be
 series.
 
 A completed series with two or more successful members automatically creates a group containing them.
-The code **asserts** that this group resolves Tier A rather than assuming it.
+The code **asserts** that this group resolves Tier A rather than assuming it, logging an error when it
+does not.
+
+> **Every series before 2026-09-07 failed that assertion, and the assertion was right.** The pricing
+> snapshot embedded `capturedAtUtc` in the JSON the comparability key hashed, so the
+> `PricingSnapshot` key could never agree between two runs launched minutes apart: Tier A was
+> unreachable by construction and every multi-run cost aggregate was flagged degraded on a difference
+> that was a timestamp. The key now hashes the snapshot's prices alone
+> (`BenchmarkComparabilityKey.PricingSignature`). A report generated before the fix says Tier B for
+> this reason and its cost figures are sound; re-running the analysis moves the group to Tier A. The
+> assertion's error reached Sentry as **OVERSEER-8**.
 
 ---
 
@@ -221,6 +231,37 @@ This mirrors conventions already in the codebase: the `n < 3 → null` rule in
 At *R* < 3 the combined interval is the item-sampling half-width alone, and the report says the
 interval covers one source rather than two.
 
+### 5.4 Intervals are clamped to the score range
+
+A quality score is bounded [0, 100], so a reported interval bound outside that range is not a wider
+claim but an impossible one — an item with a mean of 71 and a half-width of 58 does not have an upper
+bound of 129. Reported bounds are clamped and the interval is **marked truncated**, per item and for
+the combined index interval.
+
+The **half-widths are never clamped**. They are the quantities that carry the spread and that combine
+in quadrature, and clamping one would corrupt the other. A truncated interval is therefore narrower
+than its own half-width implies, which is exactly why it is marked: read the SD or the half-width, not
+the pinned bound.
+
+### 5.5 Per-dimension statistics
+
+The index is a composite and cannot say which dimension moved. Each of Accuracy, Completeness,
+Conciseness and Readability is therefore pooled across the runs in its own right: per-run means, their
+mean, sample SD, a *t*-based 95 % half-width under the same *R* < 3 rule as above, min, max, and the
+weakest items on that dimension.
+
+Two properties matter when reading them:
+
+- **They are unweighted**, while the index is difficulty-weighted. There are no per-dimension
+  difficulty weights to apply, so the two are not expected to agree, and a discrepancy is not a defect.
+- **A dimension can be low because the prompt said so.** A concise response instruction caps
+  Completeness by design. The report puts that warning next to the table and the configuration next to
+  the manifest, because the alternative is an attribution error — see § 2 of the
+  `server_benchmark_to_chat_transfer` skill.
+
+A dimension no member scored is reported present and empty rather than omitted, so a consumer never
+has to distinguish "absent" from "unscored".
+
 ---
 
 ## 6. Speed
@@ -232,8 +273,14 @@ interval covers one source rather than two.
 - **Per-item median model time.**
 
 The standing single-run caveat carries over: the Speed Index is comparable only within one thinking
-level and one timing mode. At Tier A the comparability keys enforce exactly that; at Tier B the
-figures are rendered with a degraded flag naming what moved.
+level and one timing mode, and the comparability keys covering both are what enforce it.
+
+**A tier is not a timing verdict.** A group sits at Tier B whenever exactly one instrument or
+speed-and-cost key differs, and several of those — the pricing snapshot most obviously — cannot move
+a timing measurement at all. The caveat printed with the speed figures is therefore built from the
+group's **own** degraded flags (`BenchmarkGroupStatistics.BuildSpeedCaveat`): it names the keys that
+actually moved, or states positively that none affecting timing did. Reading "Tier B" as "the speed
+numbers are degraded" is wrong in both directions.
 
 Question parallelism degrades **both** speed and cost, not speed alone — concurrency changes cache and
 token behaviour as well as wall time.
@@ -254,6 +301,28 @@ A run whose pricing cannot be resolved is **omitted**, not zeroed. An unknown co
 unknown.
 
 A pricing-snapshot mismatch degrades **cost only**. Prices cannot move a quality score.
+
+**Per-role dispersion is reported beside the per-role totals** — SD, min and max per role, plus the
+individual per-run totals. Cost is the least reproducible quantity a replicate set measures: a set
+whose 22 comparability keys match and whose Intelligence Index reproduces to a third of a point can
+still spend twice as much on one member as another, and a mean with one standard deviation on the
+total does not say which role did that. The report names the role carrying the spread.
+
+## 7.1 Token and Tool Usage
+
+Rendered only when a member recorded any of it. Pooled candidate input, output and prompt-cache-read
+tokens with the input:output ratio and cache-read share; the per-run input totals and their SD;
+assessor and claim-verifier tokens **kept separate** from the candidate's, as the run row keeps them;
+tool calls by family with each family's share; and the claim-verification outcome — claims checked,
+supported, refuted, indeterminate.
+
+The last of those exists to be read beside the verifier's share of the cost table. A verifier can be
+most of a set's spend, and a cost figure that names it without saying how many claims it checked
+leaves a reader unable to judge whether the spend bought anything.
+
+A family's share is prompt-compliant or not only against the tool preference hierarchy in
+`Overseer/ToolGuides/_policy.md`. A high source-code share on a suite weighted toward exact mechanics
+is what that policy asks for, not a routing defect.
 
 ---
 
@@ -323,15 +392,28 @@ A replicate set measures the same thing more precisely; it does not measure anyt
 
 A practical order:
 
-1. **Check the tier first.** Tier A is the only tier at which the pooled index means what it appears
-   to mean. At Tier B, read quality and ignore speed and cost. At Tier C, do not read the aggregates
-   at all — read the comparison.
-2. **Read both interval components before the combined one.** If the reproducibility half-width is
+1. **Check the tier first, and what made it.** Tier A is the only tier at which the pooled index
+   means what it appears to mean. At Tier B, read the *differing key* rather than assuming what is
+   degraded: the report's degraded flags name which of speed and cost the difference actually
+   affects, and a Tier B group can have both intact. At Tier C, do not read the aggregates at all —
+   read the comparison.
+2. **Read the Chat Prompt Under Test block, before any dimensional figure.** It is in the manifest,
+   and it is what separates prompt adherence from a model weakness. A group whose configuration was
+   not recorded cannot support an attribution at all, and the block says so instead of printing
+   defaults. It also states whether wiki context was pre-injected — live chat always does, the
+   benchmark never does, so every retrieval and routing figure is measured under a condition
+   production does not share.
+3. **Read both interval components before the combined one.** If the reproducibility half-width is
    large relative to the effect you care about, more runs will help. If the item-sampling half-width
-   dominates, more runs will not — you need more questions.
-3. **Read the unstable items.** They tell you which parts of the suite cannot support a single-run
+   dominates, more runs will not — you need more questions. An interval marked truncated is narrower
+   than its half-width implies; read the half-width.
+4. **Read the dimensions.** Which dimension is lowest, and whether its gap survives across runs, is
+   the question a single run cannot answer and this one can.
+5. **Read the unstable items.** They tell you which parts of the suite cannot support a single-run
    conclusion.
-4. **Only then read the point estimate.**
+6. **Read cost per role, not just in total.** The spread almost always sits in one role, and which
+   one is the actionable half.
+7. **Only then read the point estimate.**
 
 For a verification, the acceptance criterion should be stated **before** the treatment set is run, and
 compared against the paired difference and its interval — not against the two point estimates.

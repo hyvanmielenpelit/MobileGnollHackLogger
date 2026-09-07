@@ -1,4 +1,16 @@
-import { ChangeDetectorRef, Component, Input, OnChanges, OnInit, SimpleChanges, inject } from '@angular/core';
+import {
+  ChangeDetectorRef,
+  Component,
+  ElementRef,
+  EventEmitter,
+  Input,
+  OnChanges,
+  OnInit,
+  Output,
+  SimpleChanges,
+  ViewChild,
+  inject
+} from '@angular/core';
 import { CommonModule, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
@@ -39,6 +51,10 @@ export interface MultiRunItemStatistics {
   /** SD / mean, as a fraction. Null below two runs and at a mean of zero. */
   coefficientOfVariation?: number | null;
   meanConfidenceHalfWidth?: number | null;
+  meanConfidenceLower?: number | null;
+  meanConfidenceUpper?: number | null;
+  /** A bound hit the [0, 100] score range and was clamped; the half-width is the honest spread. */
+  meanConfidenceTruncated?: boolean;
   criticalErrorCount?: number;
   /** k/R. A rate strictly between 0 and 1 is the signal worth acting on. */
   criticalErrorRate: number;
@@ -66,6 +82,8 @@ export interface MultiRunIndexStatistics {
   combinedHalfWidth?: number | null;
   combinedLower?: number | null;
   combinedUpper?: number | null;
+  /** A combined bound hit the [0, 100] score range and was clamped. */
+  combinedIntervalTruncated?: boolean;
   /** False below three runs, where no reproducibility figure is reported at all. */
   reproducibilityAvailable?: boolean;
 }
@@ -91,10 +109,85 @@ export interface MultiRunCostStatistics {
   costStandardDeviation?: number | null;
   totalCostByRole?: { [role: string]: number };
   meanCostByRole?: { [role: string]: number };
+  /** The per-run totals. Cost is the least reproducible quantity a replicate set measures. */
+  perRunTotals?: number[];
+  costStandardDeviationByRole?: { [role: string]: number | null };
+  minCostByRole?: { [role: string]: number };
+  maxCostByRole?: { [role: string]: number };
   costPerQuestion?: number | null;
   costPerIndexPoint?: number | null;
   degraded?: boolean;
   degradedReason?: string | null;
+}
+
+/**
+ * One scoring dimension across the runs. Mirrors `BenchmarkGroupDimensionStatistics`.
+ *
+ * These means are unweighted while the index is difficulty-weighted, so the two are not expected
+ * to agree — the template says so wherever it renders them together.
+ */
+export interface MultiRunDimensionStatistics {
+  dimension: string;
+  perRunMeans?: number[];
+  mean?: number | null;
+  standardDeviation?: number | null;
+  /** Null below three runs, on the same rule the index's reproducibility component uses. */
+  confidenceHalfWidth?: number | null;
+  min?: number | null;
+  max?: number | null;
+  /** Question id → cross-run mean on this dimension. */
+  itemMeans?: { [questionId: string]: number };
+}
+
+/** Pooled token, tool and claim-verification totals. Mirrors `BenchmarkGroupUsageStatistics`. */
+export interface MultiRunUsageStatistics {
+  runCount: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCacheReadTokens: number;
+  cacheReadSharePercentage?: number | null;
+  inputOutputRatio?: number | null;
+  perRunInputTokens?: number[];
+  inputTokenStandardDeviation?: number | null;
+  totalAssessmentInputTokens: number;
+  totalAssessmentOutputTokens: number;
+  totalClaimVerificationInputTokens: number;
+  totalClaimVerificationOutputTokens: number;
+  totalToolCalls: number;
+  meanToolCallsPerRun?: number | null;
+  toolCallStandardDeviation?: number | null;
+  toolCallsByFamily?: { [family: string]: number };
+  toolFamilyShares?: { [family: string]: number };
+  claimsSupported: number;
+  claimsRefuted: number;
+  claimsIndeterminate: number;
+  claimsChecked: number;
+  answersWithVerification: number;
+}
+
+/**
+ * The prompt configuration the group was graded under. Mirrors `BenchmarkGroupPromptUnderTest`.
+ *
+ * Read from the first member; `divergent` is the server's assertion that the others match, which a
+ * poolable group guarantees and a hand-built Tier C group does not.
+ */
+export interface MultiRunPromptUnderTest {
+  recorded: boolean;
+  divergent: boolean;
+  overseerMode: number;
+  verboseMode: boolean;
+  spoilerFreeMode: boolean;
+  enableToolUse: boolean;
+  enableWebSearch: boolean;
+  enableSubAgents: boolean;
+  allowSourceCodeReferences: boolean;
+  isGameOn: boolean;
+  developerMode: boolean;
+  hasMessageHistory: boolean;
+  hasWikiContext: boolean;
+  hasGameSnapshot: boolean;
+  /** 0 Disabled, 1 OnRequest, 2 Enabled — the numeric enum as the server serialises it. */
+  parallelMode: number;
 }
 
 /** Mirrors `BenchmarkGroupStatisticsResult`. */
@@ -109,6 +202,11 @@ export interface MultiRunStatisticsResult {
   index?: MultiRunIndexStatistics;
   speed?: MultiRunSpeedStatistics;
   cost?: MultiRunCostStatistics | null;
+  /** Always four entries when present; a dimension nothing scored carries empty `perRunMeans`. */
+  dimensions?: MultiRunDimensionStatistics[];
+  /** Null when no member recorded any token or tool usage. */
+  usage?: MultiRunUsageStatistics | null;
+  promptUnderTest?: MultiRunPromptUnderTest | null;
   unstableQuestionIds?: number[];
   pooledIndexReportable?: boolean;
   varianceDecompositionCaveat?: string | null;
@@ -225,6 +323,17 @@ export class MultiRunComponent implements OnInit, OnChanges {
    * invites building a set across two of them, which is the one thing tiering must refuse.
    */
   @Input() suiteId: number | null = null;
+
+  /**
+   * A completed series the host should open its progress dialog for.
+   *
+   * The group table's Series badge is the permanent route to a finished series: the Run Benchmark
+   * banner that used to be the only one disappears when the series ends, and the series dialog is
+   * where both diagnostics captures come from.
+   */
+  @Output() openSeries = new EventEmitter<number>();
+
+  @ViewChild('groupDetailDialog') groupDetailDialog?: ElementRef<HTMLDialogElement>;
 
   // --- Group list ---
   groups: BenchmarkRunGroupDto[] = [];
@@ -362,6 +471,11 @@ export class MultiRunComponent implements OnInit, OnChanges {
   // Group list
   // ---------------------------------------------------------------------------------------
 
+  /**
+   * Loads a group's detail without showing it. Kept separate from <see cref="openGroup"/> because
+   * the builder's success path selects the group it just created, and opening a modal there would
+   * steal focus from an operator who is still working in the builder.
+   */
   selectGroup(group: BenchmarkRunGroupDto): void {
     this.selectedGroup = group;
     this.groupError = null;
@@ -374,11 +488,31 @@ export class MultiRunComponent implements OnInit, OnChanges {
     this.cdr.detectChanges();
   }
 
+  /** Loads a group and shows its analysis in the modal — what the row's eye control does. */
+  openGroup(group: BenchmarkRunGroupDto): void {
+    this.selectGroup(group);
+    // detectChanges first: showModal() on a dialog whose @if content does not exist yet opens an
+    // empty box, and the content is gated on selectedGroup.
+    this.cdr.detectChanges();
+    this.groupDetailDialog?.nativeElement.showModal();
+  }
+
   closeGroup(): void {
+    const dialog = this.groupDetailDialog?.nativeElement;
+    if (dialog?.open) {
+      dialog.close();
+    }
+
     this.selectedGroup = null;
     this.analysis = null;
     this.detailComparability = null;
     this.cdr.detectChanges();
+  }
+
+  /** Hands a group's originating series to the host, which owns the series progress dialog. */
+  viewSeries(group: BenchmarkRunGroupDto): void {
+    if (group.createdFromSeriesId == null) return;
+    this.openSeries.emit(group.createdFromSeriesId);
   }
 
   private loadGroup(id: number): void {
@@ -656,6 +790,108 @@ export class MultiRunComponent implements OnInit, OnChanges {
     return this.result?.cost ?? null;
   }
 
+  /** Only the dimensions something actually scored. An unscored one has nothing to render. */
+  get dimensionStats(): MultiRunDimensionStatistics[] {
+    return (this.result?.dimensions ?? []).filter(d => (d.perRunMeans?.length ?? 0) > 0);
+  }
+
+  get usageStats(): MultiRunUsageStatistics | null {
+    return this.result?.usage ?? null;
+  }
+
+  get promptStats(): MultiRunPromptUnderTest | null {
+    return this.result?.promptUnderTest ?? null;
+  }
+
+  /**
+   * The dimension trailing the strongest one, and by how much — null when there is nothing to
+   * compare. Named separately because a gap is the finding, and a reader scanning four rows for it
+   * is doing the panel's job.
+   */
+  get lowestDimension(): { dimension: string; mean: number; gap: number } | null {
+    const scored = this.dimensionStats.filter(d => d.mean != null);
+    if (scored.length < 2) return null;
+
+    const sorted = [...scored].sort((a, b) => (a.mean ?? 0) - (b.mean ?? 0));
+    const weakest = sorted[0];
+    const strongest = sorted[sorted.length - 1];
+    if (weakest.dimension === strongest.dimension) return null;
+
+    return {
+      dimension: weakest.dimension,
+      mean: weakest.mean!,
+      gap: (strongest.mean ?? 0) - (weakest.mean ?? 0)
+    };
+  }
+
+  /**
+   * The three weakest items on one dimension, labelled with the Q numbers the rest of the panel
+   * uses rather than with raw question ids.
+   */
+  lowestItemsFor(dimension: MultiRunDimensionStatistics): string {
+    const means = dimension.itemMeans ?? {};
+    const entries = Object.keys(means).map(key => ({ questionId: Number(key), mean: means[key] }));
+    if (entries.length === 0) return '—';
+
+    return entries
+      .sort((a, b) => a.mean - b.mean)
+      .slice(0, 3)
+      .map(entry => {
+        const item = this.itemStats.find(i => i.questionId === entry.questionId);
+        const label = item ? `Q${item.orderIndex}` : `id ${entry.questionId}`;
+        return `${label} (${this.formatNumber(entry.mean, 1)})`;
+      })
+      .join(', ');
+  }
+
+  /** Tool families in descending call order, for the usage table. */
+  get toolFamilyRows(): { family: string; calls: number; share: number | null }[] {
+    const usage = this.usageStats;
+    if (!usage?.toolCallsByFamily) return [];
+
+    return Object.keys(usage.toolCallsByFamily)
+      .map(family => ({
+        family,
+        calls: usage.toolCallsByFamily![family],
+        share: usage.toolFamilyShares?.[family] ?? null
+      }))
+      .sort((a, b) => b.calls - a.calls);
+  }
+
+  /** Cost roles in descending total order, with the dispersion figures beside each. */
+  get costRoleRows(): {
+    role: string; total: number; mean: number | null; sd: number | null;
+    min: number | null; max: number | null; share: number | null;
+  }[] {
+    const cost = this.costStats;
+    if (!cost?.totalCostByRole) return [];
+
+    return Object.keys(cost.totalCostByRole)
+      .map(role => ({
+        role,
+        total: cost.totalCostByRole![role],
+        mean: cost.meanCostByRole?.[role] ?? null,
+        sd: cost.costStandardDeviationByRole?.[role] ?? null,
+        min: cost.minCostByRole?.[role] ?? null,
+        max: cost.maxCostByRole?.[role] ?? null,
+        share: cost.totalCost > 0 ? (cost.totalCostByRole![role] / cost.totalCost) * 100 : null
+      }))
+      .sort((a, b) => b.total - a.total);
+  }
+
+  /**
+   * The role carrying most of the cost spread. A replicate set whose quality reproduces to a tenth
+   * of a point can still spend twice as much on one member as another, and which role did that is
+   * the actionable half.
+   */
+  get widestCostRole(): { role: string; sd: number } | null {
+    const rows = this.costRoleRows.filter(r => r.sd != null && r.sd > 0);
+    if (rows.length === 0) return null;
+
+    const widest = rows.reduce((a, b) => ((b.sd ?? 0) > (a.sd ?? 0) ? b : a));
+    return { role: widest.role, sd: widest.sd! };
+  }
+
   get itemComparisons(): MultiRunItemComparison[] {
     return this.comparison?.itemComparisons ?? [];
   }
@@ -785,9 +1021,41 @@ export class MultiRunComponent implements OnInit, OnChanges {
     return value > 0 ? `+${formatted}` : formatted;
   }
 
+  /** Token counts, abbreviated: a benchmark set runs to millions and raw digits do not read. */
+  formatTokens(value: number | null | undefined): string {
+    if (value == null) return '—';
+    if (value >= 1_000_000) return `${this.formatNumber(value / 1_000_000, 2)} M`;
+    if (value >= 1000) return `${this.formatNumber(value / 1000, 1)} k`;
+    return `${Math.round(value)}`;
+  }
+
+  /** A percentage that arrives already scaled, unlike `formatPercentFromFraction`. */
+  formatPercent(value: number | null | undefined, digits = 1): string {
+    if (value == null) return '—';
+    return `${this.formatNumber(value, digits)} %`;
+  }
+
+  /** The batching mode, whose numeric enum selects a tool policy file and so is prompt text. */
+  parallelModeLabel(mode: number | null | undefined): string {
+    switch (mode) {
+      case 0: return 'Disabled';
+      case 1: return 'On request';
+      case 2: return 'Enabled';
+      default: return '—';
+    }
+  }
+
   /** Tooltip anchor ids. One per row, so no two anchors in the panel share a name. */
   downloadTipId(groupId: number): string {
     return `mr-tip-download-${groupId}`;
+  }
+
+  viewTipId(groupId: number): string {
+    return `mr-tip-view-${groupId}`;
+  }
+
+  seriesTipId(groupId: number): string {
+    return `mr-tip-series-${groupId}`;
   }
 
   deleteTipId(groupId: number): string {

@@ -220,6 +220,12 @@ public static class BenchmarkComparabilityKey
     public const string QuestionParallelismKey = "QuestionParallelism";
     public const string PricingSnapshotKey = "PricingSnapshot";
 
+    /// <summary>
+    /// The pricing snapshot property that records when the snapshot was taken. Excluded from the
+    /// comparability fingerprint — see <see cref="PricingSignature"/>.
+    /// </summary>
+    private const string PricingCapturedAtProperty = "capturedAtUtc";
+
     /// <summary>Tier A and Tier B may be pooled into one index; Tier C and below may not.</summary>
     public static bool IsPoolable(BenchmarkComparabilityTier tier)
         => tier == BenchmarkComparabilityTier.Replicate || tier == BenchmarkComparabilityTier.QualityComparable;
@@ -286,7 +292,7 @@ public static class BenchmarkComparabilityKey
             Key(QuestionParallelismKey, BenchmarkComparabilityKeyKind.SpeedAndCost,
                 Render(run.MaxParallelQuestionsUsed), degradesSpeed: true, degradesCost: true),
             Key(PricingSnapshotKey, BenchmarkComparabilityKeyKind.SpeedAndCost,
-                ShortHash(run.PricingSnapshotJson), degradesSpeed: false, degradesCost: true)
+                PricingSignature(run), degradesSpeed: false, degradesCost: true)
         };
 
         return keys;
@@ -621,6 +627,41 @@ public static class BenchmarkComparabilityKey
     {
         if (string.IsNullOrWhiteSpace(json)) return NoValue;
         return Sha256Hex(json.Trim()).Substring(0, 12);
+    }
+
+    /// <summary>
+    /// A pricing snapshot's fingerprint over its <i>prices</i> alone.
+    ///
+    /// <para>The snapshot carries <c>capturedAtUtc</c> beside the four role price cards. That
+    /// instant is provenance, not a pricing condition: two runs of one series are launched minutes
+    /// apart from one identical request, so a fingerprint that included it would differ by
+    /// construction and no series could ever resolve Tier A. Each role's <c>asOf</c> stays in — two
+    /// runs priced from different catalog revisions genuinely are not cost-comparable.</para>
+    ///
+    /// <para>A snapshot that cannot be parsed falls back to hashing the whole string, which is
+    /// deterministic and no worse than the value it replaces.</para>
+    /// </summary>
+    private static string PricingSignature(BenchmarkRun run)
+    {
+        string? json = run.PricingSnapshotJson;
+        if (string.IsNullOrWhiteSpace(json)) return NoValue;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return ShortHash(json);
+
+            var parts = doc.RootElement.EnumerateObject()
+                .Where(p => !string.Equals(p.Name, PricingCapturedAtProperty, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(p => p.Name, StringComparer.Ordinal)
+                .Select(p => $"{p.Name}={p.Value.GetRawText()}");
+
+            return Sha256Hex(string.Join(";", parts)).Substring(0, 12);
+        }
+        catch (JsonException)
+        {
+            return ShortHash(json);
+        }
     }
 
     private static string? SnapshotProperty(string? snapshotJson, string propertyName)

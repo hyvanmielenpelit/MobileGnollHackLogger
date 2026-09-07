@@ -573,4 +573,235 @@ describe('MultiRunComponent', () => {
     expect(serviceMock.getRunGroups).not.toHaveBeenCalled();
     expect(text('.multi-run')).toContain('Select a benchmark suite');
   });
+
+  // --- The analysis modal ---
+
+  it('should open the analysis in the modal from the row eye control, not from the group name', () => {
+    open();
+
+    // The name is text now. A report is opened by the same eye control the run history uses.
+    expect(fixture.nativeElement.querySelector('.mr-group-name')?.tagName).toBe('SPAN');
+
+    const view = fixture.nativeElement.querySelector(
+      '.mr-group-table .col-actions .action-btn') as HTMLButtonElement;
+    expect(view.getAttribute('aria-label')).toContain('View analysis for group');
+
+    spyOn(component, 'openGroup').and.callThrough();
+    view.click();
+    fixture.detectChanges();
+
+    expect(component.openGroup).toHaveBeenCalled();
+    expect(component.selectedGroup?.id).toBe(7);
+    expect(serviceMock.getRunGroupAnalysis).toHaveBeenCalledWith(7);
+  });
+
+  it('should render the detail inside the dialog and clear it on close', () => {
+    serviceMock.getRunGroupAnalysis.and.returnValue(of(buildAnalysis()));
+    open();
+
+    component.openGroup(component.groups[0]);
+    fixture.detectChanges();
+
+    const dialog = fixture.nativeElement.querySelector('dialog.mr-analysis-dialog') as HTMLElement;
+    expect(dialog).not.toBeNull();
+    expect(dialog.textContent).toContain('Multi-run Intelligence Index');
+
+    component.closeGroup();
+    fixture.detectChanges();
+
+    expect(component.selectedGroup).toBeNull();
+    expect(dialog.textContent).not.toContain('Multi-run Intelligence Index');
+  });
+
+  it('should emit the originating series from the group row badge', () => {
+    serviceMock.getRunGroups.and.returnValue(of([buildGroup({ createdFromSeriesId: 2 })]));
+    open();
+
+    const emitted: number[] = [];
+    component.openSeries.subscribe((id: number) => emitted.push(id));
+
+    const badge = fixture.nativeElement.querySelector('.mr-badge-series') as HTMLButtonElement;
+    expect(badge.tagName).toBe('BUTTON');
+    badge.click();
+
+    expect(emitted).toEqual([2]);
+  });
+
+  it('should not emit a series for a group that was not created from one', () => {
+    open();
+
+    const emitted: number[] = [];
+    component.openSeries.subscribe((id: number) => emitted.push(id));
+    component.viewSeries(buildGroup({ createdFromSeriesId: null }));
+
+    expect(emitted).toEqual([]);
+  });
+
+  // --- The blocks the panel was missing ---
+
+  it('should render the prompt under test, including the divergence from live chat', () => {
+    serviceMock.getRunGroupAnalysis.and.returnValue(of(buildAnalysis({
+      result: {
+        ...(buildAnalysis().result as object),
+        promptUnderTest: {
+          recorded: true,
+          divergent: false,
+          overseerMode: 0,
+          verboseMode: false,
+          spoilerFreeMode: false,
+          enableToolUse: true,
+          enableWebSearch: false,
+          enableSubAgents: false,
+          allowSourceCodeReferences: true,
+          isGameOn: false,
+          developerMode: false,
+          hasMessageHistory: false,
+          hasWikiContext: false,
+          hasGameSnapshot: false,
+          parallelMode: 2
+        }
+      }
+    })));
+    open();
+    component.openGroup(component.groups[0]);
+    fixture.detectChanges();
+
+    const body = text('.mr-dialog-body');
+    expect(body).toContain('Prompt under test');
+    expect(body).toContain('Concise');
+    expect(body).toContain('Gameplay Help');
+    expect(body).toContain('Live chat pre-injects wiki articles');
+  });
+
+  it('should say so when the prompt configuration was not recorded', () => {
+    serviceMock.getRunGroupAnalysis.and.returnValue(of(buildAnalysis({
+      result: {
+        ...(buildAnalysis().result as object),
+        promptUnderTest: { recorded: false, divergent: false } as unknown
+      }
+    })));
+    open();
+    component.openGroup(component.groups[0]);
+    fixture.detectChanges();
+
+    expect(text('.mr-dialog-body')).toContain('Not recorded for these runs');
+  });
+
+  it('should render the dimension table and name the lowest dimension', () => {
+    serviceMock.getRunGroupAnalysis.and.returnValue(of(buildAnalysis({
+      result: {
+        ...(buildAnalysis().result as object),
+        dimensions: [
+          { dimension: 'Accuracy', perRunMeans: [96, 95, 97], mean: 96, standardDeviation: 1, confidenceHalfWidth: 2.5, min: 95, max: 97, itemMeans: { '101': 94 } },
+          { dimension: 'Completeness', perRunMeans: [84, 85, 86], mean: 85, standardDeviation: 1, confidenceHalfWidth: 2.5, min: 84, max: 86, itemMeans: { '101': 80 } },
+          { dimension: 'Conciseness', perRunMeans: [], mean: null },
+          { dimension: 'Readability', perRunMeans: [], mean: null }
+        ]
+      }
+    })));
+    open();
+    component.openGroup(component.groups[0]);
+    fixture.detectChanges();
+
+    const body = text('.mr-dialog-body');
+    expect(body).toContain('Quality dimensions');
+    expect(body).toContain('Completeness');
+    expect(body).toContain('Lowest dimension:');
+    // Q11 is the only item in the fixture, and it is the weakest on both scored dimensions.
+    expect(body).toContain('Q11');
+
+    // An unscored dimension is dropped from the table rather than rendered as zeroes.
+    expect(component.dimensionStats.length).toBe(2);
+  });
+
+  it('should render pooled tool families and what the claim verifier bought', () => {
+    serviceMock.getRunGroupAnalysis.and.returnValue(of(buildAnalysis({
+      result: {
+        ...(buildAnalysis().result as object),
+        usage: {
+          runCount: 3,
+          totalInputTokens: 4_210_000,
+          totalOutputTokens: 117_600,
+          totalCacheReadTokens: 3_806_000,
+          cacheReadSharePercentage: 90.4,
+          inputOutputRatio: 35.8,
+          perRunInputTokens: [1_400_000, 1_400_000, 1_410_000],
+          inputTokenStandardDeviation: 5773,
+          totalAssessmentInputTokens: 500_000,
+          totalAssessmentOutputTokens: 20_000,
+          totalClaimVerificationInputTokens: 900_000,
+          totalClaimVerificationOutputTokens: 30_000,
+          totalToolCalls: 281,
+          meanToolCallsPerRun: 93.7,
+          toolCallStandardDeviation: 4.2,
+          toolCallsByFamily: { SourceCode: 158, Wiki: 115, StructuredLookup: 7, KnowledgeBase: 1 },
+          toolFamilyShares: { SourceCode: 56.2, Wiki: 40.9, StructuredLookup: 2.5, KnowledgeBase: 0.4 },
+          claimsSupported: 10,
+          claimsRefuted: 0,
+          claimsIndeterminate: 0,
+          claimsChecked: 10,
+          answersWithVerification: 3
+        }
+      }
+    })));
+    open();
+    component.openGroup(component.groups[0]);
+    fixture.detectChanges();
+
+    const body = text('.mr-dialog-body');
+    expect(body).toContain('Tokens and tool usage');
+    expect(body).toContain('4.21 M');
+    expect(body).toContain('Grader tokens, kept separate');
+    expect(body).toContain('SourceCode');
+    expect(body).toContain('10 claims checked across 3 answers');
+
+    // Families are ordered by call count, so the heaviest is first.
+    expect(component.toolFamilyRows[0].family).toBe('SourceCode');
+  });
+
+  it('should name the role carrying the cost spread', () => {
+    serviceMock.getRunGroupAnalysis.and.returnValue(of(buildAnalysis({
+      result: {
+        ...(buildAnalysis().result as object),
+        cost: {
+          runCount: 3,
+          totalCost: 12.37,
+          meanCostPerRun: 4.12,
+          costStandardDeviation: 1.57,
+          totalCostByRole: { claimVerifier: 9.83, assessor: 1.63, candidate: 0.9073 },
+          meanCostByRole: { claimVerifier: 3.28, assessor: 0.5444, candidate: 0.3024 },
+          perRunTotals: [3.4582, 2.9969, 5.9154],
+          costStandardDeviationByRole: { claimVerifier: 1.55, assessor: 0.01, candidate: 0.002 },
+          minCostByRole: { claimVerifier: 2.4, assessor: 0.53, candidate: 0.3 },
+          maxCostByRole: { claimVerifier: 5.4, assessor: 0.55, candidate: 0.31 },
+          costPerQuestion: 0.2291,
+          costPerIndexPoint: 0.0437
+        }
+      }
+    })));
+    open();
+    component.openGroup(component.groups[0]);
+    fixture.detectChanges();
+
+    const body = text('.mr-dialog-body');
+    expect(body).toContain('Per-run totals:');
+    expect(body).toContain('Cost dispersion sits mostly in claimVerifier');
+    expect(component.widestCostRole?.role).toBe('claimVerifier');
+  });
+
+  it('should mark a combined interval that was truncated at the score bound', () => {
+    const base = buildAnalysis().result as { index: Record<string, unknown> };
+    serviceMock.getRunGroupAnalysis.and.returnValue(of(buildAnalysis({
+      result: {
+        ...(buildAnalysis().result as object),
+        index: { ...base.index, combinedUpper: 100, combinedIntervalTruncated: true }
+      }
+    })));
+    open();
+    component.openGroup(component.groups[0]);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('.mr-truncated-marker')).not.toBeNull();
+    expect(text('.mr-dialog-body')).toContain('pinned there');
+  });
 });

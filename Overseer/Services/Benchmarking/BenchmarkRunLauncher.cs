@@ -1,6 +1,7 @@
 namespace Overseer.Services.Benchmarking;
 
 using System;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
@@ -9,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services;
+using Sentry;
 
 /// <summary>
 /// Why a launch was refused. The controller maps these onto HTTP status codes and the series
@@ -369,7 +371,25 @@ public class BenchmarkRunLauncher
 
         // Deliberately not awaited and deliberately not bound to ct: ct scopes the *launch*, and the
         // run outlives the request that started it. Cancellation goes through the run manager's cts.
-        _ = Task.Run(() => _benchmarkService.RunAsync(run.Id, cts.Token, request.VerboseMode ?? false));
+        //
+        // The run gets a Sentry scope of its own for the same reason it gets its own cancellation:
+        // Sentry's scope stack is async-local, so without this the run reports under the launch
+        // request's context and collects a tag from every log scope opened beneath it while it runs.
+        long runId = run.Id;
+        bool verboseMode = request.VerboseMode ?? false;
+        // async, not a Task-returning lambda: the scope must be disposed when the run finishes, and
+        // a non-async lambda would dispose it the moment RunAsync hit its first await.
+        _ = Task.Run(async () =>
+        {
+            using var sentryScope = SentrySdk.PushScope();
+            SentrySdk.ConfigureScope(scope =>
+            {
+                scope.Clear();
+                scope.SetTag("RunId", runId.ToString(CultureInfo.InvariantCulture));
+            });
+
+            await _benchmarkService.RunAsync(runId, cts.Token, verboseMode);
+        });
 
         return BenchmarkRunLaunchResult.Ok(run.Id);
     }

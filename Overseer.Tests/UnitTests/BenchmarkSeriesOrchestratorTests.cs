@@ -543,4 +543,66 @@ public class BenchmarkSeriesOrchestratorTests
         // series start. The refusals above are the branches that reject before this point.
         Assert.Equal(BenchmarkSeriesStartOutcome.Started, result.Outcome);
     }
+
+    /// <summary>
+    /// The Tier A assertion in <c>CreateGroupForSeriesAsync</c>, tested at its decision input.
+    ///
+    /// <para>Members of one series are launched minutes apart from a single request, so their
+    /// pricing snapshots agree on every price and disagree on the instant they were taken. That is
+    /// the condition Sentry OVERSEER-8 reported for series 2, and it must resolve <b>Tier A</b>: a
+    /// series that logs the group-creation invariant error is either a harness defect or a
+    /// mid-series catalog edit, and neither applies to two runs of one request.</para>
+    ///
+    /// <para>Asserted against <c>BenchmarkComparabilityKey.Resolve</c> over series-shaped members
+    /// rather than by driving the private method: reaching it needs a member to actually execute,
+    /// which is the half-hour of candidate and assessor calls this file's header explains it does
+    /// not do.</para>
+    /// </summary>
+    [Fact]
+    public async Task SeriesMembers_PricedAtDifferentInstants_ResolveTierA()
+    {
+        var config = CreateConfig();
+        var (factory, dbName) = CreateScopeFactory(config);
+        using var db = CreateDbContext(dbName);
+        var suite = await SeedSuiteAndConfigsAsync(db);
+        var series = await SeedSeriesAsync(db, suite, BenchmarkRunSeriesStatus.Running);
+
+        // What BuildPricingSnapshotJson writes: one capturedAtUtc, then the resolved price cards.
+        const string Prices = "\"candidate\":{\"inputPerMillion\":1.25,\"outputPerMillion\":10.0}";
+
+        var members = new List<BenchmarkRun>();
+        for (int index = 1; index <= 2; index++)
+        {
+            var member = new BenchmarkRun
+            {
+                BenchmarkSuiteId = suite.Id,
+                SuiteName = suite.Name,
+                TestedModelDisplayNameUsed = "Candidate",
+                TestedModelProviderUsed = "TestProvider",
+                TestedModelIdUsed = "candidate-model",
+                AssessorModelDisplayNameUsed = "Assessor",
+                AssessorModelProviderUsed = "TestProvider",
+                AssessorModelIdUsed = "assessor-model",
+                RunSeriesId = series.Id,
+                RunSeriesIndex = index,
+                Status = BenchmarkRunStatus.Completed,
+                StartedAtUtc = DateTime.UtcNow.AddMinutes(-40 * index),
+                HarnessVersion = "12",
+                ScoringMethodVersion = 8,
+                PricingSnapshotJson =
+                    $"{{\"capturedAtUtc\":\"2026-09-07T0{7 + index}:46:51.283Z\",{Prices}}}"
+            };
+            members.Add(member);
+            db.BenchmarkRuns.Add(member);
+        }
+
+        await db.SaveChangesAsync();
+
+        var comparability = BenchmarkComparabilityKey.Resolve(members);
+
+        Assert.Equal(BenchmarkComparabilityTier.Replicate, comparability.Tier);
+        Assert.Empty(comparability.Differences);
+        Assert.False(comparability.CostAggregatesDegraded);
+        Assert.True(BenchmarkComparabilityKey.IsPoolable(comparability.Tier));
+    }
 }

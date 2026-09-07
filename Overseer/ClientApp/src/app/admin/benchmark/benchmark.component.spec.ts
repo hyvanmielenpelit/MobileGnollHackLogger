@@ -3974,4 +3974,102 @@ describe('AdminBenchmarkComponent', () => {
       component.ngOnDestroy();
     });
   });
+
+  describe('series banner lifecycle', () => {
+    function attachSeries(status: string): void {
+      component.activeSeries = {
+        id: 2,
+        suiteName: 'GnollHack Player Assistance Benchmark Suite',
+        status,
+        requestedRunCount: 3,
+        completedRunCount: 3,
+        failedRunCount: 0,
+        members: [],
+        resumable: false,
+        allowCapWait: true
+      } as unknown as typeof component.activeSeries;
+      component.activeSeriesId = 2;
+      component.multiRunDialogVisible = false;
+    }
+
+    // A banner describing work that is still going to produce something.
+    ['Pending', 'Running', 'WaitingForCap'].forEach(status => {
+      it(`should show the series banner while the series is ${status}`, () => {
+        attachSeries(status);
+
+        expect(component.seriesIsFinished).toBeFalse();
+        expect(component.seriesBannerVisible).toBeTrue();
+      });
+    });
+
+    // Stopped is the one non-terminal end state, and the only one with a Continue button to offer.
+    it('should keep the series banner for a Stopped series, which is resumable', () => {
+      attachSeries('Stopped');
+
+      expect(component.seriesIsFinished).toBeFalse();
+      expect(component.seriesBannerVisible).toBeTrue();
+    });
+
+    ['Completed', 'Cancelled', 'Failed'].forEach(status => {
+      it(`should hide the series banner once the series is ${status}`, () => {
+        attachSeries(status);
+
+        expect(component.seriesIsFinished).toBeTrue();
+        expect(component.seriesBannerVisible).toBeFalse();
+      });
+    });
+
+    it('should not render the banner element for a completed series', () => {
+      attachSeries('Completed');
+      component.activeSubTab = 'run';
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('.series-banner')).toBeNull();
+    });
+
+    it('should keep activeSeries so the dialog and run labelling still resolve it', () => {
+      attachSeries('Completed');
+
+      // Gated rendering, not cleared state: seriesIdForRun and the progress dialog read this after
+      // the series ends.
+      expect(component.activeSeries).not.toBeNull();
+      expect(component.activeSeriesId).toBe(2);
+    });
+
+    it('should hide the banner while the progress dialog is open', () => {
+      attachSeries('Running');
+      component.multiRunDialogVisible = true;
+
+      expect(component.seriesBannerVisible).toBeFalse();
+    });
+  });
+
+  describe('opening a series that this page is not driving', () => {
+    it('should point the progress dialog at the requested series and open it', () => {
+      component.openSeriesDialog(7);
+
+      expect(component.seriesDialogId).toBe(7);
+      expect(component.dialogSeriesId).toBe(7);
+      expect(component.multiRunDialogVisible).toBeTrue();
+    });
+
+    it('should fall back to the live series when none was explicitly opened', () => {
+      component.activeSeriesId = 2;
+
+      expect(component.seriesDialogId).toBeNull();
+      expect(component.dialogSeriesId).toBe(2);
+    });
+
+    it('should clear the explicitly opened series when the dialog closes', () => {
+      component.activeSeriesId = 2;
+      component.openSeriesDialog(7);
+
+      component.onMultiRunDialogClosed();
+
+      expect(component.seriesDialogId).toBeNull();
+      expect(component.multiRunDialogVisible).toBeFalse();
+      // Back to the live series, which is what the banner and the run labelling describe.
+      expect(component.dialogSeriesId).toBe(2);
+    });
+  });
 });

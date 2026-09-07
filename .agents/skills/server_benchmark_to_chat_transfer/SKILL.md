@@ -465,6 +465,49 @@ Any implementation plan derived from a benchmark run must replicate this section
   their value as **observations** and cease to be usable as **reproduction halves**: the two-run bar
   in § 6 resets, and the runs 12–14 comparable series ends here.
 
+### Runs 16–18 — 2026-09-07: GPT-5.6 Luna (first R=3 replicate set)
+- **Candidate**: GPT-5.6 Luna. 18 questions (Suite 5). Series 2, sequential, 1 h 38 m 06 s.
+- **Prompt options**: **not recorded in this analysis** — the multi-run report rendered no Chat
+  Prompt Under Test block (finding M5, fixed by the plan derived from this run).
+  `CandidatePromptOptions` matched across all three members, so they agree with each other; the
+  values must be read from the run rows before any dimensional claim rests on this entry. **This
+  entry cannot serve as half of a two-run reproduction on any dimension-sensitive finding until that
+  is done.**
+- **Grading regime**: harness version 12; scoring method version 8; assessor, second-opinion and
+  claim-verifier configurations all matched across members but not rendered by value.
+- **Instrument SHAs** — identical across all three members:
+  - `CandidateSystemPromptSha256`: `bb19dc24e28755228647960efc5c6aa70cfed64262da29a4a5079181acf5753b`
+  - `ToolGuidesSha256`: `9c79137965e4fe19e5cb2faea71ed29598ff032a7f3a653d8504ffd8a91ea168`
+  - `KnowledgeBaseHeadSha`: `576ca5741d1bd79ef1cb2f7db575709cf0bb0db8`
+- **Quality**: Multi-Run Intelligence Index **94.42**, combined 95 % interval [91.74, 97.11]
+  (± 2.69). Per-run 94.59 / 94.60 / 94.07. Reproducibility SD **0.30** (half-width 0.75);
+  item-sampling half-width 2.58 — the dominant term, and invariant in *R*. Critical errors 0 on every
+  item in every run. Per-dimension scores **unavailable** (M4). Unstable items: Q1 only
+  (mean 71.0, SD 23.3, min 45, max 90).
+- **Speed**: mean Speed Index 72.3 ± 2.1 (70 / 74 / 73). Pooled over 54 answers: P50 72.2 s,
+  P90 168.2 s, max 220.8 s. Slowest by median model time: Q18 206.1 s, Q13 123.6 s, Q11 121.6 s.
+- **Cost**: total $12.37 over three runs; mean $4.12 ± **$1.57** (CV 38 %, against the index's
+  0.3 %) — $3.4582 / $2.9969 / $5.9154. Per role: claim verifier $9.83 (79 %), assessor $1.63
+  (13 %), candidate $0.9073 (7 %). $0.2291 per question, $0.0437 per index point. Token and
+  tool-family aggregates **unavailable** (M6).
+- **Comparability**: recorded as Tier B — Quality-comparable, 22 of 23 keys matched, the sole
+  difference being `PricingSnapshot`. **That difference was a harness defect, not a condition of the
+  runs:** `capturedAtUtc = DateTime.UtcNow` inside the hashed snapshot JSON made Tier A structurally
+  unreachable for every series ever run and falsely degraded every multi-run cost aggregate. The
+  harness reported it about itself as **Sentry OVERSEER-8** at the moment the series completed. Fixed
+  on 2026-09-07; re-analysing this group resolves Tier A. **The runs are a genuine replicate set and
+  their quality aggregates were always sound.**
+- **Transfer Action**: **T19** (Q1, the Gnoll-race item) — rubric check first, then a
+  human-authored knowledge base article, rung 1; **no prompt change**, and the article is *not* an
+  agent task: rung 1 requires human authorship. **T20** (pooled P90 latency 168 s) deferred, its
+  parity check blocked by M5. **T21** — the claim verifier's 79 % of spend is explicitly ruled **not
+  chat-transferable**: it is a grading role with no counterpart in the chat request path, and the
+  chat-relevant figure here is the candidate's $0.3024 per run. **T22**: run 14's deferred T16
+  (Completeness lowest four runs running) was still unmeasurable, which is what motivated M4.
+- **Verification Outcome**: n/a — no prior chat change was under test. What the set did verify is the
+  instrument: reproducibility SD 0.30 means a re-run of this configuration moves the index by well
+  under a point, so a future difference above ~1 point is signal rather than noise.
+
 ---
 
 ## 12. Cross-References
