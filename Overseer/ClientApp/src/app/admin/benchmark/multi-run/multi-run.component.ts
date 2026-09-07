@@ -428,13 +428,17 @@ export class MultiRunComponent implements OnInit, OnChanges {
       id: r => r.id,
       testedModel: r => r.testedModelDisplayNameUsed,
       date: r => new Date(r.startedAtUtc),
-      index: r => r.qualityIndex,
+      qualityIndex: r => r.qualityIndex ?? r.finalScore,
+      index: r => r.qualityIndex ?? r.finalScore,
+      speedIndex: r => r.speedIndex,
       fingerprint: r => r.toolGuidesSha256
     },
     {
       testedModel: r => r.testedModelDisplayNameUsed,
       fingerprint: r => r.toolGuidesSha256,
-      index: exactFilter(r => r.qualityIndex != null ? 'present' : 'absent'),
+      qualityIndex: exactFilter(r => (r.qualityIndex ?? r.finalScore) != null ? 'present' : 'absent'),
+      index: exactFilter(r => (r.qualityIndex ?? r.finalScore) != null ? 'present' : 'absent'),
+      speedIndex: exactFilter(r => r.speedIndex != null ? 'present' : 'absent'),
       selected: exactFilter(r => this.isRunSelected(r.id) ? 'yes' : 'no')
     }
   );
@@ -1173,6 +1177,13 @@ export class MultiRunComponent implements OnInit, OnChanges {
     if (!value) return '—';
     const parsed = new Date(value);
     return isNaN(parsed.getTime()) ? '—' : parsed.toLocaleString();
+  }
+
+  getScoreBadgeClass(score: number | null | undefined): string {
+    if (score == null) return 'badge-score-na';
+    if (score >= 80) return 'badge-score-high';
+    if (score >= 50) return 'badge-score-mid';
+    return 'badge-score-low';
   }
 
   /**

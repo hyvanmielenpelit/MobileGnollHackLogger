@@ -222,18 +222,20 @@
       } @else if (availableRuns.length === 0) {
         <p class="text-muted">No runs recorded for this suite.</p>
       } @else {
-        <div class="mr-table-scroll gh-datatable-scroll">
-          <app-table-pager [state]="runPickerTable" [rows]="availableRuns" noun="runs" (changed)="onTableChanged()"></app-table-pager>
+        <h4 id="mr-runs-table-heading" class="mr-table-heading">Runs in this group</h4>
+        <app-table-pager [state]="runPickerTable" [rows]="availableRuns" noun="runs" (changed)="onTableChanged()"></app-table-pager>
+        <div class="mr-table-scroll">
           <table class="gh-table gh-datatable mr-run-picker-table">
-            <caption>Runs in this group</caption>
+            <caption class="visually-hidden">Runs in this group</caption>
             <thead>
               <tr>
-                <th app-sort-header [state]="runPickerTable" column="selected" label="Selected" class="col-center" (changed)="onTableChanged()"></th>
-                <th app-sort-header [state]="runPickerTable" column="id" label="ID" class="col-center" (changed)="onTableChanged()"></th>
-                <th app-sort-header [state]="runPickerTable" column="testedModel" label="Tested Model" (changed)="onTableChanged()"></th>
-                <th app-sort-header [state]="runPickerTable" column="date" label="Date" (changed)="onTableChanged()"></th>
-                <th app-sort-header [state]="runPickerTable" column="index" label="Index" class="col-center" (changed)="onTableChanged()"></th>
-                <th app-sort-header [state]="runPickerTable" column="fingerprint" label="Guides fingerprint" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="runPickerTable" column="selected" label="Selected" class="col-center col-selected" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="runPickerTable" column="id" label="ID" class="col-center col-id" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="runPickerTable" column="testedModel" label="Tested Model" class="col-model" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="runPickerTable" column="date" label="Date" class="col-date" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="runPickerTable" column="qualityIndex" label="Intelligence Index" class="col-center col-quality-index" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="runPickerTable" column="speedIndex" label="Speed Index" class="col-center col-speed-index" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="runPickerTable" column="fingerprint" label="Guides fingerprint" class="col-fingerprint" (changed)="onTableChanged()"></th>
               </tr>
               <tr class="gh-filter-row">
                 <td>
@@ -250,10 +252,20 @@
                 </td>
                 <td></td>
                 <td>
-                  <label class="visually-hidden" for="mr-f-run-index">Filter by index presence</label>
-                  <select id="mr-f-run-index" class="gh-input gh-filter-select"
-                          [ngModel]="runPickerTable.filters['index']" [ngModelOptions]="{ standalone: true }"
-                          (ngModelChange)="runPickerTable.setFilter('index', $event); cdr.detectChanges()">
+                  <label class="visually-hidden" for="mr-f-run-intelligence-index">Filter by intelligence index presence</label>
+                  <select id="mr-f-run-intelligence-index" class="gh-input gh-filter-select"
+                          [ngModel]="runPickerTable.filters['qualityIndex']" [ngModelOptions]="{ standalone: true }"
+                          (ngModelChange)="runPickerTable.setFilter('qualityIndex', $event); cdr.detectChanges()">
+                    <option value="">All</option>
+                    <option value="present">Present</option>
+                    <option value="absent">Absent</option>
+                  </select>
+                </td>
+                <td>
+                  <label class="visually-hidden" for="mr-f-run-speed-index">Filter by speed index presence</label>
+                  <select id="mr-f-run-speed-index" class="gh-input gh-filter-select"
+                          [ngModel]="runPickerTable.filters['speedIndex']" [ngModelOptions]="{ standalone: true }"
+                          (ngModelChange)="runPickerTable.setFilter('speedIndex', $event); cdr.detectChanges()">
                     <option value="">All</option>
                     <option value="present">Present</option>
                     <option value="absent">Absent</option>
@@ -269,11 +281,11 @@
             </thead>
             <tbody>
               @if (runPickerTable.noMatches(availableRuns)) {
-                <tr><td colspan="6" class="text-muted">No runs match these filters.</td></tr>
+                <tr><td colspan="7" class="text-muted">No runs match these filters.</td></tr>
               } @else {
                 @for (run of runPickerTable.view(availableRuns); track run.id) {
                   <tr>
-                    <td class="col-center">
+                    <td class="col-center col-selected">
                       <input type="checkbox" [id]="'mr-run-' + run.id"
                              [attr.aria-label]="'Include run ' + run.id + ' in this group'"
                              [checked]="isRunSelected(run.id)" (change)="toggleRun(run.id)">
@@ -281,15 +293,39 @@
                     <td class="col-center col-id">#{{ run.id }}</td>
                     <td class="col-model">{{ run.testedModelDisplayNameUsed }}</td>
                     <td class="col-date">{{ formatDate(run.startedAtUtc) }}</td>
-                    <td class="col-center col-index">{{ run.qualityIndex ?? '—' }}</td>
+                    <td class="col-center col-quality-index">
+                      @if (run.qualityIndex != null) {
+                        <span class="score-badge" [class]="getScoreBadgeClass(run.qualityIndex)">
+                          {{ run.qualityIndex }} / 100
+                        </span>
+                      } @else if (run.finalScore != null) {
+                        <span class="score-badge" [class]="getScoreBadgeClass(run.finalScore)">
+                          {{ run.finalScore }} / 100
+                        </span>
+                      } @else {
+                        <span class="text-muted">N/A</span>
+                      }
+                    </td>
+                    <td class="col-center col-speed-index">
+                      @if (run.speedIndex != null) {
+                        <span class="score-badge" [class]="getScoreBadgeClass(run.speedIndex)">
+                          {{ run.speedIndex }} / 100
+                        </span>
+                        @if (run.speedMeasurementDegraded) {
+                          <span class="degraded-indicator" title="Advisory timing — measured under concurrent execution">*</span>
+                        }
+                      } @else {
+                        <span class="text-muted">-</span>
+                      }
+                    </td>
                     <td class="col-fingerprint mr-mono">{{ shortFingerprint(run.toolGuidesSha256) }}</td>
                   </tr>
                 }
               }
             </tbody>
           </table>
-          <app-table-pager [state]="runPickerTable" [rows]="availableRuns" noun="runs" [announce]="false" (changed)="onTableChanged()"></app-table-pager>
         </div>
+        <app-table-pager [state]="runPickerTable" [rows]="availableRuns" noun="runs" [announce]="false" (changed)="onTableChanged()"></app-table-pager>
 
         @if (selectedRunCount > 0) {
           <p class="mr-selection-summary">{{ selectionSummary }}</p>

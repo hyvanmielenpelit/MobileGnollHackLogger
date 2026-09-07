@@ -358,29 +358,65 @@
   color: #9aa;
 }
 
+.mr-table-heading {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--gh-text, #f0f0f0);
+  margin: 20px 0 10px 0;
+}
+
 // Column widths only: the run picker is a plain sortable, filterable .gh-table like every other
 // one in the panel now, so there is no bordered fieldset box or per-row flex layout to style.
-.mr-run-picker-table {
-  caption {
-    padding: 0 0 8px;
-    text-align: left;
-    font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: #999;
+table.mr-run-picker-table {
+  width: auto;
+
+  .col-center {
+    text-align: center;
   }
 
-  .col-center { text-align: center; }
+  .col-selected {
+    width: 1%;
+    white-space: nowrap;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
 
   .col-id { width: 7ch; }
 
-  .col-model { width: 22ch; }
+  .col-model {
+    width: 24ch;
+    min-width: 18ch;
+  }
 
-  .col-date { width: 16ch; white-space: nowrap; }
+  .col-date { width: 20ch; white-space: nowrap; }
 
-  .col-index { width: 8ch; }
+  .col-quality-index,
+  .col-index {
+    width: 20ch;
+    white-space: nowrap;
 
-  .col-fingerprint { width: 14ch; }
+    .gh-th-label {
+      white-space: nowrap;
+    }
+  }
+
+  .col-speed-index {
+    width: 16ch;
+    white-space: nowrap;
+
+    .gh-th-label {
+      white-space: nowrap;
+    }
+  }
+
+  .col-fingerprint {
+    width: 22ch;
+    white-space: nowrap;
+
+    .gh-th-label {
+      white-space: nowrap;
+    }
+  }
 }
 
 // Always visible once something is selected, regardless of what the picker is filtered or paged

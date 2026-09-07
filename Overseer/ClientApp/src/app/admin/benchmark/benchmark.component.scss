@@ -597,14 +597,15 @@
    status columns stretch to fit their sort button while the model-name columns are squeezed. */
 .history-table-wrapper table {
   th:nth-child(1), td:nth-child(1) { inline-size: 64px; }    // ID
-  th:nth-child(5), td:nth-child(5) { inline-size: 150px; }   // Status
+  th:nth-child(2), td:nth-child(2) { min-inline-size: 220px; } // Suite
+  th:nth-child(5), td:nth-child(5) { inline-size: 140px; }   // Status
   th:nth-child(6), td:nth-child(6),
-  th:nth-child(7), td:nth-child(7) { inline-size: 120px; }   // Intelligence / Speed Index
-  th:nth-child(8), td:nth-child(8) { inline-size: 110px; }   // Instrument
-  th:nth-child(9), td:nth-child(9) { inline-size: 90px; }    // Duration
-  th:nth-child(10), td:nth-child(10) { inline-size: 90px; }  // Cost
+  th:nth-child(7), td:nth-child(7) { inline-size: 110px; }   // Intelligence / Speed Index
+  th:nth-child(8), td:nth-child(8) { width: 1%; white-space: nowrap; padding-left: 8px; padding-right: 8px; } // Instrument
+  th:nth-child(9), td:nth-child(9) { inline-size: 85px; }    // Duration
+  th:nth-child(10), td:nth-child(10) { inline-size: 75px; }  // Cost
   th:nth-child(11), td:nth-child(11) { inline-size: 140px; } // Date (UTC)
-  th:nth-child(12), td:nth-child(12) { inline-size: 110px; } // Actions
+  th:nth-child(12), td:nth-child(12) { inline-size: 136px; } // Actions
 }
 
 .status-badge {
@@ -799,6 +800,8 @@
 // form a reproduction. Monospaced because it is a hash prefix and is read character by character.
 .instrument-cell {
   white-space: nowrap;
+  padding-left: 8px;
+  padding-right: 8px;
 }
 
 .instrument-fingerprint {
