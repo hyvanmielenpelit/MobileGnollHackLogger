@@ -1199,6 +1199,13 @@ export interface BenchmarkGroupItemStatisticsDto {
   orderIndex: number;
   questionText?: string | null;
   observationCount: number;
+  /**
+   * The item's per-run quality scores, positionally aligned with `runIds`. Without these an
+   * unstable item can be seen to swing and never traced to the run that produced the low score.
+   */
+  scores: number[];
+  /** The runs those scores came from, in ascending run-id order. */
+  runIds: number[];
   mean: number;
   median: number;
   /** Sample SD (n-1). Null when fewer than two observations exist. */
@@ -1221,6 +1228,13 @@ export interface BenchmarkGroupIndexStatisticsDto {
   /** SD(run indices) / sqrt(R). Answers "would a re-run move this?" and shrinks with R. */
   reproducibilityStandardError?: number | null;
   reproducibilityStandardDeviation?: number | null;
+  /**
+   * The chi-square 95 % interval on the reproducibility SD itself. At R = 3 the upper bound is over
+   * six times the point estimate, so two groups' SDs are not comparable numbers and any surface
+   * showing one must show the interval beside it. Null below three runs and above df 19.
+   */
+  reproducibilitySdLower?: number | null;
+  reproducibilitySdUpper?: number | null;
   /**
    * Answers "would a different 18 questions move this?" and does **not** shrink with R, because
    * every run uses the same items. The UI must say so, or a reader will report it as a bug.

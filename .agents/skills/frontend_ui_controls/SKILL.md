@@ -6,17 +6,23 @@ description: >-
   GnollHack image button (.btn-gh) and its variants, icon-only buttons and their
   mandatory accessible names, interest-triggered tooltips, the shared tab widget
   (.gh-tabs / .gh-tab) with its required ARIA semantics and keyboard model, and
-  when a control is a tab rather than a button. Read before adding or restyling
-  any button, icon button, toolbar, or tab row.
+  when a control is a tab rather than a button. Also covers the shared data-table
+  layer (TableState, app-sort-header, app-table-pager, .gh-datatable) that gives a
+  table paging, column sorting and column filtering, and the rules that keep a
+  paged table honest about selection. Read before adding or restyling any button,
+  icon button, toolbar, tab row, or data table.
 ---
 
-# Frontend UI Controls: Buttons, Icon Buttons, and Tabs
+# Frontend UI Controls: Buttons, Icon Buttons, Tabs, and Data Tables
 
-This skill is the specification for the three control families that make up most of the
-Overseer interface. It exists because all three had drifted: the AI Benchmark admin tab had
-re-implemented the button base class from scratch, invented two variant names used nowhere
+This skill is the specification for the control families that make up most of the
+Overseer interface. It exists because the first three had drifted: the AI Benchmark admin tab
+had re-implemented the button base class from scratch, invented two variant names used nowhere
 else, accumulated three competing icon-button vocabularies, and styled a row of tabs as
 pill buttons.
+
+§8 covers the fourth family, the shared data table, which was written as one layer precisely so
+that it never drifts the same way.
 
 **Related skills**: [`overseer_frontend`](../overseer_frontend/SKILL.md) for the general
 frontend rules (Angular structure, global stylesheet ownership, the no-emoji rule,
@@ -488,9 +494,183 @@ concerns.
 
 ---
 
-## 8. Checklist
+## 8. Data tables
 
-Diff this against your markup before calling button or tab work finished.
+The three benchmark tables — **Run History**, **Runs in this group** and **Analysis groups** —
+share one implementation of paging, column sorting and column filtering. Three hand-rolled
+copies in one tab would be three places for the same bug.
+
+The layer is deliberately **headless plus presentational**, not a generic `<app-data-table>`.
+These tables' cells carry tier badges, score badges, instrument fingerprints, tooltips and
+three-button action groups; funnelling all of that through a column-definition DSL would
+produce worse markup than hand-written rows. What the tables genuinely share is the *state
+arithmetic*, the *pager markup* and the *styling*.
+
+| Piece | File |
+|---|---|
+| `TableState<T>`, `exactFilter()`, `PAGE_SIZES` | `shared/data-table/table-state.ts` |
+| `<th app-sort-header>` | `shared/data-table/sort-header.component.ts` |
+| `<app-table-pager>` | `shared/data-table/table-pager.component.ts` |
+| `.gh-datatable` and the `.gh-pager` / `.gh-filter-*` families | `styles.scss` |
+
+### 8a. When a list becomes a table
+
+The threshold is **paging, sorting or per-column filtering**. A five-row list that is never
+sorted stays a plain `.gh-table`; adding a pager to it is noise.
+
+**A checkbox list people scan and filter is a table.** *Runs in this group* was a
+`<fieldset class="mr-run-picker">` with a `<legend>` and one `<label>` per row. As a table it
+uses `<caption>` in place of the `<legend>` — `<caption>` is a table's native naming
+mechanism — the `<fieldset>` is dropped, and each checkbox carries its own `aria-label`
+naming its subject (*"Include run 21 in this group"*), exactly as §4 requires of any control
+whose visible text is not its name.
+
+### 8b. The `TableState<T>` contract
+
+A component owns one `TableState` per table as an ordinary field, declares its accessors once,
+and renders `state.view(sourceRows)`:
+
+```ts
+historyTable = new TableState<BenchmarkRunSummaryDto>('id', 'desc').registerAccessors(
+  { id: r => r.id, suiteName: r => r.suiteName, qualityIndex: r => r.qualityIndex ?? null },
+  { suiteName: r => r.suiteName, status: exactFilter(r => r.status) }
+);
+
+get historyView(): BenchmarkRunSummaryDto[] { return this.historyTable.view(this.historyRuns); }
+```
+
+`TableState` has no Angular dependency — no injectables, no DOM, no events — so it unit-tests
+as plain TypeScript. The rules it guarantees, each with a spec in `table-state.spec.ts`:
+
+- **`view()` never mutates its input.** It returns a new array; the source list stays in server
+  order however often the view is read.
+- **Filter, then sort, then page**, and paging counts the *filtered* rows.
+- **Null and undefined sort last in both directions.** A run with no Intelligence Index must
+  not displace a scored one at the top of a descending sort.
+- **Strings compare with `localeCompare` and numeric collation**, so `#9` ranks below `#10`.
+- **Ties keep source order**, via a carried source index rather than trusting engine sort
+  stability — so no secondary sort column is needed for a deterministic view.
+- **The page is clamped when it is read**, not only when it is set: the row set can shrink
+  under the table (a delete, a reload) with no setter ever being called.
+- **`exactFilter()` for `<select>` columns.** The default is case-insensitive containment,
+  which is right for a free-text input and wrong for a fixed option set — a *Failed* option
+  must not also match *FailedValidation*.
+
+> **The source list is the logic list; the view is only for rendering.**
+> `benchmark.component.ts`'s `instrumentChangeOf` locates a run by `indexOf` in `historyRuns`
+> and then treats later entries as chronologically earlier, and `completedRunsOfSelectedSuite`
+> takes `.slice(0, 5)` as "the five newest". Both are correct only against server order. Under
+> a user-chosen sort, in-place sorting would silently move the *INSTRUMENT CHANGED* badges onto
+> the wrong runs. Never sort a source array in place; keep helpers reading the source list and
+> give only the template the view.
+
+### 8c. Sortable headers
+
+```html
+<th app-sort-header [state]="historyTable" column="qualityIndex" label="Index"
+    (changed)="cdr.detectChanges()"></th>
+```
+
+The component's host element **is** the `<th>` (hence the attribute selector), so there is no
+wrapper between the row and the cell.
+
+- **`aria-sort` on the `<th>` is the single source of truth.** The caret is drawn in CSS from
+  `th[aria-sort="ascending"]` / `[aria-sort="descending"]` — never from a parallel `.active`
+  class that could disagree with what is announced.
+- The label is a real `<button>`, so keyboard operability and Enter/Space come free.
+
+> **`admin.component.html`'s users table is the old pattern — do not copy it.** It puts
+> `(click)` on a bare `<th>` with a `▲`/`▼` span and no `aria-sort`: it is not keyboard-operable
+> and announces nothing. It is out of scope rather than correct, and can adopt this layer later.
+
+### 8d. The filter row
+
+A `<tr class="gh-filter-row">` sits directly under the header row, one `<td>` per column,
+empty where a column is not filterable.
+
+- **Every control gets a real `<label class="visually-hidden" for="…">`.** A placeholder is not
+  a label; it disappears the moment typing starts and several screen readers never announce it.
+- Build a `<select>`'s options from the values **actually present** where you can, so an option
+  the backend stops emitting disappears from the control on its own.
+- A **Clear filters** control renders only when `state.hasActiveFilters`.
+- **Two empty states, not one.** `rows.length === 0` means nothing has been recorded yet;
+  `state.noMatches(rows)` means the filters hide everything. They want different messages, and
+  the second one offers *Clear filters*. One message for both causes is a support ticket.
+- A server-side query control (Run History's *Filter by Suite*, which changes what is fetched)
+  is **not** a column filter. Keep it in the toolbar, left of the column filters, and let its
+  `<label>` say which of the two it is.
+
+### 8e. The pager
+
+```html
+<app-table-pager [state]="historyTable" [rows]="historyRuns" noun="runs"
+                 (changed)="cdr.detectChanges()"></app-table-pager>
+```
+
+`[rows]` is the **full source list**, never the view — the pager computes the filtered count
+and the range itself.
+
+- **`aria-disabled`, never `disabled`, at the ends.** A `disabled` button leaves the focus
+  order, so a keyboard user cannot land on it and learn why it does nothing. Each handler
+  refuses independently, because an `aria-disabled` button is still clickable. This is the same
+  convention §4 applies to the group list's download control.
+- The current page is marked with **`aria-current="page"`**, not an `.active` class.
+- **One polite live region per table.** The status line (*"Showing 11–20 of 47 runs"*, plus
+  *"filtered from 122"* when filters are active) is `role="status" aria-live="polite"`. A table
+  with a pager above **and** below sets `[announce]="false"` on the second: the line stays
+  visible and is hidden from assistive technology, so a page change is announced once rather
+  than twice. Many noisy live regions become spam.
+- The page-size `<select>` has a real `<label for>`, and the icon-only step buttons carry
+  `aria-label` plus the `interestfor` + `popover="hint"` tooltip pattern of §4 — never `title`.
+
+### 8f. Selection and lookup in a paged table
+
+A paged, filtered table can hide the operator's own selection. The rules that keep it honest:
+
+- **Hold the selection by id**, not by row index or object identity, so it survives paging,
+  filtering and a reload.
+- **Say what is off-screen.** Whenever the selection is non-empty, a line under the table reads
+  *"3 selected — 2 not on this page"*, with a **Show selected only** toggle (an
+  `aria-pressed` button backed by a filter over the selected ids) beside *Clear Selection*.
+  Without it an operator filters the list, sees one tick, and builds a three-row set they never
+  inspected.
+- **No header "select all" checkbox.** Over a filtered, paged list it means one of three
+  different things — this page, these filtered rows, or everything — and a set built by
+  accident is exactly what a comparability preview exists to prevent.
+- **Every lookup searches the source list.** `openGroupById`, `selectGroup` and `deleteGroup`
+  search `this.groups`, never `groupTable.view(...)`: a row that exists but sits on page 2 must
+  still open.
+
+### 8g. Where the data-table styles live
+
+The `.gh-datatable` layer lives in **`styles.scss`**, beside `.gh-table`, for the reason
+recorded there: emulated encapsulation rewrites a component selector to
+`.gh-table[_ngcontent-benchmark]`, and the multi-run and suite-health child components would
+never receive it.
+
+- The classes are `.gh-datatable`, `.gh-datatable-scroll`, `.gh-datatable-toolbar`,
+  `.gh-filter-row` / `.gh-filter-input` / `.gh-filter-select` / `.gh-filter-clear`,
+  `.gh-th-sortable` / `.gh-th-sort` / `.gh-sort-caret`, `.gh-pager` / `.gh-pager-size` /
+  `.gh-pager-buttons` / `.gh-pager-status`, `.gh-page-btn` and `.gh-page-ellipsis`.
+- **Sticky header.** `position: sticky; top: 0` on the header cells, whose sticky context is
+  the table's own scroll container (`.gh-datatable-scroll`), not the page. `border-collapse:
+  collapse` on `.gh-table` makes a sticky header's *borders* vanish in some engines, so the
+  header cells carry a background and a `box-shadow` instead of relying on the collapsed
+  border. The "stuck" shadow is a **progressive enhancement** — `container-type: scroll-state`
+  with `@container scroll-state(stuck: top)`, Chromium-only — and without it the header still
+  sticks, it simply does not gain the shadow. No JavaScript fallback.
+- `.gh-th-sort` is a transparent button inheriting header typography, so it has no border of
+  its own: without an explicit `:focus-visible` outline a keyboard user sees nothing.
+- **Scope every rule under `.gh-datatable` or a `.gh-`-prefixed class.** `styles.scss` is
+  global; a selector written loosely enough to match `.admin-table` or `.modern-table` would
+  restyle the users, groups and analytics tables without any of their specs noticing.
+- `@media (prefers-reduced-motion: reduce)` disables the caret and row-hover transitions.
+
+---
+
+## 9. Checklist
+
+Diff this against your markup before calling button, tab or table work finished.
 
 **Buttons**
 - [ ] Every labelled action button is `.btn-gh` with a variant from the table in §2 — no invented names.
@@ -519,6 +699,20 @@ Diff this against your markup before calling button or tab work finished.
 - [ ] Arrow keys move and wrap; Home/End work; focus follows selection.
 - [ ] Appearance is driven by `[aria-selected="true"]`, with no parallel active class.
 - [ ] A nested row uses `.gh-tabs-secondary`.
+
+**Data tables**
+- [ ] The table renders `state.view(sourceRows)`; **no source array is sorted in place**, and
+      every helper that depends on server order still reads the source list.
+- [ ] Sortable headers are `<th app-sort-header>`; `aria-sort` is on the `<th>` and nothing
+      else styles the sorted state.
+- [ ] Every filter control has a `visually-hidden` `<label for>` — a placeholder is not a label.
+- [ ] `<select>` filter columns are declared with `exactFilter()`, not the substring default.
+- [ ] "Nothing recorded yet" and "nothing matches these filters" are distinct empty states.
+- [ ] Pager end buttons are `aria-disabled`, not `disabled`, and each handler refuses on its own.
+- [ ] Exactly one pager per table has `[announce]="true"`.
+- [ ] Selection is held by id; the off-page selection count and **Show selected only** are
+      present; there is no header "select all"; every lookup searches the source list.
+- [ ] New styles are scoped under `.gh-datatable` or a `.gh-`-prefixed class in `styles.scss`.
 
 **All controls**
 - [ ] Visible `:focus-visible` ring; no unreplaced `outline: none`.

@@ -702,7 +702,7 @@
     <div class="benchmark-tab-content" role="tabpanel" id="bm-panel-history" aria-labelledby="bm-tab-history" tabindex="0">
       <div class="history-toolbar mb-20">
         <div class="filter-group">
-          <label for="historySuiteFilter">Filter by Suite:</label>
+          <label for="historySuiteFilter">Filter by Suite (server-side — reloads the list):</label>
           <select id="historySuiteFilter" class="gh-input" [(ngModel)]="historySuiteFilter" (ngModelChange)="loadHistory()">
             <option [ngValue]="null">All Suites</option>
             @for (suite of suites; track suite.id) {
@@ -720,27 +720,87 @@
         <div class="loading-spinner">Loading benchmark history...</div>
       } @else if (historyRuns.length === 0) {
         <div class="empty-state">No benchmark runs recorded yet. Start one from the Run Benchmark tab.</div>
+      } @else if (historyTable.noMatches(historyRuns)) {
+        <div class="empty-state">
+          No runs match these filters.
+          <button type="button" class="gh-filter-clear" (click)="historyTable.clearFilters()">Clear filters</button>
+        </div>
       } @else {
-        <div class="history-table-wrapper">
-          <table class="gh-table">
+        <app-table-pager [state]="historyTable" [rows]="historyRuns" noun="runs"
+                         (changed)="onHistoryTableChanged()"></app-table-pager>
+        <div class="history-table-wrapper gh-datatable-scroll">
+          <table class="gh-table gh-datatable">
             <thead>
               <tr>
-                <th>ID</th>
-                <th>Suite</th>
-                <th>Tested Model</th>
-                <th>Assessor Model</th>
-                <th>Status</th>
-                <th>Intelligence Index</th>
-                <th>Speed Index</th>
+                <th app-sort-header [state]="historyTable" column="id" label="ID"
+                    (changed)="onHistoryTableChanged()"></th>
+                <th app-sort-header [state]="historyTable" column="suiteName" label="Suite"
+                    (changed)="onHistoryTableChanged()"></th>
+                <th app-sort-header [state]="historyTable" column="testedModelDisplayNameUsed" label="Tested Model"
+                    (changed)="onHistoryTableChanged()"></th>
+                <th app-sort-header [state]="historyTable" column="assessorModelDisplayNameUsed" label="Assessor Model"
+                    (changed)="onHistoryTableChanged()"></th>
+                <th app-sort-header [state]="historyTable" column="status" label="Status"
+                    (changed)="onHistoryTableChanged()"></th>
+                <th app-sort-header [state]="historyTable" column="qualityIndex" label="Intelligence Index"
+                    (changed)="onHistoryTableChanged()"></th>
+                <th app-sort-header [state]="historyTable" column="speedIndex" label="Speed Index"
+                    (changed)="onHistoryTableChanged()"></th>
                 <th scope="col">Instrument</th>
-                <th>Duration</th>
-                <th scope="col">Cost</th>
-                <th>Date (UTC)</th>
-                <th>Actions</th>
+                <th app-sort-header [state]="historyTable" column="durationMs" label="Duration"
+                    (changed)="onHistoryTableChanged()"></th>
+                <th app-sort-header [state]="historyTable" column="estimatedCost" label="Cost"
+                    (changed)="onHistoryTableChanged()"></th>
+                <th app-sort-header [state]="historyTable" column="startedAtUtc" label="Date (UTC)"
+                    (changed)="onHistoryTableChanged()"></th>
+                <th scope="col">Actions</th>
+              </tr>
+              <tr class="gh-filter-row">
+                <td></td>
+                <td>
+                  <label class="visually-hidden" for="hist-f-suite">Filter by suite</label>
+                  <input id="hist-f-suite" type="text" class="gh-input gh-filter-input" placeholder="Suite"
+                         [ngModel]="historyTable.filters['suiteName']" [ngModelOptions]="{ standalone: true }"
+                         (ngModelChange)="historyTable.setFilter('suiteName', $event)">
+                </td>
+                <td>
+                  <label class="visually-hidden" for="hist-f-tested">Filter by tested model</label>
+                  <input id="hist-f-tested" type="text" class="gh-input gh-filter-input" placeholder="Tested Model"
+                         [ngModel]="historyTable.filters['testedModelDisplayNameUsed']" [ngModelOptions]="{ standalone: true }"
+                         (ngModelChange)="historyTable.setFilter('testedModelDisplayNameUsed', $event)">
+                </td>
+                <td>
+                  <label class="visually-hidden" for="hist-f-assessor">Filter by assessor model</label>
+                  <input id="hist-f-assessor" type="text" class="gh-input gh-filter-input" placeholder="Assessor Model"
+                         [ngModel]="historyTable.filters['assessorModelDisplayNameUsed']" [ngModelOptions]="{ standalone: true }"
+                         (ngModelChange)="historyTable.setFilter('assessorModelDisplayNameUsed', $event)">
+                </td>
+                <td>
+                  <label class="visually-hidden" for="hist-f-status">Filter by status</label>
+                  <select id="hist-f-status" class="gh-input gh-filter-select"
+                          [ngModel]="historyTable.filters['status']" [ngModelOptions]="{ standalone: true }"
+                          (ngModelChange)="historyTable.setFilter('status', $event)">
+                    <option value="">All</option>
+                    @for (option of historyStatusOptions; track option) {
+                      <option [value]="option">{{ option }}</option>
+                    }
+                  </select>
+                </td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td>
+                  @if (historyTable.hasActiveFilters) {
+                    <button type="button" class="gh-filter-clear" (click)="historyTable.clearFilters()">Clear filters</button>
+                  }
+                </td>
               </tr>
             </thead>
             <tbody>
-              @for (run of historyRuns; track run.id) {
+              @for (run of historyView; track run.id) {
                 <tr>
                   <td>#{{ run.id }}</td>
                   <td>{{ run.suiteName }}</td>
@@ -839,6 +899,8 @@
             </tbody>
           </table>
         </div>
+        <app-table-pager [state]="historyTable" [rows]="historyRuns" noun="runs" [announce]="false"
+                         (changed)="onHistoryTableChanged()"></app-table-pager>
       }
     </div>
   }
@@ -846,7 +908,7 @@
   <!-- TAB 3: MULTI-RUN ANALYSIS -->
   @if (activeSubTab === 'multirun') {
     <div class="benchmark-tab-content" role="tabpanel" id="bm-panel-multirun" aria-labelledby="bm-tab-multirun" tabindex="0">
-      <app-benchmark-multi-run [suiteId]="selectedSuiteId"
+      <app-benchmark-multi-run #multiRunPanel [suiteId]="selectedSuiteId"
                                (openSeries)="openSeriesDialog($event)"></app-benchmark-multi-run>
     </div>
   }
@@ -3121,7 +3183,8 @@
   [seriesId]="dialogSeriesId"
   [visible]="multiRunDialogVisible"
   (closed)="onMultiRunDialogClosed()"
-  (openRunProgress)="onOpenRunProgressFromSeries($event)"></app-multi-run-progress-dialog>
+  (openRunProgress)="onOpenRunProgressFromSeries($event)"
+  (openGroupAnalysis)="onOpenGroupAnalysisFromSeries($event)"></app-multi-run-progress-dialog>
 
 <!-- SNAPSHOT VIEWER COMPONENT -->
 <app-snapshot-viewer #snapshotViewer (snapshotUpdated)="onSnapshotUpdated($event)"></app-snapshot-viewer>

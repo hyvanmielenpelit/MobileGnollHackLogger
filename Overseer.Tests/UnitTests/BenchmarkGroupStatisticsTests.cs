@@ -268,6 +268,127 @@ public class BenchmarkGroupStatisticsTests
         Assert.Equal(4.3027, index.ReproducibilityCriticalValue!.Value, 4);
     }
 
+    // --- The reproducibility SD's own interval ----------------------------------------------------
+
+    /// <summary>
+    /// The two worked figures the interval has to reproduce. An SD of 3.34 at df = 2 spans
+    /// [1.74, 21.0] and one of 0.30 spans [0.16, 1.89] — intervals that overlap, which is the whole
+    /// reason the figure exists: the two SDs differ elevenfold and are not distinguishable.
+    /// </summary>
+    [Fact]
+    public void StandardDeviationInterval95_ReproducesTheChiSquareIntervalAtTwoDegreesOfFreedom()
+    {
+        var wide = BenchmarkGroupStatistics.StandardDeviationInterval95(3.34, 2);
+        Assert.NotNull(wide);
+        Assert.Equal(1.74, Math.Round(wide!.Value.Lower, 2));
+        Assert.Equal(21.0, Math.Round(wide.Value.Upper, 1));
+
+        var narrow = BenchmarkGroupStatistics.StandardDeviationInterval95(0.30, 2);
+        Assert.NotNull(narrow);
+        Assert.Equal(0.16, Math.Round(narrow!.Value.Lower, 2));
+        Assert.Equal(1.89, Math.Round(narrow.Value.Upper, 2));
+
+        // The two intervals overlap over [1.74, 1.89].
+        Assert.True(wide.Value.Lower < narrow.Value.Upper);
+    }
+
+    /// <summary>
+    /// The multipliers, checked directly at df 2 and df 3 so that a transposed table shows up as a
+    /// wrong number rather than as a plausible one. The lower bound on sigma divides by the
+    /// <b>upper</b> critical value, which is the step that inverts.
+    /// </summary>
+    [Fact]
+    public void StandardDeviationInterval95_UsesTheInvertedCriticalValues()
+    {
+        var df2 = BenchmarkGroupStatistics.StandardDeviationInterval95(1.0, 2)!.Value;
+        Assert.Equal(Math.Sqrt(2.0 / 7.3777589), df2.Lower, 6);
+        Assert.Equal(Math.Sqrt(2.0 / 0.0506356), df2.Upper, 6);
+
+        var df3 = BenchmarkGroupStatistics.StandardDeviationInterval95(1.0, 3)!.Value;
+        Assert.Equal(Math.Sqrt(3.0 / 9.3484036), df3.Lower, 6);
+        Assert.Equal(Math.Sqrt(3.0 / 0.2157953), df3.Upper, 6);
+
+        // The interval narrows as degrees of freedom are added, which is the only direction it can
+        // move if the orientation is right.
+        Assert.True(df3.Lower > df2.Lower);
+        Assert.True(df3.Upper < df2.Upper);
+    }
+
+    [Fact]
+    public void StandardDeviationInterval95_IsNullOutsideTheTabulatedDegreesOfFreedom()
+    {
+        Assert.Null(BenchmarkGroupStatistics.StandardDeviationInterval95(3.34, 0));
+        Assert.Null(BenchmarkGroupStatistics.StandardDeviationInterval95(3.34, 1));
+        Assert.Null(BenchmarkGroupStatistics.StandardDeviationInterval95(
+            3.34, BenchmarkGroupStatistics.MaxDegreesOfFreedomForSdInterval + 1));
+
+        Assert.NotNull(BenchmarkGroupStatistics.StandardDeviationInterval95(
+            3.34, BenchmarkGroupStatistics.MaxDegreesOfFreedomForSdInterval));
+    }
+
+    [Fact]
+    public void ReproducibilitySdInterval_IsReportedAtThreeRuns_AndBracketsTheSd()
+    {
+        // The same fixture as the quadrature test: run indices 74 / 84 / 94, sample SD exactly 10
+        // on df = 2.
+        var questions = Questions(20, 50, 80);
+        var runs = new[]
+        {
+            Run(1, questions, new[] { 60, 70, 80 }),
+            Run(2, questions, new[] { 70, 80, 90 }),
+            Run(3, questions, new[] { 80, 90, 100 })
+        };
+
+        var index = BenchmarkGroupStatistics.Compute(Suite(), questions, runs).Index;
+
+        Assert.Equal(10.0, index.ReproducibilityStandardDeviation!.Value, 9);
+        Assert.Equal(10.0 * Math.Sqrt(2.0 / 7.3777589), index.ReproducibilitySdLower!.Value, 6);
+        Assert.Equal(10.0 * Math.Sqrt(2.0 / 0.0506356), index.ReproducibilitySdUpper!.Value, 6);
+
+        // The upper bound is over six times the point estimate at this many runs.
+        Assert.True(index.ReproducibilitySdUpper!.Value / 10.0 > 6.0);
+    }
+
+    [Fact]
+    public void ReproducibilitySdInterval_IsNullBelowThreeRuns()
+    {
+        var questions = Questions(20, 50, 80);
+        var runs = new[]
+        {
+            Run(1, questions, new[] { 60, 70, 80 }),
+            Run(2, questions, new[] { 80, 90, 100 })
+        };
+
+        var index = BenchmarkGroupStatistics.Compute(Suite(), questions, runs).Index;
+
+        Assert.Null(index.ReproducibilityStandardDeviation);
+        Assert.Null(index.ReproducibilitySdLower);
+        Assert.Null(index.ReproducibilitySdUpper);
+    }
+
+    /// <summary>
+    /// Above the tabulated degrees of freedom the SD is still reported and the interval is not. An
+    /// SD from that many runs no longer needs the warning the interval carries.
+    /// </summary>
+    [Fact]
+    public void ReproducibilitySdInterval_IsNullAboveTheTabulatedDegreesOfFreedom()
+    {
+        var questions = Questions(20, 50, 80);
+        int[][] scoreSets = { new[] { 60, 70, 80 }, new[] { 70, 80, 90 }, new[] { 80, 90, 100 } };
+
+        // 21 runs give df = 20, one past the table.
+        var runs = Enumerable.Range(0, 21)
+            .Select(i => Run(i + 1, questions, scoreSets[i % 3]))
+            .ToArray();
+
+        var index = BenchmarkGroupStatistics.Compute(Suite(), questions, runs).Index;
+
+        Assert.Equal(21, index.RunCount);
+        Assert.NotNull(index.ReproducibilityStandardDeviation);
+        Assert.Null(index.ReproducibilitySdLower);
+        Assert.Null(index.ReproducibilitySdUpper);
+    }
+
     // --- Per-item statistics ----------------------------------------------------------------------
 
     [Fact]
@@ -345,6 +466,61 @@ public class BenchmarkGroupStatisticsTests
         Assert.Equal(25000.0, speed.ModelTimeP50Ms!.Value, 9);
         Assert.Equal(37000.0, speed.ModelTimeP90Ms!.Value, 9);
         Assert.Equal(40000.0, speed.ModelTimeMaxMs!.Value, 9);
+    }
+
+    /// <summary>
+    /// Time to first token pools over its own subset of the same answers, by the same interpolation
+    /// the model-time percentiles use. Its count is separate because the per-answer figure is
+    /// nullable and model time is not: an answer that never reported one must not enter the
+    /// percentiles and must not lower the model-time denominator either.
+    /// </summary>
+    [Fact]
+    public void Speed_PoolsTimeToFirstToken_OverTheAnswersThatReportedIt()
+    {
+        var questions = Questions(50, 50, 50);
+        var a = Run(1, questions, new[] { 80, 80, 80 });
+        var b = Run(2, questions, new[] { 80, 80, 80 });
+
+        a.Answers[0].TimeToFirstTokenMs = 1000;
+        a.Answers[1].TimeToFirstTokenMs = null;
+        a.Answers[2].TimeToFirstTokenMs = 7000;
+
+        b.Answers[0].TimeToFirstTokenMs = 3000;
+        b.Answers[1].TimeToFirstTokenMs = 5000;
+
+        // A failed answer carries a figure the pool must refuse, exactly as the model-time pool does.
+        b.Answers[2].TimeToFirstTokenMs = 99000;
+        b.Answers[2].Status = BenchmarkAnswerStatus.ProviderError;
+
+        var speed = BenchmarkGroupStatistics.Compute(Suite(), questions, new[] { a, b }).Speed;
+
+        // Pooled {1000, 3000, 5000, 7000}: P50 interpolates to 4000, P90 to 6400.
+        Assert.Equal(4, speed.TtftAnswerCount);
+        Assert.Equal(4000.0, speed.TtftP50Ms!.Value, 9);
+        Assert.Equal(6400.0, speed.TtftP90Ms!.Value, 9);
+        Assert.Equal(7000.0, speed.TtftMaxMs!.Value, 9);
+
+        // The model-time pool keeps all five Ok answers, so the two denominators genuinely differ.
+        Assert.Equal(5, speed.PooledAnswerCount);
+    }
+
+    [Fact]
+    public void Speed_ReportsNoTtftFigure_WhenNoAnswerRecordedOne()
+    {
+        var questions = Questions(50, 50);
+        var speed = BenchmarkGroupStatistics.Compute(Suite(), questions, new[]
+        {
+            Run(1, questions, new[] { 80, 80 }),
+            Run(2, questions, new[] { 80, 80 })
+        }).Speed;
+
+        Assert.Equal(0, speed.TtftAnswerCount);
+        Assert.Null(speed.TtftP50Ms);
+        Assert.Null(speed.TtftP90Ms);
+        Assert.Null(speed.TtftMaxMs);
+
+        // And the model-time pool is untouched by the absence.
+        Assert.Equal(4, speed.PooledAnswerCount);
     }
 
     [Fact]
@@ -983,6 +1159,104 @@ public class BenchmarkGroupStatisticsTests
         Assert.Equal(2, usage.ClaimsIndeterminate);
         Assert.Equal(6, usage.ClaimsChecked);
         Assert.Equal(3, usage.AnswersWithVerification);
+    }
+
+    /// <summary>
+    /// Model calls are what input-token cost tracks, so the multi-run report has to carry them. The
+    /// aggregate takes only <c>Ok</c> answers that reported the counter — an answer whose provider
+    /// never set it contributes nothing rather than a zero, and a failed answer contributes nothing
+    /// at all.
+    /// </summary>
+    [Fact]
+    public void Usage_PoolsModelCalls_ExcludingUnreportedAndFailedAnswers()
+    {
+        var questions = Questions(50, 50);
+
+        var a = Run(1, questions, new[] { 90, 80 });
+        a.Answers[0].ModelCallCount = 4;
+        a.Answers[1].ModelCallCount = null;
+
+        var b = Run(2, questions, new[] { 92, 82 });
+        b.Answers[0].ModelCallCount = 6;
+        b.Answers[1].ModelCallCount = 9;
+        b.Answers[1].Status = BenchmarkAnswerStatus.ProviderError;
+
+        var result = BenchmarkGroupStatistics.Compute(Suite(), questions, new[] { a, b });
+        var usage = Assert.IsType<BenchmarkGroupUsageStatistics>(result.Usage);
+
+        // 4 from run 1 and 6 from run 2; the null and the failed answer are both absent.
+        Assert.Equal(10, usage.TotalModelCalls!.Value);
+        Assert.Equal(new int?[] { 4, 6 }, usage.PerRunModelCalls);
+        Assert.Equal(5.0, usage.MeanModelCallsPerRun!.Value, 9);
+
+        // Sample SD of {4, 6} with the n-1 denominator is sqrt(2).
+        Assert.Equal(Math.Sqrt(2.0), usage.ModelCallStandardDeviation!.Value, 9);
+    }
+
+    /// <summary>
+    /// A member none of whose answers reported the counter has no per-run figure rather than a
+    /// figure of zero, and contributes to neither the mean nor the spread. A run cannot answer a
+    /// question in no model calls, so a zero there would be a false statement.
+    /// </summary>
+    [Fact]
+    public void Usage_ModelCalls_AreNullForAMemberThatRecordedNone()
+    {
+        var questions = Questions(50);
+
+        var a = Run(1, questions, new[] { 90 });
+        a.Answers[0].ModelCallCount = 8;
+        var b = Run(2, questions, new[] { 92 });
+
+        var result = BenchmarkGroupStatistics.Compute(Suite(), questions, new[] { a, b });
+        var usage = Assert.IsType<BenchmarkGroupUsageStatistics>(result.Usage);
+
+        Assert.Equal(8, usage.TotalModelCalls!.Value);
+        Assert.Equal(new int?[] { 8, null }, usage.PerRunModelCalls);
+        Assert.Equal(8.0, usage.MeanModelCallsPerRun!.Value, 9);
+
+        // One recorded member gives no sample standard deviation.
+        Assert.Null(usage.ModelCallStandardDeviation);
+    }
+
+    /// <summary>
+    /// A group graded before the counter existed reports no model-call figure at all, while its
+    /// token totals still render. Absent and zero are different facts.
+    /// </summary>
+    [Fact]
+    public void Usage_ModelCalls_AreNullWhenNoMemberRecordedThem()
+    {
+        var questions = Questions(50);
+
+        var a = Run(1, questions, new[] { 90 });
+        a.TotalInputTokens = 1_000_000;
+        var b = Run(2, questions, new[] { 92 });
+        b.TotalInputTokens = 1_100_000;
+
+        var result = BenchmarkGroupStatistics.Compute(Suite(), questions, new[] { a, b });
+        var usage = Assert.IsType<BenchmarkGroupUsageStatistics>(result.Usage);
+
+        Assert.Null(usage.TotalModelCalls);
+        Assert.Null(usage.MeanModelCallsPerRun);
+        Assert.Null(usage.ModelCallStandardDeviation);
+        Assert.Equal(new int?[] { null, null }, usage.PerRunModelCalls);
+    }
+
+    /// <summary>
+    /// Model calls alone are enough to make the usage block a measurement, so a group that recorded
+    /// nothing but the counter still gets one.
+    /// </summary>
+    [Fact]
+    public void Usage_IsNotNull_WhenOnlyModelCallsWereRecorded()
+    {
+        var questions = Questions(50);
+
+        var a = Run(1, questions, new[] { 90 });
+        a.Answers[0].ModelCallCount = 3;
+
+        var result = BenchmarkGroupStatistics.Compute(Suite(), questions, new[] { a });
+
+        Assert.NotNull(result.Usage);
+        Assert.Equal(3, result.Usage!.TotalModelCalls!.Value);
     }
 
     /// <summary>An all-zero usage block reads as a measurement. A run that recorded none is null.</summary>

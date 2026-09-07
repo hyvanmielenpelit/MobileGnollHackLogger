@@ -226,6 +226,16 @@ public static class BenchmarkComparabilityKey
     /// </summary>
     private const string PricingCapturedAtProperty = "capturedAtUtc";
 
+    /// <summary>
+    /// Options for reading a stored snapshot back. Snapshots are written with the serializer's
+    /// defaults, so their property names are PascalCase; matching case-insensitively costs nothing
+    /// and also reads a camelCase snapshot, should one have been written by another path.
+    /// </summary>
+    private static readonly JsonSerializerOptions SnapshotSerializerOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
     /// <summary>Tier A and Tier B may be pooled into one index; Tier C and below may not.</summary>
     public static bool IsPoolable(BenchmarkComparabilityTier tier)
         => tier == BenchmarkComparabilityTier.Replicate || tier == BenchmarkComparabilityTier.QualityComparable;
@@ -272,11 +282,12 @@ public static class BenchmarkComparabilityKey
             Key(HarnessVersionKey, BenchmarkComparabilityKeyKind.Instrument, Render(run.HarnessVersion)),
             Key(ScoringMethodVersionKey, BenchmarkComparabilityKeyKind.Instrument, Render(run.ScoringMethodVersion)),
 
-            // The profile id AND the snapshot. The id alone is not enough: the Default profile is
-            // edited in place, so two runs can name profile 1 and have been scored under two
-            // different definitions of it.
+            // The profile id AND the scoring semantics of the snapshot. The id alone is not enough:
+            // the Default profile is edited in place, so two runs can name profile 1 and have been
+            // scored under two different definitions of it. See ScoringProfileSemanticsSignature
+            // for what the semantics cover and what they ignore.
             Key(ScoringProfileKey, BenchmarkComparabilityKeyKind.Instrument,
-                $"id={Render(run.ScoringProfileId)};snapshot={ShortHash(run.ScoringProfileSnapshotJson)}"),
+                $"id={Render(run.ScoringProfileId)};semantics={ScoringProfileSemanticsSignature(run)}"),
 
             Key(AssessorConfigurationKey, BenchmarkComparabilityKeyKind.Instrument, AssessorSignature(run)),
             Key(SecondOpinionConfigurationKey, BenchmarkComparabilityKeyKind.Instrument, SecondOpinionSignature(run)),
@@ -563,15 +574,12 @@ public static class BenchmarkComparabilityKey
 
     /// <summary>
     /// The profile's <c>SecondOpinionMinimumSample</c>, read from the scoring profile snapshot the
-    /// run stored at start time.
+    /// run stored at start time. A snapshot written before the field existed reports
+    /// <c>(none)</c>, which compares equal across such runs and therefore changes no tier.
     ///
-    /// TODO(Phase 3): the column does not exist yet — Phase 3 adds it to
-    /// <c>BenchmarkScoringProfile</c>, and from that point the snapshot carries it and this reads
-    /// the real value with no change here. Until then every run reports <c>(none)</c>, which
-    /// compares equal across runs and therefore changes no tier. Reading it out of the snapshot
-    /// rather than off a run column is deliberate: the snapshot is what the run was actually
-    /// scored under, and it is already a Tier A key, so this is a legible restatement of a
-    /// difference the profile hash would catch anyway.
+    /// Reading it out of the snapshot rather than off a run column is deliberate: the snapshot is
+    /// what the run was actually scored under, and it is already a Tier A key, so this is a legible
+    /// restatement of a difference the profile signature would catch anyway.
     /// </summary>
     private static string SecondOpinionMinimumSample(BenchmarkRun run)
     {
@@ -590,19 +598,29 @@ public static class BenchmarkComparabilityKey
     }
 
     /// <summary>
-    /// The per-question budgets the run recorded.
+    /// The whole per-question budget configuration the run recorded: the tool-call budget, and the
+    /// per-band tables for the tool-iteration cap, the total model-call cap and the question
+    /// timeout.
     ///
-    /// Only the tool-call budget is stored on the run. The tool-iteration cap, the total
-    /// model-call cap and the question timeout are resolved from configuration per difficulty band
-    /// at answer time (<c>BenchmarkService.ResolveBandedCap</c>) and are recorded nowhere, so they
-    /// cannot enter this key. Two runs that straddle a change to
-    /// <c>Benchmark:QuestionTimeoutSeconds</c> therefore still resolve Tier A. Closing that hole
-    /// needs those three caps snapshotted onto <see cref="BenchmarkRun"/>, which this phase does
-    /// not own; <see cref="BenchmarkRun.HarnessVersion"/> is the only partial cover today.
+    /// <para>The three tables are rendered as the canonical JSON
+    /// <see cref="BenchmarkRun.ToolIterationCapsJson"/> and its siblings store, so the key covers
+    /// every band a run could have drawn from rather than one resolved figure. A run recorded
+    /// before those columns existed renders them as <see cref="NoValue"/>: such runs match each
+    /// other and differ from snapshotted ones, which is correct, because for them the harness
+    /// genuinely does not know what caps applied.</para>
+    ///
+    /// <para>This is an instrument key because a cap that binds truncates an investigation, which
+    /// moves what the candidate scored.</para>
     /// </summary>
     private static string BudgetSignature(BenchmarkRun run)
     {
-        return $"maxToolCallsPerQuestion={Render(run.MaxToolCallsPerQuestionUsed)}";
+        return string.Join(";", new[]
+        {
+            $"maxToolCallsPerQuestion={Render(run.MaxToolCallsPerQuestionUsed)}",
+            $"toolIterationCaps={Render(run.ToolIterationCapsJson)}",
+            $"totalModelCallCaps={Render(run.TotalModelCallCapsJson)}",
+            $"questionTimeoutSeconds={Render(run.QuestionTimeoutSecondsJson)}"
+        });
     }
 
     // --- Rendering and hashing ----------------------------------------------------------------
@@ -659,6 +677,54 @@ public static class BenchmarkComparabilityKey
             return Sha256Hex(string.Join(";", parts)).Substring(0, 12);
         }
         catch (JsonException)
+        {
+            return ShortHash(json);
+        }
+    }
+
+    /// <summary>
+    /// A fingerprint of the scoring profile a run was graded under, over the profile's <i>scoring
+    /// semantics</i> alone.
+    ///
+    /// <para>Read from <see cref="BenchmarkRun.ScoringProfileSnapshotJson"/> — the definition the
+    /// run was actually scored under — and never from the live profile row, which is the reason the
+    /// snapshot exists. The snapshot itself stays the full entity: the name a profile carried at
+    /// run time is correct historical data. Only what this key reads out of it is narrowed.</para>
+    ///
+    /// <para>Covered: the four dimension weights, the level-score table, the critical-error
+    /// ceiling, every second-opinion setting, the three speed constants, and question parallelism.
+    /// See <see cref="BenchmarkScoringProfileService.CanonicalSignature"/> for the exact list and
+    /// its canonical rendering.</para>
+    ///
+    /// <para>Deliberately ignored: <c>Name</c>, <c>IsDefault</c>, <c>CreatedAtUtc</c> and
+    /// <c>ModifiedAtUtc</c>. None of them can move a score, and hashing the raw snapshot blob made
+    /// all four move this key — so renaming a profile, promoting another profile to default, or
+    /// editing and reverting any field ended a comparable series with no warning anywhere in the
+    /// UI. That is the same defect <see cref="PricingSignature"/> exists to avoid, one snapshot
+    /// over: a non-semantic field inside a hashed blob costs a tier. The profile id stays in the
+    /// key beside this, because two profiles with identical semantics are still two profiles.</para>
+    ///
+    /// <para>A snapshot that will not deserialise falls back to hashing the whole string, which is
+    /// deterministic and no worse than the value it replaces — a corrupt or oddly shaped row
+    /// degrades to a blob comparison rather than matching everything.</para>
+    /// </summary>
+    private static string ScoringProfileSemanticsSignature(BenchmarkRun run)
+    {
+        string? json = run.ScoringProfileSnapshotJson;
+        if (string.IsNullOrWhiteSpace(json)) return NoValue;
+
+        try
+        {
+            var profile = JsonSerializer.Deserialize<BenchmarkScoringProfile>(json, SnapshotSerializerOptions);
+            if (profile == null) return ShortHash(json);
+
+            return Sha256Hex(BenchmarkScoringProfileService.CanonicalSignature(profile)).Substring(0, 12);
+        }
+        catch (JsonException)
+        {
+            return ShortHash(json);
+        }
+        catch (NotSupportedException)
         {
             return ShortHash(json);
         }

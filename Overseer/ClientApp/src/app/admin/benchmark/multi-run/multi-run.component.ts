@@ -14,6 +14,9 @@ import {
 import { CommonModule, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
+import { exactFilter, TableState } from '../../../shared/data-table/table-state';
+import { SortHeaderComponent } from '../../../shared/data-table/sort-header.component';
+import { TablePagerComponent } from '../../../shared/data-table/table-pager.component';
 import {
   AdminBenchmarkService,
   BenchmarkComparabilityResultDto,
@@ -97,6 +100,15 @@ export interface MultiRunSpeedStatistics {
   modelTimeP50Ms?: number | null;
   modelTimeP90Ms?: number | null;
   modelTimeMaxMs?: number | null;
+  /**
+   * Pooled over the answers carrying a time to first token, which is a subset of
+   * `pooledAnswerCount`: model time is always recorded and TTFT is not, so the two counts differ
+   * and `ttftAnswerCount` is the denominator these three percentiles belong to.
+   */
+  ttftP50Ms?: number | null;
+  ttftP90Ms?: number | null;
+  ttftMaxMs?: number | null;
+  ttftAnswerCount?: number;
   degraded?: boolean;
   degradedReason?: string | null;
   caveat?: string | null;
@@ -156,6 +168,16 @@ export interface MultiRunUsageStatistics {
   totalToolCalls: number;
   meanToolCallsPerRun?: number | null;
   toolCallStandardDeviation?: number | null;
+  /**
+   * Null rather than zero when no answer reported the counter, and a null entry in
+   * `perRunModelCalls` is a member that reported none — neither enters the mean or the SD. Input
+   * cost tracks these rather than the tool-call totals above, because every model call resends the
+   * whole conversation.
+   */
+  totalModelCalls?: number | null;
+  meanModelCallsPerRun?: number | null;
+  modelCallStandardDeviation?: number | null;
+  perRunModelCalls?: (number | null)[];
   toolCallsByFamily?: { [family: string]: number };
   toolFamilyShares?: { [family: string]: number };
   claimsSupported: number;
@@ -309,13 +331,15 @@ export const EXPLORATORY_ITEM_TEST_NOTE =
 @Component({
   selector: 'app-benchmark-multi-run',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, SortHeaderComponent, TablePagerComponent],
   templateUrl: './multi-run.component.html',
   styleUrls: ['./multi-run.component.scss']
 })
 export class MultiRunComponent implements OnInit, OnChanges {
   private benchmarkService = inject(AdminBenchmarkService);
-  private cdr = inject(ChangeDetectorRef);
+
+  /** Protected rather than private: the filter-row template calls this directly after `setFilter`. */
+  protected cdr = inject(ChangeDetectorRef);
 
   /**
    * The suite whose groups and runs are shown. Null means "no suite selected" — the panel then
@@ -339,6 +363,28 @@ export class MultiRunComponent implements OnInit, OnChanges {
   groups: BenchmarkRunGroupDto[] = [];
   loadingGroups = false;
   groupsError: string | null = null;
+
+  /**
+   * Sort, filter and page state for the analysis-group table. Created desc by default, so the
+   * newest set an operator just built is the first row without them having to look for it. Tier
+   * sorts on the comparability enum's own numeric order rather than the label — see
+   * {@link tierOrder}, which puts Tier A first on the first click — and the analysis-state filter
+   * is derived per row by {@link analysisState}.
+   */
+  readonly groupTable = new TableState<BenchmarkRunGroupDto>('createdAtUtc', 'desc').registerAccessors(
+    {
+      name: g => g.name,
+      tier: g => this.tierOrder(g.tier),
+      runCount: g => g.runCount,
+      createdAtUtc: g => new Date(g.createdAtUtc),
+      analysisDate: g => g.latestAnalysisAtUtc ? new Date(g.latestAnalysisAtUtc) : null
+    },
+    {
+      name: g => g.name,
+      tier: exactFilter(g => g.tier),
+      analysisState: exactFilter(g => this.analysisState(g))
+    }
+  );
 
   // --- Group detail ---
   selectedGroup: BenchmarkRunGroupDto | null = null;
@@ -368,6 +414,31 @@ export class MultiRunComponent implements OnInit, OnChanges {
   loadingRuns = false;
   runsError: string | null = null;
   selectedRunIds: number[] = [];
+
+  /**
+   * Sort, filter and page state for the run picker. ID desc by default, so the most recently run
+   * candidate leads. The selection column's sort key reads component state rather than the row —
+   * `isRunSelected` — which puts every ticked run first regardless of what else changes about it;
+   * the same accessor doubles as the `Show selected only` filter definition, since both are the
+   * same underlying fact about a run.
+   */
+  readonly runPickerTable = new TableState<BenchmarkRunSummaryDto>('id', 'desc').registerAccessors(
+    {
+      selected: r => this.isRunSelected(r.id) ? 0 : 1,
+      id: r => r.id,
+      testedModel: r => r.testedModelDisplayNameUsed,
+      date: r => new Date(r.startedAtUtc),
+      index: r => r.qualityIndex,
+      fingerprint: r => r.toolGuidesSha256
+    },
+    {
+      testedModel: r => r.testedModelDisplayNameUsed,
+      fingerprint: r => r.toolGuidesSha256,
+      index: exactFilter(r => r.qualityIndex != null ? 'present' : 'absent'),
+      selected: exactFilter(r => this.isRunSelected(r.id) ? 'yes' : 'no')
+    }
+  );
+
   preview: BenchmarkRunGroupTierPreviewDto | null = null;
   previewing = false;
   previewError: string | null = null;
@@ -453,7 +524,7 @@ export class MultiRunComponent implements OnInit, OnChanges {
     if (this.suiteId == null) return;
     this.loadingRuns = true;
     this.runsError = null;
-    this.benchmarkService.getRuns(this.suiteId, 50).subscribe({
+    this.benchmarkService.getRuns(this.suiteId, 200).subscribe({
       next: (runs) => {
         this.availableRuns = runs ?? [];
         this.loadingRuns = false;
@@ -465,6 +536,15 @@ export class MultiRunComponent implements OnInit, OnChanges {
         this.cdr.detectChanges();
       }
     });
+  }
+
+  /**
+   * Re-renders after a sort, page or filter change on either table. Neither `SortHeaderComponent`
+   * nor `TablePagerComponent` calls change detection itself, and this component drives its own
+   * throughout, so every `(changed)` output on both tables lands here.
+   */
+  onTableChanged(): void {
+    this.cdr.detectChanges();
   }
 
   // ---------------------------------------------------------------------------------------
@@ -495,6 +575,28 @@ export class MultiRunComponent implements OnInit, OnChanges {
     // empty box, and the content is gated on selectedGroup.
     this.cdr.detectChanges();
     this.groupDetailDialog?.nativeElement.showModal();
+  }
+
+  /**
+   * Opens a group's analysis by id, for a caller that has an id and not a row — the series
+   * progress dialog's View Report control. Searches the full group list rather than the paged
+   * table view, so a group sitting on a page the operator is not looking at still opens; falls
+   * back to fetching the group when the list does not hold it at all, which is the ordinary case
+   * when the panel is filtered to another suite.
+   */
+  openGroupById(groupId: number): void {
+    const listed = this.groups.find(g => g.id === groupId);
+    if (listed) {
+      this.openGroup(listed);
+      return;
+    }
+    this.benchmarkService.getRunGroup(groupId).subscribe({
+      next: (group) => { if (group) this.openGroup(group); },
+      error: (err) => {
+        this.groupsError = err?.error?.message || err?.error || 'Failed to load the run groups.';
+        this.cdr.detectChanges();
+      }
+    });
   }
 
   closeGroup(): void {
@@ -663,6 +765,45 @@ export class MultiRunComponent implements OnInit, OnChanges {
     this.preview = null;
     this.previewError = null;
     this.crossCondition = false;
+    this.cdr.detectChanges();
+  }
+
+  get selectedRunCount(): number {
+    return this.selectedRunIds.length;
+  }
+
+  /**
+   * Selected ids absent from the run picker's current page. Selection is by id, so it already
+   * survives paging and filtering underneath — but an operator who filtered the list down to one
+   * ticked row has no way to see the others are still selected without this count.
+   */
+  get selectedOffPageCount(): number {
+    const onPage = new Set(this.runPickerTable.view(this.availableRuns).map(r => r.id));
+    return this.selectedRunIds.filter(id => !onPage.has(id)).length;
+  }
+
+  /** Empty when nothing is selected — the line above the picker is never rendered in that case. */
+  get selectionSummary(): string {
+    const total = this.selectedRunCount;
+    if (total === 0) return '';
+    const offPage = this.selectedOffPageCount;
+    return offPage > 0
+      ? `${total} selected — ${offPage} not on this page`
+      : `${total} selected`;
+  }
+
+  get showSelectedOnly(): boolean {
+    return this.runPickerTable.filters['selected'] === 'yes';
+  }
+
+  /**
+   * Filters the picker down to the ticked runs and back. This is the one column filter driven by
+   * a toggle button rather than a text input or a select, because its two states are "selected"
+   * and "everything" rather than an open set of values — clearing it clears only this column, not
+   * the operator's text or index filters alongside it.
+   */
+  toggleShowSelectedOnly(): void {
+    this.runPickerTable.setFilter('selected', this.showSelectedOnly ? '' : 'yes');
     this.cdr.detectChanges();
   }
 
@@ -958,6 +1099,35 @@ export class MultiRunComponent implements OnInit, OnChanges {
       case 'CrossCondition': return 'Tier C — Cross-condition';
       default: return 'Not comparable';
     }
+  }
+
+  /**
+   * The comparability enum's own numeric order, mirroring `BenchmarkComparabilityTier` on the
+   * server: `NotComparable` 0 through `Replicate` 3. The label happens to sort correctly today
+   * only because the letters A/B/C were chosen to match; a renamed tier would break an
+   * alphabetical sort silently, so the table sorts on this instead.
+   *
+   * Replicate being the highest value is what puts Tier A at the top on the first click, since a
+   * newly sorted column starts descending.
+   */
+  tierOrder(tier: BenchmarkComparabilityTier | string | null | undefined): number {
+    switch (tier) {
+      case 'Replicate': return 3;
+      case 'QualityComparable': return 2;
+      case 'CrossCondition': return 1;
+      default: return 0;
+    }
+  }
+
+  /**
+   * One of three mutually exclusive, exhaustive buckets for the group table's analysis-state
+   * filter. A group with no analysis at all is `notAnalysed`; a group whose latest analysis no
+   * longer describes its current membership is `stale` rather than `analysed` — filtering to
+   * Analysed shows only a group whose stored result still matches what it contains today.
+   */
+  analysisState(group: BenchmarkRunGroupDto): 'analysed' | 'notAnalysed' | 'stale' {
+    if (group.latestAnalysisId == null) return 'notAnalysed';
+    return group.analysisStale ? 'stale' : 'analysed';
   }
 
   /**

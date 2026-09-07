@@ -508,6 +508,55 @@ Any implementation plan derived from a benchmark run must replicate this section
   instrument: reproducibility SD 0.30 means a re-run of this configuration moves the index by well
   under a point, so a future difference above ~1 point is signal rather than noise.
 
+### Runs 19–21 — 2026-09-07: GPT-5.6 Luna (second R=3 replicate set, Tier A)
+- **Candidate**: GPT-5.6 Luna. 18 questions (Suite 5). Series 3, sequential, 1 h 28 m 54 s.
+- **Prompt options**: `overseerMode: 0`, **`verboseMode: false`**, `spoilerFreeMode: false`,
+  `enableToolUse: true`, `enableWebSearch: false`, `allowSourceCodeReferences: true`,
+  `enableSubAgents: false`, `isGameOn: false`, `developerMode: false`, `hasMessageHistory: false`,
+  `hasWikiContext: false`, `hasGameSnapshot: false`. `parallelMode`: Enabled.
+- **Grading regime**: harness 12; scoring method 8; 23 of 23 comparability keys matched (Tier A).
+- **Instrument SHAs** — **identical to runs 16–18 on all three**:
+  - `CandidateSystemPromptSha256`: `bb19dc24e28755228647960efc5c6aa70cfed64262da29a4a5079181acf5753b`
+  - `ToolGuidesSha256`: `9c79137965e4fe19e5cb2faea71ed29598ff032a7f3a653d8504ffd8a91ea168`
+  - `KnowledgeBaseHeadSha`: `576ca5741d1bd79ef1cb2f7db575709cf0bb0db8`
+- **Quality**: Index **92.63**, combined 95 % interval ± 9.01 → [83.62, 100.00] (truncated).
+  Per-run 95.4 / 93.5 / 88.9. Accuracy 94.0, Completeness 86.7, Conciseness 94.7, Readability 96.1.
+  Reproducibility SD 3.34 (χ²(2) interval [1.74, 21.0]); item-sampling half-width 3.51.
+  Unstable items Q3 (25/97/97, CE rate 33 %) and Q12 (26/100/100, CE rate 0 %). Q1 pinned at 70.0,
+  SD 0.0, Completeness 55.0.
+- **Speed**: mean Speed Index 76.3 ± 3.2. Pooled over 54 answers: P50 50.7 s, P90 133.4 s,
+  max 293.6 s. Slowest medians Q18 206.3 s, Q16 125.3 s, Q15 118.2 s. TTFT not reported (H4).
+- **Cost**: $5.53 total; $1.84 ± $0.4274 per run; $0.1025 per question; $0.0199 per index point.
+  Claim verifier $2.99 (54 %), assessor $1.73 (31 %), **candidate $0.8136 (15 %, $0.2712 per run)**.
+  31 claims across 14 answers — 23 supported, **0 refuted**, 8 indeterminate.
+- **Tokens and tools**: candidate 12.04 M in / 313.5 k out (38.4 : 1), cache-read 90.9 %.
+  761 tool calls, 253.7 per run — Source 58.3 %, Wiki 38.8 %, Structured Lookup 2.5 %,
+  Knowledge Base 0.4 % (prompt-compliant per `ChatService.cs:1103`). Model calls not reported (H3).
+- **Transfer Action**: **T-A** concise default kept, confirmed a second time. **T-B** (Q1) promoted
+  to rung 1 pending the S1 rubric check — human-authored article, not an agent task. **T-C**, **T-F**
+  deferred. **T-D** verifier and assessor spend explicitly ruled not chat-transferable. **T-E**
+  blocked on H2 then H8.
+- **Verification Outcome**: no prior chat change under test. What this set verifies about the
+  instrument is that **runs 16–21 share all three SHAs**, so the two R = 3 sets are the first
+  replicate-grade reproduction pair the project has, and that the apparent tenfold jump in
+  reproducibility SD (0.30 → 3.34) is **not** evidence of an instrument change: the two χ²(2)
+  intervals overlap.
+- **Comparability warning for anyone extending this series**: until H9 ships, the `ScoringProfile`
+  key hashes the profile's `Name`, `IsDefault`, `CreatedAtUtc` and `ModifiedAtUtc`. **Renaming the
+  Standard Intelligence Index profile, or editing and reverting it, ends this comparable series**
+  without changing a single scoring rule. Fix H9 before touching the profile row.
+  - *Resolved 2026-09-07.* H9 shipped: the key now hashes
+    `BenchmarkScoringProfileService.CanonicalSignature`, computed from the profile's scoring
+    semantics only, and the profile was renamed to *Standard Intelligence Index* afterwards. The
+    warning is kept because it is what the series was measured under. Two consequences for anyone
+    extending it: **nothing that matched before stops matching** — the key is recomputed from each
+    run's stored snapshot, so narrowing it applies to every run at once — and every stored group
+    analysis should be **re-analysed** so its recorded `ComparabilityKeyHash` reflects the narrowed
+    definition. H6 shipped in the same change and widened `BudgetSignature` to cover the iteration
+    cap, the model-call cap and the question timeout, so **runs 19–21 do not share a budget key with
+    runs started afterwards**: extending this series past 2026-09-07 requires a fresh replicate set,
+    not more members appended to it.
+
 ---
 
 ## 12. Cross-References

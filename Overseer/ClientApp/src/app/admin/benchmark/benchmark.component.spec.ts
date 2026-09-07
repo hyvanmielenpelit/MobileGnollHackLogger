@@ -4072,4 +4072,106 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.dialogSeriesId).toBe(2);
     });
   });
+
+  describe('handing a group analysis from the series dialog to the multirun panel', () => {
+    beforeEach(() => fixture.detectChanges());
+
+    it('should switch to the Multi-Run Analysis tab and clear the series dialog state', () => {
+      // The panel's own fetch is not the subject here, and it would reach a service method this
+      // suite's mock does not carry.
+      spyOn(MultiRunComponent.prototype, 'openGroupById');
+      component.multiRunDialogVisible = true;
+      component.seriesDialogId = 9;
+
+      component.onOpenGroupAnalysisFromSeries(42);
+
+      expect(component.activeSubTab).toBe('multirun');
+      expect(component.multiRunDialogVisible).toBeFalse();
+      expect(component.seriesDialogId).toBeNull();
+    });
+
+    it('should hand the group id to the multirun panel once the tab has rendered it', () => {
+      const openGroupByIdSpy = spyOn(MultiRunComponent.prototype, 'openGroupById');
+
+      component.onOpenGroupAnalysisFromSeries(42);
+
+      // The panel lives inside @if (activeSubTab === 'multirun'), so it does not exist until the
+      // tab switch above has been flushed through change detection.
+      expect(component.multiRunPanel).toBeTruthy();
+      expect(openGroupByIdSpy).toHaveBeenCalledWith(42);
+    });
+  });
+
+  describe('Run History table (data-table)', () => {
+    function buildHistoryRun(overrides: Record<string, unknown> = {}): any {
+      return {
+        id: 1,
+        benchmarkSuiteId: 1,
+        suiteName: 'Default Suite',
+        testedModelDisplayNameUsed: 'Model A',
+        testedModelProviderUsed: 'Anthropic',
+        testedModelIdUsed: 'model-a',
+        assessorModelDisplayNameUsed: 'Model B',
+        status: 'Completed',
+        startedAtUtc: '2026-09-01T00:00:00Z',
+        totalAnswerDurationMs: 1000,
+        totalDurationMs: 1000,
+        speedMeasurementDegraded: false,
+        answeredQuestionCount: 5,
+        totalQuestionCount: 5,
+        candidateSystemPromptSha256: 'sha-a',
+        toolGuidesSha256: 'guide-a',
+        knowledgeBaseHeadSha: 'kb-a',
+        ...overrides
+      };
+    }
+
+    it('should default to sorting by ID, descending', () => {
+      expect(component.historyTable.sortColumn).toBe('id');
+      expect(component.historyTable.sortDirection).toBe('desc');
+    });
+
+    it('should keep instrumentChangeOf verdicts unchanged when the view is sorted', () => {
+      component.historyRuns = [
+        buildHistoryRun({ id: 3, startedAtUtc: '2026-09-03T00:00:00Z', candidateSystemPromptSha256: 'sha-b' }),
+        buildHistoryRun({ id: 2, startedAtUtc: '2026-09-02T00:00:00Z', status: 'Running' }),
+        buildHistoryRun({ id: 1, startedAtUtc: '2026-09-01T00:00:00Z' })
+      ];
+
+      const before = component.instrumentChangeOf(component.historyRuns[0]);
+      expect(before).toBeTruthy();
+      expect(before?.comparedToRunId).toBe(1);
+
+      // historyView is a new sorted array; historyRuns itself — which instrumentChangeOf and
+      // completedRunsOfSelectedSuite both read by position — must not move under it.
+      expect(component.historyView.map(r => r.id)).toEqual([3, 2, 1]);
+      component.historyTable.toggleSort('startedAtUtc');
+      component.historyTable.toggleSort('startedAtUtc');
+      expect(component.historyView.map(r => r.id)).toEqual([1, 2, 3]);
+
+      const after = component.instrumentChangeOf(component.historyRuns[0]);
+      expect(after).toEqual(before);
+    });
+
+    it('should derive the Status filter options from the statuses present in the history', () => {
+      component.historyRuns = [
+        buildHistoryRun({ id: 1, status: 'Completed' }),
+        buildHistoryRun({ id: 2, status: 'CompletedWithLimits' }),
+        buildHistoryRun({ id: 3, status: 'Completed' })
+      ];
+
+      expect(component.historyStatusOptions).toEqual(['Completed', 'Completed with limits']);
+    });
+
+    it('should page and filter the view without touching historyRuns', () => {
+      const runs = Array.from({ length: 3 }, (_, i) => buildHistoryRun({ id: i + 1, suiteName: `Suite ${i + 1}` }));
+      component.historyRuns = runs;
+
+      component.historyTable.setFilter('suiteName', 'Suite 2');
+
+      expect(component.historyView.map(r => r.id)).toEqual([2]);
+      expect(component.historyRuns).toBe(runs);
+      expect(component.historyRuns.length).toBe(3);
+    });
+  });
 });

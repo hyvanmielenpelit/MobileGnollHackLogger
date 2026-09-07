@@ -457,12 +457,17 @@ On completion with two or more successful members, a `BenchmarkRunGroup` is crea
 
 | Tier | Meaning | Pooling |
 |---|---|---|
-| **A — Replicate** | Every key matches: suite **and every question's item revision**; the full candidate specification and prompt options; all three instrument hashes; harness and scoring-method versions; scoring profile **and its snapshot**; assessor, second-opinion and claim-verifier configurations; per-question budgets; question parallelism | **Yes** — the only tier at which a pooled index is sound |
+| **A — Replicate** | Every key matches: suite **and every question's item revision**; the full candidate specification and prompt options; all three instrument hashes; harness and scoring-method versions; scoring profile **and its canonical scoring-semantics signature**; assessor, second-opinion and claim-verifier configurations; per-question budgets **(tool-call budget, iteration cap, model-call cap and question timeout, all four bands)**; question parallelism | **Yes** — the only tier at which a pooled index is sound |
 | **B — Quality-comparable** | Tier A relaxed on question parallelism and the pricing snapshot, which affect speed and cost only | Quality yes; **speed and cost aggregates carry a degraded flag** |
 | **C — Cross-condition** | Candidate identical, exactly one instrument key deliberately moved | **Never.** Such a set is two groups, and the tool's job is to *compare* them |
 | Below B | The runs measure different things | No aggregate over them means anything |
 
-The scoring profile is keyed by its **snapshot**, not its id, because scoring method 8 edits the default profile in place. Item revisions are keyed because a rubric edit changes the answer key — which is exactly what the Rubric Gap Author does on purpose.
+The scoring profile is keyed by its **canonical scoring-semantics signature** (see § 9), not its
+raw snapshot and not its id alone, because scoring method 8 edits the default profile in place and
+because a non-semantic field inside that snapshot — the profile's name, its default flag, or its
+timestamps — must not be able to end a comparable series by itself. Item revisions are keyed
+because a rubric edit changes the answer key — which is exactly what the Rubric Gap Author does on
+purpose.
 
 The resolver returns, for a set that fails a tier, **which keys differ and on which runs**. A boolean verdict with no reason is unusable in a dialog or a bug report, so the reasons travel to the UI, into the group's `TierReasonsJson`, and into the copyable diagnostics.
 
@@ -480,6 +485,55 @@ Two points the report and the UI both state explicitly, because both are misread
 - **Multi-run cannot separate candidate noise from grader noise.** Run-to-run variance mixes the two, because each run produces a new answer graded once. Separating them requires re-grading identical answers (`SecondOpinionMode = All`, or a re-assessment pass); `FlaggedPlusSample` is the partial answer. Without this stated, an operator will attribute item instability to the model when it may be the grader.
 
 Per-item differences in a group comparison are **exploratory, under Benjamini–Hochberg FDR control**, and labelled as such everywhere they appear. Eighteen simultaneous item tests without correction would manufacture findings.
+
+#### What the group report adds: per-run scores, TTFT, model calls, the reproducibility interval
+
+`BenchmarkGroupReportBuilder` numbers its sections with a running counter, so the references below
+(§2.1, §4, §5, §7) are **that report's own headings**, not this document's:
+
+- **§2.1 — the reproducibility SD's own interval.** Beside the point estimate, the report states the
+  reproducibility standard deviation's own 95 % confidence interval on σ itself, from the
+  χ²(*R*−1) distribution, tabulated for *R*−1 = 2 through 19 (*R* = 3 through 20). Null below
+  *R* = 3, where there is no SD to bound, and null above *R* = 20, where the warning it carries no
+  longer applies. At *R* = 3 the upper bound is roughly **6.3×** the point estimate, so **two
+  groups' SDs are not comparable point estimates**: a set reporting an SD ten times another's can
+  have an interval that overlaps it completely, and a reader who compares the bare numbers will
+  conclude the instrument became ten times less reproducible when nothing measurable did.
+- **§4 — per-run scores, and two kinds of unstable item.** The Per-Item Statistics table gains a
+  **Per-run scores** column rendering each item's scores in run-id order (e.g. `25 / 97 / 97`),
+  with that order stated once under the table; an item whose score and run-id vectors disagree in
+  length renders `—` rather than a mispaired list. Unstable items split into two kinds: **unstable
+  because the critical-error ceiling tripped in some runs and not others** (critical-error rate
+  strictly between 0 and 1 — the SD is the ceiling moving rather than a score earned differently,
+  and the item's Accuracy mean sits well above its total mean), rendered `unstable — ceiling`; and
+  **unstable with a critical-error rate of 0**, earned on the rubric itself. The two look identical
+  in the table without this split and are entirely different problems — a rubric that cannot
+  decide a borderline case, versus an answer that genuinely varies.
+- **§5 — pooled time to first token.** A pooled TTFT line (P50 / P90 / max) sits beside the pooled
+  model-time line, over its own answer count — kept separate from the model-time count because TTFT
+  is nullable where model time is not. This is the latency a chat user actually waits through; a
+  production speed claim rests on this line, not on model time, which a thinking-heavy
+  configuration can dominate without moving TTFT at all.
+- **§7 — model calls, and the claim verifier's yield as arithmetic.** Beside the tool-call block,
+  the report carries total and per-run **model calls**, with the point that **input cost tracks
+  model calls, not tool calls**: every model call resends the whole conversation, so two tools
+  batched into one call pay the input once and the same two tools in two calls pay it twice. Where
+  claim verification ran, a Claim Verification Yield block reports cost per claim checked, cost per
+  refutation (stated as "this ratio does not exist" when there were no refutations, rather than as
+  a zero or an infinity), and the indeterminate share.
+- **§1.1 correction — the *Chat Prompt Under Test* batching line is now three-way.** `Disabled` and
+  `OnRequest` each name the override file they select (`_policy_parallel_disabled.md` /
+  `_policy_parallel_on_request.md`); **`Enabled` selects no override file, and the batching
+  guidance already in `Overseer/ToolGuides/_policy.md` applies unchanged.** The line previously
+  claimed `Enabled` selected `_policy_parallel_on_request.md`, which is prompt text the prompt
+  never contained.
+
+Every field above is computed from data the run already stored — no migration, no backfill.
+Because the statistics live in the persisted `BenchmarkGroupAnalysis.ResultJson` rather than being
+recomputed on every read, **a group analysis computed before these fields existed still renders
+the new lines as `—`, not as a missing section, until Run Analysis is pressed again.** An absent
+value renders as an em dash rather than as a zero deliberately: a stale analysis reporting "0
+model calls" would be a false statement about a run that made calls nobody has counted yet.
 
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).
@@ -993,6 +1047,64 @@ The cap keys are **flat values** since harness 13 (`Benchmark:ToolCallBudget`, `
 The 3x factor is empirical, not arbitrary: on the 2026-09-03 run a single Advanced question executed up to **39** tool calls (Q13 and Q18, each 39 of 45), so a session budget has to cover several such questions rather than one. At the old default of 50, the second hard question in a session was refused mid-investigation with "Maximum tool calls per session exceeded."
 
 Both chat values remain user-adjustable in `/settings`; these are the defaults for a user who has never changed them. `MaxResultLength` already agreed at 10,000 on both sides, and chat's `ChatRequestTimeout` (1,800 s) already exceeds the Advanced band's per-question timeout (720 s).
+
+### Comparability Across Runs: The Budget Key Widened, the Scoring-Profile Key Narrowed
+
+`BenchmarkComparabilityKey` resolves whether a set of runs may be pooled (§ 2's Multi-Run
+Replicate Sets). Two of its keys changed, in opposite directions, and both bear directly on the
+caps this section documents.
+
+**The budget key widened.** `BenchmarkComparabilityKey.BudgetSignature` previously covered only
+`MaxToolCallsPerQuestionUsed`, so two runs straddling a change to any of the other three caps —
+the tool-iteration cap, the total model-call cap, or the per-question timeout — still resolved
+Tier A, even though these very caps had already changed once (banded → flat, after run 13, as
+above). `BenchmarkRun` now carries three nullable snapshot columns, written at run start from the
+same configuration read the per-question path uses: `ToolIterationCapsJson`,
+`TotalModelCallCapsJson`, `QuestionTimeoutSecondsJson`. Each is canonical per-band JSON with a
+fixed key order and invariant-culture numbers — `{"Simple":22,"Intermediate":22,"Advanced":22}` —
+so the comparability text is byte-stable; a flat cap renders its single figure under all three
+band keys, which is literally what applied to every band, and the same shape survives a future
+re-banding with no schema change. `BudgetSignature` now covers all four caps. Runs recorded before
+the three columns existed render `(none)` for them, so they match each other and differ from newer
+runs — correctly, because for those runs the harness genuinely does not know what caps applied.
+**Operator-facing consequence: a group mixing runs from before and after a cap change now
+correctly drops below Tier A.** That is the fix working, not a regression.
+
+**The scoring-profile key narrowed.** `BenchmarkRun.ScoringProfileSnapshotJson` stores the whole
+serialised profile entity — including `Name`, `IsDefault`, `CreatedAtUtc` and `ModifiedAtUtc` —
+and the comparability key used to hash that entire blob. None of those four fields can move a
+score, and all four moved the hash: renaming a profile, promoting a different profile to default,
+or editing a field and reverting it each silently ended a comparable series with nothing in the
+UI saying so. The key now hashes `BenchmarkScoringProfileService.CanonicalSignature`, computed
+only from the profile's *scoring semantics* — the four dimension weights, a normalised
+`LevelScoresJson`, `CriticalErrorCeiling`, the five second-opinion fields, the three speed
+constants, and `MaxParallelQuestions` — deserialised from the stored snapshot, falling back to a
+hash of the raw blob when the snapshot will not deserialise. The profile id still travels alongside
+this signature in the key, because two profiles with identical scoring semantics are still two
+profiles. `ScoringProfileSnapshotJson` itself is unchanged: it remains the historical record of
+what the profile actually was.
+
+Two consequences worth stating plainly: **nothing that matched before stops matching** — the key
+is recomputed from each run's stored snapshot at comparison time, with no key hash stored on the
+run itself, so narrowing what it reads applies uniformly to every run, past and future. And
+because the key's rendered value changed, **any already-stored `BenchmarkGroupAnalysis` reads as
+stale and should be re-analysed**, so its recorded comparability-key hash reflects the narrowed
+definition.
+
+This is the second time a non-semantic field inside a hashed snapshot has made a tier spuriously
+unreachable — the first was `PricingSnapshot`'s `capturedAtUtc` (Sentry OVERSEER-8, § 2). When a
+field is added to `BenchmarkScoringProfile` in the future, `CanonicalSignature` must be updated
+with it, or the same defect recurs a third time.
+
+**The default profile was also renamed**, from `Standard Intelligence Index (Default)` to
+`Standard Intelligence Index`, by a migration data step matching that exact name (the seed itself
+had always written the clean name — the suffix was a stored anomaly rather than the intended
+value). The badge beside the profile heading already states that it is the default, so the suffix
+said so twice. Historical runs display the *live* profile name, so they now show the clean name
+too — correctly, since it is the same profile — while each run's own `ScoringProfileSnapshotJson`
+keeps the old, suffixed name verbatim, as history requires. This rename was only safe to make
+**after** the comparability key stopped hashing `Name`: renaming the row before this fix would
+itself have ended every comparable series that used the default profile.
 
 ---
 

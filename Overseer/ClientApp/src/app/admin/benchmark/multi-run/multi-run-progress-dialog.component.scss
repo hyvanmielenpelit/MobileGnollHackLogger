@@ -632,7 +632,7 @@
 
 /* The report button stays focusable while unavailable (aria-disabled, not disabled), because its
    tooltip is what explains why. The dimming is a second signal, never the only one. */
-.download-report-btn.is-unavailable {
+.view-report-btn.is-unavailable {
   opacity: 0.55;
   cursor: not-allowed;
 }

@@ -9,7 +9,7 @@
       <div class="dialog-title-group">
         <h3 id="multiRunProgressDialogTitle">Benchmark Series #{{ series?.id ?? seriesId }}</h3>
         <p class="dialog-subtitle">
-          {{ series?.suiteName }} | {{ series?.requestedRunCount ?? 0 }} run(s)
+          {{ series?.suiteName }} | {{ series?.requestedRunCount ?? 0 }} runs
         </p>
       </div>
       <button type="button" class="btn-icon-action"
@@ -400,23 +400,23 @@
 
       <!-- aria-disabled rather than disabled: a disabled button cannot be focused, and the whole
            point of the tooltip is to tell an operator why the report is not available yet. -->
-      <button type="button" class="btn-gh download-report-btn"
-              [class.is-unavailable]="!canDownloadReport"
-              [attr.aria-disabled]="canDownloadReport ? null : 'true'"
-              interestfor="tip-download-group-report"
-              style="anchor-name: --tip-download-group-report"
-              (click)="downloadGroupReport()">
+      <button type="button" class="btn-gh view-report-btn"
+              [class.is-unavailable]="!canViewReport"
+              [attr.aria-disabled]="canViewReport ? null : 'true'"
+              interestfor="tip-view-group-report"
+              style="anchor-name: --tip-view-group-report"
+              (click)="viewGroupReport()">
         <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
              viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-          <polyline points="7 10 12 15 17 10"></polyline>
-          <line x1="12" y1="15" x2="12" y2="3"></line>
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+          <polyline points="15 3 21 3 21 9"></polyline>
+          <line x1="10" y1="14" x2="21" y2="3"></line>
         </svg>
-        Download report
+        View Report
       </button>
-      <div popover="hint" class="gh-tooltip" id="tip-download-group-report"
-           style="position-anchor: --tip-download-group-report">{{ downloadReportTooltip }}</div>
+      <div popover="hint" class="gh-tooltip" id="tip-view-group-report"
+           style="position-anchor: --tip-view-group-report">{{ viewReportTooltip }}</div>
     </div>
   </div>
 </dialog>

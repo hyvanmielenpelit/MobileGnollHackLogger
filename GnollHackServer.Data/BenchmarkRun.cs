@@ -515,6 +515,31 @@ public class BenchmarkRun
 
     public int? MaxToolCallsPerQuestionUsed { get; set; }
 
+    /// <summary>
+    /// The sequential tool-round cap that applied to this run, as canonical JSON over every
+    /// difficulty band: <c>{"Simple":n,"Intermediate":n,"Advanced":n}</c>, bands in that order.
+    /// The whole band table rather than one resolved figure, because a question takes its caps from
+    /// the band its assessed difficulty falls in and one run spans several bands. Null for runs
+    /// recorded before these caps were snapshotted; for those the harness does not know what
+    /// applied.
+    /// </summary>
+    [MaxLength(256)]
+    public string? ToolIterationCapsJson { get; set; }
+
+    /// <summary>
+    /// The total provider-request cap that applied to this run, per difficulty band, in the same
+    /// canonical JSON shape as <see cref="ToolIterationCapsJson"/>.
+    /// </summary>
+    [MaxLength(256)]
+    public string? TotalModelCallCapsJson { get; set; }
+
+    /// <summary>
+    /// The per-question wall-clock timeout in seconds that applied to this run, per difficulty
+    /// band, in the same canonical JSON shape as <see cref="ToolIterationCapsJson"/>.
+    /// </summary>
+    [MaxLength(256)]
+    public string? QuestionTimeoutSecondsJson { get; set; }
+
     [MaxLength(32)]
     public string? HarnessVersion { get; set; }
 

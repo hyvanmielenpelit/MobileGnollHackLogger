@@ -256,10 +256,6 @@ public static class BenchmarkGroupReportBuilder
             return;
         }
 
-        string policyFile = prompt.ParallelMode == MobileGnollHackLogger.Data.ParallelExecutionMode.Disabled
-            ? "_policy_parallel_disabled.md"
-            : "_policy_parallel_on_request.md";
-
         sb.AppendLine($"- **Mode:** {(prompt.OverseerMode == 0 ? "Gameplay Help" : $"Mode {prompt.OverseerMode}")} · " +
                       $"**Response style:** {(prompt.VerboseMode ? "detailed (`verboseMode: true`)" : "concise (`verboseMode: false`)")}");
         sb.AppendLine($"- **Tools:** {OnOff(prompt.EnableToolUse, "enabled", "disabled")} · " +
@@ -272,7 +268,7 @@ public static class BenchmarkGroupReportBuilder
                       $"**Message history:** {OnOff(prompt.HasMessageHistory, "yes", "no")}");
         sb.AppendLine($"- **Pre-injected wiki context:** {OnOff(prompt.HasWikiContext, "yes", "no")} · " +
                       $"**Game snapshot:** {OnOff(prompt.HasGameSnapshot, "yes", "no")}");
-        sb.AppendLine($"- **Tool batching policy:** {prompt.ParallelMode} — selects `Overseer/ToolGuides/{policyFile}`, so this is part of the prompt text.");
+        sb.AppendLine($"- **Tool batching policy:** {prompt.ParallelMode} — {ParallelPolicyDescription(prompt.ParallelMode)}");
         sb.AppendLine();
 
         sb.AppendLine(prompt.Divergent
@@ -289,6 +285,21 @@ public static class BenchmarkGroupReportBuilder
 
     private static string OnOff(bool value, string whenTrue, string whenFalse)
         => value ? whenTrue : whenFalse;
+
+    /// <summary>
+    /// What <see cref="Overseer.Services.Tools.ToolRegistry.GetParallelOverrideText"/> actually
+    /// selects for a given mode, in report prose. <c>Enabled</c> loads no override file; the
+    /// batching guidance in <c>Overseer/ToolGuides/_policy.md</c> still applies unchanged.
+    /// </summary>
+    private static string ParallelPolicyDescription(MobileGnollHackLogger.Data.ParallelExecutionMode mode) => mode switch
+    {
+        MobileGnollHackLogger.Data.ParallelExecutionMode.Disabled =>
+            "selects `Overseer/ToolGuides/_policy_parallel_disabled.md`, so this is part of the prompt text.",
+        MobileGnollHackLogger.Data.ParallelExecutionMode.OnRequest =>
+            "selects `Overseer/ToolGuides/_policy_parallel_on_request.md`, so this is part of the prompt text.",
+        _ =>
+            "selects no override file; the batching guidance in `Overseer/ToolGuides/_policy.md` applies unchanged."
+    };
 
     private static string Short(string? sha)
         => string.IsNullOrWhiteSpace(sha) ? "—" : (sha.Length <= 8 ? sha : sha[..8]);
@@ -330,6 +341,24 @@ public static class BenchmarkGroupReportBuilder
             $"| {Inv(ix.ItemSamplingHalfWidth)} " +
             "| **No** |");
         sb.AppendLine();
+
+        // The SD's own interval. Without it a reader compares one group's 0.30 against another's
+        // 3.34 as though both were measurements and concludes the instrument became ten times less
+        // reproducible, when the two intervals overlap and nothing measurable changed.
+        if (ix.ReproducibilityStandardDeviation.HasValue
+            && ix.ReproducibilitySdLower.HasValue
+            && ix.ReproducibilitySdUpper.HasValue)
+        {
+            double sd = ix.ReproducibilityStandardDeviation.Value;
+            string factor = sd > 0.0
+                ? Inv(ix.ReproducibilitySdUpper.Value / sd, "F1")
+                : "—";
+
+            sb.AppendLine($"**The reproducibility SD is itself an estimate, and it carries its own interval:** SD {Inv(sd)}, 95 % interval on σ [{Inv(ix.ReproducibilitySdLower)}, {Inv(ix.ReproducibilitySdUpper)}], from the χ²({ix.RunCount - 1}) distribution.");
+            sb.AppendLine();
+            sb.AppendLine($"At *R* = {ix.RunCount} the upper bound is {factor} × the point estimate, so **two groups' SDs are not comparable point estimates.** A set reporting an SD ten times another's can have an interval that overlaps it completely: the instrument did not become ten times less reproducible, and a reader comparing the two bare numbers across reports will conclude that it did. Compare the intervals, or add runs until the SD is worth comparing.");
+            sb.AppendLine();
+        }
 
         if (!ix.ReproducibilityAvailable)
         {
@@ -437,8 +466,8 @@ public static class BenchmarkGroupReportBuilder
         sb.AppendLine();
         sb.AppendLine("Quality score per item across the group's runs. *CV* is SD / mean; *CE rate* is the share of runs in which the assessor flagged a critical error on this item. An interval marked † was truncated at the score bound.");
         sb.AppendLine();
-        sb.AppendLine("| Q | Runs | Mean | Median | SD | Min | Max | IQR | CV | 95 % CI | CE rate | Stability | Question |");
-        sb.AppendLine("|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---|---|");
+        sb.AppendLine("| Q | Runs | Per-run scores | Mean | Median | SD | Min | Max | IQR | CV | 95 % CI | CE rate | Stability | Question |");
+        sb.AppendLine("|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---|---|");
 
         foreach (var item in result.Items.OrderBy(i => i.OrderIndex))
         {
@@ -447,13 +476,28 @@ public static class BenchmarkGroupReportBuilder
                   + (item.MeanConfidenceTruncated ? " †" : string.Empty)
                 : "—";
 
+            // Scores and run ids are positionally aligned. Rendered only when they agree in length:
+            // a mis-paired score column would name the wrong run as the one that collapsed, which is
+            // worse than naming none.
+            string perRunScores = item.Scores.Count > 0 && item.Scores.Count == item.RunIds.Count
+                ? string.Join(" / ", item.Scores.Select(s => Inv(s, "F0")))
+                : "—";
+
+            // An unstable item whose critical-error verdict moved across runs is a ceiling problem,
+            // not a dimensional one, and the two demand opposite responses.
+            bool ceilingDriven = item.Unstable
+                && item.CriticalErrorRate > 0.0 && item.CriticalErrorRate < 1.0;
+
             string stability = item.InsufficientRuns
                 ? "n/a"
-                : item.Unstable ? "**unstable**" : "stable";
+                : item.Unstable
+                    ? (ceilingDriven ? "**unstable — ceiling**" : "**unstable**")
+                    : "stable";
 
             sb.AppendLine(
                 $"| {item.OrderIndex} " +
                 $"| {item.RunCount} " +
+                $"| {perRunScores} " +
                 $"| {Inv(item.Mean, "F1")} " +
                 $"| {Inv(item.Median, "F1")} " +
                 $"| {Inv(item.StandardDeviation, "F1")} " +
@@ -468,11 +512,39 @@ public static class BenchmarkGroupReportBuilder
         }
         sb.AppendLine();
 
+        // The order is stated once, under the table. Without it the score vector cannot be read
+        // back to a run, which is the whole point of carrying it.
+        if (result.RunIds.Count > 0)
+        {
+            sb.AppendLine($"*Per-run scores are in run-id order: {string.Join(", ", result.RunIds)}. An item answered by fewer runs than the group holds carries only the runs that answered it, in that same order; a `—` means the two vectors disagreed in length and no pairing could be trusted.*");
+            sb.AppendLine();
+        }
+
         var unstable = result.Items.Where(i => i.Unstable).OrderBy(i => i.OrderIndex).ToList();
         if (unstable.Count > 0)
         {
             sb.AppendLine($"**Unstable items ({unstable.Count}):** {string.Join(", ", unstable.Select(i => "Q" + i.OrderIndex))}. These are the items where a single run's verdict is least trustworthy — which is a suite-health signal as much as a model one: an item whose rubric cannot decide a borderline answer will swing between runs no matter which model answers it.");
             sb.AppendLine();
+
+            // The two kinds of instability the table cannot tell apart on its own.
+            var ceilingUnstable = unstable
+                .Where(i => i.CriticalErrorRate > 0.0 && i.CriticalErrorRate < 1.0)
+                .ToList();
+            var dimensionalUnstable = unstable
+                .Where(i => i.CriticalErrorRate <= 0.0)
+                .ToList();
+
+            if (ceilingUnstable.Count > 0)
+            {
+                sb.AppendLine($"**Unstable because the critical-error ceiling tripped in some runs and not others:** {string.Join(", ", ceilingUnstable.Select(i => $"Q{i.OrderIndex} ({i.CriticalErrorCount}/{i.RunCount} runs)"))}. On these the SD is the ceiling moving, not a score earned differently on the dimensions — expect the item's Accuracy mean to sit well above its total mean, and read the gap as the ceiling rather than as the prose.");
+                sb.AppendLine();
+
+                if (dimensionalUnstable.Count > 0)
+                {
+                    sb.AppendLine($"**Unstable with the critical-error rate at 0, so earned on the dimensions:** {string.Join(", ", dimensionalUnstable.Select(i => "Q" + i.OrderIndex))}. A low run here scored low on the rubric itself, with no ceiling involved. The two groups of items look identical in the table above and are entirely different problems: one is a rubric that cannot decide a borderline case, the other an answer that genuinely varies.");
+                    sb.AppendLine();
+                }
+            }
         }
 
         var borderlineCriticals = result.Items
@@ -519,6 +591,19 @@ public static class BenchmarkGroupReportBuilder
         sb.AppendLine($"- **Per-run Speed Indices:** {string.Join(", ", sp.PerRunSpeedIndices.Select(v => Inv(v, "F0")))}");
         sb.AppendLine($"- **Pooled per-answer model time** over {sp.PooledAnswerCount} answers — P50 {Seconds(sp.ModelTimeP50Ms)}, P90 {Seconds(sp.ModelTimeP90Ms)}, max {Seconds(sp.ModelTimeMaxMs)}");
         sb.AppendLine("  - Pooled across all *R* × *Q* cells rather than averaged per run: the question is what a single slow turn looks like, and a mean of per-run medians cannot answer it.");
+
+        // Time to first token is the latency a chat user perceives, and it carries its own
+        // denominator because the per-answer figure is nullable where model time is not.
+        if (sp.TtftAnswerCount > 0 && sp.TtftP50Ms.HasValue)
+        {
+            sb.AppendLine($"- **Pooled time to first token** over {sp.TtftAnswerCount} answers — P50 {Seconds(sp.TtftP50Ms)}, P90 {Seconds(sp.TtftP90Ms)}, max {Seconds(sp.TtftMaxMs)}");
+            sb.AppendLine("  - This is the latency a chat user actually waits through, and a thinking-heavy configuration dominates the model time above without touching it. A production speed claim rests on this line rather than on the one before it.");
+        }
+        else
+        {
+            sb.AppendLine("- **Pooled time to first token:** — *no member answer recorded one, so no figure is reported rather than a zero. Time to first token is the latency a chat user perceives, so a set without it cannot support a production speed claim.*");
+        }
+
         sb.AppendLine();
         sb.AppendLine($"> {sp.Caveat}");
         sb.AppendLine();
@@ -661,6 +746,22 @@ public static class BenchmarkGroupReportBuilder
             sb.AppendLine();
         }
 
+        if (usage.TotalModelCalls.HasValue)
+        {
+            sb.AppendLine($"**Model calls:** {usage.TotalModelCalls.Value} across {usage.RunCount} runs" +
+                          (usage.MeanModelCallsPerRun.HasValue ? $", {Inv(usage.MeanModelCallsPerRun, "F1")} per run" : string.Empty) +
+                          (usage.ModelCallStandardDeviation.HasValue ? $" (SD {Inv(usage.ModelCallStandardDeviation, "F1")})" : string.Empty) + ".");
+            sb.AppendLine($"- **Per-run model calls:** {string.Join(", ", usage.PerRunModelCalls.Select(c => c.HasValue ? c.Value.ToString(CultureInfo.InvariantCulture) : "—"))}");
+            sb.AppendLine();
+            sb.AppendLine("> **Input cost tracks model calls, not tool calls.** Every model call resends the whole conversation, so two tools batched into one call pay the input once and the same two tools in two calls pay it twice. A rising tool-call count beside a flat model-call count is cheaper rather than more expensive, and neither figure can be read for cost without the other.");
+            sb.AppendLine();
+        }
+        else
+        {
+            sb.AppendLine("**Model calls:** — *no member answer recorded a model-call count, so none is reported rather than a zero. Input cost tracks model calls rather than tool calls, so this set cannot show whether its input growth came from more calls or from a larger context.*");
+            sb.AppendLine();
+        }
+
         if (usage.ClaimsChecked > 0 || usage.AnswersWithVerification > 0)
         {
             sb.AppendLine($"**Claim verification:** {usage.ClaimsChecked} claims checked across {usage.AnswersWithVerification} answers — " +
@@ -668,9 +769,68 @@ public static class BenchmarkGroupReportBuilder
             sb.AppendLine();
             sb.AppendLine("Read this beside the verifier's share of the cost table above: it is what that spend bought. A verifier that refutes nothing across a whole replicate set is either confirming the candidate is accurate or failing to test it, and the claim count is what separates those.");
             sb.AppendLine();
+
+            AppendVerifierYield(sb, usage, result.Cost);
         }
 
         sb.AppendLine("---");
+        sb.AppendLine();
+    }
+
+    /// <summary>The cost role the claim verifier's spend is keyed under.</summary>
+    private const string ClaimVerifierCostRole = "claimVerifier";
+
+    /// <summary>
+    /// The verifier's yield as division rather than as two counts placed side by side.
+    ///
+    /// <para>A section that shows the verifier taking half the spend and, separately, that it refuted
+    /// nothing, has stated everything and concluded nothing. The ratios are what make the trade
+    /// legible — and a zero denominator is said in words, because <c>∞</c>, <c>0</c> and a blank all
+    /// read as a measurement.</para>
+    /// </summary>
+    private static void AppendVerifierYield(
+        StringBuilder sb,
+        BenchmarkGroupUsageStatistics usage,
+        BenchmarkGroupCostStatistics? cost)
+    {
+        double? verifierCost = null;
+        if (cost != null && cost.TotalCostByRole.TryGetValue(ClaimVerifierCostRole, out double resolved))
+        {
+            verifierCost = resolved;
+        }
+
+        sb.AppendLine("**What that spend bought, as arithmetic:**");
+        sb.AppendLine();
+
+        if (usage.ClaimsChecked <= 0)
+        {
+            sb.AppendLine("- **Cost per claim checked:** no claims were checked, so this ratio does not exist.");
+        }
+        else if (verifierCost.HasValue)
+        {
+            sb.AppendLine($"- **Cost per claim checked:** {Money(verifierCost.Value / usage.ClaimsChecked)} — {Money(verifierCost)} over {usage.ClaimsChecked} claims.");
+        }
+        else
+        {
+            sb.AppendLine($"- **Cost per claim checked:** — the verifier's cost is not resolvable for this group, so the {usage.ClaimsChecked} claims cannot be priced.");
+        }
+
+        if (usage.ClaimsRefuted <= 0)
+        {
+            sb.AppendLine("- **Cost per refutation:** no refutations, so this ratio does not exist. Every dollar the verifier spent bought a confirmation or a non-answer.");
+        }
+        else if (verifierCost.HasValue)
+        {
+            sb.AppendLine($"- **Cost per refutation:** {Money(verifierCost.Value / usage.ClaimsRefuted)} — {Money(verifierCost)} over {usage.ClaimsRefuted} refutation(s).");
+        }
+        else
+        {
+            sb.AppendLine($"- **Cost per refutation:** — {usage.ClaimsRefuted} refutation(s), but the verifier's cost is not resolvable for this group.");
+        }
+
+        sb.AppendLine(usage.ClaimsChecked > 0
+            ? $"- **Indeterminate share:** {Inv(usage.ClaimsIndeterminate * 100.0 / usage.ClaimsChecked, "F1")} % — {usage.ClaimsIndeterminate} of {usage.ClaimsChecked}. A claim the verifier could not decide cost what a decided one cost and settled nothing, so this share is the part of the spend that bought no verdict."
+            : "- **Indeterminate share:** no claims were checked, so there is no share to report.");
         sb.AppendLine();
     }
 

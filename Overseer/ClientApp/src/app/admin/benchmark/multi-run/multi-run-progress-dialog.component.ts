@@ -69,6 +69,10 @@ interface GroupStatisticsResultShape {
     criticalErrorRate?: number;
     unstable?: boolean;
     insufficientRuns?: boolean;
+    /** The item's per-run scores, positionally aligned with `runIds`. */
+    scores?: number[];
+    /** The runs `scores` came from, in the same order. */
+    runIds?: number[];
   }>;
   index?: {
     runCount?: number;
@@ -164,6 +168,13 @@ export class MultiRunProgressDialogComponent implements OnInit, OnChanges, OnDes
    * closes this dialog and opens the existing single-run dialog on that run.
    */
   @Output() openRunProgress = new EventEmitter<number>();
+
+  /**
+   * The **group id** whose multi-run analysis the operator asked to view. The host closes this
+   * dialog and switches to the Multi-Run Analysis tab on that group — the dialog hands off rather
+   * than embedding, because two native modals in the top layer trap focus between them.
+   */
+  @Output() openGroupAnalysis = new EventEmitter<number>();
 
   @ViewChild('multiRunProgressDialog') dialog?: ElementRef<HTMLDialogElement>;
   @ViewChild('multiRunProgressHeading') heading?: ElementRef<HTMLElement>;
@@ -649,13 +660,13 @@ export class MultiRunProgressDialogComponent implements OnInit, OnChanges, OnDes
     return reason ? `Continue — ${reason}` : 'Continue';
   }
 
-  get canDownloadReport(): boolean {
+  get canViewReport(): boolean {
     return this.series?.autoCreatedGroupId != null && !!this.groupAnalysis;
   }
 
-  get downloadReportTooltip(): string {
-    if (this.canDownloadReport) {
-      return 'Download the multi-run Markdown report';
+  get viewReportTooltip(): string {
+    if (this.canViewReport) {
+      return 'Open the multi-run analysis for this series';
     }
     if (this.series?.autoCreatedGroupId == null) {
       return 'No analysis group exists for this series yet — a group is created once two or more members complete.';
@@ -733,12 +744,17 @@ export class MultiRunProgressDialogComponent implements OnInit, OnChanges, OnDes
     this.requestClose();
   }
 
-  /** Same call `downloadReport` makes for a single run, so the two read as one feature. */
-  downloadGroupReport(): void {
-    if (!this.canDownloadReport) return;
+  /**
+   * Hands the operator to the multi-run analysis for this series rather than embedding it here:
+   * two native modals in the top layer trap focus between them, the same reason
+   * `openMemberRunProgress` closes this dialog before opening the single-run one.
+   */
+  viewGroupReport(): void {
+    if (!this.canViewReport) return;
     const groupId = this.series?.autoCreatedGroupId;
     if (groupId == null) return;
-    window.open(this.benchmarkService.getGroupReportUrl(groupId), '_blank');
+    this.openGroupAnalysis.emit(groupId);
+    this.requestClose();
   }
 
   // -------------------------------------------------------------------------------------------
@@ -836,6 +852,21 @@ export class MultiRunProgressDialogComponent implements OnInit, OnChanges, OnDes
 
   private num(value: number | null | undefined, digits = 2): string {
     return value == null || Number.isNaN(value) ? 'n/a' : value.toFixed(digits);
+  }
+
+  /**
+   * `run #<id>=<score>` pairs for one item, naming which run produced which score so a copied
+   * diagnostics blob answers "which run collapsed" too. Rendered only when both arrays are
+   * populated and the same length — a mismatched pairing would blame the wrong run, which is
+   * worse than leaving the line without a vector at all.
+   */
+  private scoreVectorOf(item: { scores?: number[]; runIds?: number[] }): string {
+    const scores = item.scores ?? [];
+    const runIds = item.runIds ?? [];
+    if (scores.length === 0 || runIds.length === 0 || scores.length !== runIds.length) {
+      return '';
+    }
+    return runIds.map((runId, i) => `run #${runId}=${this.num(scores[i])}`).join(', ');
   }
 
   // -------------------------------------------------------------------------------------------
@@ -1054,11 +1085,13 @@ export class MultiRunProgressDialogComponent implements OnInit, OnChanges, OnDes
       lines.push(`Unstable items (SD above threshold): ${unstable.length > 0 ? unstable.join(', ') : 'none'}`);
       lines.push(`Pooled index reportable: ${result.pooledIndexReportable ?? false}`);
       for (const item of result.items ?? []) {
+        const scoreVector = this.scoreVectorOf(item);
         lines.push(
           `  Q${item.orderIndex} (id ${item.questionId}): n=${item.runCount ?? 0}, mean ${this.num(item.mean)}, `
           + `SD ${item.standardDeviation == null ? 'n/a' : this.num(item.standardDeviation)}, `
           + `CE rate ${this.num(item.criticalErrorRate)}, unstable=${item.unstable ?? false}, `
-          + `insufficient=${item.insufficientRuns ?? false}`);
+          + `insufficient=${item.insufficientRuns ?? false}`
+          + (scoreVector ? `, scores: ${scoreVector}` : ''));
       }
     }
     lines.push('');

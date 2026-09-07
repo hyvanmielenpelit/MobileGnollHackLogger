@@ -360,7 +360,13 @@ a:hover {
   .btn-gh,
   .gh-tab,
   .action-btn,
-  .btn-icon-action {
+  .btn-icon-action,
+  .gh-th-sort,
+  .gh-sort-caret,
+  .gh-page-btn {
+    transition: none;
+  }
+  .gh-datatable thead > tr:first-child > th::after {
     transition: none;
   }
   .gh-tabs {
@@ -1255,6 +1261,269 @@ label.checkbox-label,
     display: flex;
     gap: 4px;
   }
+}
+
+/* Shared Data Table — filtering, sorting and paging on top of .gh-table
+   Global for the same reason as .gh-table above: the multi-run and suite-health tables are
+   separate components, and an encapsulated selector would never reach their markup. Every
+   selector below is scoped under a .gh- prefixed class, because this stylesheet is global and
+   a looser one would restyle the users, groups and analytics tables as well. */
+.gh-datatable {
+  /* clip, not hidden. overflow: hidden makes the table its own scroll container, which would
+     anchor the sticky header to the table box instead of the enclosing scroll box; clip keeps
+     the rounded corners without creating a scrollport. Declared after .gh-table, so it wins on
+     an element carrying both classes. */
+  overflow: clip;
+
+  thead {
+    /* Only the first row sticks. A filter row is a second <thead> row and scrolls away with
+       the body, so the two never overlap at the top of the scroll box. */
+    > tr:first-child > th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      /* Opaque: body rows pass underneath it. */
+      background: #181818;
+      /* border-collapse drops a sticky header's own bottom border in several engines, so the
+         rule under the header row is drawn as an inset shadow instead. */
+      box-shadow: inset 0 -1px 0 #2a2a2a;
+      /* Chromium-only, and purely additive: where scroll-state queries are unsupported the
+         header still sticks, it simply never gains the shadow below. */
+      container-type: scroll-state;
+
+      &::after {
+        content: "";
+        position: absolute;
+        inset-inline: 0;
+        top: 100%;
+        height: 6px;
+        pointer-events: none;
+        opacity: 0;
+        background: linear-gradient(rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0));
+        transition: opacity 0.15s ease;
+      }
+    }
+  }
+
+  /* Interpolated so Sass emits the query verbatim rather than reading scroll-state() as a
+     function call. */
+  @container #{'scroll-state(stuck: top)'} {
+    thead > tr:first-child > th::after {
+      opacity: 1;
+    }
+  }
+
+  /* The header label is a real button, so the column is sortable by keyboard; the cell's own
+     padding moves onto it so the whole cell stays the hit target. */
+  .gh-th-sortable {
+    padding: 0;
+
+    .gh-th-sort {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      width: 100%;
+      padding: 12px 14px;
+      background: transparent;
+      border: none;
+      color: inherit;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+      transition: color 0.2s ease;
+
+      &:hover {
+        color: var(--primary-color);
+      }
+
+      /* It carries no border or background of its own, so without an explicit ring a keyboard
+         user sees nothing when it takes focus. */
+      &:focus-visible {
+        outline: 2px solid var(--primary-color);
+        outline-offset: -2px;
+      }
+    }
+
+    .gh-sort-caret {
+      flex-shrink: 0;
+      opacity: 0.4;
+      transition: transform 0.15s ease, opacity 0.15s ease;
+    }
+  }
+
+  /* The caret is drawn from aria-sort, which is therefore the single source of truth for the
+     sorted state — a styled but unannounced header is not expressible. */
+  th[aria-sort] .gh-sort-caret {
+    opacity: 1;
+  }
+  th[aria-sort="ascending"] .gh-sort-caret {
+    transform: rotate(180deg);
+  }
+
+  /* The per-column filter row, directly under the header row. Each control carries a
+     .visually-hidden <label>; a placeholder is not a label. */
+  .gh-filter-row {
+    > th, > td {
+      position: static;
+      padding: 6px 10px;
+      background: #1a1a1a;
+      border-bottom: 1px solid #2a2a2a;
+    }
+
+    .gh-filter-input,
+    .gh-filter-select {
+      width: 100%;
+      min-width: 0;
+      height: 28px;
+      padding: 0 6px;
+      font-size: 12px;
+    }
+  }
+}
+
+/* Vertical scroll viewport for a sticky-header table. Opt-in: the header sticks to whichever
+   scroll box encloses it, so without a bounded height here the page scrolls instead and the
+   header travels with it. */
+.gh-datatable-scroll {
+  overflow: auto;
+  overscroll-behavior: contain;
+  max-block-size: min(70vh, 720px);
+}
+
+/* Filter controls and a pager on one row, wrapping to as many rows as the viewport needs. */
+.gh-datatable-toolbar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 10px 16px;
+  align-items: end;
+}
+
+/* Clears every active filter. Rendered only while some filter is set. */
+.gh-filter-clear {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: #64b5f6;
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+
+  &:hover {
+    color: #90caf9;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+}
+
+.gh-pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+}
+
+.gh-pager-size {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  label {
+    font-size: 13px;
+    color: #a0a0a0;
+    white-space: nowrap;
+  }
+}
+
+.gh-pager-size-select {
+  width: 72px;
+  height: 32px;
+  padding: 0 6px;
+  flex-shrink: 0;
+}
+
+.gh-pager-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+}
+
+.gh-page-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 6px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: #a0a0a0;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+
+  /* The current page is read off aria-current, so there is no parallel active class to drift
+     out of step with what is announced. */
+  &[aria-current="page"] {
+    background: rgba(224, 186, 109, 0.85);
+    color: #121212;
+    font-weight: 700;
+  }
+
+  /* aria-disabled rather than disabled: the button keeps its place in the focus order, so a
+     keyboard user can land on it and hear that it is unavailable. */
+  &[aria-disabled="true"] {
+    opacity: 0.35;
+    cursor: default;
+
+    &:hover {
+      background: transparent;
+      color: #a0a0a0;
+    }
+  }
+
+  svg {
+    width: 16px;
+    height: 16px;
+  }
+}
+
+.gh-page-ellipsis {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  color: #a0a0a0;
+  font-size: 14px;
+  font-weight: 700;
+  user-select: none;
+}
+
+.gh-pager-status {
+  margin: 0;
+  margin-inline-start: auto;
+  font-size: 13px;
+  color: #a0a0a0;
 }
 
 /* Inline text button, for a secondary action inside a table row or a card.

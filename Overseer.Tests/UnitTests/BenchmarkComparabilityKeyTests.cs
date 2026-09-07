@@ -1,7 +1,9 @@
 namespace Overseer.Tests.UnitTests;
 
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using MobileGnollHackLogger.Data;
 using Overseer.Services.Benchmarking;
 using Xunit;
@@ -17,6 +19,7 @@ public class BenchmarkComparabilityKeyTests
     private const string PromptSha = "e9b3e9a7c4d1b8f0a2e6c9d3b7f1a4e8c2d6b0f9a3e7c1d5b9f3a7e1c5d9b3f7";
     private const string GuidesSha = "f59d8b30a1c7e4d2b6f0a8c3e9d5b1f7a3c9e5d1b7f3a9c5e1d7b3f9a5c1e7d3";
     private const string KnowledgeSha = "576ca574b2e8d0f6a4c2e8d4b0f6a2c8";
+    private const string ToolIterationCaps = "{\"Simple\":22,\"Intermediate\":22,\"Advanced\":22}";
 
     private static BenchmarkRun Run(long id)
     {
@@ -60,6 +63,9 @@ public class BenchmarkComparabilityKeyTests
             ScoringProfileSnapshotJson = "{\"SpeedTargetMs\":15000,\"SpeedDecayK\":20.0}",
 
             MaxToolCallsPerQuestionUsed = 45,
+            ToolIterationCapsJson = ToolIterationCaps,
+            TotalModelCallCapsJson = "{\"Simple\":28,\"Intermediate\":28,\"Advanced\":28}",
+            QuestionTimeoutSecondsJson = "{\"Simple\":420,\"Intermediate\":600,\"Advanced\":720}",
             MaxParallelQuestionsUsed = 1,
             PricingSnapshotJson = "{\"candidate\":{\"inputPerMillion\":1.25}}"
         };
@@ -379,6 +385,224 @@ public class BenchmarkComparabilityKeyTests
 
         Assert.Equal(first, second);
         Assert.NotEqual(BenchmarkComparabilityKey.NoValue, first);
+    }
+
+    /// <summary>
+    /// The per-question caps are resolved from configuration at answer time, so without the run's
+    /// own snapshot of them two runs straddling a cap change look like a replicate set. A cap that
+    /// binds truncates an investigation, which moves what the candidate scored.
+    /// </summary>
+    [Fact]
+    public void ChangingTheToolIterationCap_EndsTheReplicateSet()
+    {
+        var a = Run(13);
+        var b = Run(14);
+        b.ToolIterationCapsJson = "{\"Simple\":22,\"Intermediate\":22,\"Advanced\":35}";
+
+        var result = BenchmarkComparabilityKey.Resolve(new[] { a, b });
+
+        Assert.Equal(BenchmarkComparabilityTier.CrossCondition, result.Tier);
+        var difference = Assert.Single(result.Differences);
+        Assert.Equal(BenchmarkComparabilityKey.PerQuestionBudgetsKey, difference.Name);
+        Assert.Equal(BenchmarkComparabilityKeyKind.Instrument, difference.Kind);
+    }
+
+    [Fact]
+    public void ChangingTheQuestionTimeout_EndsTheReplicateSet()
+    {
+        var a = Run(13);
+        var b = Run(14);
+        b.QuestionTimeoutSecondsJson = "{\"Simple\":420,\"Intermediate\":600,\"Advanced\":900}";
+
+        var result = BenchmarkComparabilityKey.Resolve(new[] { a, b });
+
+        Assert.Equal(BenchmarkComparabilityTier.CrossCondition, result.Tier);
+        Assert.Equal(BenchmarkComparabilityKey.PerQuestionBudgetsKey, Assert.Single(result.Differences).Name);
+    }
+
+    /// <summary>
+    /// Runs recorded before the budget snapshot existed carry all three columns null. Those runs
+    /// match each other — the harness does not know what applied to either — and differ from a
+    /// snapshotted run, which is the only honest reading of "one of these is unknown".
+    /// </summary>
+    [Fact]
+    public void RunsWithoutABudgetSnapshot_MatchEachOther_AndDifferFromASnapshottedRun()
+    {
+        var oldA = Run(13);
+        var oldB = Run(14);
+        foreach (var run in new[] { oldA, oldB })
+        {
+            run.ToolIterationCapsJson = null;
+            run.TotalModelCallCapsJson = null;
+            run.QuestionTimeoutSecondsJson = null;
+        }
+
+        var amongOld = BenchmarkComparabilityKey.Resolve(new[] { oldA, oldB });
+        Assert.Equal(BenchmarkComparabilityTier.Replicate, amongOld.Tier);
+        Assert.Empty(amongOld.Differences);
+
+        var straddling = BenchmarkComparabilityKey.Resolve(new[] { oldA, Run(15) });
+        Assert.Equal(BenchmarkComparabilityTier.CrossCondition, straddling.Tier);
+        Assert.Equal(
+            BenchmarkComparabilityKey.PerQuestionBudgetsKey,
+            Assert.Single(straddling.Differences).Name);
+    }
+
+    // --- The scoring profile key reads scoring semantics, not the whole snapshot ----------------
+
+    [Fact]
+    public void ChangingADimensionWeight_EndsTheReplicateSet()
+    {
+        var result = ResolveWithProfileSnapshots(
+            Snapshot(),
+            Snapshot(p => p.WeightAccuracy = 0.60));
+
+        Assert.Equal(BenchmarkComparabilityTier.CrossCondition, result.Tier);
+        Assert.Equal(BenchmarkComparabilityKey.ScoringProfileKey, Assert.Single(result.Differences).Name);
+    }
+
+    [Fact]
+    public void ChangingTheCriticalErrorCeiling_EndsTheReplicateSet()
+    {
+        var result = ResolveWithProfileSnapshots(
+            Snapshot(),
+            Snapshot(p => p.CriticalErrorCeiling = 30));
+
+        Assert.Equal(BenchmarkComparabilityTier.CrossCondition, result.Tier);
+        Assert.Equal(BenchmarkComparabilityKey.ScoringProfileKey, Assert.Single(result.Differences).Name);
+    }
+
+    [Fact]
+    public void ChangingTheLevelScoreTable_EndsTheReplicateSet()
+    {
+        var result = ResolveWithProfileSnapshots(
+            Snapshot(),
+            Snapshot(p => p.LevelScoresJson = "[1, 15, 35, 55, 72, 90, 100]"));
+
+        Assert.Equal(BenchmarkComparabilityTier.CrossCondition, result.Tier);
+        Assert.Equal(BenchmarkComparabilityKey.ScoringProfileKey, Assert.Single(result.Differences).Name);
+    }
+
+    /// <summary>
+    /// A rename cannot move a score, and hashing the raw snapshot made it move this key — which
+    /// ended a comparable series with no warning anywhere in the UI.
+    /// </summary>
+    [Fact]
+    public void ProfileSnapshotsDifferingOnlyInName_ResolveTierA()
+    {
+        var result = ResolveWithProfileSnapshots(
+            Snapshot(p => p.Name = "Standard Intelligence Index (Default)"),
+            Snapshot(p => p.Name = "Standard Intelligence Index"));
+
+        Assert.Equal(BenchmarkComparabilityTier.Replicate, result.Tier);
+        Assert.Empty(result.Differences);
+    }
+
+    [Fact]
+    public void ProfileSnapshotsDifferingOnlyInIsDefault_ResolveTierA()
+    {
+        // IsDefault decides which profile a run picks when none is named. It cannot change what a
+        // run already named this profile scored.
+        var result = ResolveWithProfileSnapshots(
+            Snapshot(p => p.IsDefault = true),
+            Snapshot(p => p.IsDefault = false));
+
+        Assert.Equal(BenchmarkComparabilityTier.Replicate, result.Tier);
+        Assert.Empty(result.Differences);
+    }
+
+    [Fact]
+    public void ProfileSnapshotsDifferingOnlyInTimestamps_ResolveTierA()
+    {
+        // Editing a field and reverting it leaves the semantics identical and ModifiedAtUtc moved.
+        var result = ResolveWithProfileSnapshots(
+            Snapshot(p => p.ModifiedAtUtc = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc)),
+            Snapshot(p =>
+            {
+                p.CreatedAtUtc = new DateTime(2026, 7, 4, 12, 0, 0, DateTimeKind.Utc);
+                p.ModifiedAtUtc = new DateTime(2026, 9, 6, 18, 30, 0, DateTimeKind.Utc);
+            }));
+
+        Assert.Equal(BenchmarkComparabilityTier.Replicate, result.Tier);
+        Assert.Empty(result.Differences);
+    }
+
+    [Fact]
+    public void LevelScoreTableFormatting_DoesNotMoveTheProfileKey()
+    {
+        var result = ResolveWithProfileSnapshots(
+            Snapshot(p => p.LevelScoresJson = "[1, 15, 35, 55, 72, 87, 100]"),
+            Snapshot(p => p.LevelScoresJson = "[1,15,35,55,72,87,100.0]"));
+
+        Assert.Equal(BenchmarkComparabilityTier.Replicate, result.Tier);
+        Assert.Empty(result.Differences);
+    }
+
+    /// <summary>
+    /// A snapshot that will not deserialise degrades to a blob comparison rather than matching
+    /// every other run, which would be a false replicate.
+    /// </summary>
+    [Fact]
+    public void MalformedProfileSnapshot_KeysDeterministically_AndDiffersFromAValidOne()
+    {
+        var run = Run(13);
+        run.ScoringProfileSnapshotJson = "{not valid json";
+
+        string first = Value(BenchmarkComparabilityKey.Extract(run), BenchmarkComparabilityKey.ScoringProfileKey);
+        string second = Value(BenchmarkComparabilityKey.Extract(run), BenchmarkComparabilityKey.ScoringProfileKey);
+
+        Assert.Equal(first, second);
+        Assert.DoesNotContain(BenchmarkComparabilityKey.NoValue, first);
+
+        var valid = Run(14);
+        valid.ScoringProfileSnapshotJson = Snapshot();
+        Assert.NotEqual(
+            first,
+            Value(BenchmarkComparabilityKey.Extract(valid), BenchmarkComparabilityKey.ScoringProfileKey));
+    }
+
+    private static BenchmarkComparabilityResult ResolveWithProfileSnapshots(string first, string second)
+    {
+        var a = Run(13);
+        var b = Run(14);
+        a.ScoringProfileSnapshotJson = first;
+        b.ScoringProfileSnapshotJson = second;
+
+        return BenchmarkComparabilityKey.Resolve(new[] { a, b });
+    }
+
+    /// <summary>
+    /// A full profile snapshot in the shape <c>BenchmarkService</c> writes — the serialized entity,
+    /// name and timestamps included — optionally mutated before serialization.
+    /// </summary>
+    private static string Snapshot(Action<BenchmarkScoringProfile>? mutate = null)
+    {
+        var profile = new BenchmarkScoringProfile
+        {
+            Id = 1,
+            Name = "Standard Intelligence Index",
+            IsDefault = true,
+            WeightAccuracy = 0.55,
+            WeightCompleteness = 0.25,
+            WeightConciseness = 0.10,
+            WeightReadability = 0.10,
+            LevelScoresJson = "[1, 15, 35, 55, 72, 87, 100]",
+            CriticalErrorCeiling = 25,
+            SecondOpinionQualityThreshold = 50,
+            SecondOpinionMode = (int)BenchmarkSecondOpinionMode.FlaggedPlusSample,
+            SecondOpinionBlind = true,
+            SecondOpinionOutlierDeltaPoints = 25,
+            SecondOpinionMinimumSample = 4,
+            SpeedTargetMs = 15000,
+            SpeedDecayK = 20.0,
+            SpeedDifficultyScaling = 1.0,
+            MaxParallelQuestions = 1,
+            CreatedAtUtc = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc),
+            ModifiedAtUtc = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc)
+        };
+
+        mutate?.Invoke(profile);
+        return JsonSerializer.Serialize(profile);
     }
 
     private static string Value(IReadOnlyList<BenchmarkComparabilityKeyEntry> keys, string name)

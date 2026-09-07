@@ -46,6 +46,9 @@ import { SnapshotViewerComponent } from '../../shared/snapshot-viewer/snapshot-v
 import { ensureOverlayPolyfills } from '../../utils/polyfills.util';
 import { SystemService } from '../../services/system.service';
 import { parseServerUtcDate, elapsedMsBetween } from '../../utils/date.util';
+import { TableState, exactFilter } from '../../shared/data-table/table-state';
+import { SortHeaderComponent } from '../../shared/data-table/sort-header.component';
+import { TablePagerComponent } from '../../shared/data-table/table-pager.component';
 
 /**
  * One row of the run progress list: a suite question merged with its answer, if the run
@@ -157,7 +160,8 @@ interface BenchmarkRunSettings {
   standalone: true,
   imports: [
     CommonModule, DecimalPipe, FormsModule, CollapsibleMarkdownComponent, SuiteHealthComponent,
-    SnapshotViewerComponent, MultiRunComponent, MultiRunProgressDialogComponent
+    SnapshotViewerComponent, MultiRunComponent, MultiRunProgressDialogComponent,
+    SortHeaderComponent, TablePagerComponent
   ],
   templateUrl: './benchmark.component.html',
   styleUrls: ['./benchmark.component.scss']
@@ -181,6 +185,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   @ViewChild('suiteHealthDialog') suiteHealthDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('suiteHealthHeading') suiteHealthHeading?: ElementRef<HTMLElement>;
   @ViewChild('snapshotViewer') snapshotViewer?: SnapshotViewerComponent;
+  @ViewChild('multiRunPanel') multiRunPanel?: MultiRunComponent;
   @ViewChild('generationDialog') generationDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('generationProgressHeading') generationProgressHeading?: ElementRef<HTMLElement>;
   suiteHealthInitialTab: SuiteHealthTab = 'items';
@@ -407,6 +412,54 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   historyRuns: BenchmarkRunSummaryDto[] = [];
   historySuiteFilter: number | null = null;
   loadingHistory = false;
+
+  /**
+   * Sort, filter and page state for the Run History table. `historyRuns` itself stays in the
+   * server's own order — `instrumentChangeOf` and `completedRunsOfSelectedSuite` both locate a
+   * run by its position in that list, and a user-chosen sort would make either misread the data.
+   * `view()` never mutates its input, so both keep reading `historyRuns` unaffected by this.
+   */
+  readonly historyTable = new TableState<BenchmarkRunSummaryDto>('id', 'desc').registerAccessors(
+    {
+      id: r => r.id,
+      suiteName: r => r.suiteName,
+      testedModelDisplayNameUsed: r => r.testedModelDisplayNameUsed,
+      assessorModelDisplayNameUsed: r => r.assessorModelDisplayNameUsed,
+      status: r => this.formatStatusLabel(r.status),
+      // Null sorts last automatically, which is right for a run that never scored.
+      qualityIndex: r => r.qualityIndex ?? r.finalScore,
+      speedIndex: r => r.speedIndex,
+      // The same expression the Duration cell displays, so the column sorts by what it shows.
+      durationMs: r => r.totalAnswerDurationMs || r.totalDurationMs,
+      estimatedCost: r => r.estimatedCost,
+      startedAtUtc: r => new Date(r.startedAtUtc)
+    },
+    {
+      suiteName: r => r.suiteName,
+      testedModelDisplayNameUsed: r => r.testedModelDisplayNameUsed,
+      assessorModelDisplayNameUsed: r => r.assessorModelDisplayNameUsed,
+      // Keyed on the same label the Status cell shows, so the <select> options and the cell text
+      // always agree.
+      status: exactFilter(r => this.formatStatusLabel(r.status))
+    }
+  );
+
+  get historyView(): BenchmarkRunSummaryDto[] {
+    return this.historyTable.view(this.historyRuns);
+  }
+
+  /** The statuses actually present in the loaded history, so a retired status drops out on its own. */
+  get historyStatusOptions(): string[] {
+    const seen = new Set<string>();
+    for (const run of this.historyRuns) {
+      seen.add(this.formatStatusLabel(run.status));
+    }
+    return Array.from(seen).sort();
+  }
+
+  onHistoryTableChanged(): void {
+    this.cdr.detectChanges();
+  }
 
   // --- Run History: series badge, group column and the group builder ---
   //
@@ -2356,6 +2409,21 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     this.openRunProgressDialog(true);
   }
 
+  /**
+   * The hand-off `viewGroupReport` makes from the multi-run progress dialog: switch to the
+   * Multi-Run Analysis tab and open that group there, rather than stacking a second dialog on
+   * top of this page.
+   */
+  onOpenGroupAnalysisFromSeries(groupId: number): void {
+    this.multiRunDialogVisible = false;
+    this.seriesDialogId = null;
+    this.selectSubTab('multirun');
+    // The panel lives inside @if (activeSubTab === 'multirun'); the ViewChild does not resolve
+    // until that block has rendered, so the tab switch is flushed before the panel is addressed.
+    this.cdr.detectChanges();
+    this.multiRunPanel?.openGroupById(groupId);
+  }
+
   cancelActiveSeries(): void {
     const seriesId = this.activeSeriesId;
     if (seriesId == null) return;
@@ -3188,7 +3256,9 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
 
   loadHistory() {
     this.loadingHistory = true;
-    this.benchmarkService.getRuns(this.historySuiteFilter || undefined).subscribe({
+    // The endpoint clamps to 200 regardless, so asking for exactly that keeps a full page rather
+    // than leaving the table half-empty behind its own pager.
+    this.benchmarkService.getRuns(this.historySuiteFilter || undefined, 200).subscribe({
       next: (data) => {
         this.historyRuns = data;
         this.loadingHistory = false;

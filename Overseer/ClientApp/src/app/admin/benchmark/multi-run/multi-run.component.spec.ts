@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 
 import { MultiRunComponent } from './multi-run.component';
 import {
@@ -273,7 +273,7 @@ describe('MultiRunComponent', () => {
     open();
 
     expect(serviceMock.getRunGroups).toHaveBeenCalled();
-    expect(serviceMock.getRuns).toHaveBeenCalledWith(5, 50);
+    expect(serviceMock.getRuns).toHaveBeenCalledWith(5, 200);
     expect(component.groups.length).toBe(1);
   });
 
@@ -803,5 +803,227 @@ describe('MultiRunComponent', () => {
 
     expect(fixture.nativeElement.querySelector('.mr-truncated-marker')).not.toBeNull();
     expect(text('.mr-dialog-body')).toContain('pinned there');
+  });
+
+  // --- openGroupById ---
+
+  it('should open a listed group through its normal open path, without the id-fetch fallback', () => {
+    open();
+    serviceMock.getRunGroup.calls.reset();
+    spyOn(component, 'openGroup').and.callThrough();
+
+    component.openGroupById(7);
+
+    expect(component.openGroup).toHaveBeenCalledWith(component.groups[0]);
+    // The one call here is openGroup's own loadGroup, not a second fetch from openGroupById itself.
+    expect(serviceMock.getRunGroup).toHaveBeenCalledTimes(1);
+    expect(serviceMock.getRunGroup).toHaveBeenCalledWith(7);
+  });
+
+  it('should fetch and open a group absent from the current list', () => {
+    open();
+    const other = buildGroup({ id: 99, name: 'Suite 5 · other · R=3' });
+    serviceMock.getRunGroup.and.returnValue(of(other));
+    spyOn(component, 'openGroup').and.callThrough();
+
+    component.openGroupById(99);
+
+    expect(serviceMock.getRunGroup).toHaveBeenCalledWith(99);
+    expect(component.openGroup).toHaveBeenCalledWith(other);
+    expect(component.selectedGroup?.id).toBe(99);
+  });
+
+  it('should report the same groups-list error shape when the id-fetch fallback fails', () => {
+    open();
+    serviceMock.getRunGroup.and.returnValue(throwError(() => ({ error: { message: 'Group 99 not found.' } })));
+
+    component.openGroupById(99);
+
+    expect(component.groupsError).toBe('Group 99 not found.');
+  });
+
+  // --- Analysis-group table: sorting, filtering, paging ---
+
+  it('should default the group table to Created descending', () => {
+    const older = buildGroup({ id: 1, name: 'Older', createdAtUtc: '2026-09-01T00:00:00Z' });
+    const newer = buildGroup({ id: 2, name: 'Newer', createdAtUtc: '2026-09-06T00:00:00Z' });
+    serviceMock.getRunGroups.and.returnValue(of([older, newer]));
+    open();
+
+    expect(component.groupTable.sortColumn).toBe('createdAtUtc');
+    expect(component.groupTable.sortDirection).toBe('desc');
+    expect(component.groupTable.view(component.groups)[0].id).toBe(2);
+  });
+
+  it('should order tier by the comparability enum, not alphabetically by label', () => {
+    expect(component.tierOrder('Replicate')).toBeGreaterThan(component.tierOrder('QualityComparable'));
+    expect(component.tierOrder('QualityComparable')).toBeGreaterThan(component.tierOrder('CrossCondition'));
+    expect(component.tierOrder('CrossCondition')).toBeGreaterThan(component.tierOrder('NotComparable'));
+  });
+
+  it('should list a Tier A group before a Tier B group on the first click of the tier header', () => {
+    const tierA = buildGroup({ id: 1, name: 'A', tier: 'Replicate', createdAtUtc: '2026-09-01T00:00:00Z' });
+    const tierB = buildGroup({ id: 2, name: 'B', tier: 'QualityComparable', createdAtUtc: '2026-09-02T00:00:00Z' });
+    serviceMock.getRunGroups.and.returnValue(of([tierB, tierA]));
+    open();
+
+    component.groupTable.toggleSort('tier');
+    fixture.detectChanges();
+
+    const view = component.groupTable.view(component.groups);
+    expect(view[0].id).toBe(1);
+    expect(view[1].id).toBe(2);
+  });
+
+  it('should list a Tier B group first on the second click of the tier header', () => {
+    const tierA = buildGroup({ id: 1, name: 'A', tier: 'Replicate', createdAtUtc: '2026-09-01T00:00:00Z' });
+    const tierB = buildGroup({ id: 2, name: 'B', tier: 'QualityComparable', createdAtUtc: '2026-09-02T00:00:00Z' });
+    serviceMock.getRunGroups.and.returnValue(of([tierB, tierA]));
+    open();
+
+    component.groupTable.toggleSort('tier');
+    component.groupTable.toggleSort('tier');
+    fixture.detectChanges();
+
+    const view = component.groupTable.view(component.groups);
+    expect(view[0].id).toBe(2);
+    expect(view[1].id).toBe(1);
+  });
+
+  it('should treat a stale group as Stale only, not also Analysed, under the analysis-state filter', () => {
+    const stale = buildGroup({ id: 1, latestAnalysisId: 11, analysisStale: true });
+    serviceMock.getRunGroups.and.returnValue(of([stale]));
+    open();
+
+    expect(component.analysisState(stale)).toBe('stale');
+
+    component.groupTable.setFilter('analysisState', 'analysed');
+    expect(component.groupTable.view(component.groups).length).toBe(0);
+
+    component.groupTable.setFilter('analysisState', 'stale');
+    expect(component.groupTable.view(component.groups).length).toBe(1);
+  });
+
+  it('should keep the stale-analysis tooltip working when filtered to Stale', () => {
+    serviceMock.getRunGroups.and.returnValue(of([buildGroup({
+      latestAnalysisId: 11, latestAnalysisAtUtc: '2026-09-06T11:00:00Z', analysisStale: true
+    })]));
+    open();
+
+    component.groupTable.setFilter('analysisState', 'stale');
+    fixture.detectChanges();
+
+    expect(component.groupTable.view(component.groups).length).toBe(1);
+    expect(allText('.mr-badge-stale')).toContain('Stale analysis');
+    const tooltip = fixture.nativeElement.querySelector('.gh-tooltip-multiline')?.textContent || '';
+    expect(tooltip).toContain('no longer describes this group');
+  });
+
+  // --- Run picker table: sorting, filtering, paging, selection ---
+
+  it('should default the run picker table to ID descending', () => {
+    open();
+
+    expect(component.runPickerTable.sortColumn).toBe('id');
+    expect(component.runPickerTable.sortDirection).toBe('desc');
+    expect(component.runPickerTable.view(component.availableRuns)[0].id).toBe(43);
+  });
+
+  it('should name each run picker checkbox for the run it selects', () => {
+    open();
+
+    const checkbox = fixture.nativeElement.querySelector('#mr-run-41') as HTMLInputElement;
+    expect(checkbox.getAttribute('aria-label')).toBe('Include run 41 in this group');
+  });
+
+  it('should request up to 200 runs rather than 50', () => {
+    open();
+    expect(serviceMock.getRuns).toHaveBeenCalledWith(5, 200);
+  });
+
+  it('should keep a run selected across a page change and a filter change, and still pass it to createGroup', () => {
+    const many = Array.from({ length: 12 }, (_, i) => buildRun({ id: i + 1, testedModelDisplayNameUsed: `Model ${i + 1}` }));
+    serviceMock.getRuns.and.returnValue(of(many));
+    const created = buildGroup({ id: 50 });
+    serviceMock.createRunGroup.and.returnValue(of({ accepted: true, error: null, comparability: null, group: created }));
+    open();
+
+    // ID desc by default: run 12 leads page 1.
+    component.toggleRun(12);
+    expect(component.runPickerTable.view(component.availableRuns).some(r => r.id === 12)).toBeTrue();
+
+    // Move to a different page and apply a filter — neither touches the selection underneath.
+    component.runPickerTable.setPage(2, component.availableRuns);
+    component.runPickerTable.setFilter('testedModel', 'Model 1');
+    fixture.detectChanges();
+
+    expect(component.selectedRunIds).toContain(12);
+
+    component.toggleRun(1);
+    component.builderName = 'Cross-page group';
+    component.createGroup();
+
+    expect(serviceMock.createRunGroup).toHaveBeenCalledWith(jasmine.objectContaining({
+      runIds: jasmine.arrayContaining([12, 1])
+    }));
+  });
+
+  it('should count a selected run as off-page once a page change moves it out of view', () => {
+    const many = Array.from({ length: 15 }, (_, i) => buildRun({ id: i + 1 }));
+    serviceMock.getRuns.and.returnValue(of(many));
+    open();
+
+    component.toggleRun(15); // ID desc default: run 15 leads page 1.
+    expect(component.selectedOffPageCount).toBe(0);
+    expect(component.selectionSummary).toBe('1 selected');
+
+    component.runPickerTable.setPage(2, component.availableRuns);
+    fixture.detectChanges();
+
+    expect(component.selectedOffPageCount).toBe(1);
+    expect(component.selectionSummary).toBe('1 selected — 1 not on this page');
+  });
+
+  it('should count a selected run as off-page once a filter hides it from the current view', () => {
+    open();
+    component.toggleRun(41);
+    expect(component.selectedOffPageCount).toBe(0);
+
+    component.runPickerTable.setFilter('testedModel', 'nonexistent-model-xyz');
+    fixture.detectChanges();
+
+    expect(component.selectedOffPageCount).toBe(1);
+    expect(component.selectionSummary).toBe('1 selected — 1 not on this page');
+  });
+
+  it('should show Show Selected Only as a real toggle button with aria-pressed', () => {
+    open();
+    const button = Array.from<HTMLButtonElement>(fixture.nativeElement.querySelectorAll('button'))
+      .find(b => (b.textContent || '').includes('Show Selected Only')) as HTMLButtonElement;
+
+    expect(button.getAttribute('aria-pressed')).toBe('false');
+
+    button.click();
+    fixture.detectChanges();
+    expect(button.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('should filter to only the selected runs when toggled on, and clear only that filter when toggled off', () => {
+    open();
+    component.toggleRun(41);
+    component.runPickerTable.setFilter('testedModel', 'GPT');
+
+    component.toggleShowSelectedOnly();
+    fixture.detectChanges();
+
+    expect(component.runPickerTable.filters['selected']).toBe('yes');
+    expect(component.runPickerTable.filters['testedModel']).toBe('GPT');
+    const view = component.runPickerTable.view(component.availableRuns);
+    expect(view.length).toBe(1);
+    expect(view[0].id).toBe(41);
+
+    component.toggleShowSelectedOnly();
+    expect(component.runPickerTable.filters['selected']).toBe('');
+    expect(component.runPickerTable.filters['testedModel']).toBe('GPT');
   });
 });

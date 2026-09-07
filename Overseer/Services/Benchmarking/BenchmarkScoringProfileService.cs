@@ -2,6 +2,7 @@ namespace Overseer.Services.Benchmarking;
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -332,6 +333,79 @@ public class BenchmarkScoringProfileService
 
         return JsonSerializer.Deserialize<List<int>>(json) ?? new List<int> { 1, 15, 35, 55, 72, 87, 100 };
     }
+
+    /// <summary>
+    /// A stable string over a profile's scoring semantics alone — every field that can move a
+    /// score or select an answer for a second verdict, in a fixed order, with numbers in the
+    /// invariant culture and a format that collapses trailing zeros so <c>0.55</c> and
+    /// <c>0.5500</c> agree. <see cref="BenchmarkScoringProfile.LevelScoresJson"/> is parsed and
+    /// re-rendered, so its whitespace and number formatting do not enter the signature either.
+    ///
+    /// <para>Deliberately absent: <c>Id</c>, <c>Name</c>, <c>IsDefault</c>, <c>CreatedAtUtc</c>
+    /// and <c>ModifiedAtUtc</c>. None of them enters a score — <c>IsDefault</c> only decides which
+    /// profile a run picks when none is named, and the other four are identity and audit data — so
+    /// two profiles agreeing here score identically.</para>
+    ///
+    /// <para>The field list is exhaustive over the entity by construction: a scoring field added
+    /// to <see cref="BenchmarkScoringProfile"/> and not added here would make two profiles that
+    /// score differently compare equal, which is a false replicate rather than a false
+    /// difference. Extend this method whenever the entity gains a field.</para>
+    /// </summary>
+    public static string CanonicalSignature(BenchmarkScoringProfile profile)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+
+        return string.Join(";", new[]
+        {
+            $"weightAccuracy={Number(profile.WeightAccuracy)}",
+            $"weightCompleteness={Number(profile.WeightCompleteness)}",
+            $"weightConciseness={Number(profile.WeightConciseness)}",
+            $"weightReadability={Number(profile.WeightReadability)}",
+            $"levelScores={NormalizeLevelScores(profile.LevelScoresJson)}",
+            $"criticalErrorCeiling={Number(profile.CriticalErrorCeiling)}",
+            $"secondOpinionQualityThreshold={Number(profile.SecondOpinionQualityThreshold)}",
+            $"secondOpinionMode={Number(profile.SecondOpinionMode)}",
+            $"secondOpinionBlind={(profile.SecondOpinionBlind ? "1" : "0")}",
+            $"secondOpinionOutlierDeltaPoints={Number(profile.SecondOpinionOutlierDeltaPoints)}",
+            $"secondOpinionMinimumSample={Number(profile.SecondOpinionMinimumSample)}",
+            $"speedTargetMs={Number(profile.SpeedTargetMs)}",
+            $"speedDecayK={Number(profile.SpeedDecayK)}",
+            $"speedDifficultyScaling={Number(profile.SpeedDifficultyScaling)}",
+            $"maxParallelQuestions={Number(profile.MaxParallelQuestions)}"
+        });
+    }
+
+    /// <summary>
+    /// The level-score table as comma-separated numbers. A table that will not parse renders as
+    /// its own trimmed text, which is deterministic and still distinguishes two different tables.
+    /// </summary>
+    private static string NormalizeLevelScores(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            var levels = JsonSerializer.Deserialize<List<double>>(json);
+            if (levels != null)
+            {
+                return string.Join(",", levels.Select(level => Number(level)));
+            }
+        }
+        catch (JsonException)
+        {
+        }
+
+        return json.Trim();
+    }
+
+    private static string Number(double value)
+        => value.ToString("0.######", CultureInfo.InvariantCulture);
+
+    private static string Number(int value)
+        => value.ToString(CultureInfo.InvariantCulture);
 
     public BenchmarkScoringConstants ToConstants(BenchmarkScoringProfile profile)
     {

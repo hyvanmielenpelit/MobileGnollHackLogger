@@ -342,41 +342,9 @@
   }
 }
 
-.mr-run-picker {
-  margin: 0;
-  padding: 12px 14px;
-  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.02);
-  max-height: 280px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-
-  legend {
-    padding: 0 6px;
-    font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: #999;
-  }
-}
-
-.mr-run-row {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 3px 0;
-
-  label {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    font-size: 13px;
-    color: #ccc;
-    cursor: pointer;
-  }
-}
-
+// The member list in the group detail dialog still reads bold, tabular-nums run ids and monospace
+// fingerprints from these two rules, so they stay even though the run picker below no longer uses
+// either class name — its own columns carry widths instead, under .mr-run-picker-table.
 .mr-run-id {
   font-variant-numeric: tabular-nums;
   color: #eee;
@@ -388,6 +356,38 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
   color: #9aa;
+}
+
+// Column widths only: the run picker is a plain sortable, filterable .gh-table like every other
+// one in the panel now, so there is no bordered fieldset box or per-row flex layout to style.
+.mr-run-picker-table {
+  caption {
+    padding: 0 0 8px;
+    text-align: left;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #999;
+  }
+
+  .col-center { text-align: center; }
+
+  .col-id { width: 7ch; }
+
+  .col-model { width: 22ch; }
+
+  .col-date { width: 16ch; white-space: nowrap; }
+
+  .col-index { width: 8ch; }
+
+  .col-fingerprint { width: 14ch; }
+}
+
+// Always visible once something is selected, regardless of what the picker is filtered or paged
+// to — the whole point of the line is to say so when the selection is not all on screen.
+.mr-selection-summary {
+  font-size: 13px;
+  color: #ccc;
 }
 
 // --- Tier preview ---
@@ -515,6 +515,14 @@
   flex-wrap: wrap;
   gap: 12px;
   align-items: center;
+
+  // The engaged state of the Show Selected Only toggle. Layered on top of .btn-gh by an attribute
+  // selector rather than a redefinition of the base class, the same way aria-selected drives a
+  // tab's appearance without a parallel .is-active class.
+  .btn-gh[aria-pressed="true"] {
+    filter: brightness(1.2);
+    box-shadow: 0 0 0 2px rgba(224, 186, 109, 0.4) inset;
+  }
 }
 
 // --- Group detail ---

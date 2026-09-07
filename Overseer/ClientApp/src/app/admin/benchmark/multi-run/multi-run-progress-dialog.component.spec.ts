@@ -213,6 +213,13 @@ describe('MultiRunProgressDialogComponent', () => {
     expect(text('.progress-status')).toContain('Launching');
   });
 
+  it('should read the requested run count in the subtitle', () => {
+    open(buildSeries({ requestedRunCount: 3 }));
+
+    expect(text('.dialog-subtitle')).toContain('3 runs');
+    expect(text('.dialog-subtitle')).not.toContain('run(s)');
+  });
+
   it('should name the running member and its position in the series', () => {
     open(buildSeries());
 
@@ -309,36 +316,38 @@ describe('MultiRunProgressDialogComponent', () => {
     expect(footerText()).not.toContain('Continue');
   });
 
-  it('should keep Download report unavailable, with a reason, until an analysis exists', () => {
+  it('should keep View Report unavailable, with a reason, until an analysis exists', () => {
     open(buildSeries());
 
-    expect(component.canDownloadReport).toBeFalse();
-    expect(component.downloadReportTooltip).toContain('No analysis group exists');
-    const button = fixture.nativeElement.querySelector('.download-report-btn') as HTMLElement;
+    expect(component.canViewReport).toBeFalse();
+    expect(component.viewReportTooltip).toContain('No analysis group exists');
+    const button = fixture.nativeElement.querySelector('.view-report-btn') as HTMLElement;
     expect(button.getAttribute('aria-disabled')).toBe('true');
   });
 
-  it('should enable Download report once the group analysis is terminal', () => {
+  it('should enable View Report once the group analysis is terminal', () => {
     open(buildSeries({
       status: 'Completed', completedRunCount: 3, autoCreatedGroupId: 9,
       members: [buildMember(), buildMember({ index: 2, runId: 42 })]
     }));
 
-    expect(component.canDownloadReport).toBeTrue();
-    const button = fixture.nativeElement.querySelector('.download-report-btn') as HTMLElement;
+    expect(component.canViewReport).toBeTrue();
+    const button = fixture.nativeElement.querySelector('.view-report-btn') as HTMLElement;
     expect(button.getAttribute('aria-disabled')).toBeNull();
   });
 
-  it('should download the group report from the groups report endpoint', () => {
-    const openSpy = spyOn(window, 'open');
+  it('should hand the group id to the host and close, rather than downloading a file', () => {
     open(buildSeries({
       status: 'Completed', completedRunCount: 3, autoCreatedGroupId: 9,
       members: [buildMember(), buildMember({ index: 2, runId: 42 })]
     }));
+    const handoff = spyOn(component.openGroupAnalysis, 'emit');
 
-    component.downloadGroupReport();
+    component.viewGroupReport();
 
-    expect(openSpy).toHaveBeenCalledWith('/api/admin/benchmark/runs/groups/9/report', '_blank');
+    expect(handoff).toHaveBeenCalledWith(9);
+    const dialog = fixture.nativeElement.querySelector('dialog') as HTMLDialogElement;
+    expect(dialog.open).toBeFalse();
   });
 
   // --- Dialog lifecycle -----------------------------------------------------------------------
@@ -439,6 +448,43 @@ describe('MultiRunProgressDialogComponent', () => {
     expect(capture).toContain('Item sampling: SE 4.20');
     expect(capture).toContain('does NOT shrink with R');
     expect(capture).toContain('Combined 95% interval: half-width 9.06, [62.24, 80.36]');
+  });
+
+  it('should name which run produced which score on an item line', () => {
+    const analysis = buildAnalysis();
+    (analysis.result as any).items = [
+      { questionId: 70, orderIndex: 4, runCount: 3, mean: 65, standardDeviation: 12.5,
+        criticalErrorRate: 0, unstable: true, insufficientRuns: false,
+        scores: [80, 52, 63], runIds: [41, 42, 43] }
+    ];
+    serviceMock.analyseRunGroup.and.returnValue(of(analysis));
+    open(buildSeries({
+      status: 'Completed', completedRunCount: 3, autoCreatedGroupId: 9,
+      members: [buildMember(), buildMember({ index: 2, runId: 42 }), buildMember({ index: 3, runId: 43 })]
+    }));
+
+    const capture = component.groupAnalysisDiagnosticsText;
+
+    expect(capture).toContain('scores: run #41=80.00, run #42=52.00, run #43=63.00');
+  });
+
+  it('should omit the score vector when the scores and run ids do not line up', () => {
+    const analysis = buildAnalysis();
+    (analysis.result as any).items = [
+      { questionId: 70, orderIndex: 4, runCount: 3, mean: 65, standardDeviation: 12.5,
+        criticalErrorRate: 0, unstable: true, insufficientRuns: false,
+        scores: [80, 52], runIds: [41, 42, 43] }
+    ];
+    serviceMock.analyseRunGroup.and.returnValue(of(analysis));
+    open(buildSeries({
+      status: 'Completed', completedRunCount: 3, autoCreatedGroupId: 9,
+      members: [buildMember(), buildMember({ index: 2, runId: 42 }), buildMember({ index: 3, runId: 43 })]
+    }));
+
+    const capture = component.groupAnalysisDiagnosticsText;
+
+    expect(capture).not.toContain('scores:');
+    expect(capture).toContain('Q4 (id 70)');
   });
 
   // --- Clipboard ------------------------------------------------------------------------------

@@ -38,21 +38,62 @@
       } @else if (groups.length === 0) {
         <p class="text-muted">No groups yet for this suite. Build one below, or run a multi-run series — a completed series creates its own group.</p>
       } @else {
-        <div class="mr-table-scroll">
-          <table class="gh-table mr-group-table">
+        <div class="mr-table-scroll gh-datatable-scroll">
+          <app-table-pager [state]="groupTable" [rows]="groups" noun="groups" (changed)="onTableChanged()"></app-table-pager>
+          <table class="gh-table gh-datatable mr-group-table">
             <caption class="visually-hidden">Analysis groups for this suite: name, comparability tier, run count, creation date and analysis state.</caption>
             <thead>
               <tr>
-                <th scope="col">Group</th>
-                <th scope="col">Tier</th>
-                <th scope="col" class="col-center">R</th>
-                <th scope="col">Created</th>
-                <th scope="col">Analysis</th>
+                <th app-sort-header [state]="groupTable" column="name" label="Group" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="groupTable" column="tier" label="Tier" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="groupTable" column="runCount" label="R" class="col-center" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="groupTable" column="createdAtUtc" label="Created" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="groupTable" column="analysisDate" label="Analysis" (changed)="onTableChanged()"></th>
                 <th scope="col" class="col-actions"><span class="visually-hidden">Actions</span></th>
+              </tr>
+              <tr class="gh-filter-row">
+                <td>
+                  <label class="visually-hidden" for="mr-f-group-name">Filter by group name</label>
+                  <input id="mr-f-group-name" type="text" class="gh-input gh-filter-input" placeholder="Name"
+                         [ngModel]="groupTable.filters['name']" [ngModelOptions]="{ standalone: true }"
+                         (ngModelChange)="groupTable.setFilter('name', $event); cdr.detectChanges()">
+                </td>
+                <td>
+                  <label class="visually-hidden" for="mr-f-group-tier">Filter by tier</label>
+                  <select id="mr-f-group-tier" class="gh-input gh-filter-select"
+                          [ngModel]="groupTable.filters['tier']" [ngModelOptions]="{ standalone: true }"
+                          (ngModelChange)="groupTable.setFilter('tier', $event); cdr.detectChanges()">
+                    <option value="">All</option>
+                    <option value="Replicate">{{ tierName('Replicate') }}</option>
+                    <option value="QualityComparable">{{ tierName('QualityComparable') }}</option>
+                    <option value="CrossCondition">{{ tierName('CrossCondition') }}</option>
+                  </select>
+                </td>
+                <td></td>
+                <td></td>
+                <td>
+                  <label class="visually-hidden" for="mr-f-group-state">Filter by analysis state</label>
+                  <select id="mr-f-group-state" class="gh-input gh-filter-select"
+                          [ngModel]="groupTable.filters['analysisState']" [ngModelOptions]="{ standalone: true }"
+                          (ngModelChange)="groupTable.setFilter('analysisState', $event); cdr.detectChanges()">
+                    <option value="">All</option>
+                    <option value="analysed">Analysed</option>
+                    <option value="notAnalysed">Not analysed</option>
+                    <option value="stale">Stale</option>
+                  </select>
+                </td>
+                <td>
+                  @if (groupTable.hasActiveFilters) {
+                    <button type="button" class="gh-filter-clear" (click)="groupTable.clearFilters(); cdr.detectChanges()">Clear filters</button>
+                  }
+                </td>
               </tr>
             </thead>
             <tbody>
-              @for (group of groups; track group.id) {
+              @if (groupTable.noMatches(groups)) {
+                <tr><td colspan="6" class="text-muted">No groups match these filters.</td></tr>
+              }
+              @for (group of groupTable.view(groups); track group.id) {
                 <tr [class.is-selected]="selectedGroup?.id === group.id">
                   <th scope="row" class="col-name">
                     <span class="mr-group-name">{{ group.name }}</span>
@@ -178,26 +219,81 @@
         <div class="alert alert-warning" role="alert">
           <div class="alert-content"><div class="alert-body">{{ runsError }}</div></div>
         </div>
+      } @else if (availableRuns.length === 0) {
+        <p class="text-muted">No runs recorded for this suite.</p>
       } @else {
-        <fieldset class="mr-run-picker">
-          <legend>Runs in this group</legend>
-          @for (run of availableRuns; track run.id) {
-            <div class="mr-run-row">
-              <input type="checkbox" [id]="'mr-run-' + run.id"
-                     [checked]="isRunSelected(run.id)" (change)="toggleRun(run.id)">
-              <label [attr.for]="'mr-run-' + run.id">
-                <span class="mr-run-id">#{{ run.id }}</span>
-                <span class="mr-run-model">{{ run.testedModelDisplayNameUsed }}</span>
-                <span class="mr-run-date">{{ formatDate(run.startedAtUtc) }}</span>
-                <span class="mr-run-index">Index {{ run.qualityIndex ?? '—' }}</span>
-                <span class="mr-run-fingerprint">Guides {{ shortFingerprint(run.toolGuidesSha256) }}</span>
-              </label>
-            </div>
-          }
-          @if (availableRuns.length === 0) {
-            <p class="text-muted">No runs recorded for this suite.</p>
-          }
-        </fieldset>
+        <div class="mr-table-scroll gh-datatable-scroll">
+          <app-table-pager [state]="runPickerTable" [rows]="availableRuns" noun="runs" (changed)="onTableChanged()"></app-table-pager>
+          <table class="gh-table gh-datatable mr-run-picker-table">
+            <caption>Runs in this group</caption>
+            <thead>
+              <tr>
+                <th app-sort-header [state]="runPickerTable" column="selected" label="Selected" class="col-center" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="runPickerTable" column="id" label="ID" class="col-center" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="runPickerTable" column="testedModel" label="Tested Model" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="runPickerTable" column="date" label="Date" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="runPickerTable" column="index" label="Index" class="col-center" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="runPickerTable" column="fingerprint" label="Guides fingerprint" (changed)="onTableChanged()"></th>
+              </tr>
+              <tr class="gh-filter-row">
+                <td>
+                  @if (runPickerTable.hasActiveFilters) {
+                    <button type="button" class="gh-filter-clear" (click)="runPickerTable.clearFilters(); cdr.detectChanges()">Clear filters</button>
+                  }
+                </td>
+                <td></td>
+                <td>
+                  <label class="visually-hidden" for="mr-f-run-model">Filter by tested model</label>
+                  <input id="mr-f-run-model" type="text" class="gh-input gh-filter-input" placeholder="Tested model"
+                         [ngModel]="runPickerTable.filters['testedModel']" [ngModelOptions]="{ standalone: true }"
+                         (ngModelChange)="runPickerTable.setFilter('testedModel', $event); cdr.detectChanges()">
+                </td>
+                <td></td>
+                <td>
+                  <label class="visually-hidden" for="mr-f-run-index">Filter by index presence</label>
+                  <select id="mr-f-run-index" class="gh-input gh-filter-select"
+                          [ngModel]="runPickerTable.filters['index']" [ngModelOptions]="{ standalone: true }"
+                          (ngModelChange)="runPickerTable.setFilter('index', $event); cdr.detectChanges()">
+                    <option value="">All</option>
+                    <option value="present">Present</option>
+                    <option value="absent">Absent</option>
+                  </select>
+                </td>
+                <td>
+                  <label class="visually-hidden" for="mr-f-run-fingerprint">Filter by guides fingerprint</label>
+                  <input id="mr-f-run-fingerprint" type="text" class="gh-input gh-filter-input" placeholder="Fingerprint"
+                         [ngModel]="runPickerTable.filters['fingerprint']" [ngModelOptions]="{ standalone: true }"
+                         (ngModelChange)="runPickerTable.setFilter('fingerprint', $event); cdr.detectChanges()">
+                </td>
+              </tr>
+            </thead>
+            <tbody>
+              @if (runPickerTable.noMatches(availableRuns)) {
+                <tr><td colspan="6" class="text-muted">No runs match these filters.</td></tr>
+              } @else {
+                @for (run of runPickerTable.view(availableRuns); track run.id) {
+                  <tr>
+                    <td class="col-center">
+                      <input type="checkbox" [id]="'mr-run-' + run.id"
+                             [attr.aria-label]="'Include run ' + run.id + ' in this group'"
+                             [checked]="isRunSelected(run.id)" (change)="toggleRun(run.id)">
+                    </td>
+                    <td class="col-center col-id">#{{ run.id }}</td>
+                    <td class="col-model">{{ run.testedModelDisplayNameUsed }}</td>
+                    <td class="col-date">{{ formatDate(run.startedAtUtc) }}</td>
+                    <td class="col-center col-index">{{ run.qualityIndex ?? '—' }}</td>
+                    <td class="col-fingerprint mr-mono">{{ shortFingerprint(run.toolGuidesSha256) }}</td>
+                  </tr>
+                }
+              }
+            </tbody>
+          </table>
+          <app-table-pager [state]="runPickerTable" [rows]="availableRuns" noun="runs" [announce]="false" (changed)="onTableChanged()"></app-table-pager>
+        </div>
+
+        @if (selectedRunCount > 0) {
+          <p class="mr-selection-summary">{{ selectionSummary }}</p>
+        }
       }
 
       @if (previewing) {
@@ -300,6 +396,8 @@
           Create Group
         </button>
         <button type="button" class="btn-gh btn-gh-cancel" (click)="clearSelection()">Clear Selection</button>
+        <button type="button" class="btn-gh" [attr.aria-pressed]="showSelectedOnly"
+                (click)="toggleShowSelectedOnly()">Show Selected Only</button>
       </div>
     </section>
   }

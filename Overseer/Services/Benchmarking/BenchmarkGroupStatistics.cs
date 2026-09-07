@@ -264,6 +264,29 @@ public sealed record BenchmarkGroupIndexStatistics
     public double? ReproducibilityStandardDeviation { get; init; }
 
     /// <summary>
+    /// Bounds of the 95 % confidence interval on σ itself:
+    /// <c>SD·√(df/χ²_{0.975,df})</c> and <c>SD·√(df/χ²_{0.025,df})</c> on <c>df = R−1</c>.
+    ///
+    /// <para>The interval is <b>inverted</b> with respect to the critical values — the lower bound
+    /// on σ divides by the upper χ² point — which is why it is computed once here rather than at
+    /// each rendering site.</para>
+    ///
+    /// <para>It exists because a standard deviation from three runs is a very weak estimate: at
+    /// df = 2 the upper bound is over six times the point estimate. Two groups whose SDs differ
+    /// tenfold can have overlapping intervals, so an SD presented without one invites the reader
+    /// to conclude the instrument changed when nothing measurable did.</para>
+    ///
+    /// <para>Null below <see cref="BenchmarkGroupStatistics.MinRunsForReproducibility"/> runs, where
+    /// there is no SD to bound, and null above
+    /// <see cref="BenchmarkGroupStatistics.MaxDegreesOfFreedomForSdInterval"/>, beyond which the χ²
+    /// table stops — an SD from that many runs no longer needs the warning.</para>
+    /// </summary>
+    public double? ReproducibilitySdLower { get; init; }
+
+    /// <inheritdoc cref="ReproducibilitySdLower"/>
+    public double? ReproducibilitySdUpper { get; init; }
+
+    /// <summary>
     /// <c>SD(run indices) / √R</c>. Answers <i>"would a re-run move this?"</i> and
     /// <b>shrinks with R</b>. Null below three runs.
     /// </summary>
@@ -346,6 +369,28 @@ public sealed record BenchmarkGroupSpeedStatistics
 
     public double? ModelTimeP90Ms { get; init; }
     public double? ModelTimeMaxMs { get; init; }
+
+    /// <summary>
+    /// Percentiles of time to first token over every answer that reported one, by the same
+    /// interpolation the model-time percentiles use.
+    ///
+    /// <para>This is the latency a chat user actually perceives: a thinking-heavy configuration
+    /// dominates total model time and says nothing about how long the reader waits before text
+    /// appears. A multi-run report that carries model time alone measures the axis furthest from
+    /// production.</para>
+    /// </summary>
+    public double? TtftP50Ms { get; init; }
+
+    public double? TtftP90Ms { get; init; }
+    public double? TtftMaxMs { get; init; }
+
+    /// <summary>
+    /// Answers the TTFT percentiles were computed over. Separate from
+    /// <see cref="PooledAnswerCount"/> because time to first token is nullable and model time is
+    /// not, so the two denominators genuinely differ and a report that reused one would misstate
+    /// the coverage.
+    /// </summary>
+    public int TtftAnswerCount { get; init; }
 
     /// <summary>Speed aggregates mix timing conditions. See the group's comparability tier.</summary>
     public bool Degraded { get; init; }
@@ -515,6 +560,37 @@ public sealed record BenchmarkGroupUsageStatistics
     /// <summary>Each family's share of <see cref="TotalToolCalls"/>, as a percentage.</summary>
     public IReadOnlyDictionary<string, double> ToolFamilyShares { get; init; }
         = new Dictionary<string, double>();
+
+    // --- Model calls, which is what input cost tracks ---
+
+    /// <summary>
+    /// Model calls summed over every <c>Ok</c> answer that reported the counter, pooled across the
+    /// members.
+    ///
+    /// <para>This is the quantity input-token cost follows, not <see cref="TotalToolCalls"/>: every
+    /// model call resends the whole conversation, so two tools batched into one call pay the input
+    /// once and the same two tools in two calls pay it twice.</para>
+    ///
+    /// <para><b>Null, not zero, when nothing reported it.</b> The per-answer counter is nullable and
+    /// a set graded before it existed has no figure at all, which is a different fact from a set that
+    /// made no model calls — an impossibility for an answered question.</para>
+    /// </summary>
+    public int? TotalModelCalls { get; init; }
+
+    /// <summary>Mean of the per-run totals, over the members that reported any. Null with none.</summary>
+    public double? MeanModelCallsPerRun { get; init; }
+
+    /// <summary>
+    /// Sample standard deviation of the per-run model-call totals, over the members that reported
+    /// any. Null below two such members.
+    /// </summary>
+    public double? ModelCallStandardDeviation { get; init; }
+
+    /// <summary>
+    /// One total per member, in member order. A member none of whose answers reported the counter
+    /// carries <c>null</c> rather than <c>0</c>, and contributes to neither the mean nor the SD.
+    /// </summary>
+    public IReadOnlyList<int?> PerRunModelCalls { get; init; } = Array.Empty<int?>();
 
     // --- Claim verification: what the verifier's spend bought ---
     public int ClaimsSupported { get; init; }
@@ -809,6 +885,14 @@ public static class BenchmarkGroupStatistics
     /// </summary>
     public const int MinRunsForReproducibility = 3;
 
+    /// <summary>
+    /// Highest <c>df</c> the χ² interval on a standard deviation is tabulated for, and therefore the
+    /// largest <i>R</i>−1 <see cref="StandardDeviationInterval95"/> answers for. Above it the
+    /// interval is not reported: an SD from more than twenty runs is tight enough that the warning
+    /// the interval exists to carry no longer applies.
+    /// </summary>
+    public const int MaxDegreesOfFreedomForSdInterval = 19;
+
     /// <summary>Sample SD at or above which an item is flagged unstable.</summary>
     public const double DefaultUnstableItemStandardDeviation = 15.0;
 
@@ -1083,6 +1167,10 @@ public static class BenchmarkGroupStatistics
         double? tCrit = reproSe.HasValue ? StudentTCritical95(r - 1) : null;
         double? reproHalf = reproSe.HasValue && tCrit.HasValue ? tCrit.Value * reproSe.Value : null;
 
+        // The SD is itself an estimate, and at the R a replicate set actually runs at, a weak one.
+        (double Lower, double Upper)? reproSdInterval =
+            reproSd.HasValue ? StandardDeviationInterval95(reproSd.Value, r - 1) : null;
+
         // Reuse, not reimplement: the existing item-sampling standard error, applied to the
         // per-item cross-run means. The method takes integer scores and difficulties, so the means
         // and the weights are rounded on the way in; replicating a run identically leaves both
@@ -1121,6 +1209,8 @@ public static class BenchmarkGroupStatistics
             PerRunIndices = perRunIndices,
             MeanStoredQualityIndex = storedMean,
             ReproducibilityStandardDeviation = reproSd,
+            ReproducibilitySdLower = reproSdInterval?.Lower,
+            ReproducibilitySdUpper = reproSdInterval?.Upper,
             ReproducibilityStandardError = reproSe,
             ReproducibilityCriticalValue = tCrit,
             ReproducibilityHalfWidth = reproHalf,
@@ -1164,6 +1254,18 @@ public static class BenchmarkGroupStatistics
             .Select(a => (double)a.ModelTimeMs)
             .ToList();
 
+        // Time to first token is nullable, so it pools over its own subset of the same answers and
+        // carries its own count. Averaging it into the model-time denominator would report a
+        // coverage the figure does not have.
+        var pooledTtft = members
+            .SelectMany(m => m.Answers ?? new List<BenchmarkRunAnswer>())
+            .Where(a => a.Status == BenchmarkAnswerStatus.Ok
+                        && a.BenchmarkQuestionId.HasValue
+                        && questionIds.Contains(a.BenchmarkQuestionId.Value)
+                        && a.TimeToFirstTokenMs.HasValue)
+            .Select(a => (double)a.TimeToFirstTokenMs!.Value)
+            .ToList();
+
         return new BenchmarkGroupSpeedStatistics
         {
             RunCount = members.Count,
@@ -1174,6 +1276,10 @@ public static class BenchmarkGroupStatistics
             ModelTimeP50Ms = Percentile(pooled, 50.0),
             ModelTimeP90Ms = Percentile(pooled, 90.0),
             ModelTimeMaxMs = pooled.Count > 0 ? pooled.Max() : null,
+            TtftAnswerCount = pooledTtft.Count,
+            TtftP50Ms = Percentile(pooledTtft, 50.0),
+            TtftP90Ms = Percentile(pooledTtft, 90.0),
+            TtftMaxMs = pooledTtft.Count > 0 ? pooledTtft.Max() : null,
             Degraded = cfg.SpeedDegraded,
             DegradedReason = cfg.SpeedDegradedReason,
             Caveat = BuildSpeedCaveat(cfg)
@@ -1300,6 +1406,27 @@ public static class BenchmarkGroupStatistics
                     .Where(a => a.Status == BenchmarkAnswerStatus.Ok)).Values.Sum())
             .ToList();
 
+        // Model calls, over the same Ok answers the tool counts use. The counter is nullable, so a
+        // member none of whose answers carry one has no total rather than a total of zero — the
+        // distinction the whole block turns on, since a member cannot answer a question in no model
+        // calls at all.
+        var perRunModelCalls = new List<int?>(members.Count);
+        foreach (var member in members)
+        {
+            var counted = (member.Answers ?? new List<BenchmarkRunAnswer>())
+                .Where(a => a.Status == BenchmarkAnswerStatus.Ok && a.ModelCallCount.HasValue)
+                .Select(a => a.ModelCallCount!.Value)
+                .ToList();
+
+            perRunModelCalls.Add(counted.Count > 0 ? (int?)counted.Sum() : null);
+        }
+
+        var recordedModelCalls = perRunModelCalls
+            .Where(c => c.HasValue)
+            .Select(c => (double)c!.Value)
+            .ToList();
+        int? totalModelCalls = recordedModelCalls.Count > 0 ? (int?)recordedModelCalls.Sum() : null;
+
         int supported = members.Sum(m => m.ClaimsSupportedCount);
         int refuted = members.Sum(m => m.ClaimsRefutedCount);
         int indeterminate = members.Sum(m => m.ClaimsIndeterminateCount);
@@ -1326,6 +1453,10 @@ public static class BenchmarkGroupStatistics
             ToolFamilyShares = totalToolCalls > 0
                 ? byFamily.ToDictionary(kv => kv.Key, kv => kv.Value * 100.0 / totalToolCalls, StringComparer.Ordinal)
                 : new Dictionary<string, double>(StringComparer.Ordinal),
+            TotalModelCalls = totalModelCalls,
+            MeanModelCallsPerRun = recordedModelCalls.Count > 0 ? recordedModelCalls.Average() : null,
+            ModelCallStandardDeviation = SampleStandardDeviation(recordedModelCalls),
+            PerRunModelCalls = perRunModelCalls,
             ClaimsSupported = supported,
             ClaimsRefuted = refuted,
             ClaimsIndeterminate = indeterminate,
@@ -1334,6 +1465,7 @@ public static class BenchmarkGroupStatistics
         };
 
         bool anythingRecorded = input > 0 || output > 0 || totalToolCalls > 0
+            || usage.TotalModelCalls.HasValue
             || usage.ClaimsChecked > 0 || usage.AnswersWithVerification > 0
             || usage.TotalAssessmentInputTokens > 0 || usage.TotalClaimVerificationInputTokens > 0;
 
@@ -1874,6 +2006,53 @@ public static class BenchmarkGroupStatistics
         return z
             + (z * z * z + z) / (4.0 * df)
             + (5.0 * Math.Pow(z, 5) + 16.0 * z * z * z + 3.0 * z) / (96.0 * df * df);
+    }
+
+    // The 2.5% and 97.5% points of the chi-square distribution, df 2..19, indexed by df so that
+    // the slots below MinRunsForReproducibility - 1 are unusable by construction. Tabulated for the
+    // same reason the t values are: the interval matters most at df = 2, where every closed-form
+    // approximation is at its worst.
+    private static readonly double[] ChiSquareLowerTail025 =
+    {
+        double.NaN, double.NaN,
+        0.0506356, 0.2157953, 0.4844186, 0.8312116, 1.2373442, 1.6898692, 2.1797307, 2.7003895,
+        3.2469728, 3.8157483, 4.4037885, 5.0087505, 5.6287261, 6.2621378, 6.9076644, 7.5641864,
+        8.2307462, 8.9065165
+    };
+
+    /// <inheritdoc cref="ChiSquareLowerTail025"/>
+    private static readonly double[] ChiSquareUpperTail975 =
+    {
+        double.NaN, double.NaN,
+        7.3777589, 9.3484036, 11.1432868, 12.8325020, 14.4493753, 16.0127643, 17.5345461, 19.0227678,
+        20.4831774, 21.9200493, 23.3366642, 24.7356049, 26.1189480, 27.4883929, 28.8453507, 30.1910091,
+        31.5263784, 32.8523269
+    };
+
+    /// <summary>
+    /// The 95 % confidence interval on a population standard deviation, from the χ²(<i>df</i>)
+    /// distribution: <c>[SD·√(df/χ²_{0.975,df}), SD·√(df/χ²_{0.025,df})]</c>.
+    ///
+    /// <para>Note the inversion: the <b>lower</b> bound on σ divides by the <b>upper</b> critical
+    /// value. Getting that the other way round produces an interval that looks plausible and is
+    /// backwards.</para>
+    ///
+    /// <para>Null for <paramref name="degreesOfFreedom"/> outside the tabulated 2 to
+    /// <see cref="MaxDegreesOfFreedomForSdInterval"/>, and null for a negative standard deviation.
+    /// A zero standard deviation yields <c>[0, 0]</c>, which is the correct interval for a
+    /// replication that produced the same number every time.</para>
+    /// </summary>
+    public static (double Lower, double Upper)? StandardDeviationInterval95(
+        double standardDeviation, int degreesOfFreedom)
+    {
+        if (degreesOfFreedom < 2 || degreesOfFreedom > MaxDegreesOfFreedomForSdInterval) return null;
+        if (double.IsNaN(standardDeviation) || standardDeviation < 0.0) return null;
+
+        double df = degreesOfFreedom;
+        double lower = standardDeviation * Math.Sqrt(df / ChiSquareUpperTail975[degreesOfFreedom]);
+        double upper = standardDeviation * Math.Sqrt(df / ChiSquareLowerTail025[degreesOfFreedom]);
+
+        return (lower, upper);
     }
 
     /// <summary>

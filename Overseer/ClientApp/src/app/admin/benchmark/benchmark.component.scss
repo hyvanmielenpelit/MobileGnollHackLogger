@@ -593,6 +593,20 @@
 /* .gh-table now lives in styles.scss: declared here, emulated encapsulation kept it from
    ever reaching the Suite Health child component's tables. */
 
+/* Run History column widths. Twelve columns is a lot for one row; without these the numeric and
+   status columns stretch to fit their sort button while the model-name columns are squeezed. */
+.history-table-wrapper table {
+  th:nth-child(1), td:nth-child(1) { inline-size: 64px; }    // ID
+  th:nth-child(5), td:nth-child(5) { inline-size: 150px; }   // Status
+  th:nth-child(6), td:nth-child(6),
+  th:nth-child(7), td:nth-child(7) { inline-size: 120px; }   // Intelligence / Speed Index
+  th:nth-child(8), td:nth-child(8) { inline-size: 110px; }   // Instrument
+  th:nth-child(9), td:nth-child(9) { inline-size: 90px; }    // Duration
+  th:nth-child(10), td:nth-child(10) { inline-size: 90px; }  // Cost
+  th:nth-child(11), td:nth-child(11) { inline-size: 140px; } // Date (UTC)
+  th:nth-child(12), td:nth-child(12) { inline-size: 110px; } // Actions
+}
+
 .status-badge {
   display: inline-block;
   padding: 3px 8px;

@@ -27,6 +27,21 @@ public static class BenchmarkReportBuilder
         claimVerificationError.StartsWith(BenchmarkService.ClaimVerificationNotCheckedPrefix, StringComparison.Ordinal);
 
     /// <summary>
+    /// What <see cref="Overseer.Services.Tools.ToolRegistry.GetParallelOverrideText"/> actually
+    /// selects for a given mode, in report prose. <c>Enabled</c> loads no override file; the
+    /// batching guidance in Overseer/ToolGuides/_policy.md still applies unchanged.
+    /// </summary>
+    private static string ParallelPolicyDescription(MobileGnollHackLogger.Data.ParallelExecutionMode mode) => mode switch
+    {
+        MobileGnollHackLogger.Data.ParallelExecutionMode.Disabled =>
+            "selects Overseer/ToolGuides/_policy_parallel_disabled.md, so this is part of the prompt text.",
+        MobileGnollHackLogger.Data.ParallelExecutionMode.OnRequest =>
+            "selects Overseer/ToolGuides/_policy_parallel_on_request.md, so this is part of the prompt text.",
+        _ =>
+            "selects no override file; the batching guidance in Overseer/ToolGuides/_policy.md applies unchanged."
+    };
+
+    /// <summary>
     /// A UTC timestamp in the report's own fixed shape. Needed because ":" in a custom format
     /// string is the culture's *time separator* rather than a literal, so an interpolated
     /// "{d:yyyy-MM-dd HH:mm:ss}" renders "08.30.00" under fi-FI — the culture these machines
@@ -422,15 +437,12 @@ public static class BenchmarkReportBuilder
         sb.AppendLine();
 
         sb.AppendLine("### Chat Prompt Under Test");
-        string policyFile = run.TestedModelParallelExecutionModeUsed == MobileGnollHackLogger.Data.ParallelExecutionMode.Disabled
-            ? "_policy_parallel_disabled.md"
-            : "_policy_parallel_on_request.md";
 
         if (string.IsNullOrWhiteSpace(run.CandidatePromptOptionsJson))
         {
             sb.AppendLine("The candidate is graded under the **production Overseer chat system prompt** (`ChatService.BuildSystemPrompt`), not a benchmark-specific prompt. Every quality verdict below is a verdict on the prompt real users receive.");
             sb.AppendLine();
-            sb.AppendLine($"- **Tool batching policy:** {run.TestedModelParallelExecutionModeUsed} — selects Overseer/ToolGuides/{policyFile}, so this is part of the prompt text.");
+            sb.AppendLine($"- **Tool batching policy:** {run.TestedModelParallelExecutionModeUsed} — {ParallelPolicyDescription(run.TestedModelParallelExecutionModeUsed)}");
             sb.AppendLine("- *Configuration not recorded for this run.*");
         }
         else
@@ -451,7 +463,7 @@ public static class BenchmarkReportBuilder
             sb.AppendLine($"- **Mode:** {modeStr} · **Response style:** {styleStr}");
             sb.AppendLine($"- **Tools:** {toolsStr} · **Web search:** {webStr} · **Subagents:** {subagentsStr} · **Source code references:** {srcStr}");
             sb.AppendLine($"- **Spoiler-free mode:** {spoilerStr} · **Active game:** {activeGameStr} · **Message history:** {historyStr}");
-            sb.AppendLine($"- **Tool batching policy:** {run.TestedModelParallelExecutionModeUsed} — selects Overseer/ToolGuides/{policyFile}, so this is part of the prompt text.");
+            sb.AppendLine($"- **Tool batching policy:** {run.TestedModelParallelExecutionModeUsed} — {ParallelPolicyDescription(run.TestedModelParallelExecutionModeUsed)}");
             sb.AppendLine("- **Pre-injected wiki context:** none — live chat pre-injects relevant articles, so this run is a strictly harder configuration than production and its tool counts are an upper bound on chat's.");
             sb.AppendLine();
             sb.AppendLine("*Configurations differ in what they measure. Two runs are comparable on Completeness, Conciseness and Readability only if this block matches.*");

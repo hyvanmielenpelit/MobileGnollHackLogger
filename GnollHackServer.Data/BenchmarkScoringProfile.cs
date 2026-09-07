@@ -64,7 +64,7 @@ public class BenchmarkScoringProfile
     // Column default 0, deliberately: a non-zero default here would silently change the grading
     // regime of every profile that predates this field the moment the migration ran, which is
     // exactly the run-11 F1 mistake repeated at the schema level. Only the Standard Intelligence
-    // Index (Default) profile is set to 4, and only by an explicit data step in the migration —
+    // Index profile is set to 4, and only by an explicit data step in the migration —
     // never by this default.
     public int SecondOpinionMinimumSample { get; set; } = 0;
 

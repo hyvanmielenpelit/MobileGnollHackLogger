@@ -259,6 +259,14 @@ public class BenchmarkService
             // given question, and for runs 1-13 it carries the old per-band values.
             int maxToolCallsPerQuestion = ResolveToolCallBudget();
             run.MaxToolCallsPerQuestionUsed = maxToolCallsPerQuestion;
+
+            // The other three caps are resolved per question, from the same configuration these
+            // three reads use, so the snapshot cannot drift from the figures that were applied.
+            run.ToolIterationCapsJson = RenderBandedCaps(_ => ResolveToolIterations());
+            run.TotalModelCallCapsJson = RenderBandedCaps(_ => ResolveTotalModelCalls());
+            run.QuestionTimeoutSecondsJson = RenderBandedCaps(
+                band => ResolveBandedCap("QuestionTimeoutSeconds", band, DefaultQuestionTimeoutSeconds(band)));
+
             await db.SaveChangesAsync(cancellationToken);
 
             bool suiteHasBoard = run.BenchmarkSuite?.GameSnapshot != null;
@@ -580,6 +588,28 @@ public class BenchmarkService
     {
         int banded = _configuration.GetValue<int>($"Benchmark:{section}:{band}", 0);
         return banded > 0 ? banded : bandDefault;
+    }
+
+    /// <summary>
+    /// A per-question cap rendered for every difficulty band, as canonical JSON:
+    /// <c>{"Simple":n,"Intermediate":n,"Advanced":n}</c>, bands in that fixed order and numbers in
+    /// the invariant culture, so two runs configured alike render byte-identical text and the value
+    /// can be compared as a fingerprint. A flat cap renders the same figure under all three bands,
+    /// which is what applied to each of them.
+    /// </summary>
+    private static string RenderBandedCaps(Func<BenchmarkDifficulty, int> resolve)
+    {
+        var bands = new[]
+        {
+            BenchmarkDifficulty.Simple,
+            BenchmarkDifficulty.Intermediate,
+            BenchmarkDifficulty.Advanced
+        };
+
+        var parts = bands.Select(band =>
+            $"\"{band}\":{resolve(band).ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+
+        return "{" + string.Join(",", parts) + "}";
     }
 
     /// <summary>
