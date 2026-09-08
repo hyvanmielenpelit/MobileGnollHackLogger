@@ -47,8 +47,8 @@ public class BenchmarkRubricCitationValidatorTests
         // Line numbers in GnollHack's C source drift with every commit, so validating them would
         // produce permanent false alarms — and an operator who learns to ignore one line of a
         // panel learns to ignore the panel.
-        var citation = Assert.Single(BenchmarkRubricCitationValidator.Parse(Q1Rubric)
-            .Where(c => c.Value == "src/role.c"));
+        var citation = Assert.Single(BenchmarkRubricCitationValidator.Parse(Q1Rubric),
+            c => c.Value == "src/role.c");
 
         Assert.Equal(1217, citation.LineNumber);
     }
@@ -125,7 +125,7 @@ public class BenchmarkRubricCitationValidatorTests
             symbol => true,
             wikiTitleResolver: null));
 
-        var wiki = Assert.Single(question.Citations.Where(c => c.Kind == BenchmarkCitationKind.WikiArticle));
+        var wiki = Assert.Single(question.Citations, c => c.Kind == BenchmarkCitationKind.WikiArticle);
         Assert.Equal(BenchmarkCitationStatus.NotValidated, wiki.Status);
         Assert.Equal(1, question.NotValidatedCount);
     }
@@ -139,7 +139,7 @@ public class BenchmarkRubricCitationValidatorTests
             path => throw new System.InvalidOperationException("index not ready"),
             symbol => true));
 
-        var file = Assert.Single(question.Citations.Where(c => c.Kind == BenchmarkCitationKind.SourceFile));
+        var file = Assert.Single(question.Citations, c => c.Kind == BenchmarkCitationKind.SourceFile);
         Assert.Equal(BenchmarkCitationStatus.NotValidated, file.Status);
     }
 

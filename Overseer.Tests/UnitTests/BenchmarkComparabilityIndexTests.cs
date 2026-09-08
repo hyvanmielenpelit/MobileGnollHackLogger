@@ -466,7 +466,7 @@ public class BenchmarkComparabilityIndexTests
         using (var db = new ApplicationDbContext(options))
         {
             db.BenchmarkSuites.Add(new BenchmarkSuite { Id = 5, Name = "NetHack Wiki Suite" });
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
         var dto = await IndexAsync(options, runIds: new long[] { 1 });
@@ -542,7 +542,7 @@ public class BenchmarkComparabilityIndexTests
         using var db = new ApplicationDbContext(NewDatabase());
         var service = new BenchmarkComparabilityIndexService(db);
 
-        var (result, error) = await service.BuildAsync(new BenchmarkComparabilityIndexRequest());
+        var (result, error) = await service.BuildAsync(new BenchmarkComparabilityIndexRequest(), TestContext.Current.CancellationToken);
 
         Assert.Null(result);
         Assert.Contains("at least one run or group", error!);
@@ -559,7 +559,7 @@ public class BenchmarkComparabilityIndexTests
             RunIds = Enumerable.Range(1, BenchmarkComparabilityIndexService.MaxRunIds + 1)
                 .Select(i => (long)i)
                 .ToList()
-        });
+        }, TestContext.Current.CancellationToken);
 
         Assert.Null(result);
         Assert.Contains(BenchmarkComparabilityIndexService.MaxRunIds.ToString(), error!);
@@ -577,7 +577,7 @@ public class BenchmarkComparabilityIndexTests
         var (result, error) = await service.BuildAsync(new BenchmarkComparabilityIndexRequest
         {
             RunIds = new List<long> { 1, 99 }
-        });
+        }, TestContext.Current.CancellationToken);
 
         Assert.Null(result);
         Assert.Contains("99", error!);

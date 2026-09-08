@@ -300,7 +300,7 @@ public class BenchmarkRubricGapAuthorTests
 
         Assert.IsType<OkObjectResult>(result);
 
-        var stored = await db.BenchmarkQuestions.FirstAsync(q => q.Id == question.Id);
+        var stored = await db.BenchmarkQuestions.FirstAsync(q => q.Id == question.Id, TestContext.Current.CancellationToken);
         Assert.Contains("Mentions infravision.", stored.ExpectedPoints);
         Assert.Contains("Gnolls gain infravision at experience level 1.", stored.ExpectedPoints);
         // A rubric edit is a content change: exactly one bump, from 3 to 4.
@@ -336,7 +336,7 @@ public class BenchmarkRubricGapAuthorTests
         // The draft is kept verbatim, so the edit stays reconstructable.
         Assert.Equal("Gnolls gain infravision at experience level 1.", acceptance.DraftText);
 
-        var stored = await db.BenchmarkQuestions.FirstAsync(q => q.Id == question.Id);
+        var stored = await db.BenchmarkQuestions.FirstAsync(q => q.Id == question.Id, TestContext.Current.CancellationToken);
         Assert.Equal("Gnolls gain infravision from experience level 1 onward.", stored.ExpectedPoints);
         Assert.DoesNotContain("at experience level 1.", stored.ExpectedPoints);
     }
@@ -389,9 +389,10 @@ public class BenchmarkRubricGapAuthorTests
     [Fact]
     public async Task Accept_AppliesOneDraftOnly_LeavingEveryOtherQuestionUntouched()
     {
+        var ct = TestContext.Current.CancellationToken;
         var (controller, db, jobs) = CreateController();
         var question = await SeedQuestionAsync(db, null);
-        var suite = await db.BenchmarkSuites.Include(s => s.Questions).FirstAsync();
+        var suite = await db.BenchmarkSuites.Include(s => s.Questions).FirstAsync(ct);
         var other = new BenchmarkQuestion
         {
             QuestionText = "Second question",
@@ -403,7 +404,7 @@ public class BenchmarkRubricGapAuthorTests
             BenchmarkSuiteId = suite.Id
         };
         db.BenchmarkQuestions.Add(other);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(ct);
 
         var job = SeedJob(jobs, question.Id, "Gnolls gain infravision at experience level 1.");
         await controller.AcceptRubricAddition(question.Id, new AcceptRubricAdditionRequest
@@ -413,7 +414,7 @@ public class BenchmarkRubricGapAuthorTests
             ClusterKey = $"{question.Id}:0"
         }, CancellationToken.None);
 
-        var untouched = await db.BenchmarkQuestions.FirstAsync(q => q.Id == other.Id);
+        var untouched = await db.BenchmarkQuestions.FirstAsync(q => q.Id == other.Id, ct);
         Assert.Equal("Untouched.", untouched.ExpectedPoints);
         Assert.Equal(3, untouched.ItemRevision);
         Assert.Equal(25, untouched.AssessedDifficulty);
@@ -432,7 +433,7 @@ public class BenchmarkRubricGapAuthorTests
         }, CancellationToken.None);
 
         Assert.IsType<BadRequestObjectResult>(result);
-        var stored = await db.BenchmarkQuestions.FirstAsync(q => q.Id == question.Id);
+        var stored = await db.BenchmarkQuestions.FirstAsync(q => q.Id == question.Id, TestContext.Current.CancellationToken);
         Assert.Equal("Existing.", stored.ExpectedPoints);
         Assert.Equal(3, stored.ItemRevision);
         Assert.Empty(db.BenchmarkRubricAdditionAcceptances);
@@ -454,7 +455,7 @@ public class BenchmarkRubricGapAuthorTests
         }, CancellationToken.None);
 
         Assert.IsType<BadRequestObjectResult>(result);
-        var stored = await db.BenchmarkQuestions.FirstAsync(q => q.Id == question.Id);
+        var stored = await db.BenchmarkQuestions.FirstAsync(q => q.Id == question.Id, TestContext.Current.CancellationToken);
         Assert.Equal("Existing.", stored.ExpectedPoints);
         Assert.Empty(db.BenchmarkRubricAdditionAcceptances);
     }

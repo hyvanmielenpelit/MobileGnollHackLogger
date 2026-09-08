@@ -41,7 +41,7 @@ public class BenchmarkScoringProfileServiceTests
         Assert.True(created.Success);
 
         await using var db = new ApplicationDbContext(dbOptions);
-        var stored = await db.BenchmarkScoringProfiles.FirstAsync(p => p.Name == "Speed-Weighted Experiment");
+        var stored = await db.BenchmarkScoringProfiles.FirstAsync(p => p.Name == "Speed-Weighted Experiment", TestContext.Current.CancellationToken);
 
         Assert.False(stored.IsDefault);
         Assert.Equal(0, stored.SecondOpinionMinimumSample);

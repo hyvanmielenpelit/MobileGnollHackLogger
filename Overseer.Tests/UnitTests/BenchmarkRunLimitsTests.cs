@@ -58,15 +58,16 @@ public class BenchmarkRunLimitsTests
     [Fact]
     public async Task Limits_CountTheRolling24Hours_NotTheCalendarDay()
     {
+        var ct = TestContext.Current.CancellationToken;
         using var db = CreateDbContext();
 
         AddRunStartedHoursAgo(db, 23);   // inside the window
         AddRunStartedHoursAgo(db, 25);   // outside it
         AddRunStartedHoursAgo(db, 0.5);  // inside both windows
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(ct);
 
         var guard = new BenchmarkComplianceGuard(CreateConfig(), db);
-        var limits = await guard.GetLimitsAsync();
+        var limits = await guard.GetLimitsAsync(ct: ct);
 
         Assert.Equal(2, limits.RunsInLast24Hours);
         Assert.Equal(1, limits.RunsInLastHour);
@@ -75,15 +76,16 @@ public class BenchmarkRunLimitsTests
     [Fact]
     public async Task Limits_CountTheRolling60Minutes_ForTheHourlyWindow()
     {
+        var ct = TestContext.Current.CancellationToken;
         using var db = CreateDbContext();
 
         AddRunStartedHoursAgo(db, 0.5);
         AddRunStartedHoursAgo(db, 0.9);
         AddRunStartedHoursAgo(db, 1.1);  // just outside
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(ct);
 
         var guard = new BenchmarkComplianceGuard(CreateConfig(), db);
-        var limits = await guard.GetLimitsAsync();
+        var limits = await guard.GetLimitsAsync(ct: ct);
 
         Assert.Equal(2, limits.RunsInLastHour);
         Assert.Equal(3, limits.RunsInLast24Hours);
@@ -95,7 +97,7 @@ public class BenchmarkRunLimitsTests
         using var db = CreateDbContext();
 
         var guard = new BenchmarkComplianceGuard(CreateConfig(maxRunsPerDay: 7, maxRunsPerHour: 3), db);
-        var limits = await guard.GetLimitsAsync();
+        var limits = await guard.GetLimitsAsync(ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(7, limits.MaxRunsPerDay);
         Assert.Equal(3, limits.MaxRunsPerHour);
@@ -109,16 +111,17 @@ public class BenchmarkRunLimitsTests
     [Fact]
     public async Task RemainingDailyHeadroom_NeverGoesNegative()
     {
+        var ct = TestContext.Current.CancellationToken;
         using var db = CreateDbContext();
 
         for (int i = 0; i < 5; i++)
         {
             AddRunStartedHoursAgo(db, 2);
         }
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(ct);
 
         var guard = new BenchmarkComplianceGuard(CreateConfig(maxRunsPerDay: 2), db);
-        var limits = await guard.GetLimitsAsync();
+        var limits = await guard.GetLimitsAsync(ct: ct);
 
         Assert.Equal(5, limits.RunsInLast24Hours);
         Assert.Equal(0, limits.RemainingDailyHeadroom);
@@ -127,14 +130,15 @@ public class BenchmarkRunLimitsTests
     [Fact]
     public async Task RemainingDailyHeadroom_IsTheCapMinusTheRollingCount()
     {
+        var ct = TestContext.Current.CancellationToken;
         using var db = CreateDbContext();
 
         AddRunStartedHoursAgo(db, 3);
         AddRunStartedHoursAgo(db, 30);  // outside the window: must not consume headroom
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(ct);
 
         var guard = new BenchmarkComplianceGuard(CreateConfig(maxRunsPerDay: 6), db);
-        var limits = await guard.GetLimitsAsync();
+        var limits = await guard.GetLimitsAsync(ct: ct);
 
         Assert.Equal(1, limits.RunsInLast24Hours);
         Assert.Equal(5, limits.RemainingDailyHeadroom);
@@ -148,16 +152,17 @@ public class BenchmarkRunLimitsTests
     [Fact]
     public async Task Limits_AgreeWithCanSpend_AtTheBoundary()
     {
+        var ct = TestContext.Current.CancellationToken;
         using var db = CreateDbContext();
 
         AddRunStartedHoursAgo(db, 2);
         AddRunStartedHoursAgo(db, 3);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(ct);
 
         var guard = new BenchmarkComplianceGuard(CreateConfig(maxRunsPerDay: 2, maxRunsPerHour: 10), db);
 
-        var limits = await guard.GetLimitsAsync();
-        var (allowed, reason) = await guard.CanSpendAsync();
+        var limits = await guard.GetLimitsAsync(ct: ct);
+        var (allowed, reason) = await guard.CanSpendAsync(ct: ct);
 
         Assert.Equal(0, limits.RemainingDailyHeadroom);
         Assert.False(allowed);

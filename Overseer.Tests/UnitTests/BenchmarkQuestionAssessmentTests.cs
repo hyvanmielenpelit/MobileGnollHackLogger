@@ -62,7 +62,7 @@ public class BenchmarkQuestionAssessmentTests
             Id = 10,
             Provider = "OpenAI",
             ModelId = "gpt-4o",
-            DisplayName = null
+            DisplayName = null!
         };
 
         BenchmarkQuestionAssessment.ApplySnapshot(question, 50, config, DateTime.UtcNow);

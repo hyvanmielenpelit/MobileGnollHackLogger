@@ -161,7 +161,7 @@ public class BenchmarkSeriesOrchestratorTests
 
         var orchestrator = CreateOrchestrator(factory, new BenchmarkRunManager());
 
-        var result = await orchestrator.StartSeriesAsync(Request(suite.Id, runCount: 0), "user");
+        var result = await orchestrator.StartSeriesAsync(Request(suite.Id, runCount: 0), "user", TestContext.Current.CancellationToken);
 
         Assert.Equal(BenchmarkSeriesStartOutcome.Invalid, result.Outcome);
         Assert.Contains("at least 1", result.Error);
@@ -180,6 +180,7 @@ public class BenchmarkSeriesOrchestratorTests
     [InlineData(20)]
     public async Task StartSeries_AcceptsExactlyTheConfiguredDailyCap_AndRejectsOneMore(int maxRunsPerDay)
     {
+        var ct = TestContext.Current.CancellationToken;
         var config = CreateConfig(maxRunsPerDay: maxRunsPerDay, maxRunsPerHour: maxRunsPerDay);
         var (factory, dbName) = CreateScopeFactory(config);
         using var db = CreateDbContext(dbName);
@@ -188,13 +189,13 @@ public class BenchmarkSeriesOrchestratorTests
         var orchestrator = CreateOrchestrator(factory, new BenchmarkRunManager());
 
         var tooMany = await orchestrator.StartSeriesAsync(
-            Request(suite.Id, runCount: maxRunsPerDay + 1), "user");
+            Request(suite.Id, runCount: maxRunsPerDay + 1), "user", ct);
 
         Assert.Equal(BenchmarkSeriesStartOutcome.Invalid, tooMany.Outcome);
         Assert.Contains(maxRunsPerDay.ToString(), tooMany.Error);
 
         var atCap = await orchestrator.StartSeriesAsync(
-            Request(suite.Id, runCount: maxRunsPerDay), "user");
+            Request(suite.Id, runCount: maxRunsPerDay), "user", ct);
 
         Assert.Equal(BenchmarkSeriesStartOutcome.Started, atCap.Outcome);
     }
@@ -215,7 +216,7 @@ public class BenchmarkSeriesOrchestratorTests
 
         var orchestrator = CreateOrchestrator(factory, runManager);
 
-        var result = await orchestrator.StartSeriesAsync(Request(suite.Id, runCount: 2), "user");
+        var result = await orchestrator.StartSeriesAsync(Request(suite.Id, runCount: 2), "user", TestContext.Current.CancellationToken);
 
         Assert.Equal(BenchmarkSeriesStartOutcome.Conflict, result.Outcome);
     }
@@ -223,6 +224,7 @@ public class BenchmarkSeriesOrchestratorTests
     [Fact]
     public async Task StartSeries_RecordsTheRequestAndTheCapPreference_OnTheRow()
     {
+        var ct = TestContext.Current.CancellationToken;
         var config = CreateConfig();
         var (factory, dbName) = CreateScopeFactory(config);
         using var db = CreateDbContext(dbName);
@@ -232,12 +234,12 @@ public class BenchmarkSeriesOrchestratorTests
         request.AllowCapWait = true;
 
         var orchestrator = CreateOrchestrator(factory, new BenchmarkRunManager());
-        var result = await orchestrator.StartSeriesAsync(request, "user");
+        var result = await orchestrator.StartSeriesAsync(request, "user", ct);
 
         Assert.True(result.Started);
 
         using var readback = CreateDbContext(dbName);
-        var series = await readback.BenchmarkRunSeries.FirstAsync(s => s.Id == result.SeriesId!.Value);
+        var series = await readback.BenchmarkRunSeries.FirstAsync(s => s.Id == result.SeriesId!.Value, ct);
 
         Assert.Equal(3, series.RequestedRunCount);
         Assert.Equal(0, series.CompletedRunCount);
@@ -292,7 +294,7 @@ public class BenchmarkSeriesOrchestratorTests
 
         var orchestrator = CreateOrchestrator(factory, new BenchmarkRunManager());
 
-        var result = await orchestrator.ResumeSeriesAsync(series.Id, acknowledgeInstrumentChange: false);
+        var result = await orchestrator.ResumeSeriesAsync(series.Id, acknowledgeInstrumentChange: false, TestContext.Current.CancellationToken);
 
         // Cancelled is the important one: the operator said stop, which is a different statement
         // from a series that halted on its own and left a Continue button.
@@ -312,7 +314,7 @@ public class BenchmarkSeriesOrchestratorTests
 
         var orchestrator = CreateOrchestrator(factory, new BenchmarkRunManager());
 
-        var result = await orchestrator.ResumeSeriesAsync(series.Id, acknowledgeInstrumentChange: false);
+        var result = await orchestrator.ResumeSeriesAsync(series.Id, acknowledgeInstrumentChange: false, TestContext.Current.CancellationToken);
 
         Assert.Equal(BenchmarkSeriesStartOutcome.Invalid, result.Outcome);
         Assert.Contains("already completed", result.Error);
@@ -334,7 +336,7 @@ public class BenchmarkSeriesOrchestratorTests
 
         var orchestrator = CreateOrchestrator(factory, runManager);
 
-        var result = await orchestrator.ResumeSeriesAsync(series.Id, acknowledgeInstrumentChange: false);
+        var result = await orchestrator.ResumeSeriesAsync(series.Id, acknowledgeInstrumentChange: false, TestContext.Current.CancellationToken);
 
         Assert.Equal(BenchmarkSeriesStartOutcome.Conflict, result.Outcome);
     }
@@ -342,6 +344,7 @@ public class BenchmarkSeriesOrchestratorTests
     [Fact]
     public async Task Resume_IsRefused_WhenTheSpendGuardDenies()
     {
+        var ct = TestContext.Current.CancellationToken;
         // A cap of one, with one run already inside the rolling window: the guard refuses before
         // the instrument guard is even consulted. A resume is a new run and is capped like one.
         var config = CreateConfig(maxRunsPerDay: 1, maxRunsPerHour: 1);
@@ -363,11 +366,11 @@ public class BenchmarkSeriesOrchestratorTests
             StartedAtUtc = DateTime.UtcNow.AddMinutes(-5),
             Status = BenchmarkRunStatus.Completed
         });
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(ct);
 
         var orchestrator = CreateOrchestrator(factory, new BenchmarkRunManager());
 
-        var result = await orchestrator.ResumeSeriesAsync(series.Id, acknowledgeInstrumentChange: false);
+        var result = await orchestrator.ResumeSeriesAsync(series.Id, acknowledgeInstrumentChange: false, ct);
 
         Assert.Equal(BenchmarkSeriesStartOutcome.SpendDenied, result.Outcome);
     }
@@ -380,7 +383,7 @@ public class BenchmarkSeriesOrchestratorTests
 
         var orchestrator = CreateOrchestrator(factory, new BenchmarkRunManager());
 
-        var result = await orchestrator.ResumeSeriesAsync(4242, acknowledgeInstrumentChange: false);
+        var result = await orchestrator.ResumeSeriesAsync(4242, acknowledgeInstrumentChange: false, TestContext.Current.CancellationToken);
 
         Assert.Equal(BenchmarkSeriesStartOutcome.NotFound, result.Outcome);
     }
@@ -390,6 +393,7 @@ public class BenchmarkSeriesOrchestratorTests
     [Fact]
     public async Task Cancel_MarksTheSeriesCancelled_AndCancellationIsNotResumable()
     {
+        var ct = TestContext.Current.CancellationToken;
         var config = CreateConfig();
         var (factory, dbName) = CreateScopeFactory(config);
         using var db = CreateDbContext(dbName);
@@ -398,21 +402,22 @@ public class BenchmarkSeriesOrchestratorTests
 
         var orchestrator = CreateOrchestrator(factory, new BenchmarkRunManager());
 
-        Assert.True(await orchestrator.CancelSeriesAsync(series.Id));
+        Assert.True(await orchestrator.CancelSeriesAsync(series.Id, ct));
 
         using var readback = CreateDbContext(dbName);
-        var cancelled = await readback.BenchmarkRunSeries.FirstAsync(s => s.Id == series.Id);
+        var cancelled = await readback.BenchmarkRunSeries.FirstAsync(s => s.Id == series.Id, ct);
         Assert.Equal(BenchmarkRunSeriesStatus.Cancelled, cancelled.Status);
         Assert.Null(cancelled.StopReason);
         Assert.NotNull(cancelled.CompletedAtUtc);
 
-        var resume = await orchestrator.ResumeSeriesAsync(series.Id, acknowledgeInstrumentChange: false);
+        var resume = await orchestrator.ResumeSeriesAsync(series.Id, acknowledgeInstrumentChange: false, ct);
         Assert.Equal(BenchmarkSeriesStartOutcome.Invalid, resume.Outcome);
     }
 
     [Fact]
     public async Task Cancel_CancelsTheInFlightMemberThroughTheRunManager()
     {
+        var ct = TestContext.Current.CancellationToken;
         var config = CreateConfig();
         var (factory, dbName) = CreateScopeFactory(config);
         using var db = CreateDbContext(dbName);
@@ -435,14 +440,14 @@ public class BenchmarkSeriesOrchestratorTests
             StartedAtUtc = DateTime.UtcNow
         };
         db.BenchmarkRuns.Add(member);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(ct);
 
         var runManager = new BenchmarkRunManager();
         var cts = new System.Threading.CancellationTokenSource();
         Assert.True(runManager.TryStart(member.Id, cts, out _));
 
         var orchestrator = CreateOrchestrator(factory, runManager);
-        Assert.True(await orchestrator.CancelSeriesAsync(series.Id));
+        Assert.True(await orchestrator.CancelSeriesAsync(series.Id, ct));
 
         // Cancelled through the run manager rather than by writing the row directly, so the run's
         // own finalisation path runs instead of being bypassed.
@@ -457,7 +462,7 @@ public class BenchmarkSeriesOrchestratorTests
         var (factory, _) = CreateScopeFactory(config);
         var orchestrator = CreateOrchestrator(factory, new BenchmarkRunManager());
 
-        Assert.False(await orchestrator.CancelSeriesAsync(4242));
+        Assert.False(await orchestrator.CancelSeriesAsync(4242, TestContext.Current.CancellationToken));
     }
 
     // --- Startup reconciliation --------------------------------------------------------------
@@ -471,6 +476,7 @@ public class BenchmarkSeriesOrchestratorTests
     [Fact]
     public async Task Reconcile_MovesAnOrphanedSeriesToStopped_SoContinueBecomesAvailable()
     {
+        var ct = TestContext.Current.CancellationToken;
         var config = CreateConfig();
         var (factory, dbName) = CreateScopeFactory(config);
         using var db = CreateDbContext(dbName);
@@ -484,14 +490,14 @@ public class BenchmarkSeriesOrchestratorTests
 
         var orchestrator = CreateOrchestrator(factory, new BenchmarkRunManager());
 
-        int reconciled = await orchestrator.ReconcileOrphanedSeriesAsync(db);
+        int reconciled = await orchestrator.ReconcileOrphanedSeriesAsync(db, ct);
 
         Assert.Equal(3, reconciled);
 
         using var readback = CreateDbContext(dbName);
         foreach (long id in new[] { running.Id, waiting.Id, pending.Id })
         {
-            var row = await readback.BenchmarkRunSeries.FirstAsync(s => s.Id == id);
+            var row = await readback.BenchmarkRunSeries.FirstAsync(s => s.Id == id, ct);
             Assert.Equal(BenchmarkRunSeriesStatus.Stopped, row.Status);
             Assert.NotNull(row.StopReason);
             Assert.Contains("restarted", row.ErrorMessage);
@@ -500,10 +506,10 @@ public class BenchmarkSeriesOrchestratorTests
         // A terminal series is left exactly as it was: it is not orphaned, it is finished.
         Assert.Equal(
             BenchmarkRunSeriesStatus.Completed,
-            (await readback.BenchmarkRunSeries.FirstAsync(s => s.Id == completed.Id)).Status);
+            (await readback.BenchmarkRunSeries.FirstAsync(s => s.Id == completed.Id, ct)).Status);
         Assert.Equal(
             BenchmarkRunSeriesStatus.Cancelled,
-            (await readback.BenchmarkRunSeries.FirstAsync(s => s.Id == cancelled.Id)).Status);
+            (await readback.BenchmarkRunSeries.FirstAsync(s => s.Id == cancelled.Id, ct)).Status);
     }
 
     [Fact]
@@ -515,7 +521,7 @@ public class BenchmarkSeriesOrchestratorTests
 
         var orchestrator = CreateOrchestrator(factory, new BenchmarkRunManager());
 
-        Assert.Equal(0, await orchestrator.ReconcileOrphanedSeriesAsync(db));
+        Assert.Equal(0, await orchestrator.ReconcileOrphanedSeriesAsync(db, TestContext.Current.CancellationToken));
     }
 
     /// <summary>
@@ -526,18 +532,19 @@ public class BenchmarkSeriesOrchestratorTests
     [Fact]
     public async Task Resume_WorksFromAFreshOrchestrator_AfterReconciliation()
     {
+        var ct = TestContext.Current.CancellationToken;
         var config = CreateConfig();
         var (factory, dbName) = CreateScopeFactory(config);
         using var db = CreateDbContext(dbName);
         var suite = await SeedSuiteAndConfigsAsync(db);
         var series = await SeedSeriesAsync(db, suite, BenchmarkRunSeriesStatus.Running);
 
-        await CreateOrchestrator(factory, new BenchmarkRunManager()).ReconcileOrphanedSeriesAsync(db);
+        await CreateOrchestrator(factory, new BenchmarkRunManager()).ReconcileOrphanedSeriesAsync(db, ct);
 
         // A different instance entirely — as after a service restart.
         var afterRestart = CreateOrchestrator(factory, new BenchmarkRunManager());
 
-        var result = await afterRestart.ResumeSeriesAsync(series.Id, acknowledgeInstrumentChange: false);
+        var result = await afterRestart.ResumeSeriesAsync(series.Id, acknowledgeInstrumentChange: false, ct);
 
         // What this asserts is that the resume was *accepted* by an orchestrator that never saw the
         // series start. The refusals above are the branches that reject before this point.
@@ -596,7 +603,7 @@ public class BenchmarkSeriesOrchestratorTests
             db.BenchmarkRuns.Add(member);
         }
 
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var comparability = BenchmarkComparabilityKey.Resolve(members);
 

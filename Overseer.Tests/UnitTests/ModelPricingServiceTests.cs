@@ -176,6 +176,7 @@ public class ModelPricingServiceTests
     [Fact]
     public async Task ResolveForConfigurationAsync_CachesLookups()
     {
+        var ct = TestContext.Current.CancellationToken;
         using var db = CreateInMemoryDb();
         var config = new SystemAiApiConfiguration
         {
@@ -186,7 +187,7 @@ public class ModelPricingServiceTests
             PricingMode = "default"
         };
         db.SystemAiApiConfigurations.Add(config);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(ct);
 
         var service = new ModelPricingService(_metadataService, db);
 
@@ -196,7 +197,7 @@ public class ModelPricingServiceTests
 
         // Remove from db to verify cached lookup succeeds
         db.SystemAiApiConfigurations.Remove(config);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(ct);
 
         var second = await service.ResolveForConfigurationAsync(42, null, null);
         Assert.Same(first, second);

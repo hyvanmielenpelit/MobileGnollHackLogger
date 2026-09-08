@@ -69,6 +69,7 @@ public class BenchmarkComplianceGuardTests
     [Fact]
     public async Task CanSpendAsync_AllowsBelowHourlyCap_DeniesAtHourlyCap()
     {
+        var ct = TestContext.Current.CancellationToken;
         var db = CreateDbContext();
         var config = CreateConfig(maxRunsPerHour: 3, maxRunsPerDay: 20);
         var guard = new BenchmarkComplianceGuard(config, db);
@@ -78,17 +79,17 @@ public class BenchmarkComplianceGuardTests
         db.BenchmarkRuns.Add(CreateTestRun("Suite2", DateTime.UtcNow.AddMinutes(-20)));
         // Add 1 old run from 2 hours ago (should not count for hourly)
         db.BenchmarkRuns.Add(CreateTestRun("SuiteOld", DateTime.UtcNow.AddHours(-2)));
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(ct);
 
-        var (allowed1, reason1) = await guard.CanSpendAsync();
+        var (allowed1, reason1) = await guard.CanSpendAsync(ct: ct);
         Assert.True(allowed1);
         Assert.Null(reason1);
 
         // Add 3rd run in trailing hour (hitting the cap of 3)
         db.BenchmarkRuns.Add(CreateTestRun("Suite3", DateTime.UtcNow.AddMinutes(-5)));
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(ct);
 
-        var (allowed2, reason2) = await guard.CanSpendAsync();
+        var (allowed2, reason2) = await guard.CanSpendAsync(ct: ct);
         Assert.False(allowed2);
         Assert.NotNull(reason2);
         Assert.Contains("Hourly benchmark run cap reached (3 runs/hour)", reason2);
@@ -97,6 +98,7 @@ public class BenchmarkComplianceGuardTests
     [Fact]
     public async Task CanSpendAsync_AllowsBelowDailyCap_DeniesAtDailyCap()
     {
+        var ct = TestContext.Current.CancellationToken;
         var db = CreateDbContext();
         var config = CreateConfig(maxRunsPerHour: 10, maxRunsPerDay: 4);
         var guard = new BenchmarkComplianceGuard(config, db);
@@ -107,17 +109,17 @@ public class BenchmarkComplianceGuardTests
         db.BenchmarkRuns.Add(CreateTestRun("S3", DateTime.UtcNow.AddHours(-6)));
         // Add 1 old run from 30 hours ago (should not count for daily)
         db.BenchmarkRuns.Add(CreateTestRun("SOld", DateTime.UtcNow.AddHours(-30)));
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(ct);
 
-        var (allowed1, reason1) = await guard.CanSpendAsync();
+        var (allowed1, reason1) = await guard.CanSpendAsync(ct: ct);
         Assert.True(allowed1);
         Assert.Null(reason1);
 
         // Add 4th run in past 24 hours (hitting the daily cap of 4)
         db.BenchmarkRuns.Add(CreateTestRun("S4", DateTime.UtcNow.AddHours(-2)));
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(ct);
 
-        var (allowed2, reason2) = await guard.CanSpendAsync();
+        var (allowed2, reason2) = await guard.CanSpendAsync(ct: ct);
         Assert.False(allowed2);
         Assert.NotNull(reason2);
         Assert.Contains("Daily benchmark run cap reached (4 runs/day)", reason2);
@@ -126,6 +128,7 @@ public class BenchmarkComplianceGuardTests
     [Fact]
     public async Task CanSpendAsync_CountsAcrossAllSuitesAndModels()
     {
+        var ct = TestContext.Current.CancellationToken;
         var db = CreateDbContext();
         var config = CreateConfig(maxRunsPerHour: 2, maxRunsPerDay: 20);
         var guard = new BenchmarkComplianceGuard(config, db);
@@ -139,9 +142,9 @@ public class BenchmarkComplianceGuardTests
         var r2 = CreateTestRun("Suite2", DateTime.UtcNow.AddMinutes(-10));
         r2.TestedModelIdUsed = "model-b";
         db.BenchmarkRuns.Add(r2);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(ct);
 
-        var (allowed, reason) = await guard.CanSpendAsync();
+        var (allowed, reason) = await guard.CanSpendAsync(ct: ct);
         Assert.False(allowed);
         Assert.Contains("Hourly benchmark run cap reached (2 runs/hour)", reason);
     }
@@ -149,6 +152,7 @@ public class BenchmarkComplianceGuardTests
     [Fact]
     public async Task CanAddQuestionsAsync_EnforcesSuiteCap()
     {
+        var ct = TestContext.Current.CancellationToken;
         var db = CreateDbContext();
         var config = CreateConfig(maxQuestions: 3);
         var guard = new BenchmarkComplianceGuard(config, db);
@@ -157,15 +161,15 @@ public class BenchmarkComplianceGuardTests
         suite.Questions.Add(new BenchmarkQuestion { QuestionText = "Q1", OrderIndex = 1 });
         suite.Questions.Add(new BenchmarkQuestion { QuestionText = "Q2", OrderIndex = 2 });
         db.BenchmarkSuites.Add(suite);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(ct);
 
         // Adding 1 question (2+1 = 3 <= 3) is allowed
-        var (allowed1, reason1) = await guard.CanAddQuestionsAsync(suite.Id, 1);
+        var (allowed1, reason1) = await guard.CanAddQuestionsAsync(suite.Id, 1, ct: ct);
         Assert.True(allowed1);
         Assert.Null(reason1);
 
         // Adding 2 questions (2+2 = 4 > 3) is denied
-        var (allowed2, reason2) = await guard.CanAddQuestionsAsync(suite.Id, 2);
+        var (allowed2, reason2) = await guard.CanAddQuestionsAsync(suite.Id, 2, ct: ct);
         Assert.False(allowed2);
         Assert.NotNull(reason2);
         Assert.Contains("Suite question limit reached (3 questions maximum)", reason2);
@@ -332,7 +336,7 @@ public class BenchmarkComplianceGuardTests
 
         // Insert 1 run in the trailing hour to exhaust the cap of 1
         db.BenchmarkRuns.Add(CreateTestRun("Prior", DateTime.UtcNow.AddMinutes(-10)));
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var request = new StartBenchmarkRunRequest
         {
@@ -390,7 +394,7 @@ public class BenchmarkComplianceGuardTests
         var result = await controller.StartRun(request);
         var acceptedResult = Assert.IsType<AcceptedResult>(result);
 
-        var run = await db.BenchmarkRuns.FirstAsync();
+        var run = await db.BenchmarkRuns.FirstAsync(TestContext.Current.CancellationToken);
         Assert.True(run.SameProviderAcknowledged);
         Assert.NotNull(run.PurposeStatementUsed);
         Assert.Contains("Internal evaluation of candidate AI models", run.PurposeStatementUsed);
@@ -414,7 +418,7 @@ public class BenchmarkComplianceGuardTests
         var result = await controller.StartRun(request);
         Assert.IsType<AcceptedResult>(result);
 
-        var run = await db.BenchmarkRuns.FirstAsync();
+        var run = await db.BenchmarkRuns.FirstAsync(TestContext.Current.CancellationToken);
         Assert.False(run.SameProviderAcknowledged); // Cross provider does not require same-provider acknowledgement
         Assert.NotNull(run.PurposeStatementUsed);
     }
@@ -450,7 +454,7 @@ public class BenchmarkComplianceGuardTests
 
         // Add 1 recent run to exhaust hourly cap of 1
         db.BenchmarkRuns.Add(CreateTestRun("ExhaustingRun", DateTime.UtcNow.AddMinutes(-5)));
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         // 1. StartDifficultyAssessment -> 429
         var r1 = await controller.StartDifficultyAssessment(new StartDifficultyAssessmentRequest { SuiteId = suite.Id, AssessorModelConfigurationId = modelC.Id });
@@ -504,7 +508,7 @@ public class BenchmarkComplianceGuardTests
 
         // Add 1 recent run to exhaust hourly cap
         db.BenchmarkRuns.Add(CreateTestRun("CapExhausted", DateTime.UtcNow.AddMinutes(-5)));
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         // Rescore is pure arithmetic and must not be gated
         var result = await controller.RescoreRun(run.Id, new RescoreRunRequest());
@@ -569,7 +573,7 @@ public class BenchmarkComplianceGuardTests
         run2.Answers.Add(new BenchmarkRunAnswer { QuestionText = "Q1", AnswerText = "abc", OrderIndex = 1 });
 
         db.BenchmarkRuns.AddRange(run1, run2);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         // 1. Get Footprint
         var fpResult = await controller.GetSuiteRunsFootprint(suite.Id);
@@ -592,6 +596,7 @@ public class BenchmarkComplianceGuardTests
     [Fact]
     public async Task StartRun_RejectsUnassessedSuite_AndAllowsFullyAssessedSuite()
     {
+        var ct = TestContext.Current.CancellationToken;
         var (controller, db, _) = CreateTestBenchmarkController(maxRunsPerHour: 10);
         var (suite, modelA, _, modelC) = await SeedConfigsAndSuite(db);
 
@@ -603,7 +608,7 @@ public class BenchmarkComplianceGuardTests
             Difficulty = BenchmarkDifficulty.Intermediate,
             AssessedDifficulty = null
         });
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(ct);
 
         var request = new StartBenchmarkRunRequest
         {
@@ -622,7 +627,7 @@ public class BenchmarkComplianceGuardTests
 
         // Now assess the question
         suite.Questions.First(q => q.OrderIndex == 2).AssessedDifficulty = 60;
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(ct);
 
         // Should succeed
         var acceptedResult = await controller.StartRun(request);

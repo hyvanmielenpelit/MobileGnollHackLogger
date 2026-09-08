@@ -520,6 +520,7 @@ public class BenchmarkServiceTests
     [Fact]
     public async Task BenchmarkService_CleanupOrphanedRunsAsync_WithoutAnswers_MarksFailed()
     {
+        var ct = TestContext.Current.CancellationToken;
         var dbOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
@@ -539,7 +540,7 @@ public class BenchmarkServiceTests
                 StartedAtUtc = DateTime.UtcNow.AddHours(-1)
             };
             db.BenchmarkRuns.Add(run);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(ct);
         }
 
         var services = new ServiceCollection();
@@ -561,7 +562,7 @@ public class BenchmarkServiceTests
 
         await using (var verifyDb = new ApplicationDbContext(dbOptions))
         {
-            var updated = await verifyDb.BenchmarkRuns.FindAsync(1L);
+            var updated = await verifyDb.BenchmarkRuns.FindAsync([1L], ct);
             Assert.NotNull(updated);
             Assert.Equal(BenchmarkRunStatus.Failed, updated.Status);
             Assert.NotNull(updated.CompletedAtUtc);
@@ -572,6 +573,7 @@ public class BenchmarkServiceTests
     [Fact]
     public async Task CleanupOrphanedRuns_PublishesNoIndex_AndRecordsTotals()
     {
+        var ct = TestContext.Current.CancellationToken;
         var dbOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
@@ -607,7 +609,7 @@ public class BenchmarkServiceTests
                 }
             };
             db.BenchmarkRuns.Add(run);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(ct);
         }
 
         var services = new ServiceCollection();
@@ -629,7 +631,7 @@ public class BenchmarkServiceTests
 
         await using (var verifyDb = new ApplicationDbContext(dbOptions))
         {
-            var updated = await verifyDb.BenchmarkRuns.Include(r => r.Answers).FirstOrDefaultAsync(r => r.Id == 2L);
+            var updated = await verifyDb.BenchmarkRuns.Include(r => r.Answers).FirstOrDefaultAsync(r => r.Id == 2L, ct);
             Assert.NotNull(updated);
 
             // An interrupted run never reached the end of its suite, so it carries no index — an
@@ -657,6 +659,7 @@ public class BenchmarkServiceTests
     [Fact]
     public async Task RescoreRun_OnAbortedRun_IsRefused()
     {
+        var ct = TestContext.Current.CancellationToken;
         var dbOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
@@ -694,7 +697,7 @@ public class BenchmarkServiceTests
                     }
                 }
             });
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(ct);
         }
 
         var benchmarkService = CreateBenchmarkServiceOver(dbOptions);
@@ -706,7 +709,7 @@ public class BenchmarkServiceTests
 
         await using (var verifyDb = new ApplicationDbContext(dbOptions))
         {
-            var run = await verifyDb.BenchmarkRuns.FindAsync(3L);
+            var run = await verifyDb.BenchmarkRuns.FindAsync([3L], ct);
             Assert.NotNull(run);
             Assert.Null(run.QualityIndex);
             Assert.Null(run.SpeedIndex);
@@ -716,6 +719,7 @@ public class BenchmarkServiceTests
     [Fact]
     public async Task RescoreRun_WritesAllThreeQualityFigures()
     {
+        var ct = TestContext.Current.CancellationToken;
         // H13: the method wrote QualityIndex and SpeedIndex and nothing else, so a rescored run's
         // report printed an index from the new profile beside an unweighted mean and a standard
         // error from the old one.
@@ -778,7 +782,7 @@ public class BenchmarkServiceTests
             });
 
             db.BenchmarkRuns.Add(run);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(ct);
         }
 
         var benchmarkService = CreateBenchmarkServiceOver(dbOptions);
@@ -788,7 +792,7 @@ public class BenchmarkServiceTests
 
         await using (var verifyDb = new ApplicationDbContext(dbOptions))
         {
-            var run = await verifyDb.BenchmarkRuns.Include(r => r.Answers).FirstAsync(r => r.Id == 4L);
+            var run = await verifyDb.BenchmarkRuns.Include(r => r.Answers).FirstAsync(r => r.Id == 4L, ct);
 
             Assert.NotNull(run.QualityIndex);
             Assert.NotNull(run.UnweightedQualityIndex);
@@ -915,6 +919,7 @@ public class BenchmarkServiceTests
     [Fact]
     public async Task RunClaimVerificationAsync_AnswerWithZeroUnverifiedClaims_ProducesNoVerifierCall()
     {
+        var ct = TestContext.Current.CancellationToken;
         var dbOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
@@ -958,7 +963,7 @@ public class BenchmarkServiceTests
                 StartedAtUtc = DateTime.UtcNow
             };
             db.BenchmarkRuns.Add(run);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(ct);
             runId = run.Id;
 
             var answer = new BenchmarkRunAnswer
@@ -972,7 +977,7 @@ public class BenchmarkServiceTests
                 UnverifiedClaimsJson = "[]"
             };
             db.BenchmarkRunAnswers.Add(answer);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(ct);
         }
 
         var services = new ServiceCollection();
@@ -994,12 +999,12 @@ public class BenchmarkServiceTests
 
         await using (var db = new ApplicationDbContext(dbOptions))
         {
-            var run = await db.BenchmarkRuns.FindAsync(runId);
+            var run = await db.BenchmarkRuns.FindAsync([runId], ct);
             Assert.NotNull(run);
 
             await benchmarkService.RunClaimVerificationAsync(db, null!, run, CancellationToken.None);
 
-            var verifyAnswer = await db.BenchmarkRunAnswers.FirstAsync(a => a.BenchmarkRunId == runId);
+            var verifyAnswer = await db.BenchmarkRunAnswers.FirstAsync(a => a.BenchmarkRunId == runId, ct);
             Assert.Null(verifyAnswer.ClaimVerificationJson);
             Assert.Equal(0, run.ClaimVerifiedAnswerCount);
         }

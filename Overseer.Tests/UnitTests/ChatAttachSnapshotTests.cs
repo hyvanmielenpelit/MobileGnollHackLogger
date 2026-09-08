@@ -66,6 +66,7 @@ public class ChatAttachSnapshotTests
     [Fact]
     public async Task AttachSnapshot_WithNoSession_CreatesSession_SetsGameModeFlags_ReturnsId()
     {
+        var ct = TestContext.Current.CancellationToken;
         using var db = CreateInMemoryDbContext();
         var controller = CreateController(db, "user-1");
 
@@ -84,14 +85,14 @@ public class ChatAttachSnapshotTests
         Assert.True(createdSessionId > 0);
         Assert.True(hasGameSnapshot);
 
-        var session = await db.ChatSession.FindAsync(createdSessionId);
+        var session = await db.ChatSession.FindAsync([createdSessionId], ct);
         Assert.NotNull(session);
         Assert.Equal("user-1", session.AspNetUserId);
         Assert.Equal("GnollHack Session", session.Title);
         Assert.True(session.IsGnollHackSession);
         Assert.Equal("{\"BoolData\":{\"isGameOn\":true}}", session.ClientSettings);
 
-        var messages = await db.ChatMessage.Where(m => m.ChatSessionId == createdSessionId).ToListAsync();
+        var messages = await db.ChatMessage.Where(m => m.ChatSessionId == createdSessionId).ToListAsync(ct);
         Assert.Single(messages);
         var sysMsg = messages[0];
         Assert.Equal("system", sysMsg.Role);
@@ -102,6 +103,7 @@ public class ChatAttachSnapshotTests
     [Fact]
     public async Task AttachSnapshot_ToExistingSession_SupersedesOlderSnapshot_LeavesOneLiveSnapshot_PreservesFlags()
     {
+        var ct = TestContext.Current.CancellationToken;
         using var db = CreateInMemoryDbContext();
         var controller = CreateController(db, "user-1");
 
@@ -125,7 +127,7 @@ public class ChatAttachSnapshotTests
             TimestampUtc = DateTime.UtcNow.AddMinutes(-5)
         };
         db.ChatMessage.Add(oldSnapshot);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(ct);
 
         var request = new AttachGameSnapshotRequest
         {
@@ -140,13 +142,13 @@ public class ChatAttachSnapshotTests
         Assert.True((bool)val.hasGameSnapshot);
 
         // Check flags preserved
-        var updatedSession = await db.ChatSession.FindAsync(10L);
+        var updatedSession = await db.ChatSession.FindAsync([10L], ct);
         Assert.NotNull(updatedSession);
         Assert.False(updatedSession.IsGnollHackSession);
         Assert.Equal("{\"BoolData\":{\"isGameOn\":false}}", updatedSession.ClientSettings);
 
         // Check messages: old is superseded, new is active
-        var messages = await db.ChatMessage.Where(m => m.ChatSessionId == 10).OrderBy(m => m.TimestampUtc).ToListAsync();
+        var messages = await db.ChatMessage.Where(m => m.ChatSessionId == 10).OrderBy(m => m.TimestampUtc).ToListAsync(ct);
         Assert.Equal(2, messages.Count);
 
         Assert.Equal("[Game state snapshot superseded by the updated snapshot below]", messages[0].Content);
@@ -186,7 +188,7 @@ public class ChatAttachSnapshotTests
             LastMessageUtc = DateTime.UtcNow
         };
         db.ChatSession.Add(session);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var request = new AttachGameSnapshotRequest
         {
