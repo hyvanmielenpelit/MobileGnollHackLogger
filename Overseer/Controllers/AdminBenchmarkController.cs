@@ -564,15 +564,47 @@ public class AdminBenchmarkController : ControllerBase
         return Ok();
     }
 
+    /// <summary>
+    /// Deletes a suite and its questions. Runs, series and groups that referenced the suite are
+    /// kept with a null suite reference: they are the record of measurements that actually
+    /// happened, and each carries its own suite-name snapshot.
+    /// </summary>
     [HttpDelete("suites/{id}")]
     public async Task<IActionResult> DeleteSuite(long id)
     {
         var suite = await _dbContext.BenchmarkSuites.FindAsync(id);
-        if (suite != null)
+        if (suite == null) return Ok();
+
+        long? activeRunId = _runManager.CurrentRunId;
+        if (activeRunId.HasValue &&
+            await _dbContext.BenchmarkRuns.AnyAsync(r => r.Id == activeRunId.Value && r.BenchmarkSuiteId == id))
         {
-            _dbContext.BenchmarkSuites.Remove(suite);
-            await _dbContext.SaveChangesAsync();
+            return Conflict("Cannot delete this suite while one of its runs is in progress.");
         }
+
+        long? activeSeriesId = _seriesOrchestrator.ActiveSeriesId;
+        if (activeSeriesId.HasValue &&
+            await _dbContext.BenchmarkRunSeries.AnyAsync(s => s.Id == activeSeriesId.Value && s.BenchmarkSuiteId == id))
+        {
+            return Conflict("Cannot delete this suite while a run series over it is in progress.");
+        }
+
+        // These three foreign keys are ClientSetNull, which is NO ACTION in the database: EF clears
+        // them only on rows it is already tracking, so they are loaded and cleared here. Without
+        // this the delete is rejected by the FK constraint as soon as any run, series or group
+        // referenced the suite.
+        var runs = await _dbContext.BenchmarkRuns.Where(r => r.BenchmarkSuiteId == id).ToListAsync();
+        foreach (var run in runs) run.BenchmarkSuiteId = null;
+
+        var series = await _dbContext.BenchmarkRunSeries.Where(s => s.BenchmarkSuiteId == id).ToListAsync();
+        foreach (var s in series) s.BenchmarkSuiteId = null;
+
+        var groups = await _dbContext.BenchmarkRunGroups.Where(g => g.BenchmarkSuiteId == id).ToListAsync();
+        foreach (var g in groups) g.BenchmarkSuiteId = null;
+
+        _dbContext.BenchmarkSuites.Remove(suite);
+        await _dbContext.SaveChangesAsync();
+
         return Ok();
     }
 
