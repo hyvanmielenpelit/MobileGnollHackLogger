@@ -300,6 +300,7 @@ public class BenchmarkRunLauncher
         var run = new BenchmarkRun
         {
             BenchmarkSuiteId = suite.Id,
+            BenchmarkSuiteIdUsed = suite.Id,
             SuiteName = suite.Name,
             TestedModelConfigurationId = testedConfig.Id,
             TestedModelDisplayNameUsed = testedConfig.DisplayName,

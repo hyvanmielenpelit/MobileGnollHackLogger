@@ -786,7 +786,10 @@ public class BenchmarkSeriesOrchestrator
         BenchmarkRunSeries series,
         CancellationToken ct)
     {
+        // Untracked: only ids and the display name are used, and the stub answer graph below must
+        // not be mistaken for new answers by the two SaveChanges calls at the end of this method.
         var members = await db.BenchmarkRuns
+            .AsNoTracking()
             .Where(r => r.RunSeriesId == series.Id
                         && (r.Status == BenchmarkRunStatus.Completed
                             || r.Status == BenchmarkRunStatus.CompletedWithLimits
@@ -796,6 +799,8 @@ public class BenchmarkSeriesOrchestrator
 
         // One run is not a replicate set, and a group of one supports no statistic multi-run adds.
         if (members.Count < 2) return null;
+
+        await HydrateItemRevisionsAsync(db, members, ct);
 
         var comparability = BenchmarkComparabilityKey.Resolve(members);
         var tier = (BenchmarkRunGroupTier)(int)comparability.Tier;
@@ -867,6 +872,52 @@ public class BenchmarkSeriesOrchestrator
 
         await db.SaveChangesAsync(ct);
         return group.Id;
+    }
+
+    /// <summary>
+    /// Fills each member's <see cref="BenchmarkRun.Answers"/> with the stubs
+    /// <c>BenchmarkComparabilityKey.ItemRevisionSignature</c> needs, so the tier persisted on the
+    /// auto-created group reads the item-revision key rather than rendering it as absent.
+    ///
+    /// <para><b>Only for untracked runs</b>: the stubs have no key, so attaching them to a tracked
+    /// run makes the next <c>SaveChanges</c> insert them as new answers.</para>
+    /// </summary>
+    private static async Task HydrateItemRevisionsAsync(
+        ApplicationDbContext db,
+        List<BenchmarkRun> members,
+        CancellationToken ct)
+    {
+        var runIds = members.Select(r => r.Id).ToList();
+
+        var revisions = await db.BenchmarkRunAnswers
+            .AsNoTracking()
+            .Where(a => runIds.Contains(a.BenchmarkRunId)
+                        && (a.BenchmarkQuestionIdUsed != null || a.BenchmarkQuestionId != null))
+            .Select(a => new
+            {
+                a.BenchmarkRunId,
+                a.BenchmarkQuestionIdUsed,
+                a.BenchmarkQuestionId,
+                a.ItemRevisionUsed
+            })
+            .ToListAsync(ct);
+
+        var byRun = revisions.GroupBy(a => a.BenchmarkRunId).ToDictionary(g => g.Key, g => g.ToList());
+
+        foreach (var run in members)
+        {
+            if (!byRun.TryGetValue(run.Id, out var rows)) continue;
+
+            run.Answers = rows
+                .Select(a => new BenchmarkRunAnswer
+                {
+                    BenchmarkRunId = a.BenchmarkRunId,
+                    BenchmarkQuestionIdUsed = a.BenchmarkQuestionIdUsed,
+                    BenchmarkQuestionId = a.BenchmarkQuestionId,
+                    ItemRevisionUsed = a.ItemRevisionUsed
+                })
+                .ToList();
+        }
     }
 
     internal static StartBenchmarkRunRequest? DeserializeRequest(BenchmarkRunSeries series)

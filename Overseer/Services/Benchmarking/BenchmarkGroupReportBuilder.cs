@@ -217,6 +217,19 @@ public static class BenchmarkGroupReportBuilder
                 sb.AppendLine("> **Cross-condition set — the aggregates below are not a replicate measurement.** One instrument key was deliberately moved across these runs. A pooled index over them would average a before and an after into a number describing neither, so pooling is refused; use the paired comparison against the other condition's group instead.");
                 sb.AppendLine();
             }
+
+            // Both readings, never one silently replacing the other: the tier recorded at creation is
+            // what the group was accepted as, and the resolution above is what its members say now.
+            // A gap is information — a suite or an item revision moved under the group.
+            if ((BenchmarkComparabilityTier)group.Tier != comparability.Tier)
+            {
+                sb.AppendLine(
+                    $"> **Recorded tier differs from the current resolution.** This group was created as "
+                    + $"{TierLabel((BenchmarkComparabilityTier)group.Tier)} and its members now resolve to "
+                    + $"{TierLabel(comparability.Tier)}. The stored value is left as recorded; the resolution "
+                    + "above is the one this report is built on.");
+                sb.AppendLine();
+            }
         }
         else if (group.Tier != BenchmarkRunGroupTier.Replicate)
         {

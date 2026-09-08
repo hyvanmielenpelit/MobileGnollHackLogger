@@ -192,6 +192,24 @@ public static class BenchmarkCrossModelComparability
     public static bool IsMustMatchKey(string name)
         => !IsModelAxisKey(name) && !IsDegradingKey(name);
 
+    /// <summary>
+    /// True when a <see cref="BenchmarkComparabilityKeyKind.Fundamental"/> must-match key has no
+    /// value on this run, so it cannot be charted with anything.
+    ///
+    /// <para>The must-match signature is an equality test, and an absent identity is equal to every
+    /// other absent identity: without this, runs from two different deleted suites would share one
+    /// chart point's condition. The same reasoning as the absent-identity branch in
+    /// <see cref="BenchmarkComparabilityKey.Resolve"/>, applied where the index judges instead.</para>
+    /// </summary>
+    public static bool HasAbsentFundamentalIdentity(BenchmarkRun run)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+
+        return MustMatchKeys(run).Any(k =>
+            k.Kind == BenchmarkComparabilityKeyKind.Fundamental
+            && string.Equals(k.Value, BenchmarkComparabilityKey.NoValue, StringComparison.Ordinal));
+    }
+
     public static bool IsModelAxisKey(string name)
         => ModelAxisKeys.Contains(name, StringComparer.Ordinal);
 

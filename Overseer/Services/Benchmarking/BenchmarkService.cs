@@ -915,6 +915,7 @@ public class BenchmarkService
             // not one: reordering a suite rewrites it and touches no stored answer, so every
             // earlier run then rendered its answers against the wrong questions.
             BenchmarkQuestionId = question.Id,
+            BenchmarkQuestionIdUsed = question.Id,
             ItemRevisionUsed = question.ItemRevision,
 
             QuestionText = question.QuestionText,

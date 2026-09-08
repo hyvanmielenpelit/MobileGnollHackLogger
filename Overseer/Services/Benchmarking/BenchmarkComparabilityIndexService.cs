@@ -150,14 +150,14 @@ public class BenchmarkComparabilityIndexService
     }
 
     /// <summary>
-    /// Fills each run's <see cref="BenchmarkRun.Answers"/> with stubs carrying the run id, the
-    /// question id and the item revision.
+    /// Fills each run's <see cref="BenchmarkRun.Answers"/> with stubs carrying the run id, both
+    /// question identity columns and the item revision.
     ///
-    /// <para><b>Invariant:</b> those three columns are the whole of what
+    /// <para><b>Invariant:</b> those four columns are the whole of what
     /// <c>BenchmarkComparabilityKey.ItemRevisionSignature</c> reads out of the answers, and the item
     /// revision signature is the only comparability key that touches them at all. A stub graph
     /// therefore yields the identical signature to a fully loaded one. A revision signature that
-    /// grows to read a fourth column must carry that column here as well, or this index will bucket
+    /// grows to read a further column must carry that column here as well, or this index will bucket
     /// runs that the comparison then splits.</para>
     /// </summary>
     private async Task LoadItemRevisionsAsync(
@@ -169,8 +169,15 @@ public class BenchmarkComparabilityIndexService
 
         var revisions = await _db.BenchmarkRunAnswers
             .AsNoTracking()
-            .Where(a => wantedRunIds.Contains(a.BenchmarkRunId) && a.BenchmarkQuestionId != null)
-            .Select(a => new { a.BenchmarkRunId, a.BenchmarkQuestionId, a.ItemRevisionUsed })
+            .Where(a => wantedRunIds.Contains(a.BenchmarkRunId)
+                        && (a.BenchmarkQuestionIdUsed != null || a.BenchmarkQuestionId != null))
+            .Select(a => new
+            {
+                a.BenchmarkRunId,
+                a.BenchmarkQuestionIdUsed,
+                a.BenchmarkQuestionId,
+                a.ItemRevisionUsed
+            })
             .ToListAsync(ct);
 
         foreach (var byRun in revisions.GroupBy(a => a.BenchmarkRunId))
@@ -181,6 +188,7 @@ public class BenchmarkComparabilityIndexService
                 .Select(a => new BenchmarkRunAnswer
                 {
                     BenchmarkRunId = a.BenchmarkRunId,
+                    BenchmarkQuestionIdUsed = a.BenchmarkQuestionIdUsed,
                     BenchmarkQuestionId = a.BenchmarkQuestionId,
                     ItemRevisionUsed = a.ItemRevisionUsed
                 })
@@ -465,6 +473,23 @@ public class BenchmarkComparabilityIndexService
             if (distinct.Count > 1 && !BenchmarkCrossModelComparability.IsDegradingKey(name))
             {
                 state.SelfInconsistentKeys.Add(name);
+            }
+        }
+
+        // An absent Fundamental identity equals every other absent one, so such an entry cannot be
+        // charted with anything — including another entry whose identity is equally absent. Excluded
+        // through the same path as a self-inconsistent entry, naming the keys that carry no value;
+        // an entry where only some runs lack identity is already flagged by the loop above.
+        if (source.Runs.Any(BenchmarkCrossModelComparability.HasAbsentFundamentalIdentity))
+        {
+            foreach (var key in perRun[0].Where(k =>
+                k.Kind == BenchmarkComparabilityKeyKind.Fundamental
+                && string.Equals(k.Value, BenchmarkComparabilityKey.NoValue, StringComparison.Ordinal)))
+            {
+                if (!state.SelfInconsistentKeys.Contains(key.Name))
+                {
+                    state.SelfInconsistentKeys.Add(key.Name);
+                }
             }
         }
 

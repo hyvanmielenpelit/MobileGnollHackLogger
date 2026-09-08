@@ -38,6 +38,16 @@ public class BenchmarkRunAnswer
     public BenchmarkQuestion? BenchmarkQuestion { get; set; }
 
     /// <summary>
+    /// The question this answer was produced for, retained after the question row is gone.
+    /// Deleting a suite cascades its questions and nulls the foreign key above; the item-revision
+    /// comparability signature is derived from this instead, so it survives suite maintenance.
+    /// Not a foreign key, deliberately, and not a substitute for
+    /// <see cref="BenchmarkQuestionId"/>: a null there still means "unlinked" everywhere
+    /// downstream, and item analysis still excludes it.
+    /// </summary>
+    public long? BenchmarkQuestionIdUsed { get; set; }
+
+    /// <summary>
     /// <see cref="BenchmarkQuestion.ItemRevision"/> as it stood when this answer was produced.
     /// Null for answers that predate the column; item analysis groups on it, so a null is
     /// excluded rather than assumed to be revision 1.

@@ -577,6 +577,8 @@ public class BenchmarkSeriesOrchestratorTests
         // What BuildPricingSnapshotJson writes: one capturedAtUtc, then the resolved price cards.
         const string Prices = "\"candidate\":{\"inputPerMillion\":1.25,\"outputPerMillion\":10.0}";
 
+        var question = suite.Questions.First();
+
         var members = new List<BenchmarkRun>();
         for (int index = 1; index <= 2; index++)
         {
@@ -599,6 +601,23 @@ public class BenchmarkSeriesOrchestratorTests
                 PricingSnapshotJson =
                     $"{{\"capturedAtUtc\":\"2026-09-07T0{7 + index}:46:51.283Z\",{Prices}}}"
             };
+            // A completed member answered the suite's questions, and the item-revision key is derived
+            // from those answers. A member carrying none has no exam identity for the resolver to
+            // agree on, which is a different condition from the pricing instant tested here.
+            member.Answers.Add(new BenchmarkRunAnswer
+            {
+                BenchmarkQuestionId = question.Id,
+                BenchmarkQuestionIdUsed = question.Id,
+                ItemRevisionUsed = question.ItemRevision,
+                OrderIndex = question.OrderIndex,
+                QuestionText = question.QuestionText,
+                AnswerText = "A1",
+                Status = BenchmarkAnswerStatus.Ok,
+                AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+                QualityScore = 80,
+                SpeedScore = 100
+            });
+
             members.Add(member);
             db.BenchmarkRuns.Add(member);
         }

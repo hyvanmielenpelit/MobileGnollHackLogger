@@ -190,6 +190,14 @@ public class BenchmarkRun
     public long? BenchmarkSuiteId { get; set; }
     public BenchmarkSuite? BenchmarkSuite { get; set; }
 
+    /// <summary>
+    /// The suite this run was launched against, retained after the suite row is gone. Deleting a
+    /// suite clears the foreign key above, so it cannot identify the exam; this can, and two runs
+    /// from two different deleted suites stay distinguishable in the comparability keys. Not a
+    /// foreign key, deliberately.
+    /// </summary>
+    public long? BenchmarkSuiteIdUsed { get; set; }
+
     [MaxLength(128)]
     public string SuiteName { get; set; } = default!;
 

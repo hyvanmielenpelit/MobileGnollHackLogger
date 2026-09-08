@@ -3710,7 +3710,10 @@ public class AdminBenchmarkController : ControllerBase
             return (new List<BenchmarkRun>(), "A group needs at least two runs.");
         }
 
+        // Untracked: only the ids are used to build membership rows, and the stub answer graph
+        // attached below must never be mistaken for new answers by a later SaveChanges.
         var runs = await _dbContext.BenchmarkRuns
+            .AsNoTracking()
             .Where(r => distinct.Contains(r.Id))
             .OrderBy(r => r.StartedAtUtc)
             .ToListAsync();
@@ -3721,7 +3724,59 @@ public class AdminBenchmarkController : ControllerBase
             return (runs, $"Run(s) not found: {string.Join(", ", missing)}.");
         }
 
+        await HydrateItemRevisionsAsync(runs);
+
         return (runs, null);
+    }
+
+    /// <summary>
+    /// Fills each run's <see cref="BenchmarkRun.Answers"/> with the stubs
+    /// <c>BenchmarkComparabilityKey.ItemRevisionSignature</c> needs, so a tier resolved here reads
+    /// the item-revision key instead of rendering it as absent. Without it the suite id is the only
+    /// effective fundamental key, and a set that used two revisions of one question resolves as a
+    /// replicate set.
+    ///
+    /// <para>A projection rather than <c>Include(r =&gt; r.Answers)</c>: only four columns are read,
+    /// and the answer graph carries the candidate and assessment text of every question.</para>
+    ///
+    /// <para><b>Only for untracked runs.</b> The stubs have no key, so attaching them to a tracked
+    /// run makes the next <c>SaveChanges</c> insert them as new answers.</para>
+    /// </summary>
+    private async Task HydrateItemRevisionsAsync(List<BenchmarkRun> runs)
+    {
+        if (runs.Count == 0) return;
+
+        var runIds = runs.Select(r => r.Id).ToList();
+
+        var revisions = await _dbContext.BenchmarkRunAnswers
+            .AsNoTracking()
+            .Where(a => runIds.Contains(a.BenchmarkRunId)
+                        && (a.BenchmarkQuestionIdUsed != null || a.BenchmarkQuestionId != null))
+            .Select(a => new
+            {
+                a.BenchmarkRunId,
+                a.BenchmarkQuestionIdUsed,
+                a.BenchmarkQuestionId,
+                a.ItemRevisionUsed
+            })
+            .ToListAsync();
+
+        var byRun = revisions.GroupBy(a => a.BenchmarkRunId).ToDictionary(g => g.Key, g => g.ToList());
+
+        foreach (var run in runs)
+        {
+            if (!byRun.TryGetValue(run.Id, out var rows)) continue;
+
+            run.Answers = rows
+                .Select(a => new BenchmarkRunAnswer
+                {
+                    BenchmarkRunId = a.BenchmarkRunId,
+                    BenchmarkQuestionIdUsed = a.BenchmarkQuestionIdUsed,
+                    BenchmarkQuestionId = a.BenchmarkQuestionId,
+                    ItemRevisionUsed = a.ItemRevisionUsed
+                })
+                .ToList();
+        }
     }
 
     /// <summary>
@@ -3755,6 +3810,14 @@ public class AdminBenchmarkController : ControllerBase
             return "These runs differ on exactly one instrument key, which makes them a cross-condition " +
                    "comparison (Tier C) rather than a replicate set. A Tier C group is never pooled into one " +
                    "index. Set crossCondition to create it as a comparison. Differing: " + differing + ".";
+        }
+
+        // A refusal with no differing key is the absent-identity verdict: the runs agree on a
+        // fundamental key only because none of them carries a value for it. "No key was identified
+        // as differing" is true there and useless, so the resolver's own explanation is shown.
+        if (comparability.Differences.Count == 0 && !string.IsNullOrWhiteSpace(comparability.Explanation))
+        {
+            return comparability.Explanation;
         }
 
         return "These runs are not comparable, so no aggregate over them would mean anything. " +
@@ -3976,9 +4039,12 @@ public class AdminBenchmarkController : ControllerBase
         long[] memberRunIds = DeserialiseMemberRunIds(analysis);
 
         var members = await _dbContext.BenchmarkRuns
+            .AsNoTracking()
             .Where(r => memberRunIds.Contains(r.Id))
             .OrderBy(r => r.StartedAtUtc)
             .ToListAsync();
+
+        await HydrateItemRevisionsAsync(members);
 
         BenchmarkComparabilityResult? comparability = members.Count >= 2
             ? BenchmarkComparabilityKey.Resolve(members)

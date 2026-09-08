@@ -477,7 +477,8 @@ public static class BenchmarkComparabilityKey
         var keys = new List<BenchmarkComparabilityKeyEntry>
         {
             // --- Fundamental: the exam and its answer key -----------------------------------
-            Key(SuiteKey, BenchmarkComparabilityKeyKind.Fundamental, Render(run.BenchmarkSuiteId)),
+            Key(SuiteKey, BenchmarkComparabilityKeyKind.Fundamental,
+                Render(run.BenchmarkSuiteIdUsed ?? run.BenchmarkSuiteId)),
             Key(ItemRevisionsKey, BenchmarkComparabilityKeyKind.Fundamental, ItemRevisionSignature(run)),
 
             // --- Candidate specification ------------------------------------------------------
@@ -642,10 +643,35 @@ public static class BenchmarkComparabilityKey
         int instrument = differences.Count(d => d.Kind == BenchmarkComparabilityKeyKind.Instrument);
         int speedCost = differences.Count(d => d.Kind == BenchmarkComparabilityKeyKind.SpeedAndCost);
 
+        // A Fundamental key every member agrees on only because none of them has a value is not
+        // agreement: identity absent from all of them cannot establish that they sat the same exam,
+        // and two runs from two different deleted suites would otherwise match on the sentinel.
+        // Meaningful only across members, so a single run keeps the trivial Tier A below.
+        var absentFundamental = members.Count < 2
+            ? new List<string>()
+            : keyNames
+                .Where(n => kinds[n] == BenchmarkComparabilityKeyKind.Fundamental && matched.Contains(n))
+                .Where(n => string.Equals(
+                    extracted[members[0]].First(k => k.Name == n).Value,
+                    NoValue,
+                    StringComparison.Ordinal))
+                .ToList();
+
         BenchmarkComparabilityTier tier;
         string explanation;
 
-        if (fundamental > 0 || candidate > 0)
+        if (absentFundamental.Count > 0)
+        {
+            tier = BenchmarkComparabilityTier.NotComparable;
+            explanation = "Below Tier B: the exam these runs sat cannot be identified — "
+                + string.Join(", ", absentFundamental)
+                + (absentFundamental.Count == 1 ? " has" : " have")
+                + " no value on any member, so agreement on "
+                + (absentFundamental.Count == 1 ? "it" : "them")
+                + " is absence, not a match. This happens when the suite was deleted before the "
+                + "run's identity was recorded.";
+        }
+        else if (fundamental > 0 || candidate > 0)
         {
             tier = BenchmarkComparabilityTier.NotComparable;
             var blocking = differences
@@ -745,13 +771,22 @@ public static class BenchmarkComparabilityKey
     /// An answer whose revision was never recorded renders as <c>?</c> — reported, not assumed to
     /// be the current revision, following the <see cref="BenchmarkItemAnalysis"/> precedent.
     /// Unlinked answers are skipped: they cannot be attributed to a question at all.
+    ///
+    /// Question identity comes from <see cref="BenchmarkRunAnswer.BenchmarkQuestionIdUsed"/> in
+    /// preference to the foreign key, which a suite deletion clears. Both yield the same rendering
+    /// for a row that has both, so a run's signature does not move when its suite goes.
     /// </summary>
     private static string ItemRevisionSignature(BenchmarkRun run)
     {
         var answers = run.Answers ?? new List<BenchmarkRunAnswer>();
         var parts = answers
-            .Where(a => a.BenchmarkQuestionId.HasValue)
-            .GroupBy(a => a.BenchmarkQuestionId!.Value)
+            .Select(a => new
+            {
+                QuestionId = a.BenchmarkQuestionIdUsed ?? a.BenchmarkQuestionId,
+                a.ItemRevisionUsed
+            })
+            .Where(a => a.QuestionId.HasValue)
+            .GroupBy(a => a.QuestionId!.Value)
             .OrderBy(g => g.Key)
             .Select(g =>
             {
