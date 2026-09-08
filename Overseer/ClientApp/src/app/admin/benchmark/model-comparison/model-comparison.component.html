@@ -850,26 +850,61 @@
     not on Previous and Compare. The titles come from the picker's own exported constants, so the
     label cannot name a heading the picker no longer uses.
 
-    Warning above status, and both are mutually exclusive with the request-cap refusal, which
-    `nextBlockedReason` states in the footer below rather than repeating here.
+    Errors above warnings above information, and none of them repeats the request-cap refusal,
+    which `nextBlockedReason` states in the footer below: two differently worded accounts of one
+    fact is worse than one account in the place the reader is already looking.
+
+    One live region on the container, polite, and no role on the individual notices. Polite rather
+    than assertive because a selection that cannot be charted loses no work and blocks nothing but
+    Compare; and a `role="alert"` or `role="status"` nested inside an `aria-live` ancestor
+    double-announces in several screen readers. `aria-atomic="false"` announces only the notice
+    that appeared, not the whole band again.
+
+    Severity reaches the reader through three channels, never colour alone: the heading states the
+    fact in words, the glyph differs in shape, and the alert variant supplies the hue.
 
     Step 1 only: from step 2 on, the computed comparison reports its own exclusions per entry and
     the figures name their own overflow, so a selection-stage band would be a second, differently
     worded account of facts already on screen.
   -->
-  @if (step === 1 && (selectionNotice || plotCapNotice)) {
-    <div class="mc-wizard-notice" role="group" aria-labelledby="mc-notice-label">
+  @if (step === 1 && bandNotices.length > 0) {
+    <div class="mc-wizard-notice" role="group" aria-labelledby="mc-notice-label"
+         aria-live="polite" aria-atomic="false">
       <p class="mc-wizard-notice-label" id="mc-notice-label">
         Your selection in {{ selectionScopeLabel }} — {{ selectedSourceCount }} selected
       </p>
-      @if (selectionNotice) {
-        <div class="alert alert-warning" role="note">
-          <div class="alert-content"><div class="alert-body">{{ selectionNotice }}</div></div>
-        </div>
-      }
-      @if (plotCapNotice) {
-        <div class="alert" role="status">
-          <div class="alert-content"><div class="alert-body">{{ plotCapNotice }}</div></div>
+      @for (notice of bandNotices; track notice.id) {
+        <div class="alert"
+             [class.alert-danger]="notice.severity === 'error'"
+             [class.alert-warning]="notice.severity === 'warning'"
+             [class.alert-info]="notice.severity === 'info'">
+          @switch (notice.severity) {
+            @case ('error') {
+              <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+              </svg>
+            }
+            @case ('warning') {
+              <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                <line x1="12" y1="9" x2="12" y2="13"></line>
+                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+              </svg>
+            }
+            @default {
+              <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+              </svg>
+            }
+          }
+          <div class="alert-content">
+            <p class="alert-heading">{{ notice.heading }}</p>
+            <div class="alert-body">{{ notice.body }}</div>
+          </div>
         </div>
       }
     </div>

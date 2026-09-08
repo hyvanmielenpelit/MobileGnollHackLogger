@@ -57,7 +57,10 @@ import {
   ComparisonSourcePickerComponent,
   ModelComparisonSelection
 } from './model-comparison/comparison-source-picker.component';
-import { incompatibleSelectionNotice } from './model-comparison/model-comparison.models';
+import {
+  ComparisonSelectionNotice,
+  selectionNotices
+} from './model-comparison/model-comparison.models';
 
 /**
  * The Model Comparison selection, as it is remembered between visits and between sessions.
@@ -538,9 +541,19 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   comparisonSuiteId: number | null = null;
   comparisonPricingBasis: BenchmarkModelComparisonPricingBasis = 'Current';
 
-  /** The wizard band's text. Derived, so the picker and the band cannot disagree. */
-  get comparisonSelectionNotice(): string {
-    return incompatibleSelectionNotice(this.comparabilityIndex, this.comparisonRunIds, this.comparisonGroupIds);
+  /**
+   * The wizard band's notices. Derived from the index and the selection this component owns, so
+   * the picker and the band cannot disagree about what the selection costs.
+   */
+  get comparisonSelectionNotices(): ComparisonSelectionNotice[] {
+    return selectionNotices({
+      index: this.comparabilityIndex,
+      indexLoading: this.comparabilityIndexLoading,
+      indexError: this.comparabilityIndexError,
+      runIds: this.comparisonRunIds,
+      groupIds: this.comparisonGroupIds,
+      pricingBasis: this.comparisonPricingBasis
+    });
   }
 
   /**

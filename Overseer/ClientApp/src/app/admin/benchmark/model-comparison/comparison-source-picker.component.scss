@@ -225,22 +225,42 @@
   }
 }
 
-/* Key above value, one pair per row. The values are machine output — hashes, a serialized
-   options object, semicolon-separated configuration strings — so `anywhere` is the only wrap
-   rule that holds, and a long one gets its own scroller rather than stretching the dialog. */
+/* One row per key: the human label with the machine name beside it, the one-line description
+   under that, and then the value. The values are machine output — hashes, a serialized options
+   object, semicolon-separated configuration strings — so `anywhere` is the only wrap rule that
+   holds, and a long one gets its own scroller rather than stretching the dialog. */
 .csp-legend-values {
   margin: 0;
   display: grid;
-  gap: 4px 0;
+  gap: 12px 0;
   font-size: 13px;
 
+  /* Each key is one `<div>` inside the `<dl>`, so a row is a grid cell that can be ruled off
+     rather than two siblings the browser may separate across a column break. */
+  > div {
+    display: grid;
+    gap: 4px 0;
+    min-width: 0;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  }
+
+  > div:last-child {
+    padding-bottom: 0;
+    border-bottom: none;
+  }
+
   dt {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px;
     font-weight: 600;
     color: #c3c2b7;
   }
 
   dd {
-    margin: 0 0 10px;
+    margin: 0;
     min-width: 0;
   }
 
@@ -259,6 +279,210 @@
     color: #a1a1aa;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+  }
+
+  /* The machine key name sits inside the term, where it names the row rather than being one of
+     its values — so it is a quiet inline annotation, not another value box. */
+  code.csp-methods-key {
+    display: inline;
+    max-height: none;
+    padding: 1px 5px;
+    border: none;
+    background: rgba(255, 255, 255, 0.05);
+    font-size: 11px;
+    font-weight: 400;
+    color: #8b8b90;
+    white-space: nowrap;
+  }
+}
+
+/* --- The reference condition, as a methods statement --- */
+
+.csp-methods {
+  gap: 14px;
+}
+
+/* Size, recency and signature on one line: four short facts read faster side by side than as a
+   list, and they are what makes "the largest condition" checkable rather than asserted. */
+.csp-methods-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  li {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    min-width: 0;
+  }
+
+  span {
+    font-size: 11px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #8b8b90;
+  }
+
+  strong {
+    font-size: 13px;
+    color: #c3c2b7;
+  }
+
+  code {
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.32);
+    font-family: "Consolas", "Menlo", monospace;
+    font-size: 12px;
+    color: #a1a1aa;
+  }
+}
+
+/* The selection rule, set off from the prose around it because it is the answer to the question
+   the block otherwise invites: why this condition and not a newer one. */
+.csp-legend-group .csp-methods-rule {
+  padding-left: 10px;
+  border-left: 2px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+  color: #b8b7ad;
+}
+
+.csp-methods-kind {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  h5 {
+    margin: 0;
+    font-family: "Cinzel", serif;
+    font-size: 13px;
+    letter-spacing: 0.02em;
+    color: var(--primary-color);
+  }
+}
+
+.csp-legend-group .csp-methods-kind-note {
+  font-size: 12px;
+  color: #8b8b90;
+}
+
+.csp-legend-group .csp-methods-key-note {
+  margin: 0 0 5px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #8b8b90;
+}
+
+/* An em dash carries the absence for a sighted reader; the visually hidden word carries it for a
+   screen reader, which would otherwise announce a bare dash or nothing at all. */
+.csp-legend-group .csp-methods-none {
+  margin: 0;
+  color: #8b8b90;
+}
+
+/* The abbreviated digest and its copy control on one line, so the control is beside the value it
+   acts on rather than under it. */
+.csp-methods-hash {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+
+  code {
+    flex: 0 1 auto;
+    white-space: nowrap;
+  }
+}
+
+/* The full digest, closed by default: it is 64 characters no reader scans, and it is here so it
+   can be selected by hand when the clipboard is unavailable. */
+.csp-methods-disclosure {
+  margin-top: 6px;
+
+  summary {
+    cursor: pointer;
+    font-size: 12px;
+    color: #a1a1aa;
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 3px;
+    }
+  }
+
+  code {
+    display: block;
+    margin-top: 6px;
+    padding: 6px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.32);
+    font-family: "Consolas", "Menlo", monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #a1a1aa;
+    overflow-wrap: anywhere;
+  }
+}
+
+.csp-methods-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+
+/* Holds its line height while empty, so the copy result appearing does not shift the block it
+   sits under. */
+.csp-legend-group .csp-methods-copy-state {
+  min-height: 1.3em;
+  font-size: 12px;
+  color: var(--primary-color, #e0ba6d);
+}
+
+/* --- The conditions the figures are not measured under --- */
+
+.csp-others {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  > li {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 10px;
+    border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.02);
+    min-width: 0;
+  }
+}
+
+.csp-legend-group .csp-others-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 12px;
+
+  strong {
+    font-size: 13px;
+    color: #c3c2b7;
+  }
+
+  code {
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.32);
+    font-family: "Consolas", "Menlo", monospace;
+    color: #a1a1aa;
   }
 }
 

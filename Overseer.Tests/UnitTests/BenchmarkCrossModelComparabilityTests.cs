@@ -306,6 +306,38 @@ public class BenchmarkCrossModelComparabilityTests
         Assert.Equal(BenchmarkCrossModelComparability.ThinkingLevelSpeedCaveat, result.SpeedAxisCaveat);
     }
 
+    // --- The baseline signature: the citable instrument identifier ---------------------------------
+
+    [Fact]
+    public void BaselineSignature_EqualsTheMustMatchSignatureOfABaselineRun()
+    {
+        var result = BenchmarkCrossModelComparability.Resolve(new[]
+        {
+            Entry("a", Run(13, "gpt-5.6-luna")),
+            Entry("b", Run(14, "gemini-3.8-flash-lite"))
+        });
+
+        Assert.Equal(BenchmarkCrossModelComparability.MustMatchSignature(Run(13)), result.BaselineSignature);
+    }
+
+    [Fact]
+    public void BaselineSignature_IsEmpty_WhenNoEntryReachesTheBaseline()
+    {
+        // An empty set reaches no baseline at all.
+        var empty = BenchmarkCrossModelComparability.Resolve(new List<BenchmarkCrossModelEntry>());
+        Assert.Equal(string.Empty, empty.BaselineSignature);
+
+        // Every entry here is internally inconsistent — two models inside one entry — so each is
+        // excluded before a baseline is chosen, and nothing composes it either.
+        var result = BenchmarkCrossModelComparability.Resolve(new[]
+        {
+            Entry("a", Run(13, "gpt-5.6-luna"), Run(14, "gemini-3.8-flash-lite")),
+            Entry("b", Run(15, "claude-opus-5"), Run(16, "claude-haiku-5"))
+        });
+
+        Assert.Equal(string.Empty, result.BaselineSignature);
+    }
+
     // --- Degenerate sets ------------------------------------------------------------------------
 
     [Fact]

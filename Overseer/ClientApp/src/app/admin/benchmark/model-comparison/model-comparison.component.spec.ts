@@ -7,9 +7,12 @@ import { ComparisonWizardStep, ModelComparisonComponent } from './model-comparis
 import { MAX_PLOTTED_ENTRIES, MODEL_COMPARISON_REGISTRABLES, P1_STACK_BREAKPOINT_PX } from './model-comparison-charts';
 import {
   BenchmarkComparabilityIndexDto,
+  BenchmarkComparabilityIndexEntryDto,
   BenchmarkModelComparisonDto,
   BenchmarkModelComparisonEntryDto,
-  incompatibleSelectionNotice,
+  ComparisonSelectionNotice,
+  ComparisonSelectionState,
+  selectionNotices,
   toChartContext,
   toChartEntries
 } from './model-comparison.models';
@@ -151,6 +154,7 @@ describe('ModelComparisonComponent', () => {
       baselineSuiteName: 'GnollHack Player Assistance Benchmark Suite',
       baselineEntryKeys: entries.filter(entry => !entry.excluded).map(entry => entry.key),
       baselineKeyValues: { BenchmarkSuiteId: '5', ScoringMethodVersion: 'v8' },
+      baselineSignature: '9c79137965e4d1f0aa3b',
       modelAxisKeys: ['Provider', 'ModelId', 'ThinkingLevel'],
       entries,
       comparableCount: entries.length - excluded,
@@ -577,14 +581,43 @@ describe('ModelComparisonComponent', () => {
   // The step-1 notice band
   // -------------------------------------------------------------------------------------------
 
-  /** Step 1 with a cross-condition notice in force, which is what puts the band on screen. */
-  function band(counts: { runs?: number; groups?: number; notice?: string } = {}): void {
+  const crossCondition: ComparisonSelectionNotice = {
+    id: 'cross-condition',
+    severity: 'warning',
+    heading: 'Part of this selection will be excluded',
+    body: '2 of 3 selected sources fall outside Condition A and will be excluded.'
+  };
+
+  const indexFailure: ComparisonSelectionNotice = {
+    id: 'index-error',
+    severity: 'error',
+    heading: 'Conditions could not be computed',
+    body: 'The index could not be built.'
+  };
+
+  const stillComputing: ComparisonSelectionNotice = {
+    id: 'index-loading',
+    severity: 'info',
+    heading: 'Conditions are still being computed',
+    body: 'The Condition column stays muted until the index lands.'
+  };
+
+  /** Step 1 with a notice set in force, which is what puts the band on screen. */
+  function band(counts: {
+    runs?: number;
+    groups?: number;
+    notices?: readonly ComparisonSelectionNotice[];
+  } = {}): void {
     render(null, 1);
     fixture.componentRef.setInput('selectedRunCount', counts.runs ?? 0);
     fixture.componentRef.setInput('selectedGroupCount', counts.groups ?? 0);
-    fixture.componentRef.setInput('selectionNotice',
-      counts.notice ?? '2 of 3 selected sources fall outside Condition A and will be excluded.');
+    fixture.componentRef.setInput('selectionNotices', counts.notices ?? [crossCondition]);
     fixture.detectChanges();
+  }
+
+  function bandAlerts(): HTMLElement[] {
+    return fixture.debugElement.queryAll(By.css('.mc-wizard-notice .alert'))
+      .map(element => element.nativeElement as HTMLElement);
   }
 
   it('sums the two selection counts', () => {
@@ -629,13 +662,52 @@ describe('ModelComparisonComponent', () => {
       .nativeElement as HTMLElement).id).toBe(labelId);
   });
 
-  it('bands the condition notice above the footer on step 1', () => {
-    band({ runs: 2, notice: 'sources fall outside Condition A' });
+  it('announces through one polite live region on the container, and no role per notice', () => {
+    band({ runs: 3, notices: [indexFailure, crossCondition, stillComputing] });
 
-    const notice = fixture.debugElement.query(By.css('.mc-wizard-notice [role="note"]'));
-    expect(notice).toBeTruthy();
-    expect((notice.nativeElement as HTMLElement).textContent).toContain('Condition A');
+    const strip = fixture.debugElement.query(By.css('.mc-wizard-notice')).nativeElement as HTMLElement;
+    expect(strip.getAttribute('aria-live')).toBe('polite');
+    // Only the notice that appeared is announced, rather than the whole band again.
+    expect(strip.getAttribute('aria-atomic')).toBe('false');
 
+    // A role="alert" or role="status" nested inside an aria-live ancestor double-announces in
+    // several screen readers, so the notices carry no role of their own.
+    expect(bandAlerts().map(alert => alert.getAttribute('role'))).toEqual([null, null, null]);
+  });
+
+  it('renders one alert per notice, each with its own variant, glyph and heading', () => {
+    band({ runs: 3, notices: [indexFailure, crossCondition, stillComputing] });
+
+    const alerts = bandAlerts();
+    expect(alerts.length).toBe(3);
+    expect(alerts[0].classList).toContain('alert-danger');
+    expect(alerts[1].classList).toContain('alert-warning');
+    expect(alerts[2].classList).toContain('alert-info');
+
+    expect(alerts[0].querySelector('.alert-heading')?.textContent)
+      .toContain('Conditions could not be computed');
+    expect(alerts[1].querySelector('.alert-body')?.textContent).toContain('fall outside Condition A');
+
+    // Severity is carried by shape as well as by hue: three distinct glyphs, none of them decorative
+    // to a screen reader.
+    const glyphs = alerts.map(alert => alert.querySelector('svg.alert-icon'));
+    expect(glyphs.every(glyph => glyph?.getAttribute('aria-hidden') === 'true')).toBeTrue();
+    expect(new Set(glyphs.map(glyph => glyph?.innerHTML)).size).toBe(3);
+  });
+
+  it('stacks errors above warnings above information, whatever order they arrive in', () => {
+    band({ runs: 3, notices: [stillComputing, crossCondition, indexFailure] });
+
+    expect(component.bandNotices.map(notice => notice.id))
+      .toEqual(['index-error', 'cross-condition', 'index-loading']);
+    expect(bandAlerts().map(alert => alert.className.includes('alert-danger')))
+      .toEqual([true, false, false]);
+  });
+
+  it('bands the notices above the footer on step 1, under one label', () => {
+    band({ runs: 3, notices: [indexFailure, crossCondition] });
+
+    expect(fixture.debugElement.queryAll(By.css('.mc-wizard-notice-label')).length).toBe(1);
     const strip = fixture.debugElement.query(By.css('.mc-wizard-notice')).nativeElement as HTMLElement;
     expect(strip.nextElementSibling?.classList).toContain('mc-wizard-nav');
   });
@@ -647,30 +719,28 @@ describe('ModelComparisonComponent', () => {
     expect(getComputedStyle(nav).borderTopWidth).not.toBe('0px');
   });
 
-  it('bands the plot-cap notice above the footer on step 1', () => {
-    band({ runs: component.maxPlottedEntries + 1, notice: '' });
+  it('derives the plot-cap notice from its own constant, as information', () => {
+    band({ runs: component.maxPlottedEntries + 1, notices: [] });
 
-    const status = fixture.debugElement.query(By.css('.mc-wizard-notice [role="status"]'));
-    expect((status.nativeElement as HTMLElement).textContent)
-      .toContain(`plot at most ${component.maxPlottedEntries}`);
-    // Grey, not amber: the amber border is reserved for the notice that changes what is charted.
-    expect((status.nativeElement as HTMLElement).classList).not.toContain('alert-warning');
+    expect(component.plotCapNotice?.id).toBe('plot-cap');
+    const alerts = bandAlerts();
+    expect(alerts.length).toBe(1);
+    // Blue, not amber: the plot cap changes how much is drawn, not what the figures mean.
+    expect(alerts[0].classList).toContain('alert-info');
+    expect(alerts[0].textContent).toContain(`plot at most ${component.maxPlottedEntries}`);
   });
 
   it('drops the plot-cap notice above the request cap', () => {
-    band({ runs: component.maxSources + 1, notice: '' });
+    band({ runs: component.maxSources + 1, notices: [] });
 
-    expect(component.plotCapNotice).toBe('');
-    expect(fixture.debugElement.query(By.css('.mc-wizard-notice [role="status"]'))).toBeNull();
+    expect(component.plotCapNotice).toBeNull();
+    expect(fixture.debugElement.query(By.css('.mc-wizard-notice'))).toBeNull();
   });
 
-  it('stacks both notices under one label, warning first', () => {
+  it('sorts the wizard-derived plot-cap notice in with the host-derived ones', () => {
     band({ runs: component.maxPlottedEntries + 1 });
 
-    expect(fixture.debugElement.queryAll(By.css('.mc-wizard-notice-label')).length).toBe(1);
-    const roles = fixture.debugElement.queryAll(By.css('.mc-wizard-notice .alert'))
-      .map(element => (element.nativeElement as HTMLElement).getAttribute('role'));
-    expect(roles).toEqual(['note', 'status']);
+    expect(component.bandNotices.map(notice => notice.id)).toEqual(['cross-condition', 'plot-cap']);
   });
 
   it('drops the band from step 2 on', () => {
@@ -681,8 +751,8 @@ describe('ModelComparisonComponent', () => {
     expect(fixture.debugElement.query(By.css('.mc-wizard-notice'))).toBeNull();
   });
 
-  it('renders no band when the selection is within both caps and one condition', () => {
-    band({ runs: 2, notice: '' });
+  it('renders no band when the selection is within both caps and has nothing to report', () => {
+    band({ runs: 2, notices: [] });
 
     expect(fixture.debugElement.query(By.css('.mc-wizard-notice'))).toBeNull();
   });
@@ -876,63 +946,211 @@ describe('ModelComparisonComponent', () => {
 
 });
 
-describe('incompatibleSelectionNotice', () => {
-  function buildIndex(): BenchmarkComparabilityIndexDto {
+describe('selectionNotices', () => {
+  function entry(
+    overrides: Partial<BenchmarkComparabilityIndexEntryDto> = {}
+  ): BenchmarkComparabilityIndexEntryDto {
     return {
-      computedAtUtc: '2026-09-05T12:00:00Z',
-      entries: [
-        {
-          key: 'run:1',
-          sourceKind: 'Run',
-          sourceId: 1,
-          conditionOrdinal: 1,
-          conditionLabel: 'Condition A',
-          signature: 'sig-a',
-          selfInconsistent: false,
-          selfInconsistentKeys: [],
-          differencesFromLargest: [],
-          questionParallelism: '1',
-          pricingSnapshot: '2026-09-01'
-        },
-        {
-          key: 'run:2',
-          sourceKind: 'Run',
-          sourceId: 2,
-          conditionOrdinal: 2,
-          conditionLabel: 'Condition B',
-          signature: 'sig-b',
-          selfInconsistent: false,
-          selfInconsistentKeys: [],
-          differencesFromLargest: [],
-          questionParallelism: '1',
-          pricingSnapshot: '2026-09-01'
-        }
-      ],
-      conditions: [
-        { ordinal: 1, label: 'Condition A', sourceCount: 1, runCount: 1 },
-        { ordinal: 2, label: 'Condition B', sourceCount: 1, runCount: 1 }
-      ],
-      largestConditionKeyValues: { serviceTier: 'standard' },
-      mustMatchKeyNames: ['serviceTier'],
-      modelAxisKeyNames: ['modelId'],
-      degradingKeyNames: []
+      key: 'run:1',
+      sourceKind: 'Run',
+      sourceId: 1,
+      conditionOrdinal: 1,
+      conditionLabel: 'Condition A',
+      signature: 'sig-a',
+      selfInconsistent: false,
+      selfInconsistentKeys: [],
+      differencesFromLargest: [],
+      questionParallelism: '1',
+      pricingSnapshot: '2026-09-01',
+      ...overrides
     };
   }
 
-  it('says nothing while the selection sits in one condition', () => {
-    expect(incompatibleSelectionNotice(buildIndex(), [1], [])).toBe('');
+  function buildIndex(entries: BenchmarkComparabilityIndexEntryDto[]): BenchmarkComparabilityIndexDto {
+    return {
+      computedAtUtc: '2026-09-05T12:00:00Z',
+      entries,
+      conditions: [
+        {
+          ordinal: 1, label: 'Condition A', sourceCount: 2, runCount: 2,
+          signature: 'sig-a', newestRunStartedAtUtc: '2026-09-05T10:00:00Z'
+        },
+        {
+          ordinal: 2, label: 'Condition B', sourceCount: 1, runCount: 1,
+          signature: 'sig-b', newestRunStartedAtUtc: '2026-09-04T10:00:00Z'
+        }
+      ],
+      largestConditionKeys: [{
+        name: 'serviceTier',
+        label: 'Candidate service tier',
+        description: 'The service tier the candidate ran under.',
+        kind: 'Instrument',
+        valueKind: 'Text',
+        value: 'standard',
+        displayValue: null
+      }],
+      referenceSelectionRule: 'The reference condition is the one with the most sources.',
+      mustMatchKeyNames: ['serviceTier'],
+      modelAxisKeyNames: ['modelId'],
+      degradingKeyNames: ['QuestionParallelism', 'PricingSnapshot']
+    };
+  }
+
+  /**
+   * Two runs in the reference condition, one outside it, and one analysis group whose own members
+   * disagree — which is the whole space of placements the index can report.
+   */
+  function defaultIndex(): BenchmarkComparabilityIndexDto {
+    return buildIndex([
+      entry({ key: 'run:1', sourceId: 1 }),
+      entry({ key: 'run:2', sourceId: 2 }),
+      entry({
+        key: 'run:3',
+        sourceId: 3,
+        conditionOrdinal: 2,
+        conditionLabel: 'Condition B',
+        signature: 'sig-b'
+      }),
+      entry({
+        key: 'group:11',
+        sourceKind: 'Group',
+        sourceId: 11,
+        conditionOrdinal: 0,
+        conditionLabel: 'Self-inconsistent',
+        selfInconsistent: true,
+        selfInconsistentKeys: ['ScoringMethodVersion']
+      })
+    ]);
+  }
+
+  function state(overrides: Partial<ComparisonSelectionState> = {}): ComparisonSelectionState {
+    return {
+      index: defaultIndex(),
+      indexLoading: false,
+      indexError: null,
+      runIds: [],
+      groupIds: [],
+      pricingBasis: 'Current',
+      ...overrides
+    };
+  }
+
+  function ids(notices: readonly ComparisonSelectionNotice[]): string[] {
+    return notices.map(notice => notice.id);
+  }
+
+  it('says nothing about a selection that sits wholly in the reference condition', () => {
+    expect(selectionNotices(state({ runIds: [1, 2] }))).toEqual([]);
   });
 
-  it('says nothing for a null index or an empty selection', () => {
-    expect(incompatibleSelectionNotice(null, [1, 2], [3])).toBe('');
-    expect(incompatibleSelectionNotice(buildIndex(), [], [])).toBe('');
+  it('says nothing while nothing is selected and the index is in hand', () => {
+    expect(selectionNotices(state())).toEqual([]);
   });
 
-  it('names the excluded count and the baseline condition once the selection crosses one', () => {
-    const notice = incompatibleSelectionNotice(buildIndex(), [1, 2], []);
+  it('reports a failed index as an error, carrying the server text', () => {
+    const notices = selectionNotices(state({
+      index: null,
+      indexError: 'The index could not be built.'
+    }));
 
-    expect(notice).toBe('1 of 2 selected sources fall outside Condition A and will be excluded '
-      + 'from the comparison — only one condition can be charted.');
+    expect(ids(notices)).toEqual(['index-error']);
+    expect(notices[0].severity).toBe('error');
+    expect(notices[0].body).toContain('The index could not be built.');
+    expect(notices[0].body).toContain('cannot be checked for comparability before Compare');
+  });
+
+  it('reports an index still in flight as information', () => {
+    const notices = selectionNotices(state({ index: null, indexLoading: true }));
+
+    expect(ids(notices)).toEqual(['index-loading']);
+    expect(notices[0].severity).toBe('info');
+  });
+
+  it('refuses the whole selection when no condition contains any of it', () => {
+    const notices = selectionNotices(state({ groupIds: [11] }));
+
+    expect(ids(notices)).toEqual(['no-condition', 'self-inconsistent']);
+    expect(notices[0].severity).toBe('error');
+    expect(notices[0].body).toContain('would chart nothing');
+  });
+
+  it('stays silent about an empty condition set while the index has not landed', () => {
+    // Otherwise every selection would be refused for the length of the round trip.
+    expect(ids(selectionNotices(state({ index: null, indexLoading: true, runIds: [1] }))))
+      .toEqual(['index-loading']);
+  });
+
+  it('names the excluded count and the reference condition once the selection crosses one', () => {
+    const notices = selectionNotices(state({ runIds: [1, 3] }));
+
+    expect(ids(notices)).toEqual(['cross-condition', 'single-point']);
+    expect(notices[0].body).toBe('1 of 2 selected sources fall outside Condition A and will be '
+      + 'excluded from the comparison — only one condition can be charted.');
+  });
+
+  it('warns about a self-inconsistent group inside an otherwise single-condition selection', () => {
+    // The gap the cross-condition sentence cannot close: an unassigned group folds to no condition,
+    // so the selection still spans exactly one and nothing used to be said about the exclusion.
+    const notices = selectionNotices(state({ runIds: [1, 2], groupIds: [11] }));
+
+    expect(ids(notices)).toEqual(['self-inconsistent']);
+    expect(notices[0].severity).toBe('warning');
+    expect(notices[0].body).toContain('Analysis group 11');
+    expect(notices[0].body).toContain('ScoringMethodVersion');
+  });
+
+  it('warns that one point in the reference condition draws no figure', () => {
+    const notices = selectionNotices(state({ runIds: [1] }));
+
+    expect(ids(notices)).toEqual(['single-point']);
+    expect(notices[0].body).toContain('A comparison needs two points');
+  });
+
+  it('warns when the sources to be charted differ on question parallelism', () => {
+    const notices = selectionNotices(state({
+      index: buildIndex([
+        entry({ key: 'run:1', sourceId: 1, questionParallelism: '1' }),
+        entry({ key: 'run:2', sourceId: 2, questionParallelism: '4' })
+      ]),
+      runIds: [1, 2]
+    }));
+
+    expect(ids(notices)).toEqual(['degrading-keys']);
+    expect(notices[0].heading).toBe('The speed and cost axes will be flagged');
+    expect(notices[0].body).toContain('QuestionParallelism');
+    expect(notices[0].body).toContain('speed axis');
+    expect(notices[0].body).toContain('cost axis');
+  });
+
+  it('warns about a differing pricing snapshot only on the As-run basis', () => {
+    const index = buildIndex([
+      entry({ key: 'run:1', sourceId: 1, pricingSnapshot: '2026-08-01' }),
+      entry({ key: 'run:2', sourceId: 2, pricingSnapshot: '2026-09-01' })
+    ]);
+
+    // Repriced to one basis, the figures are not charting the stored snapshot prices at all, so a
+    // snapshot difference no longer describes the cost axis.
+    expect(selectionNotices(state({ index, runIds: [1, 2], pricingBasis: 'Current' }))).toEqual([]);
+
+    const notices = selectionNotices(state({ index, runIds: [1, 2], pricingBasis: 'AsRun' }));
+    expect(ids(notices)).toEqual(['degrading-keys']);
+    // The snapshot degrades cost only, so the heading claims nothing about the speed axis.
+    expect(notices[0].heading).toBe('The cost axis will be flagged');
+    expect(notices[0].body).toContain('PricingSnapshot');
+    expect(notices[0].body).toContain('cost axis');
+  });
+
+  it('orders errors above warnings above information', () => {
+    const notices = selectionNotices(state({
+      indexError: 'The index is stale.',
+      indexLoading: true,
+      runIds: [1, 3]
+    }));
+
+    expect(ids(notices))
+      .toEqual(['index-error', 'cross-condition', 'single-point', 'index-loading']);
+    expect(notices.map(notice => notice.severity))
+      .toEqual(['error', 'warning', 'warning', 'info']);
   });
 });
 
@@ -982,6 +1200,7 @@ describe('ModelComparisonComponent projected step 1', () => {
       baselineSuiteName: 'Suite',
       baselineEntryKeys: [],
       baselineKeyValues: {},
+      baselineSignature: '',
       modelAxisKeys: [],
       entries: [],
       comparableCount: 0,
@@ -1051,6 +1270,7 @@ describe('model-comparison adapter', () => {
       baselineSuiteName: 'Suite',
       baselineEntryKeys: [],
       baselineKeyValues: {},
+      baselineSignature: '',
       modelAxisKeys: [],
       entries: [excluded],
       comparableCount: 0,

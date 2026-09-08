@@ -54,6 +54,8 @@ import {
   BenchmarkModelComparisonDto,
   BenchmarkModelComparisonEntryDto,
   BenchmarkModelComparisonPricingBasis,
+  ComparisonSelectionNotice,
+  orderedNotices,
   toChartContext,
   toChartEntries,
   unmeasuredAxes
@@ -189,8 +191,11 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   /** How many analysis groups the host currently has selected. */
   @Input() selectedGroupCount = 0;
 
-  /** Why part of the selection cannot be charted, or '' when it all sits in one condition. */
-  @Input() selectionNotice = '';
+  /**
+   * What the host has to say about the current selection: what cannot be charted, what will be
+   * excluded, and what is still being computed. Empty while the selection is unremarkable.
+   */
+  @Input() selectionNotices: readonly ComparisonSelectionNotice[] = [];
 
   /** The two counts together, which is what both caps and Next are judged on. */
   get selectedSourceCount(): number {
@@ -433,8 +438,9 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    * Which of the two source tables the current selection draws from, titled as they are titled in
    * the picker, so the notice band names the control its notices are about.
    *
-   * Both counts zero is unreachable while the band is rendered — neither notice has text at an
-   * empty selection — so the runs table is a safe last case rather than a claim.
+   * Both counts zero is reachable while the band is rendered: an index that failed or is still
+   * computing raises a notice over an empty selection. The runs table is the last case rather than
+   * a claim about the selection, and the count beside it reads zero, which is the fact.
    */
   get selectionScopeLabel(): string {
     if (this.selectedRunCount > 0 && this.selectedGroupCount > 0) {
@@ -444,19 +450,34 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   /**
-   * That the selection exceeds what the figures draw, or '' below the cap.
+   * That the selection exceeds what the figures draw, or null below the cap.
    *
    * Derived rather than passed in: the plot cap is the constant this component already charts by,
    * and the selection size already arrives for Next to gate on. Silent above the request cap,
    * where the comparison is refused outright and the plot cap is no longer the reader's problem.
    */
-  get plotCapNotice(): string {
+  get plotCapNotice(): ComparisonSelectionNotice | null {
     if (this.selectedSourceCount <= this.maxPlottedEntries || this.selectedSourceCount > this.maxSources) {
-      return '';
+      return null;
     }
-    return `${this.selectedSourceCount} sources selected — the figures plot at most `
-      + `${this.maxPlottedEntries}. The rest stay in the comparison table with their measures, and `
-      + 'the view names which were left out.';
+    return {
+      id: 'plot-cap',
+      severity: 'info',
+      heading: 'More sources selected than the figures plot',
+      body: `${this.selectedSourceCount} sources selected — the figures plot at most `
+        + `${this.maxPlottedEntries}. The rest stay in the comparison table with their measures, and `
+        + 'the view names which were left out.'
+    };
+  }
+
+  /**
+   * Everything the band renders: the host's index-derived notices plus this component's own
+   * plot-cap notice, re-ordered so nothing that blocks a figure sits below something that only
+   * shrinks one.
+   */
+  get bandNotices(): ComparisonSelectionNotice[] {
+    const capNotice = this.plotCapNotice;
+    return orderedNotices(capNotice == null ? this.selectionNotices : [...this.selectionNotices, capNotice]);
   }
 
   goToStep(step: ComparisonWizardStep): void {
@@ -1067,7 +1088,15 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     return Number.isInteger(density) ? String(density) : density.toFixed(2);
   }
 
-  /** Suite, pricing basis, entry count and computation time — the provenance of one figure. */
+  /**
+   * Suite, pricing basis, entry count, the reference condition and the computation time — the
+   * provenance of one figure.
+   *
+   * The condition segment is twelve hex characters of the baseline's must-match signature, which is
+   * what a reader holding only the exported PNG matches against the methods block in the wizard. A
+   * comparison that reached no baseline carries no signature, and the segment is then omitted
+   * rather than printed empty.
+   */
   private exportFooter(): string {
     const dto = this.comparison;
     const suite = dto?.baselineSuiteName || 'Suite not set';
@@ -1075,7 +1104,14 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     const plotted = this.plotted.length;
     const total = this.entries.length;
     const computed = dto?.computedAtUtc ? new Date(dto.computedAtUtc).toLocaleString() : 'unknown time';
-    return `${suite} — ${basis} — ${plotted} of ${total} entries charted — computed ${computed}`;
+    const signature = (dto?.baselineSignature ?? '').trim();
+
+    const parts = [suite, basis, `${plotted} of ${total} entries charted`];
+    if (signature !== '') {
+      parts.push(`condition ${signature.slice(0, 12)}`);
+    }
+    parts.push(`computed ${computed}`);
+    return parts.join(' — ');
   }
 
   /**

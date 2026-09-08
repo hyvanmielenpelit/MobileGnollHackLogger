@@ -734,6 +734,14 @@
   border-top: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
   background: rgba(16, 16, 16, 0.98);
 
+  /* Up to five notices can be in force at once — a failed index over a stale selection that
+     crosses conditions, carries a self-inconsistent group and exceeds the plot cap. Bounded with
+     its own contained scroller so the band never eats the step panel it sits above, and so a
+     scroll gesture inside it does not carry on into that panel. */
+  max-height: 38dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+
   /* The global callout carries a bottom margin for stacked prose; in a flex column with its
      own gap it would add a second, uneven one. */
   .alert {

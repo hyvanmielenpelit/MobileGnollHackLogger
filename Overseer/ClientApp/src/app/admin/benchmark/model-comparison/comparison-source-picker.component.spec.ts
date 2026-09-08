@@ -13,14 +13,21 @@ import type {
 } from '../../../services/admin-benchmark.service';
 import type {
   BenchmarkComparabilityIndexDto,
-  BenchmarkComparabilityIndexEntryDto
+  BenchmarkComparabilityIndexEntryDto,
+  BenchmarkComparabilityKeyValueDto
 } from './model-comparison.models';
+
+/** A single token with no break opportunity in it, which any narrower container must scroll. */
+const UNBREAKABLE_TOKEN = 'x'.repeat(360);
 
 /**
  * A value with no break opportunity in it, standing in for the serialized `CandidatePromptOptions`
  * the real index carries. Long enough that any container narrower than it must wrap or scroll.
  */
-const UNBREAKABLE_VALUE = `{"systemPrompt":"${'x'.repeat(360)}","temperature":0.2}`;
+const UNBREAKABLE_VALUE = `{"systemPrompt":"${UNBREAKABLE_TOKEN}","temperature":0.2}`;
+
+/** A full-length digest, so a test can tell an abbreviation from the value it stands for. */
+const FULL_DIGEST = 'bb19dc24e287'.repeat(5) + 'abcd';
 
 describe('ComparisonSourcePickerComponent', () => {
   let component: ComparisonSourcePickerComponent;
@@ -106,6 +113,22 @@ describe('ComparisonSourcePickerComponent', () => {
     };
   }
 
+  /** One described must-match key of the reference condition, as the index sends it. */
+  function buildKey(
+    overrides: Partial<BenchmarkComparabilityKeyValueDto> = {}
+  ): BenchmarkComparabilityKeyValueDto {
+    return {
+      name: 'serviceTier',
+      label: 'Candidate service tier',
+      description: 'A difference here means the runs were served at different priorities.',
+      kind: 'Instrument',
+      valueKind: 'Text',
+      value: 'standard',
+      displayValue: null,
+      ...overrides
+    };
+  }
+
   /**
    * Two runs and one group in Condition A (the largest), one run in Condition B. Run 3 differs on
    * `serviceTier` from Condition A's `standard`.
@@ -132,13 +155,56 @@ describe('ComparisonSourcePickerComponent', () => {
         })
       ],
       conditions: [
-        { ordinal: 1, label: 'Condition A', sourceCount: 3, runCount: 3 },
-        { ordinal: 2, label: 'Condition B', sourceCount: 1, runCount: 1 }
+        {
+          ordinal: 1, label: 'Condition A', sourceCount: 3, runCount: 3,
+          signature: 'sig-a', newestRunStartedAtUtc: '2026-09-07T18:22:00Z'
+        },
+        {
+          ordinal: 2, label: 'Condition B', sourceCount: 1, runCount: 1,
+          signature: 'sig-b', newestRunStartedAtUtc: '2026-09-06T09:10:00Z'
+        }
       ],
-      largestConditionKeyValues: {
-        serviceTier: 'standard',
-        candidatePromptOptions: UNBREAKABLE_VALUE
-      },
+      largestConditionKeys: [
+        buildKey({
+          name: 'BenchmarkSuiteId',
+          label: 'Question suite',
+          kind: 'Fundamental',
+          valueKind: 'Identifier',
+          value: '5',
+          displayValue: 'NetHack Wiki Suite (#5)'
+        }),
+        buildKey({
+          name: 'SuiteItemRevisions',
+          label: 'Suite item revisions',
+          kind: 'Fundamental',
+          valueKind: 'List',
+          value: '70:1,71:1'
+        }),
+        buildKey({
+          name: 'CandidatePromptOptions',
+          label: 'Candidate prompt options',
+          kind: 'Instrument',
+          valueKind: 'Json',
+          value: UNBREAKABLE_VALUE
+        }),
+        buildKey({
+          name: 'CandidateSystemPromptSha256',
+          label: 'Candidate system prompt',
+          kind: 'Instrument',
+          valueKind: 'Hash',
+          value: FULL_DIGEST
+        }),
+        buildKey({
+          name: 'SecondOpinionConfiguration',
+          label: 'Second opinion configuration',
+          kind: 'Instrument',
+          valueKind: 'List',
+          value: '(none)'
+        })
+      ],
+      referenceSelectionRule:
+        'The reference condition is the one with the most sources; ties go to the most runs, then '
+        + 'to the source offered first.',
       mustMatchKeyNames: ['serviceTier'],
       modelAxisKeyNames: ['modelId'],
       degradingKeyNames: ['questionParallelism'],
@@ -365,7 +431,9 @@ describe('ComparisonSourcePickerComponent', () => {
     const index = buildIndex();
     render({ comparabilityIndex: index });
 
-    const chips = fixture.debugElement.queryAll(By.css('.csp-key-chips li'))
+    // Direct children only: the methods block and the other-conditions list reuse the same class
+    // for their own values, nested inside a `<dd>` and an `<li>` respectively.
+    const chips = fixture.debugElement.queryAll(By.css('.csp-legend-group > .csp-key-chips li'))
       .map(element => (element.nativeElement as HTMLElement).textContent?.trim() ?? '');
 
     expect(chips.length).toBe(
@@ -374,17 +442,196 @@ describe('ComparisonSourcePickerComponent', () => {
     expect(chips.some(text => text.includes(','))).toBeFalse();
   });
 
-  it('gives each largest-condition value its own row', () => {
-    const index = buildIndex();
+  // -------------------------------------------------------------------------------------------
+  // The reference condition, as a methods statement
+  // -------------------------------------------------------------------------------------------
+
+  describe('the reference-condition methods block', () => {
+    /**
+     * `navigator.clipboard` is a read-only accessor, so a copy case installs its own descriptor
+     * and the restore below puts the real one back for every later spec in this browser.
+     */
+    const originalClipboard = Object.getOwnPropertyDescriptor(Navigator.prototype, 'clipboard')
+      ?? Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+
+    function installClipboard(value: unknown): void {
+      Object.defineProperty(navigator, 'clipboard', { value, configurable: true, writable: true });
+    }
+
+    afterEach(() => {
+      delete (navigator as { clipboard?: unknown }).clipboard;
+      if (originalClipboard) {
+        Object.defineProperty(navigator, 'clipboard', originalClipboard);
+      }
+    });
+
+    function textOf(selector: string): string {
+      const element = fixture.debugElement.query(By.css(selector));
+      return ((element?.nativeElement as HTMLElement | undefined)?.textContent ?? '').trim();
+    }
+
+    it('names the condition, its size, its newest run and the rule that chose it', () => {
+      const index = buildIndex();
+      render({ comparabilityIndex: index });
+
+      expect(textOf('#csp-methods-heading')).toContain('Condition A');
+
+      const facts = textOf('.csp-methods-facts');
+      expect(facts).toContain('Sources');
+      expect(facts).toContain('3');
+      expect(facts).toContain('Newest run');
+      // The signature is citable on screen at twelve characters, whatever its full length.
+      expect(facts).toContain('sig-a');
+
+      // The sentence is the server's, so the text an operator reads cannot drift from the
+      // tie-break the bucketing applies.
+      expect(textOf('.csp-methods-rule')).toBe(index.referenceSelectionRule);
+    });
+
+    it('gives each reference-condition key its own row, grouped by kind', () => {
+      const index = buildIndex();
+      render({ comparabilityIndex: index });
+
+      const rows = fixture.debugElement.queryAll(By.css('.csp-legend-values dt'));
+      expect(rows.length).toBe(index.largestConditionKeys.length);
+
+      const titles = fixture.debugElement.queryAll(By.css('.csp-methods-kind h5'))
+        .map(element => (element.nativeElement as HTMLElement).textContent?.trim());
+      expect(titles).toEqual(['The exam', 'The apparatus']);
+
+      // Every row carries the human label, the machine name and the one-line description: the
+      // internal key name alone is what made the old block unreadable.
+      const firstRow = (rows[0].nativeElement as HTMLElement).textContent ?? '';
+      expect(firstRow).toContain('Question suite');
+      expect(firstRow).toContain('BenchmarkSuiteId');
+      expect(textOf('.csp-methods-key-note')).toContain('A difference here');
+    });
+
+    it('shows an identifier as the name the server knows for it', () => {
+      render({ comparabilityIndex: buildIndex() });
+
+      const values = fixture.debugElement.queryAll(By.css('.csp-legend-values dd code'))
+        .map(element => (element.nativeElement as HTMLElement).textContent ?? '');
+      expect(values.some(text => text.includes('NetHack Wiki Suite (#5)'))).toBeTrue();
+    });
+
+    it('shows a hash as twelve characters with the full digest behind a disclosure', () => {
+      render({ comparabilityIndex: buildIndex() });
+
+      expect(textOf('.csp-methods-hash code')).toBe(FULL_DIGEST.slice(0, 12));
+
+      const disclosure = fixture.debugElement.query(By.css('details.csp-methods-disclosure'));
+      expect(disclosure).withContext('the full digest must remain reachable by hand').toBeTruthy();
+      expect(textOf('details.csp-methods-disclosure code')).toBe(FULL_DIGEST);
+    });
+
+    it('keeps the prompt-options value inside its own code scroller', () => {
+      render({ comparabilityIndex: buildIndex() });
+
+      const values = fixture.debugElement.queryAll(By.css('.csp-legend-values dd code'))
+        .map(element => (element.nativeElement as HTMLElement).textContent ?? '');
+      expect(values.some(text => text.includes(UNBREAKABLE_TOKEN)))
+        .withContext('the prompt-options value must render inside its own code box').toBeTrue();
+      // Pretty-printed rather than the minified blob the wire carries.
+      expect(values.some(text => text.includes('"temperature": 0.2'))).toBeTrue();
+    });
+
+    it('renders a JSON value that does not parse as the raw string', () => {
+      expect(component.formatJson('{ not json')).toBe('{ not json');
+    });
+
+    it('splits a list value into one chip per element', () => {
+      render({ comparabilityIndex: buildIndex() });
+
+      const chips = fixture.debugElement.queryAll(By.css('.csp-legend-values dd .csp-key-chips li'))
+        .map(element => (element.nativeElement as HTMLElement).textContent?.trim());
+      expect(chips).toContain('70:1');
+      expect(chips).toContain('71:1');
+    });
+
+    it('renders an absent value as a dash rather than as the word "(none)"', () => {
+      render({ comparabilityIndex: buildIndex() });
+
+      const none = fixture.debugElement.query(By.css('.csp-methods-none'));
+      expect(none).toBeTruthy();
+      expect((none.nativeElement as HTMLElement).textContent).toContain('—');
+      expect((none.nativeElement as HTMLElement).querySelector('.visually-hidden')?.textContent)
+        .toBe('no value');
+      expect(component.isNoValue('(none)')).toBeTrue();
+    });
+
+    it('copies the methods statement with full values, never the abbreviations', async () => {
+      const writeText = jasmine.createSpy('writeText').and.returnValue(Promise.resolve());
+      installClipboard({ writeText });
+      render({ comparabilityIndex: buildIndex() });
+
+      await component.copyMethodsStatement();
+
+      const written = writeText.calls.mostRecent().args[0] as string;
+      expect(written).toContain('Reference condition: Condition A (3 sources, 3 runs');
+      expect(written).toContain('Signature: sig-a');
+      expect(written).toContain('The exam');
+      expect(written).toContain('The apparatus');
+      // The whole use of the block is being pasted somewhere, so it carries the values in full.
+      expect(written).toContain(FULL_DIGEST);
+      expect(written).toContain(UNBREAKABLE_TOKEN);
+      expect(component.methodsCopyState).toContain('copied');
+    });
+
+    it('copies a hash row in full rather than the twelve characters it shows', async () => {
+      const writeText = jasmine.createSpy('writeText').and.returnValue(Promise.resolve());
+      installClipboard({ writeText });
+      const index = buildIndex();
+      render({ comparabilityIndex: index });
+
+      const hashKey = index.largestConditionKeys.find(key => key.valueKind === 'Hash')!;
+      await component.copyFullValue(hashKey);
+
+      expect(writeText).toHaveBeenCalledWith(FULL_DIGEST);
+    });
+
+    it('says what to do instead when the clipboard refuses the write', async () => {
+      installClipboard(undefined);
+      render({ comparabilityIndex: buildIndex() });
+
+      await component.copyMethodsStatement();
+
+      expect(component.methodsCopyState).toBe('Copy failed — select the text instead.');
+    });
+  });
+
+  // -------------------------------------------------------------------------------------------
+  // The conditions the figures are not measured under
+  // -------------------------------------------------------------------------------------------
+
+  it('lists every non-reference condition with its size and the keys it differs on', () => {
+    render({ comparabilityIndex: buildIndex() });
+
+    expect(component.otherConditions.length).toBe(1);
+    expect(component.otherConditions[0].condition.label).toBe('Condition B');
+
+    const others = fixture.debugElement.queryAll(By.css('.csp-others > li'))
+      .map(element => (element.nativeElement as HTMLElement).textContent ?? '');
+    expect(others.length).toBe(1);
+    expect(others[0]).toContain('Condition B');
+    expect(others[0]).toContain('1 source');
+    expect(others[0]).toContain('1 run');
+    // The differing key is named by its own label where the reference condition describes it, so
+    // the reader sees what switching would change rather than a bare internal name.
+    expect(others[0]).toContain('serviceTier');
+  });
+
+  it('offers no other-conditions section when everything is in one condition', () => {
+    const index = buildIndex({
+      conditions: [{
+        ordinal: 1, label: 'Condition A', sourceCount: 3, runCount: 3,
+        signature: 'sig-a', newestRunStartedAtUtc: '2026-09-07T18:22:00Z'
+      }]
+    });
     render({ comparabilityIndex: index });
 
-    const terms = fixture.debugElement.queryAll(By.css('.csp-legend-values dt'));
-    expect(terms.length).toBe(Object.keys(index.largestConditionKeyValues).length);
-
-    const values = fixture.debugElement.queryAll(By.css('.csp-legend-values code'))
-      .map(element => (element.nativeElement as HTMLElement).textContent ?? '');
-    expect(values.some(text => text.includes(UNBREAKABLE_VALUE)))
-      .withContext('the prompt-options value must render inside its own code box').toBeTrue();
+    expect(component.otherConditions).toEqual([]);
+    expect(fixture.debugElement.query(By.css('#csp-others-heading'))).toBeNull();
   });
 
   it('closes the legend on a backdrop click where closedby is unsupported', () => {

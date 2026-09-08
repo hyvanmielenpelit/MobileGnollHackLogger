@@ -52,6 +52,36 @@ public class BenchmarkComparabilityIndexEntryDto
     public string PricingSnapshot { get; set; } = string.Empty;
 }
 
+/// <summary>
+/// One comparability key as a condition holds it: what the key is, and its value.
+///
+/// <para>This is the methods statement of a set of figures, one line at a time — the machine name
+/// the rest of the product uses, the phrase an operator reads it by, and the value every source in
+/// the condition agreed on.</para>
+/// </summary>
+public class BenchmarkComparabilityKeyValueDto
+{
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>A short noun phrase — "Question suite", "Candidate system prompt".</summary>
+    public string Label { get; set; } = string.Empty;
+
+    /// <summary>One line: what a difference on this key would mean for a comparison.</summary>
+    public string Description { get; set; } = string.Empty;
+
+    /// <summary>`Fundamental`, `Candidate`, `Instrument` or `SpeedAndCost`.</summary>
+    public string Kind { get; set; } = string.Empty;
+
+    /// <summary>`Text`, `Identifier`, `Hash`, `Json` or `List`.</summary>
+    public string ValueKind { get; set; } = string.Empty;
+
+    /// <summary>The canonical value compared for equality, verbatim. Never abbreviated here.</summary>
+    public string Value { get; set; } = string.Empty;
+
+    /// <summary>A friendlier rendering where the server knows one the client cannot derive; else null.</summary>
+    public string? DisplayValue { get; set; }
+}
+
 /// <summary>One cohort of sources that agree on every must-match key.</summary>
 public class BenchmarkComparabilityConditionDto
 {
@@ -62,6 +92,15 @@ public class BenchmarkComparabilityConditionDto
     public int SourceCount { get; set; }
 
     public int RunCount { get; set; }
+
+    /// <summary>The must-match signature every source in this cohort shares; the citable short form of it.</summary>
+    public string Signature { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The most recent <c>StartedAtUtc</c> among the cohort's runs, so a cohort that is the majority
+    /// yet describes a superseded instrument is visibly stale. Null when the cohort has no runs.
+    /// </summary>
+    public DateTime? NewestRunStartedAtUtc { get; set; }
 }
 
 /// <summary>
@@ -77,8 +116,17 @@ public class BenchmarkComparabilityIndexDto
     /// <summary>The conditions, largest first. Ordinal 1 is the baseline a comparison would pick.</summary>
     public List<BenchmarkComparabilityConditionDto> Conditions { get; set; } = new();
 
-    /// <summary>The must-match key values of the largest condition, for the legend.</summary>
-    public Dictionary<string, string> LargestConditionKeyValues { get; set; } = new();
+    /// <summary>
+    /// The must-match keys of the largest condition, in canonical key order, each with the label,
+    /// description and value kind that let a legend read as a methods statement.
+    /// </summary>
+    public List<BenchmarkComparabilityKeyValueDto> LargestConditionKeys { get; set; } = new();
+
+    /// <summary>
+    /// How the reference condition was chosen, in one sentence. Server-owned so that the text a
+    /// legend prints cannot drift from the tie-break the bucketing actually applies.
+    /// </summary>
+    public string ReferenceSelectionRule { get; set; } = string.Empty;
 
     public List<string> MustMatchKeyNames { get; set; } = new();
 

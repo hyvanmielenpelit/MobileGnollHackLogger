@@ -165,6 +165,7 @@ public static class BenchmarkModelComparison
             BaselineSuiteName = baselineSource?.Suite?.Name,
             BaselineEntryKeys = comparability.BaselineEntryKeys.ToList(),
             BaselineKeyValues = comparability.BaselineKeyValues.ToDictionary(kv => kv.Key, kv => kv.Value),
+            BaselineSignature = comparability.BaselineSignature,
             ModelAxisKeys = BenchmarkCrossModelComparability.ModelAxisKeys.ToList(),
             Entries = entries,
             ComparableCount = entries.Count(e => !e.Excluded),

@@ -300,6 +300,46 @@ public class BenchmarkComparabilityKeyTests
         Assert.Equal(names.Count, names.Distinct().Count());
     }
 
+    // --- Describe: the methods-statement metadata --------------------------------------------
+
+    [Fact]
+    public void Describe_GivesEveryExtractedKeyANonEmptyLabelAndDescription()
+    {
+        // A key added to Extract but never described here would render blank in a methods
+        // statement, so this walks Extract's own output rather than a hard-coded key list.
+        foreach (var key in BenchmarkComparabilityKey.Extract(Run(13)))
+        {
+            var info = BenchmarkComparabilityKey.Describe(key.Name);
+            Assert.False(string.IsNullOrWhiteSpace(info.Label), $"{key.Name} has no label.");
+            Assert.False(string.IsNullOrWhiteSpace(info.Description), $"{key.Name} has no description.");
+        }
+    }
+
+    [Fact]
+    public void Describe_AnUnrecognisedName_DegradesToItselfWithNoDescription()
+    {
+        var info = BenchmarkComparabilityKey.Describe("SomeFutureKey");
+
+        Assert.Equal("SomeFutureKey", info.Label);
+        Assert.Equal(string.Empty, info.Description);
+        Assert.Equal(BenchmarkComparabilityValueKind.Text, info.ValueKind);
+    }
+
+    [Fact]
+    public void Describe_ReturnsTheDocumentedValueKind_ForOneKeyOfEachKindInUse()
+    {
+        Assert.Equal(BenchmarkComparabilityValueKind.Identifier,
+            BenchmarkComparabilityKey.Describe(BenchmarkComparabilityKey.SuiteKey).ValueKind);
+        Assert.Equal(BenchmarkComparabilityValueKind.Hash,
+            BenchmarkComparabilityKey.Describe(BenchmarkComparabilityKey.CandidateSystemPromptKey).ValueKind);
+        Assert.Equal(BenchmarkComparabilityValueKind.Json,
+            BenchmarkComparabilityKey.Describe(BenchmarkComparabilityKey.CandidatePromptOptionsKey).ValueKind);
+        Assert.Equal(BenchmarkComparabilityValueKind.List,
+            BenchmarkComparabilityKey.Describe(BenchmarkComparabilityKey.ItemRevisionsKey).ValueKind);
+        Assert.Equal(BenchmarkComparabilityValueKind.Text,
+            BenchmarkComparabilityKey.Describe(BenchmarkComparabilityKey.CandidateProviderKey).ValueKind);
+    }
+
     [Fact]
     public void SecondOpinionSettings_AreTierAKeys()
     {

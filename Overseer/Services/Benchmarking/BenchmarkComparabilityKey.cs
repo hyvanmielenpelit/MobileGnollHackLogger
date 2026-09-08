@@ -103,6 +103,55 @@ public sealed record BenchmarkComparabilityKeyEntry
     public bool DegradesCost { get; init; }
 }
 
+/// <summary>
+/// How a key's value should be read, so a view renders it correctly without sniffing it.
+///
+/// <para>The kind describes the <i>shape</i> of the canonical value, never its meaning: it is what
+/// tells a reader that a 64-character string is a digest to be abbreviated rather than a name to be
+/// printed whole, and that a semicolon-separated signature is a list of settings rather than one
+/// unbreakable token.</para>
+/// </summary>
+public enum BenchmarkComparabilityValueKind
+{
+    /// <summary>A short human-readable value that is printed as it stands.</summary>
+    Text = 0,
+
+    /// <summary>A database identifier, which a view may pair with the name it stands for.</summary>
+    Identifier = 1,
+
+    /// <summary>A hex fingerprint: legible as a short prefix, verifiable only in full.</summary>
+    Hash = 2,
+
+    /// <summary>A JSON document, which is legible only pretty-printed.</summary>
+    Json = 3,
+
+    /// <summary>Several settings joined into one signature, separable into one element each.</summary>
+    List = 4
+}
+
+/// <summary>
+/// What one comparability key is, in words a reader outside this file can use.
+///
+/// <para>The comparability machinery names its keys by C# constant so that the UI, the diagnostics
+/// text and the tests cannot drift apart; those names are precise and mean nothing to an operator.
+/// This record is the other half: the phrase a methods statement prints, and the one line that says
+/// what a difference on the key would cost a comparison.</para>
+/// </summary>
+public sealed record BenchmarkComparabilityKeyInfo
+{
+    /// <summary>The key name, as <see cref="BenchmarkComparabilityKeyEntry.Name"/> reports it.</summary>
+    public string Name { get; init; } = string.Empty;
+
+    /// <summary>A short noun phrase — "Question suite", "Candidate system prompt".</summary>
+    public string Label { get; init; } = string.Empty;
+
+    /// <summary>One line: what a difference on this key would mean for a comparison.</summary>
+    public string Description { get; init; } = string.Empty;
+
+    /// <summary>The shape of the canonical value, so a view renders it without inspecting it.</summary>
+    public BenchmarkComparabilityValueKind ValueKind { get; init; }
+}
+
 /// <summary>One distinct value of a key, and the runs that carry it.</summary>
 public sealed record BenchmarkComparabilityKeyVariant
 {
@@ -239,6 +288,179 @@ public static class BenchmarkComparabilityKey
     /// <summary>Tier A and Tier B may be pooled into one index; Tier C and below may not.</summary>
     public static bool IsPoolable(BenchmarkComparabilityTier tier)
         => tier == BenchmarkComparabilityTier.Replicate || tier == BenchmarkComparabilityTier.QualityComparable;
+
+    /// <summary>
+    /// The label, description and value kind of one key.
+    ///
+    /// <para>An unrecognised name degrades to itself as the label, an empty description and
+    /// <see cref="BenchmarkComparabilityValueKind.Text"/>, so a key added to <see cref="Extract"/>
+    /// renders plainly — as its own machine name against its raw value — rather than disappearing
+    /// from a methods statement before it is described here.</para>
+    /// </summary>
+    public static BenchmarkComparabilityKeyInfo Describe(string name)
+    {
+        return name switch
+        {
+            // --- Fundamental: the exam and its answer key -----------------------------------
+            SuiteKey => Info(name,
+                "Question suite",
+                "A difference means the runs answered different questions, so no measure can be "
+                + "paired by question.",
+                BenchmarkComparabilityValueKind.Identifier),
+
+            ItemRevisionsKey => Info(name,
+                "Suite item revisions",
+                "A rubric edit bumps an item's revision, so a difference means the same questions "
+                + "were graded against a different answer key.",
+                BenchmarkComparabilityValueKind.List),
+
+            // --- Candidate specification ------------------------------------------------------
+            CandidateProviderKey => Info(name,
+                "Candidate provider",
+                "A difference means a different vendor served the answers, so the runs are two "
+                + "subjects rather than replicates of one.",
+                BenchmarkComparabilityValueKind.Text),
+
+            CandidateModelKey => Info(name,
+                "Candidate model",
+                "A difference means a different model answered; two models are compared as two "
+                + "groups and never averaged into one.",
+                BenchmarkComparabilityValueKind.Text),
+
+            CandidateThinkingLevelKey => Info(name,
+                "Candidate thinking level",
+                "Thinking level dominates model time, so a difference compares the models as they "
+                + "are configured rather than at one common setting.",
+                BenchmarkComparabilityValueKind.Text),
+
+            CandidateReasoningModeKey => Info(name,
+                "Candidate reasoning mode",
+                "A difference changes how the model was asked to reason, so the runs describe two "
+                + "differently configured subjects.",
+                BenchmarkComparabilityValueKind.Text),
+
+            CandidateReasoningSummaryKey => Info(name,
+                "Candidate reasoning summary",
+                "A difference changes what reasoning the model was asked to disclose, which is part "
+                + "of how the subject was configured.",
+                BenchmarkComparabilityValueKind.Text),
+
+            CandidateServiceTierKey => Info(name,
+                "Candidate service tier",
+                "A difference means one model was served under a different provider tier, which "
+                + "moves its speed and its price.",
+                BenchmarkComparabilityValueKind.Text),
+
+            CandidateMaxOutputTokensKey => Info(name,
+                "Candidate output token cap",
+                "A cap that binds truncates an answer, so a difference can move completeness as "
+                + "well as cost.",
+                BenchmarkComparabilityValueKind.Text),
+
+            CandidateParallelExecutionModeKey => Info(name,
+                "Candidate batching mode",
+                "A difference changes how the candidate's model calls were batched, which is part "
+                + "of how the subject was configured.",
+                BenchmarkComparabilityValueKind.Text),
+
+            CandidatePromptOptionsKey => Info(name,
+                "Candidate prompt options",
+                "The production chat prompt configuration the model was graded under: a difference "
+                + "makes the points incomparable on completeness, conciseness and readability.",
+                BenchmarkComparabilityValueKind.Json),
+
+            // --- Instrument -------------------------------------------------------------------
+            CandidateSystemPromptKey => Info(name,
+                "Candidate system prompt",
+                "A difference means the answers were produced under different instructions, which "
+                + "is a different instrument rather than a different subject.",
+                BenchmarkComparabilityValueKind.Hash),
+
+            ToolGuidesKey => Info(name,
+                "Tool guides",
+                "A difference means the model was given different guidance about its tools — the "
+                + "deliberate single-variable change a cross-condition comparison exists for.",
+                BenchmarkComparabilityValueKind.Hash),
+
+            KnowledgeBaseKey => Info(name,
+                "Knowledge base head",
+                "A difference means the retrievable corpus moved, so the same question had "
+                + "different material available to answer it.",
+                BenchmarkComparabilityValueKind.Hash),
+
+            HarnessVersionKey => Info(name,
+                "Harness version",
+                "A difference means different harness code ran the questions, so the apparatus "
+                + "itself is not the same.",
+                BenchmarkComparabilityValueKind.Text),
+
+            ScoringMethodVersionKey => Info(name,
+                "Scoring method version",
+                "A difference means the answers were scored by a different method, so the scores "
+                + "are not on one scale.",
+                BenchmarkComparabilityValueKind.Text),
+
+            ScoringProfileKey => Info(name,
+                "Scoring profile",
+                "The profile identity and the scoring semantics it held at run time: a difference "
+                + "means the weights, level scores or error ceiling behind the scores moved.",
+                BenchmarkComparabilityValueKind.List),
+
+            AssessorConfigurationKey => Info(name,
+                "Assessor configuration",
+                "The grading model and how it was configured; a difference means a different "
+                + "grader produced the scores.",
+                BenchmarkComparabilityValueKind.List),
+
+            SecondOpinionConfigurationKey => Info(name,
+                "Second-opinion configuration",
+                "How and how often a second grader was consulted; a difference changes the "
+                + "adjudication that settled the scores.",
+                BenchmarkComparabilityValueKind.List),
+
+            ClaimVerifierConfigurationKey => Info(name,
+                "Claim verifier configuration",
+                "The model that checked the candidate's factual claims; a difference changes how "
+                + "accuracy was established.",
+                BenchmarkComparabilityValueKind.List),
+
+            PerQuestionBudgetsKey => Info(name,
+                "Per-question budgets",
+                "The tool-call, iteration, model-call and timeout limits; a limit that binds "
+                + "truncates an investigation and moves what the candidate scored.",
+                BenchmarkComparabilityValueKind.List),
+
+            // --- Speed and cost ---------------------------------------------------------------
+            QuestionParallelismKey => Info(name,
+                "Question parallelism",
+                "Answering questions concurrently changes both timing and prompt-cache behaviour, "
+                + "so a difference degrades the speed and the cost aggregates alike.",
+                BenchmarkComparabilityValueKind.Text),
+
+            PricingSnapshotKey => Info(name,
+                "Pricing snapshot",
+                "The catalog prices the run was costed from; a difference degrades cost alone, "
+                + "because prices cannot move a quality or a speed score.",
+                BenchmarkComparabilityValueKind.Hash),
+
+            _ => Info(name, name, string.Empty, BenchmarkComparabilityValueKind.Text)
+        };
+    }
+
+    private static BenchmarkComparabilityKeyInfo Info(
+        string name,
+        string label,
+        string description,
+        BenchmarkComparabilityValueKind valueKind)
+    {
+        return new BenchmarkComparabilityKeyInfo
+        {
+            Name = name,
+            Label = label,
+            Description = description,
+            ValueKind = valueKind
+        };
+    }
 
     /// <summary>
     /// Every comparability key of one run, in a stable order.

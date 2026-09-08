@@ -146,6 +146,10 @@ public class BenchmarkComparabilityIndexTests
         BenchmarkComparabilityIndexDto dto, string key)
         => dto.Entries.Single(e => e.Key == key);
 
+    private static BenchmarkComparabilityKeyValueDto KeyValue(
+        BenchmarkComparabilityIndexDto dto, string name)
+        => dto.LargestConditionKeys.Single(k => k.Name == name);
+
     // --- Bucketing ----------------------------------------------------------------------------------
 
     [Fact]
@@ -212,7 +216,7 @@ public class BenchmarkComparabilityIndexTests
         Assert.Equal(2, Entry(dto, "run:3").ConditionOrdinal);
 
         // The legend prints the larger half's condition.
-        Assert.Equal("9", dto.LargestConditionKeyValues[BenchmarkComparabilityKey.ScoringMethodVersionKey]);
+        Assert.Equal("9", KeyValue(dto, BenchmarkComparabilityKey.ScoringMethodVersionKey).Value);
     }
 
     [Fact]
@@ -340,7 +344,7 @@ public class BenchmarkComparabilityIndexTests
         // And the legend prints the same condition the comparison would report.
         foreach (var pair in resolved.BaselineKeyValues)
         {
-            Assert.Equal(pair.Value, dto.LargestConditionKeyValues[pair.Key]);
+            Assert.Equal(pair.Value, KeyValue(dto, pair.Key).Value);
         }
     }
 
@@ -416,6 +420,118 @@ public class BenchmarkComparabilityIndexTests
         Assert.Equal(
             BenchmarkComparabilityKey.ItemRevisionsKey,
             Assert.Single(Entry(dto, "run:2").DifferencesFromLargest).Name);
+    }
+
+    // --- The reference-condition methods block -----------------------------------------------------------
+
+    [Fact]
+    public async Task LargestConditionKeys_AreInCanonicalKeyOrder()
+    {
+        var options = NewDatabase();
+        await SeedAsync(options, new[] { Run(1) });
+
+        var dto = await IndexAsync(options, runIds: new long[] { 1 });
+
+        Assert.Equal(dto.MustMatchKeyNames, dto.LargestConditionKeys.Select(k => k.Name).ToList());
+    }
+
+    [Fact]
+    public async Task LargestConditionKeys_CarryKindAndValueKind_AndTheValueVerbatim()
+    {
+        var options = NewDatabase();
+        var run = Run(1);
+        await SeedAsync(options, new[] { run });
+
+        var dto = await IndexAsync(options, runIds: new long[] { 1 });
+        var extracted = BenchmarkComparabilityKey.Extract(run).ToDictionary(k => k.Name, k => k.Value);
+
+        var suite = KeyValue(dto, BenchmarkComparabilityKey.SuiteKey);
+        Assert.Equal(BenchmarkComparabilityKeyKind.Fundamental.ToString(), suite.Kind);
+        Assert.Equal(BenchmarkComparabilityValueKind.Identifier.ToString(), suite.ValueKind);
+        Assert.Equal(extracted[BenchmarkComparabilityKey.SuiteKey], suite.Value);
+
+        // A hash row carries the full digest, never the 12-character prefix a view would show.
+        var systemPrompt = KeyValue(dto, BenchmarkComparabilityKey.CandidateSystemPromptKey);
+        Assert.Equal(BenchmarkComparabilityKeyKind.Instrument.ToString(), systemPrompt.Kind);
+        Assert.Equal(BenchmarkComparabilityValueKind.Hash.ToString(), systemPrompt.ValueKind);
+        Assert.Equal(run.CandidateSystemPromptSha256, systemPrompt.Value);
+        Assert.Equal(extracted[BenchmarkComparabilityKey.CandidateSystemPromptKey], systemPrompt.Value);
+    }
+
+    [Fact]
+    public async Task LargestConditionKeys_SetsDisplayValueOnTheSuiteRow_WhenTheSuiteHasAName()
+    {
+        var options = NewDatabase();
+        await SeedAsync(options, new[] { Run(1) });
+        using (var db = new ApplicationDbContext(options))
+        {
+            db.BenchmarkSuites.Add(new BenchmarkSuite { Id = 5, Name = "NetHack Wiki Suite" });
+            await db.SaveChangesAsync();
+        }
+
+        var dto = await IndexAsync(options, runIds: new long[] { 1 });
+
+        Assert.Equal("NetHack Wiki Suite (#5)", KeyValue(dto, BenchmarkComparabilityKey.SuiteKey).DisplayValue);
+
+        // Suite is the one must-match value whose meaning lives in another table; every other row
+        // has no friendlier rendering than its raw value.
+        Assert.All(
+            dto.LargestConditionKeys.Where(k => k.Name != BenchmarkComparabilityKey.SuiteKey),
+            k => Assert.Null(k.DisplayValue));
+    }
+
+    [Fact]
+    public async Task LargestConditionKeys_LeavesTheSuiteRowsDisplayValueNull_WhenTheSuiteHasNoName()
+    {
+        var options = NewDatabase();
+        await SeedAsync(options, new[] { Run(1) });
+
+        var dto = await IndexAsync(options, runIds: new long[] { 1 });
+
+        Assert.Null(KeyValue(dto, BenchmarkComparabilityKey.SuiteKey).DisplayValue);
+    }
+
+    [Fact]
+    public async Task ReferenceSelectionRule_IsPopulated_WhenAConditionExists()
+    {
+        var options = NewDatabase();
+        await SeedAsync(options, new[] { Run(1) });
+
+        var dto = await IndexAsync(options, runIds: new long[] { 1 });
+
+        Assert.Equal(BenchmarkComparabilityIndexService.ReferenceSelectionRule, dto.ReferenceSelectionRule);
+    }
+
+    [Fact]
+    public async Task ReferenceSelectionRule_IsPopulated_EvenOverAnOfferedSetThatProducesNoConditionAtAll()
+    {
+        // A group with no loadable members defines no condition, so the index reports zero of them —
+        // but the sentence explaining how a reference would be chosen still cannot be blank.
+        var options = NewDatabase();
+        await SeedAsync(options, new[] { Run(1) }, new[] { Group(7, "Empty") });
+
+        var dto = await IndexAsync(options, groupIds: new long[] { 7 });
+
+        Assert.Empty(dto.Conditions);
+        Assert.Equal(BenchmarkComparabilityIndexService.ReferenceSelectionRule, dto.ReferenceSelectionRule);
+    }
+
+    [Fact]
+    public async Task Condition_CarriesANonEmptySignature_AndTheNewestRunDate()
+    {
+        var options = NewDatabase();
+        var first = Run(1);
+        var second = Run(2, "gemini-3.8-flash-lite");
+        await SeedAsync(options, new[] { first, second });
+
+        var dto = await IndexAsync(options, runIds: new long[] { 1, 2 });
+
+        var condition = Assert.Single(dto.Conditions);
+        Assert.NotEmpty(condition.Signature);
+        Assert.Equal(BenchmarkCrossModelComparability.MustMatchSignature(first), condition.Signature);
+
+        // Run 2 was started later than run 1 by construction of the fixture.
+        Assert.Equal((DateTime?)second.StartedAtUtc, condition.NewestRunStartedAtUtc);
     }
 
     // --- Request limits -----------------------------------------------------------------------------------

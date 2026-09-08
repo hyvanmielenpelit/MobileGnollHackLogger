@@ -423,15 +423,150 @@
         }
       </section>
 
-      @if (objectKeys(comparabilityIndex.largestConditionKeyValues).length > 0) {
-        <section class="csp-legend-group">
-          <h4>The largest condition's own values</h4>
-          <dl class="csp-legend-values">
-            @for (name of objectKeys(comparabilityIndex.largestConditionKeyValues); track name) {
-              <dt>{{ name }}</dt>
-              <dd><code>{{ comparabilityIndex.largestConditionKeyValues[name] }}</code></dd>
+      <!-- The methods statement for the figures. A cross-model chart is a measurement, and this is
+           the instrument it was taken with: the block a reader cites, and the block two charts a
+           month apart have to agree on before they mean anything together. -->
+      @if (comparabilityIndex.largestConditionKeys.length > 0) {
+        <section class="csp-legend-group csp-methods" aria-labelledby="csp-methods-heading">
+          <h4 id="csp-methods-heading">The reference condition — {{ referenceConditionLabel }}</h4>
+          <p>
+            The instrument these figures are measured under, and the block to cite when one is
+            pasted into a report. Every source in this condition agrees on every value below; a
+            source that differs on any of them is excluded from the comparison rather than plotted
+            beside it.
+          </p>
+
+          <!-- Size, recency and the citable signature: "the largest" is otherwise a claim the
+               reader cannot check, and a majority cohort whose newest run is old describes a
+               superseded instrument. -->
+          <ul class="csp-methods-facts">
+            <li><span>Sources</span> <strong>{{ referenceCondition?.sourceCount ?? 0 }}</strong></li>
+            <li><span>Runs</span> <strong>{{ referenceCondition?.runCount ?? 0 }}</strong></li>
+            <li>
+              <span>Newest run</span>
+              <strong>{{ formatDate(referenceCondition?.newestRunStartedAtUtc) }}</strong>
+            </li>
+            <li><span>Signature</span> <code>{{ shortHash(referenceCondition?.signature) }}</code></li>
+          </ul>
+
+          <p class="csp-methods-rule">{{ comparabilityIndex.referenceSelectionRule }}</p>
+
+          @for (group of methodsGroups; track group.kind) {
+            <section class="csp-methods-kind"
+                     [attr.aria-labelledby]="'csp-methods-kind-' + group.kind">
+              <h5 [id]="'csp-methods-kind-' + group.kind">{{ group.title }}</h5>
+              <p class="csp-methods-kind-note">{{ group.note }}</p>
+              <dl class="csp-legend-values">
+                @for (key of group.keys; track key.name) {
+                  <div>
+                    <dt>
+                      {{ key.label }}
+                      <code class="csp-methods-key">{{ key.name }}</code>
+                    </dt>
+                    <dd>
+                      <p class="csp-methods-key-note">{{ key.description }}</p>
+                      @if (isNoValue(key.value)) {
+                        <!-- The absence of a value, which the wire spells "(none)" and which would
+                             otherwise read as a value in its own right. -->
+                        <p class="csp-methods-none">
+                          <span aria-hidden="true">—</span>
+                          <span class="visually-hidden">no value</span>
+                        </p>
+                      } @else {
+                        @switch (key.valueKind) {
+                          @case ('Hash') {
+                            <!-- The git convention: a prefix short enough to read, with the full
+                                 digest one disclosure away and the copy control writing it whole. -->
+                            <div class="csp-methods-hash">
+                              <code>{{ shortHash(key.value) }}</code>
+                              <button type="button" class="action-btn"
+                                      [attr.aria-label]="'Copy the full ' + key.label + ' value'"
+                                      [attr.interestfor]="methodsRowId(key) + '-tip'"
+                                      [attr.style]="'anchor-name: --' + methodsRowId(key) + '-tip'"
+                                      (click)="copyFullValue(key)">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14"
+                                     viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                                     aria-hidden="true">
+                                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                                </svg>
+                              </button>
+                              <div popover="hint" class="gh-tooltip"
+                                   [id]="methodsRowId(key) + '-tip'"
+                                   [attr.style]="'position-anchor: --' + methodsRowId(key) + '-tip'">
+                                Copy the full value
+                              </div>
+                            </div>
+                            <details class="csp-methods-disclosure">
+                              <summary>Full digest</summary>
+                              <code>{{ key.value }}</code>
+                            </details>
+                          }
+                          @case ('Json') {
+                            <code>{{ formatJson(key.value) }}</code>
+                          }
+                          @case ('List') {
+                            <ul class="csp-key-chips">
+                              @for (part of splitList(key.value); track $index) {
+                                <li>{{ part }}</li>
+                              }
+                            </ul>
+                          }
+                          @default {
+                            <code>{{ displayValue(key) }}</code>
+                          }
+                        }
+                      }
+                    </dd>
+                  </div>
+                }
+              </dl>
+            </section>
+          }
+
+          <div class="csp-methods-actions">
+            <button type="button" class="btn-gh btn-gh-small" (click)="copyMethodsStatement()">
+              Copy the methods statement
+            </button>
+            <p class="csp-methods-copy-state" role="status">{{ methodsCopyState }}</p>
+          </div>
+        </section>
+      }
+
+      <!-- What the reader is not looking at. This is the answer to "why the largest and not the
+           latest?": the alternative is visibly smaller, and what switching would change is named. -->
+      @if (otherConditions.length > 0) {
+        <section class="csp-legend-group" aria-labelledby="csp-others-heading">
+          <h4 id="csp-others-heading">The other conditions</h4>
+          <p>
+            What the sources outside the reference condition were measured under. Switching to one
+            of these means charting a different instrument, not a different subset.
+          </p>
+          <ul class="csp-others">
+            @for (other of otherConditions; track other.condition.ordinal) {
+              <li>
+                <p class="csp-others-head">
+                  <strong>{{ other.condition.label }}</strong>
+                  <span>
+                    {{ countLabel(other.condition.sourceCount, 'source') }},
+                    {{ countLabel(other.condition.runCount, 'run') }}
+                  </span>
+                  <span>newest run {{ formatDate(other.condition.newestRunStartedAtUtc) }}</span>
+                  <code>{{ shortHash(other.condition.signature) }}</code>
+                </p>
+                @if (other.differingKeyLabels.length > 0) {
+                  <ul class="csp-key-chips">
+                    @for (label of other.differingKeyLabels; track $index) {
+                      <li>{{ label }}</li>
+                    }
+                  </ul>
+                } @else {
+                  <p class="csp-legend-empty">No differing key was reported for it.</p>
+                }
+              </li>
             }
-          </dl>
+          </ul>
         </section>
       }
     } @else {

@@ -304,6 +304,13 @@ public class BenchmarkModelComparisonDto
     /// <summary>The baseline's value for every must-match key, so a report can print the condition.</summary>
     public Dictionary<string, string> BaselineKeyValues { get; set; } = new();
 
+    /// <summary>
+    /// The must-match signature of the baseline condition: the one short string that names the
+    /// instrument the charted points were measured under, so an exported figure carries its own
+    /// provenance. Empty when nothing reached the baseline.
+    /// </summary>
+    public string BaselineSignature { get; set; } = string.Empty;
+
     /// <summary>The keys the points are allowed to differ on, for the view's own explanatory text.</summary>
     public List<string> ModelAxisKeys { get; set; } = new();
 

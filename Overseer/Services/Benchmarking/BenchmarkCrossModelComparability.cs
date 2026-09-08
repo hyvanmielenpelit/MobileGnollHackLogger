@@ -106,6 +106,14 @@ public sealed record BenchmarkCrossModelComparabilityResult
         = new Dictionary<string, string>();
 
     /// <summary>
+    /// The <see cref="BenchmarkCrossModelComparability.MustMatchSignature"/> of the baseline
+    /// condition, as lower-case hex SHA-256: the one short string that identifies the instrument
+    /// these entries were charted under, so an exported figure can cite it and be matched back to
+    /// the condition it was measured in. Empty when no entry reached the baseline.
+    /// </summary>
+    public string BaselineSignature { get; init; } = string.Empty;
+
+    /// <summary>
     /// Thinking level differs across the entries that reached the charts. A disclosed caveat on the
     /// speed axis, never an exclusion — see <see cref="BenchmarkCrossModelComparability.ThinkingLevelSpeedCaveat"/>.
     /// </summary>
@@ -441,6 +449,9 @@ public static class BenchmarkCrossModelComparability
             Entries = verdicts,
             BaselineEntryKeys = baseline.Select(e => e.Key).ToList(),
             BaselineKeyValues = baselineValues,
+            BaselineSignature = baseline.Count > 0
+                ? MustMatchSignature(baseline[0].Runs[0])
+                : string.Empty,
             ThinkingLevelsDiffer = thinkingLevelsDiffer,
             SpeedAxisCaveat = thinkingLevelsDiffer ? ThinkingLevelSpeedCaveat : null,
             Explanation = excluded == 0

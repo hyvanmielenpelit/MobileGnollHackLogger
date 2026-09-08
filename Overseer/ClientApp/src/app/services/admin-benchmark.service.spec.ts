@@ -95,7 +95,8 @@ describe('AdminBenchmarkService', () => {
       computedAtUtc: '2026-09-01T00:00:00Z',
       entries: [],
       conditions: [],
-      largestConditionKeyValues: {},
+      largestConditionKeys: [],
+      referenceSelectionRule: 'The reference condition is the one with the most sources.',
       mustMatchKeyNames: [],
       modelAxisKeyNames: [],
       degradingKeyNames: []

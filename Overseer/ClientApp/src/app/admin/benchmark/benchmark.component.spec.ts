@@ -136,7 +136,8 @@ describe('AdminBenchmarkComponent', () => {
       computedAtUtc: '2026-09-07T12:00:00Z',
       entries: [],
       conditions: [],
-      largestConditionKeyValues: {},
+      largestConditionKeys: [],
+      referenceSelectionRule: 'The reference condition is the one with the most sources.',
       mustMatchKeyNames: ['BenchmarkSuiteId'],
       modelAxisKeyNames: ['ModelId'],
       degradingKeyNames: ['PricingSnapshot']
@@ -4529,6 +4530,66 @@ describe('AdminBenchmarkComponent', () => {
       // Non-fatal: the Condition column falls back to a dash and Compare still works.
       expect(component.comparabilityIndex).toBeNull();
       expect(component.comparabilityIndexError).toContain('could not be built');
+    });
+
+    it('derives the wizard band notices from the index, the selection and the pricing basis', () => {
+      // One owner: the picker's checkboxes and the wizard's band both read this list, so neither
+      // can hold its own account of what the selection costs.
+      component.comparabilityIndexError = null;
+      component.comparabilityIndexLoading = false;
+      component.comparabilityIndex = {
+        computedAtUtc: '2026-09-07T12:00:00Z',
+        entries: [
+          {
+            key: 'run:1', sourceKind: 'Run', sourceId: 1, conditionOrdinal: 1,
+            conditionLabel: 'Condition A', signature: 'sig-a', selfInconsistent: false,
+            selfInconsistentKeys: [], differencesFromLargest: [],
+            questionParallelism: '1', pricingSnapshot: '2026-09-01'
+          },
+          {
+            key: 'run:2', sourceKind: 'Run', sourceId: 2, conditionOrdinal: 1,
+            conditionLabel: 'Condition A', signature: 'sig-a', selfInconsistent: false,
+            selfInconsistentKeys: [], differencesFromLargest: [],
+            questionParallelism: '1', pricingSnapshot: '2026-09-01'
+          },
+          {
+            key: 'run:3', sourceKind: 'Run', sourceId: 3, conditionOrdinal: 2,
+            conditionLabel: 'Condition B', signature: 'sig-b', selfInconsistent: false,
+            selfInconsistentKeys: [], differencesFromLargest: [],
+            questionParallelism: '1', pricingSnapshot: '2026-09-01'
+          }
+        ],
+        conditions: [
+          {
+            ordinal: 1, label: 'Condition A', sourceCount: 2, runCount: 2,
+            signature: 'sig-a', newestRunStartedAtUtc: '2026-09-05T10:00:00Z'
+          },
+          {
+            ordinal: 2, label: 'Condition B', sourceCount: 1, runCount: 1,
+            signature: 'sig-b', newestRunStartedAtUtc: '2026-09-04T10:00:00Z'
+          }
+        ],
+        largestConditionKeys: [],
+        referenceSelectionRule: 'The reference condition is the one with the most sources.',
+        mustMatchKeyNames: ['BenchmarkSuiteId'],
+        modelAxisKeyNames: ['ModelId'],
+        degradingKeyNames: ['PricingSnapshot']
+      } as any;
+
+      component.comparisonRunIds = [1, 2];
+      component.comparisonGroupIds = [];
+      expect(component.comparisonSelectionNotices).toEqual([]);
+
+      component.comparisonRunIds = [1, 2, 3];
+      expect(component.comparisonSelectionNotices.map(notice => notice.id))
+        .toEqual(['cross-condition']);
+
+      component.comparabilityIndex = null;
+      component.comparabilityIndexError = 'The index could not be built.';
+      const failed = component.comparisonSelectionNotices;
+      expect(failed.map(notice => notice.id)).toEqual(['index-error']);
+      expect(failed[0].severity).toBe('error');
+      expect(failed[0].body).toContain('The index could not be built.');
     });
 
     it('drops the payload when the selection changes, so Compare is asked for again', () => {

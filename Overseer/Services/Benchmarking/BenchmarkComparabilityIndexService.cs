@@ -2,6 +2,7 @@ namespace Overseer.Services.Benchmarking;
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -45,6 +46,20 @@ public class BenchmarkComparabilityIndexService
 
     /// <summary>The condition label of a source with no loadable runs.</summary>
     public const string NoRunsLabel = "No runs";
+
+    /// <summary>
+    /// The rule that picks the reference condition, in one sentence.
+    ///
+    /// <para>It is emitted with the index rather than written into a template so that the text an
+    /// operator reads and the tie-break the bucketing applies — most sources, then most runs, then
+    /// first appearance — have one definition. The last clause is the reason the rule is worth
+    /// stating at all: a reference level chosen by recency would silently redefine what a saved
+    /// comparison means every time a run landed under a changed instrument.</para>
+    /// </summary>
+    public const string ReferenceSelectionRule =
+        "The reference condition is the one with the most sources; ties go to the most runs, then "
+        + "to the source offered first. It is never chosen by recency, so the same set of sources "
+        + "always charts the same condition.";
 
     private readonly ApplicationDbContext _db;
     private readonly ILogger<BenchmarkComparabilityIndexService>? _logger;
@@ -121,8 +136,10 @@ public class BenchmarkComparabilityIndexService
 
         await LoadItemRevisionsAsync(runsById, wantedRunIds, ct);
 
+        var suiteNames = await LoadSuiteNamesAsync(runs, ct);
+
         var sources = BuildSources(runIds, groupIds, groups, runsById);
-        var result = Build(sources, DateTime.UtcNow);
+        var result = Build(sources, suiteNames, DateTime.UtcNow);
 
         _logger?.LogInformation(
             "Computed a comparability index over {SourceCount} sources ({RunCount} runs): "
@@ -169,6 +186,36 @@ public class BenchmarkComparabilityIndexService
                 })
                 .ToList();
         }
+    }
+
+    /// <summary>
+    /// The names of the suites the loaded runs were taken from, by suite id.
+    ///
+    /// <para>The suite id is a must-match key, so a condition's members share one suite by
+    /// construction and this map exists only to let the legend read the suite as a name instead of
+    /// as a bare number. Two projected columns over the distinct ids of at most
+    /// <see cref="MaxRunIds"/> runs, untracked: the value it decorates is still the id itself.</para>
+    /// </summary>
+    private async Task<IReadOnlyDictionary<long, string>> LoadSuiteNamesAsync(
+        IReadOnlyList<BenchmarkRun> runs, CancellationToken ct)
+    {
+        var suiteIds = runs
+            .Where(r => r.BenchmarkSuiteId.HasValue)
+            .Select(r => r.BenchmarkSuiteId!.Value)
+            .Distinct()
+            .ToList();
+
+        if (suiteIds.Count == 0) return new Dictionary<long, string>();
+
+        var rows = await _db.BenchmarkSuites
+            .AsNoTracking()
+            .Where(s => suiteIds.Contains(s.Id))
+            .Select(s => new { s.Id, s.Name })
+            .ToListAsync(ct);
+
+        return rows
+            .Where(s => !string.IsNullOrWhiteSpace(s.Name))
+            .ToDictionary(s => s.Id, s => s.Name);
     }
 
     /// <summary>
@@ -221,7 +268,9 @@ public class BenchmarkComparabilityIndexService
     /// tie-break are all read from the runs already loaded.
     /// </summary>
     private static BenchmarkComparabilityIndexDto Build(
-        IReadOnlyList<IndexSource> sources, DateTime computedAtUtc)
+        IReadOnlyList<IndexSource> sources,
+        IReadOnlyDictionary<long, string> suiteNames,
+        DateTime computedAtUtc)
     {
         // The key order is a property of the taxonomy rather than of any run's data, so a request
         // that loaded no runs at all still reports the three key-name lists.
@@ -258,7 +307,12 @@ public class BenchmarkComparabilityIndexService
                 Ordinal = ordinal,
                 Label = ConditionLabel(ordinal),
                 SourceCount = buckets[i].Count(),
-                RunCount = buckets[i].Sum(s => s.Runs.Count)
+                RunCount = buckets[i].Sum(s => s.Runs.Count),
+                Signature = buckets[i].Key,
+                NewestRunStartedAtUtc = buckets[i]
+                    .SelectMany(s => s.Runs)
+                    .Select(r => (DateTime?)r.StartedAtUtc)
+                    .Max()
             });
         }
 
@@ -309,11 +363,71 @@ public class BenchmarkComparabilityIndexService
             ComputedAtUtc = computedAtUtc,
             Entries = entries,
             Conditions = conditions,
-            LargestConditionKeyValues = largestValues,
+            LargestConditionKeys = DescribeKeys(mustMatchKeyNames, largestValues, taxonomy, suiteNames),
+            ReferenceSelectionRule = BenchmarkComparabilityIndexService.ReferenceSelectionRule,
             MustMatchKeyNames = mustMatchKeyNames,
             ModelAxisKeyNames = BenchmarkCrossModelComparability.ModelAxisKeys.ToList(),
             DegradingKeyNames = BenchmarkCrossModelComparability.DegradingKeys.ToList()
         };
+    }
+
+    /// <summary>
+    /// The condition's must-match keys in canonical key order, each carrying what the key is as well
+    /// as the value the cohort agreed on.
+    ///
+    /// <para>The kind comes from the taxonomy the runs themselves reported, and the label,
+    /// description and value kind from <see cref="BenchmarkComparabilityKey.Describe"/>, so a key
+    /// added to the taxonomy is described here the moment it exists — plainly, if it has no entry
+    /// there yet.</para>
+    ///
+    /// <para><see cref="BenchmarkComparabilityKeyValueDto.Value"/> is the canonical string compared
+    /// for equality and is copied verbatim. Anything friendlier belongs in
+    /// <see cref="BenchmarkComparabilityKeyValueDto.DisplayValue"/>, which the server fills only
+    /// where it knows something a client cannot derive from the value alone.</para>
+    /// </summary>
+    private static List<BenchmarkComparabilityKeyValueDto> DescribeKeys(
+        IReadOnlyList<string> mustMatchKeyNames,
+        IReadOnlyDictionary<string, string> values,
+        IReadOnlyDictionary<string, BenchmarkComparabilityKeyEntry> taxonomy,
+        IReadOnlyDictionary<long, string> suiteNames)
+    {
+        var described = new List<BenchmarkComparabilityKeyValueDto>();
+
+        foreach (string name in mustMatchKeyNames)
+        {
+            if (!values.TryGetValue(name, out string? value)) continue;
+
+            var info = BenchmarkComparabilityKey.Describe(name);
+            taxonomy.TryGetValue(name, out var key);
+
+            described.Add(new BenchmarkComparabilityKeyValueDto
+            {
+                Name = name,
+                Label = info.Label,
+                Description = info.Description,
+                Kind = (key?.Kind ?? BenchmarkComparabilityKeyKind.Instrument).ToString(),
+                ValueKind = info.ValueKind.ToString(),
+                Value = value,
+                DisplayValue = SuiteDisplayValue(name, value, suiteNames)
+            });
+        }
+
+        return described;
+    }
+
+    /// <summary>
+    /// The suite key rendered as its name beside its id — the one must-match value whose meaning
+    /// lives in another table and therefore cannot be derived from the value itself. Every other
+    /// key, and a suite whose name was not loaded, has no friendlier rendering than its value.
+    /// </summary>
+    private static string? SuiteDisplayValue(
+        string name, string value, IReadOnlyDictionary<long, string> suiteNames)
+    {
+        if (!string.Equals(name, BenchmarkComparabilityKey.SuiteKey, StringComparison.Ordinal)) return null;
+        if (!long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out long suiteId)) return null;
+        if (!suiteNames.TryGetValue(suiteId, out string? suiteName)) return null;
+
+        return $"{suiteName} (#{suiteId.ToString(CultureInfo.InvariantCulture)})";
     }
 
     /// <summary>

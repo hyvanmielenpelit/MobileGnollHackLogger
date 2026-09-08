@@ -1,7 +1,17 @@
-import { ChangeDetectorRef, Component, EventEmitter, Input, OnInit, Output, inject } from '@angular/core';
+import {
+  ChangeDetectorRef,
+  Component,
+  EventEmitter,
+  Input,
+  OnDestroy,
+  OnInit,
+  Output,
+  inject
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
+import { copyToClipboard } from '../../../utils/clipboard.util';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 import { exactFilter, TableState } from '../../../shared/data-table/table-state';
 import { SortHeaderComponent } from '../../../shared/data-table/sort-header.component';
@@ -15,9 +25,11 @@ import {
   selectedConditions
 } from './model-comparison.models';
 import type {
+  BenchmarkComparabilityConditionDto,
   BenchmarkComparabilityDifferenceDto,
   BenchmarkComparabilityIndexDto,
-  BenchmarkComparabilityIndexEntryDto
+  BenchmarkComparabilityIndexEntryDto,
+  BenchmarkComparabilityKeyValueDto
 } from './model-comparison.models';
 
 /** One selectable suite for the scope control. Structural, so any suite DTO with these two fits. */
@@ -61,6 +73,57 @@ export const MAX_COMPARISON_SOURCES = 24;
 export const RUN_SECTION_TITLE = 'Single runs';
 export const GROUP_SECTION_TITLE = 'Analysis groups';
 
+/** The canonical rendering of an absent value, as `BenchmarkComparabilityKey.NoValue` writes it. */
+const NO_VALUE = '(none)';
+
+/** Hex characters of a digest that stay legible: git's own abbreviation, and enough to cite. */
+const SHORT_HASH_LENGTH = 12;
+
+/** How long a copy result stays on the status line before it clears itself. */
+const COPY_STATE_MS = 2000;
+
+/** Both copy controls report the same fallback, because the remedy is the same one. */
+const COPY_FAILED = 'Copy failed — select the text instead.';
+
+/**
+ * One kind of must-match key, with the heading and the sentence that say what that kind governs.
+ *
+ * The must-match set spans two kinds in the server's own taxonomy, and separating *what was asked*
+ * from *how it was asked and graded* is what turns a list of internal key names into something a
+ * reader can cite. The kinds are listed in reading order; a kind the server sends that is not
+ * named here renders after these, under its own taxonomy name.
+ */
+const METHODS_KINDS: readonly { kind: string; title: string; note: string }[] = [
+  {
+    kind: 'Fundamental',
+    title: 'The exam',
+    note: 'What was asked, and which revision of the answer key graded it.'
+  },
+  {
+    kind: 'Instrument',
+    title: 'The apparatus',
+    note: 'How it was asked and how it was graded.'
+  }
+];
+
+/** The lead sentence for a taxonomy kind {@link METHODS_KINDS} does not name. */
+const METHODS_KIND_FALLBACK_NOTE = 'Other values every source in this condition agrees on.';
+
+/** One kind's worth of the methods block: its own heading, its lead sentence, and its keys. */
+export interface MethodsKindGroup {
+  readonly kind: string;
+  readonly title: string;
+  readonly note: string;
+  readonly keys: readonly BenchmarkComparabilityKeyValueDto[];
+}
+
+/** One condition the figures are not measured under, and what it disagrees with the reference on. */
+export interface OtherConditionSummary {
+  readonly condition: BenchmarkComparabilityConditionDto;
+  /** The human labels of its differing keys, so the reader sees what switching would change. */
+  readonly differingKeyLabels: readonly string[];
+}
+
 /**
  * Chooses what a cross-model comparison is computed over: single runs at R = 1, analysis groups at
  * one pooled point each, and the suite scope that decides which of either are offered.
@@ -82,7 +145,7 @@ export const GROUP_SECTION_TITLE = 'Analysis groups';
   templateUrl: './comparison-source-picker.component.html',
   styleUrls: ['./comparison-source-picker.component.scss']
 })
-export class ComparisonSourcePickerComponent implements OnInit {
+export class ComparisonSourcePickerComponent implements OnInit, OnDestroy {
   /** Protected rather than private: the filter rows call it directly after a `TableState` mutation. */
   protected cdr = inject(ChangeDetectorRef);
 
@@ -165,6 +228,10 @@ export class ComparisonSourcePickerComponent implements OnInit {
     // Every icon-only control below carries an interestfor tooltip, and the primitives behind those
     // are not baseline everywhere.
     ensureOverlayPolyfills();
+  }
+
+  ngOnDestroy(): void {
+    this.clearCopyStateTimer();
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -310,9 +377,215 @@ export class ComparisonSourcePickerComponent implements OnInit {
     return `csp-condition csp-condition-${((ordinal - 1) % 3) + 1}`;
   }
 
-  /** `Object.keys`, callable from the template — the legend reads the largest condition's key values. */
-  objectKeys(value: Record<string, string>): string[] {
-    return Object.keys(value);
+  // ---------------------------------------------------------------------------------------------
+  // The reference condition, as a methods statement
+  //
+  // A cross-model chart is a measurement, and a measurement is uninterpretable without the
+  // instrument it was taken with. This block is where the reference cohort's instrument is read
+  // off: the suite and its item revisions, the candidate prompt configuration, the system prompt,
+  // the tool guides, the knowledge base head, the harness, the scoring regime and the budgets.
+  // Two charts a month apart are comparable only if those agree, and there is nowhere else in the
+  // product they can be compared.
+  //
+  // Everything below is presentation of what the index already sent. No value is recomputed, and
+  // no value is abbreviated anywhere a copy control can reach it.
+  // ---------------------------------------------------------------------------------------------
+
+  /** The result of the last copy, cleared after {@link COPY_STATE_MS}. Empty renders nothing. */
+  methodsCopyState = '';
+
+  private copyStateTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** The condition the figures are measured under: ordinal 1, or the first one on offer. */
+  get referenceCondition(): BenchmarkComparabilityConditionDto | null {
+    const conditions = this.comparabilityIndex?.conditions ?? [];
+    return conditions.find(condition => condition.ordinal === 1) ?? conditions[0] ?? null;
+  }
+
+  /** Its label, so the block's heading names the same badge the two tables show on its rows. */
+  get referenceConditionLabel(): string {
+    return this.referenceCondition?.label || 'Condition A';
+  }
+
+  /**
+   * The reference condition's keys grouped by what they govern, in {@link METHODS_KINDS} order.
+   *
+   * A kind with no keys in this condition is omitted rather than rendered empty, and a kind the
+   * server sends that is not named locally comes last under its own name — so a key added to the
+   * taxonomy appears in the block the moment it exists.
+   */
+  get methodsGroups(): MethodsKindGroup[] {
+    const keys = this.comparabilityIndex?.largestConditionKeys ?? [];
+    const named = METHODS_KINDS.map(kind => kind.kind);
+    const order = [...named, ...keys.map(key => key.kind).filter(kind => !named.includes(kind))];
+
+    const groups: MethodsKindGroup[] = [];
+    for (const kind of order) {
+      if (groups.some(group => group.kind === kind)) {
+        continue;
+      }
+      const inKind = keys.filter(key => key.kind === kind);
+      if (inKind.length === 0) {
+        continue;
+      }
+      const known = METHODS_KINDS.find(candidate => candidate.kind === kind);
+      groups.push({
+        kind,
+        title: known?.title ?? kind,
+        note: known?.note ?? METHODS_KIND_FALLBACK_NOTE,
+        keys: inKind
+      });
+    }
+    return groups;
+  }
+
+  /**
+   * The conditions the figures are *not* measured under, with the keys each disagrees on.
+   *
+   * This is the concrete answer to "why the largest and not the latest": the reader can see that
+   * the alternative is smaller, what switching to it would change, and whether it is newer.
+   */
+  get otherConditions(): OtherConditionSummary[] {
+    const index = this.comparabilityIndex;
+    if (!index) {
+      return [];
+    }
+    const referenceOrdinal = this.referenceCondition?.ordinal ?? 1;
+    return index.conditions
+      .filter(condition => condition.ordinal !== referenceOrdinal)
+      .map(condition => ({
+        condition,
+        differingKeyLabels: this.differingKeyLabels(condition.ordinal)
+      }));
+  }
+
+  /**
+   * The labels of the keys one condition differs from the reference on.
+   *
+   * Every source in a condition shares one must-match signature, so any single member's
+   * `differencesFromLargest` describes the whole cohort — which is why no per-condition difference
+   * list has to be sent.
+   */
+  private differingKeyLabels(ordinal: number): string[] {
+    const member = this.comparabilityIndex?.entries
+      .find(entry => entry.conditionOrdinal === ordinal);
+    return (member?.differencesFromLargest ?? []).map(difference => this.keyLabel(difference.name));
+  }
+
+  /** A key's human label as the reference condition describes it, falling back to its own name. */
+  keyLabel(name: string): string {
+    const described = this.comparabilityIndex?.largestConditionKeys
+      .find(key => key.name === name);
+    return described?.label || name;
+  }
+
+  /** The first {@link SHORT_HASH_LENGTH} characters: short enough to read, enough to cite. */
+  shortHash(value: string | null | undefined): string {
+    const text = (value ?? '').trim();
+    return text === '' ? '—' : text.slice(0, SHORT_HASH_LENGTH);
+  }
+
+  /**
+   * A JSON value indented for reading, or the value verbatim when it does not parse.
+   *
+   * A stored options blob that is not valid JSON still has to render: the operator looking at this
+   * block may well be looking at it *because* a run's configuration is malformed.
+   */
+  formatJson(value: string): string {
+    try {
+      return JSON.stringify(JSON.parse(value), null, 2);
+    } catch {
+      return value;
+    }
+  }
+
+  /**
+   * One signature split into its settings. A comma-joined string is a single token the browser
+   * breaks wherever it likes; one chip per element breaks where a reader expects it.
+   */
+  splitList(value: string): string[] {
+    return value
+      .split(/[,;]/)
+      .map(part => part.trim())
+      .filter(part => part !== '');
+  }
+
+  /** "1 source" / "3 sources": a count beside an always-plural noun reads as a rendering fault. */
+  countLabel(count: number, singular: string): string {
+    return `${count} ${count === 1 ? singular : `${singular}s`}`;
+  }
+
+  /** The absence of a value, which must not render as the literal word the wire uses for it. */
+  isNoValue(value: string | null | undefined): boolean {
+    const text = (value ?? '').trim();
+    return text === '' || text === NO_VALUE;
+  }
+
+  /** What a `Text` or `Identifier` row shows: the friendlier rendering where the server knows one. */
+  displayValue(key: BenchmarkComparabilityKeyValueDto): string {
+    return key.displayValue?.trim() || key.value;
+  }
+
+  /**
+   * The plain-text methods block, which is the whole point of the section: a report, a plan or a
+   * bug report needs the instrument pasted into it.
+   *
+   * Full values throughout, the signature included — an abbreviation is a screen affordance, and a
+   * pasted statement is the artifact someone later verifies a figure against.
+   */
+  methodsStatement(): string {
+    const condition = this.referenceCondition;
+    const lines: string[] = [];
+
+    const size = `${this.countLabel(condition?.sourceCount ?? 0, 'source')}, `
+      + `${this.countLabel(condition?.runCount ?? 0, 'run')}; `
+      + `newest run ${this.formatDate(condition?.newestRunStartedAtUtc)}`;
+    lines.push(`Reference condition: ${this.referenceConditionLabel} (${size})`);
+    lines.push(`Signature: ${condition?.signature || '(none)'}`);
+    lines.push(`Selected by: ${this.comparabilityIndex?.referenceSelectionRule ?? ''}`.trimEnd());
+
+    for (const group of this.methodsGroups) {
+      lines.push('');
+      lines.push(group.title);
+      for (const key of group.keys) {
+        lines.push(`  ${key.label} (${key.name}): ${this.displayValue(key)}`);
+      }
+    }
+    return lines.join('\n');
+  }
+
+  async copyMethodsStatement(): Promise<void> {
+    const copied = await copyToClipboard(this.methodsStatement());
+    this.setCopyState(copied ? 'Methods statement copied.' : COPY_FAILED);
+  }
+
+  /** Copies one key's value in full, never the abbreviation the row shows. */
+  async copyFullValue(key: BenchmarkComparabilityKeyValueDto): Promise<void> {
+    const copied = await copyToClipboard(key.value);
+    this.setCopyState(copied ? `Full ${key.label} value copied.` : COPY_FAILED);
+  }
+
+  /** A DOM id derived from a key name, for the disclosure and the tooltip of that row. */
+  methodsRowId(key: BenchmarkComparabilityKeyValueDto): string {
+    return `csp-methods-${key.name.replace(/[^A-Za-z0-9_-]/g, '-')}`;
+  }
+
+  private setCopyState(message: string): void {
+    this.clearCopyStateTimer();
+    this.methodsCopyState = message;
+    this.cdr.markForCheck();
+    this.copyStateTimer = setTimeout(() => {
+      this.copyStateTimer = null;
+      this.methodsCopyState = '';
+      this.cdr.markForCheck();
+    }, COPY_STATE_MS);
+  }
+
+  private clearCopyStateTimer(): void {
+    if (this.copyStateTimer != null) {
+      clearTimeout(this.copyStateTimer);
+      this.copyStateTimer = null;
+    }
   }
 
   /**
