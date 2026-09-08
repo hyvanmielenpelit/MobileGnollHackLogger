@@ -3,8 +3,9 @@ import { By } from '@angular/platform-browser';
 
 import {
   ComparisonSourcePickerComponent,
-  MAX_COMPARISON_SOURCES,
-  ModelComparisonSelection
+  GROUP_SECTION_TITLE,
+  ModelComparisonSelection,
+  RUN_SECTION_TITLE
 } from './comparison-source-picker.component';
 import type {
   BenchmarkRunGroupDto,
@@ -14,6 +15,12 @@ import type {
   BenchmarkComparabilityIndexDto,
   BenchmarkComparabilityIndexEntryDto
 } from './model-comparison.models';
+
+/**
+ * A value with no break opportunity in it, standing in for the serialized `CandidatePromptOptions`
+ * the real index carries. Long enough that any container narrower than it must wrap or scroll.
+ */
+const UNBREAKABLE_VALUE = `{"systemPrompt":"${'x'.repeat(360)}","temperature":0.2}`;
 
 describe('ComparisonSourcePickerComponent', () => {
   let component: ComparisonSourcePickerComponent;
@@ -128,7 +135,10 @@ describe('ComparisonSourcePickerComponent', () => {
         { ordinal: 1, label: 'Condition A', sourceCount: 3, runCount: 3 },
         { ordinal: 2, label: 'Condition B', sourceCount: 1, runCount: 1 }
       ],
-      largestConditionKeyValues: { serviceTier: 'standard' },
+      largestConditionKeyValues: {
+        serviceTier: 'standard',
+        candidatePromptOptions: UNBREAKABLE_VALUE
+      },
       mustMatchKeyNames: ['serviceTier'],
       modelAxisKeyNames: ['modelId'],
       degradingKeyNames: ['questionParallelism'],
@@ -231,31 +241,6 @@ describe('ComparisonSourcePickerComponent', () => {
   });
 
   // -------------------------------------------------------------------------------------------
-  // The two caps
-  // -------------------------------------------------------------------------------------------
-
-  it('warns above the plot cap while leaving canCompare true for the wizard footer to read', () => {
-    const nine = Array.from({ length: 9 }, (_unused, index) => index + 1);
-    render({ runs: runs(9), selectedRunIds: nine });
-
-    expect(component.overPlotCap).toBeTrue();
-    expect(component.overSourceCap).toBeFalse();
-    expect(component.canCompare).toBeTrue();
-    expect((fixture.debugElement.query(By.css('.csp-cap-note'))
-      .nativeElement as HTMLElement).textContent).toContain('plot at most 8');
-  });
-
-  it('flags canCompare false above the source cap and names the reason in its own alert', () => {
-    const tooMany = Array.from({ length: MAX_COMPARISON_SOURCES + 1 }, (_unused, i) => i + 1);
-    render({ runs: runs(MAX_COMPARISON_SOURCES + 1), selectedRunIds: tooMany });
-
-    expect(component.overSourceCap).toBeTrue();
-    expect(component.canCompare).toBeFalse();
-    expect((fixture.debugElement.query(By.css('.alert-warning'))
-      .nativeElement as HTMLElement).textContent).toContain(`at most ${MAX_COMPARISON_SOURCES}`);
-  });
-
-  // -------------------------------------------------------------------------------------------
   // Compare moved to the wizard footer
   // -------------------------------------------------------------------------------------------
 
@@ -331,20 +316,6 @@ describe('ComparisonSourcePickerComponent', () => {
     expect(component.groupTable.view(component.groups).length).toBe(0);
   });
 
-  it('raises a role="note" alert once the selection spans two conditions', () => {
-    render({
-      runs: runs(3),
-      selectedRunIds: [1, 3],
-      comparabilityIndex: buildIndex()
-    });
-
-    expect(component.selectionSpansConditions).toBeTrue();
-    const notice = fixture.debugElement.query(By.css('[role="note"]'));
-    expect(notice).withContext('the incompatible-selection notice must be rendered').toBeTruthy();
-    expect((notice.nativeElement as HTMLElement).textContent).toContain(component.incompatibleSelectionNotice);
-    expect(component.incompatibleSelectionNotice).toContain('Condition A');
-  });
-
   it('renders a muted dash and blocks nothing while the index is null', () => {
     render({ runs: [buildRun({ id: 1 }), buildRun({ id: 2, status: 'Failed' })], comparabilityIndex: null });
 
@@ -372,5 +343,95 @@ describe('ComparisonSourcePickerComponent', () => {
     expect(component.showCompatibleRunsOnly).toBeTrue();
     // The run table sorts by id descending by default, so the surviving rows come back 2 then 1.
     expect(component.runTable.view(component.runs).map(r => r.id)).toEqual([2, 1]);
+  });
+
+  // -------------------------------------------------------------------------------------------
+  // The condition legend
+  // -------------------------------------------------------------------------------------------
+
+  it('opens the condition legend as a modal dialog', () => {
+    render({ comparabilityIndex: buildIndex() });
+    const dialog = fixture.debugElement.query(By.css('dialog.csp-legend-dialog'))
+      .nativeElement as HTMLDialogElement;
+    const showModal = spyOn(dialog, 'showModal');
+
+    (fixture.debugElement.query(By.css('.csp-legend-actions .btn-gh'))
+      .nativeElement as HTMLButtonElement).click();
+
+    expect(showModal).toHaveBeenCalled();
+  });
+
+  it('renders every comparability key as its own chip', () => {
+    const index = buildIndex();
+    render({ comparabilityIndex: index });
+
+    const chips = fixture.debugElement.queryAll(By.css('.csp-key-chips li'))
+      .map(element => (element.nativeElement as HTMLElement).textContent?.trim() ?? '');
+
+    expect(chips.length).toBe(
+      index.mustMatchKeyNames.length + index.modelAxisKeyNames.length + index.degradingKeyNames.length);
+    // A comma would mean a joined string was handed to the browser as one breakable-anywhere token.
+    expect(chips.some(text => text.includes(','))).toBeFalse();
+  });
+
+  it('gives each largest-condition value its own row', () => {
+    const index = buildIndex();
+    render({ comparabilityIndex: index });
+
+    const terms = fixture.debugElement.queryAll(By.css('.csp-legend-values dt'));
+    expect(terms.length).toBe(Object.keys(index.largestConditionKeyValues).length);
+
+    const values = fixture.debugElement.queryAll(By.css('.csp-legend-values code'))
+      .map(element => (element.nativeElement as HTMLElement).textContent ?? '');
+    expect(values.some(text => text.includes(UNBREAKABLE_VALUE)))
+      .withContext('the prompt-options value must render inside its own code box').toBeTrue();
+  });
+
+  it('closes the legend on a backdrop click where closedby is unsupported', () => {
+    render({ comparabilityIndex: buildIndex() });
+    const dialog = fixture.debugElement.query(By.css('dialog.csp-legend-dialog'))
+      .nativeElement as HTMLDialogElement;
+    const close = spyOn(dialog, 'close');
+    // The dialog is closed, so its rect is empty and every coordinate is outside it.
+    const outside = { target: dialog, currentTarget: dialog, clientX: -50, clientY: -50 } as unknown as MouseEvent;
+
+    component.onLegendDialogClick(outside);
+
+    if ('closedBy' in HTMLDialogElement.prototype) {
+      // The browser's own light dismiss owns this; the handler must not close it a second time.
+      expect(close).not.toHaveBeenCalled();
+    } else {
+      expect(close).toHaveBeenCalled();
+      close.calls.reset();
+      const rect = dialog.getBoundingClientRect();
+      const inside = {
+        target: dialog,
+        currentTarget: dialog,
+        clientX: rect.left + rect.width / 2,
+        clientY: rect.top + rect.height / 2
+      } as unknown as MouseEvent;
+
+      component.onLegendDialogClick(inside);
+
+      expect(close).not.toHaveBeenCalled();
+    }
+  });
+
+  it('keeps the legend close event off the wizard', () => {
+    const event = new Event('close');
+    const stopPropagation = spyOn(event, 'stopPropagation');
+
+    component.onLegendDialogClose(event);
+
+    expect(stopPropagation).toHaveBeenCalled();
+  });
+
+  it('titles both source sections from the exported constants', () => {
+    render();
+
+    expect((fixture.debugElement.query(By.css('#csp-runs-heading'))
+      .nativeElement as HTMLElement).textContent?.trim()).toBe(RUN_SECTION_TITLE);
+    expect((fixture.debugElement.query(By.css('#csp-groups-heading'))
+      .nativeElement as HTMLElement).textContent?.trim()).toBe(GROUP_SECTION_TITLE);
   });
 });

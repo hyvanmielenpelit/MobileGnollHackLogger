@@ -313,6 +313,34 @@ export function selectedConditions(
   return [...ordinals].sort((a, b) => a - b);
 }
 
+/**
+ * Why part of a selection cannot be charted, or '' when the selection sits in one condition.
+ *
+ * A pure function rather than a component getter: the picker owns the checkboxes that produce
+ * the selection, the wizard's notice band is where the sentence has to appear, and the host owns
+ * both. Neither view may hold its own copy of the wording.
+ */
+export function incompatibleSelectionNotice(
+  index: BenchmarkComparabilityIndexDto | null,
+  runIds: readonly number[],
+  groupIds: readonly number[]
+): string {
+  if (selectedConditions(index, runIds, groupIds).length <= 1) {
+    return '';
+  }
+  const conditions = index?.conditions ?? [];
+  const baselineLabel = conditions.find(condition => condition.ordinal === 1)?.label
+    ?? conditions[0]?.label
+    ?? 'the largest condition';
+  const keys = [
+    ...runIds.map(id => `run:${id}`),
+    ...groupIds.map(id => `group:${id}`)
+  ];
+  const excludedCount = keys.filter(key => conditionOf(index, key) !== 1).length;
+  return `${excludedCount} of ${keys.length} selected sources fall outside ${baselineLabel} and will be `
+    + 'excluded from the comparison — only one condition can be charted.';
+}
+
 // ---------------------------------------------------------------------------------------------
 // The adapter onto the chart core's input shape
 // ---------------------------------------------------------------------------------------------

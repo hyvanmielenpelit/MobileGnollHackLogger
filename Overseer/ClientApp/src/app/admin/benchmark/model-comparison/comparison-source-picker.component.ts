@@ -52,6 +52,16 @@ export interface ModelComparisonSelection {
 export const MAX_COMPARISON_SOURCES = 24;
 
 /**
+ * The two source sections' titles.
+ *
+ * Exported because the wizard's notice band names the table its notices report on, and a second
+ * copy of either string would go stale the first time one is renamed. The `<h4>` elements below
+ * bind to these, so the heading and the label are the same value.
+ */
+export const RUN_SECTION_TITLE = 'Single runs';
+export const GROUP_SECTION_TITLE = 'Analysis groups';
+
+/**
  * Chooses what a cross-model comparison is computed over: single runs at R = 1, analysis groups at
  * one pooled point each, and the suite scope that decides which of either are offered.
  *
@@ -95,9 +105,6 @@ export class ComparisonSourcePickerComponent implements OnInit {
   /** A request is in flight. Compare is disabled rather than queued behind it. */
   @Input() loading = false;
 
-  /** The figures' own plot cap, named here so the soft warning cannot drift from it. */
-  @Input() maxPlotted = 8;
-
   /** Which condition each offered run and group falls into, and what it differs on outside it. */
   @Input() comparabilityIndex: BenchmarkComparabilityIndexDto | null = null;
 
@@ -110,6 +117,9 @@ export class ComparisonSourcePickerComponent implements OnInit {
 
   /** The hard cap, exposed so the template names the same number the guard enforces. */
   readonly maxSources = MAX_COMPARISON_SOURCES;
+
+  readonly runSectionTitle = RUN_SECTION_TITLE;
+  readonly groupSectionTitle = GROUP_SECTION_TITLE;
 
   readonly runTable = new TableState<BenchmarkRunSummaryDto>('id', 'desc').registerAccessors(
     {
@@ -237,34 +247,11 @@ export class ComparisonSourcePickerComponent implements OnInit {
   }
 
   // ---------------------------------------------------------------------------------------------
-  // The two caps
-  // ---------------------------------------------------------------------------------------------
-
-  /** Above the plot cap. A note, never a block: the view charts the first eight and names the rest. */
-  get overPlotCap(): boolean {
-    return this.selectedCount > this.maxPlotted;
-  }
-
-  /** Above the request cap. Compare refuses, with the reason named beside it. */
-  get overSourceCap(): boolean {
-    return this.selectedCount > this.maxSources;
-  }
-
-  /**
-   * Kept for a caller that still reads it even though this component no longer offers a Compare
-   * control of its own — the wizard footer owns Compare and reads the cap state directly.
-   */
-  get canCompare(): boolean {
-    return !this.loading && this.selectedCount > 0 && !this.overSourceCap;
-  }
-
-  // ---------------------------------------------------------------------------------------------
   // The comparability index
   //
   // Only the largest condition may be charted; everything outside it is excluded from the
   // comparison. This surfaces that fact in the picker rather than leaving it to be discovered in
-  // the result: a condition badge and detail per row, a filter to narrow to one condition, and a
-  // notice when the current selection spans more than one.
+  // the result: a condition badge and detail per row, and a filter to narrow to one condition.
   // ---------------------------------------------------------------------------------------------
 
   private comparabilityEntry(key: string): BenchmarkComparabilityIndexEntryDto | undefined {
@@ -323,32 +310,39 @@ export class ComparisonSourcePickerComponent implements OnInit {
     return `csp-condition csp-condition-${((ordinal - 1) % 3) + 1}`;
   }
 
-  /** True once the current selection touches more than one condition. */
-  get selectionSpansConditions(): boolean {
-    return selectedConditions(this.comparabilityIndex, this.selectedRunIds, this.selectedGroupIds).length > 1;
-  }
-
-  /** Names how many selected sources fall outside the baseline and which condition that is. */
-  get incompatibleSelectionNotice(): string {
-    if (!this.selectionSpansConditions) {
-      return '';
-    }
-    const conditions = this.comparabilityIndex?.conditions ?? [];
-    const baselineLabel = conditions.find(condition => condition.ordinal === 1)?.label
-      ?? conditions[0]?.label
-      ?? 'the largest condition';
-    const keys = [
-      ...this.selectedRunIds.map(id => `run:${id}`),
-      ...this.selectedGroupIds.map(id => `group:${id}`)
-    ];
-    const excludedCount = keys.filter(key => this.conditionOrdinal(key) !== 1).length;
-    return `${excludedCount} of ${keys.length} selected sources fall outside ${baselineLabel} and will be `
-      + 'excluded from the comparison — only one condition can be charted.';
-  }
-
   /** `Object.keys`, callable from the template — the legend reads the largest condition's key values. */
   objectKeys(value: Record<string, string>): string[] {
     return Object.keys(value);
+  }
+
+  /**
+   * Light dismiss where `closedby` is unsupported — Safari, at the time of writing.
+   *
+   * A backdrop click reports the dialog itself as the target, so a hit outside the dialog's own
+   * border box is the backdrop and closes it. A no-op in every browser that has `closedby`.
+   */
+  onLegendDialogClick(event: MouseEvent): void {
+    if ('closedBy' in HTMLDialogElement.prototype) {
+      return;
+    }
+    const dialog = event.currentTarget as HTMLDialogElement;
+    if (event.target !== dialog) {
+      return;
+    }
+    const rect = dialog.getBoundingClientRect();
+    const inside = rect.top <= event.clientY && event.clientY <= rect.top + rect.height
+      && rect.left <= event.clientX && event.clientX <= rect.left + rect.width;
+    if (!inside) {
+      dialog.close();
+    }
+  }
+
+  /**
+   * Keeps the legend's own close and cancel events off the wizard dialog that contains it. The
+   * host closes the wizard from those two events, and this dialog is a descendant of it.
+   */
+  onLegendDialogClose(event: Event): void {
+    event.stopPropagation();
   }
 
   /** Every condition label offered by the index, in whatever order they arrive plus any extras. */

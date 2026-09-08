@@ -838,6 +838,43 @@
     }
   </div>
 
+  <!--
+    THE STEP-1 NOTICE BAND
+
+    A flex item of the wizard column rather than a sticky element inside the step scroller: a
+    sibling of the footer shrinks the step panel to make room, so it cannot come to rest over a
+    table row the reader is trying to read.
+
+    Labelled with the source table the selection came from, and kept visually separate from the
+    navigation row below it: these notices report on the selection made in the step panel above,
+    not on Previous and Compare. The titles come from the picker's own exported constants, so the
+    label cannot name a heading the picker no longer uses.
+
+    Warning above status, and both are mutually exclusive with the request-cap refusal, which
+    `nextBlockedReason` states in the footer below rather than repeating here.
+
+    Step 1 only: from step 2 on, the computed comparison reports its own exclusions per entry and
+    the figures name their own overflow, so a selection-stage band would be a second, differently
+    worded account of facts already on screen.
+  -->
+  @if (step === 1 && (selectionNotice || plotCapNotice)) {
+    <div class="mc-wizard-notice" role="group" aria-labelledby="mc-notice-label">
+      <p class="mc-wizard-notice-label" id="mc-notice-label">
+        Your selection in {{ selectionScopeLabel }} — {{ selectedSourceCount }} selected
+      </p>
+      @if (selectionNotice) {
+        <div class="alert alert-warning" role="note">
+          <div class="alert-content"><div class="alert-body">{{ selectionNotice }}</div></div>
+        </div>
+      }
+      @if (plotCapNotice) {
+        <div class="alert" role="status">
+          <div class="alert-content"><div class="alert-body">{{ plotCapNotice }}</div></div>
+        </div>
+      }
+    </div>
+  }
+
   <div class="dialog-footer mc-wizard-nav">
     <button type="button" class="btn-gh btn-gh-cancel"
             [disabled]="!canGoPrevious" (click)="previousStep()">Previous</button>

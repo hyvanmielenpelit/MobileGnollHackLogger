@@ -57,7 +57,7 @@ import {
   ComparisonSourcePickerComponent,
   ModelComparisonSelection
 } from './model-comparison/comparison-source-picker.component';
-import { MAX_PLOTTED_ENTRIES } from './model-comparison/model-comparison-charts';
+import { incompatibleSelectionNotice } from './model-comparison/model-comparison.models';
 
 /**
  * The Model Comparison selection, as it is remembered between visits and between sessions.
@@ -538,8 +538,10 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   comparisonSuiteId: number | null = null;
   comparisonPricingBasis: BenchmarkModelComparisonPricingBasis = 'Current';
 
-  /** The plot cap the figures enforce, handed to the picker so its soft warning names the same number. */
-  readonly comparisonMaxPlotted = MAX_PLOTTED_ENTRIES;
+  /** The wizard band's text. Derived, so the picker and the band cannot disagree. */
+  get comparisonSelectionNotice(): string {
+    return incompatibleSelectionNotice(this.comparabilityIndex, this.comparisonRunIds, this.comparisonGroupIds);
+  }
 
   /**
    * Guards against an out-of-order comparison response. Compare can be clicked faster than the

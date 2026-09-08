@@ -24,51 +24,28 @@
       <p class="csp-hint">Scopes which runs and groups are offered below.</p>
     </div>
 
-    <!-- Collapsed by default: the requirement it states holds on every load, so it need not open
-         itself on the reader every time — the condition badge and the notice below already carry
-         it into view the moment it matters. -->
-    <details class="csp-legend">
-      <summary>What "condition" means</summary>
-      <p>
-        A comparison can only chart sources that agree on every must-match key — that cohort is a
-        <strong>condition</strong>. Only the largest condition on offer can be charted; every
-        source outside it is excluded from the comparison rather than plotted beside it.
-      </p>
-      @if (comparabilityIndex) {
-        <dl class="csp-legend-list">
-          <dt>Must-match</dt>
-          <dd>
-            A difference here excludes the source entirely:
-            {{ comparabilityIndex.mustMatchKeyNames.join(', ') || '—' }}
-          </dd>
-          <dt>Model axis</dt>
-          <dd>
-            The subject of the comparison — differences here are the point:
-            {{ comparabilityIndex.modelAxisKeyNames.join(', ') || '—' }}
-          </dd>
-          <dt>Degrading</dt>
-          <dd>
-            Still plotted, with the affected axis flagged:
-            {{ comparabilityIndex.degradingKeyNames.join(', ') || '—' }}
-          </dd>
-        </dl>
-        @if (objectKeys(comparabilityIndex.largestConditionKeyValues).length > 0) {
-          <p class="csp-hint">
-            The largest condition's own values —
-            @for (name of objectKeys(comparabilityIndex.largestConditionKeyValues); track name; let last = $last) {
-              <strong>{{ name }}</strong>: {{ comparabilityIndex.largestConditionKeyValues[name] }}@if (!last) {, }
-            }
-          </p>
-        }
-      }
-    </details>
+    <!-- A dialog rather than an inline disclosure: the largest condition's values include a
+         serialized prompt-options JSON with no break opportunity in it, which overflows any
+         column this panel can give it, and expanding in place displaces both source tables. -->
+    <div class="csp-legend-actions">
+      <button type="button" class="btn-gh" (click)="legendDialog.showModal()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+             viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="10"></circle>
+          <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+          <line x1="12" y1="17" x2="12.01" y2="17"></line>
+        </svg>
+        What a condition is
+      </button>
+    </div>
   </section>
 
   <!-- ===================================================================================
        SINGLE RUNS
        =================================================================================== -->
   <section class="csp-section" aria-labelledby="csp-runs-heading">
-    <h4 id="csp-runs-heading" class="csp-subheading">Single runs</h4>
+    <h4 id="csp-runs-heading" class="csp-subheading">{{ runSectionTitle }}</h4>
 
     @if (runs.length === 0) {
       <p class="text-muted">
@@ -217,7 +194,7 @@
        ANALYSIS GROUPS
        =================================================================================== -->
   <section class="csp-section" aria-labelledby="csp-groups-heading">
-    <h4 id="csp-groups-heading" class="csp-subheading">Analysis groups</h4>
+    <h4 id="csp-groups-heading" class="csp-subheading">{{ groupSectionTitle }}</h4>
     <p class="section-note">
       Every group is offered, whatever its tier. A group whose members do not pool comes back
       <strong>excluded with the keys it differs on named</strong>, which is more informative than a
@@ -355,38 +332,10 @@
     }
   </section>
 
-  <!-- ===================================================================================
-       THE CAPS, AND THE ACTIONS
-
-       Two caps, enforced differently. The plot cap is a note: the view charts the first eight
-       and names the rest, so blocking here would refuse a selection the view handles. The
-       source cap is a refusal: a comparison over every stored run is a slow query. Compare itself
-       lives in the wizard footer, which reads this cap state rather than duplicating it.
-       =================================================================================== -->
+  <!-- The caps and the notices they raise belong to the wizard's notice band, which is pinned;
+       this section is what is left, and it is one control. -->
   <section class="csp-section" aria-labelledby="csp-actions-heading">
-    <h4 id="csp-actions-heading" class="visually-hidden">Selection summary</h4>
-
-    @if (overPlotCap && !overSourceCap) {
-      <p class="csp-cap-note" role="status">
-        {{ selectedCount }} sources selected — the figures plot at most {{ maxPlotted }}. The rest
-        stay in the comparison table with their measures, and the view names which were left out.
-      </p>
-    }
-
-    @if (overSourceCap) {
-      <div class="alert alert-warning" role="alert">
-        <div class="alert-content"><div class="alert-body">
-          {{ selectedCount }} sources selected — at most {{ maxSources }} may be compared in one
-          request. A comparison over every stored run is a slow query and an unreadable figure.
-        </div></div>
-      </div>
-    }
-
-    @if (selectionSpansConditions) {
-      <div class="alert alert-warning" role="note">
-        <div class="alert-content"><div class="alert-body">{{ incompatibleSelectionNotice }}</div></div>
-      </div>
-    }
+    <h4 id="csp-actions-heading" class="visually-hidden">Selection actions</h4>
 
     <div class="csp-actions">
       <button type="button" class="btn-gh btn-gh-cancel" [disabled]="selectedCount === 0"
@@ -394,3 +343,105 @@
     </div>
   </section>
 </div>
+
+<!--
+  THE CONDITION LEGEND
+
+  Nested inside the wizard's own modal dialog, which is legitimate: showModal() promotes this
+  element to the top layer, where the wizard's `overflow: hidden` and the step panel's
+  `overflow-y: auto` do not clip it, and Escape closes the topmost dialog only.
+
+  closedby="any" for light dismiss — the legend commits nothing, so a mis-click costs a
+  reopen rather than a configured comparison. Safari has no `closedby` yet, so the click
+  handler supplies the same behaviour there and is a no-op everywhere else.
+-->
+<dialog #legendDialog class="gh-dialog csp-legend-dialog" closedby="any"
+        aria-labelledby="csp-legend-title"
+        (click)="onLegendDialogClick($event)"
+        (cancel)="onLegendDialogClose($event)"
+        (close)="onLegendDialogClose($event)">
+  <div class="csp-legend-header">
+    <h3 id="csp-legend-title">What a condition is</h3>
+    <button type="button" class="btn-icon-action" aria-label="Close the condition legend"
+            (click)="legendDialog.close()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+           style="width: 20px; height: 20px;">
+        <line x1="18" y1="6" x2="6" y2="18"></line>
+        <line x1="6" y1="6" x2="18" y2="18"></line>
+      </svg>
+    </button>
+  </div>
+
+  <div class="csp-legend-body" tabindex="-1" autofocus>
+    <p class="csp-legend-lead">
+      A comparison can only chart sources that agree on every must-match key — that cohort is a
+      <strong>condition</strong>. Only the largest condition on offer can be charted; every
+      source outside it is excluded from the comparison rather than plotted beside it.
+    </p>
+
+    @if (comparabilityIndex) {
+      <section class="csp-legend-group">
+        <h4>Must-match</h4>
+        <p>A difference here excludes the source entirely.</p>
+        @if (comparabilityIndex.mustMatchKeyNames.length > 0) {
+          <ul class="csp-key-chips">
+            @for (name of comparabilityIndex.mustMatchKeyNames; track name) {
+              <li>{{ name }}</li>
+            }
+          </ul>
+        } @else {
+          <p class="csp-legend-empty">None.</p>
+        }
+      </section>
+
+      <section class="csp-legend-group">
+        <h4>Model axis</h4>
+        <p>The subject of the comparison — differences here are the point.</p>
+        @if (comparabilityIndex.modelAxisKeyNames.length > 0) {
+          <ul class="csp-key-chips">
+            @for (name of comparabilityIndex.modelAxisKeyNames; track name) {
+              <li>{{ name }}</li>
+            }
+          </ul>
+        } @else {
+          <p class="csp-legend-empty">None.</p>
+        }
+      </section>
+
+      <section class="csp-legend-group">
+        <h4>Degrading</h4>
+        <p>Still plotted, with the affected axis flagged.</p>
+        @if (comparabilityIndex.degradingKeyNames.length > 0) {
+          <ul class="csp-key-chips">
+            @for (name of comparabilityIndex.degradingKeyNames; track name) {
+              <li>{{ name }}</li>
+            }
+          </ul>
+        } @else {
+          <p class="csp-legend-empty">None.</p>
+        }
+      </section>
+
+      @if (objectKeys(comparabilityIndex.largestConditionKeyValues).length > 0) {
+        <section class="csp-legend-group">
+          <h4>The largest condition's own values</h4>
+          <dl class="csp-legend-values">
+            @for (name of objectKeys(comparabilityIndex.largestConditionKeyValues); track name) {
+              <dt>{{ name }}</dt>
+              <dd><code>{{ comparabilityIndex.largestConditionKeyValues[name] }}</code></dd>
+            }
+          </dl>
+        </section>
+      }
+    } @else {
+      <p class="csp-legend-empty">
+        The comparability index has not loaded, so the keys in force are not known yet.
+      </p>
+    }
+  </div>
+
+  <div class="dialog-actions">
+    <button type="button" class="btn-gh btn-gh-cancel" (click)="legendDialog.close()">Close</button>
+  </div>
+</dialog>

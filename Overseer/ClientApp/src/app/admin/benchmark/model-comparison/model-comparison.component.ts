@@ -45,7 +45,11 @@ import {
   glyphFor,
   normalizeProfile
 } from './model-comparison-charts';
-import { MAX_COMPARISON_SOURCES } from './comparison-source-picker.component';
+import {
+  GROUP_SECTION_TITLE,
+  MAX_COMPARISON_SOURCES,
+  RUN_SECTION_TITLE
+} from './comparison-source-picker.component';
 import {
   BenchmarkModelComparisonDto,
   BenchmarkModelComparisonEntryDto,
@@ -179,8 +183,19 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   // and this component needs no pass-through of them. Step 1's validity is judged here, though, so
   // the two facts about the selection that Next reads do arrive as inputs.
 
-  /** How many runs and analysis groups the host currently has selected. */
-  @Input() selectedSourceCount = 0;
+  /** How many single runs the host currently has selected. */
+  @Input() selectedRunCount = 0;
+
+  /** How many analysis groups the host currently has selected. */
+  @Input() selectedGroupCount = 0;
+
+  /** Why part of the selection cannot be charted, or '' when it all sits in one condition. */
+  @Input() selectionNotice = '';
+
+  /** The two counts together, which is what both caps and Next are judged on. */
+  get selectedSourceCount(): number {
+    return this.selectedRunCount + this.selectedGroupCount;
+  }
 
   /** The request cap. Above it Compare is refused rather than truncated. */
   @Input() maxSources = MAX_COMPARISON_SOURCES;
@@ -406,11 +421,42 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
         return 'Select at least one run or analysis group.';
       }
       return `${this.selectedSourceCount} sources selected — at most ${this.maxSources} may be ` +
-        'compared in one request.';
+        'compared in one request. A comparison over every stored run is a slow query and an ' +
+        'unreadable figure.';
     }
     return this.shape === 'single'
       ? 'Only one entry is plotted; a comparison needs two.'
       : 'Nothing in this set may be charted together.';
+  }
+
+  /**
+   * Which of the two source tables the current selection draws from, titled as they are titled in
+   * the picker, so the notice band names the control its notices are about.
+   *
+   * Both counts zero is unreachable while the band is rendered — neither notice has text at an
+   * empty selection — so the runs table is a safe last case rather than a claim.
+   */
+  get selectionScopeLabel(): string {
+    if (this.selectedRunCount > 0 && this.selectedGroupCount > 0) {
+      return `${RUN_SECTION_TITLE} and ${GROUP_SECTION_TITLE}`;
+    }
+    return this.selectedGroupCount > 0 ? GROUP_SECTION_TITLE : RUN_SECTION_TITLE;
+  }
+
+  /**
+   * That the selection exceeds what the figures draw, or '' below the cap.
+   *
+   * Derived rather than passed in: the plot cap is the constant this component already charts by,
+   * and the selection size already arrives for Next to gate on. Silent above the request cap,
+   * where the comparison is refused outright and the plot cap is no longer the reader's problem.
+   */
+  get plotCapNotice(): string {
+    if (this.selectedSourceCount <= this.maxPlottedEntries || this.selectedSourceCount > this.maxSources) {
+      return '';
+    }
+    return `${this.selectedSourceCount} sources selected — the figures plot at most `
+      + `${this.maxPlottedEntries}. The rest stay in the comparison table with their measures, and `
+      + 'the view names which were left out.';
   }
 
   goToStep(step: ComparisonWizardStep): void {

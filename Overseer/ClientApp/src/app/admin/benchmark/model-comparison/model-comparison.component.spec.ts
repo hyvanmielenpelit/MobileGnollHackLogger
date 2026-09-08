@@ -6,11 +6,14 @@ import { provideCharts } from 'ng2-charts';
 import { ComparisonWizardStep, ModelComparisonComponent } from './model-comparison.component';
 import { MAX_PLOTTED_ENTRIES, MODEL_COMPARISON_REGISTRABLES, P1_STACK_BREAKPOINT_PX } from './model-comparison-charts';
 import {
+  BenchmarkComparabilityIndexDto,
   BenchmarkModelComparisonDto,
   BenchmarkModelComparisonEntryDto,
+  incompatibleSelectionNotice,
   toChartContext,
   toChartEntries
 } from './model-comparison.models';
+import { GROUP_SECTION_TITLE, RUN_SECTION_TITLE } from './comparison-source-picker.component';
 
 describe('ModelComparisonComponent', () => {
   let component: ModelComparisonComponent;
@@ -557,21 +560,136 @@ describe('ModelComparisonComponent', () => {
     expect(component.canGoNext).toBeFalse();
     expect(textOf('.mc-wizard-blocked')).toContain('at least one run or analysis group');
 
-    fixture.componentRef.setInput('selectedSourceCount', component.maxSources + 1);
+    fixture.componentRef.setInput('selectedRunCount', component.maxSources + 1);
     fixture.detectChanges();
     expect(component.canGoNext).toBeFalse();
     expect(textOf('.mc-wizard-blocked')).toContain(`at most ${component.maxSources}`);
+    expect(textOf('.mc-wizard-blocked')).toContain('slow query');
 
-    fixture.componentRef.setInput('selectedSourceCount', 2);
+    fixture.componentRef.setInput('selectedRunCount', 2);
     fixture.detectChanges();
     expect(component.canGoNext).toBeTrue();
     expect(component.nextBlockedReason).toBe('');
     expect(fixture.debugElement.query(By.css('.mc-wizard-blocked'))).toBeNull();
   });
 
+  // -------------------------------------------------------------------------------------------
+  // The step-1 notice band
+  // -------------------------------------------------------------------------------------------
+
+  /** Step 1 with a cross-condition notice in force, which is what puts the band on screen. */
+  function band(counts: { runs?: number; groups?: number; notice?: string } = {}): void {
+    render(null, 1);
+    fixture.componentRef.setInput('selectedRunCount', counts.runs ?? 0);
+    fixture.componentRef.setInput('selectedGroupCount', counts.groups ?? 0);
+    fixture.componentRef.setInput('selectionNotice',
+      counts.notice ?? '2 of 3 selected sources fall outside Condition A and will be excluded.');
+    fixture.detectChanges();
+  }
+
+  it('sums the two selection counts', () => {
+    band({ runs: 3, groups: 4 });
+
+    expect(component.selectedSourceCount).toBe(7);
+  });
+
+  it('names the runs table in the band label when only runs are selected', () => {
+    band({ runs: 3 });
+
+    const label = textOf('.mc-wizard-notice-label');
+    expect(label).toContain(RUN_SECTION_TITLE);
+    expect(label).toContain('3 selected');
+    expect(label).not.toContain(GROUP_SECTION_TITLE);
+  });
+
+  it('names the groups table when only groups are selected', () => {
+    band({ groups: 2 });
+
+    const label = textOf('.mc-wizard-notice-label');
+    expect(label).toContain(GROUP_SECTION_TITLE);
+    expect(label).toContain('2 selected');
+    expect(label).not.toContain(RUN_SECTION_TITLE);
+  });
+
+  it('names both tables when the selection spans them', () => {
+    band({ runs: 2, groups: 1 });
+
+    const label = textOf('.mc-wizard-notice-label');
+    expect(label).toContain(`${RUN_SECTION_TITLE} and ${GROUP_SECTION_TITLE}`);
+    expect(label).toContain('3 selected');
+  });
+
+  it('labels the band for assistive technology', () => {
+    band({ runs: 2 });
+
+    const strip = fixture.debugElement.query(By.css('.mc-wizard-notice')).nativeElement as HTMLElement;
+    expect(strip.getAttribute('role')).toBe('group');
+    const labelId = strip.getAttribute('aria-labelledby')!;
+    expect((fixture.debugElement.query(By.css('.mc-wizard-notice-label'))
+      .nativeElement as HTMLElement).id).toBe(labelId);
+  });
+
+  it('bands the condition notice above the footer on step 1', () => {
+    band({ runs: 2, notice: 'sources fall outside Condition A' });
+
+    const notice = fixture.debugElement.query(By.css('.mc-wizard-notice [role="note"]'));
+    expect(notice).toBeTruthy();
+    expect((notice.nativeElement as HTMLElement).textContent).toContain('Condition A');
+
+    const strip = fixture.debugElement.query(By.css('.mc-wizard-notice')).nativeElement as HTMLElement;
+    expect(strip.nextElementSibling?.classList).toContain('mc-wizard-nav');
+  });
+
+  it('keeps the notice band and the navigation as separate regions', () => {
+    band({ runs: 2 });
+
+    const nav = fixture.debugElement.query(By.css('.mc-wizard-nav')).nativeElement as HTMLElement;
+    expect(getComputedStyle(nav).borderTopWidth).not.toBe('0px');
+  });
+
+  it('bands the plot-cap notice above the footer on step 1', () => {
+    band({ runs: component.maxPlottedEntries + 1, notice: '' });
+
+    const status = fixture.debugElement.query(By.css('.mc-wizard-notice [role="status"]'));
+    expect((status.nativeElement as HTMLElement).textContent)
+      .toContain(`plot at most ${component.maxPlottedEntries}`);
+    // Grey, not amber: the amber border is reserved for the notice that changes what is charted.
+    expect((status.nativeElement as HTMLElement).classList).not.toContain('alert-warning');
+  });
+
+  it('drops the plot-cap notice above the request cap', () => {
+    band({ runs: component.maxSources + 1, notice: '' });
+
+    expect(component.plotCapNotice).toBe('');
+    expect(fixture.debugElement.query(By.css('.mc-wizard-notice [role="status"]'))).toBeNull();
+  });
+
+  it('stacks both notices under one label, warning first', () => {
+    band({ runs: component.maxPlottedEntries + 1 });
+
+    expect(fixture.debugElement.queryAll(By.css('.mc-wizard-notice-label')).length).toBe(1);
+    const roles = fixture.debugElement.queryAll(By.css('.mc-wizard-notice .alert'))
+      .map(element => (element.nativeElement as HTMLElement).getAttribute('role'));
+    expect(roles).toEqual(['note', 'status']);
+  });
+
+  it('drops the band from step 2 on', () => {
+    band({ runs: component.maxPlottedEntries + 1 });
+    render(buildDto(comparableSet(3)), 2);
+    fixture.detectChanges();
+
+    expect(fixture.debugElement.query(By.css('.mc-wizard-notice'))).toBeNull();
+  });
+
+  it('renders no band when the selection is within both caps and one condition', () => {
+    band({ runs: 2, notice: '' });
+
+    expect(fixture.debugElement.query(By.css('.mc-wizard-notice'))).toBeNull();
+  });
+
   it('emits compare from the footer rather than advancing, while no comparison exists', () => {
     render(null);
-    fixture.componentRef.setInput('selectedSourceCount', 2);
+    fixture.componentRef.setInput('selectedRunCount', 2);
     fixture.detectChanges();
 
     const asked: number[] = [];
@@ -758,6 +876,66 @@ describe('ModelComparisonComponent', () => {
 
 });
 
+describe('incompatibleSelectionNotice', () => {
+  function buildIndex(): BenchmarkComparabilityIndexDto {
+    return {
+      computedAtUtc: '2026-09-05T12:00:00Z',
+      entries: [
+        {
+          key: 'run:1',
+          sourceKind: 'Run',
+          sourceId: 1,
+          conditionOrdinal: 1,
+          conditionLabel: 'Condition A',
+          signature: 'sig-a',
+          selfInconsistent: false,
+          selfInconsistentKeys: [],
+          differencesFromLargest: [],
+          questionParallelism: '1',
+          pricingSnapshot: '2026-09-01'
+        },
+        {
+          key: 'run:2',
+          sourceKind: 'Run',
+          sourceId: 2,
+          conditionOrdinal: 2,
+          conditionLabel: 'Condition B',
+          signature: 'sig-b',
+          selfInconsistent: false,
+          selfInconsistentKeys: [],
+          differencesFromLargest: [],
+          questionParallelism: '1',
+          pricingSnapshot: '2026-09-01'
+        }
+      ],
+      conditions: [
+        { ordinal: 1, label: 'Condition A', sourceCount: 1, runCount: 1 },
+        { ordinal: 2, label: 'Condition B', sourceCount: 1, runCount: 1 }
+      ],
+      largestConditionKeyValues: { serviceTier: 'standard' },
+      mustMatchKeyNames: ['serviceTier'],
+      modelAxisKeyNames: ['modelId'],
+      degradingKeyNames: []
+    };
+  }
+
+  it('says nothing while the selection sits in one condition', () => {
+    expect(incompatibleSelectionNotice(buildIndex(), [1], [])).toBe('');
+  });
+
+  it('says nothing for a null index or an empty selection', () => {
+    expect(incompatibleSelectionNotice(null, [1, 2], [3])).toBe('');
+    expect(incompatibleSelectionNotice(buildIndex(), [], [])).toBe('');
+  });
+
+  it('names the excluded count and the baseline condition once the selection crosses one', () => {
+    const notice = incompatibleSelectionNotice(buildIndex(), [1, 2], []);
+
+    expect(notice).toBe('1 of 2 selected sources fall outside Condition A and will be excluded '
+      + 'from the comparison — only one condition can be charted.');
+  });
+});
+
 /**
  * The projected step-1 content, which is the source picker in the running application.
  *
@@ -769,7 +947,7 @@ describe('ModelComparisonComponent', () => {
   standalone: true,
   imports: [ModelComparisonComponent],
   template: `
-    <app-benchmark-model-comparison [comparison]="comparison" [selectedSourceCount]="2">
+    <app-benchmark-model-comparison [comparison]="comparison" [selectedRunCount]="2">
       <input id="projected-picker-state" type="text">
     </app-benchmark-model-comparison>`
 })
