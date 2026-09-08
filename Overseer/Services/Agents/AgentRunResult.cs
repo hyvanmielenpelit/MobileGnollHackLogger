@@ -20,6 +20,16 @@ public class AgentRunResult
     public int? TimeToFirstTokenMs { get; set; }
     public int? TotalDurationMs { get; set; }
     public string? TerminationReason { get; set; }
+
+    /// <summary>
+    /// The provider's own reason for ending the response — Anthropic `stop_reason`, OpenAI
+    /// `incomplete_details.reason` or status, Google `finishReason` — verbatim and unmapped. Null when
+    /// the provider reported none. Distinct from <see cref="TerminationReason"/>, which describes what
+    /// the harness loop did (canceled, budget_exhausted, iteration_limit, completed) and cannot
+    /// distinguish a model that stopped normally with no text from one the harness cut short.
+    /// </summary>
+    public string? ProviderFinishReason { get; set; }
+
     public string? ActualServiceTier { get; set; }
     public bool ToolBudgetExhausted { get; set; }
     public int ToolCallsBlocked { get; set; }

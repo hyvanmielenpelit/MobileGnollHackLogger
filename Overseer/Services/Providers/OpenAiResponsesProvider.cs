@@ -189,6 +189,7 @@ public class OpenAiResponsesProvider : IAiProvider
                     ChatEvent? providerItemEvt = null;
                     ChatEvent? tierEvt = null;
                     ChatEvent? usageEvt = null;
+                    ChatEvent? finishReasonEvt = null;
 
                     try
                     {
@@ -385,6 +386,27 @@ public class OpenAiResponsesProvider : IAiProvider
                                     Data = $"[OpenAI] Response incomplete: reason={reason}{tokenUsage}"
                                 };
                             }
+
+                            // The provider's own reason for ending this response, verbatim: the incomplete
+                            // reason where there is one, and the response status otherwise. Last write wins:
+                            // the loop runner keeps the final call's value, which is the one that describes
+                            // the turn the user got.
+                            if (respObj.TryGetProperty("status", out var finishStatusProp) &&
+                                finishStatusProp.ValueKind == JsonValueKind.String)
+                            {
+                                string? finishReason = finishStatusProp.GetString();
+                                if (finishReason == "incomplete" &&
+                                    respObj.TryGetProperty("incomplete_details", out var finishDetails) &&
+                                    finishDetails.TryGetProperty("reason", out var finishReasonProp) &&
+                                    !string.IsNullOrEmpty(finishReasonProp.GetString()))
+                                {
+                                    finishReason = finishReasonProp.GetString();
+                                }
+                                if (!string.IsNullOrEmpty(finishReason))
+                                {
+                                    finishReasonEvt = new ChatEvent { Type = "finish_reason", Data = finishReason };
+                                }
+                            }
                         }
                         else if (eventType == "response.failed")
                         {
@@ -411,6 +433,7 @@ public class OpenAiResponsesProvider : IAiProvider
                     catch (JsonException) { }
 
                     if (debugEvt != null) yield return debugEvt;
+                    if (finishReasonEvt != null) yield return finishReasonEvt;
                     if (errorEvt != null) yield return errorEvt;
                     if (providerItemEvt != null) yield return providerItemEvt;
                     if (tierEvt != null) yield return tierEvt;

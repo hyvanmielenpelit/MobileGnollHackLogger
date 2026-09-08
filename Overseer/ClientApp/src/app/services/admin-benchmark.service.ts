@@ -569,6 +569,12 @@ export interface BenchmarkRunAnswerDto {
   // "not recorded", not zero.
   narrationBlockCount?: number | null;
   terminationReason?: string | null;
+  /**
+   * The provider's own reason for ending the turn, verbatim — `STOP`, `MAX_TOKENS`, `end_turn` and so
+   * on. Null where the provider reported none, which for an empty answer means the transport failed
+   * rather than the model choosing to stop.
+   */
+  providerFinishReason?: string | null;
   answerFlags?: number;
   answerFlagNames?: string[];
 
@@ -763,6 +769,11 @@ export interface BenchmarkRunDetailDto {
   maxParallelQuestionsUsed: number;
   answeredQuestionCount: number;
   totalQuestionCount: number;
+  /**
+   * Questions the model ended its turn on without producing text. Each scores 0 under scoring
+   * method 10 rather than being excluded, so this is a count of failures, not of missing data.
+   */
+  unansweredQuestionCount: number;
   purposeStatementUsed?: string | null;
   sameProviderAcknowledged?: boolean;
   assessmentJson?: string | null;
@@ -1001,6 +1012,11 @@ export interface BenchmarkRunSummaryDto {
   speedMeasurementDegraded: boolean;
   answeredQuestionCount: number;
   totalQuestionCount: number;
+  /**
+   * Questions the model ended its turn on without producing text. Each scores 0 under scoring
+   * method 10 rather than being excluded, so this is a count of failures, not of missing data.
+   */
+  unansweredQuestionCount: number;
   degradedAnswerCount?: number;
   toolStarvedAnswerCount?: number;
   budgetSaturatedAnswerCount?: number;

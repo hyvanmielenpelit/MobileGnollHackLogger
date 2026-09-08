@@ -570,7 +570,7 @@ public class BenchmarkServiceTests
     }
 
     [Fact]
-    public async Task BenchmarkService_CleanupOrphanedRunsAsync_WithAnswers_FinalizesRun()
+    public async Task CleanupOrphanedRuns_PublishesNoIndex_AndRecordsTotals()
     {
         var dbOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
@@ -600,7 +600,9 @@ public class BenchmarkServiceTests
                         AssessmentStatus = BenchmarkAssessmentStatus.Scored,
                         QualityScore = 85,
                         SpeedScore = 75,
-                        DurationMs = 2000
+                        DurationMs = 2000,
+                        InputTokens = 12000,
+                        OutputTokens = 900
                     }
                 }
             };
@@ -629,11 +631,210 @@ public class BenchmarkServiceTests
         {
             var updated = await verifyDb.BenchmarkRuns.Include(r => r.Answers).FirstOrDefaultAsync(r => r.Id == 2L);
             Assert.NotNull(updated);
-            Assert.Equal(BenchmarkRunStatus.Completed, updated.Status);
+
+            // An interrupted run never reached the end of its suite, so it carries no index — an
+            // index over whichever answers happen to exist is indistinguishable, once stored, from
+            // an index over all of them.
+            Assert.Equal(BenchmarkRunStatus.Failed, updated.Status);
+            Assert.Equal("Run interrupted by application restart.", updated.ErrorMessage);
             Assert.NotNull(updated.CompletedAtUtc);
-            Assert.Equal(85, updated.QualityIndex);
-            Assert.Equal(75, updated.SpeedIndex);
+            Assert.Null(updated.QualityIndex);
+            Assert.Null(updated.SpeedIndex);
+
+            // What it did consume is recorded, which is the whole point of splitting the totals
+            // out of the scores.
+            Assert.Equal(12000, updated.TotalInputTokens);
+            Assert.Equal(900, updated.TotalOutputTokens);
+            Assert.Equal(2000, updated.TotalAnswerDurationMs);
+            Assert.Equal(1, updated.AnsweredQuestionCount);
+
+            // Wall clock is deliberately left at zero: the outage between the crash and the
+            // restart is not run time, and the reader derives elapsed from the two timestamps.
+            Assert.Equal(0, updated.TotalDurationMs);
         }
+    }
+
+    [Fact]
+    public async Task RescoreRun_OnAbortedRun_IsRefused()
+    {
+        var dbOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+        await using (var db = new ApplicationDbContext(dbOptions))
+        {
+            db.BenchmarkRuns.Add(new BenchmarkRun
+            {
+                Id = 3,
+                SuiteName = "Test Suite",
+                TestedModelDisplayNameUsed = "Model A",
+                TestedModelProviderUsed = "Provider A",
+                TestedModelIdUsed = "model-a",
+                AssessorModelDisplayNameUsed = "Model B",
+                AssessorModelProviderUsed = "Provider B",
+                AssessorModelIdUsed = "model-b",
+                Status = BenchmarkRunStatus.Canceled,
+                StartedAtUtc = DateTime.UtcNow.AddHours(-1),
+                CompletedAtUtc = DateTime.UtcNow,
+                Answers = new List<BenchmarkRunAnswer>
+                {
+                    new()
+                    {
+                        OrderIndex = 1,
+                        QuestionText = "Q1",
+                        AnswerText = "A1",
+                        Status = BenchmarkAnswerStatus.Ok,
+                        AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+                        AccuracyLevel = 5,
+                        CompletenessLevel = 5,
+                        ConcisenessLevel = 5,
+                        ReadabilityLevel = 5,
+                        QualityScore = 85,
+                        SpeedScore = 75,
+                        DurationMs = 2000
+                    }
+                }
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var benchmarkService = CreateBenchmarkServiceOver(dbOptions);
+
+        var (success, error) = await benchmarkService.RescoreRunAsync(3);
+
+        Assert.False(success);
+        Assert.Equal(BenchmarkService.AbortedRunRefusal, error);
+
+        await using (var verifyDb = new ApplicationDbContext(dbOptions))
+        {
+            var run = await verifyDb.BenchmarkRuns.FindAsync(3L);
+            Assert.NotNull(run);
+            Assert.Null(run.QualityIndex);
+            Assert.Null(run.SpeedIndex);
+        }
+    }
+
+    [Fact]
+    public async Task RescoreRun_WritesAllThreeQualityFigures()
+    {
+        // H13: the method wrote QualityIndex and SpeedIndex and nothing else, so a rescored run's
+        // report printed an index from the new profile beside an unweighted mean and a standard
+        // error from the old one.
+        var dbOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+        await using (var db = new ApplicationDbContext(dbOptions))
+        {
+            var run = new BenchmarkRun
+            {
+                Id = 4,
+                SuiteName = "Test Suite",
+                TestedModelDisplayNameUsed = "Model A",
+                TestedModelProviderUsed = "Provider A",
+                TestedModelIdUsed = "model-a",
+                AssessorModelDisplayNameUsed = "Model B",
+                AssessorModelProviderUsed = "Provider B",
+                AssessorModelIdUsed = "model-b",
+                Status = BenchmarkRunStatus.CompletedWithErrors,
+                StartedAtUtc = DateTime.UtcNow.AddHours(-1),
+                CompletedAtUtc = DateTime.UtcNow,
+                TotalQuestionCount = 4,
+                UnweightedQualityIndex = 11,
+                QualityIndexStandardError = 99.0,
+                Answers = new List<BenchmarkRunAnswer>()
+            };
+
+            for (int i = 1; i <= 3; i++)
+            {
+                run.Answers.Add(new BenchmarkRunAnswer
+                {
+                    OrderIndex = i,
+                    QuestionText = $"Q{i}",
+                    AnswerText = $"A{i}",
+                    Status = BenchmarkAnswerStatus.Ok,
+                    AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+                    AccuracyLevel = i + 2,
+                    CompletenessLevel = i + 2,
+                    ConcisenessLevel = i + 2,
+                    ReadabilityLevel = i + 2,
+                    AssessedDifficulty = 50,
+                    DurationMs = 2000
+                });
+            }
+
+            // The zero the rescore must keep in the index: a question the model failed to answer.
+            run.Answers.Add(new BenchmarkRunAnswer
+            {
+                OrderIndex = 4,
+                QuestionText = "Q4",
+                AnswerText = string.Empty,
+                Status = BenchmarkAnswerStatus.EmptyAnswer,
+                AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+                ProviderFinishReason = "STOP",
+                AssessedDifficulty = 50,
+                QualityScore = 0,
+                RawQualityScore = 0,
+                Score = 0,
+                DurationMs = 400
+            });
+
+            db.BenchmarkRuns.Add(run);
+            await db.SaveChangesAsync();
+        }
+
+        var benchmarkService = CreateBenchmarkServiceOver(dbOptions);
+
+        var (success, error) = await benchmarkService.RescoreRunAsync(4);
+        Assert.True(success, error);
+
+        await using (var verifyDb = new ApplicationDbContext(dbOptions))
+        {
+            var run = await verifyDb.BenchmarkRuns.Include(r => r.Answers).FirstAsync(r => r.Id == 4L);
+
+            Assert.NotNull(run.QualityIndex);
+            Assert.NotNull(run.UnweightedQualityIndex);
+            Assert.NotNull(run.QualityIndexStandardError);
+
+            // All three come from the same item set, which includes the unanswered question at 0.
+            var scorable = run.Answers
+                .Where(a => BenchmarkRunFinalizer.CountsTowardQualityIndex(a) && a.QualityScore.HasValue)
+                .Select(a => (a.QualityScore, a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty)))
+                .ToList();
+
+            Assert.Equal(4, scorable.Count);
+            Assert.Equal(BenchmarkScoring.QualityIndex(scorable), run.QualityIndex);
+            Assert.Equal(
+                BenchmarkScoring.UnweightedQualityMean(
+                    run.Answers.Where(BenchmarkRunFinalizer.CountsTowardQualityIndex).Select(a => a.QualityScore)),
+                run.UnweightedQualityIndex);
+            Assert.Equal(BenchmarkScoring.QualityIndexStandardError(scorable), run.QualityIndexStandardError);
+
+            // The stale figures from the previous profile are gone rather than left behind.
+            Assert.NotEqual(11, run.UnweightedQualityIndex);
+            Assert.NotEqual(99.0, run.QualityIndexStandardError);
+        }
+    }
+
+    /// <summary>
+    /// A BenchmarkService wired only far enough for the paths that touch the database and the
+    /// scoring profiles. The provider-facing collaborators stay null: nothing here makes a model
+    /// call.
+    /// </summary>
+    private static BenchmarkService CreateBenchmarkServiceOver(DbContextOptions<ApplicationDbContext> dbOptions)
+    {
+        var services = new ServiceCollection();
+        services.AddScoped(_ => new ApplicationDbContext(dbOptions));
+        var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+
+        return new BenchmarkService(
+            scopeFactory,
+            null!,
+            null!,
+            null!,
+            new BenchmarkRunManager(),
+            new BenchmarkDifficultyJobManager(),
+            new BenchmarkScoringProfileService(scopeFactory, NullLogger<BenchmarkScoringProfileService>.Instance),
+            new ConfigurationBuilder().Build(),
+            NullLogger<BenchmarkService>.Instance);
     }
 
     [Fact]

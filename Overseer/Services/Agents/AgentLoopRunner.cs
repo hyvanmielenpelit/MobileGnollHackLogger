@@ -242,6 +242,22 @@ public class AgentLoopRunner
                     }
                     continue;
                 }
+                else if (evt.Type == "finish_reason")
+                {
+                    // The typed reason where a provider supplies one; the debug-text match below survives only as the
+                    // fallback for a provider that does not yet emit it. Matching log prose meant a reworded debug
+                    // line silently disabled truncation detection. Not yielded onward: the client has never seen it.
+                    if (!string.IsNullOrWhiteSpace(evt.Data))
+                    {
+                        result.ProviderFinishReason = evt.Data;
+                        if (evt.Data.Equals("max_tokens", StringComparison.OrdinalIgnoreCase)
+                            || evt.Data.Equals("max_output_tokens", StringComparison.OrdinalIgnoreCase))
+                        {
+                            wasTruncatedByMaxTokens = true;
+                        }
+                    }
+                    continue;
+                }
                 else if (evt.Type == "provider_history_reset")
                 {
                     currentIterationProviderItems.Clear();

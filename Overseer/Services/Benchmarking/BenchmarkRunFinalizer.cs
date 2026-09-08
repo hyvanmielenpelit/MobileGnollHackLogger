@@ -15,6 +15,12 @@ public static class BenchmarkRunFinalizer
         _ => 50
     };
 
+    /// <summary>
+    /// An answer with no text stays here even when scoring method 10 has scored it 0: an unanswered
+    /// question is an error, not merely a low score, so it keeps the run at CompletedWithErrors. The
+    /// name predates that second meaning — nothing about a scored empty answer can be resolved by a
+    /// retry.
+    /// </summary>
     public static bool HasUnresolvedWork(BenchmarkRunAnswer answer)
     {
         return answer.Status is BenchmarkAnswerStatus.ProviderError or BenchmarkAnswerStatus.Failed or BenchmarkAnswerStatus.EmptyAnswer
@@ -56,9 +62,47 @@ public static class BenchmarkRunFinalizer
         | BenchmarkAnswerFlags.RefutedClaim
         | BenchmarkAnswerFlags.OmissionAsAccuracy;
 
+    /// <summary>
+    /// Provider finish reasons that mean "the model chose to stop here". `tool_use` is deliberately
+    /// absent: a turn that ended asking for a tool and produced no text is a loop problem, not a
+    /// refusal to answer.
+    /// </summary>
+    private static readonly string[] NormalStopReasons =
+        { "stop", "end_turn", "completed", "complete", "stop_sequence" };
+
+    /// <summary>
+    /// The model finished normally and produced no answer text: a failure to answer, scored 0 by
+    /// scoring method 10. Distinct from a transport defect, which is not the candidate's fault and
+    /// stays unscored. A null or unrecognised reason keeps the old classification — "not recorded" is
+    /// not evidence of a normal stop, and an unmatched reason must never silently reclassify an answer.
+    /// </summary>
+    public static bool IsModelProducedEmptyAnswer(BenchmarkRunAnswer answer)
+    {
+        if (answer.Status != BenchmarkAnswerStatus.EmptyAnswer) return false;
+        if (string.IsNullOrWhiteSpace(answer.ProviderFinishReason)) return false;
+
+        return NormalStopReasons.Contains(answer.ProviderFinishReason, StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Whether this answer contributes to the quality indices. Ok answers, and answers the model failed
+    /// to produce — the latter at 0, under scoring method 10. Every consumer that recomputes an index
+    /// must use this: the run's stored index and any index computed elsewhere have to be over the same
+    /// item set, or two numbers describing one run disagree with no way to tell which is right.
+    /// </summary>
+    public static bool CountsTowardQualityIndex(BenchmarkRunAnswer answer)
+    {
+        return answer.Status == BenchmarkAnswerStatus.Ok || IsModelProducedEmptyAnswer(answer);
+    }
+
     /// <summary>A transport or provider defect corrupted this answer beyond recovery.</summary>
     public static bool HasTransportDefect(BenchmarkRunAnswer answer)
     {
+        // A model that ended its turn normally and returned nothing has not suffered a transport
+        // defect — it failed to answer, and scoring method 10 scores that 0 rather than excusing it.
+        // The run still reports CompletedWithErrors: see HasUnresolvedWork.
+        if (IsModelProducedEmptyAnswer(answer)) return false;
+
         return answer.Status == BenchmarkAnswerStatus.EmptyAnswer
             || (((BenchmarkAnswerFlags)answer.AnswerFlags) & TransportDefectFlags) != 0;
     }
@@ -100,13 +144,15 @@ public static class BenchmarkRunFinalizer
     }
 
     /// <summary>
-    /// Which of the four mutually exclusive integrity buckets this answer belongs to. The order
+    /// Which of the five mutually exclusive integrity buckets this answer belongs to. The order
     /// is the precedence: the most severe applicable class wins, which is what keeps
-    /// clean + transport defects + recovered + harness limits equal to the question count.
+    /// clean + transport defects + recovered + harness limits + unanswered equal to the question
+    /// count.
     /// </summary>
     public static BenchmarkAnswerIntegrity Classify(BenchmarkRunAnswer answer)
     {
         if (HasTransportDefect(answer)) return BenchmarkAnswerIntegrity.TransportDefect;
+        if (IsModelProducedEmptyAnswer(answer)) return BenchmarkAnswerIntegrity.Unanswered;
         if (WasRecovered(answer)) return BenchmarkAnswerIntegrity.Recovered;
         if (HasHarnessLimit(answer)) return BenchmarkAnswerIntegrity.HarnessLimit;
         return BenchmarkAnswerIntegrity.Clean;
@@ -195,7 +241,13 @@ public static class BenchmarkRunFinalizer
             .FirstOrDefault();
     }
 
-    public static void Apply(BenchmarkRun run, IReadOnlyCollection<BenchmarkRunAnswer> answers)
+    /// <summary>
+    /// The measured totals: token sums, durations, integrity and advisory counts, and grader
+    /// agreement. Nothing here is a score, and nothing here decides the run's status, which is what
+    /// lets a run that stopped early use it on its own — such a run has a real cost and a real elapsed
+    /// time, but a quality index over whichever questions happened to finish is not the suite's index.
+    /// </summary>
+    public static void ApplyTotals(BenchmarkRun run, IReadOnlyCollection<BenchmarkRunAnswer> answers)
     {
         var candidateTotals = ComputeCandidateTotals(answers);
         run.TotalInputTokens = candidateTotals.TotalInputTokens;
@@ -222,6 +274,12 @@ public static class BenchmarkRunFinalizer
         run.TotalClaimVerificationDurationMs = answers.Sum(a => a.ClaimVerificationDurationMs ?? 0L);
 
         run.AnsweredQuestionCount = answers.Count(a => a.Status == BenchmarkAnswerStatus.Ok);
+        run.UnansweredQuestionCount = answers.Count(IsModelProducedEmptyAnswer);
+
+        // The index weights each item by its assessed difficulty, and an unanswered question has none —
+        // no grader read it — so it is weighted by its authored band's fallback. Recording that keeps the
+        // report's own claim about independent assessment honest.
+        run.DifficultyFallbackUsed = answers.Any(a => CountsTowardQualityIndex(a) && a.AssessedDifficulty == null);
         run.DegradedAnswerCount = answers.Count(IsDegraded);
         run.ToolStarvedAnswerCount = answers.Count(HasHarnessLimit);
         run.TransportDefectAnswerCount = answers.Count(HasTransportDefect);
@@ -274,9 +332,14 @@ public static class BenchmarkRunFinalizer
         run.ToolOverheadMs = answers.Any(a => a.ToolTimeMs.HasValue)
             ? answers.Sum(a => a.ToolTimeMs ?? 0L)
             : null;
+    }
+
+    public static void Apply(BenchmarkRun run, IReadOnlyCollection<BenchmarkRunAnswer> answers)
+    {
+        ApplyTotals(run, answers);
 
         var scorableItems = answers
-            .Where(a => a.Status == BenchmarkAnswerStatus.Ok)
+            .Where(CountsTowardQualityIndex)
             .Select(a => (a.QualityScore, a.AssessedDifficulty ?? FallbackDifficulty(a.Difficulty)))
             .ToList();
 
@@ -288,7 +351,7 @@ public static class BenchmarkRunFinalizer
         // invisible from either number alone. On the 2026-09-03 run they were 94 and 92, because
         // the two weakest answers were also two of the easiest questions.
         run.UnweightedQualityIndex = BenchmarkScoring.UnweightedQualityMean(
-            answers.Where(a => a.Status == BenchmarkAnswerStatus.Ok).Select(a => a.QualityScore));
+            answers.Where(CountsTowardQualityIndex).Select(a => a.QualityScore));
 
         // Equal weight: difficulty already scales each question's own speed target.
         run.SpeedIndex = BenchmarkScoring.SpeedIndex(

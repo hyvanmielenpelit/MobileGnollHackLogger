@@ -137,7 +137,7 @@ public class BenchmarkReportBuilderTests
         Assert.Contains("**Transport Defects:** 0", report);
         Assert.Contains("**Recovered:** 1", report);
         Assert.Contains("**Harness Limits:**", report);
-        Assert.Contains("Clean + transport defects + recovered + harness limits =", report);
+        Assert.Contains("Clean + transport defects + recovered + harness limits + unanswered =", report);
         Assert.Contains("**Advisory Flags:**", report);
 
         // Latency percentiles
@@ -319,7 +319,9 @@ public class BenchmarkReportBuilderTests
         Assert.Contains("Simple (1–35)", report);
         Assert.Contains("Intermediate (36–70)", report);
         Assert.Contains("Advanced (71–100)", report);
-        Assert.Contains("Authored Band Distribution", report);
+        // The counts are over the answers this run stored, not over the suite as authored.
+        Assert.Contains("Answered Band Distribution (of ", report);
+        Assert.DoesNotContain("Authored Band Distribution", report);
     }
 
     // --- Heading demotion ---------------------------------------------------------------
@@ -2095,5 +2097,163 @@ public class BenchmarkReportBuilderTests
             HarnessV7Run(BenchmarkSecondOpinionMode.Off, a1, a2, a3, a4));
 
         Assert.DoesNotContain("Saturated —", report);
+    }
+
+    // --- Aborted runs, provenance, and the failure to answer -----------------------------
+
+    /// <summary>
+    /// An answer the model itself ended without producing text: status EmptyAnswer plus a provider
+    /// finish reason that means a normal stop, scored 0 by rule rather than by a grader.
+    /// </summary>
+    private static BenchmarkRunAnswer UnansweredAnswer(int orderIndex, int assessedDifficulty = 50)
+    {
+        return new BenchmarkRunAnswer
+        {
+            OrderIndex = orderIndex,
+            QuestionText = $"Q{orderIndex}",
+            AnswerText = string.Empty,
+            Difficulty = BenchmarkDifficulty.Intermediate,
+            AssessedDifficulty = assessedDifficulty,
+            Status = BenchmarkAnswerStatus.EmptyAnswer,
+            AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+            ProviderFinishReason = "STOP",
+            QualityScore = 0,
+            RawQualityScore = 0,
+            Score = 0,
+            AnswerFlags = (int)BenchmarkAnswerFlags.Empty,
+            ReviewComment = "Not assessed by a grader: the model ended its turn without producing an answer. Scored 0 under scoring method 10."
+        };
+    }
+
+    [Fact]
+    public void HarnessCost_AppearsForARunWithCandidateTokensAndNoGradingSpend()
+    {
+        // Run 24's shape: 2.86 M candidate input tokens and no grading stage at all. Gating the
+        // section on the grading roles hid the cost of exactly the runs whose cost is least
+        // obvious elsewhere.
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80));
+        run.Status = BenchmarkRunStatus.Canceled;
+        run.TotalInputTokens = 2_856_966;
+        run.TotalOutputTokens = 25_387;
+        run.TotalAssessmentInputTokens = 0;
+        run.TotalAssessmentOutputTokens = 0;
+        run.TotalAssessmentDurationMs = 0;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("### Harness Cost", report);
+        Assert.Contains("**Candidate Tokens:** 2,856,966 in / 25,387 out", report);
+    }
+
+    [Fact]
+    public void ToolOverheadProvenance_BlamesAgeOnlyForARunThatIsActuallyOld()
+    {
+        var current = HarnessV7Run(BenchmarkSecondOpinionMode.Off, ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80));
+        current.HarnessVersion = "12";
+
+        string currentReport = BenchmarkReportBuilder.BuildMarkdownReport(current);
+        Assert.Contains("**Tool Overhead:** Not recorded — no answered question carries tool timing.", currentReport);
+        Assert.DoesNotContain("predates harness version 3", currentReport);
+
+        var old = HarnessV7Run(BenchmarkSecondOpinionMode.Off, ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80));
+        old.HarnessVersion = "2";
+
+        string oldReport = BenchmarkReportBuilder.BuildMarkdownReport(old);
+        Assert.Contains("predates harness version 3", oldReport);
+    }
+
+    [Fact]
+    public void AssessorAccountingProvenance_BlamesAgeOnlyForARunThatIsActuallyOld()
+    {
+        var current = HarnessV7Run(BenchmarkSecondOpinionMode.Off, ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80));
+        current.HarnessVersion = "12";
+        current.TotalInputTokens = 0;
+        current.TotalOutputTokens = 0;
+
+        string currentReport = BenchmarkReportBuilder.BuildMarkdownReport(current);
+        Assert.Contains("*Assessor and claim-verifier accounting is zero for this run: no grading stage recorded any usage.*", currentReport);
+        Assert.DoesNotContain("predates harness version 4", currentReport);
+    }
+
+    [Fact]
+    public void UnverifiedClaimsProvenance_NeverClaimsARunPredatesItsOwnHarnessVersion()
+    {
+        var current = HarnessV7Run(BenchmarkSecondOpinionMode.Off, ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80));
+        current.HarnessVersion = "12";
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(current);
+
+        Assert.Contains("**Unverified Claims:** not recorded — no answer carries a claim count", report);
+        Assert.DoesNotContain("predates harness version 12", report);
+    }
+
+    [Fact]
+    public void AnswerRate_ReportsAnsweredAgainstTheSuiteSize()
+    {
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80));
+        run.AnsweredQuestionCount = 3;
+        run.TotalQuestionCount = 18;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("**Answer Rate:** 3 of 18 (16.7%)", report);
+    }
+
+    [Fact]
+    public void UnansweredQuestions_AreNamedAndScoredZero_AndTheLineIsOmittedAtZero()
+    {
+        var answered = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, answered, UnansweredAnswer(4));
+        run.Status = BenchmarkRunStatus.CompletedWithErrors;
+        run.TotalQuestionCount = 18;
+        run.AnsweredQuestionCount = 1;
+        run.UnansweredQuestionCount = 1;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("**Unanswered Questions:** 1 of 18 (question(s) 4)", report);
+        Assert.Contains("**Unanswered:** 1 — *the model produced no answer; scored 0, not excluded*", report);
+        Assert.Contains("**Reply:** *(No answer — the model ended its turn without producing text; provider finish reason: `STOP`)*", report);
+        Assert.Contains("**Quality Score:** 0 / 100 *(NO ANSWER — scored 0 by rule; no grader read this)*", report);
+        Assert.Contains("*(Scored 0: no answer produced)*", report);
+
+        var cleanRun = HarnessV7Run(BenchmarkSecondOpinionMode.Off, ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80));
+        Assert.DoesNotContain("**Unanswered Questions:**", BenchmarkReportBuilder.BuildMarkdownReport(cleanRun));
+    }
+
+    [Fact]
+    public void TransportDefectEmpty_KeepsTheOldWordingAndStaysExcludedFromScoring()
+    {
+        // No recorded finish reason is "not recorded", never "stopped normally", so this answer
+        // stays a transport defect and stays unscored.
+        var defect = UnansweredAnswer(2);
+        defect.ProviderFinishReason = null;
+        defect.QualityScore = null;
+        defect.RawQualityScore = null;
+        defect.Score = null;
+        defect.ReviewComment = null;
+
+        var run = HarnessV7Run(
+            BenchmarkSecondOpinionMode.Off,
+            ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80),
+            defect);
+        run.Status = BenchmarkRunStatus.CompletedWithErrors;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("**Reply:** *(Empty answer produced)*", report);
+        Assert.Contains("*(Note: Excluded from scoring)*", report);
+        Assert.DoesNotContain("*(Scored 0: no answer produced)*", report);
+        Assert.DoesNotContain("**Unanswered Questions:**", report);
+    }
+
+    [Fact]
+    public void AggregationFormulas_SayAnUnansweredQuestionScoresZero()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(
+            HarnessV7Run(BenchmarkSecondOpinionMode.Off, ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80)));
+
+        Assert.Contains("over answered questions and unanswered questions alike, the latter at 0", report);
+        Assert.Contains("over answered questions only, since an answer that does not exist has no latency", report);
     }
 }

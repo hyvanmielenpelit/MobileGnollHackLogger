@@ -193,6 +193,7 @@ public class GoogleProvider : IAiProvider
                 var usageEvts = new List<ChatEvent>();
                 ChatEvent? tierEvt = null;
                 ChatEvent? errorEvt = null;
+                ChatEvent? finishReasonEvt = null;
 
                 try
                 {
@@ -203,6 +204,14 @@ public class GoogleProvider : IAiProvider
                         if (cand.TryGetProperty("finishReason", out var frProp) && frProp.ValueKind == JsonValueKind.String)
                         {
                             var finishReason = frProp.GetString() ?? "";
+
+                            // The provider's own reason for ending this response, verbatim. Last write wins:
+                            // the loop runner keeps the final call's value, which is the one that describes the
+                            // turn the user got.
+                            if (!string.IsNullOrEmpty(finishReason))
+                            {
+                                finishReasonEvt = new ChatEvent { Type = "finish_reason", Data = finishReason };
+                            }
                             if (finishReason == "MAX_TOKENS")
                             {
                                 debugEvts.Add(new ChatEvent { Type = "debug", Data = "[Google] Response incomplete: finishReason=MAX_TOKENS" });
@@ -322,6 +331,7 @@ public class GoogleProvider : IAiProvider
                 catch (JsonException) { }
 
                 foreach (var dbg in debugEvts) yield return dbg;
+                if (finishReasonEvt != null) yield return finishReasonEvt;
                 if (errorEvt != null) yield return errorEvt;
                 foreach (var pEvt in providerItemEvts) yield return pEvt;
                 if (tierEvt != null) yield return tierEvt;

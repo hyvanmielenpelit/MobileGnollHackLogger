@@ -192,7 +192,7 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void ScoringMethodVersion_IsNine()
+    public void ScoringMethodVersion_IsTen()
     {
         // v4 was the artifact scrubbing and speed recalibration. v5 changed what a critical
         // error is — an omission can no longer be one, and the claim must be quoted. v6 changed
@@ -204,10 +204,11 @@ public class BenchmarkAssessmentPromptTests
         // scope, and a rubric point it did not ask for is recorded under OUT-OF-SCOPE: rather than
         // deducted for. v9 does the same for Readability — a rubric FORM suggestion is recorded
         // under FORM: rather than deducted for — and stops the synthesis accuracy-defect marker
-        // firing on sentence-form denials. Scores are not comparable across any of those
-        // boundaries on the answers they touch, and the report prints the version so a mixed
-        // comparison is visible rather than silent.
-        Assert.Equal(9, BenchmarkAssessmentPrompt.ScoringMethodVersion);
+        // firing on sentence-form denials. v10 scores a question the model failed to answer 0
+        // instead of excluding it, so a candidate can no longer raise its index by not answering.
+        // Scores are not comparable across any of those boundaries on the answers they touch, and
+        // the report prints the version so a mixed comparison is visible rather than silent.
+        Assert.Equal(10, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 
     [Fact]
@@ -435,10 +436,10 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs12_ScoringMethodIs9()
+    public void Versions_HarnessIs12_ScoringMethodIs10()
     {
         Assert.Equal("12", BenchmarkAssessmentPrompt.HarnessVersion);
-        Assert.Equal(9, BenchmarkAssessmentPrompt.ScoringMethodVersion);
+        Assert.Equal(10, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 
     [Fact]

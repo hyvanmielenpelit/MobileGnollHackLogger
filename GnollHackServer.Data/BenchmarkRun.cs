@@ -19,8 +19,9 @@ public enum BenchmarkRunStatus
     Failed = 4,
     Canceled = 5,
     // The run is valid; it only hit an operator-configured harness cap (currently the
-    // per-question tool call budget). Distinct from CompletedWithErrors, which means a
-    // transport or provider defect compromised answer validity.
+    // per-question tool call budget). Distinct from CompletedWithErrors, which means either a
+    // transport or provider defect compromised answer validity, or the model failed to answer
+    // a question.
     CompletedWithLimits = 6
 }
 
@@ -152,8 +153,8 @@ public enum BenchmarkSecondOpinionMode
 
 /// <summary>
 /// Classification of a single answer for run integrity accounting. Every answer falls into
-/// exactly one bucket, so Clean + TransportDefect + Recovered + HarnessLimit always equals the
-/// question count. Advisory flags are tracked separately and may overlap any bucket.
+/// exactly one bucket, so Clean + TransportDefect + Recovered + HarnessLimit + Unanswered always
+/// equals the question count. Advisory flags are tracked separately and may overlap any bucket.
 /// </summary>
 public enum BenchmarkAnswerIntegrity
 {
@@ -170,7 +171,16 @@ public enum BenchmarkAnswerIntegrity
     /// beneath graded normally. Reported, because it is a real provider-path defect; not an
     /// error, because the result is intact.
     /// </summary>
-    Recovered = 3
+    Recovered = 3,
+
+    /// <summary>
+    /// The model ended its turn normally and produced no answer. Scored 0 rather than excluded: the
+    /// candidate failed the question, and excusing it let a model improve its index by not answering.
+    /// Disjoint from <see cref="TransportDefect"/>, which is the harness's or the provider path's
+    /// fault. Both keep the run at <see cref="BenchmarkRunStatus.CompletedWithErrors"/>; the buckets
+    /// differ on cause, not on severity.
+    /// </summary>
+    Unanswered = 4
 }
 
 public class BenchmarkRun
@@ -358,6 +368,14 @@ public class BenchmarkRun
     public int MaxParallelQuestionsUsed { get; set; } = 1;
 
     public int AnsweredQuestionCount { get; set; }
+
+    /// <summary>
+    /// Questions the model failed to answer: it ended its turn normally and produced no text. Scored 0
+    /// from scoring method 10; zero on every earlier run, where such an answer was excluded from the
+    /// index instead. Not the complement of <see cref="AnsweredQuestionCount"/> — a provider error and
+    /// a question that never ran are neither answered nor unanswered in this sense.
+    /// </summary>
+    public int UnansweredQuestionCount { get; set; }
 
     public int TotalQuestionCount { get; set; }
 

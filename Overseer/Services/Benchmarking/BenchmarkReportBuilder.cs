@@ -53,6 +53,24 @@ public static class BenchmarkReportBuilder
         return value.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
     }
 
+    /// <summary>
+    /// Whether this run was recorded before the harness version that added a field. False when the run
+    /// carries no parseable version, because "unknown" is not evidence of age — and a missing figure on
+    /// a current run has a current cause, usually a run that stopped early or a failed stage, which is
+    /// what the reader needs told instead.
+    /// </summary>
+    private static bool PredatesHarnessVersion(BenchmarkRun run, int addedInVersion)
+    {
+        return int.TryParse(run.HarnessVersion, out int version) && version < addedInVersion;
+    }
+
+    /// <summary>
+    /// The harness version that added <see cref="BenchmarkRunAnswer.UnverifiedClaimCount"/>. A
+    /// constant rather than the current version: interpolating the latter made every run claim to
+    /// predate the harness it ran under.
+    /// </summary>
+    private const int UnverifiedClaimsHarnessVersion = 12;
+
     private static readonly Regex BlockedCallsRegex =
         new(@"\((\d+)\s+blocked by budget\)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
@@ -340,6 +358,10 @@ public static class BenchmarkReportBuilder
         }
         sb.AppendLine($"- **Total Questions:** {run.TotalQuestionCount}");
         sb.AppendLine($"- **Answered Questions:** {run.AnsweredQuestionCount} of {run.TotalQuestionCount}");
+        sb.AppendLine($"- **Answer Rate:** {run.AnsweredQuestionCount} of {run.TotalQuestionCount}"
+            + (run.TotalQuestionCount > 0
+                ? $" ({Inv(run.AnsweredQuestionCount * 100.0 / run.TotalQuestionCount, "F1")}%)"
+                : string.Empty));
         sb.AppendLine($"- **Run Status:** {run.Status}");
         sb.AppendLine($"- **Start Time (UTC):** {Stamp(run.StartedAtUtc)}");
         sb.AppendLine($"- **End Time (UTC):** {(run.CompletedAtUtc.HasValue ? Stamp(run.CompletedAtUtc.Value) : "In Progress / Interrupted")}");
@@ -588,7 +610,21 @@ public static class BenchmarkReportBuilder
         // 3. Results Summary
         var scoredAnswers = answers.Where(a => a.Status == BenchmarkAnswerStatus.Ok && a.QualityScore.HasValue).ToList();
 
-        var rawScorableItems = scoredAnswers
+        // The item set the quality indices are computed over: graded answers, and the questions the
+        // model failed to answer, at 0. Wider than scoredAnswers, which stays the set a grader
+        // actually read and therefore the set the dimensional averages are taken over. Both are
+        // needed: an index over a different item set than the run's stored one would put two
+        // disagreeing numbers on one run.
+        var indexAnswers = answers
+            .Where(a => BenchmarkRunFinalizer.CountsTowardQualityIndex(a) && a.QualityScore.HasValue)
+            .ToList();
+
+        var unansweredAnswers = answers
+            .Where(BenchmarkRunFinalizer.IsModelProducedEmptyAnswer)
+            .OrderBy(a => a.OrderIndex)
+            .ToList();
+
+        var rawScorableItems = indexAnswers
             .Select(a => (a.RawQualityScore ?? a.QualityScore, a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty)))
             .ToList();
         int? rawQualityIndex = BenchmarkScoring.QualityIndex(rawScorableItems);
@@ -598,10 +634,10 @@ public static class BenchmarkReportBuilder
         sb.AppendLine();
 
         double? se = run.QualityIndexStandardError;
-        if (!se.HasValue && scoredAnswers.Count >= 3)
+        if (!se.HasValue && indexAnswers.Count >= 3)
         {
             se = BenchmarkScoring.QualityIndexStandardError(
-                scoredAnswers.Select(a => (a.QualityScore, a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty))));
+                indexAnswers.Select(a => (a.QualityScore, a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty))));
         }
 
         string seText = string.Empty;
@@ -611,7 +647,7 @@ public static class BenchmarkReportBuilder
             double halfWidth = 1.96 * se.Value;
             ciLower = (int)Math.Max(0, Math.Round(run.QualityIndex.Value - halfWidth));
             ciUpper = (int)Math.Min(100, Math.Round(run.QualityIndex.Value + halfWidth));
-            seText = $" ± {halfWidth:F0} (95% CI over {scoredAnswers.Count} items)";
+            seText = $" ± {halfWidth:F0} (95% CI over {indexAnswers.Count} items)";
         }
 
         sb.AppendLine($"### **Intelligence Index: {(run.QualityIndex.HasValue ? $"{run.QualityIndex.Value}{seText} / 100" : "Not Scored")}**");
@@ -633,7 +669,7 @@ public static class BenchmarkReportBuilder
         // model's two weakest answers were also two of its easiest questions. Computed here for
         // runs that predate the stored column, so the line works on the whole archive.
         int? unweightedMean = run.UnweightedQualityIndex
-            ?? BenchmarkScoring.UnweightedQualityMean(scoredAnswers.Select(a => a.QualityScore));
+            ?? BenchmarkScoring.UnweightedQualityMean(indexAnswers.Select(a => a.QualityScore));
         if (unweightedMean.HasValue && run.QualityIndex.HasValue &&
             Math.Abs(run.QualityIndex.Value - unweightedMean.Value) >= 1)
         {
@@ -711,6 +747,12 @@ public static class BenchmarkReportBuilder
             string criticalQuestionNumbers = string.Join(", ", criticalErrorAnswers.Select(a => a.OrderIndex));
             sb.AppendLine($"- **Critical Errors:** {criticalErrorAnswers.Count} of {answeredCountForCritical} answered (question(s) {criticalQuestionNumbers})");
         }
+
+        if (unansweredAnswers.Count > 0)
+        {
+            string unansweredNumbers = string.Join(", ", unansweredAnswers.Select(a => a.OrderIndex));
+            sb.AppendLine($"- **Unanswered Questions:** {unansweredAnswers.Count} of {run.TotalQuestionCount} (question(s) {unansweredNumbers}) — *the model ended its turn without producing an answer. Each scores 0 under scoring method 10, and the run is reported as CompletedWithErrors.*");
+        }
         sb.AppendLine();
         sb.AppendLine($"- **Holistic Assessor Score:** {(run.FinalScore.HasValue ? $"{run.FinalScore.Value} / 100" : "N/A")}");
         sb.AppendLine($"- **Total Model Answer Duration:** {FormatDuration(run.TotalAnswerDurationMs)} ({Inv(run.TotalAnswerDurationMs, "N0")} ms)");
@@ -737,7 +779,9 @@ public static class BenchmarkReportBuilder
         }
         else
         {
-            sb.AppendLine("- **Tool Overhead:** Not recorded (run predates harness version 3); speed was scored on total turn duration.");
+            sb.AppendLine(PredatesHarnessVersion(run, 3)
+                ? "- **Tool Overhead:** Not recorded (run predates harness version 3); speed was scored on total turn duration."
+                : "- **Tool Overhead:** Not recorded — no answered question carries tool timing.");
         }
 
         // Time to first token: the only latency figure a thinking=max configuration does not
@@ -811,7 +855,11 @@ public static class BenchmarkReportBuilder
         // Harness cost. The token totals above are the candidate's alone; grading an 18-question
         // suite question by question is not a rounding error, and until this block existed the
         // run's actual consumption was recorded nowhere.
-        if (run.TotalAssessmentInputTokens > 0 || run.TotalAssessmentOutputTokens > 0 || run.TotalAssessmentDurationMs > 0 ||
+        // The candidate's own spend is knowable whether or not a grading stage ran, and a run that stopped
+        // early often has only the former. Gating the section on the grading roles alone hid the cost of
+        // exactly the runs whose cost is least obvious elsewhere.
+        if (run.TotalInputTokens > 0 || run.TotalOutputTokens > 0 ||
+            run.TotalAssessmentInputTokens > 0 || run.TotalAssessmentOutputTokens > 0 || run.TotalAssessmentDurationMs > 0 ||
             run.TotalClaimVerificationInputTokens > 0 || run.TotalClaimVerificationOutputTokens > 0 || run.TotalClaimVerificationDurationMs > 0)
         {
             sb.AppendLine("### Harness Cost");
@@ -1010,7 +1058,9 @@ public static class BenchmarkReportBuilder
         }
         else
         {
-            sb.AppendLine("*Assessor token and time accounting was not recorded for this run (it predates harness version 4).*");
+            sb.AppendLine(PredatesHarnessVersion(run, 4)
+                ? "*Assessor token and time accounting was not recorded for this run (it predates harness version 4).*"
+                : "*Assessor and claim-verifier accounting is zero for this run: no grading stage recorded any usage.*");
             sb.AppendLine();
         }
 
@@ -1036,6 +1086,7 @@ public static class BenchmarkReportBuilder
         int transportDefectCount = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.TransportDefect);
         int recoveredCount = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.Recovered);
         int harnessLimitCount = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.HarnessLimit);
+        int unansweredCount = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.Unanswered);
         int advisoryCount = answers.Count(BenchmarkRunFinalizer.HasAdvisoryFlag);
         // NarrationBlockCount is the honest figure: how many narration blocks the scrubber
         // actually removed from this answer. Runs before harness version 6 did not record it,
@@ -1064,8 +1115,9 @@ public static class BenchmarkReportBuilder
         sb.AppendLine($"- **Transport Defects:** {transportDefectCount} (empty: {emptyCount}, truncated: {truncatedCount}) — *unrecoverable; excluded or invalid*");
         sb.AppendLine($"- **Recovered:** {recoveredCount} (leaked transport artifacts in: {artifactCount}) — *the harness removed the leaked payloads and graded the answer beneath them; a provider-path defect, not a damaged result*");
         sb.AppendLine($"- **Harness Limits:** {harnessLimitCount} (tool budget exhausted: {answers.Count(a => a.ToolBudgetExhausted)})");
+        sb.AppendLine($"- **Unanswered:** {unansweredCount} — *the model produced no answer; scored 0, not excluded*");
         sb.AppendLine($"- **Provider Errors:** {providerErrorCount}");
-        sb.AppendLine($"*Clean + transport defects + recovered + harness limits = {cleanCount + transportDefectCount + recoveredCount + harnessLimitCount} of {totalQuestions}.*");
+        sb.AppendLine($"*Clean + transport defects + recovered + harness limits + unanswered = {cleanCount + transportDefectCount + recoveredCount + harnessLimitCount + unansweredCount} of {totalQuestions}.*");
         sb.AppendLine();
         // On the 2026-09-03 run the report claimed the removal was unconditional; the streaming
         // writer's bug (fixed alongside this) meant five graded answers still carried their own
@@ -1121,7 +1173,9 @@ public static class BenchmarkReportBuilder
             sb.AppendLine("### Assessor Findings");
             if (!claimsRecorded)
             {
-                sb.AppendLine($"- **Unverified Claims:** not recorded — this run predates harness version {BenchmarkAssessmentPrompt.HarnessVersion}, which added the field.");
+                sb.AppendLine(PredatesHarnessVersion(run, UnverifiedClaimsHarnessVersion)
+                    ? $"- **Unverified Claims:** not recorded — this run predates harness version {UnverifiedClaimsHarnessVersion}, which added the field."
+                    : "- **Unverified Claims:** not recorded — no answer carries a claim count, so no assessment reached the stage that records it.");
             }
             else if (unverifiedTotal > 0)
             {
@@ -1421,7 +1475,9 @@ public static class BenchmarkReportBuilder
         int authoredSimple = answers.Count(a => a.Difficulty == BenchmarkDifficulty.Simple);
         int authoredIntermediate = answers.Count(a => a.Difficulty == BenchmarkDifficulty.Intermediate);
         int authoredAdvanced = answers.Count(a => a.Difficulty == BenchmarkDifficulty.Advanced);
-        sb.AppendLine($"- **Authored Band Distribution:** {authoredSimple} Simple, {authoredIntermediate} Intermediate, {authoredAdvanced} Advanced");
+        // The counts are over the answers this run stored, not over the suite as authored: a run that
+        // stopped early has fewer of them, and the old label read as the suite's authored mix.
+        sb.AppendLine($"- **Answered Band Distribution (of {answers.Count} answers):** {authoredSimple} Simple, {authoredIntermediate} Intermediate, {authoredAdvanced} Advanced");
         sb.AppendLine();
 
         // Band Agreement. Without this, a reader sees an authored distribution of 6/6/6 next to
@@ -1752,7 +1808,11 @@ public static class BenchmarkReportBuilder
             }
             else if (a.Status == BenchmarkAnswerStatus.EmptyAnswer)
             {
-                sb.AppendLine("**Reply:** *(Empty answer produced)*");
+                // A finish reason that means a normal stop is the model failing to answer; anything else,
+                // a null included, is a transport defect and keeps the wording it always had.
+                sb.AppendLine(BenchmarkRunFinalizer.IsModelProducedEmptyAnswer(a)
+                    ? $"**Reply:** *(No answer — the model ended its turn without producing text; provider finish reason: `{a.ProviderFinishReason}`)*"
+                    : "**Reply:** *(Empty answer produced)*");
             }
             else
             {
@@ -1785,7 +1845,14 @@ public static class BenchmarkReportBuilder
                     string capNote = a.CriticalError
                         ? (capLoweredScore ? " *(CRITICAL ERROR CAP APPLIED)*" : " *(CRITICAL ERROR — cap not binding)*")
                         : string.Empty;
-                    sb.AppendLine($"> - **Quality Score:** {a.QualityScore.Value} / 100{rawPart}{capNote}");
+                    if (BenchmarkRunFinalizer.IsModelProducedEmptyAnswer(a))
+                    {
+                        sb.AppendLine($"> - **Quality Score:** {a.QualityScore.Value} / 100 *(NO ANSWER — scored 0 by rule; no grader read this)*");
+                    }
+                    else
+                    {
+                        sb.AppendLine($"> - **Quality Score:** {a.QualityScore.Value} / 100{rawPart}{capNote}");
+                    }
                 }
                 else
                 {
@@ -1938,8 +2005,8 @@ public static class BenchmarkReportBuilder
         sb.AppendLine("- **Model Time:** $ModelTime = \\max(0, \\text{DurationMs} - \\text{ToolTimeMs})$ — the turn duration with harness tool I/O removed");
         sb.AppendLine("- **Speed Target:** $Target(q) = T \\cdot (1 + s \\cdot \\text{Difficulty}(q) / 100)$, where $T$ is SpeedTargetMs and $s$ is SpeedDifficultyScaling");
         sb.AppendLine("- **Speed Score:** $Speed = \\text{clamp}(100 - k \\cdot \\log_2(\\text{ModelTime} / Target(q)), 1, 100)$, where $k$ is SpeedDecayK");
-        sb.AppendLine("- **Intelligence Index:** $\\Sigma(\\text{Difficulty}(q) \\cdot \\text{Quality}(q)) / \\Sigma(\\text{Difficulty}(q))$ (answered questions only). Quality only: the Speed Index is reported separately by design and is not folded in.");
-        sb.AppendLine("- **Speed Index:** equal-weight mean of $Speed(q)$ over answered questions. Difficulty enters through $Target(q)$, not through the weight; weighting here as well would count difficulty twice and pull the index toward the floor.");
+        sb.AppendLine("- **Intelligence Index:** $\\Sigma(\\text{Difficulty}(q) \\cdot \\text{Quality}(q)) / \\Sigma(\\text{Difficulty}(q))$ over answered questions and unanswered questions alike, the latter at 0 — an unanswered question is a failed question. Quality only: the Speed Index is reported separately by design and is not folded in.");
+        sb.AppendLine("- **Speed Index:** equal-weight mean of $Speed(q)$ over answered questions only, since an answer that does not exist has no latency. Difficulty enters through $Target(q)$, not through the weight; weighting here as well would count difficulty twice and pull the index toward the floor.");
         sb.AppendLine();
         sb.AppendLine($"> **Comparing Speed Indices:** thinking level dominates model time, so a Speed Index is comparable between runs at the same thinking level and misleading across levels. This run used thinking level **{run.TestedModelThinkingLevelUsed ?? "Default"}**.");
         sb.AppendLine();
@@ -1970,8 +2037,14 @@ public static class BenchmarkReportBuilder
             foreach (var ia in issueAnswers)
             {
                 var iaFlags = (BenchmarkAnswerFlags)ia.AnswerFlags;
+                bool unanswered = BenchmarkRunFinalizer.IsModelProducedEmptyAnswer(ia);
                 var flagDescriptions = new List<string>();
-                if (ia.Status == BenchmarkAnswerStatus.EmptyAnswer) flagDescriptions.Add("Empty answer");
+                if (ia.Status == BenchmarkAnswerStatus.EmptyAnswer)
+                {
+                    flagDescriptions.Add(unanswered
+                        ? $"No answer — the model ended its turn without producing text (provider finish reason: {ia.ProviderFinishReason})"
+                        : "Empty answer");
+                }
                 if (ia.Status == BenchmarkAnswerStatus.ProviderError) flagDescriptions.Add($"Provider error (HTTP {ia.HttpStatusCode}): {ia.ErrorMessage}");
                 if (ia.Status == BenchmarkAnswerStatus.Failed) flagDescriptions.Add($"Failed: {ia.ErrorMessage}");
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.HarnessArtifacts))
@@ -2015,9 +2088,19 @@ public static class BenchmarkReportBuilder
                 }
 
                 string desc = string.Join("; ", flagDescriptions);
-                string note = (ia.Status is BenchmarkAnswerStatus.ProviderError or BenchmarkAnswerStatus.Failed or BenchmarkAnswerStatus.EmptyAnswer)
-                    ? " *(Note: Excluded from scoring)*"
-                    : string.Empty;
+                string note;
+                if (unanswered)
+                {
+                    note = " *(Scored 0: no answer produced)*";
+                }
+                else if (ia.Status is BenchmarkAnswerStatus.ProviderError or BenchmarkAnswerStatus.Failed or BenchmarkAnswerStatus.EmptyAnswer)
+                {
+                    note = " *(Note: Excluded from scoring)*";
+                }
+                else
+                {
+                    note = string.Empty;
+                }
                 sb.AppendLine($"- **Question {ia.OrderIndex}:** Status {ia.Status} — {desc}.{note}");
             }
 

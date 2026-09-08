@@ -284,7 +284,7 @@ public static class BenchmarkItemAnalysis
         {
             var answer = (run.Answers ?? new List<BenchmarkRunAnswer>())
                 .FirstOrDefault(a => a.BenchmarkQuestionId == question.Id
-                                     && a.Status == BenchmarkAnswerStatus.Ok
+                                     && BenchmarkRunFinalizer.CountsTowardQualityIndex(a)
                                      && a.QualityScore.HasValue
                                      && (a.ItemRevisionUsed == null || a.ItemRevisionUsed == question.ItemRevision));
 

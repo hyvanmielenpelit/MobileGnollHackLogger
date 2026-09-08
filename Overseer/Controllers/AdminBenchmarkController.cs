@@ -2217,7 +2217,7 @@ public class AdminBenchmarkController : ControllerBase
             QualityIndex = run.QualityIndex,
             RawQualityIndex = BenchmarkScoring.QualityIndex(
                 run.Answers
-                    .Where(a => a.Status == BenchmarkAnswerStatus.Ok && a.QualityScore.HasValue)
+                    .Where(a => BenchmarkRunFinalizer.CountsTowardQualityIndex(a) && a.QualityScore.HasValue)
                     .Select(a => (a.RawQualityScore ?? a.QualityScore, a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty)))
                     .ToList()),
             UnweightedQualityIndex = run.UnweightedQualityIndex,
@@ -2290,6 +2290,7 @@ public class AdminBenchmarkController : ControllerBase
             SpeedMeasurementDegraded = run.SpeedMeasurementDegraded,
             MaxParallelQuestionsUsed = run.MaxParallelQuestionsUsed,
             AnsweredQuestionCount = run.AnsweredQuestionCount,
+            UnansweredQuestionCount = run.UnansweredQuestionCount,
             TotalQuestionCount = run.TotalQuestionCount,
             PurposeStatementUsed = run.PurposeStatementUsed,
             SameProviderAcknowledged = run.SameProviderAcknowledged,
@@ -2371,6 +2372,7 @@ public class AdminBenchmarkController : ControllerBase
                 ScrubbedArtifactCount = a.ScrubbedArtifactCount,
                 NarrationBlockCount = a.NarrationBlockCount,
                 TerminationReason = a.TerminationReason,
+                ProviderFinishReason = a.ProviderFinishReason,
                 AnswerFlags = a.AnswerFlags,
                 AnswerFlagNames = ((BenchmarkAnswerFlags)a.AnswerFlags != BenchmarkAnswerFlags.None)
                     ? Enum.GetValues<BenchmarkAnswerFlags>()
@@ -2476,6 +2478,7 @@ public class AdminBenchmarkController : ControllerBase
                     TotalAnswerDurationMs = r.TotalAnswerDurationMs,
                     SpeedMeasurementDegraded = r.SpeedMeasurementDegraded,
                     AnsweredQuestionCount = r.AnsweredQuestionCount,
+                    UnansweredQuestionCount = r.UnansweredQuestionCount,
                     TotalQuestionCount = r.TotalQuestionCount,
                     DegradedAnswerCount = r.DegradedAnswerCount,
                     ToolStarvedAnswerCount = r.ToolStarvedAnswerCount,
@@ -2664,6 +2667,11 @@ public class AdminBenchmarkController : ControllerBase
             .FirstOrDefaultAsync(r => r.Id == id);
         if (run == null) return NotFound();
 
+        if (run.Status is BenchmarkRunStatus.Canceled or BenchmarkRunStatus.Failed)
+        {
+            return BadRequest(BenchmarkService.AbortedRunRefusal);
+        }
+
         var answer = run.Answers.FirstOrDefault(a => a.Id == answerId);
         if (answer == null) return NotFound();
 
@@ -2803,6 +2811,11 @@ public class AdminBenchmarkController : ControllerBase
             .FirstOrDefaultAsync(r => r.Id == id);
         if (run == null) return NotFound();
 
+        if (run.Status is BenchmarkRunStatus.Canceled or BenchmarkRunStatus.Failed)
+        {
+            return BadRequest(BenchmarkService.AbortedRunRefusal);
+        }
+
         var answer = run.Answers.FirstOrDefault(a => a.Id == answerId);
         if (answer == null) return NotFound();
 
@@ -2861,6 +2874,11 @@ public class AdminBenchmarkController : ControllerBase
             .FirstOrDefaultAsync(r => r.Id == id);
         if (run == null) return NotFound();
 
+        if (run.Status is BenchmarkRunStatus.Canceled or BenchmarkRunStatus.Failed)
+        {
+            return BadRequest(BenchmarkService.AbortedRunRefusal);
+        }
+
         if (run.Answers.Count == 0)
         {
             return BadRequest("This run has no answers to synthesize.");
@@ -2901,6 +2919,11 @@ public class AdminBenchmarkController : ControllerBase
             .Include(r => r.Answers)
             .FirstOrDefaultAsync(r => r.Id == id);
         if (run == null) return NotFound();
+
+        if (run.Status is BenchmarkRunStatus.Canceled or BenchmarkRunStatus.Failed)
+        {
+            return BadRequest(BenchmarkService.AbortedRunRefusal);
+        }
 
         if (!run.Answers.Any(a => a.AssessmentStatus != BenchmarkAssessmentStatus.Scored))
         {
@@ -2943,6 +2966,11 @@ public class AdminBenchmarkController : ControllerBase
             .FirstOrDefaultAsync(r => r.Id == id);
         if (run == null) return NotFound();
 
+        if (run.Status is BenchmarkRunStatus.Canceled or BenchmarkRunStatus.Failed)
+        {
+            return BadRequest(BenchmarkService.AbortedRunRefusal);
+        }
+
         if (!run.Answers.Any(a => !string.IsNullOrWhiteSpace(a.ClaimVerificationError)))
         {
             return BadRequest("This run has no failed claim verifications to retry.");
@@ -2974,6 +3002,21 @@ public class AdminBenchmarkController : ControllerBase
         {
             run.Status = BenchmarkRunStatus.Canceled;
             run.CompletedAtUtc = DateTime.UtcNow;
+
+            // No live run to cancel means the row is orphaned and its own abort path will never run, so
+            // what it consumed is recorded here instead. A live run measures its own wall clock, which
+            // is why this is not done unconditionally.
+            if (!cancelled)
+            {
+                var answers = await _dbContext.BenchmarkRunAnswers
+                    .Where(a => a.BenchmarkRunId == run.Id)
+                    .ToListAsync();
+
+                BenchmarkRunFinalizer.ApplyTotals(run, answers);
+                run.TotalDurationMs =
+                    (long)(run.CompletedAtUtc.Value - run.StartedAtUtc).TotalMilliseconds;
+            }
+
             await _dbContext.SaveChangesAsync();
         }
         return Ok(new { success = cancelled || (run != null && run.Status == BenchmarkRunStatus.Canceled) });
@@ -2998,6 +3041,11 @@ public class AdminBenchmarkController : ControllerBase
             .FirstOrDefaultAsync(r => r.Id == id);
 
         if (run == null) return NotFound();
+
+        if (run.Status is BenchmarkRunStatus.Canceled or BenchmarkRunStatus.Failed)
+        {
+            return BadRequest(BenchmarkService.AbortedRunRefusal);
+        }
 
         bool hasFailures = run.Answers.Any(a => a.Status == BenchmarkAnswerStatus.ProviderError || a.Status == BenchmarkAnswerStatus.Failed);
         if (!hasFailures)

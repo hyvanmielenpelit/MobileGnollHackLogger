@@ -205,6 +205,78 @@ namespace Overseer.Tests
             Assert.False(errorOccurred, "An error occurred during streaming.");
             Assert.False(string.IsNullOrWhiteSpace(fullResponse), "The response from the AI provider was empty.");
         }
+
+        // --- Empty provider response ---------------------------------------------------------
+        //
+        // These make no API call and carry no UsesExternalApi trait: they cover the turn a
+        // provider ends with no text, which chat used to persist and present as a blank bubble.
+
+        [Fact]
+        public void EmptyResponseNotice_NamesTheProviderFinishReason()
+        {
+            string notice = ChatService.EmptyResponseNotice("STOP");
+
+            Assert.Contains("The model ended its turn without producing an answer", notice);
+            Assert.Contains("provider finish reason: STOP", notice);
+        }
+
+        [Fact]
+        public void EmptyResponseNotice_SaysNoReason_WhenTheProviderReportedNone()
+        {
+            Assert.Contains("provider finish reason: no reason", ChatService.EmptyResponseNotice(null));
+            Assert.Contains("provider finish reason: no reason", ChatService.EmptyResponseNotice("   "));
+        }
+
+        [Fact]
+        public async Task EmptyResponse_PersistsTheNotice_AndKeepsTheTurnsCostAndTokens()
+        {
+            // The row is kept because the tokens were spent and their cost is real; what it must
+            // not do is store emptiness as an answer.
+            var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+                .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+                .Options;
+            await using var db = new ApplicationDbContext(options);
+            var ct = TestContext.Current.CancellationToken;
+
+            var session = new ChatSession
+            {
+                AspNetUserId = "user-empty-response",
+                Title = "Empty response session",
+                CreatedUtc = DateTime.UtcNow,
+                LastMessageUtc = DateTime.UtcNow
+            };
+            db.ChatSession.Add(session);
+            await db.SaveChangesAsync(ct);
+
+            string fullResponse = string.Empty;
+            if (string.IsNullOrWhiteSpace(fullResponse))
+            {
+                fullResponse = ChatService.EmptyResponseNotice("STOP");
+            }
+
+            db.ChatMessage.Add(new ChatMessage
+            {
+                ChatSessionId = session.Id,
+                Role = "assistant",
+                Content = fullResponse,
+                TimestampUtc = DateTime.UtcNow,
+                ProviderUsed = "Google",
+                ModelUsed = "gemini-3.1-pro-preview",
+                InputTokens = 51_534,
+                OutputTokens = 68,
+                EstimatedCost = 0.0644m,
+                PricingSource = "catalog"
+            });
+            await db.SaveChangesAsync(ct);
+
+            var saved = await db.ChatMessage.FirstAsync(m => m.ChatSessionId == session.Id, ct);
+
+            Assert.False(string.IsNullOrWhiteSpace(saved.Content));
+            Assert.Contains("without producing an answer", saved.Content);
+            Assert.Equal(51_534, saved.InputTokens);
+            Assert.Equal(68, saved.OutputTokens);
+            Assert.Equal(0.0644m, saved.EstimatedCost);
+        }
     }
 
     public class DummyClientToolBridge : Overseer.Services.Tools.IClientToolBridge

@@ -278,12 +278,31 @@ public class BenchmarkRunFinalizerTests
         Assert.False(BenchmarkRunFinalizer.WasRecovered(answer));
     }
 
+    /// <summary>
+    /// An answer the model itself ended without producing text: status EmptyAnswer plus a provider
+    /// finish reason that means a normal stop. Both halves are required — an empty answer with no
+    /// recorded reason is a transport defect.
+    /// </summary>
+    private static BenchmarkRunAnswer MakeUnansweredAnswer(int orderIndex, int assessedDifficulty = 50)
+    {
+        var answer = MakeAnswer(orderIndex, status: BenchmarkAnswerStatus.EmptyAnswer);
+        answer.AnswerText = string.Empty;
+        answer.ProviderFinishReason = "STOP";
+        answer.AssessedDifficulty = assessedDifficulty;
+        answer.QualityScore = 0;
+        answer.RawQualityScore = 0;
+        answer.Score = 0;
+        answer.SpeedScore = null;
+        answer.AnswerFlags = (int)BenchmarkAnswerFlags.Empty;
+        return answer;
+    }
+
     [Fact]
     public void IntegrityBuckets_PartitionEveryAnswerExactlyOnce()
     {
         // The invariant the old report violated: clean + transport defects + recovered +
-        // harness limits must equal the question count, whatever combination of causes is
-        // present.
+        // harness limits + unanswered must equal the question count, whatever combination of
+        // causes is present.
         var answers = new List<BenchmarkRunAnswer>
         {
             MakeAnswer(1),
@@ -293,19 +312,241 @@ public class BenchmarkRunFinalizerTests
             MakeAnswer(5, BenchmarkAnswerFlags.ReasoningBleed),
             MakeAnswer(6, BenchmarkAnswerFlags.ReasoningBleed, budgetExhausted: true),
             MakeAnswer(7, BenchmarkAnswerFlags.HarnessArtifacts, budgetExhausted: true),
-            MakeAnswer(8, status: BenchmarkAnswerStatus.EmptyAnswer)
+            MakeAnswer(8, status: BenchmarkAnswerStatus.EmptyAnswer),
+            MakeUnansweredAnswer(9)
         };
 
         int clean = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.Clean);
         int defects = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.TransportDefect);
         int recovered = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.Recovered);
         int limits = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.HarnessLimit);
+        int unanswered = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.Unanswered);
 
-        Assert.Equal(answers.Count, clean + defects + recovered + limits);
-        Assert.Equal(2, clean);      // 1 and 5 (advisory only)
-        Assert.Equal(2, defects);    // 3 (truncated) and 8 (empty)
-        Assert.Equal(2, recovered);  // 2 and 7 — repaired and graded
-        Assert.Equal(2, limits);     // 4 and 6
+        Assert.Equal(answers.Count, clean + defects + recovered + limits + unanswered);
+        Assert.Equal(2, clean);        // 1 and 5 (advisory only)
+        Assert.Equal(2, defects);      // 3 (truncated) and 8 (empty, no finish reason recorded)
+        Assert.Equal(2, recovered);    // 2 and 7 — repaired and graded
+        Assert.Equal(2, limits);       // 4 and 6
+        Assert.Equal(1, unanswered);   // 9 — the model stopped normally with no text
+    }
+
+    [Fact]
+    public void Classify_UnansweredIsItsOwnBucket_AndNotATransportDefect()
+    {
+        var unanswered = MakeUnansweredAnswer(1);
+        var emptyWithNoReason = MakeAnswer(2, status: BenchmarkAnswerStatus.EmptyAnswer);
+        emptyWithNoReason.AnswerText = string.Empty;
+
+        Assert.Equal(BenchmarkAnswerIntegrity.Unanswered, BenchmarkRunFinalizer.Classify(unanswered));
+        Assert.False(BenchmarkRunFinalizer.HasTransportDefect(unanswered));
+
+        // Attribution and severity are independent: the bucket says which failure it was, and
+        // HasUnresolvedWork is what keeps both of them at CompletedWithErrors.
+        Assert.True(BenchmarkRunFinalizer.HasUnresolvedWork(unanswered));
+
+        Assert.Equal(BenchmarkAnswerIntegrity.TransportDefect, BenchmarkRunFinalizer.Classify(emptyWithNoReason));
+        Assert.True(BenchmarkRunFinalizer.HasTransportDefect(emptyWithNoReason));
+        Assert.True(BenchmarkRunFinalizer.HasUnresolvedWork(emptyWithNoReason));
+    }
+
+    [Fact]
+    public void ComputeStatus_UnansweredStillProducesCompletedWithErrors()
+    {
+        // Item 6b: an empty answer is an error, not merely a low score, whatever produced it.
+        var answers = new List<BenchmarkRunAnswer>
+        {
+            MakeAnswer(1),
+            MakeUnansweredAnswer(2)
+        };
+
+        Assert.Equal(BenchmarkRunStatus.CompletedWithErrors, BenchmarkRunFinalizer.ComputeStatus(answers));
+    }
+
+    [Theory]
+    [InlineData("STOP", true)]
+    [InlineData("end_turn", true)]
+    [InlineData("completed", true)]
+    [InlineData(null, false)]
+    [InlineData("", false)]
+    [InlineData("MAX_TOKENS", false)]
+    [InlineData("tool_use", false)]
+    public void IsModelProducedEmptyAnswer_TrueOnNormalStop_FalseOnNullOrTruncated(string? finishReason, bool expected)
+    {
+        var answer = MakeAnswer(1, status: BenchmarkAnswerStatus.EmptyAnswer);
+        answer.AnswerText = string.Empty;
+        answer.ProviderFinishReason = finishReason;
+
+        Assert.Equal(expected, BenchmarkRunFinalizer.IsModelProducedEmptyAnswer(answer));
+    }
+
+    [Fact]
+    public void IsModelProducedEmptyAnswer_IsFalseForAnAnswerThatHasText()
+    {
+        var answered = MakeAnswer(1);
+        answered.ProviderFinishReason = "STOP";
+
+        Assert.False(BenchmarkRunFinalizer.IsModelProducedEmptyAnswer(answered));
+        Assert.True(BenchmarkRunFinalizer.CountsTowardQualityIndex(answered));
+    }
+
+    [Fact]
+    public void ApplyTotals_WritesMeasuredTotals_AndLeavesStatusAndScoresUntouched()
+    {
+        var completedAt = new DateTime(2026, 9, 8, 12, 0, 0, DateTimeKind.Utc);
+        var run = new BenchmarkRun
+        {
+            Id = 1,
+            TotalQuestionCount = 18,
+            Status = BenchmarkRunStatus.Canceled,
+            CompletedAtUtc = completedAt,
+            QualityIndex = null,
+            SpeedIndex = null,
+            TotalDurationMs = 0
+        };
+
+        var answers = new List<BenchmarkRunAnswer>
+        {
+            MakeAnswer(1),
+            MakeAnswer(2),
+            MakeAnswer(3),
+            MakeUnansweredAnswer(4)
+        };
+        foreach (var a in answers)
+        {
+            a.InputTokens = 1000;
+            a.OutputTokens = 100;
+            a.DurationMs = 5000;
+        }
+
+        BenchmarkRunFinalizer.ApplyTotals(run, answers);
+
+        // The totals sum over every answer that exists: an aborted run's cost is real whether or
+        // not the answer that spent it graded.
+        Assert.Equal(4000, run.TotalInputTokens);
+        Assert.Equal(400, run.TotalOutputTokens);
+        Assert.Equal(20000, run.TotalAnswerDurationMs);
+        Assert.Equal(3, run.AnsweredQuestionCount);
+        Assert.Equal(1, run.UnansweredQuestionCount);
+
+        Assert.Equal(BenchmarkRunStatus.Canceled, run.Status);
+        Assert.Equal(completedAt, run.CompletedAtUtc);
+        Assert.Null(run.QualityIndex);
+        Assert.Null(run.SpeedIndex);
+        Assert.Equal(0, run.TotalDurationMs);
+    }
+
+    [Fact]
+    public void ApplyTotals_OnNoAnswers_LeavesTotalsAtZero_AndToolOverheadNull()
+    {
+        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 18, Status = BenchmarkRunStatus.Canceled };
+
+        BenchmarkRunFinalizer.ApplyTotals(run, new List<BenchmarkRunAnswer>());
+
+        Assert.Equal(0, run.TotalInputTokens);
+        Assert.Equal(0, run.TotalOutputTokens);
+        Assert.Equal(0, run.TotalAnswerDurationMs);
+        Assert.Equal(0, run.AnsweredQuestionCount);
+        Assert.Equal(0, run.UnansweredQuestionCount);
+        Assert.Null(run.ToolOverheadMs);
+        Assert.Equal(BenchmarkRunStatus.Canceled, run.Status);
+    }
+
+    [Fact]
+    public void Apply_StillComputesStatusAndIndices_AfterTotalsExtraction()
+    {
+        var a1 = MakeAnswer(1);
+        a1.QualityScore = 90;
+        a1.SpeedScore = 80;
+        a1.AssessedDifficulty = 30;
+
+        var a2 = MakeAnswer(2);
+        a2.QualityScore = 70;
+        a2.SpeedScore = 60;
+        a2.AssessedDifficulty = 50;
+
+        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 2 };
+        BenchmarkRunFinalizer.Apply(run, new[] { a1, a2 });
+
+        Assert.Equal(BenchmarkRunStatus.Completed, run.Status);
+        Assert.NotNull(run.CompletedAtUtc);
+        Assert.Equal(2, run.AnsweredQuestionCount);
+        Assert.Equal(78, run.QualityIndex);   // (30*90 + 50*70) / 80
+        Assert.Equal(70, run.SpeedIndex);
+        Assert.Equal(80, run.UnweightedQualityIndex);
+    }
+
+    [Fact]
+    public void Apply_ScoresUnansweredAtZero_InQualityButNotSpeed()
+    {
+        var answered = MakeAnswer(1);
+        answered.QualityScore = 80;
+        answered.RawQualityScore = 80;
+        answered.SpeedScore = 64;
+        answered.AssessedDifficulty = 25;
+
+        var unanswered = MakeUnansweredAnswer(2, assessedDifficulty: 25);
+
+        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 2 };
+        BenchmarkRunFinalizer.Apply(run, new[] { answered, unanswered });
+
+        Assert.Equal(40, run.QualityIndex);
+        Assert.Equal(40, run.UnweightedQualityIndex);
+
+        // The unanswered question has no SpeedScore, so the speed aggregate is the answered
+        // question's alone. Counting one failure on two orthogonal axes would penalise it twice.
+        Assert.Equal(64, run.SpeedIndex);
+        Assert.Equal(BenchmarkRunStatus.CompletedWithErrors, run.Status);
+        Assert.Equal(1, run.UnansweredQuestionCount);
+        Assert.Equal(1, run.AnsweredQuestionCount);
+    }
+
+    [Fact]
+    public void ScoringSites_AgreeOnAFixtureContainingAnUnansweredAnswer()
+    {
+        // Option B's central risk: six sites recompute a quality index, and one that filters on
+        // Status == Ok alone would silently exclude the zeros the finaliser included.
+        var a1 = MakeAnswer(1);
+        a1.QualityScore = 80;
+        a1.RawQualityScore = 80;
+        a1.AssessedDifficulty = 25;
+
+        var a2 = MakeAnswer(2);
+        a2.QualityScore = 60;
+        a2.RawQualityScore = 60;
+        a2.AssessedDifficulty = 75;
+
+        var unanswered = MakeUnansweredAnswer(3, assessedDifficulty: 50);
+        var answers = new List<BenchmarkRunAnswer> { a1, a2, unanswered };
+
+        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 3, Answers = answers };
+        BenchmarkRunFinalizer.Apply(run, answers);
+
+        // 2: AdminBenchmarkController's RawQualityIndex expression.
+        int? controllerRawIndex = BenchmarkScoring.QualityIndex(
+            answers
+                .Where(a => BenchmarkRunFinalizer.CountsTowardQualityIndex(a) && a.QualityScore.HasValue)
+                .Select(a => (a.RawQualityScore ?? a.QualityScore, a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty)))
+                .ToList());
+
+        // 3: BenchmarkReportBuilder's rawScorableItems selector.
+        int? reportRawIndex = BenchmarkScoring.QualityIndex(
+            answers
+                .Where(a => BenchmarkRunFinalizer.CountsTowardQualityIndex(a) && a.QualityScore.HasValue)
+                .Select(a => (a.RawQualityScore ?? a.QualityScore, a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty)))
+                .ToList());
+
+        // 6: BenchmarkService.RescoreRunAsync's scorableItems selector.
+        int? rescoreIndex = BenchmarkScoring.QualityIndex(
+            answers
+                .Where(a => BenchmarkRunFinalizer.CountsTowardQualityIndex(a) && a.QualityScore.HasValue)
+                .Select(a => (a.QualityScore, a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty)))
+                .ToList());
+
+        // (25*80 + 75*60 + 50*0) / 150 = 6500 / 150 = 43
+        Assert.Equal(43, run.QualityIndex);
+        Assert.Equal(run.QualityIndex, controllerRawIndex);
+        Assert.Equal(run.QualityIndex, reportRawIndex);
+        Assert.Equal(run.QualityIndex, rescoreIndex);
     }
 
     [Fact]

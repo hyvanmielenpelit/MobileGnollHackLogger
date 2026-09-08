@@ -270,6 +270,7 @@ public class AnthropicProvider : IAiProvider
                 ChatEvent? debugEvt = null;
                 ChatEvent? tierEvt = null;
                 ChatEvent? usageEvt = null;
+                ChatEvent? finishReasonEvt = null;
                 var providerItemEvts = new List<ChatEvent>();
 
                 try
@@ -461,6 +462,15 @@ public class AnthropicProvider : IAiProvider
                             if (json.TryGetProperty("delta", out var delta2))
                             {
                                 var stopReason = delta2.TryGetProperty("stop_reason", out var sr) ? sr.GetString() : "null";
+
+                                // The provider's own reason for ending this response, verbatim. Last write
+                                // wins: the loop runner keeps the final call's value, which is the one that
+                                // describes the turn the user got.
+                                if (!string.IsNullOrEmpty(stopReason) && stopReason != "null")
+                                {
+                                    finishReasonEvt = new ChatEvent { Type = "finish_reason", Data = stopReason };
+                                }
+
                                 string usageInfo = "";
                                 if (json.TryGetProperty("usage", out var usage))
                                 {
@@ -502,6 +512,7 @@ public class AnthropicProvider : IAiProvider
                 catch (JsonException) { }
 
                 if (debugEvt != null) yield return debugEvt;
+                if (finishReasonEvt != null) yield return finishReasonEvt;
                 if (errorEvt != null) yield return errorEvt;
                 if (providerItemEvts != null)
                 {

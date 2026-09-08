@@ -104,7 +104,14 @@ public static class BenchmarkAssessmentPrompt
     //      weaknesses. The denial is now detected unanchored, and is itself disqualified whenever
     //      the same evidence names a falsehood, an omission, or concedes one after a conjunction.
     // Scores are not comparable with v8 on Readability.
-    public const int ScoringMethodVersion = 9;
+    // v10: a question the model failed to answer scores 0 instead of being excluded from the
+    //   indices. It fires only when the provider itself reported a normal stop; an empty answer with
+    //   no recorded finish reason, or one truncated at the output limit, stays a transport defect and
+    //   stays unscored. The Speed Index is unaffected: such an answer carries no SpeedScore, and
+    //   counting one failure on two orthogonal axes would penalise it twice. The run still reports
+    //   CompletedWithErrors — an unanswered question is an error, not merely a low score.
+    // Scores are not comparable with v9 whenever either run contains an unanswered question.
+    public const int ScoringMethodVersion = 10;
 
     /// <summary>
     /// The harness the run executed under. A constant rather than a configuration key: it exists

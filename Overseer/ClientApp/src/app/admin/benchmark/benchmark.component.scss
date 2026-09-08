@@ -752,6 +752,20 @@
   border: 1px solid rgba(255, 152, 0, 0.5);
 }
 
+// How many of the suite's questions a terminal run actually answered. Neutral rather than warning
+// coloured: the status badge beside it already carries the severity, and this only says how many.
+.badge-progress-count {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--nav-color);
+  border: 1px solid var(--border-glass);
+}
+
 .q-raw-score {
   font-size: 11px;
   color: #aaa;
@@ -823,6 +837,14 @@
   border: 1px solid rgba(255, 183, 77, 0.4);
   color: #ffb74d;
   cursor: help;
+}
+
+// A run option moved, not the instrument itself. Quieter than .instrument-changed, because it
+// reports a deliberate change of the thing being measured rather than drift in the measuring stick.
+.instrument-changed.options-changed {
+  background-color: rgba(255, 255, 255, 0.05);
+  border: 1px dashed var(--border-glass);
+  color: var(--nav-color);
 }
 
 .difficulty-badge {
@@ -1095,6 +1117,18 @@
   border-radius: 6px;
   font-weight: 500;
   color: #e0e0e0;
+}
+
+// Says why Re-score and Re-run are disabled on a run that stopped before finishing its suite.
+.run-aborted-notice {
+  margin: 0 0 12px 0;
+  padding: 10px 14px;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.15));
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 13px;
+  line-height: 1.5;
+  color: #888;
 }
 
 .score-summary-bar {

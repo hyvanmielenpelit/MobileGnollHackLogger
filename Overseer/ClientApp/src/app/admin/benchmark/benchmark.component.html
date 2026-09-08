@@ -826,6 +826,13 @@
                     @if ((run.degradedAnswerCount ?? 0) > 0) {
                       <span class="badge-degraded-count" title="Degraded answers count">⚠ {{ run.degradedAnswerCount }}</span>
                     }
+                    @if (answerShortfallOf(run); as progress) {
+                      <span class="badge-progress-count"
+                            [attr.interestfor]="'tip-progress-' + run.id"
+                            [attr.style]="'anchor-name: --tip-progress-' + run.id">{{ progress.answered }} / {{ progress.total }}</span>
+                      <div popover="hint" class="gh-tooltip" [id]="'tip-progress-' + run.id"
+                           [attr.style]="'position-anchor: --tip-progress-' + run.id">{{ progress.answered }} of {{ progress.total }} questions answered; the rest score 0</div>
+                    }
                   </td>
                   <td>
                     @if (run.qualityIndex != null) {
@@ -861,15 +868,22 @@
                       <span class="text-muted">-</span>
                     }
                     @if (instrumentChangeOf(run); as change) {
-                      <span class="instrument-changed"
-                            [attr.aria-label]="'Instrument changed since run ' + change.comparedToRunId"
+                      <span class="instrument-changed" [class]="change.kind === 'options' ? 'options-changed' : ''"
+                            [attr.aria-label]="(change.kind === 'options' ? 'Run options changed since run ' : 'Instrument changed since run ') + change.comparedToRunId"
                             [attr.interestfor]="'tip-instr-' + run.id"
-                            [attr.style]="'anchor-name: --tip-instr-' + run.id">INSTRUMENT CHANGED</span>
+                            [attr.style]="'anchor-name: --tip-instr-' + run.id">{{ change.kind === 'options' ? 'OPTIONS CHANGED' : 'INSTRUMENT CHANGED' }}</span>
                       <div popover="hint" class="gh-tooltip" [id]="'tip-instr-' + run.id"
                            [attr.style]="'position-anchor: --tip-instr-' + run.id">{{ change.description }}</div>
                     }
                   </td>
-                  <td>{{ formatDuration(run.totalAnswerDurationMs || run.totalDurationMs) }}</td>
+                  <td>
+                    <span [attr.interestfor]="isAbortedRun(run) ? 'tip-dur-' + run.id : null"
+                          [attr.style]="isAbortedRun(run) ? 'anchor-name: --tip-dur-' + run.id : null">{{ formatDuration(runDurationMs(run)) }}</span>
+                    @if (isAbortedRun(run)) {
+                      <div popover="hint" class="gh-tooltip" [id]="'tip-dur-' + run.id"
+                           [attr.style]="'position-anchor: --tip-dur-' + run.id">Wall-clock time until the run stopped</div>
+                    }
+                  </td>
                   <td>
                     @if (run.estimatedCost != null) {
                       {{ formatRunEstimatedCost(run) }}
@@ -1375,6 +1389,9 @@
             @if (indexConfidenceLabel) {
               <span class="score-note">{{ indexConfidenceLabel }} (95%)</span>
             }
+            @if ((selectedRunDetail.unansweredQuestionCount ?? 0) > 0) {
+              <span class="score-note">{{ selectedRunDetail.unansweredQuestionCount }} question(s) unanswered — the model produced no text, and each scores 0 here</span>
+            }
           </div>
           @if (selectedRunDetail.rawQualityIndex != null && selectedRunDetail.rawQualityIndex !== (selectedRunDetail.qualityIndex ?? selectedRunDetail.finalScore)) {
             <div class="score-card">
@@ -1637,6 +1654,10 @@
           </div>
         }
 
+        @if (isAbortedRun(selectedRunDetail)) {
+          <p class="run-aborted-notice">This run stopped before finishing its suite, so it has no Intelligence Index or Speed Index. Re-scoring and re-running are unavailable: they would publish indices computed over only the questions that completed.</p>
+        }
+
         <!-- Actions Bar -->
         <div class="modal-actions-bar mb-20">
           @if (selectedRunGameSnapshotId) {
@@ -1648,7 +1669,7 @@
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             Download Markdown Report
           </button>
-          <button type="button" class="btn-gh" (click)="rescoreRun(selectedRunDetail.id)" [disabled]="rescoringRun || isRunBusy()">
+          <button type="button" class="btn-gh" (click)="rescoreRun(selectedRunDetail.id)" [disabled]="rescoringRun || isRunBusy() || isAbortedRun(selectedRunDetail)">
             <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
             {{ rescoringRun ? 'Re-scoring...' : 'Re-score Run' }}
           </button>
@@ -1671,7 +1692,7 @@
             </button>
           }
           @if (formatStatus(selectedRunDetail.status) === 'CompletedWithErrors' || formatStatus(selectedRunDetail.status) === 'Failed') {
-            <button type="button" class="btn-gh" (click)="rerunFailed(selectedRunDetail.id)" [disabled]="isRunBusy()">
+            <button type="button" class="btn-gh" (click)="rerunFailed(selectedRunDetail.id)" [disabled]="isRunBusy() || isAbortedRun(selectedRunDetail)">
               <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
               Re-run Failed Questions
             </button>
@@ -2061,11 +2082,11 @@
                   </div>
 
                   <div class="mt-15 flex-row gap-10">
-                    <button type="button" class="btn-gh" (click)="openRetryDialog('question', selectedRunDetail.id, ans)" [disabled]="isRunBusy() || rerunningAnswerId === ans.id">
+                    <button type="button" class="btn-gh" (click)="openRetryDialog('question', selectedRunDetail.id, ans)" [disabled]="isRunBusy() || rerunningAnswerId === ans.id || isAbortedRun(selectedRunDetail)">
                       <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
                       {{ rerunningAnswerId === ans.id ? 'Re-running...' : 'Re-run Question' }}
                     </button>
-                    <button type="button" class="btn-gh" (click)="openRetryDialog('assessment', selectedRunDetail.id, ans)" [disabled]="isRunBusy() || reassessingAnswerId === ans.id">
+                    <button type="button" class="btn-gh" (click)="openRetryDialog('assessment', selectedRunDetail.id, ans)" [disabled]="isRunBusy() || reassessingAnswerId === ans.id || isAbortedRun(selectedRunDetail)">
                       <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
                       {{ reassessingAnswerId === ans.id ? 'Re-assessing...' : (isAssessmentFailed(ans) ? 'Retry Assessment' : 'Re-assess Question') }}
                     </button>

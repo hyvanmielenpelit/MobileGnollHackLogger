@@ -446,6 +446,14 @@ public class BenchmarkRunAnswerDto
     public int? NarrationBlockCount { get; set; }
 
     public string? TerminationReason { get; set; }
+
+    /// <summary>
+    /// The provider's verbatim reason for ending the response. Null means "not recorded" — never
+    /// "stopped normally"; the pair with <see cref="TerminationReason"/> is what separates an empty
+    /// answer the model produced from one a transport defect destroyed.
+    /// </summary>
+    public string? ProviderFinishReason { get; set; }
+
     public int AnswerFlags { get; set; }
     public List<string> AnswerFlagNames { get; set; } = new();
 
@@ -710,6 +718,13 @@ public class BenchmarkRunDetailDto
     public bool SpeedMeasurementDegraded { get; set; }
     public int MaxParallelQuestionsUsed { get; set; }
     public int AnsweredQuestionCount { get; set; }
+
+    /// <summary>
+    /// Questions the model failed to answer: it ended its turn normally and produced no text. Each
+    /// scores 0 from scoring method 10; zero on every earlier run, where such an answer was excluded.
+    /// </summary>
+    public int UnansweredQuestionCount { get; set; }
+
     public int TotalQuestionCount { get; set; }
     public string? PurposeStatementUsed { get; set; }
     public bool SameProviderAcknowledged { get; set; }
@@ -974,6 +989,13 @@ public class BenchmarkRunSummaryDto
     public long TotalAnswerDurationMs { get; set; }
     public bool SpeedMeasurementDegraded { get; set; }
     public int AnsweredQuestionCount { get; set; }
+
+    /// <summary>
+    /// Questions the model failed to answer: it ended its turn normally and produced no text. Each
+    /// scores 0 from scoring method 10; zero on every earlier run, where such an answer was excluded.
+    /// </summary>
+    public int UnansweredQuestionCount { get; set; }
+
     public int TotalQuestionCount { get; set; }
     public int DegradedAnswerCount { get; set; }
     public int ToolStarvedAnswerCount { get; set; }

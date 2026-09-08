@@ -345,5 +345,15 @@ public class BenchmarkRunAnswer
     public int? ToolCallBudgetUsed { get; set; }
     [MaxLength(32)]
     public string? TerminationReason { get; set; }
+
+    /// <summary>
+    /// The provider's verbatim finish reason for the final model call. Null for answers recorded before
+    /// this was captured, which is "not recorded" and never "stopped normally". Read with
+    /// <see cref="TerminationReason"/>: the pair is what separates an empty answer the model produced
+    /// from one a transport defect destroyed, and therefore what scoring method 10 scores 0.
+    /// </summary>
+    [MaxLength(64)]
+    public string? ProviderFinishReason { get; set; }
+
     public int AnswerFlags { get; set; }
 }

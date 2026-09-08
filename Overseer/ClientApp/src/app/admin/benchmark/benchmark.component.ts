@@ -465,7 +465,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       qualityIndex: r => r.qualityIndex ?? r.finalScore,
       speedIndex: r => r.speedIndex,
       // The same expression the Duration cell displays, so the column sorts by what it shows.
-      durationMs: r => r.totalAnswerDurationMs || r.totalDurationMs,
+      durationMs: r => this.runDurationMs(r),
       estimatedCost: r => r.estimatedCost,
       startedAtUtc: r => new Date(r.startedAtUtc)
     },
@@ -1432,12 +1432,16 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
    *
    * Returns null when there is no older run of the same suite, or when either run is missing a hash: "not
    * recorded" is not "unchanged", and badging it as a change would be a claim the data cannot support.
+   *
+   * The candidate hash covers the prompt as built, so a run option that changes the prompt text —
+   * verboseMode is the usual one — moves it without anything in the instrument having moved. Two runs
+   * with different prompt options are not a candidate reproduction on any axis, so the option
+   * difference is reported as itself rather than as instrument drift; only runs whose options match
+   * can say anything about whether the instrument held still. Where the options cannot be compared —
+   * either run missing them, or either one unparseable — the hashes are the only claim available.
    */
-  instrumentChangeOf(run: BenchmarkRunSummaryDto): { comparedToRunId: number; description: string } | null {
-    if (!run.candidateSystemPromptSha256 && !run.toolGuidesSha256 && !run.knowledgeBaseHeadSha) {
-      return null;
-    }
-
+  instrumentChangeOf(run: BenchmarkRunSummaryDto):
+    { kind: 'instrument' | 'options'; description: string; comparedToRunId: number } | null {
     const index = this.historyRuns.indexOf(run);
     if (index < 0) return null;
 
@@ -1445,6 +1449,20 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       .slice(index + 1)
       .find(r => r.benchmarkSuiteId === run.benchmarkSuiteId && this.formatStatus(r.status) !== 'Running');
     if (!previous) return null;
+
+    const changedOptions = this.changedPromptOptionKeys(run, previous);
+    if (changedOptions && changedOptions.length > 0) {
+      return {
+        kind: 'options',
+        comparedToRunId: previous.id,
+        description: `Run options differ from run #${previous.id}: ${changedOptions.join(', ')}. ` +
+          'The prompt is built from these, so the candidate hash moves with them. The two runs are not a reproduction.'
+      };
+    }
+
+    if (!run.candidateSystemPromptSha256 && !run.toolGuidesSha256 && !run.knowledgeBaseHeadSha) {
+      return null;
+    }
 
     const moved: string[] = [];
     if (run.candidateSystemPromptSha256 && previous.candidateSystemPromptSha256 &&
@@ -1463,9 +1481,35 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     if (moved.length === 0) return null;
 
     return {
+      kind: 'instrument',
       comparedToRunId: previous.id,
       description: `Changed since run #${previous.id}: ${moved.join(', ')}. The two runs are a controlled pair, not a reproduction.`
     };
+  }
+
+  /**
+   * The prompt-option keys whose values differ between two runs, or null when the two records cannot
+   * be compared at all — either run missing its options, or either one unparseable. An empty array
+   * means the comparison was made and the options match.
+   */
+  private changedPromptOptionKeys(run: BenchmarkRunSummaryDto, previous: BenchmarkRunSummaryDto): string[] | null {
+    const current = this.parsePromptOptions(run.candidatePromptOptionsJson);
+    const older = this.parsePromptOptions(previous.candidatePromptOptionsJson);
+    if (!current || !older) return null;
+
+    const keys = Array.from(new Set([...Object.keys(current), ...Object.keys(older)])).sort();
+    return keys.filter(key => JSON.stringify(current[key] ?? null) !== JSON.stringify(older[key] ?? null));
+  }
+
+  private parsePromptOptions(json: string | null | undefined): Record<string, unknown> | null {
+    if (!json) return null;
+    try {
+      const parsed = JSON.parse(json);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+      return parsed as Record<string, unknown>;
+    } catch {
+      return null;
+    }
   }
 
   formatSecondOpinionMode(mode: number | null | undefined): string {
@@ -3401,7 +3445,8 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
         const parts = [
           `status=${this.formatAnswerStatus(ans.status)}`,
           `assessment=${this.formatAssessmentStatus(ans.assessmentStatus)}`,
-          `duration=${ans.durationMs}ms`
+          `duration=${ans.durationMs}ms`,
+          `finishReason=${ans.providerFinishReason ?? 'n/a'}`
         ];
         if (ans.timeToFirstTokenMs != null) parts.push(`ttft=${ans.timeToFirstTokenMs}ms`);
         if (ans.inputTokens != null) parts.push(`in=${ans.inputTokens}`);
@@ -4694,6 +4739,47 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   hasDivergence(finalScore?: number | null, computedScore?: number | null): boolean {
     if (finalScore == null || computedScore == null) return false;
     return Math.abs(finalScore - computedScore) > 10;
+  }
+
+  /** A run that stopped before finishing its suite: the operator cancelled it, or it died. */
+  isAbortedRun(run: BenchmarkRunSummaryDto | BenchmarkRunDetailDto): boolean {
+    const status = this.formatStatus(run.status);
+    return status === 'Canceled' || status === 'Failed';
+  }
+
+  /**
+   * What the Duration column shows. A run that reached the end is measured by the time its answers
+   * took; one that stopped early by the wall clock up to the stop, because the questions that never
+   * ran are part of what was cancelled. Runs stopped before either figure was recorded fall back to
+   * the two timestamps, which are always present on a terminal run.
+   */
+  runDurationMs(run: BenchmarkRunSummaryDto): number {
+    if (this.isAbortedRun(run)) {
+      return run.totalDurationMs || this.elapsedBetweenTimestamps(run);
+    }
+    return run.totalAnswerDurationMs || run.totalDurationMs || this.elapsedBetweenTimestamps(run);
+  }
+
+  private elapsedBetweenTimestamps(run: BenchmarkRunSummaryDto): number {
+    if (!run.completedAtUtc) return 0;
+    return Math.max(0, new Date(run.completedAtUtc).getTime() - new Date(run.startedAtUtc).getTime());
+  }
+
+  /**
+   * How many questions a terminal run actually answered, when that is fewer than the suite holds.
+   * Null while a run is still going, and null for a run that answered everything.
+   *
+   * `answeredQuestionCount` counts answers whose status is Ok, matching the report's "Answered
+   * Questions" line: an answer that came back empty is not an answered question, even though scoring
+   * method 10 scores it 0. The status already says a run had errors; this says how many, which is
+   * what separates an index of 74 over 16 of 18 questions from 74 over 18.
+   */
+  answerShortfallOf(run: BenchmarkRunSummaryDto): { answered: number; total: number } | null {
+    if (this.formatStatus(run.status) === 'Running') return null;
+    const total = run.totalQuestionCount ?? 0;
+    const answered = run.answeredQuestionCount ?? 0;
+    if (total <= 0 || answered >= total) return null;
+    return { answered, total };
   }
 
   formatDuration(ms: number): string {

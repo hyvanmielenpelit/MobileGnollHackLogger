@@ -64,6 +64,44 @@ public class BenchmarkService
         _logger = logger;
     }
 
+    public const string AbortedRunRefusal =
+        "This run stopped before finishing its suite, so it has no Intelligence Index or Speed Index. " +
+        "Re-scoring or re-running it would publish indices computed over only the questions that completed.";
+
+    /// <summary>
+    /// A provider finish reason cut to the width of
+    /// <see cref="BenchmarkRunAnswer.ProviderFinishReason"/>. These are short enumerated tokens on
+    /// every provider the harness talks to; the cut is here so an unexpected one is stored rather
+    /// than throwing at save time.
+    /// </summary>
+    private static string? TruncateFinishReason(string? finishReason)
+    {
+        if (string.IsNullOrWhiteSpace(finishReason)) return null;
+
+        string trimmed = finishReason.Trim();
+        return trimmed.Length <= 64 ? trimmed : trimmed[..64];
+    }
+
+    /// <summary>
+    /// Records what a run that stopped early consumed: the totals over the answers that completed,
+    /// and — when a stopwatch measured it — the wall clock up to the stop. The status and the indices
+    /// belong to the caller: such a run has a cost and a duration, and no score.
+    /// </summary>
+    private static async Task ApplyAbortedTotalsAsync(
+        ApplicationDbContext db, BenchmarkRun run, long? elapsedMs)
+    {
+        var answers = await db.BenchmarkRunAnswers
+            .Where(a => a.BenchmarkRunId == run.Id)
+            .ToListAsync(CancellationToken.None);
+
+        BenchmarkRunFinalizer.ApplyTotals(run, answers);
+
+        if (elapsedMs.HasValue)
+        {
+            run.TotalDurationMs = elapsedMs.Value;
+        }
+    }
+
     public async Task CleanupOrphanedRunsAsync()
     {
         using var scope = _scopeFactory.CreateScope();
@@ -78,14 +116,11 @@ public class BenchmarkService
         {
             foreach (var run in orphanedRuns)
             {
-                if (run.Answers.Count == 0)
-                {
-                    run.Status = BenchmarkRunStatus.Failed;
-                }
-                else
-                {
-                    BenchmarkRunFinalizer.Apply(run, run.Answers);
-                }
+                // An interrupted run never reached the end of its suite, so it gets its measured totals and no
+                // score: an index over the answers that happen to exist describes a fraction of the instrument
+                // and is indistinguishable, once stored, from an index over all of it.
+                BenchmarkRunFinalizer.ApplyTotals(run, run.Answers);
+                run.Status = BenchmarkRunStatus.Failed;
                 run.ErrorMessage = "Run interrupted by application restart.";
                 run.CompletedAtUtc = DateTime.UtcNow;
             }
@@ -302,6 +337,8 @@ public class BenchmarkService
                     {
                         run.Status = BenchmarkRunStatus.Canceled;
                         run.CompletedAtUtc = DateTime.UtcNow;
+                        runStopwatch.Stop();
+                        await ApplyAbortedTotalsAsync(db, run, runStopwatch.ElapsedMilliseconds);
                         await db.SaveChangesAsync(CancellationToken.None);
                         _runManager.Complete(runId);
                         return;
@@ -413,6 +450,8 @@ public class BenchmarkService
             {
                 run.Status = BenchmarkRunStatus.Canceled;
                 run.CompletedAtUtc = DateTime.UtcNow;
+                runStopwatch.Stop();
+                await ApplyAbortedTotalsAsync(db, run, runStopwatch.ElapsedMilliseconds);
                 await db.SaveChangesAsync();
             }
         }
@@ -427,6 +466,8 @@ public class BenchmarkService
                 run.Status = BenchmarkRunStatus.Failed;
                 run.ErrorMessage = BenchmarkAssessmentFailure.Truncate(ex.Message);
                 run.CompletedAtUtc = DateTime.UtcNow;
+                runStopwatch.Stop();
+                await ApplyAbortedTotalsAsync(db, run, runStopwatch.ElapsedMilliseconds);
                 await db.SaveChangesAsync();
             }
         }
@@ -523,6 +564,8 @@ public class BenchmarkService
                 if (cancellationToken.IsCancellationRequested)
                 {
                     run.Status = BenchmarkRunStatus.Canceled;
+                    await ApplyAbortedTotalsAsync(db, run, null);
+                    run.CompletedAtUtc ??= DateTime.UtcNow;
                     await db.SaveChangesAsync(CancellationToken.None);
                     _runManager.Complete(runId);
                     return;
@@ -902,6 +945,7 @@ public class BenchmarkService
             ToolCallBudgetUsed = toolCallBudget,
             ToolTimeMs = runResult.ToolTimeMs,
             TerminationReason = runResult.TerminationReason,
+            ProviderFinishReason = TruncateFinishReason(runResult.ProviderFinishReason),
             ScrubbedArtifactText = sanitized.ScrubbedArtifactText,
             ScrubbedArtifactCount = sanitized.ScrubbedArtifactCount,
             NarrationBlockCount = sanitized.NarrationBlockCount,
@@ -1081,6 +1125,7 @@ public class BenchmarkService
         answer.ToolCallBudgetUsed = toolCallBudget;
         answer.ToolTimeMs = runResult.ToolTimeMs;
         answer.TerminationReason = runResult.TerminationReason;
+        answer.ProviderFinishReason = TruncateFinishReason(runResult.ProviderFinishReason);
         answer.ScrubbedArtifactText = sanitized.ScrubbedArtifactText;
         answer.ScrubbedArtifactCount = sanitized.ScrubbedArtifactCount;
         answer.NarrationBlockCount = sanitized.NarrationBlockCount;
@@ -1117,6 +1162,36 @@ public class BenchmarkService
         BenchmarkScoringConstants constants,
         CancellationToken cancellationToken)
     {
+        // An answer with no text has nothing for a grader to read, and the assessor's empty reply was being
+        // recorded as a harness stage failure — a guaranteed one, paid for at assessor rates on every empty
+        // answer. Which branch applies is the whole distinction scoring method 10 rests on: a model that
+        // ended its turn normally and returned nothing failed to answer and scores 0; an answer destroyed
+        // in transit is not the candidate's fault and stays unscored. Either way the run reports
+        // CompletedWithErrors — an empty answer is an error whatever produced it.
+        if (answer.Status == BenchmarkAnswerStatus.EmptyAnswer || string.IsNullOrWhiteSpace(answer.AnswerText))
+        {
+            if (BenchmarkRunFinalizer.IsModelProducedEmptyAnswer(answer))
+            {
+                answer.QualityScore = 0;
+                answer.RawQualityScore = 0;
+                answer.Score = 0;
+                answer.AssessmentStatus = BenchmarkAssessmentStatus.Scored;
+                answer.ReviewComment =
+                    "Not assessed by a grader: the model ended its turn without producing an answer. "
+                    + "Scored 0 under scoring method 10.";
+                answer.AssessmentError = null;
+            }
+            else
+            {
+                answer.AssessmentStatus = BenchmarkAssessmentStatus.Failed;
+                answer.AssessmentError =
+                    "Not assessed: the answer contained no text, and the provider reported no normal stop.";
+            }
+
+            await db.SaveChangesAsync(CancellationToken.None);
+            return;
+        }
+
         answer.AssessmentStatus = BenchmarkAssessmentStatus.Assessing;
         await db.SaveChangesAsync(CancellationToken.None);
 
@@ -3704,6 +3779,14 @@ public class BenchmarkService
             return (false, "Run not found.");
         }
 
+        // Re-scoring recomputes QualityIndex and SpeedIndex from whatever answers exist. On a run that
+        // stopped early that is an index over a fraction of the suite, stored in the same column a
+        // complete run uses, with nothing to mark the difference.
+        if (run.Status is BenchmarkRunStatus.Canceled or BenchmarkRunStatus.Failed)
+        {
+            return (false, AbortedRunRefusal);
+        }
+
         var answersWithLevels = run.Answers
             .Where(a => a.AccuracyLevel.HasValue && a.CompletenessLevel.HasValue && a.ConcisenessLevel.HasValue && a.ReadabilityLevel.HasValue)
             .ToList();
@@ -3756,11 +3839,17 @@ public class BenchmarkService
         }
 
         var scorableItems = run.Answers
-            .Where(a => a.Status == BenchmarkAnswerStatus.Ok && a.QualityScore.HasValue)
+            .Where(a => BenchmarkRunFinalizer.CountsTowardQualityIndex(a) && a.QualityScore.HasValue)
             .Select(a => (a.QualityScore, a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty)))
             .ToList();
 
         run.QualityIndex = BenchmarkScoring.QualityIndex(scorableItems);
+        run.QualityIndexStandardError = BenchmarkScoring.QualityIndexStandardError(scorableItems);
+        run.UnweightedQualityIndex = BenchmarkScoring.UnweightedQualityMean(
+            run.Answers.Where(BenchmarkRunFinalizer.CountsTowardQualityIndex).Select(a => a.QualityScore));
+
+        // The speed filter keeps Status == Ok: a null SpeedScore excludes an unanswered answer
+        // anyway, and saying so explicitly is clearer than relying on it.
         run.SpeedIndex = BenchmarkScoring.SpeedIndex(run.Answers
             .Where(a => a.Status == BenchmarkAnswerStatus.Ok && a.SpeedScore.HasValue)
             .Select(a => a.SpeedScore));
@@ -3876,6 +3965,8 @@ public class BenchmarkService
         catch (OperationCanceledException)
         {
             run.Status = BenchmarkRunStatus.Canceled;
+            await ApplyAbortedTotalsAsync(db, run, null);
+            run.CompletedAtUtc ??= DateTime.UtcNow;
             await db.SaveChangesAsync(CancellationToken.None);
         }
         catch (Exception ex)
@@ -4007,6 +4098,8 @@ public class BenchmarkService
         catch (OperationCanceledException)
         {
             run.Status = BenchmarkRunStatus.Canceled;
+            await ApplyAbortedTotalsAsync(db, run, null);
+            run.CompletedAtUtc ??= DateTime.UtcNow;
             await db.SaveChangesAsync(CancellationToken.None);
         }
         catch (Exception ex)
@@ -4074,6 +4167,8 @@ public class BenchmarkService
         catch (OperationCanceledException)
         {
             run.Status = BenchmarkRunStatus.Canceled;
+            await ApplyAbortedTotalsAsync(db, run, null);
+            run.CompletedAtUtc ??= DateTime.UtcNow;
             await db.SaveChangesAsync(CancellationToken.None);
         }
         catch (Exception ex)
@@ -4144,6 +4239,8 @@ public class BenchmarkService
                 if (cancellationToken.IsCancellationRequested)
                 {
                     run.Status = BenchmarkRunStatus.Canceled;
+                    await ApplyAbortedTotalsAsync(db, run, null);
+                    run.CompletedAtUtc ??= DateTime.UtcNow;
                     await db.SaveChangesAsync(CancellationToken.None);
                     return;
                 }
@@ -4163,6 +4260,8 @@ public class BenchmarkService
         catch (OperationCanceledException)
         {
             run.Status = BenchmarkRunStatus.Canceled;
+            await ApplyAbortedTotalsAsync(db, run, null);
+            run.CompletedAtUtc ??= DateTime.UtcNow;
             await db.SaveChangesAsync(CancellationToken.None);
         }
         catch (Exception ex)

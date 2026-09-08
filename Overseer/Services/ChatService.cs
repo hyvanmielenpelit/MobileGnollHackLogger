@@ -989,6 +989,16 @@ public class ChatService
                     };
                 }
 
+                // The provider ended the turn with no text — observed on Gemini 3.1 Pro after minutes of work, on
+                // the same prompt builder chat uses. The row is kept because the tokens were spent and their cost
+                // is real; what it must not do is present emptiness as an answer.
+                if (string.IsNullOrWhiteSpace(fullResponse))
+                {
+                    fullResponse = EmptyResponseNotice(runResult.ProviderFinishReason);
+
+                    yield return new ChatEvent { Type = "error", Data = "The model returned no answer text." };
+                }
+
                 var asstMsg = new ChatMessage
                 {
                     ChatSessionId = currentSessionId,
@@ -1047,6 +1057,22 @@ public class ChatService
                 if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat] Assistant message saved to DB (id={asstMsg.Id})" };
             }
         }
+    }
+
+    /// <summary>
+    /// What an assistant turn says when the provider ended it without producing any text. The
+    /// message row is still stored — it carries the tokens, the cost, the timings and the tool
+    /// calls — so the notice is what stands in its Content, naming the provider's own finish reason
+    /// where there is one.
+    /// </summary>
+    internal static string EmptyResponseNotice(string? providerFinishReason)
+    {
+        string reason = string.IsNullOrWhiteSpace(providerFinishReason)
+            ? "no reason"
+            : providerFinishReason;
+
+        return "*The model ended its turn without producing an answer "
+            + $"(provider finish reason: {reason}). Nothing was lost — please ask again.*";
     }
 
     internal (string frozenPrefix, string sessionPrefix, string volatileSuffix) BuildSegmentedSystemPrompt(

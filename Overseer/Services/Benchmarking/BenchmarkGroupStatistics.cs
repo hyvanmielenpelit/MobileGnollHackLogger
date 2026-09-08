@@ -1317,7 +1317,7 @@ public static class BenchmarkGroupStatistics
             foreach (var member in members)
             {
                 var scored = (member.Answers ?? new List<BenchmarkRunAnswer>())
-                    .Where(a => a.Status == BenchmarkAnswerStatus.Ok
+                    .Where(a => BenchmarkRunFinalizer.CountsTowardQualityIndex(a)
                                 && a.BenchmarkQuestionId.HasValue
                                 && questionIds.Contains(a.BenchmarkQuestionId.Value)
                                 && score(a).HasValue)

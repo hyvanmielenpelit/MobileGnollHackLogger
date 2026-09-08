@@ -392,6 +392,7 @@ describe('AdminBenchmarkComponent', () => {
       speedMeasurementDegraded: false,
       maxParallelQuestionsUsed: 1,
       answeredQuestionCount: 1,
+      unansweredQuestionCount: 0,
       totalQuestionCount: 1,
       purposeStatementUsed: 'Test Purpose',
       sameProviderAcknowledged: false,
@@ -4330,6 +4331,144 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.historyView.map(r => r.id)).toEqual([2]);
       expect(component.historyRuns).toBe(runs);
       expect(component.historyRuns.length).toBe(3);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Aborted runs, the answer shortfall badge, and the instrument-vs-options distinction
+  //
+  // A run that stopped early has no answer-duration total to be measured by, and a run that
+  // answered fewer questions than its suite holds must say so beside its status. The instrument
+  // badge is a separate claim: a changed run option moves the candidate hash on its own, and
+  // reporting that as instrument drift blames the measuring stick for a change to what is measured.
+  // ---------------------------------------------------------------------------
+  describe('aborted runs, answer shortfall and the instrument badge', () => {
+    function buildRun(overrides: Record<string, unknown> = {}): any {
+      return {
+        id: 1,
+        benchmarkSuiteId: 1,
+        suiteName: 'Default Suite',
+        testedModelDisplayNameUsed: 'Gemini 3.1 Pro',
+        testedModelProviderUsed: 'Google',
+        testedModelIdUsed: 'gemini-3.1-pro',
+        assessorModelDisplayNameUsed: 'Claude Opus',
+        status: 'Completed',
+        startedAtUtc: '2026-09-08T13:35:00Z',
+        completedAtUtc: '2026-09-08T13:58:39Z',
+        totalAnswerDurationMs: 765466,
+        totalDurationMs: 1419000,
+        speedMeasurementDegraded: false,
+        answeredQuestionCount: 18,
+        totalQuestionCount: 18,
+        unansweredQuestionCount: 0,
+        candidateSystemPromptSha256: 'sha-a',
+        toolGuidesSha256: 'guide-a',
+        knowledgeBaseHeadSha: 'kb-a',
+        candidatePromptOptionsJson: '{"verboseMode":false,"enableToolUse":true}',
+        ...overrides
+      };
+    }
+
+    it('should measure an aborted run by the wall clock, not by the time its answers took', () => {
+      const run = buildRun({ status: 'Canceled', totalAnswerDurationMs: 2000000, totalDurationMs: 1419000 });
+
+      expect(component.runDurationMs(run)).toBe(1419000);
+      expect(component.isAbortedRun(run)).toBeTrue();
+    });
+
+    it('should measure a completed run by the time its answers took', () => {
+      const run = buildRun();
+
+      expect(component.runDurationMs(run)).toBe(765466);
+      expect(component.isAbortedRun(run)).toBeFalse();
+    });
+
+    it('should derive a duration from the timestamps when neither total was recorded', () => {
+      const run = buildRun({ status: 'Canceled', totalAnswerDurationMs: 0, totalDurationMs: 0 });
+
+      // 13:35:00 to 13:58:39 is run 24's own wall clock: 23m 39s.
+      expect(component.runDurationMs(run)).toBe(1419000);
+    });
+
+    it('should report the shortfall of a run that finished with errors', () => {
+      const run = buildRun({ status: 'CompletedWithErrors', answeredQuestionCount: 16, totalQuestionCount: 18 });
+
+      expect(component.answerShortfallOf(run)).toEqual({ answered: 16, total: 18 });
+    });
+
+    it('should report the shortfall of a cancelled run', () => {
+      const run = buildRun({ status: 'Canceled', answeredQuestionCount: 3, totalQuestionCount: 18 });
+
+      expect(component.answerShortfallOf(run)).toEqual({ answered: 3, total: 18 });
+    });
+
+    it('should report no shortfall while running, at a full answer set, or with no suite total', () => {
+      expect(component.answerShortfallOf(buildRun({ status: 'Running', answeredQuestionCount: 3, totalQuestionCount: 18 }))).toBeNull();
+      expect(component.answerShortfallOf(buildRun({ answeredQuestionCount: 18, totalQuestionCount: 18 }))).toBeNull();
+      expect(component.answerShortfallOf(buildRun({ answeredQuestionCount: 0, totalQuestionCount: 0 }))).toBeNull();
+    });
+
+    it('should badge a changed run option as an option change, not as instrument drift', () => {
+      // Runs 24 and 25: verboseMode flipped, so the candidate prompt hash moved with it.
+      component.historyRuns = [
+        buildRun({
+          id: 25,
+          candidateSystemPromptSha256: 'bb19dc24',
+          candidatePromptOptionsJson: '{"verboseMode":true,"enableToolUse":true}'
+        }),
+        buildRun({
+          id: 24,
+          candidateSystemPromptSha256: 'e9b3e9a7',
+          candidatePromptOptionsJson: '{"verboseMode":false,"enableToolUse":true}'
+        })
+      ];
+
+      const change = component.instrumentChangeOf(component.historyRuns[0]);
+
+      expect(change?.kind).toBe('options');
+      expect(change?.comparedToRunId).toBe(24);
+      expect(change?.description).toContain('verboseMode');
+    });
+
+    it('should badge a moved hash as instrument drift when the options match', () => {
+      component.historyRuns = [
+        buildRun({ id: 25, knowledgeBaseHeadSha: 'kb-b' }),
+        buildRun({ id: 24 })
+      ];
+
+      const change = component.instrumentChangeOf(component.historyRuns[0]);
+
+      expect(change?.kind).toBe('instrument');
+      expect(change?.comparedToRunId).toBe(24);
+      expect(change?.description).toContain('knowledge base');
+    });
+
+    it('should fall back to the hash comparison when the options cannot be parsed', () => {
+      component.historyRuns = [
+        buildRun({ id: 25, knowledgeBaseHeadSha: 'kb-b', candidatePromptOptionsJson: 'not json' }),
+        buildRun({ id: 24 })
+      ];
+
+      expect(component.instrumentChangeOf(component.historyRuns[0])?.kind).toBe('instrument');
+    });
+
+    it('should badge nothing when both the options and all three hashes match', () => {
+      component.historyRuns = [buildRun({ id: 25 }), buildRun({ id: 24 })];
+
+      expect(component.instrumentChangeOf(component.historyRuns[0])).toBeNull();
+    });
+
+    it('should sort the Duration column by the figure each cell shows', () => {
+      component.historyRuns = [
+        // The cancelled run's answers took the longest, but only 100s of wall clock elapsed.
+        buildRun({ id: 3, status: 'Canceled', totalAnswerDurationMs: 900000, totalDurationMs: 100000 }),
+        buildRun({ id: 2, totalAnswerDurationMs: 500000, totalDurationMs: 700000 }),
+        buildRun({ id: 1, totalAnswerDurationMs: 300000, totalDurationMs: 300000 })
+      ];
+
+      component.historyTable.toggleSort('durationMs');
+
+      expect(component.historyView.map(r => r.id)).toEqual([2, 1, 3]);
     });
   });
 
