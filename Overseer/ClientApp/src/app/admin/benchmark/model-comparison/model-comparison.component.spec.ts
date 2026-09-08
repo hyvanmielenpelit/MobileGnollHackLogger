@@ -1,8 +1,9 @@
+import { ChangeDetectorRef, Component, inject } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideCharts } from 'ng2-charts';
 
-import { ModelComparisonComponent } from './model-comparison.component';
+import { ComparisonWizardStep, ModelComparisonComponent } from './model-comparison.component';
 import { MAX_PLOTTED_ENTRIES, MODEL_COMPARISON_REGISTRABLES, P1_STACK_BREAKPOINT_PX } from './model-comparison-charts';
 import {
   BenchmarkModelComparisonDto,
@@ -165,10 +166,32 @@ describe('ModelComparisonComponent', () => {
     };
   }
 
-  /** Renders one payload through the input, which is the only way the host feeds this component. */
-  function render(dto: BenchmarkModelComparisonDto | null): void {
+  /**
+   * Renders one payload through the input, which is the only way the host feeds this component,
+   * and opens one wizard step.
+   *
+   * The step is explicit because the wizard opens on step 1 — the projected source picker — and
+   * almost every assertion below is about the two steps behind it. Step 2 is the default: it
+   * carries the filters, the caveats and the comparison table. `goToStep` refuses an unreachable
+   * step, so a test that asks for step 3 over an unchartable set finds an empty panel rather than
+   * a quietly passing assertion.
+   */
+  function render(dto: BenchmarkModelComparisonDto | null, step: ComparisonWizardStep = 2): void {
     fixture.componentRef.setInput('comparison', dto);
     fixture.detectChanges();
+    component.goToStep(step);
+    fixture.detectChanges();
+  }
+
+  /**
+   * Re-renders after a field was set directly.
+   *
+   * Every real interaction reaches this component through a template event or an input, both of
+   * which mark its view; `ApplicationRef.tick` refreshes only what is marked, so a spec writing a
+   * field straight onto the instance has to check that view itself.
+   */
+  function refresh(): void {
+    (component as unknown as { cdr: ChangeDetectorRef }).cdr.detectChanges();
   }
 
   function comparableSet(count: number): BenchmarkModelComparisonEntryDto[] {
@@ -270,7 +293,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('suppresses the profile plot at two entries and keeps P1 and the scatters', () => {
-    render(buildDto(comparableSet(2)));
+    render(buildDto(comparableSet(2)), 3);
 
     expect(component.shape).toBe('pair');
     expect(component.profileCard).toBeNull();
@@ -280,7 +303,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('renders all six figures from three entries upward', () => {
-    render(buildDto(comparableSet(3)));
+    render(buildDto(comparableSet(3)), 3);
 
     expect(component.shape).toBe('full');
     expect(fixture.debugElement.queryAll(By.css('canvas')).length).toBe(7);
@@ -293,8 +316,13 @@ describe('ModelComparisonComponent', () => {
 
   it('holds exactly one filter row, and no filter inside any chart card', () => {
     render(buildDto(comparableSet(4)));
-
     expect(fixture.debugElement.queryAll(By.css('.mc-filters')).length).toBe(1);
+
+    // The figures are a step further on, and none of them may carry a control of its own: six
+    // figures scoped by six controls would each describe a different slice of one set.
+    component.goToStep(3);
+    fixture.detectChanges();
+    expect(fixture.debugElement.queryAll(By.css('.mc-filters')).length).toBe(0);
     expect(fixture.debugElement.queryAll(By.css('.mc-card select, .mc-card input')).length).toBe(0);
   });
 
@@ -470,7 +498,7 @@ describe('ModelComparisonComponent', () => {
   // -------------------------------------------------------------------------------------------
 
   it('offers a download control on every figure card and one for the whole set', () => {
-    render(buildDto(comparableSet(3)));
+    render(buildDto(comparableSet(3)), 3);
 
     const cards = fixture.debugElement.queryAll(By.css('.mc-card')).length;
     const downloads = fixture.debugElement.queryAll(By.css('.mc-card .mc-download'));
@@ -485,20 +513,24 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('hides the export controls where no figure is rendered', () => {
-    render(buildDto(comparableSet(1)));
+    // Not merely hidden: the whole Figures step refuses to open, because there is nothing on it.
+    render(buildDto(comparableSet(1)), 3);
     expect(component.shape).toBe('single');
+    expect(component.isStepReachable(3)).toBeFalse();
     expect(fixture.debugElement.query(By.css('.mc-export'))).toBeNull();
     expect(fixture.debugElement.queryAll(By.css('.mc-download')).length).toBe(0);
 
     render(buildDto([
       buildExcludedEntry('run:8', ['ScoringMethodVersion']),
       buildExcludedEntry('run:9', ['CandidatePromptOptions'])
-    ]));
+    ]), 3);
     expect(component.shape).toBe('none');
+    expect(component.isStepReachable(3)).toBeFalse();
     expect(fixture.debugElement.query(By.css('.mc-export'))).toBeNull();
 
     render(null);
     expect(component.shape).toBe('empty');
+    expect(component.isStepReachable(2)).toBeFalse();
     expect(fixture.debugElement.query(By.css('.mc-export'))).toBeNull();
     expect(component.canExport).toBeFalse();
   });
@@ -513,6 +545,268 @@ describe('ModelComparisonComponent', () => {
       component.profileCard!.id,
       ...component.scatterCards.map(card => card.id)
     ]);
+  });
+  // -------------------------------------------------------------------------------------------
+  // The wizard
+  // -------------------------------------------------------------------------------------------
+
+  it('gates Next on step 1 on the source selection, and names the reason as visible text', () => {
+    render(null);
+    expect(component.step).toBe(1);
+    expect(component.nextLabel).toBe('Compare');
+    expect(component.canGoNext).toBeFalse();
+    expect(textOf('.mc-wizard-blocked')).toContain('at least one run or analysis group');
+
+    fixture.componentRef.setInput('selectedSourceCount', component.maxSources + 1);
+    fixture.detectChanges();
+    expect(component.canGoNext).toBeFalse();
+    expect(textOf('.mc-wizard-blocked')).toContain(`at most ${component.maxSources}`);
+
+    fixture.componentRef.setInput('selectedSourceCount', 2);
+    fixture.detectChanges();
+    expect(component.canGoNext).toBeTrue();
+    expect(component.nextBlockedReason).toBe('');
+    expect(fixture.debugElement.query(By.css('.mc-wizard-blocked'))).toBeNull();
+  });
+
+  it('emits compare from the footer rather than advancing, while no comparison exists', () => {
+    render(null);
+    fixture.componentRef.setInput('selectedSourceCount', 2);
+    fixture.detectChanges();
+
+    const asked: number[] = [];
+    component.compare.subscribe(() => asked.push(1));
+    component.nextStep();
+
+    // The step advances when the payload lands, not on the click: advancing now would show an
+    // empty step 2 for the length of the round trip.
+    expect(asked.length).toBe(1);
+    expect(component.step).toBe(1);
+  });
+
+  it('advances on the first comparison, stays put on a refetch, and drops back when it is lost', () => {
+    fixture.componentRef.setInput('comparison', null);
+    fixture.detectChanges();
+    expect(component.step).toBe(1);
+
+    fixture.componentRef.setInput('comparison', buildDto(comparableSet(3)));
+    fixture.detectChanges();
+    expect(component.step).toBe(2);
+
+    component.goToStep(3);
+    // A pricing-basis refetch replaces one payload with another; it must not move the reader.
+    fixture.componentRef.setInput('comparison', buildDto(comparableSet(3)));
+    fixture.detectChanges();
+    expect(component.step).toBe(3);
+
+    fixture.componentRef.setInput('comparison', null);
+    fixture.detectChanges();
+    expect(component.step).toBe(1);
+  });
+
+  it('marks Next on step 2 aria-disabled where nothing may be charted, never disabled', () => {
+    render(buildDto([
+      buildExcludedEntry('run:8', ['ScoringMethodVersion']),
+      buildExcludedEntry('run:9', ['CandidatePromptOptions'])
+    ]));
+
+    expect(component.step).toBe(2);
+    expect(component.canGoNext).toBeFalse();
+    expect(component.isStepReachable(3)).toBeFalse();
+
+    const next = fixture.debugElement.queryAll(By.css('.mc-wizard-nav .btn-gh'))[1]
+      .nativeElement as HTMLElement;
+    // aria-disabled, not disabled: a disabled button cannot be focused, and the reader would be
+    // left guessing why Next does nothing.
+    expect(next.getAttribute('aria-disabled')).toBe('true');
+    expect(next.hasAttribute('disabled')).toBeFalse();
+    expect(textOf('.mc-wizard-blocked')).toContain('Nothing in this set may be charted together');
+
+    const figuresTab = fixture.debugElement
+      .queryAll(By.css('.mc-wizard-steps .gh-tab'))[2].nativeElement as HTMLElement;
+    expect(figuresTab.getAttribute('aria-disabled')).toBe('true');
+    expect(figuresTab.hasAttribute('disabled')).toBeFalse();
+  });
+
+  it('names the single-entry case separately, because it is a different fix', () => {
+    render(buildDto(comparableSet(1)));
+
+    expect(component.shape).toBe('single');
+    expect(component.nextBlockedReason).toContain('Only one entry is plotted');
+  });
+
+  it('labels step 3 Next as Close and emits closeRequested from it', () => {
+    render(buildDto(comparableSet(3)), 3);
+    expect(component.step).toBe(3);
+    expect(component.nextLabel).toBe('Close');
+
+    const closed: number[] = [];
+    component.closeRequested.subscribe(() => closed.push(1));
+    component.nextStep();
+
+    expect(closed.length).toBe(1);
+  });
+
+  it('draws the figures on step 3 and keeps the comparison table on step 2, always reachable', () => {
+    render(buildDto(comparableSet(3)), 3);
+    expect(fixture.debugElement.queryAll(By.css('canvas')).length).toBe(7);
+    expect(fixture.debugElement.query(By.css('table.mc-table'))).toBeNull();
+
+    component.goToStep(2);
+    fixture.detectChanges();
+    expect(fixture.debugElement.query(By.css('table.mc-table'))).toBeTruthy();
+    expect(fixture.debugElement.queryAll(By.css('canvas')).length).toBe(0);
+  });
+
+  it('drives the step tablist with a roving tabindex and the arrow keys', () => {
+    render(buildDto(comparableSet(3)));
+
+    const tabs = fixture.debugElement.queryAll(By.css('.mc-wizard-steps .gh-tab'))
+      .map(tab => tab.nativeElement as HTMLElement);
+    expect(tabs.length).toBe(3);
+    expect(tabs[1].getAttribute('aria-selected')).toBe('true');
+    expect(tabs[1].getAttribute('tabindex')).toBe('0');
+    expect(tabs[0].getAttribute('tabindex')).toBe('-1');
+    expect(tabs[2].getAttribute('tabindex')).toBe('-1');
+
+    component.onStepKeydown(new KeyboardEvent('keydown', { key: 'ArrowLeft' }), 1);
+    fixture.detectChanges();
+    expect(component.step).toBe(1);
+
+    component.onStepKeydown(new KeyboardEvent('keydown', { key: 'End' }), 0);
+    fixture.detectChanges();
+    expect(component.step).toBe(3);
+  });
+
+  it('survives being measured at width zero, which is what a closed dialog reports', () => {
+    render(buildDto(comparableSet(3)), 3);
+
+    expect(() => component.applyContainerWidth(0)).not.toThrow();
+    expect(component.orientation).toBe('vertical');
+  });
+
+  it('disables its own close controls while an export is running, and nothing else', () => {
+    render(buildDto(comparableSet(3)), 3);
+    component.exporting = true;
+    refresh();
+
+    const close = fixture.debugElement.query(By.css('.mc-wizard-header .btn-icon-action'))
+      .nativeElement as HTMLButtonElement;
+    const next = fixture.debugElement.queryAll(By.css('.mc-wizard-nav .btn-gh'))[1]
+      .nativeElement as HTMLButtonElement;
+    expect(close.disabled).toBeTrue();
+    expect(next.disabled).toBeTrue();
+
+    component.exporting = false;
+    refresh();
+    expect(close.disabled).toBeFalse();
+    expect(next.disabled).toBeFalse();
+  });
+
+  // -------------------------------------------------------------------------------------------
+  // Export resolution
+  // -------------------------------------------------------------------------------------------
+
+  it('shows the two custom size inputs only for Custom, and names what will be written', () => {
+    render(buildDto(comparableSet(3)), 3);
+    expect(fixture.debugElement.query(By.css('#mc-export-width'))).toBeNull();
+    expect(textOf('.mc-export-dimensions')).toContain('on-screen size');
+
+    component.onExportResolutionChange('fullhd');
+    refresh();
+    expect(textOf('.mc-export-dimensions')).toContain('1920 × 1080 px');
+    expect(textOf('.mc-export-dimensions')).toContain('2× density');
+
+    component.onExportResolutionChange('custom');
+    refresh();
+    expect(fixture.debugElement.query(By.css('#mc-export-width'))).toBeTruthy();
+    expect(fixture.debugElement.query(By.css('#mc-export-height'))).toBeTruthy();
+  });
+
+  it('refuses an out-of-range custom size in words, and will not export under one', () => {
+    render(buildDto(comparableSet(3)), 3);
+    component.onExportResolutionChange('custom');
+    component.customExportHeight = 10;
+    refresh();
+
+    expect(component.customResolutionError).toContain('height');
+    expect(component.customResolutionError).toContain(`${component.maxExportDimension}`);
+    expect(component.canExport).toBeFalse();
+    expect(textOf('.mc-export-error')).toContain('height');
+
+    component.customExportHeight = 1080;
+    refresh();
+    expect(component.customResolutionError).toBe('');
+    expect(component.canExport).toBeTrue();
+  });
+
+});
+
+/**
+ * The projected step-1 content, which is the source picker in the running application.
+ *
+ * Its own state — two TableState instances holding a sort column, a page and a set of filters —
+ * is exactly what would be lost if step 1 were an @if rather than [hidden], so this asserts the
+ * element survives a round trip through another step rather than being re-created.
+ */
+@Component({
+  standalone: true,
+  imports: [ModelComparisonComponent],
+  template: `
+    <app-benchmark-model-comparison [comparison]="comparison" [selectedSourceCount]="2">
+      <input id="projected-picker-state" type="text">
+    </app-benchmark-model-comparison>`
+})
+class ProjectionHostComponent {
+  /** As the real host does: it checks its own view after every mutation it makes. */
+  readonly cdr = inject(ChangeDetectorRef);
+
+  comparison: BenchmarkModelComparisonDto | null = null;
+}
+
+describe('ModelComparisonComponent projected step 1', () => {
+  it('keeps the projected content alive across a step away and back', async () => {
+    await TestBed.configureTestingModule({
+      imports: [ProjectionHostComponent],
+      providers: [provideCharts({ registerables: MODEL_COMPARISON_REGISTRABLES })]
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(ProjectionHostComponent);
+    fixture.detectChanges();
+
+    const wizard = fixture.debugElement
+      .query(By.directive(ModelComparisonComponent)).componentInstance as ModelComparisonComponent;
+    const before = fixture.debugElement.query(By.css('#projected-picker-state'))
+      .nativeElement as HTMLInputElement;
+    before.value = 'sorted by condition, page 3';
+
+    fixture.componentInstance.comparison = {
+      pricingBasis: 'Current',
+      pricingBasisLabel: 'Current catalog',
+      computedAtUtc: '2026-09-07T12:00:00Z',
+      baselineSuiteId: 5,
+      baselineSuiteName: 'Suite',
+      baselineEntryKeys: [],
+      baselineKeyValues: {},
+      modelAxisKeys: [],
+      entries: [],
+      comparableCount: 0,
+      excludedCount: 0,
+      thinkingLevelsDiffer: false,
+      speedAxisCaveat: null,
+      explanation: '',
+      excludedMeasures: []
+    };
+    fixture.componentInstance.cdr.detectChanges();
+    expect(wizard.step).toBe(2);
+
+    wizard.goToStep(1);
+    fixture.componentInstance.cdr.detectChanges();
+
+    const after = fixture.debugElement.query(By.css('#projected-picker-state'))
+      .nativeElement as HTMLInputElement;
+    expect(after).toBe(before);
+    expect(after.value).toBe('sorted by condition, page 3');
   });
 });
 

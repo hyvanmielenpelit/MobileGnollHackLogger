@@ -2,7 +2,10 @@ namespace Overseer.Services.Benchmarking;
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using MobileGnollHackLogger.Data;
 
 /// <summary>
@@ -221,6 +224,27 @@ public static class BenchmarkCrossModelComparability
                 : k)
             .ToList();
     }
+
+    /// <summary>
+    /// The must-match key values of one run, in canonical key order: everything that is neither a
+    /// model-axis key nor a degrading key.
+    ///
+    /// <para>The subset is derived from <see cref="IsMustMatchKey"/> rather than listed, so the index
+    /// that offers a set of runs and the comparison that judges it read one taxonomy.</para>
+    /// </summary>
+    public static IReadOnlyList<BenchmarkComparabilityKeyEntry> MustMatchKeys(BenchmarkRun run)
+        => Keys(run).Where(k => IsMustMatchKey(k.Name)).ToList();
+
+    /// <summary>
+    /// A stable signature over those values, as lower-case hex SHA-256: two runs may share a chart
+    /// only if their signatures agree.
+    ///
+    /// <para>The canonical form is the one <see cref="BenchmarkComparabilityKey.ComputeKeyHash"/>
+    /// uses — <c>name=value</c> pairs in key order, newline separated — narrowed to the must-match
+    /// keys, so the signature moves exactly when a difference would exclude an entry.</para>
+    /// </summary>
+    public static string MustMatchSignature(BenchmarkRun run)
+        => Sha256Hex(string.Join("\n", MustMatchKeys(run).Select(k => $"{k.Name}={k.Value}")));
 
     /// <summary>
     /// Judges a set of entries.
@@ -491,5 +515,17 @@ public static class BenchmarkCrossModelComparability
 
         return "Plotted with a degraded axis: quality is sound, and " + string.Join(" and ", parts)
             + " mix conditions across the set.";
+    }
+
+    private static string Sha256Hex(string value)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value));
+        var sb = new StringBuilder(bytes.Length * 2);
+        foreach (byte b in bytes)
+        {
+            sb.Append(b.ToString("x2", CultureInfo.InvariantCulture));
+        }
+
+        return sb.ToString();
     }
 }

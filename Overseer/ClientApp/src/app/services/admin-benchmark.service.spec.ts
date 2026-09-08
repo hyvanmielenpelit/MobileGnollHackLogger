@@ -89,4 +89,26 @@ describe('AdminBenchmarkService', () => {
     expect(req.request.method).toBe('POST');
     req.flush({ runId: 42 });
   });
+
+  it('should get the comparability index with repeated runIds and groupIds params', () => {
+    const mockIndex = {
+      computedAtUtc: '2026-09-01T00:00:00Z',
+      entries: [],
+      conditions: [],
+      largestConditionKeyValues: {},
+      mustMatchKeyNames: [],
+      modelAxisKeyNames: [],
+      degradingKeyNames: []
+    };
+
+    service.getComparabilityIndex({ runIds: [1, 2], groupIds: [3] }).subscribe(res => {
+      expect(res).toEqual(mockIndex as any);
+    });
+
+    const req = httpMock.expectOne(request => request.url === '/api/admin/benchmark/model-comparison/comparability');
+    expect(req.request.method).toBe('GET');
+    expect(req.request.params.getAll('runIds')).toEqual(['1', '2']);
+    expect(req.request.params.getAll('groupIds')).toEqual(['3']);
+    req.flush(mockIndex);
+  });
 });

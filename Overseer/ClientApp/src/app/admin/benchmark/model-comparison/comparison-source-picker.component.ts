@@ -10,11 +10,30 @@ import type {
   BenchmarkRunGroupDto,
   BenchmarkRunSummaryDto
 } from '../../../services/admin-benchmark.service';
+import {
+  conditionOf,
+  selectedConditions
+} from './model-comparison.models';
+import type {
+  BenchmarkComparabilityDifferenceDto,
+  BenchmarkComparabilityIndexDto,
+  BenchmarkComparabilityIndexEntryDto
+} from './model-comparison.models';
 
 /** One selectable suite for the scope control. Structural, so any suite DTO with these two fits. */
 export interface ModelComparisonSuiteOption {
   readonly id: number;
   readonly name: string;
+}
+
+/** The comparability-index key for one run: the format `conditionOf` and `selectedConditions` expect. */
+function runKey(run: BenchmarkRunSummaryDto): string {
+  return `run:${run.id}`;
+}
+
+/** The comparability-index key for one analysis group: the format `conditionOf` and `selectedConditions` expect. */
+function groupKey(group: BenchmarkRunGroupDto): string {
+  return `group:${group.id}`;
 }
 
 /** The two source lists, emitted together because a comparison is made of both at once. */
@@ -79,9 +98,14 @@ export class ComparisonSourcePickerComponent implements OnInit {
   /** The figures' own plot cap, named here so the soft warning cannot drift from it. */
   @Input() maxPlotted = 8;
 
+  /** Which condition each offered run and group falls into, and what it differs on outside it. */
+  @Input() comparabilityIndex: BenchmarkComparabilityIndexDto | null = null;
+
+  /** The index is being (re)computed. The condition column and filter go muted rather than stale. */
+  @Input() indexLoading = false;
+
   @Output() suiteIdChange = new EventEmitter<number | null>();
   @Output() selectionChange = new EventEmitter<ModelComparisonSelection>();
-  @Output() compare = new EventEmitter<void>();
   @Output() clear = new EventEmitter<void>();
 
   /** The hard cap, exposed so the template names the same number the guard enforces. */
@@ -95,13 +119,16 @@ export class ComparisonSourcePickerComponent implements OnInit {
       testedModel: r => r.testedModelDisplayNameUsed,
       status: r => this.runStatus(r),
       qualityIndex: r => r.qualityIndex ?? r.finalScore,
-      startedAtUtc: r => new Date(r.startedAtUtc)
+      startedAtUtc: r => new Date(r.startedAtUtc),
+      // Unassigned and self-inconsistent sources sort last under an ascending sort.
+      condition: r => this.conditionOrdinal(runKey(r)) ?? Number.MAX_SAFE_INTEGER
     },
     {
       suiteName: r => r.suiteName,
       testedModel: r => r.testedModelDisplayNameUsed,
       status: exactFilter(r => this.runStatus(r)),
-      selected: exactFilter(r => (this.isRunSelected(r.id) ? 'yes' : 'no'))
+      selected: exactFilter(r => (this.isRunSelected(r.id) ? 'yes' : 'no')),
+      condition: exactFilter(r => this.conditionLabel(runKey(r)))
     }
   );
 
@@ -112,12 +139,15 @@ export class ComparisonSourcePickerComponent implements OnInit {
       tier: g => g.tierLabel || String(g.tier),
       runCount: g => g.runCount,
       createdAtUtc: g => new Date(g.createdAtUtc),
-      analysis: g => this.analysisState(g)
+      analysis: g => this.analysisState(g),
+      // Unassigned and self-inconsistent sources sort last under an ascending sort.
+      condition: g => this.conditionOrdinal(groupKey(g)) ?? Number.MAX_SAFE_INTEGER
     },
     {
       name: g => g.name,
       tier: exactFilter(g => String(g.tier)),
-      selected: exactFilter(g => (this.isGroupSelected(g.id) ? 'yes' : 'no'))
+      selected: exactFilter(g => (this.isGroupSelected(g.id) ? 'yes' : 'no')),
+      condition: exactFilter(g => this.conditionLabel(groupKey(g)))
     }
   );
 
@@ -172,13 +202,6 @@ export class ComparisonSourcePickerComponent implements OnInit {
     this.clear.emit();
   }
 
-  onCompare(): void {
-    if (!this.canCompare) {
-      return;
-    }
-    this.compare.emit();
-  }
-
   get selectedCount(): number {
     return this.selectedRunIds.length + this.selectedGroupIds.length;
   }
@@ -227,23 +250,158 @@ export class ComparisonSourcePickerComponent implements OnInit {
     return this.selectedCount > this.maxSources;
   }
 
+  /**
+   * Kept for a caller that still reads it even though this component no longer offers a Compare
+   * control of its own — the wizard footer owns Compare and reads the cap state directly.
+   */
   get canCompare(): boolean {
     return !this.loading && this.selectedCount > 0 && !this.overSourceCap;
   }
 
-  /** Why Compare is disabled, or the empty string while it is not. */
-  get compareBlockedReason(): string {
-    if (this.loading) {
-      return 'A comparison is being computed.';
+  // ---------------------------------------------------------------------------------------------
+  // The comparability index
+  //
+  // Only the largest condition may be charted; everything outside it is excluded from the
+  // comparison. This surfaces that fact in the picker rather than leaving it to be discovered in
+  // the result: a condition badge and detail per row, a filter to narrow to one condition, and a
+  // notice when the current selection spans more than one.
+  // ---------------------------------------------------------------------------------------------
+
+  private comparabilityEntry(key: string): BenchmarkComparabilityIndexEntryDto | undefined {
+    return this.comparabilityIndex?.entries.find(entry => entry.key === key);
+  }
+
+  /** The row's condition label, or a muted dash while the index has not loaded or lacks the key. */
+  conditionLabel(key: string): string {
+    if (this.indexLoading || !this.comparabilityIndex) {
+      return '—';
     }
-    if (this.selectedCount === 0) {
-      return 'Select at least one run or analysis group.';
+    return this.comparabilityEntry(key)?.conditionLabel ?? '—';
+  }
+
+  conditionOrdinal(key: string): number | null {
+    return conditionOf(this.comparabilityIndex, key);
+  }
+
+  conditionDifferences(key: string): BenchmarkComparabilityDifferenceDto[] {
+    return this.comparabilityEntry(key)?.differencesFromLargest ?? [];
+  }
+
+  /**
+   * One string for the row's detail tooltip: for a self-inconsistent source, the keys its own
+   * members disagree on; otherwise every key it differs on from the largest condition, each with
+   * its value there. Empty when the source is itself in the largest condition — there is nothing
+   * to say.
+   */
+  conditionTooltip(key: string): string {
+    const entry = this.comparabilityEntry(key);
+    if (!entry) {
+      return '';
     }
-    if (this.overSourceCap) {
-      return `${this.selectedCount} sources selected — at most ${this.maxSources} may be compared in one ` +
-        'request. A comparison over every stored run is a slow query and an unreadable figure.';
+    if (entry.selfInconsistent) {
+      return entry.selfInconsistentKeys.length > 0
+        ? `Its own members disagree on ${entry.selfInconsistentKeys.join(', ')}.`
+        : 'Its own members disagree.';
     }
-    return '';
+    return entry.differencesFromLargest
+      .map(difference => `${difference.name}: ${difference.description} `
+        + `(${difference.variants.map(variant => variant.value).join(' vs ')})`)
+      .join(' ');
+  }
+
+  /** A DOM id and anchor name derived from an entry key, which carries a `run:12` style colon. */
+  conditionTipId(key: string): string {
+    return `csp-tip-cond-${key.replace(/[^A-Za-z0-9_-]/g, '-')}`;
+  }
+
+  /** One of a small hue palette, keyed by condition ordinal so same-condition rows read alike. */
+  conditionBadgeClass(key: string): string {
+    const ordinal = this.conditionOrdinal(key);
+    if (ordinal == null) {
+      return 'csp-condition csp-condition-none';
+    }
+    return `csp-condition csp-condition-${((ordinal - 1) % 3) + 1}`;
+  }
+
+  /** True once the current selection touches more than one condition. */
+  get selectionSpansConditions(): boolean {
+    return selectedConditions(this.comparabilityIndex, this.selectedRunIds, this.selectedGroupIds).length > 1;
+  }
+
+  /** Names how many selected sources fall outside the baseline and which condition that is. */
+  get incompatibleSelectionNotice(): string {
+    if (!this.selectionSpansConditions) {
+      return '';
+    }
+    const conditions = this.comparabilityIndex?.conditions ?? [];
+    const baselineLabel = conditions.find(condition => condition.ordinal === 1)?.label
+      ?? conditions[0]?.label
+      ?? 'the largest condition';
+    const keys = [
+      ...this.selectedRunIds.map(id => `run:${id}`),
+      ...this.selectedGroupIds.map(id => `group:${id}`)
+    ];
+    const excludedCount = keys.filter(key => this.conditionOrdinal(key) !== 1).length;
+    return `${excludedCount} of ${keys.length} selected sources fall outside ${baselineLabel} and will be `
+      + 'excluded from the comparison — only one condition can be charted.';
+  }
+
+  /** `Object.keys`, callable from the template — the legend reads the largest condition's key values. */
+  objectKeys(value: Record<string, string>): string[] {
+    return Object.keys(value);
+  }
+
+  /** Every condition label offered by the index, in whatever order they arrive plus any extras. */
+  get conditionFilterOptions(): string[] {
+    const options = new Set<string>();
+    for (const condition of this.comparabilityIndex?.conditions ?? []) {
+      options.add(condition.label);
+    }
+    for (const entry of this.comparabilityIndex?.entries ?? []) {
+      if (entry.conditionOrdinal === 0) {
+        options.add(entry.conditionLabel);
+      }
+    }
+    return Array.from(options).sort((a, b) => a.localeCompare(b));
+  }
+
+  /** The largest condition's label, or the selection's own once it touches exactly one condition. */
+  private compatibleConditionLabel(): string {
+    const conditions = this.comparabilityIndex?.conditions ?? [];
+    if (conditions.length === 0) {
+      return '';
+    }
+    const ordinals = selectedConditions(this.comparabilityIndex, this.selectedRunIds, this.selectedGroupIds);
+    const ordinal = ordinals[0] ?? 1;
+    return conditions.find(condition => condition.ordinal === ordinal)?.label ?? conditions[0].label;
+  }
+
+  get showCompatibleRunsOnly(): boolean {
+    const label = this.compatibleConditionLabel();
+    return label !== '' && this.runTable.filters['condition'] === label;
+  }
+
+  get showCompatibleGroupsOnly(): boolean {
+    const label = this.compatibleConditionLabel();
+    return label !== '' && this.groupTable.filters['condition'] === label;
+  }
+
+  toggleShowCompatibleRunsOnly(): void {
+    const label = this.compatibleConditionLabel();
+    if (label === '') {
+      return;
+    }
+    this.runTable.setFilter('condition', this.showCompatibleRunsOnly ? '' : label);
+    this.cdr.detectChanges();
+  }
+
+  toggleShowCompatibleGroupsOnly(): void {
+    const label = this.compatibleConditionLabel();
+    if (label === '') {
+      return;
+    }
+    this.groupTable.setFilter('condition', this.showCompatibleGroupsOnly ? '' : label);
+    this.cdr.detectChanges();
   }
 
   // ---------------------------------------------------------------------------------------------

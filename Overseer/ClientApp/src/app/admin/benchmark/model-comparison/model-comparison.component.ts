@@ -45,6 +45,7 @@ import {
   glyphFor,
   normalizeProfile
 } from './model-comparison-charts';
+import { MAX_COMPARISON_SOURCES } from './comparison-source-picker.component';
 import {
   BenchmarkModelComparisonDto,
   BenchmarkModelComparisonEntryDto,
@@ -54,12 +55,27 @@ import {
   unmeasuredAxes
 } from './model-comparison.models';
 import {
+  FIGURE_EXPORT_LAYOUT_WIDTH,
+  FIGURE_EXPORT_MAX_DIMENSION,
+  FIGURE_EXPORT_MIN_DIMENSION,
+  FIGURE_EXPORT_PRESETS,
   FigureExportFormat,
+  FigureExportRequest,
+  FigureExportResolution,
+  FigureExportResult,
   composeFigureImage,
   encodeFigureImage,
   figureExportFilename,
+  renderPlotOffscreen,
+  resolveFigureLayout,
   saveFigureBlob
 } from './figure-export';
+
+/** Which wizard step is on screen. Three, in a fixed order: sources, then filters, then figures. */
+export type ComparisonWizardStep = 1 | 2 | 3;
+
+/** One figure's chrome, as the export composer and the layout resolver both take it. */
+type FigureExportChrome = Omit<FigureExportRequest, 'canvas' | 'format' | 'layout'>;
 
 /**
  * Which entries the figures are allowed to draw.
@@ -157,6 +173,32 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   @Output() pricingBasisChange = new EventEmitter<BenchmarkModelComparisonPricingBasis>();
   @Output() refresh = new EventEmitter<void>();
 
+  // --- Wizard inputs and outputs ---
+  //
+  // The source picker is projected rather than bound, so the host keeps owning the picker's inputs
+  // and this component needs no pass-through of them. Step 1's validity is judged here, though, so
+  // the two facts about the selection that Next reads do arrive as inputs.
+
+  /** How many runs and analysis groups the host currently has selected. */
+  @Input() selectedSourceCount = 0;
+
+  /** The request cap. Above it Compare is refused rather than truncated. */
+  @Input() maxSources = MAX_COMPARISON_SOURCES;
+
+  /**
+   * Compare, emitted by the wizard footer rather than by the picker.
+   *
+   * Two Compare affordances on one screen would disagree the moment one of them was disabled, so
+   * the picker offers none and this is the only one.
+   */
+  @Output() compare = new EventEmitter<void>();
+
+  /** Step 3's Close, and the header's close control. The host owns the dialog element. */
+  @Output() closeRequested = new EventEmitter<void>();
+
+  /** Focused by the host after showModal(), which would otherwise focus the close button. */
+  @ViewChild('wizardHeading') wizardHeading?: ElementRef<HTMLElement>;
+
   /** The container query root, measured to decide P1's bar orientation. */
   @ViewChild('chartsHost') chartsHost?: ElementRef<HTMLElement>;
 
@@ -249,16 +291,25 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['comparison']) {
-      // A new payload is a new set of models, so the entry selection is re-seeded rather than
-      // carried: a key held over from the previous suite would silently plot nothing.
-      this.includedKeys = (this.comparison?.entries ?? [])
-        .filter(entry => !entry.excluded)
-        .map(entry => entry.key);
-      this.emphasisKeys = [];
-      this.highlightedKey = null;
-      this.entryTable.page = 1;
-      this.rebuild();
+    const change = changes['comparison'];
+    if (!change) {
+      return;
+    }
+
+    // A new payload is a new set of models, so the entry selection is re-seeded rather than
+    // carried: a key held over from the previous suite would silently plot nothing.
+    this.includedKeys = (this.comparison?.entries ?? [])
+      .filter(entry => !entry.excluded)
+      .map(entry => entry.key);
+    this.emphasisKeys = [];
+    this.highlightedKey = null;
+    this.entryTable.page = 1;
+    this.rebuild();
+
+    // Not on the first change: that one is the initial binding, and step 1 is where the wizard
+    // opens regardless of what the host already holds.
+    if (!change.firstChange) {
+      this.applyComparisonToStep(change.previousValue as BenchmarkModelComparisonDto | null);
     }
   }
 
@@ -284,6 +335,164 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.reducedMotion.dispose();
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // The wizard
+  //
+  // Three steps in a fixed order, with the step header as a tablist and Previous / Next as the
+  // primary traversal. Next is enabled only when the current step's selection is valid, and where
+  // it is not, the reason is rendered as text beside it rather than left to a disabled button.
+  // ---------------------------------------------------------------------------------------------
+
+  step: ComparisonWizardStep = 1;
+
+  readonly steps: readonly ComparisonWizardStep[] = [1, 2, 3];
+
+  readonly stepTitles: Record<ComparisonWizardStep, string> = {
+    1: 'Sources',
+    2: 'Comparability & filters',
+    3: 'Figures'
+  };
+
+  /**
+   * Steps 2 and 3 need a computed comparison; step 3 additionally needs something chartable.
+   *
+   * An unreachable step is `aria-disabled`, not `disabled`: it stays in the focus order, so a
+   * keyboard reader still learns the step exists and can read why it is unavailable.
+   */
+  isStepReachable(step: ComparisonWizardStep): boolean {
+    if (step === 1) {
+      return true;
+    }
+    if (this.comparison === null) {
+      return false;
+    }
+    return step === 2 || this.showFigures;
+  }
+
+  get canGoPrevious(): boolean {
+    return this.step > 1;
+  }
+
+  get canGoNext(): boolean {
+    if (this.step === 1) {
+      return !this.loading && this.selectedSourceCount > 0 && this.selectedSourceCount <= this.maxSources;
+    }
+    if (this.step === 2) {
+      return this.showFigures;
+    }
+    return true;
+  }
+
+  /** Compare while the current selection has no computed comparison; Next once it does. */
+  get nextLabel(): string {
+    if (this.step === 3) {
+      return 'Close';
+    }
+    return this.step === 1 && this.comparison === null ? 'Compare' : 'Next';
+  }
+
+  /** Why Next is unavailable, named beside it rather than left to a disabled button. */
+  get nextBlockedReason(): string {
+    if (this.canGoNext) {
+      return '';
+    }
+    if (this.step === 1) {
+      if (this.loading) {
+        return 'A comparison is being computed.';
+      }
+      if (this.selectedSourceCount === 0) {
+        return 'Select at least one run or analysis group.';
+      }
+      return `${this.selectedSourceCount} sources selected — at most ${this.maxSources} may be ` +
+        'compared in one request.';
+    }
+    return this.shape === 'single'
+      ? 'Only one entry is plotted; a comparison needs two.'
+      : 'Nothing in this set may be charted together.';
+  }
+
+  goToStep(step: ComparisonWizardStep): void {
+    if (!this.isStepReachable(step)) {
+      return;
+    }
+    this.step = step;
+    // Marked, like every other mutator here: several callers are outside a template event —
+    // ngOnChanges, the keyboard handler, the host reopening the dialog.
+    this.cdr.markForCheck();
+  }
+
+  previousStep(): void {
+    if (this.canGoPrevious) {
+      this.goToStep((this.step - 1) as ComparisonWizardStep);
+    }
+  }
+
+  nextStep(): void {
+    if (this.step === 3) {
+      this.closeRequested.emit();
+      return;
+    }
+    if (!this.canGoNext) {
+      return;
+    }
+    if (this.step === 1 && this.comparison === null) {
+      // The step advances in ngOnChanges when the payload lands, not here: advancing now would
+      // show an empty step 2 for the length of the round trip.
+      this.compare.emit();
+      return;
+    }
+    this.goToStep((this.step + 1) as ComparisonWizardStep);
+  }
+
+  /**
+   * Roving-tabindex keyboard support required by role="tablist": Left/Right move between steps
+   * and wrap around, Home/End jump to the ends.
+   *
+   * Focus moves even onto a step that refuses to open — that is the whole point of marking it
+   * `aria-disabled` rather than `disabled` — so the two calls here are deliberately independent.
+   */
+  onStepKeydown(event: KeyboardEvent, index: number): void {
+    const targets: Record<string, number> = {
+      ArrowRight: index + 1,
+      ArrowLeft: index - 1,
+      Home: 0,
+      End: this.steps.length - 1
+    };
+    const requested = targets[event.key];
+    if (requested === undefined) {
+      return;
+    }
+
+    event.preventDefault();
+    const next = this.steps[(requested + this.steps.length) % this.steps.length];
+    this.goToStep(next);
+    document.getElementById(`mc-step-tab-${next}`)?.focus();
+  }
+
+  /** Called by the host after showModal(), which would otherwise focus the close button. */
+  focusHeading(): void {
+    this.wizardHeading?.nativeElement.focus();
+  }
+
+  /**
+   * Moves the wizard in step with the payload, and only where the payload changed state.
+   *
+   * A first comparison advances to step 2, because Compare on step 1 is what asked for it. A
+   * refetch under an unchanged selection — the pricing basis control, which lives on step 2 —
+   * replaces one non-null payload with another and must leave the step alone, or changing a cost
+   * basis would yank the reader forward. Losing the payload drops back to step 1, where the
+   * sources are: steps 2 and 3 have nothing to render without one.
+   */
+  private applyComparisonToStep(previous: BenchmarkModelComparisonDto | null | undefined): void {
+    if (this.comparison === null) {
+      this.step = 1;
+      return;
+    }
+    if (!previous) {
+      this.step = 2;
+    }
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -541,8 +750,72 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   /** Set while an export is running, so a second click cannot interleave two canvas resizes. */
   exporting = false;
 
-  /** The last export's outcome, announced politely: how many files, and any WebP fallback. */
+  /** The last export's outcome, announced politely: how many files, at what size, and any refusal. */
   exportStatus = '';
+
+  // --- Export resolution ---
+  //
+  // Presets plus a custom width and height. Every explicit size composes at one layout width and
+  // scales, so a 4K export and a Full HD export differ in pixels and not in relative type size;
+  // the on-screen preset keeps the previous behaviour of following the rendered figure at 2x.
+
+  readonly exportPresets = FIGURE_EXPORT_PRESETS;
+  readonly minExportDimension = FIGURE_EXPORT_MIN_DIMENSION;
+  readonly maxExportDimension = FIGURE_EXPORT_MAX_DIMENSION;
+
+  exportResolutionId = 'onscreen';
+  customExportWidth = 1920;
+  customExportHeight = 1080;
+
+  get isCustomResolution(): boolean {
+    return this.exportResolutionId === 'custom';
+  }
+
+  /** The chosen preset, or the custom pair clamped into the supported range. */
+  get exportResolution(): FigureExportResolution {
+    if (!this.isCustomResolution) {
+      return this.exportPresets.find(preset => preset.id === this.exportResolutionId)
+        ?? this.exportPresets[0];
+    }
+    return {
+      id: 'custom',
+      label: 'Custom',
+      widthPx: this.clampDimension(this.customExportWidth),
+      heightPx: this.clampDimension(this.customExportHeight)
+    };
+  }
+
+  /** An out-of-range custom size, named. Empty while the current setting is usable. */
+  get customResolutionError(): string {
+    if (!this.isCustomResolution) {
+      return '';
+    }
+    const bad = [
+      this.isUsableDimension(this.customExportWidth) ? '' : 'width',
+      this.isUsableDimension(this.customExportHeight) ? '' : 'height'
+    ].filter(name => name !== '');
+    if (bad.length === 0) {
+      return '';
+    }
+    return `The export ${bad.join(' and ')} must be between ${this.minExportDimension} and ` +
+      `${this.maxExportDimension} px.`;
+  }
+
+  /** What the current setting will actually write, in the reader's own units. */
+  get exportDimensionsLabel(): string {
+    const resolution = this.exportResolution;
+    if (resolution.widthPx === null || resolution.heightPx === null) {
+      return 'Twice each figure’s on-screen size — the width follows the panel it is rendered in.';
+    }
+    const density = resolution.widthPx / FIGURE_EXPORT_LAYOUT_WIDTH;
+    const layoutHeight = Math.round(resolution.heightPx / density);
+    return `${resolution.widthPx} × ${resolution.heightPx} px — laid out at ` +
+      `${FIGURE_EXPORT_LAYOUT_WIDTH} × ${layoutHeight}, ${this.formatDensity(density)}× density`;
+  }
+
+  onExportResolutionChange(value: string): void {
+    this.exportResolutionId = value;
+  }
 
   /** Every card currently rendered, in the order the template draws them. */
   get exportableCards(): ComparisonFigureCard[] {
@@ -554,7 +827,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   get canExport(): boolean {
-    return !this.exporting && this.exportableCards.length > 0;
+    return !this.exporting && this.exportableCards.length > 0 && this.customResolutionError === '';
   }
 
   onExportFormatChange(value: FigureExportFormat): void {
@@ -575,35 +848,49 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    * Sequential rather than parallel, and gapped: several browsers prompt once before allowing a
    * second save from one gesture, and a burst of simultaneous anchor clicks is what triggers the
    * prompt in the first place.
+   *
+   * A card the target size cannot fit is skipped with its refusal collected rather than aborting
+   * the batch, so a partially-refused export names both what it wrote and what it would not.
    */
   private async downloadFigures(cards: readonly ComparisonFigureCard[]): Promise<void> {
-    if (this.exporting || cards.length === 0) {
+    if (this.exporting || cards.length === 0 || this.customResolutionError !== '') {
       return;
     }
+    const resolution = this.exportResolution;
     this.exporting = true;
     this.exportStatus = '';
     this.cdr.markForCheck();
 
     let written = 0;
     let fellBack = false;
+    let liveFallback = false;
+    let pixels = '';
+    const refusals: string[] = [];
     try {
       for (const card of cards) {
         const canvas = this.canvasFor(card);
         if (!canvas) {
           continue;
         }
-        const result = await this.renderAtExportDensity(card, canvas);
-        if (!result) {
+        const outcome = await this.exportOneFigure(card, canvas, resolution);
+        if (outcome.refusal) {
+          refusals.push(outcome.refusal);
           continue;
         }
-        fellBack = fellBack || result.fellBackToPng;
-        saveFigureBlob(result.blob, figureExportFilename(card.id, result.format));
+        if (!outcome.result) {
+          continue;
+        }
+        fellBack = fellBack || outcome.result.fellBackToPng;
+        liveFallback = liveFallback || outcome.liveFallback;
+        pixels = outcome.pixels || pixels;
+        saveFigureBlob(outcome.result.blob, figureExportFilename(card.id, outcome.result.format));
         written++;
         if (written < cards.length) {
           await new Promise<void>(resolve => setTimeout(resolve, 250));
         }
       }
-      this.exportStatus = this.exportSummary(written, cards.length, fellBack);
+      this.exportStatus =
+        this.exportSummary(written, cards.length, pixels, fellBack, liveFallback, refusals);
     } catch {
       this.exportStatus = 'The figures could not be exported.';
     } finally {
@@ -613,15 +900,73 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   /**
-   * Re-renders one chart at {@link FIGURE_EXPORT_SCALE} device pixels, composes it and encodes it.
+   * Encodes one figure at the requested resolution, or refuses it.
+   *
+   * An explicit size needs a plot box of its own, which the live chart cannot be given without
+   * reflowing the visible page, so the plot is rebuilt in a transient offscreen chart. Where that
+   * cannot be built the live canvas is composed instead and the status says so: an export never
+   * simply fails.
+   */
+  private async exportOneFigure(
+    card: ComparisonFigureCard,
+    canvas: HTMLCanvasElement,
+    resolution: FigureExportResolution
+  ): Promise<{
+    result: FigureExportResult | null;
+    refusal: string | null;
+    liveFallback: boolean;
+    pixels: string;
+  }> {
+    const chrome = this.exportChrome(card);
+
+    // The on-screen preset keeps the live-canvas path untouched: the composition follows the
+    // rendered figure, so there is no target box to refuse and no offscreen chart to build.
+    if (resolution.widthPx === null || resolution.heightPx === null) {
+      return {
+        result: await this.encodeFromLiveCanvas(chrome, canvas),
+        refusal: null,
+        liveFallback: false,
+        pixels: ''
+      };
+    }
+
+    const { layout, refusal } = resolveFigureLayout(chrome, resolution, this.onScreenSizeOf(canvas));
+    if (!layout) {
+      return { result: null, refusal, liveFallback: false, pixels: '' };
+    }
+
+    const plot = await renderPlotOffscreen(
+      { type: card.type, data: card.data, options: card.options, plugins: card.plugins },
+      layout
+    );
+    if (!plot) {
+      return {
+        result: await this.encodeFromLiveCanvas(chrome, canvas),
+        refusal: null,
+        liveFallback: true,
+        pixels: ''
+      };
+    }
+
+    const composed = composeFigureImage({ ...chrome, canvas: plot, format: this.exportFormat, layout });
+    return {
+      result: await encodeFigureImage(composed, this.exportFormat),
+      refusal: null,
+      liveFallback: false,
+      pixels: `${layout.pixelWidth} × ${layout.pixelHeight} px`
+    };
+  }
+
+  /**
+   * Re-renders one live chart at twice its device pixels, composes it and encodes it.
    *
    * The previous `devicePixelRatio` is restored and the chart resized again in a `finally`, so a
    * thrown encode cannot strand the on-screen figure at export density.
    */
-  private async renderAtExportDensity(
-    card: ComparisonFigureCard,
+  private async encodeFromLiveCanvas(
+    chrome: FigureExportChrome,
     canvas: HTMLCanvasElement
-  ): Promise<{ blob: Blob; format: FigureExportFormat; fellBackToPng: boolean } | null> {
+  ): Promise<FigureExportResult> {
     const chart = this.chartFor(canvas);
     const previousRatio = chart?.options?.devicePixelRatio;
     try {
@@ -629,15 +974,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
         chart.options.devicePixelRatio = 2;
         chart.resize();
       }
-      const composed = composeFigureImage({
-        canvas,
-        title: card.title,
-        subtitle: card.subtitle,
-        caption: card.caption,
-        notices: [...card.notices, ...this.setNotices],
-        footer: this.exportFooter(),
-        format: this.exportFormat
-      });
+      const composed = composeFigureImage({ ...chrome, canvas, format: this.exportFormat, layout: null });
       return await encodeFigureImage(composed, this.exportFormat);
     } finally {
       if (chart?.options) {
@@ -645,6 +982,43 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
         chart.resize();
       }
     }
+  }
+
+  /** One card's chrome: everything the exported image carries besides the plot itself. */
+  private exportChrome(card: ComparisonFigureCard): FigureExportChrome {
+    return {
+      title: card.title,
+      subtitle: card.subtitle,
+      caption: card.caption,
+      notices: [...card.notices, ...this.setNotices],
+      footer: this.exportFooter()
+    };
+  }
+
+  /** The live canvas's CSS box, which the on-screen layout is measured against. */
+  private onScreenSizeOf(canvas: HTMLCanvasElement): { width: number; height: number } {
+    return {
+      width: canvas.clientWidth > 0 ? canvas.clientWidth : canvas.width,
+      height: canvas.clientHeight > 0 ? canvas.clientHeight : canvas.height
+    };
+  }
+
+  private clampDimension(value: number): number {
+    if (!Number.isFinite(value)) {
+      return this.minExportDimension;
+    }
+    return Math.min(this.maxExportDimension, Math.max(this.minExportDimension, Math.round(value)));
+  }
+
+  private isUsableDimension(value: number): boolean {
+    return Number.isFinite(value)
+      && value >= this.minExportDimension
+      && value <= this.maxExportDimension;
+  }
+
+  /** `2` rather than `2.00`, and `1.33` rather than `1.3333333`. */
+  private formatDensity(density: number): string {
+    return Number.isInteger(density) ? String(density) : density.toFixed(2);
   }
 
   /** Suite, pricing basis, entry count and computation time — the provenance of one figure. */
@@ -658,16 +1032,40 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     return `${suite} — ${basis} — ${plotted} of ${total} entries charted — computed ${computed}`;
   }
 
-  private exportSummary(written: number, requested: number, fellBack: boolean): string {
+  /**
+   * What the export actually did, including everything it would not do.
+   *
+   * A refused figure is named in full: a batch that silently wrote five of six files reads as a
+   * success, and the missing one is exactly the figure whose caveats did not fit.
+   */
+  private exportSummary(
+    written: number,
+    requested: number,
+    pixels: string,
+    fellBack: boolean,
+    liveFallback: boolean,
+    refusals: readonly string[]
+  ): string {
+    const parts: string[] = [];
     if (written === 0) {
-      return 'No figure was written: none is currently rendered.';
+      parts.push(refusals.length > 0
+        ? 'No figure was written at this size.'
+        : 'No figure was written: none is currently rendered.');
+    } else {
+      const noun = written === 1 ? 'figure' : 'figures';
+      const shortfall = written < requested ? ` of ${requested}` : '';
+      const size = pixels ? ` at ${pixels}` : '';
+      parts.push(`${written}${shortfall} ${noun} saved${size}.`);
     }
-    const noun = written === 1 ? 'figure' : 'figures';
-    const shortfall = written < requested ? ` of ${requested}` : '';
-    const fallback = fellBack
-      ? ' This browser cannot encode WebP, so the file was written as PNG.'
-      : '';
-    return `${written}${shortfall} ${noun} saved.${fallback}`;
+    if (fellBack) {
+      parts.push('This browser cannot encode WebP, so the file was written as PNG.');
+    }
+    if (liveFallback) {
+      parts.push('An offscreen chart could not be built for at least one figure, so it was ' +
+        'written at its on-screen size instead.');
+    }
+    parts.push(...refusals);
+    return parts.join(' ');
   }
 
   /** The canvas belonging to one card, located by the aria-label the card gave it. */

@@ -19,6 +19,9 @@ export type { BenchmarkComparabilityDifferenceDto };
 /** The admin endpoint the view reads. Named here so the service and the spec cannot disagree on it. */
 export const MODEL_COMPARISON_ENDPOINT = '/api/admin/benchmark/model-comparison';
 
+/** The admin endpoint for the comparability index, named for the same reason as the endpoint above. */
+export const MODEL_COMPARABILITY_INDEX_ENDPOINT = '/api/admin/benchmark/model-comparison/comparability';
+
 /**
  * Which price card every entry's candidate cost is computed from.
  *
@@ -201,6 +204,113 @@ export interface BenchmarkModelComparisonDto {
   speedAxisCaveat?: string | null;
   explanation: string;
   excludedMeasures: BenchmarkModelComparisonExcludedMeasureDto[];
+}
+
+// ---------------------------------------------------------------------------------------------
+// The comparability index: which runs and analysis groups may share a chart, before Compare
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * One run or analysis group as the comparability index places it. Mirrors
+ * `BenchmarkComparabilityIndexEntryDto` field for field.
+ */
+export interface BenchmarkComparabilityIndexEntryDto {
+  /** `run:12` or `group:3` — the same key an entry in the comparison response carries. */
+  key: string;
+  sourceKind: string;
+  sourceId: number;
+  /** 1-based, largest cohort first then first appearance. 0 means not assigned to any condition. */
+  conditionOrdinal: number;
+  /** "Condition A" and so on, or "Self-inconsistent". */
+  conditionLabel: string;
+  signature: string;
+  /** A group whose own members disagree on a must-match or model-axis key. */
+  selfInconsistent: boolean;
+  selfInconsistentKeys: string[];
+  differencesFromLargest: BenchmarkComparabilityDifferenceDto[];
+  /** Degrading key value: question parallelism as run. */
+  questionParallelism: string;
+  /** Degrading key value: the pricing snapshot as run. */
+  pricingSnapshot: string;
+}
+
+/** One cohort of the index: everything in it agrees on every must-match comparability key. */
+export interface BenchmarkComparabilityConditionDto {
+  ordinal: number;
+  label: string;
+  sourceCount: number;
+  runCount: number;
+}
+
+/** The comparability index for the runs and groups currently on offer. */
+export interface BenchmarkComparabilityIndexDto {
+  computedAtUtc: string;
+  entries: BenchmarkComparabilityIndexEntryDto[];
+  conditions: BenchmarkComparabilityConditionDto[];
+  /** The largest condition's value for every must-match key, for the legend. */
+  largestConditionKeyValues: Record<string, string>;
+  mustMatchKeyNames: string[];
+  modelAxisKeyNames: string[];
+  degradingKeyNames: string[];
+}
+
+/** What to index: the runs and analysis groups currently on offer. */
+export interface BenchmarkComparabilityIndexQuery {
+  readonly runIds: readonly number[];
+  readonly groupIds: readonly number[];
+}
+
+/**
+ * The query string for one comparability-index request, as repeated `runIds` / `groupIds`
+ * parameters — the shape `[FromQuery] BenchmarkComparabilityIndexRequest` binds from.
+ */
+export function comparabilityIndexQueryParams(query: BenchmarkComparabilityIndexQuery): [string, string][] {
+  const params: [string, string][] = [];
+  for (const runId of query.runIds) {
+    params.push(['runIds', String(runId)]);
+  }
+  for (const groupId of query.groupIds) {
+    params.push(['groupIds', String(groupId)]);
+  }
+  return params;
+}
+
+/**
+ * The condition ordinal for one entry key (`run:12` / `group:3`), or null when the index has not
+ * loaded or the key is not in it. An ordinal of 0 means "not assigned" on the wire; this folds
+ * that into null too, so a caller never has to know the encoding.
+ */
+export function conditionOf(index: BenchmarkComparabilityIndexDto | null, key: string): number | null {
+  const entry = index?.entries.find(e => e.key === key);
+  if (entry == null || entry.conditionOrdinal === 0) {
+    return null;
+  }
+  return entry.conditionOrdinal;
+}
+
+/**
+ * The distinct condition ordinals the given runs and groups span, ascending, ignoring keys with
+ * no assigned condition. A caller checks `length > 1` to know the selection crosses conditions.
+ */
+export function selectedConditions(
+  index: BenchmarkComparabilityIndexDto | null,
+  runIds: readonly number[],
+  groupIds: readonly number[]
+): number[] {
+  const ordinals = new Set<number>();
+  for (const runId of runIds) {
+    const ordinal = conditionOf(index, `run:${runId}`);
+    if (ordinal != null) {
+      ordinals.add(ordinal);
+    }
+  }
+  for (const groupId of groupIds) {
+    const ordinal = conditionOf(index, `group:${groupId}`);
+    if (ordinal != null) {
+      ordinals.add(ordinal);
+    }
+  }
+  return [...ordinals].sort((a, b) => a - b);
 }
 
 // ---------------------------------------------------------------------------------------------

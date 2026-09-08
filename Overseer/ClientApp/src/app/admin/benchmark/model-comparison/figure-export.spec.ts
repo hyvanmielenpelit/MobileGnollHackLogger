@@ -1,8 +1,13 @@
 import {
+  FIGURE_EXPORT_LAYOUT_WIDTH,
+  FIGURE_EXPORT_MIN_DIMENSION,
+  FIGURE_EXPORT_PRESETS,
   FIGURE_EXPORT_SCALE,
+  FigureExportResolution,
   composeFigureImage,
   encodeFigureImage,
-  figureExportFilename
+  figureExportFilename,
+  resolveFigureLayout
 } from './figure-export';
 
 describe('figure-export', () => {
@@ -19,18 +24,38 @@ describe('figure-export', () => {
     return canvas;
   }
 
-  function request(overrides: Partial<Parameters<typeof composeFigureImage>[0]> = {}) {
+  /** The chrome half of a request: everything `resolveFigureLayout` measures. */
+  function chromeOf(overrides: Partial<Parameters<typeof resolveFigureLayout>[0]> = {}) {
     return {
-      canvas: sourceCanvas(),
       title: 'P1 — Quality, speed and cost',
       subtitle: '18 items per run, current catalog as of 2026-09-07',
       caption: 'Read the whiskers before the bar tops.',
       notices: ['Cost bars carry no interval at any R.'],
       footer: 'Suite A — Current catalog — 4 of 5 entries charted — computed 2026-09-07',
+      ...overrides
+    };
+  }
+
+  function request(overrides: Partial<Parameters<typeof composeFigureImage>[0]> = {}) {
+    return {
+      canvas: sourceCanvas(),
+      ...chromeOf(),
       format: 'png' as const,
       ...overrides
     };
   }
+
+  /** The size of the live canvas `sourceCanvas` stands in for. */
+  const onScreen = { width: 400, height: 240 };
+
+  function preset(id: string): FigureExportResolution {
+    return FIGURE_EXPORT_PRESETS.find(candidate => candidate.id === id)!;
+  }
+
+  /** Explicit sizes only: `onscreen` follows the live canvas and has no dimensions of its own. */
+  const explicitPresets = FIGURE_EXPORT_PRESETS.filter(
+    candidate => candidate.widthPx !== null && candidate.heightPx !== null
+  );
 
   it('composes at twice the source density over an opaque ground', () => {
     const composed = composeFigureImage(request());
@@ -73,6 +98,92 @@ describe('figure-export', () => {
     expect(composited).toContain('Speed is degraded');
     expect(composited).toContain('Charts plot at most 8 models');
     expect(composited).toContain('4 of 5 entries charted');
+  });
+
+  describe('resolveFigureLayout', () => {
+    it('returns exactly the requested pixel size for every preset', () => {
+      for (const resolution of explicitPresets) {
+        const { layout, refusal } = resolveFigureLayout(chromeOf(), resolution, onScreen);
+
+        expect(refusal).withContext(resolution.id).toBeNull();
+        expect(layout!.pixelWidth).withContext(resolution.id).toBe(resolution.widthPx!);
+        expect(layout!.pixelHeight).withContext(resolution.id).toBe(resolution.heightPx!);
+      }
+    });
+
+    it('composes every explicit size at one layout width, so the typography never changes', () => {
+      for (const resolution of explicitPresets) {
+        const { layout } = resolveFigureLayout(chromeOf(), resolution, onScreen);
+
+        expect(layout!.layoutWidth).withContext(resolution.id).toBe(FIGURE_EXPORT_LAYOUT_WIDTH);
+        expect(layout!.density)
+          .withContext(resolution.id)
+          .toBeCloseTo(resolution.widthPx! / FIGURE_EXPORT_LAYOUT_WIDTH, 10);
+      }
+    });
+
+    it('composes an explicit size to exactly the requested bitmap', () => {
+      const { layout } = resolveFigureLayout(chromeOf(), preset('fullhd'), onScreen);
+
+      const composed = composeFigureImage(request({ layout }));
+
+      expect(composed.width).toBe(1920);
+      expect(composed.height).toBe(1080);
+    });
+
+    it('reproduces the on-screen composition exactly', () => {
+      const composed = composeFigureImage(request());
+
+      const { layout, refusal } = resolveFigureLayout(chromeOf(), preset('onscreen'), onScreen);
+
+      expect(refusal).toBeNull();
+      expect(layout!.density).toBe(FIGURE_EXPORT_SCALE);
+      // A 400 px plot in a 360 px minimum column, plus 20 px of padding on both sides, at 2x.
+      expect(layout!.pixelWidth).toBe(880);
+      expect(layout!.pixelWidth).toBe(composed.width);
+      expect(layout!.pixelHeight).toBe(composed.height);
+    });
+
+    it('refuses a figure whose caveats leave no room for the plot, and names a height that fits', () => {
+      const notice = (index: number): string =>
+        `Notice ${index}: ` +
+        'the speed axis is degraded for this entry, so its bar is drawn from a partial sample. '
+          .repeat(6);
+      const chrome = chromeOf({ notices: [1, 2, 3, 4, 5, 6].map(notice) });
+
+      const { layout, refusal } = resolveFigureLayout(chrome, preset('hd'), onScreen);
+
+      expect(layout).toBeNull();
+      expect(refusal).toContain('Quality, speed and cost');
+
+      // The named minimum is a promise: the same figure must resolve at it.
+      const named = /(\d+) px tall or more/.exec(refusal!);
+      expect(named).not.toBeNull();
+      const minimumHeight = Number(named![1]);
+      expect(minimumHeight).toBeGreaterThan(720);
+
+      const retry = resolveFigureLayout(
+        chrome,
+        { id: 'custom', label: 'Custom', widthPx: 1280, heightPx: minimumHeight },
+        onScreen
+      );
+      expect(retry.refusal).toBeNull();
+      expect(retry.layout!.pixelHeight).toBe(minimumHeight);
+    });
+
+    it('rejects a custom size below the minimum dimension', () => {
+      const custom: FigureExportResolution = {
+        id: 'custom',
+        label: 'Custom',
+        widthPx: FIGURE_EXPORT_MIN_DIMENSION - 1,
+        heightPx: 720
+      };
+
+      const { layout, refusal } = resolveFigureLayout(chromeOf(), custom, onScreen);
+
+      expect(layout).toBeNull();
+      expect(refusal).toContain(String(FIGURE_EXPORT_MIN_DIMENSION));
+    });
   });
 
   it('reports a PNG fallback rather than naming a PNG file .webp', async () => {

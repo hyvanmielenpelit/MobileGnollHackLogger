@@ -70,6 +70,45 @@
   }
 }
 
+/* --- Legend: what "condition" means --- */
+
+.csp-legend {
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+  border-radius: 6px;
+  padding: 10px 14px;
+
+  summary {
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--primary-color);
+  }
+
+  p {
+    margin: 10px 0 0;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #a1a1aa;
+    max-width: 90ch;
+  }
+}
+
+.csp-legend-list {
+  margin: 10px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #a1a1aa;
+
+  dt {
+    font-weight: 600;
+    color: #c3c2b7;
+  }
+
+  dd {
+    margin: 0 0 6px;
+  }
+}
+
 /* --- The two tables --- */
 
 .csp-table {
@@ -153,6 +192,53 @@
     background: rgba(220, 110, 110, 0.12);
     color: #e09090;
   }
+}
+
+/* --- Condition badge ---
+   One hue per ordinal, modulo the three below and drawn from the same palette as the tier badge
+   above — a reader who cannot tell the hues apart still reads "Condition A" against "Condition B".
+   Colour reinforces the condition; the label carries it. */
+
+.csp-condition {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+
+  &.csp-condition-1 {
+    border-color: rgba(120, 200, 130, 0.5);
+    background: rgba(120, 200, 130, 0.12);
+    color: #a8dcb0;
+  }
+
+  &.csp-condition-2 {
+    border-color: rgba(224, 186, 109, 0.5);
+    background: rgba(224, 186, 109, 0.12);
+    color: var(--primary-color, #e0ba6d);
+  }
+
+  &.csp-condition-3 {
+    border-color: rgba(214, 150, 90, 0.5);
+    background: rgba(214, 150, 90, 0.12);
+    color: #e0a878;
+  }
+
+  /* Unassigned or self-inconsistent: the same red the tier badge uses for "not comparable". */
+  &.csp-condition-none {
+    border-color: rgba(220, 110, 110, 0.5);
+    background: rgba(220, 110, 110, 0.12);
+    color: #e09090;
+  }
+}
+
+.csp-condition-detail {
+  width: 22px;
+  height: 22px;
+  margin-left: 4px;
 }
 
 /* --- Caps and actions --- */

@@ -1193,29 +1193,75 @@
        leaves the container a few pixels tall and the sub-tab row scrolls away immediately. -->
   @if (activeSubTab === 'modelcomparison') {
     <div class="benchmark-tab-content" role="tabpanel" id="bm-panel-modelcomparison" aria-labelledby="bm-tab-modelcomparison" tabindex="0">
-      <app-comparison-source-picker
-        [runs]="comparisonRunOptions"
-        [groups]="comparisonGroupOptions"
-        [suites]="suites"
-        [suiteId]="comparisonSuiteId"
-        [selectedRunIds]="comparisonRunIds"
-        [selectedGroupIds]="comparisonGroupIds"
-        [loading]="comparisonLoading"
-        [maxPlotted]="comparisonMaxPlotted"
-        (suiteIdChange)="onComparisonSuiteChange($event)"
-        (selectionChange)="onComparisonSelectionChange($event)"
-        (compare)="runComparison()"
-        (clear)="clearComparisonSelection()">
-      </app-comparison-source-picker>
+      <!--
+        The launcher, not the task. The comparison carries two paged tables, six figures and a
+        thirteen-column table, and the application header, the admin tab row and this sub-tab row
+        leave it a fraction of the viewport inline — so the task itself opens in a full-screen
+        dialog and this panel stays short.
 
-      <app-benchmark-model-comparison
-        [comparison]="comparison"
-        [loading]="comparisonLoading"
-        [error]="comparisonError"
-        [pricingBasis]="comparisonPricingBasis"
-        (pricingBasisChange)="onComparisonPricingBasisChange($event)"
-        (refresh)="runComparison()">
-      </app-benchmark-model-comparison>
+        It deliberately duplicates none of the wizard's controls: the selection has one owner, and
+        a second Clear or a second suite scope here would let the two disagree.
+      -->
+      <div class="mc-launcher">
+        <h3>Cross-model comparison</h3>
+        <p class="mc-launcher-note">
+          Compares candidate models on quality, speed and cost over one benchmark suite. Two sources
+          may be charted together only where every must-match comparability key agrees — the same
+          suite, the same scoring method, the same harness and grading configuration; where one does
+          not, the source is excluded from every figure and the keys it differs on are named. The
+          wizard walks the three stages: choosing sources, reading what is comparable, and the
+          figures.
+        </p>
+
+        <dl class="mc-launcher-state">
+          <div>
+            <dt>Selected</dt>
+            <dd>
+              {{ comparisonRunIds.length }} {{ comparisonRunIds.length === 1 ? 'run' : 'runs' }},
+              {{ comparisonGroupIds.length }}
+              {{ comparisonGroupIds.length === 1 ? 'analysis group' : 'analysis groups' }}
+            </dd>
+          </div>
+          @if (comparison) {
+            <div>
+              <dt>Suite</dt>
+              <dd>{{ comparison.baselineSuiteName || 'Not set' }}</dd>
+            </div>
+            <div>
+              <dt>Pricing basis</dt>
+              <dd>{{ comparison.pricingBasisLabel || comparison.pricingBasis }}</dd>
+            </div>
+            <div>
+              <dt>Charted</dt>
+              <dd>{{ comparison.comparableCount }} of {{ comparison.entries.length }} entries</dd>
+            </div>
+            <div>
+              <dt>Computed</dt>
+              <dd>{{ comparison.computedAtUtc | date:'short' }}</dd>
+            </div>
+          }
+        </dl>
+
+        @if (comparabilityIndexError) {
+          <!-- Non-fatal: the index is a disclosure aid, and the comparison itself is unaffected. -->
+          <div class="alert alert-warning" role="note">
+            <div class="alert-content">
+              <div class="alert-body">{{ comparabilityIndexError }}</div>
+            </div>
+          </div>
+        }
+
+        <div class="mc-launcher-actions">
+          <button type="button" class="btn-gh" (click)="openComparisonWizard()">
+            Open comparison wizard
+          </button>
+          <button type="button" class="btn-gh btn-gh-cancel"
+                  [disabled]="comparisonRunIds.length + comparisonGroupIds.length === 0"
+                  (click)="clearComparisonSelection()">
+            Clear selection
+          </button>
+        </div>
+      </div>
     </div>
   }
 </div>
@@ -1238,7 +1284,7 @@
   opening, so ngOnChanges fires with a first-change suiteId and the analysis reloads. Without
   it, re-opening the same suite would show a stale table.
 -->
-<dialog #suiteHealthDialog class="gh-dialog benchmark-suite-health-dialog"
+<dialog #suiteHealthDialog class="gh-dialog gh-dialog-fullscreen benchmark-suite-health-dialog"
         aria-labelledby="suite-health-dialog-title"
         (close)="onSuiteHealthDialogClose()">
   @if (suiteHealthSuite) {
@@ -3451,4 +3497,55 @@
       </div>
     }
   </div>
+</dialog>
+
+<!--
+  THE MODEL COMPARISON WIZARD
+
+  Full-screen, for the same reason the suite health dialog is: the wizard carries two paged
+  tables, six figures and a thirteen-column table, and the application header, the admin tab row
+  and the benchmark sub-tab row leave it a fraction of the viewport inline.
+
+  No closedby="any": a viewport-filling dialog has no backdrop to click, so light dismiss would
+  only offer a way to lose a configured comparison by mis-clicking. Escape, the header control and
+  the footer Close all work on a showModal() dialog without it.
+
+  @if (comparisonWizardMounted) is set once and never reset — the opposite of the suite health
+  dialog, which re-creates its content to force a reload. Here reopening must preserve the
+  picker's table state, the wizard step, the filters, the entry selection and the rendered charts,
+  and nothing of the wizard is constructed for an operator who never opens it.
+-->
+<dialog #comparisonWizardDialog
+        class="gh-dialog gh-dialog-fullscreen benchmark-model-comparison-dialog"
+        aria-labelledby="mc-wizard-title"
+        (cancel)="onComparisonWizardCancel($event)"
+        (close)="onComparisonWizardClose()">
+  @if (comparisonWizardMounted) {
+    <app-benchmark-model-comparison
+      [comparison]="comparison"
+      [loading]="comparisonLoading"
+      [error]="comparisonError"
+      [pricingBasis]="comparisonPricingBasis"
+      [selectedSourceCount]="comparisonRunIds.length + comparisonGroupIds.length"
+      (pricingBasisChange)="onComparisonPricingBasisChange($event)"
+      (refresh)="runComparison()"
+      (compare)="runComparison()"
+      (closeRequested)="closeComparisonWizard()">
+      <app-comparison-source-picker
+        [runs]="comparisonRunOptions"
+        [groups]="comparisonGroupOptions"
+        [suites]="suites"
+        [suiteId]="comparisonSuiteId"
+        [selectedRunIds]="comparisonRunIds"
+        [selectedGroupIds]="comparisonGroupIds"
+        [loading]="comparisonLoading"
+        [maxPlotted]="comparisonMaxPlotted"
+        [comparabilityIndex]="comparabilityIndex"
+        [indexLoading]="comparabilityIndexLoading"
+        (suiteIdChange)="onComparisonSuiteChange($event)"
+        (selectionChange)="onComparisonSelectionChange($event)"
+        (clear)="clearComparisonSelection()">
+      </app-comparison-source-picker>
+    </app-benchmark-model-comparison>
+  }
 </dialog>

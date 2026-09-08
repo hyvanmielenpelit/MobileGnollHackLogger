@@ -6,13 +6,21 @@ import { Observable } from 'rxjs';
 // declaration. The reverse edge in that file is an `import type`, which TypeScript erases, so the
 // two files carry no runtime cycle.
 import {
+  BenchmarkComparabilityIndexDto,
+  BenchmarkComparabilityIndexQuery,
   BenchmarkModelComparisonDto,
   BenchmarkModelComparisonQuery,
+  MODEL_COMPARABILITY_INDEX_ENDPOINT,
   MODEL_COMPARISON_ENDPOINT,
+  comparabilityIndexQueryParams,
   modelComparisonQueryParams
 } from '../admin/benchmark/model-comparison/model-comparison.models';
 
 export type {
+  BenchmarkComparabilityIndexDto,
+  BenchmarkComparabilityIndexEntryDto,
+  BenchmarkComparabilityConditionDto,
+  BenchmarkComparabilityIndexQuery,
   BenchmarkModelComparisonDto,
   BenchmarkModelComparisonQuery,
   BenchmarkModelComparisonPricingBasis
@@ -1689,5 +1697,17 @@ export class AdminBenchmarkService {
       params = params.append(key, value);
     }
     return this.http.get<BenchmarkModelComparisonDto>(MODEL_COMPARISON_ENDPOINT, { params });
+  }
+
+  /**
+   * The comparability index over the named runs and analysis groups: which of them fall into the
+   * same condition, ahead of a Compare that would otherwise silently exclude the smaller one.
+   */
+  getComparabilityIndex(query: BenchmarkComparabilityIndexQuery): Observable<BenchmarkComparabilityIndexDto> {
+    let params = new HttpParams();
+    for (const [key, value] of comparabilityIndexQueryParams(query)) {
+      params = params.append(key, value);
+    }
+    return this.http.get<BenchmarkComparabilityIndexDto>(MODEL_COMPARABILITY_INDEX_ENDPOINT, { params });
   }
 }

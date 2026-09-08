@@ -1761,47 +1761,12 @@
   background: rgba(20, 20, 20, 0.98);
 }
 
-/* Full-screen, unlike every one of its siblings: four tabs of suite analysis and an
-   eleven-column item table have no honest smaller size. Sizing uses dvh so a mobile URL
-   bar cannot clip the footer. */
+/* Both of these dialogs are full-screen, unlike every one of their siblings: four tabs of suite
+   analysis and an eleven-column item table, and a wizard carrying two paged tables and six
+   figures, have no honest smaller size. The viewport sizing, the top-layer entry and exit
+   transition, the backdrop and the reduced-motion block all come from .gh-dialog-fullscreen in
+   styles.scss, which a second consumer is exactly the reason for; only the body frame is local. */
 .gh-dialog.benchmark-suite-health-dialog {
-  width: 100vw;
-  max-width: 100vw;
-  height: 100dvh;
-  max-height: 100dvh;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  overflow: hidden;
-  background: rgba(16, 16, 16, 0.98);
-
-  /* Entry and exit transition. display and overlay must both be in the list with
-     allow-discrete, or a top-layer element simply snaps in and out. */
-  opacity: 0;
-  transform: scale(0.99);
-  transition:
-    opacity 0.2s ease,
-    transform 0.2s ease,
-    display 0.2s allow-discrete,
-    overlay 0.2s allow-discrete;
-
-  &[open] {
-    opacity: 1;
-    transform: none;
-
-    @starting-style {
-      opacity: 0;
-      transform: scale(0.99);
-    }
-  }
-
-  /* The dialog fills the viewport, so the backdrop only shows while the transition runs.
-     It still has to exist, or the entry flashes the page behind it. */
-  &::backdrop {
-    background: rgba(0, 0, 0, 0.75);
-  }
-
   /* The body is the panel's frame, not a scroller: each tab scrolls itself. */
   .suite-health-dialog-body {
     padding: 0;
@@ -1811,16 +1776,12 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .gh-dialog.benchmark-suite-health-dialog {
-    transform: none;
-    transition-duration: 0.01s;
-
-    &[open] {
-      @starting-style {
-        transform: none;
-      }
-    }
+.gh-dialog.benchmark-model-comparison-dialog {
+  /* The wizard component renders the whole header / steps / panel / footer column, so this
+     dialog holds nothing but that column. The step panel is the only scroller. */
+  .dialog-content {
+    height: 100%;
+    min-height: 0;
   }
 }
 
@@ -2269,13 +2230,11 @@
 .gh-dialog.benchmark-run-progress-dialog[open],
 .gh-dialog.benchmark-scoring-profiles-dialog[open],
 .gh-dialog.benchmark-form-dialog[open],
-.gh-dialog.benchmark-suite-health-dialog[open],
 .gh-dialog.benchmark-questions-dialog:modal,
 .gh-dialog.benchmark-run-detail-dialog:modal,
 .gh-dialog.benchmark-run-progress-dialog:modal,
 .gh-dialog.benchmark-scoring-profiles-dialog:modal,
-.gh-dialog.benchmark-form-dialog:modal,
-.gh-dialog.benchmark-suite-health-dialog:modal {
+.gh-dialog.benchmark-form-dialog:modal {
   display: flex;
   flex-direction: column;
 }
@@ -2584,4 +2543,70 @@
       }
     }
   }
+}
+
+/* ==========================================================================
+   MODEL COMPARISON LAUNCHER
+
+   The sub-tab's whole content. The task itself lives in a full-screen dialog, so this panel
+   names what the view does, shows what is selected and what the last comparison found, and
+   opens the wizard. It is deliberately short: the three sticky rows above it are exactly the
+   vertical space the wizard needs, and duplicating any of the wizard's controls here would
+   give the selection two owners.
+   ========================================================================== */
+.mc-launcher {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.15));
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+
+  h3 {
+    margin: 0;
+    font-family: "Cinzel", serif;
+    color: var(--title-color, var(--primary-color));
+  }
+
+  .mc-launcher-note {
+    margin: 0;
+    max-width: 90ch;
+    color: #b4b4b8;
+    font-size: 13px;
+    line-height: 1.55;
+  }
+}
+
+.mc-launcher-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 28px;
+  margin: 0;
+
+  div {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  dt {
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #8b8b90;
+  }
+
+  dd {
+    margin: 0;
+    font-size: 14px;
+    color: #e4e4e7;
+  }
+}
+
+.mc-launcher-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
 }

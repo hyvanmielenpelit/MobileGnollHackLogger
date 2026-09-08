@@ -80,7 +80,8 @@ describe('AdminBenchmarkComponent', () => {
       'updateRunGroup',
       'previewRunGroupTier',
       'getRunReportUrl',
-      'compareModels'
+      'compareModels',
+      'getComparabilityIndex'
     ]);
 
     benchmarkServiceMock.getActiveDifficultyAssessment.and.returnValue(of(null));
@@ -131,6 +132,15 @@ describe('AdminBenchmarkComponent', () => {
     ]));
     benchmarkServiceMock.getRuns.and.returnValue(of([]));
     benchmarkServiceMock.compareModels.and.returnValue(of({ entries: [] } as any));
+    benchmarkServiceMock.getComparabilityIndex.and.returnValue(of({
+      computedAtUtc: '2026-09-07T12:00:00Z',
+      entries: [],
+      conditions: [],
+      largestConditionKeyValues: {},
+      mustMatchKeyNames: ['BenchmarkSuiteId'],
+      modelAxisKeyNames: ['ModelId'],
+      degradingKeyNames: ['PricingSnapshot']
+    } as any));
 
     systemServiceMock = jasmine.createSpyObj('SystemService', ['getVersion']);
     systemServiceMock.getVersion.and.returnValue(of('1.0.29'));
@@ -4399,16 +4409,113 @@ describe('AdminBenchmarkComponent', () => {
       expect(panel.classList.contains('gh-tab-panel')).toBeFalse();
     });
 
-    it('mounts the picker above the comparison view, both bound', () => {
+    it('shows a launcher, and mounts nothing of the wizard until it is opened', () => {
       fixture.nativeElement.querySelector('#bm-tab-modelcomparison').click();
       fixture.detectChanges();
 
       const panel = fixture.nativeElement.querySelector('#bm-panel-modelcomparison');
-      const picker = panel.querySelector('app-comparison-source-picker');
-      const view = panel.querySelector('app-benchmark-model-comparison');
-      expect(picker).toBeTruthy();
-      expect(view).toBeTruthy();
-      expect(picker.compareDocumentPosition(view) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(panel.querySelector('.mc-launcher')).toBeTruthy();
+      // The task itself is a dialog, so neither of the two components is in the panel.
+      expect(panel.querySelector('app-comparison-source-picker')).toBeNull();
+      expect(panel.querySelector('app-benchmark-model-comparison')).toBeNull();
+
+      // Deferred: nothing of the wizard is constructed for an operator who never opens it, and a
+      // modal that appeared without a gesture would leave them pressing Escape onto an empty tab.
+      expect(component.comparisonWizardMounted).toBeFalse();
+      const dialog = fixture.nativeElement.querySelector('.benchmark-model-comparison-dialog');
+      expect(dialog).toBeTruthy();
+      expect(dialog.querySelector('app-benchmark-model-comparison')).toBeNull();
+      expect(dialog.open).toBeFalse();
+    });
+
+    it('opens the wizard modally from the launcher, and keeps it mounted after a close', () => {
+      fixture.nativeElement.querySelector('#bm-tab-modelcomparison').click();
+      fixture.detectChanges();
+
+      const dialog = fixture.nativeElement
+        .querySelector('.benchmark-model-comparison-dialog') as HTMLDialogElement;
+      const showModal = spyOn(dialog, 'showModal').and.callThrough();
+
+      component.openComparisonWizard();
+      fixture.detectChanges();
+
+      expect(showModal).toHaveBeenCalledTimes(1);
+      expect(component.comparisonWizardMounted).toBeTrue();
+      expect(dialog.querySelector('app-benchmark-model-comparison')).toBeTruthy();
+      expect(dialog.querySelector('app-comparison-source-picker')).toBeTruthy();
+
+      component.closeComparisonWizard();
+      fixture.detectChanges();
+
+      // Mount-once, destroy-never: reopening has to preserve the picker's table state, the step,
+      // the filters, the entry selection and the rendered charts.
+      expect(component.comparisonWizardMounted).toBeTrue();
+      expect(dialog.querySelector('app-benchmark-model-comparison')).toBeTruthy();
+    });
+
+    it('refuses Escape while an export is running, and allows it otherwise', () => {
+      component.openComparisonWizard();
+      fixture.detectChanges();
+
+      const cancel = new Event('cancel', { cancelable: true });
+      component.onComparisonWizardCancel(cancel);
+      expect(cancel.defaultPrevented).toBeFalse();
+
+      // An export re-renders charts and writes files in sequence; tearing the DOM out from under
+      // it would leave a detached chart and a half-written batch.
+      component.comparisonWizard!.exporting = true;
+      const blocked = new Event('cancel', { cancelable: true });
+      component.onComparisonWizardCancel(blocked);
+      expect(blocked.defaultPrevented).toBeTrue();
+    });
+
+    it('loads the comparability index for the sources on offer, and survives it failing', () => {
+      benchmarkServiceMock.getComparabilityIndex.calls.reset();
+
+      // A new suite scope is a new set of offered sources, so it re-indexes them.
+      component.onComparisonSuiteChange(5);
+
+      expect(benchmarkServiceMock.getComparabilityIndex).toHaveBeenCalledWith({
+        runIds: [1, 2],
+        groupIds: [11]
+      });
+      expect(component.comparabilityIndex).toBeTruthy();
+
+      benchmarkServiceMock.getComparabilityIndex.and.returnValue(
+        throwError(() => ({ error: 'The index could not be built.' })));
+      component.onComparisonSuiteChange(6);
+
+      // Non-fatal: the Condition column falls back to a dash and Compare still works.
+      expect(component.comparabilityIndex).toBeNull();
+      expect(component.comparabilityIndexError).toContain('could not be built');
+    });
+
+    it('drops the payload when the selection changes, so Compare is asked for again', () => {
+      component.comparison = { entries: [] } as any;
+      component.onComparisonSelectionChange({ runIds: [1], groupIds: [] });
+
+      // The figures on hand describe the previous set of sources. It is also what the wizard reads
+      // to know Compare has not run for this selection yet.
+      expect(component.comparison).toBeNull();
+    });
+
+    // --- The .gh-dialog-fullscreen lift ---
+
+    it('leaves the suite health dialog opening and closing after the full-screen lift', () => {
+      // Its viewport sizing, transition and backdrop now come from styles.scss, and it is the only
+      // other consumer of that block, so this is the regression guard for the move.
+      const dialog = fixture.nativeElement
+        .querySelector('.benchmark-suite-health-dialog') as HTMLDialogElement;
+      expect(dialog.classList.contains('gh-dialog-fullscreen')).toBeTrue();
+
+      component.suiteHealthSuiteId = null;
+      component.openSuiteHealth({ id: 5, name: 'Suite 5', questionCount: 4 } as any);
+      fixture.detectChanges();
+      expect(dialog.open).toBeTrue();
+
+      component.closeSuiteHealth();
+      fixture.detectChanges();
+      expect(dialog.open).toBeFalse();
     });
 
     // --- Loading and the request ---

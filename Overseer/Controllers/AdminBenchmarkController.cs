@@ -3953,4 +3953,26 @@ public class AdminBenchmarkController : ControllerBase
             ? BadRequest(error ?? "The comparison could not be computed.")
             : Ok(result);
     }
+
+    /// <summary>
+    /// The runs and groups named in the query, split into comparability conditions: which of them
+    /// agree on every must-match key and would therefore share a chart, which would be excluded and
+    /// on which keys, and which group's own members do not describe one point. Read-only arithmetic
+    /// over stored data, so nothing here can trigger a run.
+    ///
+    /// <para>The split reproduces the baseline <c>model-comparison</c> would choose over the same
+    /// sources, which is what lets a picker say what Compare is about to do before it is asked.</para>
+    /// </summary>
+    [HttpGet("model-comparison/comparability")]
+    public async Task<IActionResult> GetModelComparisonComparability(
+        [FromQuery] BenchmarkComparabilityIndexRequest request,
+        [FromServices] BenchmarkComparabilityIndexService indexService,
+        CancellationToken ct)
+    {
+        var (result, error) = await indexService.BuildAsync(request, ct);
+
+        return result == null
+            ? BadRequest(error ?? "The comparability index could not be computed.")
+            : Ok(result);
+    }
 }

@@ -35,6 +35,7 @@ import {
   BenchmarkRunGroupDto,
   BenchmarkRunGroupTierPreviewDto,
   BenchmarkComparabilityResultDto,
+  BenchmarkComparabilityIndexDto,
   BenchmarkModelComparisonDto,
   BenchmarkModelComparisonPricingBasis
 } from '../../services/admin-benchmark.service';
@@ -45,7 +46,7 @@ import { SuiteHealthComponent, SuiteHealthTab } from './suite-health/suite-healt
 import { MultiRunComponent } from './multi-run/multi-run.component';
 import { MultiRunProgressDialogComponent } from './multi-run/multi-run-progress-dialog.component';
 import { SnapshotViewerComponent } from '../../shared/snapshot-viewer/snapshot-viewer.component';
-import { ensureOverlayPolyfills } from '../../utils/polyfills.util';
+import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../utils/polyfills.util';
 import { SystemService } from '../../services/system.service';
 import { parseServerUtcDate, elapsedMsBetween } from '../../utils/date.util';
 import { TableState, exactFilter } from '../../shared/data-table/table-state';
@@ -207,6 +208,14 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   @ViewChild('runProgressHeading') runProgressHeading?: ElementRef<HTMLElement>;
   @ViewChild('suiteHealthDialog') suiteHealthDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('suiteHealthHeading') suiteHealthHeading?: ElementRef<HTMLElement>;
+
+  @ViewChild('comparisonWizardDialog') comparisonWizardDialog?: ElementRef<HTMLDialogElement>;
+
+  /**
+   * The wizard instance, for the two things the host cannot reach through the DOM: focusing the
+   * heading it owns, and asking whether an export is in flight before allowing a close.
+   */
+  @ViewChild(ModelComparisonComponent) comparisonWizard?: ModelComparisonComponent;
   @ViewChild('snapshotViewer') snapshotViewer?: SnapshotViewerComponent;
   @ViewChild('multiRunPanel') multiRunPanel?: MultiRunComponent;
   @ViewChild('generationDialog') generationDialog!: ElementRef<HTMLDialogElement>;
@@ -539,6 +548,18 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
    */
   private comparisonToken = 0;
 
+  /**
+   * The comparability index for the sources on offer: which of them agree on every must-match key
+   * and may therefore be charted together. Read-only, and only ever a disclosure aid — the
+   * comparison endpoint decides what is actually comparable.
+   */
+  comparabilityIndex: BenchmarkComparabilityIndexDto | null = null;
+  comparabilityIndexLoading = false;
+  comparabilityIndexError: string | null = null;
+
+  /** The index's own out-of-order guard, for the same reason comparisonToken exists. */
+  private comparabilityIndexToken = 0;
+
   // Detail Modal
   selectedRunDetail: BenchmarkRunDetailDto | null = null;
   loadingDetail = false;
@@ -747,6 +768,9 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       this.loadRunGroups();
       this.loadSuites();
       this.restoreComparisonSelection();
+      // The lists arrive asynchronously, so this indexes whatever is already in memory and runs
+      // again from onComparisonSuiteChange as the scope narrows.
+      this.loadComparabilityIndex();
     }
     // 'multirun' loads nothing here: the panel is the MultiRunComponent's own, and it owns its
     // fetches. Loading them from the host would give that data two owners.
@@ -773,6 +797,11 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     this.comparisonRunIds = [...selection.runIds];
     this.comparisonGroupIds = [...selection.groupIds];
     this.persistComparisonSelection();
+    // The payload on hand describes the previous set of sources, so it is dropped rather than left
+    // beside a changed selection. It is also what the wizard reads to know Compare has not run for
+    // this selection yet, which is what puts Compare back on its Next button.
+    this.comparison = null;
+    this.comparisonError = null;
   }
 
   /**
@@ -784,6 +813,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
    */
   onComparisonSuiteChange(suiteId: number | null): void {
     this.comparisonSuiteId = suiteId;
+    this.loadComparabilityIndex();
 
     const runsInScope = new Set(this.comparisonRunOptions.map(run => run.id));
     const groupsInScope = new Set(this.comparisonGroupOptions.map(group => group.id));
@@ -853,6 +883,97 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
         this.comparison = null;
         this.comparisonError = err?.error || 'The comparison could not be computed.';
         this.comparisonLoading = false;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // The comparison wizard dialog
+  //
+  // Mount-once, destroy-never: the content is behind @if (comparisonWizardMounted), set true on the
+  // first open and never reset. Deliberately the opposite of the suite health dialog, which
+  // re-creates its content on every opening to force a reload — here reopening must preserve the
+  // picker's two TableState instances, the wizard step, the filters, the entry selection and the
+  // rendered charts, and nothing of it is built for an operator who never opens it.
+  // ---------------------------------------------------------------------------------------------
+
+  comparisonWizardMounted = false;
+
+  openComparisonWizard(): void {
+    this.comparisonWizardMounted = true;
+    // The dialog's @if content has to exist before showModal(), or an empty dialog opens.
+    this.cdr.detectChanges();
+    this.comparisonWizardDialog?.nativeElement.showModal();
+    // showModal() would otherwise focus the close button, which announces "Close" as the first
+    // thing a screen-reader user hears in a dialog full of tables.
+    this.comparisonWizard?.focusHeading();
+    // The anchor-positioning polyfill does not observe DOM mutations, and the wizard is full of
+    // interestfor tooltips that were behind the @if until this call.
+    refreshAnchorPositioning();
+  }
+
+  closeComparisonWizard(): void {
+    // close() fires the dialog's (close) event, so the state is handled in one place.
+    this.comparisonWizardDialog?.nativeElement.close();
+  }
+
+  /**
+   * Escape and platform back gestures, which reach the dialog as (cancel) before (close).
+   *
+   * Refused while an export is running: it re-renders charts and writes files in sequence, and
+   * tearing the DOM out from under it would leave a detached chart and a half-written batch. The
+   * wizard's export status line says so, and its own close controls are disabled for the same
+   * duration, so this is not a silent refusal.
+   */
+  onComparisonWizardCancel(event: Event): void {
+    if (this.comparisonWizard?.exporting) {
+      event.preventDefault();
+    }
+  }
+
+  /** Nothing is torn down here: the mounted content is what reopening is supposed to preserve. */
+  onComparisonWizardClose(): void {
+    this.cdr.detectChanges();
+  }
+
+  /**
+   * Loads the comparability index for the runs and groups currently on offer.
+   *
+   * A failure is non-fatal: the Condition column falls back to a dash and Compare still works. The
+   * index is a disclosure aid, and a picker made unusable because an aid failed is worse than one
+   * that discloses less.
+   */
+  private loadComparabilityIndex(): void {
+    const runIds = this.comparisonRunOptions.slice(0, 200).map(run => run.id);
+    const groupIds = this.comparisonGroupOptions.slice(0, 100).map(group => group.id);
+    if (runIds.length + groupIds.length === 0) {
+      this.comparabilityIndex = null;
+      this.comparabilityIndexLoading = false;
+      this.comparabilityIndexError = null;
+      return;
+    }
+
+    const token = ++this.comparabilityIndexToken;
+    this.comparabilityIndexLoading = true;
+    this.comparabilityIndexError = null;
+
+    this.benchmarkService.getComparabilityIndex({ runIds, groupIds }).subscribe({
+      next: (result) => {
+        // A slow response for a suite scope the operator has already left must not overwrite a
+        // newer one, exactly as with the comparison itself.
+        if (token !== this.comparabilityIndexToken) { return; }
+        this.comparabilityIndex = result;
+        this.comparabilityIndexLoading = false;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        if (token !== this.comparabilityIndexToken) { return; }
+        this.comparabilityIndex = null;
+        this.comparabilityIndexLoading = false;
+        this.comparabilityIndexError =
+          err?.error || 'The comparability index could not be loaded, so the Condition column is ' +
+          'unavailable. The comparison itself is unaffected.';
         this.cdr.detectChanges();
       }
     });

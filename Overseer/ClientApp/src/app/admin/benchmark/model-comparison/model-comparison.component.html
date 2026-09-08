@@ -1,698 +1,861 @@
-<div class="mc">
+<!--
+  THE WIZARD
 
-  <!-- ===================================================================================
-       WHAT THIS VIEW IS, AND WHAT IT REFUSES TO DO
-       =================================================================================== -->
-  <section class="mc-section" aria-labelledby="mc-intro-heading">
-    <div class="mc-section-head">
-      <h3 id="mc-intro-heading">Cross-model comparison</h3>
-      <button type="button" class="action-btn" (click)="onRefresh()"
-              aria-label="Recompute the cross-model comparison"
-              interestfor="mc-tip-refresh"
-              style="anchor-name: --mc-tip-refresh">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <polyline points="23 4 23 10 17 10"></polyline>
-          <polyline points="1 20 1 14 7 14"></polyline>
-          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-        </svg>
-      </button>
-      <div popover="hint" class="gh-tooltip" id="mc-tip-refresh"
-           style="position-anchor: --mc-tip-refresh">Recompute this comparison</div>
+  This component renders the whole content of the full-screen dialog the host declares — header,
+  step tabs, step panel and footer — so the wizard's chrome is not split across two files. The host
+  supplies only the <dialog> element and the showModal() / close() wiring.
+-->
+<div class="dialog-content flex-col mc-wizard">
+
+  <div class="dialog-header mc-wizard-header">
+    <div class="dialog-title-group">
+      <h3 #wizardHeading id="mc-wizard-title" tabindex="-1">Cross-model comparison</h3>
+      <p class="dialog-subtitle">
+        @if (comparison) {
+          {{ comparison.baselineSuiteName || 'Suite not set' }} &middot;
+          {{ comparison.pricingBasisLabel || comparison.pricingBasis }} &middot;
+          {{ comparison.comparableCount }} of {{ comparison.entries.length }} entries charted
+        } @else {
+          Choose runs or analysis groups, then compare them on quality, speed and cost
+        }
+      </p>
     </div>
+    <!-- Disabled mid-export: tearing the DOM out from under a running export would leave a
+         detached chart and a half-written batch. The reason is in the export status line. -->
+    <button type="button" class="btn-icon-action" aria-label="Close cross-model comparison"
+            [disabled]="exporting" (click)="closeRequested.emit()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width: 20px; height: 20px;">
+        <line x1="18" y1="6" x2="6" y2="18"></line>
+        <line x1="6" y1="6" x2="18" y2="18"></line>
+      </svg>
+    </button>
+  </div>
 
-    <p class="section-note">
-      One point per candidate model. Two points may be charted together only where every must-match
-      comparability key agrees; where one does not, the entry carries no measures at all and appears
-      in the table below with the differing keys named. Six charts are more persuasive than a table,
-      so this view never hides what it could not compare.
-    </p>
-
-    @if (comparison) {
-      <p class="mc-explanation">{{ comparison.explanation }}</p>
-      <dl class="mc-meta">
-        <div>
-          <dt>Suite</dt>
-          <dd>{{ comparison.baselineSuiteName || 'Not set' }}</dd>
-        </div>
-        <div>
-          <dt>Pricing basis</dt>
-          <dd>{{ comparison.pricingBasisLabel || comparison.pricingBasis }}</dd>
-        </div>
-        <div>
-          <dt>Charted</dt>
-          <dd>{{ comparison.comparableCount }} of {{ comparison.entries.length }}</dd>
-        </div>
-        <div>
-          <dt>Excluded</dt>
-          <dd>{{ comparison.excludedCount }}</dd>
-        </div>
-      </dl>
-    }
-  </section>
-
+  <!-- The fetch state sits above the step tabs, so a failed comparison is visible from any step
+       rather than only from the one that happened to be open when it failed. -->
   @if (error) {
-    <div class="alert alert-warning" role="alert">
+    <div class="alert alert-warning mc-wizard-alert" role="alert">
       <div class="alert-content"><div class="alert-body">{{ error }}</div></div>
     </div>
   }
-
   @if (loading) {
-    <p class="text-muted" role="status">Computing the comparison...</p>
+    <p class="text-muted mc-wizard-loading" role="status">Computing the comparison...</p>
   }
 
-  <!-- ===================================================================================
-       THE FILTER ROW
+  <div class="gh-tabs gh-tabs-secondary mc-wizard-steps" role="tablist"
+       aria-label="Model comparison steps">
+    @for (wizardStep of steps; track wizardStep; let i = $index) {
+      <!-- aria-disabled, never disabled: a disabled tab leaves the focus order and hides the fact
+           that the step exists at all. The reason it cannot be opened is the footer's text. -->
+      <button type="button" role="tab" class="gh-tab"
+              [id]="'mc-step-tab-' + wizardStep"
+              [attr.aria-controls]="'mc-step-panel-' + wizardStep"
+              [attr.aria-selected]="step === wizardStep"
+              [attr.aria-disabled]="!isStepReachable(wizardStep)"
+              [attr.aria-describedby]="isStepReachable(wizardStep) ? null : 'mc-next-blocked'"
+              [attr.tabindex]="step === wizardStep ? 0 : -1"
+              (keydown)="onStepKeydown($event, i)"
+              (click)="goToStep(wizardStep)">
+        {{ wizardStep }}. {{ stepTitles[wizardStep] }}
+      </button>
+    }
+  </div>
 
-       One row, above every figure. A control inside a chart card would leave the six figures
-       describing different slices of one set, which is exactly the reading error this whole
-       view exists to prevent.
-       =================================================================================== -->
-  <section class="mc-section" aria-labelledby="mc-filters-heading">
-    <h4 id="mc-filters-heading" class="mc-subheading">Filters</h4>
-    <p class="section-note">Every control here scopes all six figures and the table at once.</p>
+  <div class="dialog-body mc-wizard-body">
 
-    <div class="mc-filters" role="group" aria-labelledby="mc-filters-heading">
+    <!--
+      STEP 1 USES [hidden]; STEPS 2 AND 3 USE @if. THE ASYMMETRY IS DELIBERATE.
 
-      <div class="mc-field">
-        <label for="mc-pricing-basis">Pricing basis</label>
-        <select id="mc-pricing-basis" class="gh-input"
-                [ngModel]="pricingBasis" [ngModelOptions]="{ standalone: true }"
-                (ngModelChange)="onPricingBasisChange($event)">
-          <option value="Current">Current catalog — comparable across dates</option>
-          <option value="AsRun">As run — what was actually spent</option>
-        </select>
-        <p class="mc-field-hint">Costs from different snapshot dates compare price cards, not models.</p>
-      </div>
-
-      <div class="mc-field">
-        <label for="mc-strictness">Comparability</label>
-        <select id="mc-strictness" class="gh-input"
-                [ngModel]="strictness" [ngModelOptions]="{ standalone: true }"
-                (ngModelChange)="onStrictnessChange($event)">
-          <option value="all">Comparable and degraded</option>
-          <option value="comparableOnly">Comparable only</option>
-        </select>
-        <p class="mc-field-hint">A degraded entry is charted with the axis it degrades named. An excluded one never is.</p>
-      </div>
-
-      <div class="mc-field">
-        <label for="mc-sort-key">Model order</label>
-        <select id="mc-sort-key" class="gh-input"
-                [ngModel]="sort.key" [ngModelOptions]="{ standalone: true }"
-                (ngModelChange)="onSortKeyChange($event)">
-          <option value="intelligenceIndex">Intelligence Index</option>
-          <option value="speed">Speed</option>
-          <option value="cost">Cost</option>
-          <option value="label">Name</option>
-        </select>
-        <p class="mc-field-hint">One order for all three panels — a row is one model across them.</p>
-      </div>
-
-      <div class="mc-field">
-        <label for="mc-sort-direction">Order direction</label>
-        <select id="mc-sort-direction" class="gh-input"
-                [ngModel]="sort.direction" [ngModelOptions]="{ standalone: true }"
-                (ngModelChange)="onSortDirectionChange($event)">
-          <option value="desc">Descending</option>
-          <option value="asc">Ascending</option>
-        </select>
-      </div>
-
-      <div class="mc-field">
-        <label for="mc-speed-measure">Speed measure</label>
-        <select id="mc-speed-measure" class="gh-input"
-                [ngModel]="speedMeasure" [ngModelOptions]="{ standalone: true }"
-                (ngModelChange)="onSpeedMeasureChange($event)">
-          <option value="ttftP50">Time to first token, P50</option>
-          <option value="speedIndex">Speed Index (0-100)</option>
-        </select>
-        <p class="mc-field-hint">Speed Index saturates, so several models can sit tied at the ceiling while their real latency differs severalfold.</p>
-      </div>
-
-      <div class="mc-field">
-        <label for="mc-cost-measure">Cost measure</label>
-        <!--
-          The second option is present and disabled rather than absent: the axis exists as a concept
-          and this endpoint cannot supply it, and saying so is more honest than a control that looks
-          like it was never considered.
-        -->
-        <select id="mc-cost-measure" class="gh-input"
-                [ngModel]="costMeasure" [ngModelOptions]="{ standalone: true }"
-                (ngModelChange)="onCostMeasureChange($event)">
-          <option value="candidateSuite">Candidate cost for the whole suite</option>
-          <option value="totalRun" disabled>Total run cost including grading roles — not available</option>
-        </select>
-        <p class="mc-field-hint">The endpoint returns candidate spend only: grading-role cost is most of a run and none of it transfers to the chat assistant.</p>
-      </div>
+      Projected content inside an @if is destroyed when the branch is removed, which would reset
+      the source picker's two TableState instances — its sort column, page and filters — every
+      time the reader stepped back to it. Steps 2 and 3 own no such state and genuinely want @if:
+      a Chart.js canvas created inside a display: none container lays out at zero size, so the
+      figures must be built on entering step 3 rather than kept alive hidden.
+    -->
+    <div class="mc-step" role="tabpanel" tabindex="0"
+         id="mc-step-panel-1" aria-labelledby="mc-step-tab-1" [hidden]="step !== 1">
+      <ng-content></ng-content>
     </div>
 
-    @if (entries.length > 0) {
-      <div class="mc-entry-picker">
-        <h5 id="mc-entry-picker-heading" class="mc-subheading">
-          Entries in the figures — at most {{ maxPlottedEntries }} are plotted
-        </h5>
-        <div class="mc-chips" role="group" aria-labelledby="mc-entry-picker-heading">
-          @for (entry of entries; track entry.key) {
-            @if (entry.excluded) {
-              <span class="mc-chip mc-chip-excluded"
-                    [attr.interestfor]="tipId('chip', entry.key)"
-                    [attr.style]="'anchor-name: --' + tipId('chip', entry.key)">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line>
-                </svg>
-                {{ entry.label }} — excluded
-              </span>
-              <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="tipId('chip', entry.key)"
-                   [attr.style]="'position-anchor: --' + tipId('chip', entry.key)">{{ entry.explanation }}</div>
-            } @else {
-              <button type="button" class="mc-chip"
-                      [class.mc-chip-on]="isIncluded(entry.key)"
-                      [attr.aria-pressed]="isIncluded(entry.key)"
-                      [attr.aria-label]="'Plot ' + entry.label + ' in the figures'"
-                      (click)="toggleEntry(entry.key)"
-                      (mouseenter)="setHighlight(entry.key)"
-                      (mouseleave)="setHighlight(null)"
-                      (focus)="setHighlight(entry.key)"
-                      (blur)="setHighlight(null)">
-                @if (glyph(entry.key); as g) {
-                  <span [class]="'mc-glyph mc-glyph-' + g.shape"
-                        [style.background-color]="g.hue" aria-hidden="true"></span>
-                }
-                {{ entry.label }}
-              </button>
-            }
-          }
-        </div>
-        @if (includedKeys.length > 0 && offPageSelectionCount > 0) {
-          <p class="mc-selection-note" role="status">
-            {{ includedKeys.length }} plotted — {{ offPageSelectionCount }} not on the current table page.
+    @if (step === 2) {
+      <div class="mc-step" role="tabpanel" tabindex="0"
+           id="mc-step-panel-2" aria-labelledby="mc-step-tab-2">
+
+        <!-- ===================================================================================
+             WHAT THIS VIEW IS, AND WHAT IT REFUSES TO DO
+             =================================================================================== -->
+        <section class="mc-section" aria-labelledby="mc-intro-heading">
+          <div class="mc-section-head">
+            <h4 id="mc-intro-heading" class="mc-subheading">This comparison</h4>
+            <button type="button" class="action-btn" (click)="onRefresh()"
+                    aria-label="Recompute the cross-model comparison"
+                    interestfor="mc-tip-refresh"
+                    style="anchor-name: --mc-tip-refresh">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="23 4 23 10 17 10"></polyline>
+                <polyline points="1 20 1 14 7 14"></polyline>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+              </svg>
+            </button>
+            <div popover="hint" class="gh-tooltip" id="mc-tip-refresh"
+                 style="position-anchor: --mc-tip-refresh">Recompute this comparison</div>
+          </div>
+
+          <p class="section-note">
+            One point per candidate model. Two points may be charted together only where every
+            must-match comparability key agrees; where one does not, the entry carries no measures
+            at all and appears in the table with the differing keys named. Six charts are more
+            persuasive than a table, so this view never hides what it could not compare.
           </p>
-        }
-      </div>
-    }
-  </section>
 
-  <!-- ===================================================================================
-       SET-LEVEL CAVEATS
-
-       These are facts about the whole slice, so they render once, above the figures, rather
-       than being repeated per card or - worse - left to the reader to infer.
-       =================================================================================== -->
-  @if (comparison && comparison.thinkingLevelsDiffer) {
-    <div class="alert alert-warning" role="note">
-      <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-        <line x1="12" y1="9" x2="12" y2="13"></line>
-        <line x1="12" y1="17" x2="12.01" y2="17"></line>
-      </svg>
-      <div class="alert-content">
-        <p class="alert-heading">The plotted models were configured at different thinking levels</p>
-        <div class="alert-body">{{ comparison.speedAxisCaveat || 'Speed figures are not comparable across thinking levels.' }}</div>
-      </div>
-    </div>
-  }
-
-  @if (allSingleRun) {
-    <div class="alert" role="note">
-      <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <circle cx="12" cy="12" r="10"></circle>
-        <line x1="12" y1="16" x2="12" y2="12"></line>
-        <line x1="12" y1="8" x2="12.01" y2="8"></line>
-      </svg>
-      <div class="alert-content">
-        <p class="alert-heading">Every plotted entry is a single run — <span class="mc-n1">n = 1</span></p>
-        <div class="alert-body">
-          No interval here covers reproducibility: each quality interval is item sampling alone, which
-          does not shrink with more runs, and no cost or speed spread across runs exists at all. Read
-          the whiskers before the bar tops — at R = 1 they are wide enough to change the conclusion.
-        </div>
-      </div>
-    </div>
-  }
-
-  @if (setNotices.length > 0) {
-    <ul class="mc-notices" aria-label="Notices about this comparison">
-      @for (notice of setNotices; track $index) {
-        <li>
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="12" y1="16" x2="12" y2="12"></line>
-            <line x1="12" y1="8" x2="12.01" y2="8"></line>
-          </svg>
-          <span>{{ notice }}</span>
-        </li>
-      }
-    </ul>
-  }
-
-  <!-- ===================================================================================
-       THE FIGURES
-
-       Card order is fixed: P1, then P2, then the three scatters. P1 answers the primary
-       question and carries real units, so it is where a reader lands.
-       =================================================================================== -->
-  <section class="mc-section" aria-labelledby="mc-figures-heading">
-    <div class="mc-figures-head">
-      <h4 id="mc-figures-heading" class="mc-subheading">Figures</h4>
-
-      <!--
-        Export lives in the section header rather than in a card: the format applies to every
-        figure at once, and a per-card copy of it would let two downloaded figures disagree about
-        what they are. Hidden entirely where no figure is rendered — a download control over an
-        empty axis would produce a file saying nothing.
-      -->
-      @if (showFigures) {
-        <div class="mc-export">
-          <label class="visually-hidden" for="mc-export-format">Export format</label>
-          <select id="mc-export-format" class="gh-input mc-export-format"
-                  [ngModel]="exportFormat" [ngModelOptions]="{ standalone: true }"
-                  (ngModelChange)="onExportFormatChange($event)">
-            <option value="png">PNG</option>
-            <option value="webp">WebP (quality 85)</option>
-          </select>
-          <button type="button" class="btn-gh btn-gh-small" [disabled]="!canExport"
-                  (click)="downloadAllFigures()">Download all figures</button>
-        </div>
-      }
-    </div>
-
-    @if (exportStatus) {
-      <p class="mc-export-status" role="status">{{ exportStatus }}</p>
-    }
-
-    @switch (shape) {
-
-      @case ('empty') {
-        <p class="text-muted">No entries in this comparison yet. Choose runs or analysis groups to compare.</p>
-      }
-
-      @case ('none') {
-        <!-- Empty axes over an incomparable set would look like a measurement. Say what disagrees. -->
-        <div class="alert alert-warning" role="note">
-          <div class="alert-content">
-            <p class="alert-heading">Nothing in this set may be charted together</p>
-            <div class="alert-body">
-              No two entries agree on every must-match comparability key, so no figure is drawn — an
-              empty pair of axes would read as a measurement rather than as a refusal. The table below
-              lists every entry, and the section under it names the keys each one differs on.
-            </div>
-          </div>
-        </div>
-      }
-
-      @case ('single') {
-        <!-- One bar is not a bar chart, and one polyline is not a profile: the number is the chart. -->
-        <p class="section-note">
-          One entry is not a comparison. The figures need at least two models that agree on every
-          must-match key; until then these are the measured values, with their uncertainty.
-        </p>
-        <div class="mc-kpis">
-          @for (tile of singleEntryTiles; track $index) {
-            <div class="mc-kpi">
-              <span class="mc-kpi-label">{{ tile.label }}</span>
-              <span class="mc-kpi-value">{{ tile.value }}</span>
-              <span class="mc-kpi-detail">{{ tile.detail }}</span>
-            </div>
-          }
-        </div>
-      }
-
-      @default {
-        <div class="mc-charts" #chartsHost [class.mc-single-run]="allSingleRun">
-
-          <!-- P1 — three linked panels, one shared model order, one unit each. -->
-          <div class="mc-panels">
-            @for (card of panelCards; track card.id) {
-              <figure class="mc-card" [attr.aria-labelledby]="card.id + '-title'">
-                <figcaption class="mc-card-head">
-                  <h5 class="mc-card-title" [id]="card.id + '-title'">{{ card.title }}</h5>
-                  <p class="mc-card-subtitle">{{ card.subtitle }}</p>
-                  <button type="button" class="action-btn mc-download" [disabled]="!canExport"
-                          [attr.aria-label]="'Download ' + card.title"
-                          [attr.interestfor]="tipId('dl', card.id)"
-                          [attr.style]="'anchor-name: --' + tipId('dl', card.id)"
-                          (click)="downloadFigure(card)">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                      <polyline points="7 10 12 15 17 10"></polyline>
-                      <line x1="12" y1="15" x2="12" y2="3"></line>
-                    </svg>
-                  </button>
-                  <div popover="hint" class="gh-tooltip" [id]="tipId('dl', card.id)"
-                       [attr.style]="'position-anchor: --' + tipId('dl', card.id)">Download this figure with its caption and notices</div>
-                </figcaption>
-                <div class="mc-canvas" [style.height.px]="card.heightPx">
-                  <canvas baseChart role="img" [attr.aria-label]="card.ariaLabel"
-                          [type]="card.type" [data]="card.data" [options]="card.options"
-                          [plugins]="card.plugins"></canvas>
-                </div>
-                @if (card.notices.length > 0) {
-                  <ul class="mc-card-notices">
-                    @for (notice of card.notices; track $index) {
-                      <li>{{ notice }}</li>
-                    }
-                  </ul>
-                }
-              </figure>
-            }
-          </div>
-
-          <!-- P2 — the companion. Suppressed at two entries: two polylines cross once or not at all. -->
-          @if (profileCard; as profile) {
-            <figure class="mc-card" [attr.aria-labelledby]="profile.id + '-title'">
-              <figcaption class="mc-card-head">
-                <h5 class="mc-card-title" [id]="profile.id + '-title'">{{ profile.title }}</h5>
-                <p class="mc-card-subtitle">{{ profile.subtitle }}</p>
-                <button type="button" class="action-btn mc-download" [disabled]="!canExport"
-                        [attr.aria-label]="'Download ' + profile.title"
-                        [attr.interestfor]="tipId('dl', profile.id)"
-                        [attr.style]="'anchor-name: --' + tipId('dl', profile.id)"
-                        (click)="downloadFigure(profile)">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                    <polyline points="7 10 12 15 17 10"></polyline>
-                    <line x1="12" y1="15" x2="12" y2="3"></line>
-                  </svg>
-                </button>
-                <div popover="hint" class="gh-tooltip" [id]="tipId('dl', profile.id)"
-                     [attr.style]="'position-anchor: --' + tipId('dl', profile.id)">Download this figure with its caption and notices</div>
-              </figcaption>
-              <div class="mc-canvas" [style.height.px]="profile.heightPx">
-                <canvas baseChart role="img" [attr.aria-label]="profile.ariaLabel"
-                        [type]="profile.type" [data]="profile.data" [options]="profile.options"
-                        [plugins]="profile.plugins"></canvas>
+          @if (comparison) {
+            <p class="mc-explanation">{{ comparison.explanation }}</p>
+            <dl class="mc-meta">
+              <div>
+                <dt>Suite</dt>
+                <dd>{{ comparison.baselineSuiteName || 'Not set' }}</dd>
               </div>
-              @if (profileAxes) {
-                <!-- The real endpoints, printed beside a normalized plot so a height stays anchored. -->
-                <dl class="mc-axis-ends">
-                  @for (axis of profileAxes.axes; track axis.id) {
-                    <div>
-                      <dt>{{ axis.title }}</dt>
-                      <dd>{{ axis.minLabel }} to {{ axis.maxLabel }}{{ axis.lowerIsBetter ? ' (inverted: lower is better)' : '' }}</dd>
-                    </div>
-                  }
-                </dl>
-              }
-              <p class="mc-card-caption">{{ profile.caption }}</p>
-              @if (profile.notices.length > 0) {
-                <ul class="mc-card-notices">
-                  @for (notice of profile.notices; track $index) {
-                    <li>{{ notice }}</li>
-                  }
-                </ul>
-              }
-            </figure>
-          } @else if (shape === 'pair') {
-            <p class="section-note">
-              The profile plot is suppressed at two entries: two polylines either cross once or they
-              do not, which the three panels above already show.
-            </p>
+              <div>
+                <dt>Pricing basis</dt>
+                <dd>{{ comparison.pricingBasisLabel || comparison.pricingBasis }}</dd>
+              </div>
+              <div>
+                <dt>Charted</dt>
+                <dd>{{ comparison.comparableCount }} of {{ comparison.entries.length }}</dd>
+              </div>
+              <div>
+                <dt>Excluded</dt>
+                <dd>{{ comparison.excludedCount }}</dd>
+              </div>
+            </dl>
           }
+        </section>
 
-          <!-- S1-S3 — the trade-off scatters. -->
-          <div class="mc-grid">
-            @for (card of scatterCards; track card.id) {
-              <figure class="mc-card" [attr.aria-labelledby]="card.id + '-title'">
-                <figcaption class="mc-card-head">
-                  <h5 class="mc-card-title" [id]="card.id + '-title'">{{ card.title }}</h5>
-                  <p class="mc-card-subtitle">{{ card.subtitle }}</p>
-                  @if (card.cornerLabel) {
-                    <p class="mc-card-corner">{{ card.cornerLabel }}</p>
-                  }
-                  <button type="button" class="action-btn mc-download" [disabled]="!canExport"
-                          [attr.aria-label]="'Download ' + card.title"
-                          [attr.interestfor]="tipId('dl', card.id)"
-                          [attr.style]="'anchor-name: --' + tipId('dl', card.id)"
-                          (click)="downloadFigure(card)">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                      <polyline points="7 10 12 15 17 10"></polyline>
-                      <line x1="12" y1="15" x2="12" y2="3"></line>
-                    </svg>
-                  </button>
-                  <div popover="hint" class="gh-tooltip" [id]="tipId('dl', card.id)"
-                       [attr.style]="'position-anchor: --' + tipId('dl', card.id)">Download this figure with its caption and notices</div>
-                </figcaption>
-                <div class="mc-canvas" [style.height.px]="card.heightPx">
-                  <canvas baseChart role="img" [attr.aria-label]="card.ariaLabel"
-                          [type]="card.type" [data]="card.data" [options]="card.options"
-                          [plugins]="card.plugins"></canvas>
-                </div>
-                <p class="mc-card-caption">{{ card.caption }}</p>
-                @if (card.notices.length > 0) {
-                  <ul class="mc-card-notices">
-                    @for (notice of card.notices; track $index) {
-                      <li>{{ notice }}</li>
-                    }
-                  </ul>
-                }
-              </figure>
-            }
+        <!-- ===================================================================================
+             THE FILTER ROW
+
+             One row, above every figure. A control inside a chart card would leave the six figures
+             describing different slices of one set, which is exactly the reading error this whole
+             view exists to prevent.
+             =================================================================================== -->
+        <section class="mc-section" aria-labelledby="mc-filters-heading">
+          <h4 id="mc-filters-heading" class="mc-subheading">Filters</h4>
+          <p class="section-note">Every control here scopes all six figures and the table at once.</p>
+
+          <div class="mc-filters" role="group" aria-labelledby="mc-filters-heading">
+
+            <div class="mc-field">
+              <label for="mc-pricing-basis">Pricing basis</label>
+              <select id="mc-pricing-basis" class="gh-input"
+                      [ngModel]="pricingBasis" [ngModelOptions]="{ standalone: true }"
+                      (ngModelChange)="onPricingBasisChange($event)">
+                <option value="Current">Current catalog — comparable across dates</option>
+                <option value="AsRun">As run — what was actually spent</option>
+              </select>
+              <p class="mc-field-hint">Costs from different snapshot dates compare price cards, not models.</p>
+            </div>
+
+            <div class="mc-field">
+              <label for="mc-strictness">Comparability</label>
+              <select id="mc-strictness" class="gh-input"
+                      [ngModel]="strictness" [ngModelOptions]="{ standalone: true }"
+                      (ngModelChange)="onStrictnessChange($event)">
+                <option value="all">Comparable and degraded</option>
+                <option value="comparableOnly">Comparable only</option>
+              </select>
+              <p class="mc-field-hint">A degraded entry is charted with the axis it degrades named. An excluded one never is.</p>
+            </div>
+
+            <div class="mc-field">
+              <label for="mc-sort-key">Model order</label>
+              <select id="mc-sort-key" class="gh-input"
+                      [ngModel]="sort.key" [ngModelOptions]="{ standalone: true }"
+                      (ngModelChange)="onSortKeyChange($event)">
+                <option value="intelligenceIndex">Intelligence Index</option>
+                <option value="speed">Speed</option>
+                <option value="cost">Cost</option>
+                <option value="label">Name</option>
+              </select>
+              <p class="mc-field-hint">One order for all three panels — a row is one model across them.</p>
+            </div>
+
+            <div class="mc-field">
+              <label for="mc-sort-direction">Order direction</label>
+              <select id="mc-sort-direction" class="gh-input"
+                      [ngModel]="sort.direction" [ngModelOptions]="{ standalone: true }"
+                      (ngModelChange)="onSortDirectionChange($event)">
+                <option value="desc">Descending</option>
+                <option value="asc">Ascending</option>
+              </select>
+            </div>
+
+            <div class="mc-field">
+              <label for="mc-speed-measure">Speed measure</label>
+              <select id="mc-speed-measure" class="gh-input"
+                      [ngModel]="speedMeasure" [ngModelOptions]="{ standalone: true }"
+                      (ngModelChange)="onSpeedMeasureChange($event)">
+                <option value="ttftP50">Time to first token, P50</option>
+                <option value="speedIndex">Speed Index (0-100)</option>
+              </select>
+              <p class="mc-field-hint">Speed Index saturates, so several models can sit tied at the ceiling while their real latency differs severalfold.</p>
+            </div>
+
+            <div class="mc-field">
+              <label for="mc-cost-measure">Cost measure</label>
+              <!--
+                The second option is present and disabled rather than absent: the axis exists as a
+                concept and this endpoint cannot supply it, and saying so is more honest than a
+                control that looks like it was never considered.
+              -->
+              <select id="mc-cost-measure" class="gh-input"
+                      [ngModel]="costMeasure" [ngModelOptions]="{ standalone: true }"
+                      (ngModelChange)="onCostMeasureChange($event)">
+                <option value="candidateSuite">Candidate cost for the whole suite</option>
+                <option value="totalRun" disabled>Total run cost including grading roles — not available</option>
+              </select>
+              <p class="mc-field-hint">The endpoint returns candidate spend only: grading-role cost is most of a run and none of it transfers to the chat assistant.</p>
+            </div>
           </div>
-        </div>
-      }
-    }
-  </section>
 
-  <!-- ===================================================================================
-       WHY AN ENTRY IS NOT CHARTED
-
-       Named keys, with the baseline's value beside the entry's. "Not comparable" with no
-       reason is unusable: it cannot tell a suite mismatch from a scoring-version bump, and
-       those want opposite actions.
-       =================================================================================== -->
-  @if (excludedEntries.length > 0) {
-    <section class="mc-section" aria-labelledby="mc-excluded-heading">
-      <h4 id="mc-excluded-heading" class="mc-subheading">Entries excluded from every figure</h4>
-      @for (entry of excludedEntries; track entry.key) {
-        <div class="mc-excluded">
-          <h5 class="mc-excluded-title">{{ entry.label }}</h5>
-          <p class="mc-excluded-explanation">{{ entry.explanation }}</p>
-          @if (entry.excludingKeys.length > 0) {
-            <p class="mc-excluded-keys">
-              Differing keys: <strong>{{ entry.excludingKeys.join(', ') }}</strong>
-            </p>
-          }
-          @if (entry.differences.length > 0) {
-            <ul class="mc-differences">
-              @for (difference of entry.differences; track $index) {
-                <li>
-                  <strong>{{ difference.name }}</strong> ({{ difference.kind }}) — {{ difference.description }}
-                  <ul>
-                    @for (variant of difference.variants; track $index) {
-                      <li>{{ variant.value }} — runs {{ variant.runIds.join(', ') }}</li>
-                    }
-                  </ul>
-                </li>
-              }
-            </ul>
-          }
-        </div>
-      }
-    </section>
-  }
-
-  <!-- ===================================================================================
-       WHAT THIS VIEW DELIBERATELY DOES NOT CHART
-       =================================================================================== -->
-  @if (comparison && comparison.excludedMeasures.length > 0) {
-    <section class="mc-section" aria-labelledby="mc-measures-heading">
-      <h4 id="mc-measures-heading" class="mc-subheading">Measures deliberately left off every axis</h4>
-      <dl class="mc-measures">
-        @for (measure of comparison.excludedMeasures; track $index) {
-          <div>
-            <dt>{{ measure.measure }}</dt>
-            <dd>
-              {{ measure.reason }}
-              @if (measure.instead) {
-                <span class="mc-measure-instead">Read instead: {{ measure.instead }}</span>
-              }
-            </dd>
-          </div>
-        }
-      </dl>
-    </section>
-  }
-
-  <!-- ===================================================================================
-       THE TABLE VIEW
-
-       The accessible artefact, present unconditionally. It is not behind a toggle and has no
-       "off" state: a canvas is a picture, and this is the record of what the picture shows -
-       including every entry no figure could draw.
-       =================================================================================== -->
-  <section class="mc-section" aria-labelledby="mc-table-heading">
-    <h4 id="mc-table-heading" class="mc-subheading">Comparison table</h4>
-    <p class="section-note">
-      Every entry, charted or not, with its state, its measures and the keys it differs on. This is
-      the accessible record of the figures above.
-    </p>
-
-    @if (entries.length === 0) {
-      <p class="text-muted">Nothing to compare yet.</p>
-    } @else {
-      <div class="gh-datatable-scroll">
-        <app-table-pager [state]="entryTable" [rows]="entries" noun="entries"
-                         (changed)="onTableChanged()"></app-table-pager>
-        <table class="gh-table gh-datatable mc-table">
-          <caption class="visually-hidden">
-            Cross-model comparison entries: model, runs behind the point, comparability state,
-            Intelligence Index, time to first token, Speed Index, candidate cost, and the
-            comparability keys each entry differs on.
-          </caption>
-          <thead>
-            <tr>
-              <th app-sort-header [state]="entryTable" column="label" label="Model" (changed)="onTableChanged()"></th>
-              <th app-sort-header [state]="entryTable" column="runCount" label="R" class="col-center" (changed)="onTableChanged()"></th>
-              <th app-sort-header [state]="entryTable" column="state" label="State" (changed)="onTableChanged()"></th>
-              <th app-sort-header [state]="entryTable" column="intelligenceIndex" label="Intelligence Index" (changed)="onTableChanged()"></th>
-              <th app-sort-header [state]="entryTable" column="ttftP50Ms" label="TTFT P50 / P90" (changed)="onTableChanged()"></th>
-              <th app-sort-header [state]="entryTable" column="speedIndex" label="Speed Index" (changed)="onTableChanged()"></th>
-              <th app-sort-header [state]="entryTable" column="costPerQuestion" label="Candidate $ / question" (changed)="onTableChanged()"></th>
-              <th scope="col">Notes</th>
-            </tr>
-            <tr class="gh-filter-row">
-              <td>
-                <label class="visually-hidden" for="mc-f-label">Filter by model name</label>
-                <input id="mc-f-label" type="text" class="gh-input gh-filter-input" placeholder="Model"
-                       [ngModel]="entryTable.filters['label']" [ngModelOptions]="{ standalone: true }"
-                       (ngModelChange)="entryTable.setFilter('label', $event); onTableChanged()">
-              </td>
-              <td></td>
-              <td>
-                <label class="visually-hidden" for="mc-f-state">Filter by comparability state</label>
-                <select id="mc-f-state" class="gh-input gh-filter-select"
-                        [ngModel]="entryTable.filters['state']" [ngModelOptions]="{ standalone: true }"
-                        (ngModelChange)="entryTable.setFilter('state', $event); onTableChanged()">
-                  <option value="">All</option>
-                  <option value="Comparable">Comparable</option>
-                  <option value="Degraded">Degraded</option>
-                  <option value="Excluded">Excluded</option>
-                </select>
-              </td>
-              <td></td>
-              <td></td>
-              <td></td>
-              <td></td>
-              <td>
-                @if (entryTable.hasActiveFilters) {
-                  <button type="button" class="gh-filter-clear"
-                          (click)="entryTable.clearFilters(); onTableChanged()">Clear filters</button>
-                }
-              </td>
-            </tr>
-          </thead>
-          <tbody>
-            @if (entryTable.noMatches(entries)) {
-              <tr><td colspan="8" class="text-muted">No entries match these filters.</td></tr>
-            }
-            @for (entry of entryTable.view(entries); track entry.key) {
-              <tr [class.mc-row-highlighted]="highlightedKey === entry.key"
-                  (mouseenter)="setHighlight(entry.key)" (mouseleave)="setHighlight(null)">
-                <th scope="row" class="col-name">
-                  @if (glyph(entry.key); as g) {
-                    <span [class]="'mc-glyph mc-glyph-' + g.shape"
-                          [style.background-color]="g.hue" aria-hidden="true"></span>
-                  }
-                  <button type="button" class="mc-name-btn"
-                          [attr.aria-pressed]="isEmphasised(entry.key)"
-                          [attr.aria-label]="'Emphasise ' + entry.label + ' in every figure'"
-                          (click)="toggleEmphasis(entry.key)"
-                          (focus)="setHighlight(entry.key)"
-                          (blur)="setHighlight(null)">{{ entry.label }}</button>
-                  <span class="mc-source">{{ entry.sourceKind }} {{ entry.sourceId }}</span>
-                </th>
-                <td class="col-center">
-                  {{ entry.runCount }}
-                  @if (entry.runCount === 1) {
-                    <span class="mc-n1">n = 1</span>
-                  }
-                </td>
-                <td>
-                  <!-- Text plus icon, never colour alone: the badge names its state in words. -->
-                  <span [class]="'mc-state ' + stateClass(entry)"
-                        [attr.interestfor]="tipId('state', entry.key)"
-                        [attr.style]="'anchor-name: --' + tipId('state', entry.key)">
-                    @if (entry.excluded) {
+          @if (entries.length > 0) {
+            <div class="mc-entry-picker">
+              <h5 id="mc-entry-picker-heading" class="mc-subheading">
+                Entries in the figures — at most {{ maxPlottedEntries }} are plotted
+              </h5>
+              <div class="mc-chips" role="group" aria-labelledby="mc-entry-picker-heading">
+                @for (entry of entries; track entry.key) {
+                  @if (entry.excluded) {
+                    <span class="mc-chip mc-chip-excluded"
+                          [attr.interestfor]="tipId('chip', entry.key)"
+                          [attr.style]="'anchor-name: --' + tipId('chip', entry.key)">
                       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <circle cx="12" cy="12" r="10"></circle>
                         <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line>
                       </svg>
-                    } @else if (entry.state === 'Degraded') {
-                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                        <line x1="12" y1="9" x2="12" y2="13"></line>
-                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                      </svg>
-                    } @else {
-                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <polyline points="20 6 9 17 4 12"></polyline>
-                      </svg>
-                    }
-                    {{ stateLabel(entry) }}
-                  </span>
-                  <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="tipId('state', entry.key)"
-                       [attr.style]="'position-anchor: --' + tipId('state', entry.key)">{{ entry.explanation }}</div>
-                  @if (degradedAxes(entry).length > 0) {
-                    <span class="mc-degraded-axes">Degraded: {{ degradedAxes(entry).join(', ') }}</span>
+                      {{ entry.label }} — excluded
+                    </span>
+                    <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="tipId('chip', entry.key)"
+                         [attr.style]="'position-anchor: --' + tipId('chip', entry.key)">{{ entry.explanation }}</div>
+                  } @else {
+                    <button type="button" class="mc-chip"
+                            [class.mc-chip-on]="isIncluded(entry.key)"
+                            [attr.aria-pressed]="isIncluded(entry.key)"
+                            [attr.aria-label]="'Plot ' + entry.label + ' in the figures'"
+                            (click)="toggleEntry(entry.key)"
+                            (mouseenter)="setHighlight(entry.key)"
+                            (mouseleave)="setHighlight(null)"
+                            (focus)="setHighlight(entry.key)"
+                            (blur)="setHighlight(null)">
+                      @if (glyph(entry.key); as g) {
+                        <span [class]="'mc-glyph mc-glyph-' + g.shape"
+                              [style.background-color]="g.hue" aria-hidden="true"></span>
+                      }
+                      {{ entry.label }}
+                    </button>
                   }
-                </td>
-                <td>
-                  {{ formatIndex(entry.quality?.pointEstimate) }}
-                  @if (entry.quality?.intervalHalfWidth != null) {
-                    <span class="mc-interval">± {{ formatIndex(entry.quality?.intervalHalfWidth) }}</span>
-                    <span class="mc-interval-basis">{{ entry.quality?.intervalBasis }}</span>
-                  } @else if (!entry.excluded) {
-                    <span class="mc-interval-basis">No interval available</span>
-                  }
-                </td>
-                <td>
-                  {{ formatMs(entry.speed?.ttftP50Ms) }} / {{ formatMs(entry.speed?.ttftP90Ms) }}
-                </td>
-                <td>
-                  {{ formatIndex(entry.table?.meanSpeedIndex) }}
-                  @if (entry.table?.speedIndexSaturated) {
-                    <span class="mc-saturated"
-                          [attr.interestfor]="tipId('sat', entry.key)"
-                          [attr.style]="'anchor-name: --' + tipId('sat', entry.key)">Saturated</span>
-                    <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="tipId('sat', entry.key)"
-                         [attr.style]="'position-anchor: --' + tipId('sat', entry.key)">
-                      At least half the scored answers finished inside their difficulty-scaled target, so
-                      the index cannot discriminate at this speed. Read time to first token instead.
-                    </div>
-                  }
-                </td>
-                <td>
-                  {{ formatUsd(entry.cost?.candidateCostPerQuestionUsd) }}
-                  @if (entry.cost && !entry.cost.pricingResolved) {
-                    <span class="mc-unpriced">Unpriced</span>
-                  }
-                  @if (entry.cost?.scheduledChangeEffectiveFrom) {
-                    <span class="mc-scheduled">Price change {{ entry.cost?.scheduledChangeEffectiveFrom }}</span>
-                  }
-                </td>
-                <td class="mc-notes">
-                  @if (entry.excludingKeys.length > 0) {
-                    <span class="mc-note-line">Differs on: {{ entry.excludingKeys.join(', ') }}</span>
-                  }
-                  @if (entry.speedDegradingKeys.length > 0) {
-                    <span class="mc-note-line">Speed degraded by: {{ entry.speedDegradingKeys.join(', ') }}</span>
-                  }
-                  @if (entry.costDegradingKeys.length > 0) {
-                    <span class="mc-note-line">Cost degraded by: {{ entry.costDegradingKeys.join(', ') }}</span>
-                  }
-                  @if (entry.table && entry.table.unstableItemCount > 0) {
-                    <span class="mc-note-line">{{ entry.table.unstableItemCount }} unstable items</span>
-                  }
-                </td>
-              </tr>
+                }
+              </div>
+              @if (includedKeys.length > 0 && offPageSelectionCount > 0) {
+                <p class="mc-selection-note" role="status">
+                  {{ includedKeys.length }} plotted — {{ offPageSelectionCount }} not on the current table page.
+                </p>
+              }
+            </div>
+          }
+        </section>
+
+        <!-- ===================================================================================
+             SET-LEVEL CAVEATS
+
+             These are facts about the whole slice, so they render once, above the figures, rather
+             than being repeated per card or - worse - left to the reader to infer.
+             =================================================================================== -->
+        @if (comparison && comparison.thinkingLevelsDiffer) {
+          <div class="alert alert-warning" role="note">
+            <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+              <line x1="12" y1="9" x2="12" y2="13"></line>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+            <div class="alert-content">
+              <p class="alert-heading">The plotted models were configured at different thinking levels</p>
+              <div class="alert-body">{{ comparison.speedAxisCaveat || 'Speed figures are not comparable across thinking levels.' }}</div>
+            </div>
+          </div>
+        }
+
+        @if (allSingleRun) {
+          <div class="alert" role="note">
+            <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="16" x2="12" y2="12"></line>
+              <line x1="12" y1="8" x2="12.01" y2="8"></line>
+            </svg>
+            <div class="alert-content">
+              <p class="alert-heading">Every plotted entry is a single run — <span class="mc-n1">n = 1</span></p>
+              <div class="alert-body">
+                No interval here covers reproducibility: each quality interval is item sampling alone, which
+                does not shrink with more runs, and no cost or speed spread across runs exists at all. Read
+                the whiskers before the bar tops — at R = 1 they are wide enough to change the conclusion.
+              </div>
+            </div>
+          </div>
+        }
+
+        @if (setNotices.length > 0) {
+          <ul class="mc-notices" aria-label="Notices about this comparison">
+            @for (notice of setNotices; track $index) {
+              <li>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="12" y1="16" x2="12" y2="12"></line>
+                  <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                </svg>
+                <span>{{ notice }}</span>
+              </li>
             }
-          </tbody>
-        </table>
-        <app-table-pager [state]="entryTable" [rows]="entries" noun="entries" [announce]="false"
-                         (changed)="onTableChanged()"></app-table-pager>
+          </ul>
+        }
+
+        <!-- ===================================================================================
+             WHY AN ENTRY IS NOT CHARTED
+
+             Named keys, with the baseline's value beside the entry's. "Not comparable" with no
+             reason is unusable: it cannot tell a suite mismatch from a scoring-version bump, and
+             those want opposite actions.
+             =================================================================================== -->
+        @if (excludedEntries.length > 0) {
+          <section class="mc-section" aria-labelledby="mc-excluded-heading">
+            <h4 id="mc-excluded-heading" class="mc-subheading">Entries excluded from every figure</h4>
+            @for (entry of excludedEntries; track entry.key) {
+              <div class="mc-excluded">
+                <h5 class="mc-excluded-title">{{ entry.label }}</h5>
+                <p class="mc-excluded-explanation">{{ entry.explanation }}</p>
+                @if (entry.excludingKeys.length > 0) {
+                  <p class="mc-excluded-keys">
+                    Differing keys: <strong>{{ entry.excludingKeys.join(', ') }}</strong>
+                  </p>
+                }
+                @if (entry.differences.length > 0) {
+                  <ul class="mc-differences">
+                    @for (difference of entry.differences; track $index) {
+                      <li>
+                        <strong>{{ difference.name }}</strong> ({{ difference.kind }}) — {{ difference.description }}
+                        <ul>
+                          @for (variant of difference.variants; track $index) {
+                            <li>{{ variant.value }} — runs {{ variant.runIds.join(', ') }}</li>
+                          }
+                        </ul>
+                      </li>
+                    }
+                  </ul>
+                }
+              </div>
+            }
+          </section>
+        }
+
+        <!-- ===================================================================================
+             WHAT THIS VIEW DELIBERATELY DOES NOT CHART
+             =================================================================================== -->
+        @if (comparison && comparison.excludedMeasures.length > 0) {
+          <section class="mc-section" aria-labelledby="mc-measures-heading">
+            <h4 id="mc-measures-heading" class="mc-subheading">Measures deliberately left off every axis</h4>
+            <dl class="mc-measures">
+              @for (measure of comparison.excludedMeasures; track $index) {
+                <div>
+                  <dt>{{ measure.measure }}</dt>
+                  <dd>
+                    {{ measure.reason }}
+                    @if (measure.instead) {
+                      <span class="mc-measure-instead">Read instead: {{ measure.instead }}</span>
+                    }
+                  </dd>
+                </div>
+              }
+            </dl>
+          </section>
+        }
+        <!-- ===================================================================================
+             WHAT THIS SET CAN BE CHARTED AS
+
+             The degenerate shapes, and the refusal, live beside the table rather than on the
+             Figures step: step 3 opens only where at least two entries may be plotted, so a set
+             that cannot be charted would state its refusal on a step the reader can never reach.
+             =================================================================================== -->
+        @if (!showFigures) {
+          <section class="mc-section" aria-labelledby="mc-shape-heading">
+            <h4 id="mc-shape-heading" class="mc-subheading">What this set can be charted as</h4>
+            @switch (shape) {
+            @case ('empty') {
+              <p class="text-muted">No entries in this comparison yet. Choose runs or analysis groups to compare.</p>
+            }
+
+            @case ('none') {
+              <!-- Empty axes over an incomparable set would look like a measurement. Say what disagrees. -->
+              <div class="alert alert-warning" role="note">
+                <div class="alert-content">
+                  <p class="alert-heading">Nothing in this set may be charted together</p>
+                  <div class="alert-body">
+                    No two entries agree on every must-match comparability key, so no figure is drawn — an
+                    empty pair of axes would read as a measurement rather than as a refusal. The table below
+                    lists every entry, and the section under it names the keys each one differs on.
+                  </div>
+                </div>
+              </div>
+            }
+
+            @case ('single') {
+              <!-- One bar is not a bar chart, and one polyline is not a profile: the number is the chart. -->
+              <p class="section-note">
+                One entry is not a comparison. The figures need at least two models that agree on every
+                must-match key; until then these are the measured values, with their uncertainty.
+              </p>
+              <div class="mc-kpis">
+                @for (tile of singleEntryTiles; track $index) {
+                  <div class="mc-kpi">
+                    <span class="mc-kpi-label">{{ tile.label }}</span>
+                    <span class="mc-kpi-value">{{ tile.value }}</span>
+                    <span class="mc-kpi-detail">{{ tile.detail }}</span>
+                  </div>
+                }
+              </div>
+            }
+
+            }
+          </section>
+        }
+
+        <!-- ===================================================================================
+             THE TABLE VIEW
+
+             The accessible artefact, present unconditionally. It is not behind a toggle and has no
+             "off" state: a canvas is a picture, and this is the record of what the picture shows -
+             including every entry no figure could draw.
+             =================================================================================== -->
+        <section class="mc-section" aria-labelledby="mc-table-heading">
+          <h4 id="mc-table-heading" class="mc-subheading">Comparison table</h4>
+          <p class="section-note">
+            Every entry, charted or not, with its state, its measures and the keys it differs on. This is
+            the accessible record of the figures above.
+          </p>
+
+          @if (entries.length === 0) {
+            <p class="text-muted">Nothing to compare yet.</p>
+          } @else {
+            <div class="gh-datatable-scroll">
+              <app-table-pager [state]="entryTable" [rows]="entries" noun="entries"
+                               (changed)="onTableChanged()"></app-table-pager>
+              <table class="gh-table gh-datatable mc-table">
+                <caption class="visually-hidden">
+                  Cross-model comparison entries: model, runs behind the point, comparability state,
+                  Intelligence Index, time to first token, Speed Index, candidate cost, and the
+                  comparability keys each entry differs on.
+                </caption>
+                <thead>
+                  <tr>
+                    <th app-sort-header [state]="entryTable" column="label" label="Model" (changed)="onTableChanged()"></th>
+                    <th app-sort-header [state]="entryTable" column="runCount" label="R" class="col-center" (changed)="onTableChanged()"></th>
+                    <th app-sort-header [state]="entryTable" column="state" label="State" (changed)="onTableChanged()"></th>
+                    <th app-sort-header [state]="entryTable" column="intelligenceIndex" label="Intelligence Index" (changed)="onTableChanged()"></th>
+                    <th app-sort-header [state]="entryTable" column="ttftP50Ms" label="TTFT P50 / P90" (changed)="onTableChanged()"></th>
+                    <th app-sort-header [state]="entryTable" column="speedIndex" label="Speed Index" (changed)="onTableChanged()"></th>
+                    <th app-sort-header [state]="entryTable" column="costPerQuestion" label="Candidate $ / question" (changed)="onTableChanged()"></th>
+                    <th scope="col">Notes</th>
+                  </tr>
+                  <tr class="gh-filter-row">
+                    <td>
+                      <label class="visually-hidden" for="mc-f-label">Filter by model name</label>
+                      <input id="mc-f-label" type="text" class="gh-input gh-filter-input" placeholder="Model"
+                             [ngModel]="entryTable.filters['label']" [ngModelOptions]="{ standalone: true }"
+                             (ngModelChange)="entryTable.setFilter('label', $event); onTableChanged()">
+                    </td>
+                    <td></td>
+                    <td>
+                      <label class="visually-hidden" for="mc-f-state">Filter by comparability state</label>
+                      <select id="mc-f-state" class="gh-input gh-filter-select"
+                              [ngModel]="entryTable.filters['state']" [ngModelOptions]="{ standalone: true }"
+                              (ngModelChange)="entryTable.setFilter('state', $event); onTableChanged()">
+                        <option value="">All</option>
+                        <option value="Comparable">Comparable</option>
+                        <option value="Degraded">Degraded</option>
+                        <option value="Excluded">Excluded</option>
+                      </select>
+                    </td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td>
+                      @if (entryTable.hasActiveFilters) {
+                        <button type="button" class="gh-filter-clear"
+                                (click)="entryTable.clearFilters(); onTableChanged()">Clear filters</button>
+                      }
+                    </td>
+                  </tr>
+                </thead>
+                <tbody>
+                  @if (entryTable.noMatches(entries)) {
+                    <tr><td colspan="8" class="text-muted">No entries match these filters.</td></tr>
+                  }
+                  @for (entry of entryTable.view(entries); track entry.key) {
+                    <tr [class.mc-row-highlighted]="highlightedKey === entry.key"
+                        (mouseenter)="setHighlight(entry.key)" (mouseleave)="setHighlight(null)">
+                      <th scope="row" class="col-name">
+                        @if (glyph(entry.key); as g) {
+                          <span [class]="'mc-glyph mc-glyph-' + g.shape"
+                                [style.background-color]="g.hue" aria-hidden="true"></span>
+                        }
+                        <button type="button" class="mc-name-btn"
+                                [attr.aria-pressed]="isEmphasised(entry.key)"
+                                [attr.aria-label]="'Emphasise ' + entry.label + ' in every figure'"
+                                (click)="toggleEmphasis(entry.key)"
+                                (focus)="setHighlight(entry.key)"
+                                (blur)="setHighlight(null)">{{ entry.label }}</button>
+                        <span class="mc-source">{{ entry.sourceKind }} {{ entry.sourceId }}</span>
+                      </th>
+                      <td class="col-center">
+                        {{ entry.runCount }}
+                        @if (entry.runCount === 1) {
+                          <span class="mc-n1">n = 1</span>
+                        }
+                      </td>
+                      <td>
+                        <!-- Text plus icon, never colour alone: the badge names its state in words. -->
+                        <span [class]="'mc-state ' + stateClass(entry)"
+                              [attr.interestfor]="tipId('state', entry.key)"
+                              [attr.style]="'anchor-name: --' + tipId('state', entry.key)">
+                          @if (entry.excluded) {
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                              <circle cx="12" cy="12" r="10"></circle>
+                              <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line>
+                            </svg>
+                          } @else if (entry.state === 'Degraded') {
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                              <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                              <line x1="12" y1="9" x2="12" y2="13"></line>
+                              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                            </svg>
+                          } @else {
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                              <polyline points="20 6 9 17 4 12"></polyline>
+                            </svg>
+                          }
+                          {{ stateLabel(entry) }}
+                        </span>
+                        <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="tipId('state', entry.key)"
+                             [attr.style]="'position-anchor: --' + tipId('state', entry.key)">{{ entry.explanation }}</div>
+                        @if (degradedAxes(entry).length > 0) {
+                          <span class="mc-degraded-axes">Degraded: {{ degradedAxes(entry).join(', ') }}</span>
+                        }
+                      </td>
+                      <td>
+                        {{ formatIndex(entry.quality?.pointEstimate) }}
+                        @if (entry.quality?.intervalHalfWidth != null) {
+                          <span class="mc-interval">± {{ formatIndex(entry.quality?.intervalHalfWidth) }}</span>
+                          <span class="mc-interval-basis">{{ entry.quality?.intervalBasis }}</span>
+                        } @else if (!entry.excluded) {
+                          <span class="mc-interval-basis">No interval available</span>
+                        }
+                      </td>
+                      <td>
+                        {{ formatMs(entry.speed?.ttftP50Ms) }} / {{ formatMs(entry.speed?.ttftP90Ms) }}
+                      </td>
+                      <td>
+                        {{ formatIndex(entry.table?.meanSpeedIndex) }}
+                        @if (entry.table?.speedIndexSaturated) {
+                          <span class="mc-saturated"
+                                [attr.interestfor]="tipId('sat', entry.key)"
+                                [attr.style]="'anchor-name: --' + tipId('sat', entry.key)">Saturated</span>
+                          <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="tipId('sat', entry.key)"
+                               [attr.style]="'position-anchor: --' + tipId('sat', entry.key)">
+                            At least half the scored answers finished inside their difficulty-scaled target, so
+                            the index cannot discriminate at this speed. Read time to first token instead.
+                          </div>
+                        }
+                      </td>
+                      <td>
+                        {{ formatUsd(entry.cost?.candidateCostPerQuestionUsd) }}
+                        @if (entry.cost && !entry.cost.pricingResolved) {
+                          <span class="mc-unpriced">Unpriced</span>
+                        }
+                        @if (entry.cost?.scheduledChangeEffectiveFrom) {
+                          <span class="mc-scheduled">Price change {{ entry.cost?.scheduledChangeEffectiveFrom }}</span>
+                        }
+                      </td>
+                      <td class="mc-notes">
+                        @if (entry.excludingKeys.length > 0) {
+                          <span class="mc-note-line">Differs on: {{ entry.excludingKeys.join(', ') }}</span>
+                        }
+                        @if (entry.speedDegradingKeys.length > 0) {
+                          <span class="mc-note-line">Speed degraded by: {{ entry.speedDegradingKeys.join(', ') }}</span>
+                        }
+                        @if (entry.costDegradingKeys.length > 0) {
+                          <span class="mc-note-line">Cost degraded by: {{ entry.costDegradingKeys.join(', ') }}</span>
+                        }
+                        @if (entry.table && entry.table.unstableItemCount > 0) {
+                          <span class="mc-note-line">{{ entry.table.unstableItemCount }} unstable items</span>
+                        }
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+              <app-table-pager [state]="entryTable" [rows]="entries" noun="entries" [announce]="false"
+                               (changed)="onTableChanged()"></app-table-pager>
+            </div>
+          }
+        </section>
       </div>
     }
-  </section>
+
+    @if (step === 3) {
+      <div class="mc-step" role="tabpanel" tabindex="0"
+           id="mc-step-panel-3" aria-labelledby="mc-step-tab-3">
+
+        <!-- The set-level caveats repeat here, compactly: this is the step a reader exports from,
+             and a figure downloaded without them is exactly the misreading they prevent. -->
+        @if (setNotices.length > 0) {
+          <ul class="mc-notices mc-notices-compact" aria-label="Notices about this comparison">
+            @for (notice of setNotices; track $index) {
+              <li>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="12" y1="16" x2="12" y2="12"></line>
+                  <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                </svg>
+                <span>{{ notice }}</span>
+              </li>
+            }
+          </ul>
+        }
+
+        <!-- ===================================================================================
+             THE FIGURES
+
+             Card order is fixed: P1, then P2, then the three scatters. P1 answers the primary
+             question and carries real units, so it is where a reader lands.
+             =================================================================================== -->
+        <section class="mc-section" aria-labelledby="mc-figures-heading">
+          <div class="mc-figures-head">
+            <h4 id="mc-figures-heading" class="mc-subheading">Figures</h4>
+
+            <!--
+              Export lives in the section header rather than in a card: the format and the target
+              size apply to every figure at once, and a per-card copy of either would let two
+              downloaded figures disagree about what they are. Hidden entirely where no figure is
+              rendered — a download control over an empty axis would produce a file saying nothing.
+            -->
+            @if (showFigures) {
+              <div class="mc-export">
+                <label class="visually-hidden" for="mc-export-resolution">Export resolution</label>
+                <select id="mc-export-resolution" class="gh-input mc-export-resolution"
+                        [ngModel]="exportResolutionId" [ngModelOptions]="{ standalone: true }"
+                        (ngModelChange)="onExportResolutionChange($event)">
+                  @for (preset of exportPresets; track preset.id) {
+                    <option [value]="preset.id">{{ preset.label }}</option>
+                  }
+                  <option value="custom">Custom…</option>
+                </select>
+
+                @if (isCustomResolution) {
+                  <label class="visually-hidden" for="mc-export-width">Export width in pixels</label>
+                  <input id="mc-export-width" type="number" class="gh-input mc-export-dimension"
+                         [min]="minExportDimension" [max]="maxExportDimension" step="10"
+                         aria-describedby="mc-export-resolution-error"
+                         [ngModel]="customExportWidth" [ngModelOptions]="{ standalone: true }"
+                         (ngModelChange)="customExportWidth = $event">
+                  <span class="mc-export-times" aria-hidden="true">×</span>
+                  <label class="visually-hidden" for="mc-export-height">Export height in pixels</label>
+                  <input id="mc-export-height" type="number" class="gh-input mc-export-dimension"
+                         [min]="minExportDimension" [max]="maxExportDimension" step="10"
+                         aria-describedby="mc-export-resolution-error"
+                         [ngModel]="customExportHeight" [ngModelOptions]="{ standalone: true }"
+                         (ngModelChange)="customExportHeight = $event">
+                }
+
+                <label class="visually-hidden" for="mc-export-format">Export format</label>
+                <select id="mc-export-format" class="gh-input mc-export-format"
+                        [ngModel]="exportFormat" [ngModelOptions]="{ standalone: true }"
+                        (ngModelChange)="onExportFormatChange($event)">
+                  <option value="png">PNG</option>
+                  <option value="webp">WebP (quality 85)</option>
+                </select>
+                <button type="button" class="btn-gh btn-gh-small" [disabled]="!canExport"
+                        (click)="downloadAllFigures()">Download all figures</button>
+              </div>
+            }
+          </div>
+
+          @if (showFigures) {
+            <p class="mc-export-dimensions">{{ exportDimensionsLabel }}</p>
+            @if (customResolutionError) {
+              <p class="mc-export-error" id="mc-export-resolution-error" role="alert">{{ customResolutionError }}</p>
+            }
+          }
+
+          @if (exportStatus) {
+            <p class="mc-export-status" role="status">{{ exportStatus }}</p>
+          }
+
+          @if (showFigures) {
+            <div class="mc-charts" #chartsHost [class.mc-single-run]="allSingleRun">
+
+              <!-- P1 — three linked panels, one shared model order, one unit each. -->
+              <div class="mc-panels">
+                @for (card of panelCards; track card.id) {
+                  <figure class="mc-card" [attr.aria-labelledby]="card.id + '-title'">
+                    <figcaption class="mc-card-head">
+                      <h5 class="mc-card-title" [id]="card.id + '-title'">{{ card.title }}</h5>
+                      <p class="mc-card-subtitle">{{ card.subtitle }}</p>
+                      <button type="button" class="action-btn mc-download" [disabled]="!canExport"
+                              [attr.aria-label]="'Download ' + card.title"
+                              [attr.interestfor]="tipId('dl', card.id)"
+                              [attr.style]="'anchor-name: --' + tipId('dl', card.id)"
+                              (click)="downloadFigure(card)">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                          <polyline points="7 10 12 15 17 10"></polyline>
+                          <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                      </button>
+                      <div popover="hint" class="gh-tooltip" [id]="tipId('dl', card.id)"
+                           [attr.style]="'position-anchor: --' + tipId('dl', card.id)">Download this figure with its caption and notices</div>
+                    </figcaption>
+                    <div class="mc-canvas" [style.height.px]="card.heightPx">
+                      <canvas baseChart role="img" [attr.aria-label]="card.ariaLabel"
+                              [type]="card.type" [data]="card.data" [options]="card.options"
+                              [plugins]="card.plugins"></canvas>
+                    </div>
+                    @if (card.notices.length > 0) {
+                      <ul class="mc-card-notices">
+                        @for (notice of card.notices; track $index) {
+                          <li>{{ notice }}</li>
+                        }
+                      </ul>
+                    }
+                  </figure>
+                }
+              </div>
+
+              <!-- P2 — the companion. Suppressed at two entries: two polylines cross once or not at all. -->
+              @if (profileCard; as profile) {
+                <figure class="mc-card" [attr.aria-labelledby]="profile.id + '-title'">
+                  <figcaption class="mc-card-head">
+                    <h5 class="mc-card-title" [id]="profile.id + '-title'">{{ profile.title }}</h5>
+                    <p class="mc-card-subtitle">{{ profile.subtitle }}</p>
+                    <button type="button" class="action-btn mc-download" [disabled]="!canExport"
+                            [attr.aria-label]="'Download ' + profile.title"
+                            [attr.interestfor]="tipId('dl', profile.id)"
+                            [attr.style]="'anchor-name: --' + tipId('dl', profile.id)"
+                            (click)="downloadFigure(profile)">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                      </svg>
+                    </button>
+                    <div popover="hint" class="gh-tooltip" [id]="tipId('dl', profile.id)"
+                         [attr.style]="'position-anchor: --' + tipId('dl', profile.id)">Download this figure with its caption and notices</div>
+                  </figcaption>
+                  <div class="mc-canvas" [style.height.px]="profile.heightPx">
+                    <canvas baseChart role="img" [attr.aria-label]="profile.ariaLabel"
+                            [type]="profile.type" [data]="profile.data" [options]="profile.options"
+                            [plugins]="profile.plugins"></canvas>
+                  </div>
+                  @if (profileAxes) {
+                    <!-- The real endpoints, printed beside a normalized plot so a height stays anchored. -->
+                    <dl class="mc-axis-ends">
+                      @for (axis of profileAxes.axes; track axis.id) {
+                        <div>
+                          <dt>{{ axis.title }}</dt>
+                          <dd>{{ axis.minLabel }} to {{ axis.maxLabel }}{{ axis.lowerIsBetter ? ' (inverted: lower is better)' : '' }}</dd>
+                        </div>
+                      }
+                    </dl>
+                  }
+                  <p class="mc-card-caption">{{ profile.caption }}</p>
+                  @if (profile.notices.length > 0) {
+                    <ul class="mc-card-notices">
+                      @for (notice of profile.notices; track $index) {
+                        <li>{{ notice }}</li>
+                      }
+                    </ul>
+                  }
+                </figure>
+              } @else if (shape === 'pair') {
+                <p class="section-note">
+                  The profile plot is suppressed at two entries: two polylines either cross once or they
+                  do not, which the three panels above already show.
+                </p>
+              }
+
+              <!-- S1-S3 — the trade-off scatters. -->
+              <div class="mc-grid">
+                @for (card of scatterCards; track card.id) {
+                  <figure class="mc-card" [attr.aria-labelledby]="card.id + '-title'">
+                    <figcaption class="mc-card-head">
+                      <h5 class="mc-card-title" [id]="card.id + '-title'">{{ card.title }}</h5>
+                      <p class="mc-card-subtitle">{{ card.subtitle }}</p>
+                      @if (card.cornerLabel) {
+                        <p class="mc-card-corner">{{ card.cornerLabel }}</p>
+                      }
+                      <button type="button" class="action-btn mc-download" [disabled]="!canExport"
+                              [attr.aria-label]="'Download ' + card.title"
+                              [attr.interestfor]="tipId('dl', card.id)"
+                              [attr.style]="'anchor-name: --' + tipId('dl', card.id)"
+                              (click)="downloadFigure(card)">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                          <polyline points="7 10 12 15 17 10"></polyline>
+                          <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                      </button>
+                      <div popover="hint" class="gh-tooltip" [id]="tipId('dl', card.id)"
+                           [attr.style]="'position-anchor: --' + tipId('dl', card.id)">Download this figure with its caption and notices</div>
+                    </figcaption>
+                    <div class="mc-canvas" [style.height.px]="card.heightPx">
+                      <canvas baseChart role="img" [attr.aria-label]="card.ariaLabel"
+                              [type]="card.type" [data]="card.data" [options]="card.options"
+                              [plugins]="card.plugins"></canvas>
+                    </div>
+                    <p class="mc-card-caption">{{ card.caption }}</p>
+                    @if (card.notices.length > 0) {
+                      <ul class="mc-card-notices">
+                        @for (notice of card.notices; track $index) {
+                          <li>{{ notice }}</li>
+                        }
+                      </ul>
+                    }
+                  </figure>
+                }
+              </div>
+            </div>
+          }
+        </section>
+
+      </div>
+    }
+  </div>
+
+  <div class="dialog-footer mc-wizard-nav">
+    <button type="button" class="btn-gh btn-gh-cancel"
+            [disabled]="!canGoPrevious" (click)="previousStep()">Previous</button>
+
+    <p class="mc-wizard-position" aria-live="polite">
+      Step {{ step }} of 3 — {{ stepTitles[step] }}
+      @if (nextBlockedReason) {
+        <span class="mc-wizard-blocked" id="mc-next-blocked">{{ nextBlockedReason }}</span>
+      }
+    </p>
+
+    <!-- aria-disabled rather than disabled, so the reason stays reachable: a disabled button
+         cannot be focused, and the reader would be left guessing why Next does nothing.
+         Step 3's Close is genuinely disabled while an export is running. -->
+    <button type="button" class="btn-gh"
+            [attr.aria-disabled]="!canGoNext"
+            [disabled]="step === 3 && exporting"
+            aria-describedby="mc-next-blocked"
+            (click)="nextStep()">{{ nextLabel }}</button>
+  </div>
 </div>

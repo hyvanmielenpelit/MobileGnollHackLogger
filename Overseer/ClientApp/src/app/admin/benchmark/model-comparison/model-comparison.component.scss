@@ -9,12 +9,6 @@
  * lays out correctly inside a tab panel that is narrower than the window.
  */
 
-.mc {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-
 .mc-section {
   display: flex;
   flex-direction: column;
@@ -605,4 +599,152 @@
   .mc-chip {
     transition: none;
   }
+}
+
+/* ==========================================================================
+   THE WIZARD SHELL
+
+   This component is the whole content of a full-screen dialog, so it owns the header /
+   step-tabs / panel / footer column. The dialog element, its viewport sizing and its
+   top-layer transition all come from `.gh-dialog-fullscreen` in `styles.scss`, and the
+   button, tab, tooltip, table and pager treatments from the same file; none of them is
+   redefined here.
+
+   `min-height: 0` on the body and on the step is what stops a long comparison table
+   pushing the footer off the bottom of the viewport: a flex item's automatic minimum size
+   otherwise refuses to shrink below its content.
+   ========================================================================== */
+.mc-wizard {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+.mc-wizard-header {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin: 0;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+  background: rgba(16, 16, 16, 0.98);
+
+  .dialog-title-group {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  h3 {
+    margin: 0;
+    font-size: 1.25rem;
+  }
+
+  .dialog-subtitle {
+    margin: 0;
+    font-size: 13px;
+    color: #8b8b90;
+  }
+}
+
+/* The fetch state, between the header and the step tabs: a failed comparison has to be
+   visible from whichever step happened to be open when it failed. */
+.mc-wizard-alert,
+.mc-wizard-loading {
+  flex-shrink: 0;
+  margin: 12px 24px 0;
+}
+
+.mc-wizard-steps {
+  flex-shrink: 0;
+  padding: 0 24px;
+}
+
+.mc-wizard-body {
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+}
+
+/* The only scroller in the dialog. `overscroll-behavior: contain` stops a wheel gesture that
+   reaches the end of a long table from chaining into the page behind the dialog. */
+.mc-step {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 16px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.mc-wizard-nav {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0;
+  padding: 12px 24px;
+  border-top: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+  background: rgba(16, 16, 16, 0.98);
+}
+
+.mc-wizard-position {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  font-size: 13px;
+  color: #a1a1aa;
+}
+
+/* Why Next is unavailable, as visible text rather than as a disabled button with no
+   explanation. Referenced by aria-describedby from Next and from every unreachable step tab. */
+.mc-wizard-blocked {
+  display: block;
+  margin-top: 2px;
+  color: var(--primary-color);
+}
+
+/* On step 3 the notices are a reminder beside the export controls, not the primary reading. */
+.mc-notices-compact {
+  font-size: 12px;
+}
+
+/* --- Export resolution controls --- */
+
+.mc-export-resolution {
+  min-width: 190px;
+}
+
+.mc-export-dimension {
+  width: 90px;
+}
+
+.mc-export-times {
+  color: #8b8b90;
+}
+
+.mc-export-dimensions {
+  margin: 0;
+  font-size: 12px;
+  color: #8b8b90;
+}
+
+.mc-export-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--primary-color);
 }
