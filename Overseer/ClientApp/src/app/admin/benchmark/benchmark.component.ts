@@ -34,7 +34,9 @@ import {
   BenchmarkRunSeriesDto,
   BenchmarkRunGroupDto,
   BenchmarkRunGroupTierPreviewDto,
-  BenchmarkComparabilityResultDto
+  BenchmarkComparabilityResultDto,
+  BenchmarkModelComparisonDto,
+  BenchmarkModelComparisonPricingBasis
 } from '../../services/admin-benchmark.service';
 import { SystemAiConfigDto } from '../../services/admin.service';
 
@@ -50,6 +52,25 @@ import { TableState, exactFilter } from '../../shared/data-table/table-state';
 import { SortHeaderComponent } from '../../shared/data-table/sort-header.component';
 import { TablePagerComponent } from '../../shared/data-table/table-pager.component';
 import { ModelComparisonComponent } from './model-comparison/model-comparison.component';
+import {
+  ComparisonSourcePickerComponent,
+  ModelComparisonSelection
+} from './model-comparison/comparison-source-picker.component';
+import { MAX_PLOTTED_ENTRIES } from './model-comparison/model-comparison-charts';
+
+/**
+ * The Model Comparison selection, as it is remembered between visits and between sessions.
+ *
+ * The selection is persisted rather than the comparison: a stored payload would be re-priced stale
+ * the moment the catalog moved, and re-issuing the request is cheap next to showing costs that are
+ * no longer true.
+ */
+interface BenchmarkComparisonSelection {
+  runIds: number[];
+  groupIds: number[];
+  suiteId: number | null;
+  pricingBasis: BenchmarkModelComparisonPricingBasis;
+}
 
 /**
  * One row of the run progress list: a suite question merged with its answer, if the run
@@ -162,7 +183,8 @@ interface BenchmarkRunSettings {
   imports: [
     CommonModule, DecimalPipe, FormsModule, CollapsibleMarkdownComponent, SuiteHealthComponent,
     SnapshotViewerComponent, MultiRunComponent, MultiRunProgressDialogComponent,
-    SortHeaderComponent, TablePagerComponent, ModelComparisonComponent
+    SortHeaderComponent, TablePagerComponent, ModelComparisonComponent,
+    ComparisonSourcePickerComponent
   ],
   templateUrl: './benchmark.component.html',
   styleUrls: ['./benchmark.component.scss']
@@ -492,6 +514,31 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   groupBuilderError: string | null = null;
   groupBuilderSuccess: string | null = null;
 
+  // --- Model Comparison ---
+  //
+  // The host owns the selection, the request and the two lists the picker offers; the picker and
+  // the comparison view are both presentational. One owner is what keeps the two panels of this
+  // sub-tab from disagreeing about what is selected.
+
+  comparison: BenchmarkModelComparisonDto | null = null;
+  comparisonLoading = false;
+  comparisonError: string | null = null;
+  comparisonRunIds: number[] = [];
+  comparisonGroupIds: number[] = [];
+  /** The picker's suite scope. Null offers every suite; independent of the Run Benchmark selection. */
+  comparisonSuiteId: number | null = null;
+  comparisonPricingBasis: BenchmarkModelComparisonPricingBasis = 'Current';
+
+  /** The plot cap the figures enforce, handed to the picker so its soft warning names the same number. */
+  readonly comparisonMaxPlotted = MAX_PLOTTED_ENTRIES;
+
+  /**
+   * Guards against an out-of-order comparison response. Compare can be clicked faster than the
+   * round trip returns, and an older payload rendered over a newer selection is worse than none —
+   * it charts models the operator is no longer looking at.
+   */
+  private comparisonToken = 0;
+
   // Detail Modal
   selectedRunDetail: BenchmarkRunDetailDto | null = null;
   loadingDetail = false;
@@ -693,8 +740,186 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     if (tab === 'profiles') {
       this.loadProfiles();
     }
+    if (tab === 'modelcomparison') {
+      // The three lists the picker offers. No comparison is fetched here: an unattended request on
+      // tab entry re-prices every entry for a selection the operator has not confirmed.
+      this.loadHistory();
+      this.loadRunGroups();
+      this.loadSuites();
+      this.restoreComparisonSelection();
+    }
     // 'multirun' loads nothing here: the panel is the MultiRunComponent's own, and it owns its
     // fetches. Loading them from the host would give that data two owners.
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // Model Comparison
+  // ---------------------------------------------------------------------------------------------
+
+  /** Completed-or-not runs inside the current suite scope. The picker decides which are selectable. */
+  get comparisonRunOptions(): BenchmarkRunSummaryDto[] {
+    return this.comparisonSuiteId == null
+      ? this.historyRuns
+      : this.historyRuns.filter(run => run.benchmarkSuiteId === this.comparisonSuiteId);
+  }
+
+  get comparisonGroupOptions(): BenchmarkRunGroupDto[] {
+    return this.comparisonSuiteId == null
+      ? this.runGroups
+      : this.runGroups.filter(group => group.benchmarkSuiteId === this.comparisonSuiteId);
+  }
+
+  onComparisonSelectionChange(selection: ModelComparisonSelection): void {
+    this.comparisonRunIds = [...selection.runIds];
+    this.comparisonGroupIds = [...selection.groupIds];
+    this.persistComparisonSelection();
+  }
+
+  /**
+   * Narrows the offered sources, and drops whatever the new scope no longer offers.
+   *
+   * Leaving a hidden out-of-scope id selected is how a figure ends up carrying a model the picker
+   * does not show. Refetches only if something survives: a request with an empty selection is
+   * refused server-side anyway.
+   */
+  onComparisonSuiteChange(suiteId: number | null): void {
+    this.comparisonSuiteId = suiteId;
+
+    const runsInScope = new Set(this.comparisonRunOptions.map(run => run.id));
+    const groupsInScope = new Set(this.comparisonGroupOptions.map(group => group.id));
+    const runIds = this.comparisonRunIds.filter(id => runsInScope.has(id));
+    const groupIds = this.comparisonGroupIds.filter(id => groupsInScope.has(id));
+    const dropped = runIds.length !== this.comparisonRunIds.length
+      || groupIds.length !== this.comparisonGroupIds.length;
+
+    this.comparisonRunIds = runIds;
+    this.comparisonGroupIds = groupIds;
+    this.persistComparisonSelection();
+
+    if (runIds.length + groupIds.length > 0) {
+      this.runComparison();
+    } else if (dropped) {
+      // Nothing survives the new scope, so the figures on screen describe a set that is no longer
+      // selected. Clearing them is more honest than leaving them beside an empty picker.
+      this.comparison = null;
+      this.comparisonError = null;
+    }
+    this.cdr.detectChanges();
+  }
+
+  /** Changes the cost arithmetic over an unchanged set, so it refetches at once where one exists. */
+  onComparisonPricingBasisChange(basis: BenchmarkModelComparisonPricingBasis): void {
+    this.comparisonPricingBasis = basis;
+    this.persistComparisonSelection();
+    if (this.comparisonRunIds.length + this.comparisonGroupIds.length > 0) {
+      this.runComparison();
+    }
+  }
+
+  clearComparisonSelection(): void {
+    this.comparisonRunIds = [];
+    this.comparisonGroupIds = [];
+    this.comparison = null;
+    this.comparisonError = null;
+    this.persistComparisonSelection();
+    this.cdr.detectChanges();
+  }
+
+  runComparison(): void {
+    if (this.comparisonRunIds.length + this.comparisonGroupIds.length === 0) {
+      this.comparisonError = 'Select at least one run or analysis group to compare.';
+      this.cdr.detectChanges();
+      return;
+    }
+
+    const token = ++this.comparisonToken;
+    this.comparisonLoading = true;
+    this.comparisonError = null;
+    this.cdr.detectChanges();
+
+    this.benchmarkService.compareModels({
+      runIds: [...this.comparisonRunIds],
+      groupIds: [...this.comparisonGroupIds],
+      pricingBasis: this.comparisonPricingBasis
+    }).subscribe({
+      next: (result) => {
+        if (token !== this.comparisonToken) { return; }
+        this.comparison = result;
+        this.comparisonLoading = false;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        if (token !== this.comparisonToken) { return; }
+        this.comparison = null;
+        this.comparisonError = err?.error || 'The comparison could not be computed.';
+        this.comparisonLoading = false;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  private static readonly COMPARISON_SELECTION_STORAGE_KEY =
+    'overseer_admin_benchmark_comparison_selection';
+
+  private persistComparisonSelection(): void {
+    try {
+      const selection: BenchmarkComparisonSelection = {
+        runIds: this.comparisonRunIds,
+        groupIds: this.comparisonGroupIds,
+        suiteId: this.comparisonSuiteId,
+        pricingBasis: this.comparisonPricingBasis
+      };
+      localStorage.setItem(
+        AdminBenchmarkComponent.COMPARISON_SELECTION_STORAGE_KEY, JSON.stringify(selection));
+    } catch {
+      // Storage throws in private-browsing modes. Failing to remember a selection is not worth
+      // surfacing to the operator.
+    }
+  }
+
+  /**
+   * Restores the remembered selection, dropping every id the loaded lists no longer carry.
+   *
+   * Validated rather than trusted: a run deleted since the last visit would otherwise be sent, and
+   * the server would answer `Run(s) not found` for a selection the operator never made. The lists
+   * arrive asynchronously, so this runs again on each entry to the tab as they land.
+   */
+  private restoreComparisonSelection(): void {
+    let parsed: unknown;
+    try {
+      const stored = localStorage.getItem(AdminBenchmarkComponent.COMPARISON_SELECTION_STORAGE_KEY);
+      if (!stored) { return; }
+      parsed = JSON.parse(stored);
+    } catch {
+      return;                                   // every default stands
+    }
+
+    const raw = parsed as Partial<BenchmarkComparisonSelection> | null;
+    if (!raw || typeof raw !== 'object') { return; }
+
+    const ids = (value: unknown): number[] => Array.isArray(value)
+      ? value.filter((id): id is number => typeof id === 'number' && Number.isFinite(id))
+      : [];
+
+    this.comparisonSuiteId = typeof raw.suiteId === 'number' && Number.isFinite(raw.suiteId)
+      ? raw.suiteId
+      : null;
+    this.comparisonPricingBasis = raw.pricingBasis === 'AsRun' ? 'AsRun' : 'Current';
+    this.comparisonRunIds = ids(raw.runIds);
+    this.comparisonGroupIds = ids(raw.groupIds);
+    this.pruneComparisonSelection();
+  }
+
+  /** Drops selected ids the loaded lists do not carry. Called as each list arrives. */
+  private pruneComparisonSelection(): void {
+    if (this.historyRuns.length > 0) {
+      const known = new Set(this.comparisonRunOptions.map(run => run.id));
+      this.comparisonRunIds = this.comparisonRunIds.filter(id => known.has(id));
+    }
+    if (this.runGroups.length > 0) {
+      const known = new Set(this.comparisonGroupOptions.map(group => group.id));
+      this.comparisonGroupIds = this.comparisonGroupIds.filter(id => known.has(id));
+    }
   }
 
   /**
@@ -3263,6 +3488,9 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       next: (data) => {
         this.historyRuns = data;
         this.loadingHistory = false;
+        // A remembered comparison selection is validated against the list that has just arrived,
+        // because a run deleted since the last visit must not be sent to the compare endpoint.
+        this.pruneComparisonSelection();
         this.cdr.detectChanges();
       },
       error: (err) => {
@@ -3281,6 +3509,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       next: (groups) => {
         this.runGroups = groups;
         this.loadingRunGroups = false;
+        this.pruneComparisonSelection();
         this.cdr.detectChanges();
       },
       error: (err) => {

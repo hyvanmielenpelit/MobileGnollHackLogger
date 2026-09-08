@@ -1185,14 +1185,40 @@
       </div>
     </div>
   }
-</div>
 
-<!-- TAB 6: MODEL COMPARISON -->
-@if (activeSubTab === 'modelcomparison') {
-  <div class="gh-tab-panel" id="bm-panel-modelcomparison" role="tabpanel" aria-labelledby="bm-tab-modelcomparison" tabindex="0">
-    <app-benchmark-model-comparison></app-benchmark-model-comparison>
-  </div>
-}
+  <!-- TAB 6: MODEL COMPARISON
+
+       Inside .benchmark-container, like the five panels above it. A sticky element only sticks
+       while its parent's box is on screen, so a panel rendered after the container's closing tag
+       leaves the container a few pixels tall and the sub-tab row scrolls away immediately. -->
+  @if (activeSubTab === 'modelcomparison') {
+    <div class="benchmark-tab-content" role="tabpanel" id="bm-panel-modelcomparison" aria-labelledby="bm-tab-modelcomparison" tabindex="0">
+      <app-comparison-source-picker
+        [runs]="comparisonRunOptions"
+        [groups]="comparisonGroupOptions"
+        [suites]="suites"
+        [suiteId]="comparisonSuiteId"
+        [selectedRunIds]="comparisonRunIds"
+        [selectedGroupIds]="comparisonGroupIds"
+        [loading]="comparisonLoading"
+        [maxPlotted]="comparisonMaxPlotted"
+        (suiteIdChange)="onComparisonSuiteChange($event)"
+        (selectionChange)="onComparisonSelectionChange($event)"
+        (compare)="runComparison()"
+        (clear)="clearComparisonSelection()">
+      </app-comparison-source-picker>
+
+      <app-benchmark-model-comparison
+        [comparison]="comparison"
+        [loading]="comparisonLoading"
+        [error]="comparisonError"
+        [pricingBasis]="comparisonPricingBasis"
+        (pricingBasisChange)="onComparisonPricingBasisChange($event)"
+        (refresh)="runComparison()">
+      </app-benchmark-model-comparison>
+    </div>
+  }
+</div>
 
 <!--
   SUITE HEALTH DIALOG

@@ -1,0 +1,173 @@
+/*
+ * Layout for the comparison source picker.
+ *
+ * View-specific only: the button, input, table, pager and alert treatments all come from
+ * `styles.scss` and are never redefined here — an emulated-encapsulation override would apply to
+ * this one component and to nothing else, which is an invisible divergence rather than a visible
+ * bug.
+ */
+
+.csp {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.csp-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+
+  h3 {
+    margin: 0;
+    font-family: "Cinzel", serif;
+    font-size: 20px;
+    color: var(--primary-color);
+  }
+}
+
+.csp-subheading {
+  margin: 0;
+  font-family: "Cinzel", serif;
+  font-size: 16px;
+  color: var(--primary-color);
+}
+
+.section-note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #a1a1aa;
+  max-width: 90ch;
+}
+
+.csp-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #a1a1aa;
+  max-width: 70ch;
+}
+
+/* A single-model reference in prose keeps the R upright rather than italic. */
+.csp-r {
+  white-space: nowrap;
+}
+
+/* --- Suite scope --- */
+
+.csp-scope {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 420px;
+
+  label {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: #c3c2b7;
+  }
+}
+
+/* --- The two tables --- */
+
+.csp-table {
+  .col-center {
+    text-align: center;
+  }
+
+  .col-selected {
+    width: 92px;
+  }
+
+  .col-id {
+    width: 80px;
+  }
+
+  /* A cell keeps its table-cell display: a flex `<th>` drops out of the column grid entirely. */
+  .col-name {
+    text-align: left;
+    min-width: 180px;
+  }
+}
+
+.csp-row-selected > * {
+  background: rgba(224, 186, 109, 0.08);
+}
+
+/* Dimmed, but still readable: the row is present so its status can be read. */
+.csp-row-unselectable {
+  opacity: 0.62;
+}
+
+/* --- Selection summary --- */
+
+.csp-selection {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.csp-selection-count {
+  margin: 0;
+  font-size: 13px;
+  color: #c3c2b7;
+}
+
+/* --- Tier badge ---
+   Colour reinforces the tier; the word carries it. A reader who cannot distinguish the two greens
+   still reads "Tier A — Replicate". */
+
+.csp-tier {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+
+  &.tier-replicate {
+    border-color: rgba(120, 200, 130, 0.5);
+    background: rgba(120, 200, 130, 0.12);
+    color: #a8dcb0;
+  }
+
+  &.tier-quality {
+    border-color: rgba(224, 186, 109, 0.5);
+    background: rgba(224, 186, 109, 0.12);
+    color: var(--primary-color, #e0ba6d);
+  }
+
+  &.tier-cross {
+    border-color: rgba(214, 150, 90, 0.5);
+    background: rgba(214, 150, 90, 0.12);
+    color: #e0a878;
+  }
+
+  &.tier-none {
+    border-color: rgba(220, 110, 110, 0.5);
+    background: rgba(220, 110, 110, 0.12);
+    color: #e09090;
+  }
+}
+
+/* --- Caps and actions --- */
+
+.csp-cap-note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #d8c99a;
+  max-width: 90ch;
+}
+
+.csp-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+}

@@ -10,8 +10,10 @@ import {
   OnDestroy,
   OnInit,
   Output,
+  QueryList,
   SimpleChanges,
   ViewChild,
+  ViewChildren,
   inject
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
@@ -51,12 +53,13 @@ import {
   toChartEntries,
   unmeasuredAxes
 } from './model-comparison.models';
-
-/** One selectable suite for the query control. Structural, so any suite DTO with these two fits. */
-export interface ModelComparisonSuiteOption {
-  readonly id: number;
-  readonly name: string;
-}
+import {
+  FigureExportFormat,
+  composeFigureImage,
+  encodeFigureImage,
+  figureExportFilename,
+  saveFigureBlob
+} from './figure-export';
 
 /**
  * Which entries the figures are allowed to draw.
@@ -106,9 +109,9 @@ export interface ComparisonFigureCard {
  * Cross-model comparison: six figures over one comparable set, and the table that is the accessible
  * record of them.
  *
- * The component owns no fetching. It renders the response the host hands it and emits the two
- * controls that change what is fetched — the suite and the pricing basis — so the query lives with
- * the host that already owns a suite selection, and this view stays a pure function of one payload.
+ * The component owns no fetching. It renders the response the host hands it and emits the one
+ * control that changes what is fetched — the pricing basis — so this view stays a pure function of
+ * one payload.
  *
  * Three display rules here are load-bearing rather than cosmetic:
  *
@@ -123,8 +126,12 @@ export interface ComparisonFigureCard {
  * 3. **A degraded axis says which axis and why.** Speed and cost degrade independently of quality,
  *    so a set can be trustworthy on one axis and not on another, and the notices are per figure.
  *
- * Every control that narrows the data sits in one filter row above every figure. A filter inside a
- * chart card would leave the six figures describing different slices of the same set.
+ * Every control that narrows the **figures** sits in one filter row above every one of them. A
+ * filter inside a chart card would leave the six figures describing different slices of the same
+ * set. Controls that decide which sources are in the request at all are a different stage of the
+ * same task and belong to the source picker, next to the tables they scope — which is why suite
+ * scope lives there and pricing basis, which changes only the cost arithmetic over an unchanged
+ * set, lives here.
  */
 @Component({
   selector: 'app-benchmark-model-comparison',
@@ -144,21 +151,17 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   @Input() error: string | null = null;
 
-  /** Suites the query control offers. Empty renders the control disabled rather than absent. */
-  @Input() suites: readonly ModelComparisonSuiteOption[] = [];
-
-  /** The suite the current payload was computed over. Server-side: changing it refetches. */
-  @Input() suiteId: number | null = null;
-
   /** The price card every candidate cost is computed from. Server-side: changing it refetches. */
   @Input() pricingBasis: BenchmarkModelComparisonPricingBasis = 'Current';
 
-  @Output() suiteIdChange = new EventEmitter<number | null>();
   @Output() pricingBasisChange = new EventEmitter<BenchmarkModelComparisonPricingBasis>();
   @Output() refresh = new EventEmitter<void>();
 
   /** The container query root, measured to decide P1's bar orientation. */
   @ViewChild('chartsHost') chartsHost?: ElementRef<HTMLElement>;
+
+  /** The live chart directives, in template order, so an export reads the rendered canvas. */
+  @ViewChildren(BaseChartDirective) chartDirectives?: QueryList<BaseChartDirective>;
 
   // --- Client-side filter state, all of it scoping every figure at once ---
 
@@ -286,11 +289,6 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   // ---------------------------------------------------------------------------------------------
   // Query controls — these change what the host fetches
   // ---------------------------------------------------------------------------------------------
-
-  onSuiteChange(value: number | null): void {
-    this.suiteId = value == null || !Number.isFinite(value) ? null : value;
-    this.suiteIdChange.emit(this.suiteId);
-  }
 
   onPricingBasisChange(value: BenchmarkModelComparisonPricingBasis): void {
     this.pricingBasis = value;
@@ -527,6 +525,166 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       plugins: spec.plugins,
       heightPx
     };
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // Figure export
+  //
+  // The composited image carries the title, the subtitle, the caption, every notice and a footer
+  // naming the suite, the pricing basis, the entry count and the time the comparison was computed.
+  // That is the point of exporting through a composer rather than reading the canvas directly: a
+  // bare plot pasted into a document would drop exactly the caveats that stop it being misread.
+  // ---------------------------------------------------------------------------------------------
+
+  exportFormat: FigureExportFormat = 'png';
+
+  /** Set while an export is running, so a second click cannot interleave two canvas resizes. */
+  exporting = false;
+
+  /** The last export's outcome, announced politely: how many files, and any WebP fallback. */
+  exportStatus = '';
+
+  /** Every card currently rendered, in the order the template draws them. */
+  get exportableCards(): ComparisonFigureCard[] {
+    if (!this.showFigures) {
+      return [];
+    }
+    const profile = this.profileCard;
+    return [...this.panelCards, ...(profile ? [profile] : []), ...this.scatterCards];
+  }
+
+  get canExport(): boolean {
+    return !this.exporting && this.exportableCards.length > 0;
+  }
+
+  onExportFormatChange(value: FigureExportFormat): void {
+    this.exportFormat = value;
+  }
+
+  async downloadFigure(card: ComparisonFigureCard): Promise<void> {
+    await this.downloadFigures([card]);
+  }
+
+  async downloadAllFigures(): Promise<void> {
+    await this.downloadFigures(this.exportableCards);
+  }
+
+  /**
+   * Writes one file per card, in sequence with a short gap.
+   *
+   * Sequential rather than parallel, and gapped: several browsers prompt once before allowing a
+   * second save from one gesture, and a burst of simultaneous anchor clicks is what triggers the
+   * prompt in the first place.
+   */
+  private async downloadFigures(cards: readonly ComparisonFigureCard[]): Promise<void> {
+    if (this.exporting || cards.length === 0) {
+      return;
+    }
+    this.exporting = true;
+    this.exportStatus = '';
+    this.cdr.markForCheck();
+
+    let written = 0;
+    let fellBack = false;
+    try {
+      for (const card of cards) {
+        const canvas = this.canvasFor(card);
+        if (!canvas) {
+          continue;
+        }
+        const result = await this.renderAtExportDensity(card, canvas);
+        if (!result) {
+          continue;
+        }
+        fellBack = fellBack || result.fellBackToPng;
+        saveFigureBlob(result.blob, figureExportFilename(card.id, result.format));
+        written++;
+        if (written < cards.length) {
+          await new Promise<void>(resolve => setTimeout(resolve, 250));
+        }
+      }
+      this.exportStatus = this.exportSummary(written, cards.length, fellBack);
+    } catch {
+      this.exportStatus = 'The figures could not be exported.';
+    } finally {
+      this.exporting = false;
+      this.cdr.markForCheck();
+    }
+  }
+
+  /**
+   * Re-renders one chart at {@link FIGURE_EXPORT_SCALE} device pixels, composes it and encodes it.
+   *
+   * The previous `devicePixelRatio` is restored and the chart resized again in a `finally`, so a
+   * thrown encode cannot strand the on-screen figure at export density.
+   */
+  private async renderAtExportDensity(
+    card: ComparisonFigureCard,
+    canvas: HTMLCanvasElement
+  ): Promise<{ blob: Blob; format: FigureExportFormat; fellBackToPng: boolean } | null> {
+    const chart = this.chartFor(canvas);
+    const previousRatio = chart?.options?.devicePixelRatio;
+    try {
+      if (chart?.options) {
+        chart.options.devicePixelRatio = 2;
+        chart.resize();
+      }
+      const composed = composeFigureImage({
+        canvas,
+        title: card.title,
+        subtitle: card.subtitle,
+        caption: card.caption,
+        notices: [...card.notices, ...this.setNotices],
+        footer: this.exportFooter(),
+        format: this.exportFormat
+      });
+      return await encodeFigureImage(composed, this.exportFormat);
+    } finally {
+      if (chart?.options) {
+        chart.options.devicePixelRatio = previousRatio;
+        chart.resize();
+      }
+    }
+  }
+
+  /** Suite, pricing basis, entry count and computation time — the provenance of one figure. */
+  private exportFooter(): string {
+    const dto = this.comparison;
+    const suite = dto?.baselineSuiteName || 'Suite not set';
+    const basis = dto?.pricingBasisLabel || dto?.pricingBasis || 'Unknown pricing basis';
+    const plotted = this.plotted.length;
+    const total = this.entries.length;
+    const computed = dto?.computedAtUtc ? new Date(dto.computedAtUtc).toLocaleString() : 'unknown time';
+    return `${suite} — ${basis} — ${plotted} of ${total} entries charted — computed ${computed}`;
+  }
+
+  private exportSummary(written: number, requested: number, fellBack: boolean): string {
+    if (written === 0) {
+      return 'No figure was written: none is currently rendered.';
+    }
+    const noun = written === 1 ? 'figure' : 'figures';
+    const shortfall = written < requested ? ` of ${requested}` : '';
+    const fallback = fellBack
+      ? ' This browser cannot encode WebP, so the file was written as PNG.'
+      : '';
+    return `${written}${shortfall} ${noun} saved.${fallback}`;
+  }
+
+  /** The canvas belonging to one card, located by the aria-label the card gave it. */
+  private canvasFor(card: ComparisonFigureCard): HTMLCanvasElement | null {
+    const directive = this.chartDirectives?.find(
+      candidate => this.canvasOf(candidate)?.getAttribute('aria-label') === card.ariaLabel
+    );
+    return directive ? this.canvasOf(directive) : null;
+  }
+
+  private chartFor(canvas: HTMLCanvasElement): { options?: any; resize(): void } | null {
+    const directive = this.chartDirectives?.find(candidate => this.canvasOf(candidate) === canvas);
+    return (directive?.chart as unknown as { options?: any; resize(): void } | undefined) ?? null;
+  }
+
+  private canvasOf(directive: BaseChartDirective): HTMLCanvasElement | null {
+    return (directive.chart?.canvas as HTMLCanvasElement | undefined) ?? null;
   }
 
   // ---------------------------------------------------------------------------------------------

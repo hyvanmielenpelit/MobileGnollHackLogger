@@ -74,18 +74,6 @@
     <div class="mc-filters" role="group" aria-labelledby="mc-filters-heading">
 
       <div class="mc-field">
-        <label for="mc-suite">Suite</label>
-        <select id="mc-suite" class="gh-input" [disabled]="suites.length === 0"
-                [ngModel]="suiteId" [ngModelOptions]="{ standalone: true }"
-                (ngModelChange)="onSuiteChange($event)">
-          <option [ngValue]="null">All suites in the request</option>
-          @for (suite of suites; track suite.id) {
-            <option [ngValue]="suite.id">{{ suite.name }}</option>
-          }
-        </select>
-      </div>
-
-      <div class="mc-field">
         <label for="mc-pricing-basis">Pricing basis</label>
         <select id="mc-pricing-basis" class="gh-input"
                 [ngModel]="pricingBasis" [ngModelOptions]="{ standalone: true }"
@@ -265,7 +253,33 @@
        question and carries real units, so it is where a reader lands.
        =================================================================================== -->
   <section class="mc-section" aria-labelledby="mc-figures-heading">
-    <h4 id="mc-figures-heading" class="mc-subheading">Figures</h4>
+    <div class="mc-figures-head">
+      <h4 id="mc-figures-heading" class="mc-subheading">Figures</h4>
+
+      <!--
+        Export lives in the section header rather than in a card: the format applies to every
+        figure at once, and a per-card copy of it would let two downloaded figures disagree about
+        what they are. Hidden entirely where no figure is rendered — a download control over an
+        empty axis would produce a file saying nothing.
+      -->
+      @if (showFigures) {
+        <div class="mc-export">
+          <label class="visually-hidden" for="mc-export-format">Export format</label>
+          <select id="mc-export-format" class="gh-input mc-export-format"
+                  [ngModel]="exportFormat" [ngModelOptions]="{ standalone: true }"
+                  (ngModelChange)="onExportFormatChange($event)">
+            <option value="png">PNG</option>
+            <option value="webp">WebP (quality 85)</option>
+          </select>
+          <button type="button" class="btn-gh btn-gh-small" [disabled]="!canExport"
+                  (click)="downloadAllFigures()">Download all figures</button>
+        </div>
+      }
+    </div>
+
+    @if (exportStatus) {
+      <p class="mc-export-status" role="status">{{ exportStatus }}</p>
+    }
 
     @switch (shape) {
 
@@ -314,6 +328,19 @@
                 <figcaption class="mc-card-head">
                   <h5 class="mc-card-title" [id]="card.id + '-title'">{{ card.title }}</h5>
                   <p class="mc-card-subtitle">{{ card.subtitle }}</p>
+                  <button type="button" class="action-btn mc-download" [disabled]="!canExport"
+                          [attr.aria-label]="'Download ' + card.title"
+                          [attr.interestfor]="tipId('dl', card.id)"
+                          [attr.style]="'anchor-name: --' + tipId('dl', card.id)"
+                          (click)="downloadFigure(card)">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                      <polyline points="7 10 12 15 17 10"></polyline>
+                      <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                  </button>
+                  <div popover="hint" class="gh-tooltip" [id]="tipId('dl', card.id)"
+                       [attr.style]="'position-anchor: --' + tipId('dl', card.id)">Download this figure with its caption and notices</div>
                 </figcaption>
                 <div class="mc-canvas" [style.height.px]="card.heightPx">
                   <canvas baseChart role="img" [attr.aria-label]="card.ariaLabel"
@@ -337,6 +364,19 @@
               <figcaption class="mc-card-head">
                 <h5 class="mc-card-title" [id]="profile.id + '-title'">{{ profile.title }}</h5>
                 <p class="mc-card-subtitle">{{ profile.subtitle }}</p>
+                <button type="button" class="action-btn mc-download" [disabled]="!canExport"
+                        [attr.aria-label]="'Download ' + profile.title"
+                        [attr.interestfor]="tipId('dl', profile.id)"
+                        [attr.style]="'anchor-name: --' + tipId('dl', profile.id)"
+                        (click)="downloadFigure(profile)">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                  </svg>
+                </button>
+                <div popover="hint" class="gh-tooltip" [id]="tipId('dl', profile.id)"
+                     [attr.style]="'position-anchor: --' + tipId('dl', profile.id)">Download this figure with its caption and notices</div>
               </figcaption>
               <div class="mc-canvas" [style.height.px]="profile.heightPx">
                 <canvas baseChart role="img" [attr.aria-label]="profile.ariaLabel"
@@ -380,6 +420,19 @@
                   @if (card.cornerLabel) {
                     <p class="mc-card-corner">{{ card.cornerLabel }}</p>
                   }
+                  <button type="button" class="action-btn mc-download" [disabled]="!canExport"
+                          [attr.aria-label]="'Download ' + card.title"
+                          [attr.interestfor]="tipId('dl', card.id)"
+                          [attr.style]="'anchor-name: --' + tipId('dl', card.id)"
+                          (click)="downloadFigure(card)">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                      <polyline points="7 10 12 15 17 10"></polyline>
+                      <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                  </button>
+                  <div popover="hint" class="gh-tooltip" [id]="tipId('dl', card.id)"
+                       [attr.style]="'position-anchor: --' + tipId('dl', card.id)">Download this figure with its caption and notices</div>
                 </figcaption>
                 <div class="mc-canvas" [style.height.px]="card.heightPx">
                   <canvas baseChart role="img" [attr.aria-label]="card.ariaLabel"
@@ -479,7 +532,7 @@
     @if (entries.length === 0) {
       <p class="text-muted">Nothing to compare yet.</p>
     } @else {
-      <div class="mc-table-scroll gh-datatable-scroll">
+      <div class="gh-datatable-scroll">
         <app-table-pager [state]="entryTable" [rows]="entries" noun="entries"
                          (changed)="onTableChanged()"></app-table-pager>
         <table class="gh-table gh-datatable mc-table">

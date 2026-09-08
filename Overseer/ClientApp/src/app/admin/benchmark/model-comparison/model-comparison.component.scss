@@ -42,6 +42,32 @@
   color: var(--primary-color);
 }
 
+/* The Figures heading and the export controls on one row, the controls pushed to the far end. */
+.mc-figures-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  justify-content: space-between;
+}
+
+.mc-export {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mc-export-format {
+  width: auto;
+  min-width: 170px;
+}
+
+.mc-export-status {
+  margin: 0;
+  font-size: 13px;
+  color: #c3c2b7;
+}
+
 .section-note,
 .mc-explanation {
   margin: 0;
@@ -265,10 +291,19 @@
   min-width: 0;
 }
 
+/* Text down the first column, the download control pinned to the second, so a long title wraps
+   without pushing the button out of the card. */
 .mc-card-head {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: start;
+  gap: 3px 10px;
+}
+
+.mc-card-title,
+.mc-card-subtitle,
+.mc-card-corner {
+  grid-column: 1;
 }
 
 .mc-card-title {
@@ -290,6 +325,13 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: #898781;
+}
+
+/* Spans every text row, so it stays top-aligned beside a one-line or a three-line head. */
+.mc-download {
+  grid-column: 2;
+  grid-row: 1 / -1;
+  align-self: start;
 }
 
 /*
@@ -457,10 +499,6 @@
 /* ==========================================================================
    The table view
    ========================================================================== */
-
-.mc-table-scroll {
-  max-height: 640px;
-}
 
 .mc-table {
   .col-center {

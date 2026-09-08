@@ -1400,13 +1400,20 @@ label.checkbox-label,
   }
 }
 
-/* Vertical scroll viewport for a sticky-header table. Opt-in: the header sticks to whichever
-   scroll box encloses it, so without a bounded height here the page scrolls instead and the
-   header travels with it. */
+/* Horizontal scroll viewport for a wide data table. The block size is unbounded: the admin panel
+   (.tab-content) is the only vertical scroller, so a table takes the height it needs rather than
+   carrying a second scrollbar inside one that is already scrolling.
+
+   The consequence is that .gh-datatable's sticky header no longer pins — it sticks to the nearest
+   scroll container, which is this wrapper, and a wrapper that never scrolls vertically never moves
+   it. That is the accepted trade: removing the wrapper instead would let a wide table scroll the
+   whole admin panel sideways, sub-tab row included, because .tab-content's overflow-y forces its
+   overflow-x from visible to auto. Table-scoped horizontal scrolling is worth more than a pinned
+   header, and every table here pages at ten rows with its filters and pager above the head. */
 .gh-datatable-scroll {
-  overflow: auto;
-  overscroll-behavior: contain;
-  max-block-size: min(70vh, 720px);
+  overflow-x: auto;
+  overflow-y: auto;          /* never triggers: nothing bounds the block size */
+  overscroll-behavior-x: contain;
 }
 
 /* Filter controls and a pager on one row, wrapping to as many rows as the viewport needs. */

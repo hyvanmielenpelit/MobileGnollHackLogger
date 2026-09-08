@@ -1,0 +1,280 @@
+<div class="csp">
+
+  <section class="csp-section" aria-labelledby="csp-heading">
+    <h3 id="csp-heading">What to compare</h3>
+    <p class="section-note">
+      A single run contributes one point at <span class="csp-r">R = 1</span>; an analysis group
+      contributes one point pooled over its members. Compare is explicit rather than live: every
+      request re-prices each entry server-side, so a refetch per checkbox would be a request per
+      click.
+    </p>
+
+    <!-- Suite scope: a selection-stage control, so it sits above the two tables it scopes rather
+         than in the comparison view's filter row, which holds presentation controls only. -->
+    <div class="csp-scope">
+      <label for="csp-suite">Suite scope</label>
+      <select id="csp-suite" class="gh-input" [disabled]="suites.length === 0"
+              [ngModel]="suiteId" [ngModelOptions]="{ standalone: true }"
+              (ngModelChange)="onSuiteChange($event)">
+        <option [ngValue]="null">Every suite</option>
+        @for (suite of suites; track suite.id) {
+          <option [ngValue]="suite.id">{{ suite.name }}</option>
+        }
+      </select>
+      <p class="csp-hint">Scopes which runs and groups are offered below.</p>
+    </div>
+  </section>
+
+  <!-- ===================================================================================
+       SINGLE RUNS
+       =================================================================================== -->
+  <section class="csp-section" aria-labelledby="csp-runs-heading">
+    <h4 id="csp-runs-heading" class="csp-subheading">Single runs</h4>
+
+    @if (runs.length === 0) {
+      <p class="text-muted">
+        No runs for this suite scope — pick another suite scope, or run a benchmark from the
+        Run Benchmark tab.
+      </p>
+    } @else {
+      <div class="gh-datatable-scroll">
+        <app-table-pager [state]="runTable" [rows]="runs" noun="runs"
+                         (changed)="onTableChanged()"></app-table-pager>
+        <table class="gh-table gh-datatable csp-table">
+          <caption class="visually-hidden">
+            Benchmark runs offered as comparison points: selection, id, suite, tested model, status,
+            Intelligence Index and start time. Only a completed run may be selected.
+          </caption>
+          <thead>
+            <tr>
+              <th app-sort-header [state]="runTable" column="selected" label="Selected"
+                  class="col-center col-selected" (changed)="onTableChanged()"></th>
+              <th app-sort-header [state]="runTable" column="id" label="ID"
+                  class="col-center col-id" (changed)="onTableChanged()"></th>
+              <th app-sort-header [state]="runTable" column="suiteName" label="Suite" (changed)="onTableChanged()"></th>
+              <th app-sort-header [state]="runTable" column="testedModel" label="Tested Model" (changed)="onTableChanged()"></th>
+              <th app-sort-header [state]="runTable" column="status" label="Status" (changed)="onTableChanged()"></th>
+              <th app-sort-header [state]="runTable" column="qualityIndex" label="Intelligence Index"
+                  class="col-center" (changed)="onTableChanged()"></th>
+              <th app-sort-header [state]="runTable" column="startedAtUtc" label="Started" (changed)="onTableChanged()"></th>
+            </tr>
+            <tr class="gh-filter-row">
+              <td>
+                @if (runTable.hasActiveFilters) {
+                  <button type="button" class="gh-filter-clear"
+                          (click)="runTable.clearFilters(); onTableChanged()">Clear filters</button>
+                }
+              </td>
+              <td></td>
+              <td>
+                <label class="visually-hidden" for="csp-f-run-suite">Filter by suite</label>
+                <input id="csp-f-run-suite" type="text" class="gh-input gh-filter-input" placeholder="Suite"
+                       [ngModel]="runTable.filters['suiteName']" [ngModelOptions]="{ standalone: true }"
+                       (ngModelChange)="runTable.setFilter('suiteName', $event); onTableChanged()">
+              </td>
+              <td>
+                <label class="visually-hidden" for="csp-f-run-model">Filter by tested model</label>
+                <input id="csp-f-run-model" type="text" class="gh-input gh-filter-input" placeholder="Tested model"
+                       [ngModel]="runTable.filters['testedModel']" [ngModelOptions]="{ standalone: true }"
+                       (ngModelChange)="runTable.setFilter('testedModel', $event); onTableChanged()">
+              </td>
+              <td>
+                <label class="visually-hidden" for="csp-f-run-status">Filter by status</label>
+                <select id="csp-f-run-status" class="gh-input gh-filter-select"
+                        [ngModel]="runTable.filters['status']" [ngModelOptions]="{ standalone: true }"
+                        (ngModelChange)="runTable.setFilter('status', $event); onTableChanged()">
+                  <option value="">All</option>
+                  @for (status of runStatusOptions; track status) {
+                    <option [value]="status">{{ status }}</option>
+                  }
+                </select>
+              </td>
+              <td></td>
+              <td></td>
+            </tr>
+          </thead>
+          <tbody>
+            @if (runTable.noMatches(runs)) {
+              <tr><td colspan="7" class="text-muted">No runs match these filters.</td></tr>
+            } @else {
+              @for (run of runTable.view(runs); track run.id) {
+                <tr [class.csp-row-selected]="isRunSelected(run.id)"
+                    [class.csp-row-unselectable]="!isRunSelectable(run)">
+                  <td class="col-center col-selected">
+                    <!-- Disabled, not hidden: an operator who ran a benchmark should be able to see
+                         why it cannot be charted. -->
+                    <input type="checkbox" [id]="'csp-run-' + run.id"
+                           [disabled]="!isRunSelectable(run)"
+                           [attr.aria-label]="isRunSelectable(run)
+                             ? 'Compare run ' + run.id
+                             : runUnselectableReason(run)"
+                           [checked]="isRunSelected(run.id)" (change)="toggleRun(run)">
+                  </td>
+                  <td class="col-center col-id">#{{ run.id }}</td>
+                  <td>{{ run.suiteName }}</td>
+                  <td>{{ run.testedModelDisplayNameUsed }}</td>
+                  <td>{{ runStatus(run) }}</td>
+                  <td class="col-center">{{ formatIndex(run.qualityIndex ?? run.finalScore) }}</td>
+                  <td>{{ formatDate(run.startedAtUtc) }}</td>
+                </tr>
+              }
+            }
+          </tbody>
+        </table>
+        <app-table-pager [state]="runTable" [rows]="runs" noun="runs" [announce]="false"
+                         (changed)="onTableChanged()"></app-table-pager>
+      </div>
+
+      @if (selectedRunIds.length > 0) {
+        <div class="csp-selection">
+          <p class="csp-selection-count" role="status">
+            {{ selectedRunIds.length }} {{ selectedRunIds.length === 1 ? 'run' : 'runs' }} selected@if (offPageRunCount > 0) {<span> — {{ offPageRunCount }} not on this page</span>}
+          </p>
+          <button type="button" class="gh-filter-clear"
+                  [attr.aria-pressed]="showSelectedRunsOnly"
+                  (click)="toggleShowSelectedRunsOnly()">Show selected only</button>
+        </div>
+      }
+    }
+  </section>
+
+  <!-- ===================================================================================
+       ANALYSIS GROUPS
+       =================================================================================== -->
+  <section class="csp-section" aria-labelledby="csp-groups-heading">
+    <h4 id="csp-groups-heading" class="csp-subheading">Analysis groups</h4>
+    <p class="section-note">
+      Every group is offered, whatever its tier. A group whose members do not pool comes back
+      <strong>excluded with the keys it differs on named</strong>, which is more informative than a
+      picker that quietly omitted it.
+    </p>
+
+    @if (groups.length === 0) {
+      <p class="text-muted">
+        No analysis groups for this suite scope — pick another suite scope, or build a group from
+        the Multi-Run Analysis tab.
+      </p>
+    } @else {
+      <div class="gh-datatable-scroll">
+        <app-table-pager [state]="groupTable" [rows]="groups" noun="groups"
+                         (changed)="onTableChanged()"></app-table-pager>
+        <table class="gh-table gh-datatable csp-table">
+          <caption class="visually-hidden">
+            Analysis groups offered as comparison points: selection, name, comparability tier, run
+            count, creation date and analysis state.
+          </caption>
+          <thead>
+            <tr>
+              <th app-sort-header [state]="groupTable" column="selected" label="Selected"
+                  class="col-center col-selected" (changed)="onTableChanged()"></th>
+              <th app-sort-header [state]="groupTable" column="name" label="Group" (changed)="onTableChanged()"></th>
+              <th app-sort-header [state]="groupTable" column="tier" label="Tier" (changed)="onTableChanged()"></th>
+              <th app-sort-header [state]="groupTable" column="runCount" label="R"
+                  class="col-center" (changed)="onTableChanged()"></th>
+              <th app-sort-header [state]="groupTable" column="createdAtUtc" label="Created" (changed)="onTableChanged()"></th>
+              <th app-sort-header [state]="groupTable" column="analysis" label="Analysis" (changed)="onTableChanged()"></th>
+            </tr>
+            <tr class="gh-filter-row">
+              <td>
+                @if (groupTable.hasActiveFilters) {
+                  <button type="button" class="gh-filter-clear"
+                          (click)="groupTable.clearFilters(); onTableChanged()">Clear filters</button>
+                }
+              </td>
+              <td>
+                <label class="visually-hidden" for="csp-f-group-name">Filter by group name</label>
+                <input id="csp-f-group-name" type="text" class="gh-input gh-filter-input" placeholder="Name"
+                       [ngModel]="groupTable.filters['name']" [ngModelOptions]="{ standalone: true }"
+                       (ngModelChange)="groupTable.setFilter('name', $event); onTableChanged()">
+              </td>
+              <td>
+                <label class="visually-hidden" for="csp-f-group-tier">Filter by tier</label>
+                <select id="csp-f-group-tier" class="gh-input gh-filter-select"
+                        [ngModel]="groupTable.filters['tier']" [ngModelOptions]="{ standalone: true }"
+                        (ngModelChange)="groupTable.setFilter('tier', $event); onTableChanged()">
+                  <option value="">All</option>
+                  <option value="Replicate">{{ tierName('Replicate') }}</option>
+                  <option value="QualityComparable">{{ tierName('QualityComparable') }}</option>
+                  <option value="CrossCondition">{{ tierName('CrossCondition') }}</option>
+                </select>
+              </td>
+              <td></td>
+              <td></td>
+              <td></td>
+            </tr>
+          </thead>
+          <tbody>
+            @if (groupTable.noMatches(groups)) {
+              <tr><td colspan="6" class="text-muted">No groups match these filters.</td></tr>
+            } @else {
+              @for (group of groupTable.view(groups); track group.id) {
+                <tr [class.csp-row-selected]="isGroupSelected(group.id)">
+                  <td class="col-center col-selected">
+                    <input type="checkbox" [id]="'csp-group-' + group.id"
+                           [attr.aria-label]="'Compare analysis group ' + group.name"
+                           [checked]="isGroupSelected(group.id)" (change)="toggleGroup(group)">
+                  </td>
+                  <th scope="row" class="col-name">{{ group.name }}</th>
+                  <td>
+                    <span [class]="'csp-tier ' + tierClass(group.tier)">
+                      {{ group.tierLabel || tierName(group.tier) }}
+                    </span>
+                  </td>
+                  <td class="col-center">{{ group.runCount }}</td>
+                  <td>{{ formatDate(group.createdAtUtc) }}</td>
+                  <td>{{ analysisState(group) }}</td>
+                </tr>
+              }
+            }
+          </tbody>
+        </table>
+        <app-table-pager [state]="groupTable" [rows]="groups" noun="groups" [announce]="false"
+                         (changed)="onTableChanged()"></app-table-pager>
+      </div>
+
+      @if (selectedGroupIds.length > 0) {
+        <div class="csp-selection">
+          <p class="csp-selection-count" role="status">
+            {{ selectedGroupIds.length }} {{ selectedGroupIds.length === 1 ? 'group' : 'groups' }} selected@if (offPageGroupCount > 0) {<span> — {{ offPageGroupCount }} not on this page</span>}
+          </p>
+          <button type="button" class="gh-filter-clear"
+                  [attr.aria-pressed]="showSelectedGroupsOnly"
+                  (click)="toggleShowSelectedGroupsOnly()">Show selected only</button>
+        </div>
+      }
+    }
+  </section>
+
+  <!-- ===================================================================================
+       THE CAPS, AND THE ACTIONS
+
+       Two caps, enforced differently. The plot cap is a note: the view charts the first eight
+       and names the rest, so blocking here would refuse a selection the view handles. The
+       source cap is a refusal: a comparison over every stored run is a slow query.
+       =================================================================================== -->
+  <section class="csp-section" aria-labelledby="csp-actions-heading">
+    <h4 id="csp-actions-heading" class="visually-hidden">Run the comparison</h4>
+
+    @if (overPlotCap && !overSourceCap) {
+      <p class="csp-cap-note" role="status">
+        {{ selectedCount }} sources selected — the figures plot at most {{ maxPlotted }}. The rest
+        stay in the comparison table with their measures, and the view names which were left out.
+      </p>
+    }
+
+    @if (overSourceCap) {
+      <div class="alert alert-warning" role="alert">
+        <div class="alert-content"><div class="alert-body">{{ compareBlockedReason }}</div></div>
+      </div>
+    }
+
+    <div class="csp-actions">
+      <button type="button" class="btn-gh" [disabled]="!canCompare" (click)="onCompare()">Compare</button>
+      <button type="button" class="btn-gh btn-gh-cancel" [disabled]="selectedCount === 0"
+              (click)="onClear()">Clear selection</button>
+      @if (compareBlockedReason && !overSourceCap) {
+        <p class="csp-hint">{{ compareBlockedReason }}</p>
+      }
+    </div>
+  </section>
+</div>

@@ -298,6 +298,14 @@ describe('ModelComparisonComponent', () => {
     expect(fixture.debugElement.queryAll(By.css('.mc-card select, .mc-card input')).length).toBe(0);
   });
 
+  it('carries no suite control: suite scope is a selection-stage control and belongs to the picker', () => {
+    render(buildDto(comparableSet(4)));
+
+    expect(fixture.debugElement.query(By.css('#mc-suite'))).toBeNull();
+    // The suite the figures describe stays on screen, read off the payload itself.
+    expect(textOf('.mc-meta')).toContain('GnollHack Player Assistance Benchmark Suite');
+  });
+
   it('scopes every one of the six figures with one entry selection', () => {
     render(buildDto(comparableSet(4)));
     expect(component.figures?.selection.plotted.length).toBe(4);
@@ -447,18 +455,64 @@ describe('ModelComparisonComponent', () => {
   // Query controls
   // -------------------------------------------------------------------------------------------
 
-  it('emits the two controls that change what the host fetches', () => {
+  it('emits the one control that changes what the host fetches', () => {
     render(buildDto(comparableSet(3)));
-    const suites: number[] = [];
     const bases: string[] = [];
-    component.suiteIdChange.subscribe(value => suites.push(value ?? -1));
     component.pricingBasisChange.subscribe(value => bases.push(value));
 
-    component.onSuiteChange(7);
     component.onPricingBasisChange('AsRun');
 
-    expect(suites).toEqual([7]);
     expect(bases).toEqual(['AsRun']);
+  });
+
+  // -------------------------------------------------------------------------------------------
+  // Figure export
+  // -------------------------------------------------------------------------------------------
+
+  it('offers a download control on every figure card and one for the whole set', () => {
+    render(buildDto(comparableSet(3)));
+
+    const cards = fixture.debugElement.queryAll(By.css('.mc-card')).length;
+    const downloads = fixture.debugElement.queryAll(By.css('.mc-card .mc-download'));
+    expect(cards).toBe(7);
+    expect(downloads.length).toBe(7);
+    // An icon-only button has no text, so aria-label is its accessible name.
+    expect((downloads[0].nativeElement as HTMLElement).getAttribute('aria-label'))
+      .toContain('Download ');
+
+    expect(fixture.debugElement.query(By.css('#mc-export-format'))).toBeTruthy();
+    expect(textOf('.mc-export')).toContain('Download all figures');
+  });
+
+  it('hides the export controls where no figure is rendered', () => {
+    render(buildDto(comparableSet(1)));
+    expect(component.shape).toBe('single');
+    expect(fixture.debugElement.query(By.css('.mc-export'))).toBeNull();
+    expect(fixture.debugElement.queryAll(By.css('.mc-download')).length).toBe(0);
+
+    render(buildDto([
+      buildExcludedEntry('run:8', ['ScoringMethodVersion']),
+      buildExcludedEntry('run:9', ['CandidatePromptOptions'])
+    ]));
+    expect(component.shape).toBe('none');
+    expect(fixture.debugElement.query(By.css('.mc-export'))).toBeNull();
+
+    render(null);
+    expect(component.shape).toBe('empty');
+    expect(fixture.debugElement.query(By.css('.mc-export'))).toBeNull();
+    expect(component.canExport).toBeFalse();
+  });
+
+  it('lists every rendered card as exportable, in the order they are drawn', () => {
+    render(buildDto(comparableSet(3)));
+
+    const ids = component.exportableCards.map(card => card.id);
+    expect(ids.length).toBe(7);
+    expect(ids).toEqual([
+      ...component.panelCards.map(card => card.id),
+      component.profileCard!.id,
+      ...component.scatterCards.map(card => card.id)
+    ]);
   });
 });
 

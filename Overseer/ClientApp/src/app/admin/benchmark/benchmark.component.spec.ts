@@ -2,7 +2,7 @@ import { ComponentFixture, TestBed, fakeAsync, tick, discardPeriodicTasks } from
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { By } from '@angular/platform-browser';
-import { of, throwError } from 'rxjs';
+import { of, throwError, Subject } from 'rxjs';
 import { AdminBenchmarkComponent } from './benchmark.component';
 import { MultiRunComponent } from './multi-run/multi-run.component';
 import { AdminBenchmarkService, BenchmarkRunAnswerDto } from '../../services/admin-benchmark.service';
@@ -17,15 +17,21 @@ describe('AdminBenchmarkComponent', () => {
   /** The key AdminBenchmarkComponent remembers the last run setup under. */
   const RUN_SETTINGS_KEY = 'overseer_admin_benchmark_run_settings';
 
-  beforeEach(() => {
-    // Run-setting recall is real browser state, so without this a spec that starts a run leaks its
-    // selections into every spec that constructs the component afterwards.
-    try { localStorage.removeItem(RUN_SETTINGS_KEY); } catch { /* private-browsing modes throw */ }
-  });
+  /** The key it remembers the Model Comparison selection under. */
+  const COMPARISON_SELECTION_KEY = 'overseer_admin_benchmark_comparison_selection';
 
-  afterEach(() => {
-    try { localStorage.removeItem(RUN_SETTINGS_KEY); } catch { /* private-browsing modes throw */ }
-  });
+  function clearStoredState(): void {
+    // Both are real browser state, so without this a spec that starts a run or picks a comparison
+    // leaks its selections into every spec that constructs the component afterwards.
+    try {
+      localStorage.removeItem(RUN_SETTINGS_KEY);
+      localStorage.removeItem(COMPARISON_SELECTION_KEY);
+    } catch { /* private-browsing modes throw */ }
+  }
+
+  beforeEach(clearStoredState);
+
+  afterEach(clearStoredState);
 
   beforeEach(async () => {
     benchmarkServiceMock = jasmine.createSpyObj('AdminBenchmarkService', [
@@ -73,7 +79,8 @@ describe('AdminBenchmarkComponent', () => {
       'createRunGroup',
       'updateRunGroup',
       'previewRunGroupTier',
-      'getRunReportUrl'
+      'getRunReportUrl',
+      'compareModels'
     ]);
 
     benchmarkServiceMock.getActiveDifficultyAssessment.and.returnValue(of(null));
@@ -123,6 +130,7 @@ describe('AdminBenchmarkComponent', () => {
       }
     ]));
     benchmarkServiceMock.getRuns.and.returnValue(of([]));
+    benchmarkServiceMock.compareModels.and.returnValue(of({ entries: [] } as any));
 
     systemServiceMock = jasmine.createSpyObj('SystemService', ['getVersion']);
     systemServiceMock.getVersion.and.returnValue(of('1.0.29'));
@@ -4311,6 +4319,249 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.historyView.map(r => r.id)).toEqual([2]);
       expect(component.historyRuns).toBe(runs);
       expect(component.historyRuns.length).toBe(3);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Model Comparison
+  //
+  // The host owns the selection, the request and the two lists the picker offers, so every
+  // guard that keeps a comparison honest — placement, request shape, ordering, scope and
+  // persistence — is asserted here rather than in either presentational component.
+  // ---------------------------------------------------------------------------
+  describe('model comparison', () => {
+    function buildRun(id: number, suiteId: number, overrides: any = {}): any {
+      return {
+        id,
+        benchmarkSuiteId: suiteId,
+        suiteName: `Suite ${suiteId}`,
+        testedModelDisplayNameUsed: `Model ${id}`,
+        testedModelProviderUsed: 'Google',
+        testedModelIdUsed: 'gemini-2.5-flash',
+        assessorModelDisplayNameUsed: 'Claude Opus',
+        status: 'Completed',
+        startedAtUtc: '2026-09-01T10:00:00Z',
+        qualityIndex: 60 + id,
+        speedIndex: 80,
+        totalAnswerDurationMs: 1000,
+        speedMeasurementDegraded: false,
+        answeredQuestionCount: 18,
+        totalQuestionCount: 18,
+        totalDurationMs: 1200,
+        ...overrides
+      };
+    }
+
+    function buildGroup(id: number, suiteId: number): any {
+      return {
+        id,
+        name: `Group ${id}`,
+        benchmarkSuiteId: suiteId,
+        suiteName: `Suite ${suiteId}`,
+        tier: 'Replicate',
+        tierLabel: 'Tier A — Replicate',
+        crossCondition: false,
+        createdAtUtc: '2026-09-05T10:00:00Z',
+        modifiedAtUtc: '2026-09-05T10:00:00Z',
+        runCount: 3,
+        members: [],
+        analysisStale: false
+      };
+    }
+
+    beforeEach(() => {
+      component.historyRuns = [buildRun(1, 5), buildRun(2, 5), buildRun(3, 6)];
+      component.runGroups = [buildGroup(11, 5), buildGroup(12, 6)];
+      fixture.detectChanges();
+    });
+
+    // --- The sticky-container regression guard ---
+
+    it('renders the comparison panel inside .benchmark-container, so the sub-tab row stays pinned', () => {
+      fixture.nativeElement.querySelector('#bm-tab-modelcomparison').click();
+      fixture.detectChanges();
+
+      const container = fixture.nativeElement.querySelector('.benchmark-container');
+      const panel = fixture.nativeElement.querySelector('#bm-panel-modelcomparison');
+      expect(panel).toBeTruthy();
+      // Structural, not a computed style: a sticky element only sticks while its parent's box is
+      // on screen, and the parent is what this asserts.
+      expect(container.contains(panel)).toBeTrue();
+    });
+
+    it('gives the comparison panel the same panel class as the other five sub-tabs', () => {
+      fixture.nativeElement.querySelector('#bm-tab-modelcomparison').click();
+      fixture.detectChanges();
+
+      const panel = fixture.nativeElement.querySelector('#bm-panel-modelcomparison');
+      expect(panel.classList.contains('benchmark-tab-content')).toBeTrue();
+      // gh-tab-panel is defined in no stylesheet in the repository.
+      expect(panel.classList.contains('gh-tab-panel')).toBeFalse();
+    });
+
+    it('mounts the picker above the comparison view, both bound', () => {
+      fixture.nativeElement.querySelector('#bm-tab-modelcomparison').click();
+      fixture.detectChanges();
+
+      const panel = fixture.nativeElement.querySelector('#bm-panel-modelcomparison');
+      const picker = panel.querySelector('app-comparison-source-picker');
+      const view = panel.querySelector('app-benchmark-model-comparison');
+      expect(picker).toBeTruthy();
+      expect(view).toBeTruthy();
+      expect(picker.compareDocumentPosition(view) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    // --- Loading and the request ---
+
+    it('loads the three lists the picker needs on tab entry, and fetches no comparison', () => {
+      benchmarkServiceMock.getRuns.calls.reset();
+      benchmarkServiceMock.getRunGroups.calls.reset();
+      benchmarkServiceMock.getSuites.calls.reset();
+      benchmarkServiceMock.compareModels.calls.reset();
+
+      component.selectSubTab('modelcomparison');
+
+      expect(benchmarkServiceMock.getRuns).toHaveBeenCalled();
+      expect(benchmarkServiceMock.getRunGroups).toHaveBeenCalled();
+      expect(benchmarkServiceMock.getSuites).toHaveBeenCalled();
+      // An unattended request on tab entry would re-price for a selection nobody confirmed.
+      expect(benchmarkServiceMock.compareModels).not.toHaveBeenCalled();
+    });
+
+    it('issues one request carrying the selected ids and the basis name', () => {
+      component.onComparisonSelectionChange({ runIds: [1, 2], groupIds: [11] });
+      benchmarkServiceMock.compareModels.calls.reset();
+
+      component.runComparison();
+
+      expect(benchmarkServiceMock.compareModels).toHaveBeenCalledTimes(1);
+      expect(benchmarkServiceMock.compareModels).toHaveBeenCalledWith({
+        runIds: [1, 2],
+        groupIds: [11],
+        pricingBasis: 'Current'
+      });
+    });
+
+    it('refuses an empty selection rather than sending a request the server will reject', () => {
+      component.clearComparisonSelection();
+      benchmarkServiceMock.compareModels.calls.reset();
+
+      component.runComparison();
+
+      expect(benchmarkServiceMock.compareModels).not.toHaveBeenCalled();
+      expect(component.comparisonError).toContain('at least one run');
+    });
+
+    it('reports the server error text rather than a generic failure', () => {
+      benchmarkServiceMock.compareModels.and.returnValue(
+        throwError(() => ({ error: 'Run(s) not found: 4' })));
+      component.onComparisonSelectionChange({ runIds: [4], groupIds: [] });
+
+      component.runComparison();
+
+      expect(component.comparisonError).toBe('Run(s) not found: 4');
+      expect(component.comparison).toBeNull();
+      expect(component.comparisonLoading).toBeFalse();
+    });
+
+    it('discards an out-of-order response so the older payload never overwrites the newer', () => {
+      const first = new Subject<any>();
+      const second = new Subject<any>();
+      benchmarkServiceMock.compareModels.and.returnValues(first as any, second as any);
+      component.onComparisonSelectionChange({ runIds: [1], groupIds: [] });
+
+      component.runComparison();
+      component.runComparison();
+
+      second.next({ entries: [], explanation: 'newer' });
+      first.next({ entries: [], explanation: 'older' });
+
+      expect((component.comparison as any).explanation).toBe('newer');
+    });
+
+    // --- Suite scope ---
+
+    it('scopes both offered lists to the suite scope', () => {
+      component.onComparisonSuiteChange(5);
+
+      expect(component.comparisonRunOptions.map(r => r.id)).toEqual([1, 2]);
+      expect(component.comparisonGroupOptions.map(g => g.id)).toEqual([11]);
+
+      component.onComparisonSuiteChange(null);
+      expect(component.comparisonRunOptions.length).toBe(3);
+      expect(component.comparisonGroupOptions.length).toBe(2);
+    });
+
+    it('drops out-of-scope ids when the suite scope changes', () => {
+      component.onComparisonSelectionChange({ runIds: [1, 3], groupIds: [11, 12] });
+
+      component.onComparisonSuiteChange(5);
+
+      // Run 3 and group 12 belong to suite 6: leaving them selected is how a figure ends up with
+      // a model the picker does not show.
+      expect(component.comparisonRunIds).toEqual([1]);
+      expect(component.comparisonGroupIds).toEqual([11]);
+    });
+
+    it('clears the figures when nothing survives a suite scope change', () => {
+      component.onComparisonSelectionChange({ runIds: [3], groupIds: [] });
+      component.comparison = { entries: [] } as any;
+
+      component.onComparisonSuiteChange(5);
+
+      expect(component.comparisonRunIds).toEqual([]);
+      expect(component.comparison).toBeNull();
+    });
+
+    // --- Pricing basis ---
+
+    it('refetches at once on a pricing basis change, because it re-prices an unchanged set', () => {
+      component.onComparisonSelectionChange({ runIds: [1], groupIds: [] });
+      benchmarkServiceMock.compareModels.calls.reset();
+
+      component.onComparisonPricingBasisChange('AsRun');
+
+      expect(component.comparisonPricingBasis).toBe('AsRun');
+      expect(benchmarkServiceMock.compareModels).toHaveBeenCalledWith(
+        jasmine.objectContaining({ pricingBasis: 'AsRun' }));
+    });
+
+    // --- Persistence ---
+
+    it('remembers the selection, the scope and the basis across a reload', () => {
+      component.onComparisonSuiteChange(5);
+      component.onComparisonSelectionChange({ runIds: [1, 2], groupIds: [11] });
+
+      const stored = JSON.parse(localStorage.getItem(COMPARISON_SELECTION_KEY)!);
+      expect(stored).toEqual({
+        runIds: [1, 2], groupIds: [11], suiteId: 5, pricingBasis: 'Current'
+      });
+    });
+
+    it('drops a persisted id that no longer exists rather than sending it', () => {
+      localStorage.setItem(COMPARISON_SELECTION_KEY, JSON.stringify({
+        runIds: [1, 999], groupIds: [11, 888], suiteId: null, pricingBasis: 'AsRun'
+      }));
+
+      component.selectSubTab('modelcomparison');
+
+      // getRuns and getRunGroups both resolve to [] under the default mocks, so the lists that
+      // validate the restore are re-seeded here to what the tab actually offers.
+      component.historyRuns = [buildRun(1, 5)];
+      component.runGroups = [buildGroup(11, 5)];
+      (component as any).pruneComparisonSelection();
+
+      expect(component.comparisonRunIds).toEqual([1]);
+      expect(component.comparisonGroupIds).toEqual([11]);
+      expect(component.comparisonPricingBasis).toBe('AsRun');
+    });
+
+    it('survives a localStorage read that throws, leaving every default standing', () => {
+      spyOn(localStorage, 'getItem').and.throwError('private browsing');
+
+      expect(() => component.selectSubTab('modelcomparison')).not.toThrow();
+      expect(component.comparisonRunIds).toEqual([]);
+      expect(component.comparisonPricingBasis).toBe('Current');
     });
   });
 });

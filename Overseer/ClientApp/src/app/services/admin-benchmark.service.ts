@@ -1,6 +1,22 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
+
+// The comparison wire contract lives beside the view that renders it, so both consumers read one
+// declaration. The reverse edge in that file is an `import type`, which TypeScript erases, so the
+// two files carry no runtime cycle.
+import {
+  BenchmarkModelComparisonDto,
+  BenchmarkModelComparisonQuery,
+  MODEL_COMPARISON_ENDPOINT,
+  modelComparisonQueryParams
+} from '../admin/benchmark/model-comparison/model-comparison.models';
+
+export type {
+  BenchmarkModelComparisonDto,
+  BenchmarkModelComparisonQuery,
+  BenchmarkModelComparisonPricingBasis
+} from '../admin/benchmark/model-comparison/model-comparison.models';
 
 /**
  * How the second-opinion assessor is used. Off is equivalent to selecting no second-opinion
@@ -1274,126 +1290,6 @@ export interface BenchmarkGroupAnalysisDto {
   comparison?: any;
 }
 
-export enum BenchmarkModelComparisonPricingBasis {
-  AsRun = 0,
-  Current = 1
-}
-
-export interface BenchmarkModelComparisonRequest {
-  runIds: number[];
-  groupIds: number[];
-  pricingBasis: BenchmarkModelComparisonPricingBasis;
-}
-
-export interface BenchmarkModelComparisonQualityDto {
-  pointEstimate: number;
-  itemCount: number;
-  intervalHalfWidth?: number | null;
-  intervalLower?: number | null;
-  intervalUpper?: number | null;
-  intervalTruncated: boolean;
-  itemSamplingHalfWidth?: number | null;
-  reproducibilityHalfWidth?: number | null;
-  reproducibilityStandardDeviation?: number | null;
-  reproducibilityAvailable: boolean;
-  intervalBasis: string;
-}
-
-export interface BenchmarkModelComparisonSpeedDto {
-  ttftP50Ms?: number | null;
-  ttftP90Ms?: number | null;
-  ttftAnswerCount: number;
-  modelTimeP50Ms?: number | null;
-  modelTimeP90Ms?: number | null;
-  pooledAnswerCount: number;
-  degraded: boolean;
-  degradedReason?: string | null;
-  caveat: string;
-}
-
-export interface BenchmarkModelComparisonCostDto {
-  candidateCostPerQuestionUsd?: number | null;
-  candidateCostPerRunUsd?: number | null;
-  candidateTotalCostUsd?: number | null;
-  basis: string;
-  pricingAsOf?: string | null;
-  pricingResolved: boolean;
-  degraded: boolean;
-  degradedReason?: string | null;
-  scheduledChangeEffectiveFrom?: string | null;
-  scheduledChangeNote?: string | null;
-}
-
-export interface BenchmarkModelComparisonTableDto {
-  meanSpeedIndex?: number | null;
-  speedIndexSaturated: boolean;
-  speedIndexCeilingAnswerCount: number;
-  speedIndexScoredAnswerCount: number;
-  costPerIndexPointUsd?: number | null;
-  meanStoredQualityIndex?: number | null;
-  unstableItemCount: number;
-}
-
-export interface BenchmarkModelComparisonEntryDto {
-  key: string;
-  sourceKind: string;
-  sourceId: number;
-  sourceName?: string | null;
-  runIds: number[];
-  runCount: number;
-  suiteId?: number | null;
-  suiteName?: string | null;
-  provider: string;
-  modelId: string;
-  modelDisplayName: string;
-  thinkingLevel?: string | null;
-  reasoningMode?: string | null;
-  reasoningSummary?: string | null;
-  serviceTier?: string | null;
-  maxOutputTokens?: number | null;
-  parallelExecutionMode: string;
-  label: string;
-  firstRunStartedAtUtc: string;
-  lastRunStartedAtUtc: string;
-  state: string;
-  comparable: boolean;
-  excluded: boolean;
-  speedDegraded: boolean;
-  costDegraded: boolean;
-  excludingKeys: string[];
-  speedDegradingKeys: string[];
-  costDegradingKeys: string[];
-  differences: BenchmarkComparabilityDifferenceDto[];
-  explanation: string;
-  quality?: BenchmarkModelComparisonQualityDto | null;
-  speed?: BenchmarkModelComparisonSpeedDto | null;
-  cost?: BenchmarkModelComparisonCostDto | null;
-  table?: BenchmarkModelComparisonTableDto | null;
-}
-
-export interface BenchmarkModelComparisonExcludedMeasureDto {
-  measure: string;
-  reason: string;
-  instead: string;
-}
-
-export interface BenchmarkModelComparisonDto {
-  pricingBasis: string;
-  pricingBasisLabel: string;
-  computedAtUtc: string;
-  baselineSuiteId?: number | null;
-  baselineSuiteName?: string | null;
-  baselineEntryKeys: string[];
-  baselineKeyValues: { [key: string]: string };
-  modelAxisKeys: string[];
-  entries: BenchmarkModelComparisonEntryDto[];
-  comparableCount: number;
-  excludedCount: number;
-  thinkingLevelsDiffer: boolean;
-  speedAxisCaveat?: string | null;
-  explanation: string;
-  excludedMeasures: BenchmarkModelComparisonExcludedMeasureDto[];
-}
 
 
 @Injectable({
@@ -1780,11 +1676,18 @@ export class AdminBenchmarkService {
     return `/api/admin/benchmark/runs/groups/${groupId}/report`;
   }
 
-  compareModels(req: BenchmarkModelComparisonRequest): Observable<BenchmarkModelComparisonDto> {
-    let params: any = {};
-    if (req.runIds?.length) params.runIds = req.runIds;
-    if (req.groupIds?.length) params.groupIds = req.groupIds;
-    if (req.pricingBasis != null) params.pricingBasis = req.pricingBasis;
-    return this.http.get<BenchmarkModelComparisonDto>('/api/admin/benchmark/models/compare', { params });
+  /**
+   * One cross-model comparison over the named runs and analysis groups.
+   *
+   * `runIds` and `groupIds` are repeated parameters rather than one comma-joined value, which is
+   * the shape `[FromQuery] BenchmarkModelComparisonRequest` binds its two lists from, and
+   * `pricingBasis` travels as the enum member name the query binder accepts.
+   */
+  compareModels(query: BenchmarkModelComparisonQuery): Observable<BenchmarkModelComparisonDto> {
+    let params = new HttpParams();
+    for (const [key, value] of modelComparisonQueryParams(query)) {
+      params = params.append(key, value);
+    }
+    return this.http.get<BenchmarkModelComparisonDto>(MODEL_COMPARISON_ENDPOINT, { params });
   }
 }
