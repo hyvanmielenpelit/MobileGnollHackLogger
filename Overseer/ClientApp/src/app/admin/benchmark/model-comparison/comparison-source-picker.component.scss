@@ -88,12 +88,19 @@
   padding: 0;
   overflow: hidden;
 
-  /* A dialog defaults to `display: block`; the header / body / actions column needs a flex
-     context, and `dialog:not([open])` in `styles.scss` still hides it while closed. */
+  /* The header / body / actions column needs a flex context, which a dialog does not default to.
+
+     Only `display` is gated on the open state. A closing dialog holds `display: flex` for the
+     length of its exit transition — that is what `display` with `allow-discrete` in the
+     transition list buys — while any property the transition does not list reverts the moment
+     [open] and :modal stop matching. Gating `flex-direction` too would lay the header, body and
+     actions out as a row for the whole exit. `dialog:not([open])` in `styles.scss` still hides
+     the dialog once the transition has finished. */
+  flex-direction: column;
+
   &[open],
   &:modal {
     display: flex;
-    flex-direction: column;
   }
 
   /* Entry and exit. `display` and `overlay` must both be in the list with `allow-discrete`,

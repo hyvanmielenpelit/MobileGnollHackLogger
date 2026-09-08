@@ -606,12 +606,19 @@ dialog:not([open]),
     background: rgba(0, 0, 0, 0.75);
   }
 
-  /* The content is a header / body / footer column, so the open state is a flex column rather
-     than the block a dialog defaults to. dialog:not([open]) above still hides it while closed. */
+  /* The content is a header / body / footer column, so an open dialog is a flex column rather
+     than the block a dialog defaults to. dialog:not([open]) above still hides it while closed.
+
+     flex-direction sits outside the open-state block on purpose. A closing dialog holds
+     `display: flex` for the length of its exit transition — that is what `display` with
+     `allow-discrete` in the transition list buys — while any property the transition does not
+     list reverts the moment [open] and :modal stop matching. Gating flex-direction would
+     therefore lay the header, body and footer out as a row for the whole exit. */
+  flex-direction: column;
+
   &[open],
   &:modal {
     display: flex;
-    flex-direction: column;
   }
 }
 
