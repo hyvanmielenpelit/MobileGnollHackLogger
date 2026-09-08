@@ -1213,16 +1213,11 @@
           figures.
         </p>
 
-        <dl class="mc-launcher-state">
-          <div>
-            <dt>Selected</dt>
-            <dd>
-              {{ comparisonRunIds.length }} {{ comparisonRunIds.length === 1 ? 'run' : 'runs' }},
-              {{ comparisonGroupIds.length }}
-              {{ comparisonGroupIds.length === 1 ? 'analysis group' : 'analysis groups' }}
-            </dd>
-          </div>
-          @if (comparison) {
+        <!-- Only what the last comparison produced. Nothing about a pending selection is reported
+             here: this panel holds no control that could change one, and a labelled read-out beside
+             no selector reads as a control that has stopped working. -->
+        @if (comparison) {
+          <dl class="mc-launcher-state">
             <div>
               <dt>Suite</dt>
               <dd>{{ comparison.baselineSuiteName || 'Not set' }}</dd>
@@ -1239,8 +1234,8 @@
               <dt>Computed</dt>
               <dd>{{ comparison.computedAtUtc | date:'short' }}</dd>
             </div>
-          }
-        </dl>
+          </dl>
+        }
 
         @if (comparabilityIndexError) {
           <!-- Non-fatal: the index is a disclosure aid, and the comparison itself is unaffected. -->
@@ -1254,11 +1249,6 @@
         <div class="mc-launcher-actions">
           <button type="button" class="btn-gh" (click)="openComparisonWizard()">
             Open comparison wizard
-          </button>
-          <button type="button" class="btn-gh btn-gh-cancel"
-                  [disabled]="comparisonRunIds.length + comparisonGroupIds.length === 0"
-                  (click)="clearComparisonSelection()">
-            Clear selection
           </button>
         </div>
       </div>
@@ -1275,10 +1265,10 @@
   One dialog for every suite card, not one per card, and full-screen: eleven columns of item
   analysis never fitted the 560px suite card it used to render inside.
 
-  No closedby="any", unlike the other dialogs in this application: a viewport-filling dialog
-  has no backdrop to click, so light dismiss would add nothing but a way to lose the analysis
-  by mis-clicking. Escape, both Close controls and platform back gestures all work on a
-  showModal() dialog without it.
+  No closedby="any", unlike the other dialogs in this application: the dialog leaves the backdrop
+  showing only as an 8px ring, too thin to be an honest click target, so light dismiss would add
+  nothing but a way to lose the analysis by mis-clicking. Escape, both Close controls and platform
+  back gestures all work on a showModal() dialog without it.
 
   The @if is load-bearing beyond null safety: it re-creates SuiteHealthComponent on every
   opening, so ngOnChanges fires with a first-change suiteId and the analysis reloads. Without
@@ -3506,9 +3496,9 @@
   tables, six figures and a thirteen-column table, and the application header, the admin tab row
   and the benchmark sub-tab row leave it a fraction of the viewport inline.
 
-  No closedby="any": a viewport-filling dialog has no backdrop to click, so light dismiss would
-  only offer a way to lose a configured comparison by mis-clicking. Escape, the header control and
-  the footer Close all work on a showModal() dialog without it.
+  No closedby="any": the backdrop shows only as an 8px ring, too thin to be an honest click
+  target, so light dismiss would only offer a way to lose a configured comparison by mis-clicking.
+  Escape, the header control and the footer Close all work on a showModal() dialog without it.
 
   @if (comparisonWizardMounted) is set once and never reset — the opposite of the suite health
   dialog, which re-creates its content to force a reload. Here reopening must preserve the

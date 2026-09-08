@@ -4428,6 +4428,47 @@ describe('AdminBenchmarkComponent', () => {
       expect(dialog.open).toBeFalse();
     });
 
+    it('reports no pending selection in the launcher, and offers no control that could change one', () => {
+      component.comparisonRunIds = [1, 2];
+      component.comparisonGroupIds = [11];
+      fixture.nativeElement.querySelector('#bm-tab-modelcomparison').click();
+      fixture.detectChanges();
+
+      const launcher = fixture.nativeElement.querySelector('.mc-launcher');
+      // The picker lives in the wizard, so a "Selected" read-out here would label a control that
+      // is not on this panel, and Clear would clear something it never showed.
+      const terms = Array.from(launcher.querySelectorAll('dt'))
+        .map((dt: any) => dt.textContent.trim());
+      expect(terms).not.toContain('Selected');
+      expect(launcher.textContent).not.toContain('analysis groups');
+      expect(launcher.textContent).not.toContain('Clear selection');
+      // No comparison yet: the state list is absent rather than empty.
+      expect(launcher.querySelector('.mc-launcher-state')).toBeNull();
+      // One action, and it is the one that opens the surface that owns the selection.
+      const actions = launcher.querySelectorAll('.mc-launcher-actions button');
+      expect(actions.length).toBe(1);
+      expect(actions[0].textContent.trim()).toBe('Open comparison wizard');
+    });
+
+    it('states what the last comparison produced once one exists', () => {
+      fixture.nativeElement.querySelector('#bm-tab-modelcomparison').click();
+      component.comparison = {
+        baselineSuiteName: 'Suite 5',
+        pricingBasis: 'Current',
+        pricingBasisLabel: 'Current prices',
+        comparableCount: 2,
+        entries: [{}, {}, {}],
+        computedAtUtc: '2026-09-08T10:00:00Z'
+      } as any;
+      fixture.detectChanges();
+
+      const state = fixture.nativeElement.querySelector('.mc-launcher .mc-launcher-state');
+      expect(state).toBeTruthy();
+      const terms = Array.from(state.querySelectorAll('dt')).map((dt: any) => dt.textContent.trim());
+      expect(terms).toEqual(['Suite', 'Pricing basis', 'Charted', 'Computed']);
+      expect(state.textContent).toContain('2 of 3 entries');
+    });
+
     it('opens the wizard modally from the launcher, and keeps it mounted after a close', () => {
       fixture.nativeElement.querySelector('#bm-tab-modelcomparison').click();
       fixture.detectChanges();

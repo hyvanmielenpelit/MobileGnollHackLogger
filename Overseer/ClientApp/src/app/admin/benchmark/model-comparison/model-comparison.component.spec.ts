@@ -678,6 +678,22 @@ describe('ModelComparisonComponent', () => {
     expect(component.step).toBe(3);
   });
 
+  it('hides the step 1 panel rather than rendering it beside the open step', () => {
+    render(buildDto(comparableSet(4)), 2);
+
+    // `display: flex` on .mc-step is an author declaration and outranks the user-agent [hidden]
+    // rule, so the panel needs an explicit [hidden] declaration of its own; without it both
+    // panels render side by side in .mc-wizard-body's row.
+    const panel = fixture.debugElement.query(By.css('#mc-step-panel-1'))
+      .nativeElement as HTMLElement;
+    expect(getComputedStyle(panel).display).toBe('none');
+
+    component.goToStep(1);
+    fixture.detectChanges();
+
+    expect(getComputedStyle(panel).display).not.toBe('none');
+  });
+
   it('survives being measured at width zero, which is what a closed dialog reports', () => {
     render(buildDto(comparableSet(3)), 3);
 

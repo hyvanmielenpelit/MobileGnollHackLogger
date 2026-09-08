@@ -1765,22 +1765,16 @@
    analysis and an eleven-column item table, and a wizard carrying two paged tables and six
    figures, have no honest smaller size. The viewport sizing, the top-layer entry and exit
    transition, the backdrop and the reduced-motion block all come from .gh-dialog-fullscreen in
-   styles.scss, which a second consumer is exactly the reason for; only the body frame is local. */
+   styles.scss, which a second consumer is exactly the reason for. Only Suite Health has a local
+   body frame; the Model Comparison wizard's whole column lives in
+   model-comparison.component.scss, because its markup belongs to that component and an
+   encapsulated rule here would not reach it. */
 .gh-dialog.benchmark-suite-health-dialog {
   /* The body is the panel's frame, not a scroller: each tab scrolls itself. */
   .suite-health-dialog-body {
     padding: 0;
     overflow: hidden;
     display: flex;
-    min-height: 0;
-  }
-}
-
-.gh-dialog.benchmark-model-comparison-dialog {
-  /* The wizard component renders the whole header / steps / panel / footer column, so this
-     dialog holds nothing but that column. The step panel is the only scroller. */
-  .dialog-content {
-    height: 100%;
     min-height: 0;
   }
 }

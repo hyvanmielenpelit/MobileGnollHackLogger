@@ -610,21 +610,36 @@
    button, tab, tooltip, table and pager treatments from the same file; none of them is
    redefined here.
 
-   `min-height: 0` on the body and on the step is what stops a long comparison table
-   pushing the footer off the bottom of the viewport: a flex item's automatic minimum size
-   otherwise refuses to shrink below its content.
+   The height chain is what makes the step panel the scroller rather than the dialog the
+   clipper: the host fills the dialog's flex column, `.mc-wizard` fills the host, and
+   `min-height: 0` on the body and on the step defeats a flex item's automatic minimum
+   size, which otherwise refuses to shrink below its content and pushes the footer out
+   through the dialog's `overflow: hidden`.
    ========================================================================== */
+:host {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
 .mc-wizard {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1;
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
   padding: 0;
 }
 
+/* Pinned to the top of the wizard column and above the step panel in the stacking order, so a
+   chart or a table header scrolled under it cannot show through. */
 .mc-wizard-header {
   flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 12;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -662,9 +677,16 @@
   margin: 12px 24px 0;
 }
 
+/* Pinned under the header. `.gh-tabs` sets `position: relative` for its own scroll-state
+   container; sticky replaces it and is equally a positioned ancestor. The background is the
+   dialog's own ground, which a pinned row needs so scrolled content does not read through it. */
 .mc-wizard-steps {
   flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 11;
   padding: 0 24px;
+  background: rgba(16, 16, 16, 0.98);
 }
 
 .mc-wizard-body {
@@ -679,6 +701,7 @@
    reaches the end of a long table from chaining into the page behind the dialog. */
 .mc-step {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -686,10 +709,22 @@
   display: flex;
   flex-direction: column;
   gap: 24px;
+
+  /* `display: flex` above is an author declaration and outranks the user-agent `[hidden]`
+     rule, so step 1 — hidden rather than destroyed, to keep the picker's table state — needs
+     this to disappear. */
+  &[hidden] {
+    display: none;
+  }
 }
 
+/* Pinned to the bottom of the wizard column: Previous, the step read-out and Next stay reachable
+   from any scroll position in the step panel. */
 .mc-wizard-nav {
   flex-shrink: 0;
+  position: sticky;
+  bottom: 0;
+  z-index: 12;
   display: flex;
   justify-content: space-between;
   align-items: center;

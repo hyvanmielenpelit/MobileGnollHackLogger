@@ -560,21 +560,23 @@ dialog:not([open]),
 
 /* Full-screen dialog, for a task that has no honest smaller size: several tabs of analysis, a
    wizard carrying two paged tables and six figures, an eleven-column item table. Sizing uses dvh
-   so a mobile URL bar collapsing cannot clip the footer.
+   so a mobile URL bar collapsing cannot clip the footer, and insets 8px a side so the dialog
+   carries the same 1px glass border and 8px radius as every other .gh-dialog rather than reading
+   as a replaced page.
 
-   Shared by the Suite Health dialog and the Model Comparison wizard. No closedby="any": a
-   viewport-filling dialog has no visible backdrop to click, so light dismiss is inapplicable and
-   would only offer a way to lose configured work by mis-clicking. Escape and the dialog's own
-   close controls work on a showModal() dialog without it. */
+   Shared by the Suite Health dialog and the Model Comparison wizard. No closedby="any": the
+   backdrop shows only as that 8px ring, too thin to be an honest click target, so light dismiss
+   is inapplicable and would only offer a way to lose configured work by mis-clicking. Escape and
+   the dialog's own close controls work on a showModal() dialog without it. */
 .gh-dialog.gh-dialog-fullscreen {
-  width: 100vw;
-  max-width: 100vw;
-  height: 100dvh;
-  max-height: 100dvh;
-  margin: 0;
+  width: calc(100vw - 16px);
+  max-width: calc(100vw - 16px);
+  height: calc(100dvh - 16px);
+  max-height: calc(100dvh - 16px);
+  margin: auto;
   padding: 0;
-  border: 0;
-  border-radius: 0;
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
   overflow: hidden;
   background: rgba(16, 16, 16, 0.98);
 
@@ -598,8 +600,8 @@ dialog:not([open]),
     }
   }
 
-  /* The dialog fills the viewport, so the backdrop only shows while the transition runs.
-     It still has to exist, or the entry flashes the page behind it. */
+  /* The dialog covers all but the ring, so the backdrop is mostly seen while the transition
+     runs. It still has to exist, or the entry flashes the page behind it. */
   &::backdrop {
     background: rgba(0, 0, 0, 0.75);
   }
@@ -623,6 +625,17 @@ dialog:not([open]),
         transform: none;
       }
     }
+  }
+}
+
+/* Half the inset on a phone: 8px a side is a far larger share of a 375px viewport than of a
+   desktop one, and the frame still reads at 4px. */
+@media (max-width: 600px) {
+  .gh-dialog.gh-dialog-fullscreen {
+    width: calc(100vw - 8px);
+    max-width: calc(100vw - 8px);
+    height: calc(100dvh - 8px);
+    max-height: calc(100dvh - 8px);
   }
 }
 
