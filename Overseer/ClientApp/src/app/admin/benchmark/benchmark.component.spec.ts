@@ -4390,6 +4390,37 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.runDurationMs(run)).toBe(1419000);
     });
 
+    // The run detail's two duration cards. The Answer Duration card has no wall-clock fallback:
+    // the two figures measure different things, so substituting one for the other would put a
+    // wall-clock number under a label that says answer time.
+    it('should label the two run detail durations as the separate figures they are', () => {
+      const run = buildRun({ status: 'Canceled' });
+
+      expect(component.runAnswerDurationLabel(run)).toBe('12m 45s');
+      expect(component.runWallClockLabel(run)).toBe('23m 39s');
+    });
+
+    it('should dash the Answer Duration card rather than borrow the wall clock', () => {
+      const run = buildRun({ status: 'Canceled', totalAnswerDurationMs: 0 });
+
+      expect(component.runAnswerDurationLabel(run)).toBe('—');
+      expect(component.runWallClockLabel(run)).toBe('23m 39s');
+    });
+
+    it('should derive the wall clock card from the timestamps when the run recorded none', () => {
+      // What an interrupted run looks like: cleanup leaves TotalDurationMs at zero, because the
+      // outage between the crash and the restart is not run time.
+      const run = buildRun({ status: 'Failed', totalDurationMs: 0 });
+
+      expect(component.runWallClockLabel(run)).toBe('23m 39s');
+    });
+
+    it('should dash the wall clock card for a run with no completion timestamp', () => {
+      const run = buildRun({ status: 'Failed', totalDurationMs: 0, completedAtUtc: null });
+
+      expect(component.runWallClockLabel(run)).toBe('—');
+    });
+
     it('should report the shortfall of a run that finished with errors', () => {
       const run = buildRun({ status: 'CompletedWithErrors', answeredQuestionCount: 16, totalQuestionCount: 18 });
 

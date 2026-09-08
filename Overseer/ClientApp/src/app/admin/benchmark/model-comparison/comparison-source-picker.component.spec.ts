@@ -318,7 +318,7 @@ describe('ComparisonSourcePickerComponent', () => {
 
     let cleared = 0;
     component.clear.subscribe(() => cleared++);
-    const clearButton = fixture.debugElement.query(By.css('.csp-actions button'));
+    const clearButton = fixture.debugElement.query(By.css('.csp-actions .btn-gh-cancel'));
     (clearButton.nativeElement as HTMLButtonElement).click();
 
     expect(cleared).toBe(1);
@@ -421,7 +421,7 @@ describe('ComparisonSourcePickerComponent', () => {
       .nativeElement as HTMLDialogElement;
     const showModal = spyOn(dialog, 'showModal');
 
-    (fixture.debugElement.query(By.css('.csp-legend-actions .btn-gh'))
+    (fixture.debugElement.query(By.css('.csp-actions .btn-gh'))
       .nativeElement as HTMLButtonElement).click();
 
     expect(showModal).toHaveBeenCalled();

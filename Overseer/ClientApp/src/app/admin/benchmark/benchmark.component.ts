@@ -4760,9 +4760,33 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     return run.totalAnswerDurationMs || run.totalDurationMs || this.elapsedBetweenTimestamps(run);
   }
 
-  private elapsedBetweenTimestamps(run: BenchmarkRunSummaryDto): number {
+  private elapsedBetweenTimestamps(run: BenchmarkRunSummaryDto | BenchmarkRunDetailDto): number {
     if (!run.completedAtUtc) return 0;
     return Math.max(0, new Date(run.completedAtUtc).getTime() - new Date(run.startedAtUtc).getTime());
+  }
+
+  /**
+   * What the run detail's Answer Duration card shows: the time the candidate spent producing
+   * answers, or a dash.
+   *
+   * There is deliberately no fallback to the wall clock here. The two measure different things —
+   * on run 24 they are 12m 45s and 23m 39s, because grading and the questions cancelled in flight
+   * sit in the gap — so substituting one for the other would put a wall-clock figure under a label
+   * that says answer time. A run with no answer time recorded says so.
+   */
+  runAnswerDurationLabel(run: BenchmarkRunDetailDto): string {
+    return run.totalAnswerDurationMs ? this.formatDuration(run.totalAnswerDurationMs) : '—';
+  }
+
+  /**
+   * What the run detail's Elapsed Wall Time card shows: start to finish, grading included. Falls
+   * back to the two timestamps, which is the same measurement by another route rather than a
+   * different one — a run interrupted by a restart records no wall clock of its own, because the
+   * outage between the crash and the cleanup is not run time.
+   */
+  runWallClockLabel(run: BenchmarkRunDetailDto): string {
+    const elapsed = run.totalDurationMs || this.elapsedBetweenTimestamps(run);
+    return elapsed ? this.formatDuration(elapsed) : '—';
   }
 
   /**

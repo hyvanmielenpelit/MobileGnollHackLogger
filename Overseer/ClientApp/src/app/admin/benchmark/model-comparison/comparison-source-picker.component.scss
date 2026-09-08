@@ -70,13 +70,16 @@
   }
 }
 
-/* --- Legend: what a condition is --- */
+/* --- Selection actions: the condition legend launcher, and Clear selection beside it --- */
 
-.csp-legend-actions {
+.csp-actions {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 12px 16px;
 }
+
+/* --- Legend: what a condition is --- */
 
 /* Sizing only: the glass frame, the backdrop and the type come from `.gh-dialog` in
    `styles.scss` and are not redefined. Wider than `.dialog-wide` because one value in the
@@ -633,11 +636,3 @@
   margin-left: 4px;
 }
 
-/* --- Actions --- */
-
-.csp-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px 16px;
-}

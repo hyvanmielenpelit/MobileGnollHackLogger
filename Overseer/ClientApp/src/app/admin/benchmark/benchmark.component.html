@@ -1468,9 +1468,20 @@
             <span class="score-label">Holistic Assessor Score</span>
             <span class="score-subvalue">{{ selectedRunDetail.finalScore != null ? selectedRunDetail.finalScore : 'N/A' }} / 100</span>
           </div>
+          <!--
+            The pair the report prints as Total Candidate Answer Time and Total Elapsed Wall Time.
+            Two cards rather than one because the gap between them is the grading pipeline: on run 24
+            the candidate answered for 12m 45s inside a 23m 39s run.
+          -->
           <div class="score-card">
             <span class="score-label">Answer Duration</span>
-            <span class="score-subvalue">{{ formatDuration(selectedRunDetail.totalAnswerDurationMs || selectedRunDetail.totalDurationMs) }}</span>
+            <span class="score-subvalue">{{ runAnswerDurationLabel(selectedRunDetail) }}</span>
+            <span class="score-note">candidate answering only</span>
+          </div>
+          <div class="score-card">
+            <span class="score-label">Elapsed Wall Time</span>
+            <span class="score-subvalue">{{ runWallClockLabel(selectedRunDetail) }}</span>
+            <span class="score-note">start to finish, grading included</span>
           </div>
           <!--
             H5. The card showed one figure, and the split it hides is the interesting one: on run 13 the
