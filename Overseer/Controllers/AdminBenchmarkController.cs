@@ -2172,6 +2172,44 @@ public class AdminBenchmarkController : ControllerBase
         // hard-coded copy of the tool-name lists that drifted every time a tool was added.
         var toolRouting = BenchmarkChatTransfer.AnalyzeToolRouting(run.Answers.ToList());
 
+        // Per-answer outcome counts, without loading a single payload column: GetRun projects every
+        // answer of the run into the dialog, so a .ThenInclude(a => a.ToolCalls) here would pull in
+        // every argument and result of every call — exactly what the separate tool-calls endpoint
+        // exists to avoid. This aggregate selects only what the classification below needs.
+        //
+        // The classification is duplicated from BenchmarkToolCallRecorder.Outcomes only because it
+        // must run as SQL against the Error column rather than pull that column into memory; it must
+        // stay in step with Outcomes, which is the owner of the rule.
+        var toolCallOutcomes = await _dbContext.BenchmarkRunAnswerToolCalls
+            .Where(tc => tc.BenchmarkRunAnswer!.BenchmarkRunId == id)
+            .Select(tc => new
+            {
+                tc.BenchmarkRunAnswerId,
+                tc.Status,
+                IsRefused = tc.Error != null
+                    && (tc.Error.Contains(BenchmarkToolCallRecorder.BudgetRefusalMarker)
+                        || tc.Error.Contains(BenchmarkToolCallRecorder.PerQuestionBudgetRefusalMarker))
+            })
+            .ToListAsync();
+
+        // An answer absent from this lookup made no recorded tool calls at all: null counts, not
+        // zero, per BenchmarkRunAnswerDto.ToolCallsSucceeded's null-versus-zero rule.
+        var toolCallOutcomesByAnswer = toolCallOutcomes
+            .GroupBy(tc => tc.BenchmarkRunAnswerId)
+            .ToDictionary(
+                g => g.Key,
+                g =>
+                {
+                    int succeeded = 0, failed = 0, refused = 0;
+                    foreach (var tc in g)
+                    {
+                        if (tc.IsRefused) refused++;
+                        else if (!string.Equals(tc.Status, "completed", StringComparison.OrdinalIgnoreCase)) failed++;
+                        else succeeded++;
+                    }
+                    return (Succeeded: succeeded, Failed: failed, Refused: refused);
+                });
+
         var dto = new BenchmarkRunDetailDto
         {
             Id = run.Id,
@@ -2339,105 +2377,156 @@ public class AdminBenchmarkController : ControllerBase
             // Empty unless this is the run currently executing in this process.
             InFlightOrderIndexes = _runManager.GetInFlightQuestions(run.Id).ToList(),
 
-            Answers = run.Answers.OrderBy(a => a.OrderIndex).Select(a => new BenchmarkRunAnswerDto
+            Answers = run.Answers.OrderBy(a => a.OrderIndex).Select(a =>
             {
-                Id = a.Id,
-                BenchmarkRunId = a.BenchmarkRunId,
-                BenchmarkQuestionId = a.BenchmarkQuestionId,
-                ItemRevisionUsed = a.ItemRevisionUsed,
-                OrderIndex = a.OrderIndex,
-                QuestionText = a.QuestionText,
-                Difficulty = a.Difficulty,
-                AssessedDifficulty = a.AssessedDifficulty,
-                AnswerText = a.AnswerText,
-                ThoughtText = a.ThoughtText,
-                Status = a.Status,
-                AssessmentStatus = a.AssessmentStatus,
-                AssessmentError = a.AssessmentError,
-                ErrorMessage = a.ErrorMessage,
-                HttpStatusCode = a.HttpStatusCode,
-                Score = a.Score,
-                AccuracyLevel = a.AccuracyLevel,
-                CompletenessLevel = a.CompletenessLevel,
-                ConcisenessLevel = a.ConcisenessLevel,
-                ReadabilityLevel = a.ReadabilityLevel,
-                CriticalError = a.CriticalError,
-                AccuracyScore = a.AccuracyScore,
-                CompletenessScore = a.CompletenessScore,
-                ConcisenessScore = a.ConcisenessScore,
-                ReadabilityScore = a.ReadabilityScore,
-                QualityScore = a.QualityScore,
-                RawQualityScore = a.RawQualityScore,
-                SpeedScore = a.SpeedScore,
-                ReviewComment = a.ReviewComment,
-                DurationMs = a.DurationMs,
-                TimeToFirstTokenMs = a.TimeToFirstTokenMs,
-                ActualServiceTierUsed = a.ActualServiceTierUsed,
-                ToolCallSummary = a.ToolCallSummary,
-                InputTokens = a.InputTokens,
-                OutputTokens = a.OutputTokens,
-                CacheReadInputTokens = a.CacheReadInputTokens,
-                CacheCreationInputTokens = a.CacheCreationInputTokens,
-                InputTokenShare = (a.InputTokens.HasValue && totalInputTokens > 0)
-                    ? (double)a.InputTokens.Value / totalInputTokens
-                    : null,
-                ModelCallCount = a.ModelCallCount,
-                ToolCallCount = a.ToolCallCount,
-                ToolBudgetExhausted = a.ToolBudgetExhausted,
-                ToolCallsBlocked = a.ToolCallsBlocked,
-                ToolCallBudgetUsed = a.ToolCallBudgetUsed,
-                ToolTimeMs = a.ToolTimeMs,
-                ModelTimeMs = a.ModelTimeMs,
-                ScrubbedArtifactText = a.ScrubbedArtifactText,
-                ScrubbedArtifactCount = a.ScrubbedArtifactCount,
-                NarrationBlockCount = a.NarrationBlockCount,
-                TerminationReason = a.TerminationReason,
-                ProviderFinishReason = a.ProviderFinishReason,
-                AnswerFlags = a.AnswerFlags,
-                AnswerFlagNames = ((BenchmarkAnswerFlags)a.AnswerFlags != BenchmarkAnswerFlags.None)
-                    ? Enum.GetValues<BenchmarkAnswerFlags>()
-                        .Where(f => f != BenchmarkAnswerFlags.None && ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(f))
-                        .Select(f => f.ToString())
-                        .ToList()
-                    : new List<string>(),
-                AssessedByModelConfigurationId = a.AssessedByModelConfigurationId,
-                AssessedByModelDisplayNameUsed = a.AssessedByModelDisplayNameUsed,
-                AssessedByModelProviderUsed = a.AssessedByModelProviderUsed,
-                AssessedByModelIdUsed = a.AssessedByModelIdUsed,
-                AssessedAtUtc = a.AssessedAtUtc,
-                AssessmentInputTokens = a.AssessmentInputTokens,
-                AssessmentOutputTokens = a.AssessmentOutputTokens,
-                AssessmentDurationMs = a.AssessmentDurationMs,
-                AssessmentEvidenceJson = a.AssessmentEvidenceJson,
-                CriticalErrorQuote = a.CriticalErrorQuote,
-                UnverifiedClaimCount = a.UnverifiedClaimCount,
-                UnverifiedClaimsJson = a.UnverifiedClaimsJson,
-                SecondOpinionQualityScore = a.SecondOpinionQualityScore,
-                SecondOpinionCriticalError = a.SecondOpinionCriticalError,
-                SecondOpinionByModelDisplayNameUsed = a.SecondOpinionByModelDisplayNameUsed,
-                SecondOpinionJson = a.SecondOpinionJson,
-                SecondOpinionDisagreed = a.SecondOpinionDisagreed,
-                SecondOpinionTrigger = a.SecondOpinionTrigger,
-                SecondOpinionError = a.SecondOpinionError,
-                ClaimVerificationJson = a.ClaimVerificationJson,
-                ClaimsSupportedCount = a.ClaimsSupportedCount,
-                ClaimsRefutedCount = a.ClaimsRefutedCount,
-                ClaimsIndeterminateCount = a.ClaimsIndeterminateCount,
-                ClaimVerificationByModelDisplayNameUsed = a.ClaimVerificationByModelDisplayNameUsed,
-                ClaimVerificationInputTokens = a.ClaimVerificationInputTokens,
-                ClaimVerificationOutputTokens = a.ClaimVerificationOutputTokens,
-                ClaimVerificationDurationMs = a.ClaimVerificationDurationMs,
-                ClaimVerificationToolCallCount = a.ClaimVerificationToolCallCount,
-                ClaimVerificationError = a.ClaimVerificationError,
-                ClaimVerificationRawText = a.ClaimVerificationRawText,
-                ReassessedAtUtc = a.ReassessedAtUtc,
-                ReassessedByModelDisplayNameUsed = a.ReassessedByModelDisplayNameUsed,
-                PreviousQualityScore = a.PreviousQualityScore,
-                ReassessmentCount = a.ReassessmentCount
+                bool hasToolCallOutcome = toolCallOutcomesByAnswer.TryGetValue(a.Id, out var toolCallOutcome);
+                return new BenchmarkRunAnswerDto
+                {
+                    Id = a.Id,
+                    BenchmarkRunId = a.BenchmarkRunId,
+                    BenchmarkQuestionId = a.BenchmarkQuestionId,
+                    ItemRevisionUsed = a.ItemRevisionUsed,
+                    OrderIndex = a.OrderIndex,
+                    QuestionText = a.QuestionText,
+                    Difficulty = a.Difficulty,
+                    AssessedDifficulty = a.AssessedDifficulty,
+                    AnswerText = a.AnswerText,
+                    ThoughtText = a.ThoughtText,
+                    Status = a.Status,
+                    AssessmentStatus = a.AssessmentStatus,
+                    AssessmentError = a.AssessmentError,
+                    ErrorMessage = a.ErrorMessage,
+                    HttpStatusCode = a.HttpStatusCode,
+                    Score = a.Score,
+                    AccuracyLevel = a.AccuracyLevel,
+                    CompletenessLevel = a.CompletenessLevel,
+                    ConcisenessLevel = a.ConcisenessLevel,
+                    ReadabilityLevel = a.ReadabilityLevel,
+                    CriticalError = a.CriticalError,
+                    AccuracyScore = a.AccuracyScore,
+                    CompletenessScore = a.CompletenessScore,
+                    ConcisenessScore = a.ConcisenessScore,
+                    ReadabilityScore = a.ReadabilityScore,
+                    QualityScore = a.QualityScore,
+                    RawQualityScore = a.RawQualityScore,
+                    SpeedScore = a.SpeedScore,
+                    ReviewComment = a.ReviewComment,
+                    DurationMs = a.DurationMs,
+                    TimeToFirstTokenMs = a.TimeToFirstTokenMs,
+                    ActualServiceTierUsed = a.ActualServiceTierUsed,
+                    ToolCallSummary = a.ToolCallSummary,
+                    InputTokens = a.InputTokens,
+                    OutputTokens = a.OutputTokens,
+                    CacheReadInputTokens = a.CacheReadInputTokens,
+                    CacheCreationInputTokens = a.CacheCreationInputTokens,
+                    InputTokenShare = (a.InputTokens.HasValue && totalInputTokens > 0)
+                        ? (double)a.InputTokens.Value / totalInputTokens
+                        : null,
+                    ModelCallCount = a.ModelCallCount,
+                    ToolCallCount = a.ToolCallCount,
+                    ToolBudgetExhausted = a.ToolBudgetExhausted,
+                    ToolCallsBlocked = a.ToolCallsBlocked,
+                    ToolCallBudgetUsed = a.ToolCallBudgetUsed,
+                    ToolCallsSucceeded = hasToolCallOutcome ? toolCallOutcome.Succeeded : (int?)null,
+                    ToolCallsFailed = hasToolCallOutcome ? toolCallOutcome.Failed : (int?)null,
+                    ToolCallsRefused = hasToolCallOutcome ? toolCallOutcome.Refused : (int?)null,
+                    ToolTimeMs = a.ToolTimeMs,
+                    ModelTimeMs = a.ModelTimeMs,
+                    ScrubbedArtifactText = a.ScrubbedArtifactText,
+                    ScrubbedArtifactCount = a.ScrubbedArtifactCount,
+                    NarrationBlockCount = a.NarrationBlockCount,
+                    TerminationReason = a.TerminationReason,
+                    ProviderFinishReason = a.ProviderFinishReason,
+                    AnswerFlags = a.AnswerFlags,
+                    AnswerFlagNames = ((BenchmarkAnswerFlags)a.AnswerFlags != BenchmarkAnswerFlags.None)
+                        ? Enum.GetValues<BenchmarkAnswerFlags>()
+                            .Where(f => f != BenchmarkAnswerFlags.None && ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(f))
+                            .Select(f => f.ToString())
+                            .ToList()
+                        : new List<string>(),
+                    AssessedByModelConfigurationId = a.AssessedByModelConfigurationId,
+                    AssessedByModelDisplayNameUsed = a.AssessedByModelDisplayNameUsed,
+                    AssessedByModelProviderUsed = a.AssessedByModelProviderUsed,
+                    AssessedByModelIdUsed = a.AssessedByModelIdUsed,
+                    AssessedAtUtc = a.AssessedAtUtc,
+                    AssessmentInputTokens = a.AssessmentInputTokens,
+                    AssessmentOutputTokens = a.AssessmentOutputTokens,
+                    AssessmentDurationMs = a.AssessmentDurationMs,
+                    AssessmentEvidenceJson = a.AssessmentEvidenceJson,
+                    CriticalErrorQuote = a.CriticalErrorQuote,
+                    UnverifiedClaimCount = a.UnverifiedClaimCount,
+                    UnverifiedClaimsJson = a.UnverifiedClaimsJson,
+                    SecondOpinionQualityScore = a.SecondOpinionQualityScore,
+                    SecondOpinionCriticalError = a.SecondOpinionCriticalError,
+                    SecondOpinionByModelDisplayNameUsed = a.SecondOpinionByModelDisplayNameUsed,
+                    SecondOpinionJson = a.SecondOpinionJson,
+                    SecondOpinionDisagreed = a.SecondOpinionDisagreed,
+                    SecondOpinionTrigger = a.SecondOpinionTrigger,
+                    SecondOpinionError = a.SecondOpinionError,
+                    ClaimVerificationJson = a.ClaimVerificationJson,
+                    ClaimsSupportedCount = a.ClaimsSupportedCount,
+                    ClaimsRefutedCount = a.ClaimsRefutedCount,
+                    ClaimsIndeterminateCount = a.ClaimsIndeterminateCount,
+                    ClaimVerificationByModelDisplayNameUsed = a.ClaimVerificationByModelDisplayNameUsed,
+                    ClaimVerificationInputTokens = a.ClaimVerificationInputTokens,
+                    ClaimVerificationOutputTokens = a.ClaimVerificationOutputTokens,
+                    ClaimVerificationDurationMs = a.ClaimVerificationDurationMs,
+                    ClaimVerificationToolCallCount = a.ClaimVerificationToolCallCount,
+                    ClaimVerificationError = a.ClaimVerificationError,
+                    ClaimVerificationRawText = a.ClaimVerificationRawText,
+                    ReassessedAtUtc = a.ReassessedAtUtc,
+                    ReassessedByModelDisplayNameUsed = a.ReassessedByModelDisplayNameUsed,
+                    PreviousQualityScore = a.PreviousQualityScore,
+                    ReassessmentCount = a.ReassessmentCount
+                };
             }).ToList()
         };
 
         return Ok(dto);
+    }
+
+    /// <summary>
+    /// One answer's tool calls, payloads included. A separate endpoint from <see cref="GetRun"/>
+    /// rather than an addition to <see cref="BenchmarkRunDetailDto"/> is deliberate: that DTO is
+    /// already very large and is loaded every time the run dialog opens, and attaching payloads to
+    /// it would multiply its size for a view almost nobody opens.
+    ///
+    /// <paramref name="id"/> is validated against the answer's own <c>BenchmarkRunId</c> rather than
+    /// trusted from the route alone — an endpoint that only looked up <paramref name="answerId"/>
+    /// would serve any answer from any run through any run's URL.
+    /// </summary>
+    [HttpGet("runs/{id}/answers/{answerId}/tool-calls")]
+    public async Task<IActionResult> GetAnswerToolCalls(long id, long answerId)
+    {
+        bool answerBelongsToRun = await _dbContext.BenchmarkRunAnswers
+            .AnyAsync(a => a.Id == answerId && a.BenchmarkRunId == id);
+        if (!answerBelongsToRun) return NotFound();
+
+        var toolCalls = await _dbContext.BenchmarkRunAnswerToolCalls
+            .Where(tc => tc.BenchmarkRunAnswerId == answerId)
+            .OrderBy(tc => tc.SortOrder)
+            .Select(tc => new BenchmarkToolCallDto
+            {
+                Id = tc.Id,
+                SortOrder = tc.SortOrder,
+                IterationIndex = tc.IterationIndex,
+                Name = tc.Name,
+                ToolCallId = tc.ToolCallId,
+                Status = tc.Status,
+                ArgsText = tc.ArgsText,
+                Result = tc.Result,
+                Error = tc.Error,
+                QueueWaitMs = tc.QueueWaitMs,
+                ExecutionMs = tc.ExecutionMs,
+                Depth = tc.Depth,
+                AgentName = tc.AgentName,
+                ArgsTruncated = tc.ArgsTruncated,
+                ResultTruncated = tc.ResultTruncated,
+                ResultLengthChars = tc.ResultLengthChars
+            })
+            .ToListAsync();
+
+        return Ok(toolCalls);
     }
 
     /// <summary>
@@ -3148,8 +3237,13 @@ public class AdminBenchmarkController : ControllerBase
     [HttpGet("runs/{id}/report")]
     public async Task<IActionResult> GetRunReport(long id)
     {
+        // Load-bearing, not an optimisation: BenchmarkReportBuilder reads answer.ToolCalls for the
+        // run's tool-call outcome line and the per-question ordered call tables, and treats an
+        // empty collection as "this run predates the record". Without this ThenInclude every report
+        // would silently render as a legacy report, tool calls and all.
         var run = await _dbContext.BenchmarkRuns
             .Include(r => r.Answers)
+                .ThenInclude(a => a.ToolCalls)
             .Include(r => r.StartedByUser)
             .Include(r => r.ScoringProfile)
             .FirstOrDefaultAsync(r => r.Id == id);

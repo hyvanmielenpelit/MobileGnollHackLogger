@@ -212,9 +212,9 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsSixteen()
+    public void HarnessVersion_IsSeventeen()
     {
-        Assert.Equal("16", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("17", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -436,9 +436,13 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs16_ScoringMethodIs10()
+    public void Versions_HarnessIs17_ScoringMethodIs10()
     {
-        Assert.Equal("16", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("17", BenchmarkAssessmentPrompt.HarnessVersion);
+
+        // Harness 17 persists the per-call tool record and reports a succeeded/failed/refused
+        // split, none of which the candidate model sees, so 16 and 17 scores stay comparable and
+        // the scoring method does not move with it.
         Assert.Equal(10, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 

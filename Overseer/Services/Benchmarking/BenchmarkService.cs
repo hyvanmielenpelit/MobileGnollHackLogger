@@ -794,6 +794,10 @@ public class BenchmarkService
         int maxToolIterations = ResolveToolIterations();
         int maxTotalModelCalls = ResolveTotalModelCalls();
 
+        // The stored tool-call record's payload caps, derived from the same maxResultLength the
+        // agent context below is given, so the two cannot drift apart.
+        var toolCallRecordLimits = BenchmarkToolCallRecordLimits.Resolve(_configuration, maxResultLength);
+
         var runRequest = new AgentRunRequest
         {
             ProviderName = testedConfig.Provider,
@@ -877,7 +881,7 @@ public class BenchmarkService
             .Select(g => $"{g.Key}×{g.Count()}")
             .ToList();
 
-        int blockedCount = runResult.ToolCalls.Count(tc => tc.Error != null && tc.Error.Contains("Maximum tool calls per session exceeded"));
+        int blockedCount = runResult.ToolCalls.Count(tc => BenchmarkToolCallRecorder.IsBudgetRefusal(tc.Error));
         string toolSummary = string.Join(", ", succeededCalls);
         if (blockedCount > 0)
         {
@@ -950,7 +954,12 @@ public class BenchmarkService
             ScrubbedArtifactText = sanitized.ScrubbedArtifactText,
             ScrubbedArtifactCount = sanitized.ScrubbedArtifactCount,
             NarrationBlockCount = sanitized.NarrationBlockCount,
-            AnswerFlags = (int)sanitized.Flags
+            AnswerFlags = (int)sanitized.Flags,
+
+            // The per-call record in emission order. ToolCallSummary above lists only the calls
+            // that succeeded; these rows also carry the ones that failed, returned too much, or
+            // were refused for budget — the calls a tool-layer diagnosis is actually about.
+            ToolCalls = BenchmarkToolCallRecorder.Build(runResult.ToolCalls, toolCallRecordLimits)
         };
 
         db.BenchmarkRunAnswers.Add(answer);
@@ -992,6 +1001,10 @@ public class BenchmarkService
         int toolCallBudget = ResolveToolCallBudget();
         int maxToolIterations = ResolveToolIterations();
         int maxTotalModelCalls = ResolveTotalModelCalls();
+
+        // The stored tool-call record's payload caps, derived from the same maxResultLength the
+        // agent context below is given, so the two cannot drift apart.
+        var toolCallRecordLimits = BenchmarkToolCallRecordLimits.Resolve(_configuration, maxResultLength);
 
         var runRequest = new AgentRunRequest
         {
@@ -1074,7 +1087,7 @@ public class BenchmarkService
             .Select(g => $"{g.Key}×{g.Count()}")
             .ToList();
 
-        int blockedCount = runResult.ToolCalls.Count(tc => tc.Error != null && tc.Error.Contains("Maximum tool calls per session exceeded"));
+        int blockedCount = runResult.ToolCalls.Count(tc => BenchmarkToolCallRecorder.IsBudgetRefusal(tc.Error));
         string toolSummary = string.Join(", ", succeededCalls);
         if (blockedCount > 0)
         {
@@ -1131,6 +1144,27 @@ public class BenchmarkService
         answer.ScrubbedArtifactCount = sanitized.ScrubbedArtifactCount;
         answer.NarrationBlockCount = sanitized.NarrationBlockCount;
         answer.AnswerFlags = (int)sanitized.Flags;
+
+        // A rerun replaces this answer's tool-call record rather than appending to it: the rows
+        // from the previous turn are deleted first, or an answer accumulates two turns' worth of
+        // calls and every count derived from the rows silently doubles. The delete goes through the
+        // DbSet, not the navigation property — the rerun entry points load the answer without its
+        // ToolCalls, so that collection is empty and clearing it would delete nothing.
+        await db.BenchmarkRunAnswerToolCalls
+            .Where(tc => tc.BenchmarkRunAnswerId == answer.Id)
+            .ExecuteDeleteAsync(CancellationToken.None);
+
+        // ExecuteDeleteAsync bypasses the change tracker, so any instance a caller did load is now
+        // tracked against a row that no longer exists; leaving it attached makes the save below try
+        // to delete or update it a second time.
+        foreach (var stale in db.ChangeTracker.Entries<BenchmarkRunAnswerToolCall>()
+            .Where(e => e.Entity.BenchmarkRunAnswerId == answer.Id)
+            .ToList())
+        {
+            stale.State = EntityState.Detached;
+        }
+
+        answer.ToolCalls = BenchmarkToolCallRecorder.Build(runResult.ToolCalls, toolCallRecordLimits);
 
         await db.SaveChangesAsync(CancellationToken.None);
 

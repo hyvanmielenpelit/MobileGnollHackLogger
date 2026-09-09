@@ -84,12 +84,62 @@ public static class BenchmarkChatTransfer
         return counts;
     }
 
+    /// <summary>
+    /// The per-tool-name call counts of one answer, from the best source that answer has: its own
+    /// <see cref="BenchmarkRunAnswer.ToolCalls"/> rows when it has any, and
+    /// <see cref="ParseToolCallCounts"/> over <see cref="BenchmarkRunAnswer.ToolCallSummary"/>
+    /// otherwise. Rows exist only for runs from harness 17 onward and no backfill is possible, so
+    /// for every earlier run the summary is not merely the fallback — it is the only record.
+    ///
+    /// The row path counts <b>succeeded rows only</b>, grouped by
+    /// <see cref="BenchmarkRunAnswerToolCall.Name"/>. That is not a simplification: it is what makes
+    /// the two paths mean the same thing. <c>ToolCallSummary</c> lists, per tool name, only the calls
+    /// whose status was <c>completed</c> with no error, so folding the failed and refused rows in
+    /// here — the obvious "use the richer data" move — would inflate a harness-17 run's tool-name
+    /// counts above a harness-16 run's for identical model behaviour, and every family share and
+    /// correlation derived from them would be incomparable across that boundary while looking fine.
+    /// The failed and refused calls are reported on their own, from
+    /// <see cref="BenchmarkToolCallRecorder.Outcomes"/>.
+    ///
+    /// This is the single place the rows-else-summary decision is made; every reader in this class
+    /// goes through it, so run-wide totals and per-answer shares cannot be drawn from two different
+    /// sources.
+    /// </summary>
+    public static SortedDictionary<string, int> ToolCallCountsFor(BenchmarkRunAnswer answer)
+    {
+        if (answer == null) return new SortedDictionary<string, int>(StringComparer.Ordinal);
+
+        if (answer.ToolCalls == null || answer.ToolCalls.Count == 0)
+        {
+            return ParseToolCallCounts(answer.ToolCallSummary);
+        }
+
+        var counts = new SortedDictionary<string, int>(StringComparer.Ordinal);
+        foreach (var row in answer.ToolCalls)
+        {
+            if (row == null) continue;
+
+            string name = (row.Name ?? string.Empty).Trim();
+            if (name.Length == 0) continue;
+
+            // Classified by the recorder rather than by a status test written out here, so this
+            // path and the report's outcome split cannot come to disagree about what "succeeded"
+            // means — including the budget-refusal wording, which is scope-dependent.
+            var (succeeded, _, _) = BenchmarkToolCallRecorder.Outcomes(new[] { row });
+            if (succeeded == 0) continue;
+
+            counts[name] = counts.TryGetValue(name, out int prev) ? prev + 1 : 1;
+        }
+
+        return counts;
+    }
+
     public static SortedDictionary<string, int> AggregateToolCounts(IEnumerable<BenchmarkRunAnswer> answers)
     {
         var total = new SortedDictionary<string, int>(StringComparer.Ordinal);
         foreach (var a in answers)
         {
-            var counts = ParseToolCallCounts(a.ToolCallSummary);
+            var counts = ToolCallCountsFor(a);
             foreach (var (k, v) in counts)
             {
                 total[k] = total.TryGetValue(k, out int prev) ? prev + v : v;
@@ -175,7 +225,7 @@ public static class BenchmarkChatTransfer
         int zeroKbCount = 0;
         foreach (var a in answered)
         {
-            var counts = ParseToolCallCounts(a.ToolCallSummary);
+            var counts = ToolCallCountsFor(a);
             if (!counts.TryGetValue("get_knowledge_article", out int kbCalls) || kbCalls == 0)
             {
                 zeroKbCount++;
@@ -191,7 +241,7 @@ public static class BenchmarkChatTransfer
         {
             if (!a.QualityScore.HasValue) continue;
 
-            var counts = ParseToolCallCounts(a.ToolCallSummary);
+            var counts = ToolCallCountsFor(a);
             int ansTotal = counts.Values.Sum();
             int sourceCalls = counts.Where(kvp => ClassifyTool(kvp.Key) == BenchmarkToolFamily.SourceCode).Sum(kvp => kvp.Value);
             double share = ansTotal > 0 ? ((double)sourceCalls / ansTotal) : 0.0;

@@ -331,6 +331,13 @@ public class BenchmarkRunAnswer
 
     public string? ToolCallSummary { get; set; }
 
+    /// <summary>
+    /// The per-call record of this answer's turn, in emission order. Empty for a run recorded
+    /// before harness version 17, when <see cref="BenchmarkRunAnswerToolCall"/> did not yet exist —
+    /// <see cref="ToolCallSummary"/> stays the compatibility surface for those.
+    /// </summary>
+    public List<BenchmarkRunAnswerToolCall> ToolCalls { get; set; } = new();
+
     public int? InputTokens { get; set; }
     public int? OutputTokens { get; set; }
     public int? CacheReadInputTokens { get; set; }

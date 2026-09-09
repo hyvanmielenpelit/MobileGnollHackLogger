@@ -2072,6 +2072,126 @@
                     }
                   }
 
+                  <!--
+                    Every tool call the candidate attempted, not only the ones that succeeded —
+                    toolCallSummary and the run-level Tool Usage Profile above both list successes
+                    only, so a call the tool layer refused or that errored (most commonly a JSON
+                    result over the result cap) appears nowhere else. Recorded counts are shown on
+                    the toggle itself; a legacy answer (all three null) shows none of them rather
+                    than a fabricated zero.
+                  -->
+                  @if (hasToolCallData(ans)) {
+                    <button type="button" class="btn-link mb-10" (click)="toggleToolCalls(ans)"
+                            [attr.aria-expanded]="expandedToolCalls.has(ans.orderIndex)"
+                            [attr.aria-controls]="'bm-toolcalls-' + ans.orderIndex">
+                      @if (expandedToolCalls.has(ans.orderIndex)) { <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg> } @else { <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg> }
+                      {{ expandedToolCalls.has(ans.orderIndex) ? 'Hide Tool Calls' : 'Show Tool Calls' }}
+                      @if (toolCallCountsLabel(ans); as counts) {
+                        <span class="tool-call-counts">({{ counts }})</span>
+                      }
+                    </button>
+                    @if (expandedToolCalls.has(ans.orderIndex)) {
+                      <div class="tool-calls-box mb-15" [id]="'bm-toolcalls-' + ans.orderIndex">
+                        @if (loadingToolCalls.has(ans.orderIndex)) {
+                          <p class="text-muted">Loading tool calls...</p>
+                        } @else if (toolCallsErrorByAnswer.get(ans.orderIndex); as toolCallsErr) {
+                          <div class="alert alert-warning" role="alert">
+                            <div class="alert-content"><div class="alert-body">{{ toolCallsErr }}</div></div>
+                          </div>
+                        } @else if (toolCallsByAnswer.get(ans.orderIndex); as calls) {
+                          @if (calls.length === 0) {
+                            <p class="text-muted">No tool calls recorded for this answer.</p>
+                          } @else {
+                            <table class="gh-table tool-calls-table">
+                              <caption class="visually-hidden">Every tool call attempted while producing this answer, in emission order</caption>
+                              <thead>
+                                <tr>
+                                  <th scope="col">#</th>
+                                  <th scope="col">Round</th>
+                                  <th scope="col">Tool</th>
+                                  <th scope="col">Status</th>
+                                  <th scope="col">Queue wait</th>
+                                  <th scope="col">Execution</th>
+                                  <th scope="col">Result size</th>
+                                  <th scope="col">Detail</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                @for (call of calls; track call.id) {
+                                  <tr [class.is-tool-call-failed]="!isToolCallSucceeded(call)">
+                                    <td>{{ call.sortOrder }}</td>
+                                    <td>{{ call.iterationIndex ?? '—' }}</td>
+                                    <td><code>{{ call.name ?? '—' }}</code>@if (call.agentName) { <span class="text-muted text-11"> ({{ call.agentName }})</span> }</td>
+                                    <td>
+                                      <span class="tool-call-status-badge" [class.is-succeeded]="isToolCallSucceeded(call)" [class.is-failed]="!isToolCallSucceeded(call)">
+                                        {{ call.status ?? 'Unknown' }}
+                                      </span>
+                                    </td>
+                                    <td>{{ call.queueWaitMs != null ? (call.queueWaitMs + ' ms') : '—' }}</td>
+                                    <td>{{ call.executionMs != null ? (call.executionMs + ' ms') : '—' }}</td>
+                                    <td>
+                                      {{ call.resultLengthChars }} chars
+                                      @if (call.resultTruncated) { <span class="text-muted text-11"> (stored truncated)</span> }
+                                    </td>
+                                    <td class="tool-call-detail-cell">
+                                      @if (call.argsText) {
+                                        <button type="button" class="btn-link" (click)="toggleToolCallField(ans.orderIndex, call.id, 'args')"
+                                                [attr.aria-expanded]="isToolCallFieldExpanded(ans.orderIndex, call.id, 'args')"
+                                                [attr.aria-controls]="'bm-toolcall-args-' + ans.orderIndex + '-' + call.id">
+                                          {{ isToolCallFieldExpanded(ans.orderIndex, call.id, 'args') ? 'Hide args' : 'Show args' }}
+                                        </button>
+                                      }
+                                      @if (toolCallResultState(call) === 'value') {
+                                        <button type="button" class="btn-link" (click)="toggleToolCallField(ans.orderIndex, call.id, 'result')"
+                                                [attr.aria-expanded]="isToolCallFieldExpanded(ans.orderIndex, call.id, 'result')"
+                                                [attr.aria-controls]="'bm-toolcall-result-' + ans.orderIndex + '-' + call.id">
+                                          {{ isToolCallFieldExpanded(ans.orderIndex, call.id, 'result') ? 'Hide result' : 'Show result' }}
+                                        </button>
+                                      } @else if (toolCallResultState(call) === 'pruned') {
+                                        <span class="text-muted" title="Retention removed the stored payload after 90 days. The true size is still recorded in Result size.">Pruned</span>
+                                      } @else {
+                                        <span class="text-muted">No result</span>
+                                      }
+                                    </td>
+                                  </tr>
+                                  @if (call.argsText && isToolCallFieldExpanded(ans.orderIndex, call.id, 'args')) {
+                                    <tr>
+                                      <td colspan="8">
+                                        <div class="tool-call-detail-box" [id]="'bm-toolcall-args-' + ans.orderIndex + '-' + call.id">
+                                          @if (call.argsTruncated) { <div class="tool-call-detail-note">Stored truncated.</div> }
+                                          {{ call.argsText }}
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  }
+                                  @if (toolCallResultState(call) === 'value' && isToolCallFieldExpanded(ans.orderIndex, call.id, 'result')) {
+                                    <tr>
+                                      <td colspan="8">
+                                        <div class="tool-call-detail-box" [id]="'bm-toolcall-result-' + ans.orderIndex + '-' + call.id">
+                                          @if (call.resultTruncated) { <div class="tool-call-detail-note">Stored truncated — true length {{ call.resultLengthChars }} chars.</div> }
+                                          {{ call.result }}
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  }
+                                  @if (call.error) {
+                                    <tr>
+                                      <td colspan="8">
+                                        <div class="alert alert-warning tool-call-error" role="alert">
+                                          <div class="alert-content"><div class="alert-body">{{ call.error }}</div></div>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  }
+                                }
+                              </tbody>
+                            </table>
+                          }
+                        }
+                      </div>
+                    }
+                  }
+
                   @if (ans.reviewComment) {
                     <div class="assessor-comment-box mb-15">
                       <strong>Assessor Verdict:</strong> {{ ans.reviewComment }}

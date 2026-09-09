@@ -240,7 +240,22 @@ every `BenchmarkRun`:
 | `WikiHeadSha` | GnollHack wiki Git HEAD | `WikiPath` |
 | `SourceCodeHeadSha` | GnollHack source Git HEAD | `SourceCodePath` |
 
-**Two corpora have no fingerprint at all, and both are reachable from a run:**
+**From harness 17, a run also records what each tool call actually asked and received.**
+`BenchmarkRunAnswerToolCall` rows — one per attempted call, on `BenchmarkRunAnswer.ToolCalls` —
+carry the arguments (`ArgsText`), the result (`Result`), the error (`Error`), the status, the
+emission order (`SortOrder`) and the timings (`QueueWaitMs`, `ExecutionMs`) for every call a run's
+turn attempted. This is not a corpus fingerprint — it fingerprints nothing about the wiki or
+source tree — but it is what lets an analyst check what a tool was actually **asked**, and what it
+actually **returned**, against the corpus on disk, instead of inferring the call from the question
+text and the answer's own citations
+([`server_benchmark_tool_diagnostics`](../server_benchmark_tool_diagnostics/SKILL.md) § 6). Full
+detail, including the derived result cap and the retention window, is in
+[`docs/overseer/ai-benchmark.md`](../../../docs/overseer/ai-benchmark.md) § **Harness Version 17
+Updates**.
+
+**Two corpora have no fingerprint at all, and both are reachable from a run — the per-call record
+above does not change this, since it records a call's own arguments and result, never a corpus
+revision:**
 
 - **NetHack source** (`NetHackSourceCodePath`) is a Git working tree but is not fingerprinted.
   Every source tool accepts `repository: "nethack"`.
@@ -258,6 +273,11 @@ finding that reads as though the revision were known is not.
 > 🛑 **A null in any fingerprint column means "not recorded".** Never "no corpus", never
 > "unchanged". A null arises from an unset key, an unreachable directory, or a `.git` that is a
 > file rather than a directory — none of which says the corpus was missing.
+>
+> **The same reading extends to the per-call record.** An answer with **no** `BenchmarkRunAnswerToolCall`
+> rows means the run predates harness 17 — never that the model made no tool calls.
+> `BenchmarkRunAnswer.ToolCallSummary` remains the only record for those answers, exactly as a null
+> fingerprint column means the hash was never captured rather than that the corpus was absent.
 
 ### They are provenance, not comparability keys
 
@@ -363,4 +383,6 @@ Three rules this repository adds, and none of them is optional:
   `appsettings.json`-versus-User-Secrets split, and the `ConfigHealthService` alert pipeline that
   covers only two of the seven corpus keys
 - [`docs/overseer/ai-benchmark.md`](../../../docs/overseer/ai-benchmark.md) — "Harness Version 16
-  Updates", the authoritative account of the two corpus fingerprints and the two remaining holes
+  Updates", the authoritative account of the two corpus fingerprints and the two remaining holes;
+  "Harness Version 17 Updates" for the per-call tool record, the derived result cap, and the
+  retention window

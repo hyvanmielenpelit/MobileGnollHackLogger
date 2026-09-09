@@ -1107,6 +1107,74 @@
   }
 }
 
+// Tool call record. The disclosure's own table is a compact .gh-table like .calibration-table
+// above; the per-call argument/result panel reuses the .artifact-box geometry above it, since
+// both are audit material (mostly leaked JSON) rather than part of the answer.
+.tool-call-counts {
+  font-size: 11px;
+  color: #888;
+  margin-left: 4px;
+}
+
+.tool-calls-box {
+  .tool-calls-table {
+    font-size: 12px;
+
+    tr.is-tool-call-failed {
+      background: rgba(244, 67, 54, 0.05);
+    }
+  }
+}
+
+.tool-call-status-badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  white-space: nowrap;
+
+  &.is-succeeded {
+    background: rgba(76, 175, 80, 0.2);
+    color: #81c784;
+  }
+
+  &.is-failed {
+    background: rgba(244, 67, 54, 0.2);
+    color: #e57373;
+  }
+}
+
+.tool-call-detail-cell {
+  display: flex;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.tool-call-detail-box {
+  border-radius: 4px;
+  padding: 10px;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: #101010;
+  border: 1px dashed #333;
+  color: #8a8a8a;
+}
+
+.tool-call-detail-note {
+  margin-bottom: 6px;
+  color: #999;
+  font-style: italic;
+}
+
+.tool-call-error {
+  margin: 0;
+}
+
 .q-score-badge {
   padding: 2px 6px;
   border-radius: 4px;

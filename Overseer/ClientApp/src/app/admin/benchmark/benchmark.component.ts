@@ -37,7 +37,8 @@ import {
   BenchmarkComparabilityResultDto,
   BenchmarkComparabilityIndexDto,
   BenchmarkModelComparisonDto,
-  BenchmarkModelComparisonPricingBasis
+  BenchmarkModelComparisonPricingBasis,
+  BenchmarkToolCallDto
 } from '../../services/admin-benchmark.service';
 import { SystemAiConfigDto } from '../../services/admin.service';
 
@@ -603,6 +604,18 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   expandedQuestions = new Set<number>();
   expandedThoughts = new Set<number>();
   expandedArtifacts = new Set<number>();
+  /**
+   * Tool-call disclosure state, all keyed by `orderIndex` like the sets above — the fetch
+   * itself needs the answer's database id, never `orderIndex`, so `toggleToolCalls` takes
+   * the whole answer rather than a bare number.
+   */
+  expandedToolCalls = new Set<number>();
+  /** Loaded rows per answer. Present as a key (even for an empty run) means "already fetched" — that is what stops a second expand from refetching. */
+  toolCallsByAnswer = new Map<number, BenchmarkToolCallDto[]>();
+  loadingToolCalls = new Set<number>();
+  toolCallsErrorByAnswer = new Map<number, string>();
+  /** Which individual call's arguments/result panel is open, keyed by `orderIndex:callId:field`. */
+  expandedToolCallFields = new Set<string>();
   rescoringRun = false;
   detailPollInterval: any = null;
   reassessingAnswerId: number | null = null;
@@ -3950,6 +3963,11 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     this.expandedQuestions.clear();
     this.expandedThoughts.clear();
     this.expandedArtifacts.clear();
+    this.expandedToolCalls.clear();
+    this.toolCallsByAnswer.clear();
+    this.loadingToolCalls.clear();
+    this.toolCallsErrorByAnswer.clear();
+    this.expandedToolCallFields.clear();
     this.calibrations = [];
     this.calibrationErrorMessage = null;
     this.calibrationAssessorConfigId = this.benchmarkCapableConfigs[0]?.id ?? null;
@@ -4268,6 +4286,94 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     } else {
       this.expandedArtifacts.add(orderIndex);
     }
+  }
+
+  /**
+   * Collapses immediately when already expanded. On first expand, fetches the answer's full
+   * per-call tool record and caches it under `orderIndex` — the card and disclosure state's
+   * key — even though the request itself needs `ans.id`, the answer's database id. A cached
+   * key (including one holding an empty array) means "already fetched", so a second expand
+   * never refetches.
+   */
+  toggleToolCalls(ans: BenchmarkRunAnswerDto): void {
+    const orderIndex = ans.orderIndex;
+    if (this.expandedToolCalls.has(orderIndex)) {
+      this.expandedToolCalls.delete(orderIndex);
+      return;
+    }
+    this.expandedToolCalls.add(orderIndex);
+
+    if (this.toolCallsByAnswer.has(orderIndex) || this.loadingToolCalls.has(orderIndex)) {
+      return;
+    }
+    const runId = this.selectedRunDetail?.id;
+    if (runId == null) return;
+
+    this.loadingToolCalls.add(orderIndex);
+    this.toolCallsErrorByAnswer.delete(orderIndex);
+    this.benchmarkService.getAnswerToolCalls(runId, ans.id).subscribe({
+      next: (rows) => {
+        this.toolCallsByAnswer.set(orderIndex, rows);
+        this.loadingToolCalls.delete(orderIndex);
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.loadingToolCalls.delete(orderIndex);
+        this.toolCallsErrorByAnswer.set(orderIndex, err?.error || 'Failed to load tool calls.');
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  /** Whether an individual call's arguments or result panel is open. */
+  isToolCallFieldExpanded(orderIndex: number, callId: number, field: 'args' | 'result'): boolean {
+    return this.expandedToolCallFields.has(`${orderIndex}:${callId}:${field}`);
+  }
+
+  toggleToolCallField(orderIndex: number, callId: number, field: 'args' | 'result'): void {
+    const key = `${orderIndex}:${callId}:${field}`;
+    if (this.expandedToolCallFields.has(key)) {
+      this.expandedToolCallFields.delete(key);
+    } else {
+      this.expandedToolCallFields.add(key);
+    }
+  }
+
+  /** Whether the answer has anything for the tool-call disclosure to show at all. */
+  hasToolCallData(ans: BenchmarkRunAnswerDto): boolean {
+    return this.hasRecordedToolCallCounts(ans) || !!ans.toolCallSummary;
+  }
+
+  /** Null on every one of the three counts means the answer predates the per-call record. */
+  hasRecordedToolCallCounts(ans: BenchmarkRunAnswerDto): boolean {
+    return ans.toolCallsSucceeded != null || ans.toolCallsFailed != null || ans.toolCallsRefused != null;
+  }
+
+  /**
+   * `"N succeeded, N failed, N refused"`, including only the counts that are actually
+   * recorded. Null for a legacy answer, never a string naming a fabricated zero.
+   */
+  toolCallCountsLabel(ans: BenchmarkRunAnswerDto): string | null {
+    const parts: string[] = [];
+    if (ans.toolCallsSucceeded != null) parts.push(`${ans.toolCallsSucceeded} succeeded`);
+    if (ans.toolCallsFailed != null) parts.push(`${ans.toolCallsFailed} failed`);
+    if (ans.toolCallsRefused != null) parts.push(`${ans.toolCallsRefused} refused`);
+    return parts.length > 0 ? parts.join(', ') : null;
+  }
+
+  /** `'completed'` (case-insensitive) is the only status the record calls a success. */
+  isToolCallSucceeded(call: BenchmarkToolCallDto): boolean {
+    return (call.status ?? '').toLowerCase() === 'completed';
+  }
+
+  /**
+   * Distinguishes a call that genuinely returned nothing from one whose result was pruned by
+   * age. `result` is only ever null for one of those two reasons, and `resultLengthChars`
+   * survives the prune, so it is what tells them apart.
+   */
+  toolCallResultState(call: BenchmarkToolCallDto): 'value' | 'pruned' | 'empty' {
+    if (call.result != null) return 'value';
+    return (call.resultLengthChars ?? 0) > 0 ? 'pruned' : 'empty';
   }
 
   // --- Predicates ---

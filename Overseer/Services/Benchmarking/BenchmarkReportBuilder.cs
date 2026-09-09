@@ -1681,12 +1681,27 @@ public static class BenchmarkReportBuilder
         // 2026-09-03 run spent all 25 calls on wiki search churn and nothing said so.
         var toolCounts = BenchmarkChatTransfer.AggregateToolCounts(answers);
 
+        // Whether this run carries the per-call tool record at all. Those rows exist only from
+        // harness 17 onward and no backfill is possible, so every line derived from them is gated
+        // on this: on a legacy run the report prints nothing rather than a zero, because "0 failed"
+        // and "failures were never recorded" are opposite claims and a reader cannot tell them
+        // apart once the figure is on the page.
+        bool hasToolCallRows = answers.Any(a => a.ToolCalls.Count > 0);
+
         sb.AppendLine("### Tool Usage Profile");
         int totalToolCalls = answers.Sum(a => a.ToolCallCount ?? 0);
         sb.AppendLine($"- **Total Tool Calls:** {totalToolCalls}");
         if (answers.Count > 0)
         {
             sb.AppendLine($"- **Mean Calls per Question:** {Inv(totalToolCalls / (double)answers.Count, "F1")}");
+        }
+
+        if (hasToolCallRows)
+        {
+            var (succeededCalls, failedCalls, refusedCalls) =
+                BenchmarkToolCallRecorder.Outcomes(answers.SelectMany(a => a.ToolCalls));
+            sb.AppendLine($"- **Tool Call Outcomes:** {succeededCalls} succeeded, {failedCalls} failed, {refusedCalls} refused by budget. " +
+                "*A failed call is one that ran and did not complete — most commonly a JSON result over the result cap, which `ToolExecutor` converts into an error telling the model to narrow its query. It appears in no tool-name count in the table below, which is why the outcome split is stated separately from the profile: a model that repeatedly over-fetched leaves the profile looking sparse rather than looking wasteful. A refused call ran no tool code at all — its budget was already spent when it was emitted.*");
         }
 
         // Budget pressure. A question that stopped one call short of its budget is not
@@ -1847,7 +1862,19 @@ public static class BenchmarkReportBuilder
                 sb.AppendLine($"- *Prompt observation:* Source code tools accounted for {Inv(routing.SourceFamilySharePercentage, "F1")}% of all tool calls. The tool preference hierarchy the candidate was given is in `Overseer/ToolGuides/_policy.md`: it routes strategy and general \"what is X\" questions to wiki tools first, routes specific mechanics questions (exact AC, damage dice, MR, resistances, speed, material, artifact flags) to the structured stats tools, and places source code tools at rung 4 for questions that require reading game logic. {routing.AdvancedQuestionCount} question(s) were assessed in the Advanced band, where source-level inspection is expected. Read this share against the suite's question mix and against the policy text itself — it is an observation for operator review, not a rule violation.");
             }
             sb.AppendLine();
-            sb.AppendLine("*Note on tool ordering:* `ToolCallSummary` records aggregate call counts, not an ordered execution log (ordering is not recorded). Whether wiki tools were attempted before source code tools on any given question is not derivable from this data.");
+
+            // Both branches must survive. The caveat is exactly true of a run without rows, and a
+            // run without rows is every run before harness 17 — deleting the sentence would make
+            // this report assert of every historical run that its tool ordering can be read, which
+            // it cannot, by anyone, ever.
+            if (hasToolCallRows)
+            {
+                sb.AppendLine("*Note on tool ordering:* the family counts above are aggregates, but this run also records each call on its own, so ordering **is** derivable here: the per-question tables in section 3 list every attempted call in emission order with the tool round it belonged to. Whether wiki tools were attempted before source code tools on a given question is read off that table directly, not inferred from these totals.");
+            }
+            else
+            {
+                sb.AppendLine("*Note on tool ordering:* `ToolCallSummary` records aggregate call counts, not an ordered execution log (ordering is not recorded). Whether wiki tools were attempted before source code tools on any given question is not derivable from this data.");
+            }
         }
 
         var starved = answers.Where(a => a.ToolBudgetExhausted || (a.ToolCallsBlocked ?? 0) > 0).OrderBy(a => a.OrderIndex).ToList();
@@ -1910,6 +1937,38 @@ public static class BenchmarkReportBuilder
             {
                 sb.AppendLine($"- **Transport Artifacts Removed:** {a.ScrubbedArtifactCount} block(s) removed before grading");
             }
+
+            // The ordered record of this turn: every call the model attempted, successes and
+            // failures alike, in emission order rather than in the aggregate shape of
+            // `Tools Called` above. An answer with no rows is one from a run before harness 17,
+            // where no such record exists — nothing is printed, because a blank table would read
+            // as a turn that called no tools.
+            //
+            // Arguments and results are deliberately NOT inlined, and must not be added later. A
+            // report is written to be pasted whole into a chat or an issue, and a single tool
+            // result can be tens of thousands of characters of game source; payloads belong behind
+            // the on-demand admin endpoint that serves one call at a time. The result column
+            // carries ResultLengthChars — the true size the tool produced, before any cap — so an
+            // over-large or truncated payload is visible as a number without a character of it
+            // being quoted here.
+            if (a.ToolCalls.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("| Round | Tool | Status | Exec (ms) | Result Size |");
+                sb.AppendLine("|------:|------|--------|----------:|------------:|");
+                foreach (var call in a.ToolCalls.OrderBy(c => c.SortOrder))
+                {
+                    string round = call.IterationIndex.HasValue ? Inv(call.IterationIndex.Value) : "N/A";
+                    string toolName = string.IsNullOrWhiteSpace(call.Name) ? "*(unnamed)*" : $"`{call.Name}`";
+                    string status = string.IsNullOrWhiteSpace(call.Status) ? "*(none recorded)*" : call.Status;
+                    string execMs = call.ExecutionMs.HasValue ? Inv(call.ExecutionMs.Value, "N0") : "N/A";
+                    string resultSize = call.ResultLengthChars > 0
+                        ? $"{Inv(call.ResultLengthChars, "N0")} chars"
+                        : "—";
+                    sb.AppendLine($"| {round} | {toolName} | {status} | {execMs} | {resultSize} |");
+                }
+            }
+
             sb.AppendLine();
 
             if (a.Status == BenchmarkAnswerStatus.ProviderError)

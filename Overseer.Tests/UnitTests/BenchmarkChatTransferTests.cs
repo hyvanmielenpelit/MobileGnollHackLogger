@@ -126,4 +126,162 @@ public class BenchmarkChatTransferTests
             concisenessAverage: 95.0,
             readabilityAverage: 95.0));
     }
+
+    // --- ToolCallCountsFor / AggregateToolCounts: rows vs. ToolCallSummary parity -----------
+    //
+    // BenchmarkRunAnswerToolCall rows exist only from harness 17 onward, and ToolCallSummary
+    // remains the only record for every earlier run. The tests below pin that the two sources
+    // are read as the same signal, so a harness-16 run stays comparable to a harness-17 one.
+
+    private static BenchmarkRunAnswerToolCall SucceededRow(string name)
+        => new() { Name = name, Status = "completed" };
+
+    private static BenchmarkRunAnswerToolCall FailedRow(string name)
+        => new() { Name = name, Status = "error" };
+
+    [Fact]
+    public void ToolCallCountsFor_RowsAndSummaryDescribingTheSameSuccessfulCalls_ProduceIdenticalCounts()
+    {
+        var withRows = new BenchmarkRunAnswer
+        {
+            OrderIndex = 1,
+            ToolCalls = new List<BenchmarkRunAnswerToolCall>
+            {
+                SucceededRow("source_code_search"),
+                SucceededRow("source_code_search"),
+                SucceededRow("source_code_search"),
+                SucceededRow("wiki_search"),
+                SucceededRow("wiki_search")
+            }
+        };
+        var withSummary = new BenchmarkRunAnswer
+        {
+            OrderIndex = 2,
+            ToolCallSummary = "source_code_search×3, wiki_search×2"
+        };
+
+        var countsFromRows = BenchmarkChatTransfer.ToolCallCountsFor(withRows);
+        var countsFromSummary = BenchmarkChatTransfer.ToolCallCountsFor(withSummary);
+
+        Assert.Equal(countsFromSummary, countsFromRows);
+        Assert.Equal(3, countsFromRows["source_code_search"]);
+        Assert.Equal(2, countsFromRows["wiki_search"]);
+    }
+
+    [Fact]
+    public void ToolCallCountsFor_AnswerWithRows_CountsFromRowsAndIgnoresToolCallSummary()
+    {
+        var answer = new BenchmarkRunAnswer
+        {
+            OrderIndex = 1,
+            ToolCalls = new List<BenchmarkRunAnswerToolCall>
+            {
+                SucceededRow("source_code_search"),
+                SucceededRow("source_code_search")
+            },
+            // Deliberately contradicts the rows above: if this were read, "wiki_search" would
+            // appear in the counts and "source_code_search" would read 99, not 2.
+            ToolCallSummary = "wiki_search×99"
+        };
+
+        var counts = BenchmarkChatTransfer.ToolCallCountsFor(answer);
+
+        Assert.Equal(2, counts["source_code_search"]);
+        Assert.False(counts.ContainsKey("wiki_search"));
+    }
+
+    [Fact]
+    public void ToolCallCountsFor_AnswerWithNoRows_FallsBackToParsingToolCallSummary()
+    {
+        var answer = new BenchmarkRunAnswer
+        {
+            OrderIndex = 1,
+            ToolCallSummary = "monster_lookup×4"
+        };
+
+        var counts = BenchmarkChatTransfer.ToolCallCountsFor(answer);
+
+        Assert.Equal(4, counts["monster_lookup"]);
+    }
+
+    [Fact]
+    public void ToolCallCountsFor_ExcludesFailedAndRefusedRows_FromToolNameCounts()
+    {
+        var answer = new BenchmarkRunAnswer
+        {
+            OrderIndex = 1,
+            ToolCalls = new List<BenchmarkRunAnswerToolCall>
+            {
+                SucceededRow("source_code_search"),
+                SucceededRow("source_code_search"),
+                SucceededRow("source_code_search"),
+                FailedRow("source_code_search"),
+                FailedRow("source_code_search"),
+                FailedRow("source_code_search"),
+                FailedRow("source_code_search")
+            }
+        };
+
+        var counts = BenchmarkChatTransfer.ToolCallCountsFor(answer);
+
+        // Folding the 4 failed calls in would inflate this answer's count to 7 and make a
+        // harness-17 run look busier than a harness-16 run for identical model behaviour.
+        Assert.Equal(3, counts["source_code_search"]);
+    }
+
+    [Fact]
+    public void AnalyzeToolRouting_ForARowCarryingAnswer_DrawsTotalsSharesAndCorrelationSampleFromRowsNotSummary()
+    {
+        var answer = new BenchmarkRunAnswer
+        {
+            OrderIndex = 1,
+            Status = BenchmarkAnswerStatus.Ok,
+            QualityScore = 80,
+            ToolCalls = new List<BenchmarkRunAnswerToolCall>
+            {
+                SucceededRow("source_code_search"),
+                SucceededRow("source_code_search"),
+                SucceededRow("wiki_search")
+            },
+            // A summary that disagrees with the rows on every axis: a different total, a
+            // different family mix, and a get_knowledge_article call the rows do not have.
+            ToolCallSummary = "get_knowledge_article×50"
+        };
+
+        var routing = BenchmarkChatTransfer.AnalyzeToolRouting(new List<BenchmarkRunAnswer> { answer });
+
+        Assert.Equal(3, routing.TotalCalls);
+        Assert.Equal(2, routing.FamilyCalls[BenchmarkToolFamily.SourceCode]);
+        Assert.Equal(1, routing.FamilyCalls[BenchmarkToolFamily.Wiki]);
+        Assert.Equal(0, routing.FamilyCalls[BenchmarkToolFamily.KnowledgeBase]);
+        Assert.Equal(1, routing.ZeroKnowledgeBaseAnswerCount);
+        Assert.Equal(1, routing.CorrelationSampleSize);
+    }
+
+    [Fact]
+    public void AggregateToolCounts_MixedRun_AggregatesRowBackedAndSummaryBackedAnswersTogether()
+    {
+        var answers = new List<BenchmarkRunAnswer>
+        {
+            new BenchmarkRunAnswer
+            {
+                OrderIndex = 1,
+                ToolCalls = new List<BenchmarkRunAnswerToolCall>
+                {
+                    SucceededRow("source_code_search"),
+                    SucceededRow("source_code_search")
+                }
+            },
+            new BenchmarkRunAnswer
+            {
+                OrderIndex = 2,
+                ToolCallSummary = "source_code_search×5, wiki_search×1"
+            }
+        };
+
+        var totals = BenchmarkChatTransfer.AggregateToolCounts(answers);
+
+        Assert.Equal(7, totals["source_code_search"]);
+        Assert.Equal(1, totals["wiki_search"]);
+    }
 }

@@ -311,6 +311,31 @@ public class ChatRetentionService
         return count;
     }
 
+    public async Task<int> PruneAgedBenchmarkToolCallPayloadsAsync(int daysOld, bool isDryRun = false, CancellationToken cancellationToken = default)
+    {
+        var cutoff = DateTime.UtcNow.AddDays(-daysOld);
+
+        // The age is the run's, not the row's: BenchmarkRunAnswerToolCall carries no timestamp of
+        // its own, and a run re-analysed long after it finished should keep its evidence until the
+        // run itself is old enough, not until some unrelated clock on the row ticks over.
+        var query = _dbContext.BenchmarkRunAnswerToolCalls
+            .Where(tc => tc.BenchmarkRunAnswer!.BenchmarkRun.StartedAtUtc < cutoff
+                && (tc.Result != null || tc.ArgsText != null));
+
+        int count = await query.CountAsync(cancellationToken);
+        if (count > 0 && !isDryRun)
+        {
+            // Name, Status, Error, SortOrder, the timings and ResultLengthChars are never pruned:
+            // they are a few bytes each and are what the aggregates and the tool-layer diagnostics
+            // read.
+            await query.ExecuteUpdateAsync(s => s
+                .SetProperty(x => x.Result, (string?)null)
+                .SetProperty(x => x.ArgsText, (string?)null), cancellationToken);
+            _logger.LogInformation("Pruned {Count} benchmark tool call payloads for runs older than {Days} days", count, daysOld);
+        }
+        return count;
+    }
+
     public async Task<int> SweepOrphanedDiskDirectoriesAsync(bool isDryRun = false, CancellationToken cancellationToken = default)
     {
         var baseDir = _configuration["ConversationsDataLocation"];
@@ -359,6 +384,7 @@ public class ChatRetentionService
         var isDryRun = request?.DryRun ?? false;
         var inactivityDays = request?.InactivityDays ?? _settings.InactivityTtlDays;
         var toolCallDays = request?.ToolCallPruneDays ?? _settings.PruneToolCallResultsDays;
+        var benchmarkToolCallDays = request?.BenchmarkToolCallPruneDays ?? _settings.PruneBenchmarkToolCallResultsDays;
 
         var sw = Stopwatch.StartNew();
         var result = new MaintenanceResultDto { IsDryRun = isDryRun };
@@ -388,7 +414,11 @@ public class ChatRetentionService
         result.PrunedToolResultCount = await PruneAgedToolCallResultsAsync(toolCallDays, isDryRun, cancellationToken);
         result.Logs.Add($"Aged tool call payloads pruned (> {toolCallDays}d): {result.PrunedToolResultCount}");
 
-        // 5. Sweep orphaned disk folders
+        // 5. Prune aged benchmark tool call payloads
+        result.PrunedBenchmarkToolResultCount = await PruneAgedBenchmarkToolCallPayloadsAsync(benchmarkToolCallDays, isDryRun, cancellationToken);
+        result.Logs.Add($"Aged benchmark tool call payloads pruned (> {benchmarkToolCallDays}d): {result.PrunedBenchmarkToolResultCount}");
+
+        // 6. Sweep orphaned disk folders
         int orphanedSwept = await SweepOrphanedDiskDirectoriesAsync(isDryRun, cancellationToken);
         result.Logs.Add($"Orphaned disk folders swept: {orphanedSwept}");
 

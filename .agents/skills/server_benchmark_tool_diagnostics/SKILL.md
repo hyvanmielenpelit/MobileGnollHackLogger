@@ -27,6 +27,8 @@ Every tool-layer finding reduces to two questions, asked of one tool in one run:
 
 Neither is answered by a score. Both are answered by the run's stored columns, the corpus on disk, and — where the run stored nothing — reconstruction and replay.
 
+**"Where the run stored nothing" is version-dependent.** Every run before harness 17 stored nothing about a call's own arguments or result, which is why most of this skill is built around reconstruction (§ 6) and replay (§ 7). From harness 17, a run's `BenchmarkRunAnswerToolCall` rows may make either unnecessary — always check first whether the answer has rows (§ 2, § 7's rung 0) before reconstructing or replaying anything.
+
 **The standing fact that makes this worth doing.** A benchmark run grades the production chat system prompt (`server_benchmark_to_chat_transfer` § 1) **with the production tool registry behind it**: `ToolRegistry` and every `IToolHandler` are the same objects a live chat turn reaches, and `Benchmark:AllowedTools` in `Overseer/appsettings.json` merely narrows which of them are offered. So every tool call a run makes is a live sample of what a real user's session does, and **a tool defect seen in a run is a defect a real user hits.** That is also the trap: a corpus defect seen in a run is *not* a model defect, and reads exactly like one.
 
 > 🛑 **Answer question 1 before question 2, and both before touching a score.** A confident "the game does not contain this" that turns out to be an indexer size limit is the most expensive mistake this skill exists to prevent.
@@ -35,11 +37,11 @@ Neither is answered by a score. Both are answered by the run's stored columns, t
 
 ## 2. What a Run Records, and What It Throws Away
 
-All nine fields below exist on `BenchmarkRunAnswer` (`GnollHackServer.Data/BenchmarkRunAnswer.cs`); the five fingerprints are on `BenchmarkRun` (`GnollHackServer.Data/BenchmarkRun.cs`) and are stamped by `BenchmarkService.PopulateInstrumentFingerprint`.
+All nine fields below exist on `BenchmarkRunAnswer` (`GnollHackServer.Data/BenchmarkRunAnswer.cs`); the five fingerprints are on `BenchmarkRun` (`GnollHackServer.Data/BenchmarkRun.cs`) and are stamped by `BenchmarkService.PopulateInstrumentFingerprint`. **From harness 17 there is a tenth source**, on the answer rather than the run: `BenchmarkRunAnswer.ToolCalls`, described in its own row below.
 
 | Field | Where written | What it proves | What it cannot prove |
 |---|---|---|---|
-| `ToolCallSummary` | `BenchmarkService`, from `AgentRunResult.ToolCalls` filtered to `Status == "completed" && Error empty && Name non-empty`, grouped by name as `name×count` | Which tools **succeeded**, and how many times each | Nothing about arguments, results, ordering, or failures. Ordering is not recorded at all (§ 11) |
+| `ToolCallSummary` | `BenchmarkService`, from `AgentRunResult.ToolCalls` filtered to `Status == "completed" && Error empty && Name non-empty`, grouped by name as `name×count` | Which tools **succeeded**, and how many times each | Nothing about arguments, results, ordering, or failures — `ToolCallSummary` itself never carries any of the four, at any harness version. Ordering specifically is not recoverable from it at all (§ 11). **From harness 17**, an answer with rows carries all four instead, in `ToolCalls` below |
 | `ToolCallCount` | `AgentLoopRunner`: `result.ToolCallCount = result.ToolCalls.Count` | How many calls were **attempted**, errors and budget refusals included | Which of them worked |
 | `ToolCallsBlocked` | `AgentLoopRunner`, incremented per `ToolBatchOutcome.BudgetExhausted` | How many calls the per-question budget refused | Nothing when null — null means **not recorded** (pre-harness-11), never zero |
 | `ToolBudgetExhausted` | `AgentLoopRunner`, set alongside the above | That the budget bound at least once | How much the model still wanted to do |
@@ -48,24 +50,29 @@ All nine fields below exist on `BenchmarkRunAnswer` (`GnollHackServer.Data/Bench
 | `TerminationReason` | `AgentLoopRunner`: `canceled` \| `budget_exhausted` \| `iteration_limit` \| `completed` | What the **harness loop** did | What the model intended |
 | `ProviderFinishReason` | The provider's verbatim reason for the final model call | What the **provider** said | Nothing when null — "not recorded", never "stopped normally" |
 | The five fingerprints — `CandidateSystemPromptSha256`, `ToolGuidesSha256`, `KnowledgeBaseHeadSha`, `WikiHeadSha`, `SourceCodeHeadSha` | `BenchmarkService.PopulateInstrumentFingerprint`; the last three via `GitHelper.GetGitHeadSha` on `KbPath`, `WikiPath`, `SourceCodePath` | Which revision of three of the five corpora the run read | Anything about the two NetHack corpora, which have no fingerprint (§ 5, and `server_tool_data_sources` § 6). Null means **not recorded** — never "no corpus", never "unchanged" |
+| `BenchmarkRunAnswer.ToolCalls` (**harness 17 onward**) | `BenchmarkToolCallRecorder.Build`, called by `BenchmarkService` once per answer's turn | Every attempted call's name, status, arguments, result, error, tool round (`IterationIndex`), emission order (`SortOrder`), timings and true pre-cap result size (`ResultLengthChars`) — individually, per call | Nothing for a run before harness 17: no rows exist and none can be backfilled. `ArgsText`/`Result` are nulled by the retention sweep once the *run* (not the row) is older than `ChatRetentionSettings.PruneBenchmarkToolCallResultsDays` (default 90); `ResultLengthChars` and every other column survive that prune |
 
 **Two parsing traps in `ToolCallSummary`.** It can carry a `(N blocked by budget)` parenthetical, or read `None (N blocked by budget)` — so Σ must sum only the `name×count` pairs. And that parenthetical **never appears on a benchmark answer**: `BenchmarkService` detects blocked calls by matching the error text *"Maximum tool calls per session exceeded"*, while `ToolExecutor` emits that string only when `ToolExecutionContext.ToolBudgetScopeId` is null. Every benchmark call site sets one (`bench_<runId>_q<orderIndex>`), so a benchmark refusal carries the per-question message instead and the suffix is a chat-path artifact.
 
-> 🛑 **Arguments and results are not stored, and `ShowDebugLog` is `false` in every benchmark path.**
+> 🛑 **For any run before harness 17, arguments and results were not stored, and `ShowDebugLog` is `false` in every benchmark path.**
 >
-> `ChatMessageToolCall.ArgsText` and `.Result` — which the production chat *does* persist — are never written for a benchmark answer, because a benchmark run creates **no `ChatMessage` rows at all**. `AgentRunRequest.ShowDebugLog` is hardcoded `false` at all **eight** benchmark call sites in `BenchmarkService` (candidate answer, retry, difficulty assessment, claim verification and the rest). **"Compare the tool use parameters and results" therefore cannot be done from stored benchmark data.** It is done by reconstruction (§ 6) and replay (§ 7), and a finding must say which — never imply a transcript exists.
+> `ChatMessageToolCall.ArgsText` and `.Result` — which the production chat *does* persist — are never written for a benchmark answer at any harness version, because a benchmark run creates **no `ChatMessage` rows at all**. `AgentRunRequest.ShowDebugLog` is hardcoded `false` at all **eight** benchmark call sites in `BenchmarkService` (candidate answer, retry, difficulty assessment, claim verification and the rest), and stays that way from harness 17 too — the change below is a separate record, not a flip of this flag. **For any run before harness 17, "compare the tool use parameters and results" therefore cannot be done from stored benchmark data**; it is done by reconstruction (§ 6) and replay (§ 7), and a finding must say which — never imply a transcript exists.
+>
+> **From harness 17, this is no longer a hard limit.** `BenchmarkRunAnswer.ToolCalls` (`BenchmarkRunAnswerToolCall` rows) carry the real `ArgsText`, `Result` and `Error` for every attempted call, capped per `BenchmarkToolCallRecordLimits.Resolve` and prunable by the run's age (see the table row above). An analyst reads them through `GET /api/admin/benchmark/runs/{id}/answers/{answerId}/tool-calls` (admin-authenticated), which returns every row in `SortOrder` order with its full arguments and result — this is reading the record, not reconstruction or replay, and should be tried first (§ 7, rung 0). Full detail is in [`docs/overseer/ai-benchmark.md`](../../../docs/overseer/ai-benchmark.md) § **Harness Version 17 Updates**.
 
 ---
 
 ## 3. The Derived Failure Count
 
-No report section surfaces the number of tool calls that failed **technically** — neither refused by the budget nor successful. It is arithmetic:
+For a run before harness 17, no report section surfaces the number of tool calls that failed **technically** — neither refused by the budget nor successful. It is arithmetic:
 
 ```
 technical failures = ToolCallCount − Σ(ToolCallSummary name×count) − ToolCallsBlocked
 ```
 
 `ToolCallCount` counts attempts; `ToolCallSummary` counts successes; `ToolCallsBlocked` counts budget refusals. **A non-zero result is direct evidence for question 2, and it is invisible in the report.** Compute it first, for every answer, before reading anything else.
+
+> **From harness 17, this count is available directly and need not be derived.** `BenchmarkToolCallRecorder.Outcomes` returns it as `Failed` for an answer with rows, surfaced on the report's **Tool Call Outcomes** line and on `BenchmarkRunAnswerDto.ToolCallsFailed` (nullable; null means not recorded, never zero). The formula below still applies, unchanged, to any answer without rows — every answer from a run before harness 17 — and remains the only route to the figure for one.
 
 **Worked example.** The figures below are illustrative of the shape `BenchmarkReportBuilder.FormatToolBudgetLine` renders, not extracted from a stored run; substitute the answer's own columns.
 
@@ -93,7 +100,7 @@ Per tool, per answer. Each verdict has one decision procedure.
 |---|---|---|
 | **Never attempted** | The tool's name is absent from `ToolCallSummary` **and** the derived failure count is 0 **and** `ToolCallsBlocked` is 0 | This is a routing observation about the model, not a tool fact. Check first that the tool was even offered: `Benchmark:AllowedTools` |
 | **Attempted and refused by budget** | `ToolCallsBlocked > 0` (non-null) or `ToolBudgetExhausted` is true | `ToolCallBudgetUsed` for the ceiling; `TerminationReason == "budget_exhausted"` when the loop ended on it. A harness/limits finding, not a model one |
-| **Attempted and errored** | Derived failure count > 0 (§ 3) | Which tool errored is **not recorded** — the summary lists only successes. Attribute by replay (§ 7), never by assumption |
+| **Attempted and errored** | Derived failure count > 0 (§ 3) | Which tool errored is **not recorded** for a run before harness 17 — the summary lists only successes; attribute by replay (§ 7), never by assumption. **From harness 17** it *is* recorded, per call — `BenchmarkRunAnswerToolCall.Name` and `.Error` name it and its error text directly; read the row (§ 7, rung 0) instead of replaying |
 | **Succeeded and returned nothing** | Present in `ToolCallSummary` **and** the answer shows no content from it, or the answer paraphrases a not-found message | A `Success = true` "not found" is a success. Whether it means "absent from the game" or "absent from the index" is § 5 |
 | **Succeeded with data** | Present in `ToolCallSummary` and the answer carries content or citations traceable to it | Then any defect is in the *content* — a corpus question (§ 5) or a suite question, not a tool question |
 
@@ -129,7 +136,7 @@ A model asked about GnollHack sound sets therefore receives a confident "not fou
 
 ## 6. Reconstructing the Call
 
-Because arguments were never stored (§ 2), a tool-layer finding usually rests on a **reconstruction**: the most probable argument set, inferred from three sources together.
+Because arguments were never stored for any run before harness 17 (§ 2), a tool-layer finding about such a run usually rests on a **reconstruction**: the most probable argument set, inferred from three sources together. **For a harness-17 run, check first whether the answer has rows** (§ 2, § 7's rung 0) — reconstruction is for when it does not, or when the row's own payload columns were pruned by the retention sweep.
 
 - **The question text** — the entity, mechanic or file the model was asked about, which constrains `query`, `article`, `name` or `file_path`.
 - **The answer's own citations** — a quoted file and line, an article title, a stat block. These are the strongest evidence, because the model can only cite what a result contained.
@@ -142,6 +149,8 @@ A reconstruction is never the end of a finding. It is the input to § 7.
 ---
 
 ## 7. Replay, in Three Fidelity Tiers
+
+**Rung zero, for a harness-17 run: read the stored record before reconstructing or replaying anything.** `GET /api/admin/benchmark/runs/{id}/answers/{answerId}/tool-calls` (admin-authenticated) returns every attempted call of that answer's turn in `SortOrder` order, with its full arguments, full result, error text, status, tool round and timings. This is neither reconstruction (§ 6) nor replay — it is the harness's own record of what happened — and it settles the § 8 parameter-and-result checklist directly wherever the row's payload was not later pruned by the retention sweep (a pruned row shows `ArgsText`/`Result` null beside a non-zero `ResultLengthChars`; § 2). The three tiers below are for when rung zero is unavailable: any run before harness 17, or a pruned row on one after it.
 
 Pick the cheapest tier that can settle the question, and name the tier in the finding.
 
@@ -210,9 +219,11 @@ A tool-diagnostics pass **must** produce this table, one row per tool per run (o
 |---|---|---|---|---|---|---|---|
 | … | `ToolCallCount` share | from `ToolCallSummary` | § 3 formula | recorded? · matches disk? · or *none exists* | one of five | one of four | column names, replay tier, file paths |
 
+*For a harness-17 run, read "Succeeded" and "Derived failures" directly from the answer's rows (`Outcomes()` — succeeded, failed, refused) instead of from `ToolCallSummary` and the § 3 formula; say so in the Evidence column. The formula and the summary remain the only route for a run without rows.*
+
 **Limits of this pass** — state this, or its equivalent, in every tool-diagnostics output:
 
-> This pass reads stored run columns only. **Arguments and results were never stored** for any benchmark tool call (`ShowDebugLog` is `false` at every benchmark call site, and a run creates no `ChatMessage` rows), so every statement about a call's parameters or its returned content is a reconstruction or a replay, labelled as such. **Two corpora reachable from this run carry no fingerprint** — the NetHack source (`NetHackSourceCodePath`) and the NetHack wiki (`NetHackWikiPath`) — so any NetHack finding rests on `StartedAtUtc` against the corpus as it stands now. **Any run before harness 16 has no GnollHack wiki or GnollHack source provenance at all**: `BenchmarkAssessmentPrompt.HarnessVersion` is `"16"`, `WikiHeadSha` and `SourceCodeHeadSha` were added in that version, no historical row is backfilled and none can be, and null in either column means *not recorded*.
+> This pass reads stored run columns only. **For any run before harness 17, arguments and results were never stored** for any benchmark tool call (`ShowDebugLog` is `false` at every benchmark call site, and a run creates no `ChatMessage` rows), so every statement about such a call's parameters or its returned content is a reconstruction or a replay, labelled as such. **From harness 17, a run's `BenchmarkRunAnswerToolCall` rows carry the real arguments, result, error, status, emission order and timings for every attempted call** — read them through the tool-calls endpoint (§ 7, rung 0) rather than reconstructing, unless the payload columns were later pruned by the retention sweep (`ChatRetentionSettings.PruneBenchmarkToolCallResultsDays`, default 90 days), in which case `ArgsText`/`Result` are null but `Name`, `Status`, `Error` and `ResultLengthChars` still are not. **Two corpora reachable from this run carry no fingerprint** — the NetHack source (`NetHackSourceCodePath`) and the NetHack wiki (`NetHackWikiPath`) — so any NetHack finding rests on `StartedAtUtc` against the corpus as it stands now. **Any run before harness 16 has no GnollHack wiki or GnollHack source provenance at all**: `WikiHeadSha` and `SourceCodeHeadSha` were added in harness 16, no historical row is backfilled and none can be, and null in either column means *not recorded*. `BenchmarkAssessmentPrompt.HarnessVersion` is now `"17"`.
 
 ---
 
@@ -220,7 +231,7 @@ A tool-diagnostics pass **must** produce this table, one row per tool per run (o
 
 | Anti-pattern | Why it is wrong |
 |---|---|
-| Inferring call **ordering** from `ToolCallSummary` | Ordering is not recorded. The report says so itself: *"`ToolCallSummary` records aggregate call counts, not an ordered execution log (ordering is not recorded)"* — `BenchmarkReportBuilder`, in the tool usage section. Cite that line rather than re-deriving the point |
+| Inferring call **ordering** from `ToolCallSummary` | `ToolCallSummary` itself never records ordering, at any harness version — the report's own legacy caveat says so: *"`ToolCallSummary` records aggregate call counts, not an ordered execution log (ordering is not recorded)"* — `BenchmarkReportBuilder`, in the tool usage section. Cite that line for a run without rows. **From harness 17, check for rows first**: an answer with `ToolCalls` carries the real `SortOrder` and needs no inference at all |
 | Reading a null `ToolCallsBlocked` as zero | Null means **not recorded** (pre-harness-11). Treating it as zero converts budget refusals into fabricated technical failures in the § 3 formula |
 | Reading a null corpus fingerprint as "no corpus" | It means the hash was not captured or could not be resolved — `BenchmarkInstrumentFingerprint` states this in its own contract. It says nothing about whether the corpus was there |
 | Assuming a NetHack-corpus call has provenance because the GnollHack ones do | Three of five corpora are fingerprinted. The NetHack source is a Git tree that is simply not hashed; the NetHack wiki is generated wholesale by a script and has no revision to hash |
@@ -239,4 +250,4 @@ A tool-diagnostics pass **must** produce this table, one row per tool per run (o
 - [`background_indexing_architecture`](../background_indexing_architecture/SKILL.md) — § 3 the tool→service→guard map and the cold/warm state matrix, **owned there**
 - [`tool_execution_architecture`](../tool_execution_architecture/SKILL.md) — batching, throttles, budgets and truncation markers, **owned there**
 - [`testing_guidelines`](../testing_guidelines/SKILL.md) — § 1 the external-API trait and the mandatory test filter, § 5 `InitializationTask` synchronization, for the § 7(b) scratch replay
-- [`docs/overseer/ai-benchmark.md`](../../../docs/overseer/ai-benchmark.md) — § **Harness Version 16 Updates** for the two corpus fingerprints, why they are provenance rather than comparability keys, and the two corpora that still have none
+- [`docs/overseer/ai-benchmark.md`](../../../docs/overseer/ai-benchmark.md) — § **Harness Version 16 Updates** for the two corpus fingerprints, why they are provenance rather than comparability keys, and the two corpora that still have none; § **Harness Version 17 Updates** for the per-call tool record, the derived result cap, the three-way outcome split, and the retention window

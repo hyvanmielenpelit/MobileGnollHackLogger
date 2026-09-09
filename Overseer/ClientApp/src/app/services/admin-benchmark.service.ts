@@ -498,6 +498,47 @@ export interface BenchmarkFootprintDto {
   totalAnswerCharacters: number;
 }
 
+/**
+ * One tool call a candidate model attempted while producing an answer, ordered by
+ * `sortOrder` across the whole turn. Unlike `toolCallSummary` and the per-tool usage tally,
+ * which only ever list calls that succeeded, this is the full population: a call the tool
+ * layer refused or that errored — most commonly a JSON result over the result cap — appears
+ * here and nowhere else.
+ */
+export interface BenchmarkToolCallDto {
+  id: number;
+  /** Emission order across the whole turn, 0-based and dense. */
+  sortOrder: number;
+  /** The tool round this call belongs to. */
+  iterationIndex: number | null;
+  name: string | null;
+  toolCallId: string | null;
+  /** `'completed'` (case-insensitive) means the call succeeded; anything else did not. */
+  status: string | null;
+  argsText: string | null;
+  result: string | null;
+  error: string | null;
+  queueWaitMs: number | null;
+  executionMs: number | null;
+  depth: number;
+  agentName: string | null;
+  /** Whether the stored `argsText` was cut short; the call's actual arguments may be longer. */
+  argsTruncated: boolean;
+  /**
+   * Whether the stored `result` was cut short. The true size survived the cut and is in
+   * `resultLengthChars`, so a truncated result is never a "call returned nothing".
+   */
+  resultTruncated: boolean;
+  /**
+   * The tool's true result length in characters, before any cap — 0 only when the call
+   * genuinely produced no result. Server-side retention nulls `argsText` and `result` after
+   * 90 days but never this figure, so a null `result` next to a non-zero `resultLengthChars`
+   * means the payload was pruned by age, not that the call returned nothing: those are
+   * opposite facts and must not be conflated.
+   */
+  resultLengthChars: number;
+}
+
 export interface BenchmarkRunAnswerDto {
   id: number;
   benchmarkRunId: number;
@@ -556,6 +597,14 @@ export interface BenchmarkRunAnswerDto {
   toolCallCount?: number | null;
   toolBudgetExhausted?: boolean;
   toolCallsBlocked?: number | null;
+  /**
+   * Per-call outcome tallies from the per-tool-call record. Null means "not recorded" — the
+   * answer predates the per-call table — and never zero: a legacy answer's failed and refused
+   * calls are unknown, not absent, so the UI must not print a "0" that asserts otherwise.
+   */
+  toolCallsSucceeded?: number | null;
+  toolCallsFailed?: number | null;
+  toolCallsRefused?: number | null;
   /** The per-band tool call budget that actually applied to this question. */
   toolCallBudgetUsed?: number | null;
   /** Wall-clock time spent in tool batches during this turn. */
@@ -1447,6 +1496,11 @@ export class AdminBenchmarkService {
 
   getRun(id: number): Observable<BenchmarkRunDetailDto> {
     return this.http.get<BenchmarkRunDetailDto>(`/api/admin/benchmark/runs/${id}`);
+  }
+
+  /** The full per-call tool record for one answer, ordered by `sortOrder`. Loaded lazily — see the run detail dialog's tool-call disclosure. */
+  getAnswerToolCalls(runId: number, answerId: number): Observable<BenchmarkToolCallDto[]> {
+    return this.http.get<BenchmarkToolCallDto[]>(`/api/admin/benchmark/runs/${runId}/answers/${answerId}/tool-calls`);
   }
 
   /**

@@ -428,6 +428,20 @@ public class BenchmarkRunAnswerDto
     /// <summary>The per-band budget that actually applied to this question.</summary>
     public int? ToolCallBudgetUsed { get; set; }
 
+    /// <summary>
+    /// Calls whose row completed normally. Null means "not recorded" — this answer's run predates
+    /// harness version 17's per-call record — and is never zero, following the
+    /// <see cref="NarrationBlockCount"/> precedent: a legacy answer made tool calls that were never
+    /// recorded, and reporting that as zero would assert none failed when none were ever counted.
+    /// </summary>
+    public int? ToolCallsSucceeded { get; set; }
+
+    /// <summary>Calls whose row is neither a budget refusal nor completed. See <see cref="ToolCallsSucceeded"/> for the null-versus-zero rule.</summary>
+    public int? ToolCallsFailed { get; set; }
+
+    /// <summary>Calls refused because the per-question tool budget was already spent. See <see cref="ToolCallsSucceeded"/> for the null-versus-zero rule.</summary>
+    public int? ToolCallsRefused { get; set; }
+
     /// <summary>Wall-clock time spent in tool batches during this turn.</summary>
     public long? ToolTimeMs { get; set; }
 
@@ -514,6 +528,46 @@ public class BenchmarkRunAnswerDto
     public int? ClaimVerificationToolCallCount { get; set; }
     public string? ClaimVerificationError { get; set; }
     public string? ClaimVerificationRawText { get; set; }
+}
+
+/// <summary>
+/// One recorded tool call of a benchmark answer's turn, payloads included. Returned only by the
+/// dedicated tool-calls endpoint — never embedded in <see cref="BenchmarkRunAnswerDto"/>, which is
+/// loaded every time the run dialog opens and would multiply its size for a view almost nobody
+/// opens.
+/// </summary>
+public class BenchmarkToolCallDto
+{
+    public long Id { get; set; }
+    public int SortOrder { get; set; }
+    public int? IterationIndex { get; set; }
+    public string? Name { get; set; }
+    public string? ToolCallId { get; set; }
+    public string? Status { get; set; }
+
+    /// <summary>Payload. Nulled by the retention sweep after a configured age; <see cref="ResultLengthChars"/> survives it.</summary>
+    public string? ArgsText { get; set; }
+
+    /// <summary>
+    /// Payload. Nulled by the retention sweep after a configured age — a null value here with a
+    /// non-zero <see cref="ResultLengthChars"/> means "pruned", not "the tool returned nothing".
+    /// </summary>
+    public string? Result { get; set; }
+
+    public string? Error { get; set; }
+    public int? QueueWaitMs { get; set; }
+    public int? ExecutionMs { get; set; }
+    public int Depth { get; set; }
+    public string? AgentName { get; set; }
+    public bool ArgsTruncated { get; set; }
+    public bool ResultTruncated { get; set; }
+
+    /// <summary>
+    /// The true result length in characters before capping, recorded even when nothing was
+    /// truncated. Survives the retention sweep, so it is what tells a pruned row ("nulled, but this
+    /// many chars came back") from one that genuinely returned nothing (zero).
+    /// </summary>
+    public int ResultLengthChars { get; set; }
 }
 
 public class BenchmarkRunDetailDto

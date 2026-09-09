@@ -36,6 +36,7 @@ namespace MobileGnollHackLogger.Data
         public DbSet<BenchmarkQuestion> BenchmarkQuestions { get; set; } = null!;
         public DbSet<BenchmarkRun> BenchmarkRuns { get; set; } = null!;
         public DbSet<BenchmarkRunAnswer> BenchmarkRunAnswers { get; set; } = null!;
+        public DbSet<BenchmarkRunAnswerToolCall> BenchmarkRunAnswerToolCalls { get; set; } = null!;
         public DbSet<BenchmarkScoringProfile> BenchmarkScoringProfiles { get; set; } = null!;
         public DbSet<BenchmarkAssessorCalibration> BenchmarkAssessorCalibrations { get; set; } = null!;
         public DbSet<BenchmarkGameSnapshot> BenchmarkGameSnapshots { get; set; } = null!;
@@ -198,6 +199,18 @@ namespace MobileGnollHackLogger.Data
 
             modelBuilder.Entity<BenchmarkRunAnswer>()
                 .HasIndex(a => new { a.BenchmarkRunId, a.OrderIndex });
+
+            // Cascade matches the run -> answer cascade above: run -> answer -> tool call is a
+            // chain, not multiple paths to one table, which is what lets SQL Server accept it.
+            // Deleting a run removes its answers' tool calls along with the answers themselves.
+            modelBuilder.Entity<BenchmarkRunAnswerToolCall>()
+                .HasOne(tc => tc.BenchmarkRunAnswer)
+                .WithMany(a => a.ToolCalls)
+                .HasForeignKey(tc => tc.BenchmarkRunAnswerId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<BenchmarkRunAnswerToolCall>()
+                .HasIndex(tc => new { tc.BenchmarkRunAnswerId, tc.SortOrder });
 
             // SetNull, never Cascade: deleting a question from a suite is suite maintenance, and
             // it must not delete the answers of runs that already happened. A null FK renders as

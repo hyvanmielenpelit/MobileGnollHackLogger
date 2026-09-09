@@ -7,6 +7,16 @@ public class ChatRetentionSettings
     public int InactivityTtlDays { get; set; } = 90;
     public int SoftDeleteGracePeriodDays { get; set; } = 30;
     public int PruneToolCallResultsDays { get; set; } = 30;
+
+    /// <summary>
+    /// Age, in days, after which a benchmark tool call's <c>ArgsText</c> and <c>Result</c> are
+    /// nulled, measured from its run's <c>StartedAtUtc</c> rather than the row's own age. Set far
+    /// above <see cref="PruneToolCallResultsDays"/>: a chat tool result is transient conversational
+    /// context, but a benchmark run is a retained measurement that gets re-analysed long after it
+    /// finished, and its payloads are the evidence a tool-layer finding rests on.
+    /// </summary>
+    public int PruneBenchmarkToolCallResultsDays { get; set; } = 90;
+
     public int MaintenanceRunHourUtc { get; set; } = 3;
 
     /// <summary>
@@ -97,6 +107,7 @@ public class MaintenanceRequestDto
     public bool DryRun { get; set; } = false;
     public int? InactivityDays { get; set; }
     public int? ToolCallPruneDays { get; set; }
+    public int? BenchmarkToolCallPruneDays { get; set; }
 }
 
 public class MaintenanceResultDto
@@ -108,6 +119,7 @@ public class MaintenanceResultDto
     public int PurgedMessageCount { get; set; }
     public int PurgedToolCallCount { get; set; }
     public int PrunedToolResultCount { get; set; }
+    public int PrunedBenchmarkToolResultCount { get; set; }
     public int DeletedDiskFolderCount { get; set; }
     public int DeletedDiskFileCount { get; set; }
     public long ReclaimedDiskBytes { get; set; }

@@ -2411,4 +2411,118 @@ public class BenchmarkReportBuilderTests
         var unparseableReport = BenchmarkReportBuilder.BuildMarkdownReport(unparseable);
         Assert.DoesNotContain("Recorded before per-role cost tracking", unparseableReport);
     }
+
+    // -------------------------------------------------------------------------------------
+    // Tool Call Outcomes line and the per-question ordered call table. Both are gated on
+    // whether any answer in the run carries BenchmarkRunAnswerToolCall rows, which exist only
+    // from harness 17 onward — every run before that has none, and ToolCallSummary remains
+    // the only record for those.
+    // -------------------------------------------------------------------------------------
+
+    [Fact]
+    public void BuildMarkdownReport_RowCarryingRun_RendersOutcomesLineAndOrdersPerQuestionTableBySortOrder()
+    {
+        var answer = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        answer.ToolCalls = new List<BenchmarkRunAnswerToolCall>
+        {
+            new BenchmarkRunAnswerToolCall { SortOrder = 2, Name = "call_a", Status = "completed", ExecutionMs = 10 },
+            new BenchmarkRunAnswerToolCall { SortOrder = 0, Name = "call_b", Status = "completed", ExecutionMs = 20 },
+            new BenchmarkRunAnswerToolCall { SortOrder = 1, Name = "call_c", Status = "error", ExecutionMs = 30 }
+        };
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV6Run(answer));
+
+        Assert.Contains("**Tool Call Outcomes:** 2 succeeded, 1 failed, 0 refused by budget.", report);
+
+        // Rendered order follows SortOrder (0, 1, 2) — call_b, then call_c, then call_a — not
+        // the order the rows were added to the list.
+        //
+        // Searched from the section 3 heading onward, not across the whole report. Section 2's
+        // Tool Usage Profile also names tools, sorted alphabetically and counting successes only,
+        // so a whole-report IndexOf finds call_a and call_b there and measures that table's
+        // ordering instead of this one's.
+        int sectionStart = report.IndexOf("## 3. Questions and Replies", StringComparison.Ordinal);
+        Assert.True(sectionStart >= 0, "The per-question section must be present.");
+        string perQuestion = report.Substring(sectionStart);
+
+        int posB = perQuestion.IndexOf("`call_b`", StringComparison.Ordinal);
+        int posC = perQuestion.IndexOf("`call_c`", StringComparison.Ordinal);
+        int posA = perQuestion.IndexOf("`call_a`", StringComparison.Ordinal);
+        Assert.True(posB >= 0 && posC >= 0 && posA >= 0, "All three rows must appear in the call table.");
+        Assert.True(posB < posC && posC < posA, "Rows must render in SortOrder, not insertion, order.");
+    }
+
+    [Fact]
+    public void BuildMarkdownReport_PerQuestionCallTable_NeverIncludesArgsOrResultPayloadText()
+    {
+        const string argsSentinel = "SENTINEL_ARGS_PAYLOAD_9f3c";
+        const string resultSentinel = "SENTINEL_RESULT_PAYLOAD_2b7e";
+
+        var answer = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        answer.ToolCalls = new List<BenchmarkRunAnswerToolCall>
+        {
+            new BenchmarkRunAnswerToolCall
+            {
+                SortOrder = 0,
+                Name = "source_code_search",
+                Status = "completed",
+                ArgsText = argsSentinel,
+                Result = resultSentinel,
+                ResultLengthChars = resultSentinel.Length
+            }
+        };
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV6Run(answer));
+
+        // The table reports ResultLengthChars as a bare number, never the payload itself — a
+        // later "improvement" that inlines args or results would leak game source or wiki text
+        // into a document meant to be pasted whole into a chat or an issue.
+        Assert.DoesNotContain(argsSentinel, report);
+        Assert.DoesNotContain(resultSentinel, report);
+        Assert.Contains($"{resultSentinel.Length}", report);
+    }
+
+    [Fact]
+    public void BuildMarkdownReport_LegacyRun_RendersNoOutcomeLineOrCallTable_ButToolUsageProfileStillReadsToolCallSummary()
+    {
+        var answer = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        answer.ToolCallSummary = "wiki_search×5, source_code_search×2";
+        // ToolCalls stays at its default empty list: this is exactly the shape of every run
+        // recorded before harness 17.
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV6Run(answer));
+
+        // A legacy run printing "0 failed" would assert something false — no rows exist to
+        // count, so the line must be absent rather than printed with zeroes.
+        Assert.DoesNotContain("**Tool Call Outcomes:**", report);
+        Assert.DoesNotContain("| Round | Tool | Status | Exec (ms) | Result Size |", report);
+
+        Assert.Contains("### Tool Usage Profile", report);
+        Assert.Contains("`wiki_search`", report);
+        Assert.Contains("| `wiki_search` | 5 |", report);
+        Assert.Contains("| `source_code_search` | 2 |", report);
+    }
+
+    [Fact]
+    public void BuildMarkdownReport_ToolOrderingCaveat_IsQualifiedForRowCarryingRuns_AndUnqualifiedForLegacyRuns()
+    {
+        var rowCarrying = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        rowCarrying.ToolCalls = new List<BenchmarkRunAnswerToolCall>
+        {
+            new BenchmarkRunAnswerToolCall { SortOrder = 0, Name = "wiki_search", Status = "completed" }
+        };
+        var rowReport = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV6Run(rowCarrying));
+
+        // Deleting the legacy branch would make this sentence assert something false of every
+        // run recorded before harness 17, so both directions are pinned here.
+        Assert.Contains("ordering **is** derivable here", rowReport);
+        Assert.DoesNotContain("ordering is not recorded", rowReport);
+
+        var legacy = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        legacy.ToolCallSummary = "wiki_search×5";
+        var legacyReport = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV6Run(legacy));
+
+        Assert.Contains("ordering is not recorded", legacyReport);
+        Assert.DoesNotContain("ordering **is** derivable here", legacyReport);
+    }
 }

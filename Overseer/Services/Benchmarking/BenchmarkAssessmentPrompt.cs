@@ -190,8 +190,17 @@ public static class BenchmarkAssessmentPrompt
     ///     below Tier B. The NetHack wiki and NetHack source corpora remain unfingerprinted, and both
     ///     are reachable from a run, so a NetHack-corpus finding still has no run-recorded provenance.
     ///     On a run stamped 15 or earlier, a null in either new column is "not recorded".
+    /// v17: every tool call an answer's turn emitted is persisted individually — its arguments,
+    ///     result, error, status, emission order, tool round and timings — so the report states a
+    ///     run-wide succeeded / failed / refused-by-budget split and lists each question's calls in
+    ///     an ordered table, instead of leaving both to be guessed from ToolCallSummary, which lists
+    ///     successes only. Nothing the candidate model sees changed: the prompt, the tool set, the
+    ///     budgets and the grading rules are all as they were under 16, so harness 16 and 17 scores
+    ///     are directly comparable and ScoringMethodVersion does not move. Rows exist from this
+    ///     version onward only and no backfill is possible, so on a run stamped 16 or earlier an
+    ///     answer with no rows means "not recorded", never "this answer called no tools".
     /// </summary>
-    public const string HarnessVersion = "16";
+    public const string HarnessVersion = "17";
 
     public static string BuildPerQuestionPrompt(
         string suiteName,

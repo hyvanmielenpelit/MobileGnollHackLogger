@@ -14,16 +14,32 @@ describe('BenchmarkCostPanelComponent', () => {
   let component: BenchmarkCostPanelComponent;
   let fixture: ComponentFixture<BenchmarkCostPanelComponent>;
 
+  /**
+   * Applies inputs the way the framework does, through `setInput`.
+   *
+   * A plain property write does not mark the view dirty, and change detection here refreshes
+   * only dirty views — so the initial render picks a written property up, and every write after
+   * it renders nothing. A test that mutated an input and re-rendered would then assert against
+   * the previous frame and pass or fail on whichever value happened to be on screen.
+   */
+  function setInputs(inputs: Record<string, unknown>): void {
+    for (const [name, value] of Object.entries(inputs)) {
+      fixture.componentRef.setInput(name, value);
+    }
+  }
+
   /** A run with every role priced, so all five lines and the subtotal render. */
   function fillEveryRole(): void {
-    component.total = 4.0;
-    component.candidate = 1.0;
-    component.assessor = 2.0;
-    component.secondOpinion = 0.5;
-    component.claimVerifier = 0.3;
-    component.synthesis = 0.2;
-    component.grading = 3.0;
-    component.pricingSource = 'Configured model pricing';
+    setInputs({
+      total: 4.0,
+      candidate: 1.0,
+      assessor: 2.0,
+      secondOpinion: 0.5,
+      claimVerifier: 0.3,
+      synthesis: 0.2,
+      grading: 3.0,
+      pricingSource: 'Configured model pricing'
+    });
   }
 
   function roleNames(): string[] {
@@ -76,8 +92,7 @@ describe('BenchmarkCostPanelComponent', () => {
 
     it('should keep the fixed order when the largest figure is the last role', () => {
       fillEveryRole();
-      component.candidate = 0.01;
-      component.synthesis = 9.0;
+      setInputs({ candidate: 0.01, synthesis: 9.0 });
       fixture.detectChanges();
 
       expect(roleNames()[0]).toBe('Model under test');
@@ -86,8 +101,7 @@ describe('BenchmarkCostPanelComponent', () => {
 
     it('should omit a null role and show a zero role', () => {
       fillEveryRole();
-      component.secondOpinion = null;
-      component.claimVerifier = 0;
+      setInputs({ secondOpinion: null, claimVerifier: 0 });
       fixture.detectChanges();
 
       expect(roleNames()).toEqual([
@@ -107,7 +121,7 @@ describe('BenchmarkCostPanelComponent', () => {
     });
 
     it('should render no role list at all when every role is null', () => {
-      component.total = 1.5;
+      setInputs({ total: 1.5 });
       fixture.detectChanges();
 
       expect(fixture.nativeElement.querySelector('.gh-cost-panel__roles')).toBeNull();
@@ -125,12 +139,14 @@ describe('BenchmarkCostPanelComponent', () => {
     });
 
     it('should still sum to 100 per cent for figures that do not round cleanly', () => {
-      component.candidate = 1;
-      component.assessor = 1;
-      component.secondOpinion = 1;
-      component.claimVerifier = 1;
-      component.synthesis = 1;
-      component.grading = 4;
+      setInputs({
+        candidate: 1,
+        assessor: 1,
+        secondOpinion: 1,
+        claimVerifier: 1,
+        synthesis: 1,
+        grading: 4
+      });
       fixture.detectChanges();
 
       const shares = roleShares();
@@ -139,8 +155,7 @@ describe('BenchmarkCostPanelComponent', () => {
     });
 
     it('should report a zero share for every role when nothing was spent', () => {
-      component.candidate = 0;
-      component.assessor = 0;
+      setInputs({ candidate: 0, assessor: 0 });
       fixture.detectChanges();
 
       expect(roleShares()).toEqual([0, 0]);
@@ -150,7 +165,7 @@ describe('BenchmarkCostPanelComponent', () => {
   describe('grading subtotal', () => {
     it('should render the grading input rather than a client-side sum', () => {
       fillEveryRole();
-      component.grading = 2.75;
+      setInputs({ grading: 2.75 });
       fixture.detectChanges();
 
       const subtotal = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('.gh-cost-role--subtotal');
@@ -170,7 +185,7 @@ describe('BenchmarkCostPanelComponent', () => {
 
     it('should be absent when no grading figure was supplied', () => {
       fillEveryRole();
-      component.grading = null;
+      setInputs({ grading: null });
       fixture.detectChanges();
 
       expect(fixture.nativeElement.querySelector('.gh-cost-role--subtotal')).toBeNull();
@@ -183,7 +198,7 @@ describe('BenchmarkCostPanelComponent', () => {
       fixture.detectChanges();
       expect(fixture.nativeElement.textContent).not.toContain('per-role cost tracking');
 
-      component.legacyRun = true;
+      setInputs({ legacyRun: true });
       fixture.detectChanges();
       expect(fixture.nativeElement.textContent).toContain('per-role cost tracking');
     });
@@ -192,11 +207,11 @@ describe('BenchmarkCostPanelComponent', () => {
   describe('variant', () => {
     it('should head the live panel differently from the final one', () => {
       fillEveryRole();
-      component.variant = 'live';
+      setInputs({ variant: 'live' });
       fixture.detectChanges();
       const liveHeading = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('.gh-cost-panel__title')!.textContent!.trim();
 
-      component.variant = 'final';
+      setInputs({ variant: 'final' });
       fixture.detectChanges();
       const finalHeading = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('.gh-cost-panel__title')!.textContent!.trim();
 
@@ -224,7 +239,7 @@ describe('BenchmarkCostPanelComponent', () => {
       expect(fixture.nativeElement.querySelector('.gh-cost-panel__prov')!.textContent!.trim())
         .toBe('Configured model pricing');
 
-      component.pricingSource = null;
+      setInputs({ pricingSource: null });
       fixture.detectChanges();
       expect(fixture.nativeElement.querySelector('.gh-cost-panel__prov')!.textContent!.trim())
         .toBe('Pricing unknown');
@@ -235,7 +250,7 @@ describe('BenchmarkCostPanelComponent', () => {
       fixture.detectChanges();
       expect(fixture.nativeElement.querySelector('.gh-cost-panel__marker')).toBeNull();
 
-      component.pricingIncomplete = true;
+      setInputs({ pricingIncomplete: true });
       fixture.detectChanges();
       expect(fixture.nativeElement.querySelector('.gh-cost-panel__marker')).not.toBeNull();
       expect(fixture.nativeElement.textContent).toContain('lower bound');
