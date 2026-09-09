@@ -698,6 +698,8 @@ public class BenchmarkRunDetailDto
     public string? CandidateSystemPromptSha256 { get; set; }
     public string? ToolGuidesSha256 { get; set; }
     public string? KnowledgeBaseHeadSha { get; set; }
+    public string? WikiHeadSha { get; set; }
+    public string? SourceCodeHeadSha { get; set; }
 
     /// <summary>
     /// H3. Run-wide tool calls by family, keyed "source", "wiki", "lookup", "knowledgeBase", "other", and
@@ -1049,6 +1051,8 @@ public class BenchmarkRunSummaryDto
     public string? CandidateSystemPromptSha256 { get; set; }
     public string? ToolGuidesSha256 { get; set; }
     public string? KnowledgeBaseHeadSha { get; set; }
+    public string? WikiHeadSha { get; set; }
+    public string? SourceCodeHeadSha { get; set; }
 
     public decimal? EstimatedCost { get; set; }
     public bool PricingIncomplete { get; set; }

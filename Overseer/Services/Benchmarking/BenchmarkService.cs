@@ -4401,6 +4401,18 @@ public class BenchmarkService
         {
             run.KnowledgeBaseHeadSha = GitHelper.GetGitHeadSha(kbPath);
         }
+
+        var wikiPath = _configuration["WikiPath"];
+        if (!string.IsNullOrWhiteSpace(wikiPath))
+        {
+            run.WikiHeadSha = GitHelper.GetGitHeadSha(wikiPath);
+        }
+
+        var sourceCodePath = _configuration["SourceCodePath"];
+        if (!string.IsNullOrWhiteSpace(sourceCodePath))
+        {
+            run.SourceCodeHeadSha = GitHelper.GetGitHeadSha(sourceCodePath);
+        }
     }
 
     internal static string? ComputeToolGuidesSha256()
@@ -4449,28 +4461,27 @@ public class BenchmarkService
     }
 
     /// <summary>
-    /// The three instrument hashes as they would be stamped on a run launched <b>right now</b> from
+    /// The five instrument hashes as they would be stamped on a run launched <b>right now</b> from
     /// this request, without launching one.
     ///
     /// <para>This is the resume guard's other half. A series records member 1's fingerprint; before
-    /// continuing it, the orchestrator recomputes the same three values here and refuses when any has
+    /// continuing it, the orchestrator recomputes the same five values here and refuses when any has
     /// moved. A replicate set whose members straddle a deployment is not a replicate set, and nothing
     /// downstream would notice — every statistic would still compute, confidently, over runs that
     /// answered under different instruments.</para>
     ///
     /// <para>It deliberately reuses <see cref="PopulateInstrumentFingerprint"/> against a throwaway
-    /// <see cref="BenchmarkRun"/> rather than recomputing the three values independently: a guard that
+    /// <see cref="BenchmarkRun"/> rather than recomputing the five values independently: a guard that
     /// derived its hashes differently from the code that stamps them would compare two things that
     /// were never the same measurement.</para>
     /// </summary>
     /// <returns>Null when the suite or the tested configuration no longer exists.</returns>
-    internal async Task<(string? CandidateSystemPromptSha256, string? ToolGuidesSha256, string? KnowledgeBaseHeadSha)?>
-        ComputeCurrentInstrumentFingerprintAsync(
-            ApplicationDbContext db,
-            long suiteId,
-            long testedModelConfigurationId,
-            bool verboseMode,
-            CancellationToken ct = default)
+    internal async Task<BenchmarkInstrumentFingerprint?> ComputeCurrentInstrumentFingerprintAsync(
+        ApplicationDbContext db,
+        long suiteId,
+        long testedModelConfigurationId,
+        bool verboseMode,
+        CancellationToken ct = default)
     {
         var suite = await db.BenchmarkSuites
             .Include(s => s.GameSnapshot)
@@ -4492,7 +4503,12 @@ public class BenchmarkService
         var probe = new BenchmarkRun();
         PopulateInstrumentFingerprint(probe, systemPrompt);
 
-        return (probe.CandidateSystemPromptSha256, probe.ToolGuidesSha256, probe.KnowledgeBaseHeadSha);
+        return new BenchmarkInstrumentFingerprint(
+            probe.CandidateSystemPromptSha256,
+            probe.ToolGuidesSha256,
+            probe.KnowledgeBaseHeadSha,
+            probe.WikiHeadSha,
+            probe.SourceCodeHeadSha);
     }
 
     internal static List<string> ExtractDisputedClaims(BenchmarkRunAnswer answer, string? accuracyEvidence)

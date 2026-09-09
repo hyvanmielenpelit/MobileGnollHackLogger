@@ -4281,6 +4281,8 @@ describe('AdminBenchmarkComponent', () => {
         candidateSystemPromptSha256: 'sha-a',
         toolGuidesSha256: 'guide-a',
         knowledgeBaseHeadSha: 'kb-a',
+        wikiHeadSha: 'wiki-a',
+        sourceCodeHeadSha: 'src-a',
         ...overrides
       };
     }
@@ -4332,6 +4334,33 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.historyRuns).toBe(runs);
       expect(component.historyRuns.length).toBe(3);
     });
+
+    it('should stack a labelled row per fingerprint, dashing a hash that was not recorded', () => {
+      component.historyRuns = [buildHistoryRun({ id: 1, wikiHeadSha: null })];
+      component.activeSubTab = 'history';
+      fixture.detectChanges();
+
+      const entries = Array.from(
+        fixture.nativeElement.querySelectorAll('.instrument-cell .instrument-fingerprint')
+      ) as HTMLElement[];
+
+      // Five rows whatever the run recorded: the label carries the meaning, so the cell stays
+      // legible in greyscale, and a missing hash is visible as a dash rather than absent.
+      expect(entries.length).toBe(5);
+      expect(entries.map(e => e.textContent?.trim())).toEqual([
+        'PROMPT sha-a',
+        'GUIDES guide-a',
+        'KB kb-a',
+        'WIKI -',
+        'SRC src-a'
+      ]);
+
+      const cssClasses = ['fp-prompt', 'fp-guides', 'fp-kb', 'fp-wiki', 'fp-source'];
+      cssClasses.forEach((cssClass, i) => expect(entries[i].classList.contains(cssClass)).toBeTrue());
+
+      expect(entries[3].getAttribute('title')).toBe('GnollHack wiki Git HEAD SHA: not recorded');
+      expect(entries[4].getAttribute('title')).toBe('GnollHack source Git HEAD SHA: src-a');
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -4364,6 +4393,8 @@ describe('AdminBenchmarkComponent', () => {
         candidateSystemPromptSha256: 'sha-a',
         toolGuidesSha256: 'guide-a',
         knowledgeBaseHeadSha: 'kb-a',
+        wikiHeadSha: 'wiki-a',
+        sourceCodeHeadSha: 'src-a',
         candidatePromptOptionsJson: '{"verboseMode":false,"enableToolUse":true}',
         ...overrides
       };
@@ -4483,7 +4514,48 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.instrumentChangeOf(component.historyRuns[0])?.kind).toBe('instrument');
     });
 
-    it('should badge nothing when both the options and all three hashes match', () => {
+    it('should badge a moved GnollHack wiki HEAD as instrument drift', () => {
+      component.historyRuns = [
+        buildRun({ id: 25, wikiHeadSha: 'wiki-b' }),
+        buildRun({ id: 24 })
+      ];
+
+      const change = component.instrumentChangeOf(component.historyRuns[0]);
+
+      expect(change?.kind).toBe('instrument');
+      expect(change?.description).toContain('GnollHack wiki');
+    });
+
+    it('should badge a moved GnollHack source HEAD as instrument drift', () => {
+      component.historyRuns = [
+        buildRun({ id: 25, sourceCodeHeadSha: 'src-b' }),
+        buildRun({ id: 24 })
+      ];
+
+      const change = component.instrumentChangeOf(component.historyRuns[0]);
+
+      expect(change?.kind).toBe('instrument');
+      expect(change?.description).toContain('GnollHack source');
+    });
+
+    it('should report no drift when a corpus HEAD is recorded on only one of the two runs', () => {
+      // "Not recorded" on either side is not "unchanged", so neither direction may be badged.
+      component.historyRuns = [
+        buildRun({ id: 25, wikiHeadSha: null, sourceCodeHeadSha: 'src-a' }),
+        buildRun({ id: 24, wikiHeadSha: 'wiki-a', sourceCodeHeadSha: null })
+      ];
+
+      expect(component.instrumentChangeOf(component.historyRuns[0])).toBeNull();
+
+      component.historyRuns = [
+        buildRun({ id: 27, wikiHeadSha: 'wiki-b', sourceCodeHeadSha: 'src-b' }),
+        buildRun({ id: 26, wikiHeadSha: null, sourceCodeHeadSha: null })
+      ];
+
+      expect(component.instrumentChangeOf(component.historyRuns[0])).toBeNull();
+    });
+
+    it('should badge nothing when both the options and all five hashes match', () => {
       component.historyRuns = [buildRun({ id: 25 }), buildRun({ id: 24 })];
 
       expect(component.instrumentChangeOf(component.historyRuns[0])).toBeNull();

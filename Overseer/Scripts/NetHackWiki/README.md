@@ -27,6 +27,19 @@ NetHackWiki is protected against automated HTTP scrapers by Cloudflare WAF. Over
 
 ## How to Regenerate NetHack Wiki Files
 
+### Step 0: Back Up the Existing Tree
+
+**Required, not optional.** The converter writes into the target directory, and the generated articles are not under version control — nothing else holds a copy. Before running it, copy the current `NetHackWikiPath` tree to a **new subdirectory of `C:\Backup\NetHack Wiki` named for the backup's date and time**:
+
+```powershell
+$dest = Join-Path 'C:\Backup\NetHack Wiki' (Get-Date -Format 'yyyy-MM-dd_HHmm')
+Copy-Item -Path 'c:\hmp\nethackwiki' -Destination $dest -Recurse
+```
+
+The date-and-time naming is load-bearing rather than tidy: no benchmark run column records a NetHack wiki revision, so the backup directory's name is the only durable record of when a regeneration happened.
+
+Articles in this tree are **never hand-edited** — the converter is the only writer, and a manual edit is lost by the next regeneration without a trace.
+
 ### Step 1: Obtain a NetHack Wiki XML Dump
 Download the latest MediaWiki XML dump (current pages export, e.g. `nethackwiki_current.xml` or `nethackwiki-latest-pages-articles.xml`).
 
@@ -59,7 +72,8 @@ python convert_nethackwiki_dump_md.py <path_to_input_xml> <output_directory> --t
   ```json
   "NetHackWikiPath": "c:\\hmp\\nethackwiki"
   ```
-- **Live Re-indexing**: When Overseer starts (or on its 10-minute periodic timer), `NetHackWikiService` scans this directory and indexes all markdown files into Lucene.Net RAM index.
+- **Indexing is startup-only**: `NetHackWikiService` scans this directory and indexes all markdown files into a Lucene.Net RAM index **once, when Overseer starts**. There is no periodic re-indexing timer — NetHackWiki is thousands of static files updated only by a manual regeneration, and repeatedly scanning them would cost CPU and disk I/O for nothing.
+- **Restart Overseer after a regeneration**, or none of the new content is indexed and every NetHack wiki tool keeps answering from the previous tree.
 
 ---
 

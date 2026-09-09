@@ -860,13 +860,13 @@
                     }
                   </td>
                   <td class="instrument-cell">
-                    @if (run.candidateSystemPromptSha256) {
-                      <span class="instrument-fingerprint" [attr.title]="'Candidate system prompt SHA-256: ' + run.candidateSystemPromptSha256">
-                        {{ shortFingerprint(run.candidateSystemPromptSha256) }}
-                      </span>
-                    } @else {
-                      <span class="text-muted">-</span>
-                    }
+                    <span class="instrument-fingerprints">
+                      @for (entry of fingerprintEntries(run); track entry.label) {
+                        <span class="instrument-fingerprint" [class]="entry.cssClass" [attr.title]="entry.title">
+                          {{ entry.label }} {{ entry.short }}
+                        </span>
+                      }
+                    </span>
                     @if (instrumentChangeOf(run); as change) {
                       <span class="instrument-changed" [class]="change.kind === 'options' ? 'options-changed' : ''"
                             [attr.aria-label]="(change.kind === 'options' ? 'Run options changed since run ' : 'Instrument changed since run ') + change.comparedToRunId"

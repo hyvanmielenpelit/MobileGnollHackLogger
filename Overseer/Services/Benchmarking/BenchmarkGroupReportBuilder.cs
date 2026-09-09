@@ -169,8 +169,8 @@ public static class BenchmarkGroupReportBuilder
 
         if (members != null && members.Count > 0)
         {
-            sb.AppendLine("| Run | Started (UTC) | Status | Index | Speed | Prompt SHA | Guides SHA | KB SHA |");
-            sb.AppendLine("|---:|---|---|---:|---:|---|---|---|");
+            sb.AppendLine("| Run | Started (UTC) | Status | Index | Speed | Fingerprints |");
+            sb.AppendLine("|---:|---|---|---:|---:|---|");
             foreach (var run in members.OrderBy(r => r.Id))
             {
                 sb.AppendLine(
@@ -179,9 +179,11 @@ public static class BenchmarkGroupReportBuilder
                     $"| {run.Status} " +
                     $"| {(run.QualityIndex.HasValue ? run.QualityIndex.Value.ToString(CultureInfo.InvariantCulture) : "—")} " +
                     $"| {(run.SpeedIndex.HasValue ? run.SpeedIndex.Value.ToString(CultureInfo.InvariantCulture) : "—")} " +
-                    $"| `{Short(run.CandidateSystemPromptSha256)}` " +
-                    $"| `{Short(run.ToolGuidesSha256)}` " +
-                    $"| `{Short(run.KnowledgeBaseHeadSha)}` |");
+                    $"| PROMPT `{Short(run.CandidateSystemPromptSha256)}`<br>" +
+                    $"GUIDES `{Short(run.ToolGuidesSha256)}`<br>" +
+                    $"KB `{Short(run.KnowledgeBaseHeadSha)}`<br>" +
+                    $"WIKI `{Short(run.WikiHeadSha)}`<br>" +
+                    $"SRC `{Short(run.SourceCodeHeadSha)}` |");
             }
         }
         else

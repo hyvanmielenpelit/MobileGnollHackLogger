@@ -458,6 +458,8 @@ public static class BenchmarkReportBuilder
         sb.AppendLine($"- **Candidate System Prompt Text:** {(string.IsNullOrEmpty(run.CandidateSystemPromptText) ? "not stored" : $"stored ({run.CandidateSystemPromptText.Length:N0} characters)")}");
         sb.AppendLine($"- **ToolGuides SHA-256:** {run.ToolGuidesSha256 ?? "not recorded"}");
         sb.AppendLine($"- **Knowledge Base HEAD SHA:** {run.KnowledgeBaseHeadSha ?? "not recorded"}");
+        sb.AppendLine($"- **GnollHack Wiki HEAD SHA:** {run.WikiHeadSha ?? "not recorded"}");
+        sb.AppendLine($"- **GnollHack Source HEAD SHA:** {run.SourceCodeHeadSha ?? "not recorded"}");
         sb.AppendLine("  - *Two runs are a reproduction only when `CandidateSystemPromptSha256` matches.*");
         sb.AppendLine();
 

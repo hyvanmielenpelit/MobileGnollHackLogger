@@ -114,6 +114,8 @@ A plan is **not** required for single-file fixes, typo and comment corrections, 
 
 Any analysis of an AI benchmark run — its report, diagnostics, or assessments — and any implementation plan derived from one **MUST** read the `server-benchmark-to-chat-transfer` skill first, and **MUST** produce the **Chat Transfer** section it specifies. The benchmark grades the production chat system prompt, so a benchmark analysis that yields no conclusion about the chat assistant is incomplete, not merely brief. The skill is a living document: every analysis appends its run to the model behaviour notes.
 
+**When any finding turns on what a tool returned** — a tool that was not called, one that errored, or one that answered "not found" — the analysis **MUST** also read `server-benchmark-tool-diagnostics`, and through it `server-tool-data-sources` and `server-tool-parameter-reference`. A run stores tool *counts* and discards tool arguments and results, so "the tool returned nothing" is four different verdicts and only one of them is about the model. A corpus that was missing, stale, outside the indexed scope or excluded by a size limit is a **Corpus / Environment Defect** and never produces a chat prompt change.
+
 ## Publishing
 
 - **Do NOT publish anything** (e.g., via `dotnet publish` or similar commands) unless explicitly requested by the user.
@@ -123,7 +125,9 @@ Any analysis of an AI benchmark run — its report, diagnostics, or assessments 
 Skills in this repository use the **`server_`** prefix. Canonical bodies live in
 `.agents/skills/<underscore_name>/SKILL.md`; the `.claude/skills/<kebab-name>/` stubs are
 **generated** by `SharedAgentSkills\tools\sync_stubs.ps1` and must never be hand-edited.
-Notable project skills include `server_implementation_planning` and `server_benchmark_to_chat_transfer`.
+Notable project skills include `server_implementation_planning`, `server_benchmark_to_chat_transfer`,
+and the tool-layer trio `server_tool_data_sources`, `server_tool_parameter_reference` and
+`server_benchmark_tool_diagnostics`.
 
 > [!IMPORTANT]
 > **Never use the `client_` prefix here.** It is reserved for **GnollHack**, which is the

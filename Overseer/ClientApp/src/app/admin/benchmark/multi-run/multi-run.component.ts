@@ -285,6 +285,23 @@ export interface MultiRunComparison {
 }
 
 /**
+ * One line of a run's instrument fingerprint stack in the run picker: a short visible label, a
+ * colour class, the eight-character hash prefix, and the tooltip carrying the corpus name and the
+ * full hash.
+ *
+ * The label is what makes the stack readable in greyscale and to a colour-blind reader, so the
+ * colour class only reinforces it. Declared here rather than imported from the benchmark component,
+ * which imports this one; the labels and classes match its own deliberately, so the two surfaces
+ * read identically.
+ */
+export interface MultiRunFingerprintEntry {
+  label: 'PROMPT' | 'GUIDES' | 'KB' | 'WIKI' | 'SRC';
+  cssClass: 'fp-prompt' | 'fp-guides' | 'fp-kb' | 'fp-wiki' | 'fp-source';
+  short: string;
+  title: string;
+}
+
+/**
  * What multi-run cannot decompose, held here as a fallback so the sentence can never be missing.
  *
  * The server carries the authoritative text on the statistics result itself
@@ -430,12 +447,10 @@ export class MultiRunComponent implements OnInit, OnChanges {
       date: r => new Date(r.startedAtUtc),
       qualityIndex: r => r.qualityIndex ?? r.finalScore,
       index: r => r.qualityIndex ?? r.finalScore,
-      speedIndex: r => r.speedIndex,
-      fingerprint: r => r.toolGuidesSha256
+      speedIndex: r => r.speedIndex
     },
     {
       testedModel: r => r.testedModelDisplayNameUsed,
-      fingerprint: r => r.toolGuidesSha256,
       qualityIndex: exactFilter(r => (r.qualityIndex ?? r.finalScore) != null ? 'present' : 'absent'),
       index: exactFilter(r => (r.qualityIndex ?? r.finalScore) != null ? 'present' : 'absent'),
       speedIndex: exactFilter(r => r.speedIndex != null ? 'present' : 'absent'),
@@ -1148,6 +1163,57 @@ export class MultiRunComponent implements OnInit, OnChanges {
   /** The first eight hex characters of an instrument hash, as the run list shows them. */
   shortFingerprint(sha: string | null | undefined): string {
     return sha ? sha.substring(0, 8) : '—';
+  }
+
+  /**
+   * The five fingerprints of a run's instrument, in the fixed order the picker stacks them.
+   *
+   * The shape is always five rows: a hash that was never recorded shows as a dash under its own
+   * label rather than dropping out, so two runs' stacks line up row for row.
+   */
+  fingerprintEntries(run: BenchmarkRunSummaryDto): MultiRunFingerprintEntry[] {
+    return [
+      {
+        label: 'PROMPT',
+        cssClass: 'fp-prompt',
+        short: this.shortFingerprint(run.candidateSystemPromptSha256),
+        title: run.candidateSystemPromptSha256
+          ? 'Candidate system prompt SHA-256: ' + run.candidateSystemPromptSha256
+          : 'Candidate system prompt SHA-256: not recorded'
+      },
+      {
+        label: 'GUIDES',
+        cssClass: 'fp-guides',
+        short: this.shortFingerprint(run.toolGuidesSha256),
+        title: run.toolGuidesSha256
+          ? 'Tool guides SHA-256: ' + run.toolGuidesSha256
+          : 'Tool guides SHA-256: not recorded'
+      },
+      {
+        label: 'KB',
+        cssClass: 'fp-kb',
+        short: this.shortFingerprint(run.knowledgeBaseHeadSha),
+        title: run.knowledgeBaseHeadSha
+          ? 'Knowledge base Git HEAD SHA: ' + run.knowledgeBaseHeadSha
+          : 'Knowledge base Git HEAD SHA: not recorded'
+      },
+      {
+        label: 'WIKI',
+        cssClass: 'fp-wiki',
+        short: this.shortFingerprint(run.wikiHeadSha),
+        title: run.wikiHeadSha
+          ? 'GnollHack wiki Git HEAD SHA: ' + run.wikiHeadSha
+          : 'GnollHack wiki Git HEAD SHA: not recorded'
+      },
+      {
+        label: 'SRC',
+        cssClass: 'fp-source',
+        short: this.shortFingerprint(run.sourceCodeHeadSha),
+        title: run.sourceCodeHeadSha
+          ? 'GnollHack source Git HEAD SHA: ' + run.sourceCodeHeadSha
+          : 'GnollHack source Git HEAD SHA: not recorded'
+      }
+    ];
   }
 
   formatNumber(value: number | null | undefined, digits = 1): string {

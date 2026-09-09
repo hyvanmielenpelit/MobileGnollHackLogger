@@ -43,7 +43,7 @@ public sealed record BenchmarkSeriesStartResult
     public string? Error { get; init; }
     public SameProviderWarningDto? SameProviderWarning { get; init; }
 
-    /// <summary>Which of the three instrument hashes moved. Empty unless <see cref="Outcome"/> is InstrumentChanged.</summary>
+    /// <summary>Which of the five instrument hashes moved. Empty unless <see cref="Outcome"/> is InstrumentChanged.</summary>
     public IReadOnlyList<string> ChangedInstrumentHashes { get; init; } = Array.Empty<string>();
 
     public bool Started => Outcome == BenchmarkSeriesStartOutcome.Started;
@@ -239,7 +239,7 @@ public class BenchmarkSeriesOrchestrator
     /// on it. Refuses for <c>Cancelled</c>, <c>Completed</c> and <c>Failed</c>: the operator said
     /// stop, or there is nothing left to do.</para>
     ///
-    /// <para>The instrument guard is the important part. If any of the three hashes recorded at
+    /// <para>The instrument guard is the important part. If any of the five hashes recorded at
     /// member 1 has moved, the resume is <b>refused</b> and the moved hash is named, because the
     /// remaining members would answer under a different instrument. The
     /// <paramref name="acknowledgeInstrumentChange"/> override continues anyway and marks the
@@ -341,7 +341,7 @@ public class BenchmarkSeriesOrchestrator
         || status == BenchmarkRunSeriesStatus.CompletedWithErrors;
 
     /// <summary>
-    /// Which of the three instrument hashes recorded at member 1 differ from the ones a run launched
+    /// Which of the five instrument hashes recorded at member 1 differ from the ones a run launched
     /// now would carry. Empty means the instrument has not moved.
     /// </summary>
     /// <remarks>
@@ -359,11 +359,13 @@ public class BenchmarkSeriesOrchestrator
         if (request == null) return Array.Empty<string>();
 
         // Nothing was recorded at member 1, so there is nothing any current value could differ
-        // from. Compare below would return early on all three anyway; short-circuiting here just
+        // from. Compare below would return early on all five anyway; short-circuiting here just
         // avoids building a whole system prompt to produce a result that is discarded.
         if (string.IsNullOrEmpty(series.FirstMemberCandidateSystemPromptSha256)
             && string.IsNullOrEmpty(series.FirstMemberToolGuidesSha256)
-            && string.IsNullOrEmpty(series.FirstMemberKnowledgeBaseHeadSha))
+            && string.IsNullOrEmpty(series.FirstMemberKnowledgeBaseHeadSha)
+            && string.IsNullOrEmpty(series.FirstMemberWikiHeadSha)
+            && string.IsNullOrEmpty(series.FirstMemberSourceCodeHeadSha))
         {
             return Array.Empty<string>();
         }
@@ -385,9 +387,11 @@ public class BenchmarkSeriesOrchestrator
             }
         }
 
-        Compare("CandidateSystemPromptSha256", series.FirstMemberCandidateSystemPromptSha256, current.Value.CandidateSystemPromptSha256);
-        Compare("ToolGuidesSha256", series.FirstMemberToolGuidesSha256, current.Value.ToolGuidesSha256);
-        Compare("KnowledgeBaseHeadSha", series.FirstMemberKnowledgeBaseHeadSha, current.Value.KnowledgeBaseHeadSha);
+        Compare("CandidateSystemPromptSha256", series.FirstMemberCandidateSystemPromptSha256, current.CandidateSystemPromptSha256);
+        Compare("ToolGuidesSha256", series.FirstMemberToolGuidesSha256, current.ToolGuidesSha256);
+        Compare("KnowledgeBaseHeadSha", series.FirstMemberKnowledgeBaseHeadSha, current.KnowledgeBaseHeadSha);
+        Compare("WikiHeadSha", series.FirstMemberWikiHeadSha, current.WikiHeadSha);
+        Compare("SourceCodeHeadSha", series.FirstMemberSourceCodeHeadSha, current.SourceCodeHeadSha);
 
         return changed;
     }
@@ -602,6 +606,8 @@ public class BenchmarkSeriesOrchestrator
                 afterSeries.FirstMemberCandidateSystemPromptSha256 = run.CandidateSystemPromptSha256;
                 afterSeries.FirstMemberToolGuidesSha256 = run.ToolGuidesSha256;
                 afterSeries.FirstMemberKnowledgeBaseHeadSha = run.KnowledgeBaseHeadSha;
+                afterSeries.FirstMemberWikiHeadSha = run.WikiHeadSha;
+                afterSeries.FirstMemberSourceCodeHeadSha = run.SourceCodeHeadSha;
             }
 
             afterSeries.LastProgressAtUtc = DateTime.UtcNow;

@@ -92,11 +92,15 @@ public class BenchmarkRunSeriesDto
     public string? FirstMemberCandidateSystemPromptSha256 { get; set; }
     public string? FirstMemberToolGuidesSha256 { get; set; }
     public string? FirstMemberKnowledgeBaseHeadSha { get; set; }
+    public string? FirstMemberWikiHeadSha { get; set; }
+    public string? FirstMemberSourceCodeHeadSha { get; set; }
     public string? CurrentCandidateSystemPromptSha256 { get; set; }
     public string? CurrentToolGuidesSha256 { get; set; }
     public string? CurrentKnowledgeBaseHeadSha { get; set; }
+    public string? CurrentWikiHeadSha { get; set; }
+    public string? CurrentSourceCodeHeadSha { get; set; }
 
-    /// <summary>Which of the three hashes moved since member 1. Empty when nothing moved.</summary>
+    /// <summary>Which of the five hashes moved since member 1. Empty when nothing moved.</summary>
     public List<string> ChangedInstrumentHashes { get; set; } = new();
 
     public bool InstrumentChangeAcknowledged { get; set; }

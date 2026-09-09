@@ -2,6 +2,7 @@ namespace Overseer.Tests;
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
@@ -1284,6 +1285,127 @@ public class BenchmarkServiceTests
         else
         {
             Assert.Null(run.CandidateSystemPromptText);
+        }
+
+        // No corpus path is configured here, so the three corpus heads stay null — "not recorded",
+        // which is what every run made before a corpus was fingerprinted also carries.
+        Assert.Null(run.KnowledgeBaseHeadSha);
+        Assert.Null(run.WikiHeadSha);
+        Assert.Null(run.SourceCodeHeadSha);
+    }
+
+    /// <summary>
+    /// A configured corpus path that does not exist on disk leaves its head null rather than
+    /// throwing, so a machine missing one corpus still produces a complete run.
+    /// </summary>
+    [Fact]
+    public void PopulateInstrumentFingerprint_MissingCorpusPaths_LeaveCorpusHeadsNull()
+    {
+        string missing = Path.Combine(Path.GetTempPath(), "overseer-corpus-absent-" + Guid.NewGuid().ToString("N"));
+
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Benchmark:StoreSystemPromptText"] = "false",
+                ["WikiPath"] = missing,
+                ["SourceCodePath"] = missing
+            })
+            .Build();
+
+        var service = new BenchmarkService(
+            null!, null!, null!, null!, null!, null!, null!,
+            config,
+            NullLogger<BenchmarkService>.Instance);
+
+        var run = new BenchmarkRun();
+
+        service.PopulateInstrumentFingerprint(run, "You are an assistant for GnollHack.");
+
+        Assert.Null(run.WikiHeadSha);
+        Assert.Null(run.SourceCodeHeadSha);
+        Assert.NotNull(run.CandidateSystemPromptSha256);
+    }
+
+    /// <summary>
+    /// A configured corpus path that exists but is not a Git working tree leaves its head null.
+    /// The NetHack wiki is such a tree in production, so this is the shape of a real corpus rather
+    /// than a defensive edge case.
+    /// </summary>
+    [Fact]
+    public void PopulateInstrumentFingerprint_NonGitCorpusPaths_LeaveCorpusHeadsNull()
+    {
+        var tempDir = Directory.CreateTempSubdirectory("overseer-corpus-nongit-");
+        try
+        {
+            var config = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Benchmark:StoreSystemPromptText"] = "false",
+                    ["WikiPath"] = tempDir.FullName,
+                    ["SourceCodePath"] = tempDir.FullName
+                })
+                .Build();
+
+            var service = new BenchmarkService(
+                null!, null!, null!, null!, null!, null!, null!,
+                config,
+                NullLogger<BenchmarkService>.Instance);
+
+            var run = new BenchmarkRun();
+
+            service.PopulateInstrumentFingerprint(run, "You are an assistant for GnollHack.");
+
+            Assert.Null(run.WikiHeadSha);
+            Assert.Null(run.SourceCodeHeadSha);
+            Assert.NotNull(run.CandidateSystemPromptSha256);
+        }
+        finally
+        {
+            tempDir.Delete(recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// A corpus path that is a Git working tree records that tree's HEAD, and records it on the run
+    /// column belonging to that corpus rather than on another one.
+    /// </summary>
+    [Fact]
+    public void PopulateInstrumentFingerprint_GitCorpusPath_RecordsThatTreesHead()
+    {
+        var tempDir = Directory.CreateTempSubdirectory("overseer-corpus-git-");
+        try
+        {
+            string gitDir = Path.Combine(tempDir.FullName, ".git");
+            Directory.CreateDirectory(gitDir);
+            File.WriteAllText(Path.Combine(gitDir, "HEAD"), "ref: refs/heads/main\n");
+            Directory.CreateDirectory(Path.Combine(gitDir, "refs", "heads"));
+            string expectedSha = new string('a', 40);
+            File.WriteAllText(Path.Combine(gitDir, "refs", "heads", "main"), expectedSha + "\n");
+
+            var config = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Benchmark:StoreSystemPromptText"] = "false",
+                    ["WikiPath"] = tempDir.FullName
+                })
+                .Build();
+
+            var service = new BenchmarkService(
+                null!, null!, null!, null!, null!, null!, null!,
+                config,
+                NullLogger<BenchmarkService>.Instance);
+
+            var run = new BenchmarkRun();
+
+            service.PopulateInstrumentFingerprint(run, "You are an assistant for GnollHack.");
+
+            Assert.Equal(expectedSha, run.WikiHeadSha);
+            Assert.Null(run.SourceCodeHeadSha);
+            Assert.Null(run.KnowledgeBaseHeadSha);
+        }
+        finally
+        {
+            tempDir.Delete(recursive: true);
         }
     }
 

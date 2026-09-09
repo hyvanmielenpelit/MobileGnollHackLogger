@@ -28,7 +28,7 @@ describe('BenchmarkCostPanelComponent', () => {
 
   function roleNames(): string[] {
     return Array.from(
-      fixture.nativeElement.querySelectorAll<HTMLElement>(
+      (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLElement>(
         '.gh-cost-role:not(.gh-cost-role--subtotal) .gh-cost-role__name'
       )
     ).map(el => (el.textContent ?? '').trim());
@@ -36,7 +36,7 @@ describe('BenchmarkCostPanelComponent', () => {
 
   function roleShares(): number[] {
     return Array.from(
-      fixture.nativeElement.querySelectorAll<HTMLElement>(
+      (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLElement>(
         '.gh-cost-role:not(.gh-cost-role--subtotal) .gh-cost-role__share'
       )
     ).map(el => Number.parseInt((el.textContent ?? '').trim(), 10));
@@ -99,7 +99,7 @@ describe('BenchmarkCostPanelComponent', () => {
 
       const zeroRow = roleNames().indexOf('Claim verifier');
       const amounts = Array.from(
-        fixture.nativeElement.querySelectorAll<HTMLElement>(
+        (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLElement>(
           '.gh-cost-role:not(.gh-cost-role--subtotal) .gh-cost-role__amount'
         )
       ).map(el => (el.textContent ?? '').trim());
@@ -153,7 +153,7 @@ describe('BenchmarkCostPanelComponent', () => {
       component.grading = 2.75;
       fixture.detectChanges();
 
-      const subtotal = fixture.nativeElement.querySelector<HTMLElement>('.gh-cost-role--subtotal');
+      const subtotal = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('.gh-cost-role--subtotal');
       expect(subtotal).not.toBeNull();
       expect(subtotal!.querySelector('.gh-cost-role__name')!.textContent!.trim()).toBe('Grading subtotal');
       expect(subtotal!.querySelector('.gh-cost-role__amount')!.textContent!.trim()).toBe('$2.75');
@@ -163,7 +163,7 @@ describe('BenchmarkCostPanelComponent', () => {
       fillEveryRole();
       fixture.detectChanges();
 
-      const subtotal = fixture.nativeElement.querySelector<HTMLElement>('.gh-cost-role--subtotal');
+      const subtotal = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('.gh-cost-role--subtotal');
       expect(subtotal!.querySelector('.gh-cost-role__bar')).toBeNull();
       expect(subtotal!.querySelector('.gh-cost-role__share')).toBeNull();
     });
@@ -194,11 +194,11 @@ describe('BenchmarkCostPanelComponent', () => {
       fillEveryRole();
       component.variant = 'live';
       fixture.detectChanges();
-      const liveHeading = fixture.nativeElement.querySelector<HTMLElement>('.gh-cost-panel__title')!.textContent!.trim();
+      const liveHeading = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('.gh-cost-panel__title')!.textContent!.trim();
 
       component.variant = 'final';
       fixture.detectChanges();
-      const finalHeading = fixture.nativeElement.querySelector<HTMLElement>('.gh-cost-panel__title')!.textContent!.trim();
+      const finalHeading = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('.gh-cost-panel__title')!.textContent!.trim();
 
       expect(liveHeading).toBe('Estimated cost so far');
       expect(finalHeading).toBe('Estimated cost');
@@ -209,8 +209,8 @@ describe('BenchmarkCostPanelComponent', () => {
       fillEveryRole();
       fixture.detectChanges();
 
-      const section = fixture.nativeElement.querySelector<HTMLElement>('.gh-cost-panel')!;
-      const heading = fixture.nativeElement.querySelector<HTMLElement>('.gh-cost-panel__title')!;
+      const section = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('.gh-cost-panel')!;
+      const heading = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('.gh-cost-panel__title')!;
       expect(section.getAttribute('aria-labelledby')).toBe(heading.id);
       expect(fixture.nativeElement.querySelector('[aria-live]')).toBeNull();
       expect(fixture.nativeElement.querySelector('[role="status"]')).toBeNull();

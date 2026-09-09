@@ -161,6 +161,21 @@ export interface BenchmarkSourceShareCorrelations {
 }
 
 /**
+ * One line of a run's instrument fingerprint stack: a short visible label, a colour class, the
+ * eight-character hash prefix, and the tooltip carrying the corpus name and the full hash.
+ *
+ * The label is what makes the stack readable in greyscale and to a colour-blind reader, so the
+ * colour class only reinforces it. `PROMPT`, `GUIDES`, `KB`, `WIKI` and `SRC` are the same labels
+ * the Markdown group report prints, so all the surfaces read identically.
+ */
+export interface BenchmarkFingerprintEntry {
+  label: 'PROMPT' | 'GUIDES' | 'KB' | 'WIKI' | 'SRC';
+  cssClass: 'fp-prompt' | 'fp-guides' | 'fp-kb' | 'fp-wiki' | 'fp-source';
+  short: string;
+  title: string;
+}
+
+/**
  * The run setup an operator last started, remembered across reloads. Exactly the fields that make up a
  * run: not the same-provider acknowledgement, which is a per-run safety gate, and not the
  * difficulty-assessor, retry-assessor, generation-model or calibration-assessor selections, which belong
@@ -1419,13 +1434,67 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   /**
-   * H2. Whether this run's instrument differs from the next older completed run of the same suite, and
-   * which of the three hashes moved.
+   * H2. The five fingerprints of a run's instrument, in the fixed order the run list stacks them.
    *
-   * Two runs form a reproduction only if the candidate prompt, the tool guides and the knowledge base all
-   * match. The report has stated that rule for some time, but the run list could not support it, so the
-   * check was done by hand — and run 13's T8 verification is exactly the case where getting it wrong
-   * misattributes a change. Compared client-side over the already-loaded history; no new endpoint.
+   * The shape is always five rows: a hash that was never recorded shows as `-` under its own label
+   * rather than dropping out, so two runs' stacks line up row for row.
+   */
+  fingerprintEntries(run: BenchmarkRunSummaryDto): BenchmarkFingerprintEntry[] {
+    return [
+      {
+        label: 'PROMPT',
+        cssClass: 'fp-prompt',
+        short: this.shortFingerprint(run.candidateSystemPromptSha256),
+        title: run.candidateSystemPromptSha256
+          ? 'Candidate system prompt SHA-256: ' + run.candidateSystemPromptSha256
+          : 'Candidate system prompt SHA-256: not recorded'
+      },
+      {
+        label: 'GUIDES',
+        cssClass: 'fp-guides',
+        short: this.shortFingerprint(run.toolGuidesSha256),
+        title: run.toolGuidesSha256
+          ? 'Tool guides SHA-256: ' + run.toolGuidesSha256
+          : 'Tool guides SHA-256: not recorded'
+      },
+      {
+        label: 'KB',
+        cssClass: 'fp-kb',
+        short: this.shortFingerprint(run.knowledgeBaseHeadSha),
+        title: run.knowledgeBaseHeadSha
+          ? 'Knowledge base Git HEAD SHA: ' + run.knowledgeBaseHeadSha
+          : 'Knowledge base Git HEAD SHA: not recorded'
+      },
+      {
+        label: 'WIKI',
+        cssClass: 'fp-wiki',
+        short: this.shortFingerprint(run.wikiHeadSha),
+        title: run.wikiHeadSha
+          ? 'GnollHack wiki Git HEAD SHA: ' + run.wikiHeadSha
+          : 'GnollHack wiki Git HEAD SHA: not recorded'
+      },
+      {
+        label: 'SRC',
+        cssClass: 'fp-source',
+        short: this.shortFingerprint(run.sourceCodeHeadSha),
+        title: run.sourceCodeHeadSha
+          ? 'GnollHack source Git HEAD SHA: ' + run.sourceCodeHeadSha
+          : 'GnollHack source Git HEAD SHA: not recorded'
+      }
+    ];
+  }
+
+  /**
+   * H2. Whether this run's instrument differs from the next older completed run of the same suite, and
+   * which of the five hashes moved.
+   *
+   * All five are compared and every one that moved is named: the candidate prompt, the tool guides, the
+   * knowledge base, the GnollHack wiki and the GnollHack source. The first three are the comparability
+   * keys a reproduction turns on; the two corpus HEADs are provenance, and a badge that names one says
+   * the answers were drawn from a different corpus rather than that the instrument itself moved. The
+   * report has stated that rule for some time, but the run list could not support it, so the check was
+   * done by hand — and run 13's T8 verification is exactly the case where getting it wrong misattributes
+   * a change. Compared client-side over the already-loaded history; no new endpoint.
    *
    * Returns null when there is no older run of the same suite, or when either run is missing a hash: "not
    * recorded" is not "unchanged", and badging it as a change would be a claim the data cannot support.
@@ -1457,7 +1526,8 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       };
     }
 
-    if (!run.candidateSystemPromptSha256 && !run.toolGuidesSha256 && !run.knowledgeBaseHeadSha) {
+    if (!run.candidateSystemPromptSha256 && !run.toolGuidesSha256 && !run.knowledgeBaseHeadSha &&
+        !run.wikiHeadSha && !run.sourceCodeHeadSha) {
       return null;
     }
 
@@ -1473,6 +1543,14 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     if (run.knowledgeBaseHeadSha && previous.knowledgeBaseHeadSha &&
         run.knowledgeBaseHeadSha !== previous.knowledgeBaseHeadSha) {
       moved.push('knowledge base');
+    }
+    if (run.wikiHeadSha && previous.wikiHeadSha &&
+        run.wikiHeadSha !== previous.wikiHeadSha) {
+      moved.push('GnollHack wiki');
+    }
+    if (run.sourceCodeHeadSha && previous.sourceCodeHeadSha &&
+        run.sourceCodeHeadSha !== previous.sourceCodeHeadSha) {
+      moved.push('GnollHack source');
     }
 
     if (moved.length === 0) return null;
@@ -3313,6 +3391,8 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
         lines.push(`promptSha256: ${run.candidateSystemPromptSha256 ?? 'not recorded'}`);
         lines.push(`toolGuidesSha256: ${run.toolGuidesSha256 ?? 'not recorded'}`);
         lines.push(`knowledgeBaseHeadSha: ${run.knowledgeBaseHeadSha ?? 'not recorded'}`);
+        lines.push(`wikiHeadSha: ${run.wikiHeadSha ?? 'not recorded'}`);
+        lines.push(`sourceCodeHeadSha: ${run.sourceCodeHeadSha ?? 'not recorded'}`);
         lines.push(`parallelMode: ${run.testedModelParallelExecutionModeUsed}`);
         if (run.candidatePromptOptionsJson) {
           try {

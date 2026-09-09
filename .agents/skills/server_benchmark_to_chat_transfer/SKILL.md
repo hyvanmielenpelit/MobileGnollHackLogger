@@ -8,9 +8,11 @@ description: >-
   must clear before any chat prompt is changed, the configuration-parity check, what the
   benchmark does not measure, the ordered ladder of safe changes from knowledge-base article
   up to prompt edit, the mandatory post-change verification and rollback rule, the
-  anti-overfitting rules, and the per-run model behaviour notes this skill accumulates. Read
-  before analysing any benchmark run report, diagnostics or assessment, and before writing
-  any implementation plan derived from one.
+  anti-overfitting rules, the fourth triage category for a corpus or environment defect, the
+  route into tool-layer diagnostics when a finding turns on what a tool returned, and the
+  per-run model behaviour notes this skill accumulates. Read before analysing any benchmark
+  run report, diagnostics or assessment, and before writing any implementation plan derived
+  from one.
 ---
 
 # Benchmark to Chat Transfer: Turning Benchmark Findings into Chat Improvements
@@ -69,11 +71,12 @@ Two qualifications that the phrase "verbatim production prompt" hides, and that 
 
 ## 2. The Mandatory Triage
 
-Every finding produced by a benchmark analysis must be triaged into exactly one of three categories:
+Every finding produced by a benchmark analysis must be triaged into exactly one of four categories:
 
 1. **Harness Defect**: The testing instrument itself is broken or flawed (e.g. grading biases, parser failures, broken reporting formulas, unhandled timeouts, missing backfills, report prose that misstates what the prompt says).
 2. **Suite Defect**: The benchmark question, rubric ground truth, or difficulty rating is incorrect, ambiguous, or outdated.
 3. **Chat-Transferable**: The defect or observation reflects authentic behavior that real users experience in chat (e.g. tool routing inefficiencies, prompt-induced brevity vs. completeness conflicts, knowledge gaps, latency inflation).
+4. **Corpus / Environment Defect**: the corpus a tool reads was missing, stale, outside the indexed scope, excluded by a size limit, or still indexing on the machine that ran the benchmark. The instrument is sound and the suite is sound; the *data the tool reads* was not what it is in production. Diagnose with [`server_benchmark_tool_diagnostics`](../server_benchmark_tool_diagnostics/SKILL.md) before filing a finding in any other category.
 
 An analysis that fails to classify its findings into this taxonomy is incomplete.
 
@@ -159,6 +162,18 @@ The benchmark covers one slice of Overseer chat. A finding transfers **only to t
 > is evidence about the benchmark configuration until a run with wiki context says otherwise.
 
 The same caution applies in the other direction: a chat problem observed in a live session with history, wiki context or spoiler-free mode active is **not** contradicted by a benchmark run that scored well, because the benchmark never exercised that path.
+
+---
+
+## 4a. Tool-Layer Diagnostics
+
+A benchmark run executes the **production tool registry**, so a tool defect seen in a run is a defect a real user hits. But a run records far less about its tool calls than the finding usually needs, and three facts govern every tool finding:
+
+- **Arguments and results are not stored.** `BenchmarkRunAnswer.ToolCallSummary` is a `name×count` string over *successful* calls only; `AgentRunRequest.ShowDebugLog` is hardcoded `false` at every benchmark call site, and a run creates no `ChatMessage` rows, so nothing equivalent to `ChatMessageToolCall.ArgsText` / `.Result` exists. "Compare the parameters and results" is therefore **reconstruction and replay**, never transcript reading.
+- **The count of failed tool calls is derived, not reported.** `ToolCallCount − Σ(ToolCallSummary counts) − ToolCallsBlocked` is the number of calls that errored technically. No report section surfaces it, and a non-zero value is direct evidence of a tool problem. Compute it first. A null `ToolCallsBlocked` means *not recorded*, never zero.
+- **From harness 16 a run fingerprints three of the five corpora** — knowledge base, GnollHack wiki, GnollHack source. The NetHack wiki and NetHack source are **not** fingerprinted and are both reachable from a run. These fingerprints are **provenance, not comparability keys**: a difference is a fact to investigate, not an automatic tier drop.
+
+The method — the five verdicts for a tool's call population, the ladder that separates "no access" from "no data" from "a broken tool", the three replay fidelity tiers, and the diagnostic table a tool-layer pass must produce — lives in [`server_benchmark_tool_diagnostics`](../server_benchmark_tool_diagnostics/SKILL.md). Do not re-derive it here.
 
 ---
 
@@ -525,3 +540,6 @@ whether T5's latency correlation is causal.
 - [`overseer_chat_message_handling`](../overseer_chat_message_handling/SKILL.md)
 - [`overseer_chat_response_timing`](../overseer_chat_response_timing/SKILL.md)
 - [`tool_execution_architecture`](../tool_execution_architecture/SKILL.md)
+- [`server_benchmark_tool_diagnostics`](../server_benchmark_tool_diagnostics/SKILL.md) — the tool-layer diagnostic method
+- [`server_tool_data_sources`](../server_tool_data_sources/SKILL.md) — the corpora, their paths and what each index excludes
+- [`server_tool_parameter_reference`](../server_tool_parameter_reference/SKILL.md) — the per-tool parameter and result contract

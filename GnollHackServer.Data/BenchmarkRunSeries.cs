@@ -101,6 +101,12 @@ public class BenchmarkRunSeries
     [MaxLength(64)]
     public string? FirstMemberKnowledgeBaseHeadSha { get; set; }
 
+    [MaxLength(40)]
+    public string? FirstMemberWikiHeadSha { get; set; }
+
+    [MaxLength(40)]
+    public string? FirstMemberSourceCodeHeadSha { get; set; }
+
     /// <summary>
     /// True once a resume proceeded over a changed instrument through the explicit
     /// <c>acknowledgeInstrumentChange</c> override. The auto-created group is then Tier C and can

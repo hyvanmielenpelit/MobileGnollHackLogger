@@ -182,8 +182,16 @@ public static class BenchmarkAssessmentPrompt
     ///     uncounted — is priced on the assessor's own card as a peer role. This constant had read "12"
     ///     since v12 despite v13 and v14 both landing and being run under; the runs stamped "12" from
     ///     v13 on were not harness 12, and nothing repairs those rows.
+    /// v16: a run records the Git HEAD of the GnollHack wiki and GnollHack source corpora alongside
+    ///     the knowledge base, so a finding about either corpus can name the revision the run actually
+    ///     read. The two new fingerprints are recorded as provenance and are deliberately not
+    ///     comparability keys: every historical run is null on both, and registering them would put
+    ///     every new run two instrument keys away from every historical one and drop the comparison
+    ///     below Tier B. The NetHack wiki and NetHack source corpora remain unfingerprinted, and both
+    ///     are reachable from a run, so a NetHack-corpus finding still has no run-recorded provenance.
+    ///     On a run stamped 15 or earlier, a null in either new column is "not recorded".
     /// </summary>
-    public const string HarnessVersion = "15";
+    public const string HarnessVersion = "16";
 
     public static string BuildPerQuestionPrompt(
         string suiteName,

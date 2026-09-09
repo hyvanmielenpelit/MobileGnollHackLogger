@@ -535,6 +535,24 @@ public class BenchmarkRun
     [MaxLength(40)]
     public string? KnowledgeBaseHeadSha { get; set; }
 
+    /// <summary>
+    /// Git commit HEAD SHA of the GnollHack wiki repository at run time, the corpus configured
+    /// under the <c>WikiPath</c> key.
+    /// <b>Null means "not recorded", never "no corpus"</b>: the head was either never captured or
+    /// could not be resolved, which says nothing about whether the wiki was there.
+    /// </summary>
+    [MaxLength(40)]
+    public string? WikiHeadSha { get; set; }
+
+    /// <summary>
+    /// Git commit HEAD SHA of the GnollHack source code repository at run time, the corpus
+    /// configured under the <c>SourceCodePath</c> key.
+    /// <b>Null means "not recorded", never "no corpus"</b>, on the same reading as
+    /// <see cref="WikiHeadSha"/>.
+    /// </summary>
+    [MaxLength(40)]
+    public string? SourceCodeHeadSha { get; set; }
+
     // Total wall-clock time spent executing tool batches across the run. Subtracting this
     // from TotalAnswerDurationMs gives the model-attributable time that speed is scored on.
     public long? ToolOverheadMs { get; set; }

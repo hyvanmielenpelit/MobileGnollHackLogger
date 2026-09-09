@@ -1,6 +1,13 @@
 :host {
   display: block;
   width: 100%;
+
+  // The three fingerprint hues the theme has no token for. The candidate prompt takes
+  // --primary-color and the tool guides --nav-color; these three are picked to stay apart from
+  // both, and from the status greens and reds, on the panel's near-black ground.
+  --fp-kb-color: #7fb8e8;
+  --fp-wiki-color: #6fc3c0;
+  --fp-source-color: #c197dd;
 }
 
 .benchmark-container {
@@ -818,12 +825,29 @@
   padding-right: 8px;
 }
 
+// The five entries stack, one per line, in the fixed order PROMPT, GUIDES, KB, WIKI, SRC. The
+// order is what lets two runs' cells be read against each other row for row.
+.instrument-fingerprints {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
 .instrument-fingerprint {
   font-family: var(--gh-font-mono, ui-monospace, 'Cascadia Code', 'Consolas', monospace);
   font-size: 0.85em;
+  line-height: 1.25;
   color: var(--gh-text-secondary);
   cursor: help;
 }
+
+// Colour reinforces the visible label; it never carries the meaning on its own, so the stack reads
+// the same in greyscale and to a colour-blind operator.
+.instrument-fingerprint.fp-prompt { color: var(--primary-color); }
+.instrument-fingerprint.fp-guides { color: var(--nav-color); }
+.instrument-fingerprint.fp-kb { color: var(--fp-kb-color); }
+.instrument-fingerprint.fp-wiki { color: var(--fp-wiki-color); }
+.instrument-fingerprint.fp-source { color: var(--fp-source-color); }
 
 .instrument-changed {
   display: inline-block;

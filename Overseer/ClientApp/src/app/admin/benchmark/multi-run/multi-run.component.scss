@@ -11,6 +11,14 @@
 :host {
   display: block;
   min-width: 0;
+
+  // The three fingerprint hues the theme has no token for. The candidate prompt takes
+  // --primary-color and the tool guides --nav-color; these three are picked to stay apart from
+  // both, and from the status greens and reds, on the panel's near-black ground. The same three
+  // values as in benchmark.component.scss, which emulated encapsulation keeps out of here.
+  --fp-kb-color: #7fb8e8;
+  --fp-wiki-color: #6fc3c0;
+  --fp-source-color: #c197dd;
 }
 
 // The panel's type scale and resets. A mixin because the analysis content now renders in two
@@ -409,15 +417,40 @@ table.mr-run-picker-table {
     }
   }
 
+  // Wide enough for the longest entry, "GUIDES" plus a space plus the eight-character prefix, so
+  // the stack never wraps. A plain header, so there is no .gh-th-label inside it — that span comes
+  // only from app-sort-header.
   .col-fingerprint {
-    width: 22ch;
+    width: 24ch;
     white-space: nowrap;
-
-    .gh-th-label {
-      white-space: nowrap;
-    }
   }
 }
+
+// The five instrument fingerprints stack, one per line, in the fixed order PROMPT, GUIDES, KB,
+// WIKI, SRC. Class names and colours match benchmark.component.scss so the picker and the run list
+// read the same; emulated encapsulation means that file's rules cannot reach here, hence the
+// second definition rather than a shared one.
+.instrument-fingerprints {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.instrument-fingerprint {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.25;
+  color: #9aa;
+  cursor: help;
+}
+
+// Colour reinforces the visible label; it never carries the meaning on its own, so the stack reads
+// the same in greyscale and to a colour-blind operator.
+.instrument-fingerprint.fp-prompt { color: var(--primary-color); }
+.instrument-fingerprint.fp-guides { color: var(--nav-color); }
+.instrument-fingerprint.fp-kb { color: var(--fp-kb-color); }
+.instrument-fingerprint.fp-wiki { color: var(--fp-wiki-color); }
+.instrument-fingerprint.fp-source { color: var(--fp-source-color); }
 
 // Always visible once something is selected, regardless of what the picker is filtered or paged
 // to — the whole point of the line is to say so when the selection is not all on screen.

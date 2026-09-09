@@ -85,7 +85,11 @@ describe('MultiRunComponent', () => {
       totalQuestionCount: 18,
       transportDefectAnswerCount: 0,
       totalDurationMs: 1000,
+      candidateSystemPromptSha256: 'bb19dc24aaaa',
       toolGuidesSha256: 'f59d8b30aaaa',
+      knowledgeBaseHeadSha: 'cccc2222aaaa',
+      wikiHeadSha: 'dddd3333aaaa',
+      sourceCodeHeadSha: 'eeee4444aaaa',
       ...overrides
     } as BenchmarkRunSummaryDto;
   }
@@ -927,6 +931,26 @@ describe('MultiRunComponent', () => {
     expect(component.runPickerTable.sortColumn).toBe('id');
     expect(component.runPickerTable.sortDirection).toBe('desc');
     expect(component.runPickerTable.view(component.availableRuns)[0].id).toBe(43);
+  });
+
+  it('should render the Fingerprints column as a plain header over a labelled fingerprint stack', () => {
+    open();
+
+    // Neither sortable nor filterable: five hashes in one cell have no single sort key, and a
+    // substring filter over them would match whichever of the five happened to contain the text.
+    const header = fixture.nativeElement.querySelector('th.col-fingerprint') as HTMLElement;
+    expect(header.textContent?.trim()).toBe('Fingerprints');
+    expect(header.querySelector('.gh-th-sort')).toBeNull();
+
+    const firstCell = fixture.nativeElement.querySelector('td.col-fingerprint') as HTMLElement;
+    const entries = Array.from(firstCell.querySelectorAll('.instrument-fingerprint')) as HTMLElement[];
+    expect(entries.map(e => e.textContent?.trim())).toEqual([
+      'PROMPT bb19dc24',
+      'GUIDES f59d8b30',
+      'KB cccc2222',
+      'WIKI dddd3333',
+      'SRC eeee4444'
+    ]);
   });
 
   it('should name each run picker checkbox for the run it selects', () => {

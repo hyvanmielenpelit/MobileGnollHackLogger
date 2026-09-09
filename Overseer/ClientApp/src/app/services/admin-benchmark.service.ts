@@ -755,6 +755,8 @@ export interface BenchmarkRunDetailDto {
   candidateSystemPromptSha256?: string | null;
   toolGuidesSha256?: string | null;
   knowledgeBaseHeadSha?: string | null;
+  wikiHeadSha?: string | null;
+  sourceCodeHeadSha?: string | null;
   /**
    * H3. Run-wide tool calls by family, classified once on the server by BenchmarkChatTransfer.ClassifyTool.
    * Undefined on a run detail served before this existed; the diagnostics builder keeps its own loop only
@@ -1052,13 +1054,17 @@ export interface BenchmarkRunSummaryDto {
   harnessVersion?: string | null;
   totalDurationMs: number;
   /**
-   * The instrument fingerprint. Two runs form a reproduction only if all three match; the run list uses
-   * them to badge a run whose instrument moved since the previous run of the same suite. Null on runs
-   * recorded before each hash was captured, which is "not recorded", never "unchanged".
+   * The five instrument fingerprints. Two runs form a reproduction only if the candidate prompt, the
+   * tool guides and the knowledge base all match; the GnollHack wiki and source-code Git HEADs are
+   * provenance rather than comparability keys. The run list uses them to badge a run whose instrument
+   * moved since the previous run of the same suite. Null on runs recorded before each hash was
+   * captured, which is "not recorded", never "unchanged".
    */
   candidateSystemPromptSha256?: string | null;
   toolGuidesSha256?: string | null;
   knowledgeBaseHeadSha?: string | null;
+  wikiHeadSha?: string | null;
+  sourceCodeHeadSha?: string | null;
   estimatedCost?: number | null;
   pricingIncomplete?: boolean;
 }
@@ -1135,10 +1141,14 @@ export interface BenchmarkRunSeriesDto {
   firstMemberCandidateSystemPromptSha256?: string | null;
   firstMemberToolGuidesSha256?: string | null;
   firstMemberKnowledgeBaseHeadSha?: string | null;
+  firstMemberWikiHeadSha?: string | null;
+  firstMemberSourceCodeHeadSha?: string | null;
   currentCandidateSystemPromptSha256?: string | null;
   currentToolGuidesSha256?: string | null;
   currentKnowledgeBaseHeadSha?: string | null;
-  /** Which of the three moved. Empty when the instrument has not changed. */
+  currentWikiHeadSha?: string | null;
+  currentSourceCodeHeadSha?: string | null;
+  /** Which of the five moved. Empty when the instrument has not changed. */
   changedInstrumentHashes: string[];
   instrumentChangeAcknowledged: boolean;
 

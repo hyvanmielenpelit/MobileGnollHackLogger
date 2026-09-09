@@ -235,7 +235,7 @@
                 <th app-sort-header [state]="runPickerTable" column="date" label="Date" class="col-date" (changed)="onTableChanged()"></th>
                 <th app-sort-header [state]="runPickerTable" column="qualityIndex" label="Intelligence Index" class="col-center col-quality-index" (changed)="onTableChanged()"></th>
                 <th app-sort-header [state]="runPickerTable" column="speedIndex" label="Speed Index" class="col-center col-speed-index" (changed)="onTableChanged()"></th>
-                <th app-sort-header [state]="runPickerTable" column="fingerprint" label="Guides fingerprint" class="col-fingerprint" (changed)="onTableChanged()"></th>
+                <th scope="col" class="col-fingerprint">Fingerprints</th>
               </tr>
               <tr class="gh-filter-row">
                 <td>
@@ -271,12 +271,7 @@
                     <option value="absent">Absent</option>
                   </select>
                 </td>
-                <td>
-                  <label class="visually-hidden" for="mr-f-run-fingerprint">Filter by guides fingerprint</label>
-                  <input id="mr-f-run-fingerprint" type="text" class="gh-input gh-filter-input" placeholder="Fingerprint"
-                         [ngModel]="runPickerTable.filters['fingerprint']" [ngModelOptions]="{ standalone: true }"
-                         (ngModelChange)="runPickerTable.setFilter('fingerprint', $event); cdr.detectChanges()">
-                </td>
+                <td></td>
               </tr>
             </thead>
             <tbody>
@@ -318,7 +313,15 @@
                         <span class="text-muted">-</span>
                       }
                     </td>
-                    <td class="col-fingerprint mr-mono">{{ shortFingerprint(run.toolGuidesSha256) }}</td>
+                    <td class="col-fingerprint">
+                      <span class="instrument-fingerprints">
+                        @for (entry of fingerprintEntries(run); track entry.label) {
+                          <span class="instrument-fingerprint" [class]="entry.cssClass" [attr.title]="entry.title">
+                            {{ entry.label }} {{ entry.short }}
+                          </span>
+                        }
+                      </span>
+                    </td>
                   </tr>
                 }
               }

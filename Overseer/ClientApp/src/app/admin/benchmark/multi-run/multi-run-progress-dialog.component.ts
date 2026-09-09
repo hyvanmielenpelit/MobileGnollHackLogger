@@ -930,9 +930,13 @@ export class MultiRunProgressDialogComponent implements OnInit, OnChanges, OnDes
       lines.push(`Member 1 candidate prompt SHA: ${series.firstMemberCandidateSystemPromptSha256 ?? 'not recorded'}`);
       lines.push(`Member 1 tool guides SHA:      ${series.firstMemberToolGuidesSha256 ?? 'not recorded'}`);
       lines.push(`Member 1 knowledge base SHA:   ${series.firstMemberKnowledgeBaseHeadSha ?? 'not recorded'}`);
+      lines.push(`Member 1 GnollHack wiki SHA:   ${series.firstMemberWikiHeadSha ?? 'not recorded'}`);
+      lines.push(`Member 1 GnollHack source SHA: ${series.firstMemberSourceCodeHeadSha ?? 'not recorded'}`);
       lines.push(`Current candidate prompt SHA:  ${series.currentCandidateSystemPromptSha256 ?? 'not recorded'}`);
       lines.push(`Current tool guides SHA:       ${series.currentToolGuidesSha256 ?? 'not recorded'}`);
       lines.push(`Current knowledge base SHA:    ${series.currentKnowledgeBaseHeadSha ?? 'not recorded'}`);
+      lines.push(`Current GnollHack wiki SHA:    ${series.currentWikiHeadSha ?? 'not recorded'}`);
+      lines.push(`Current GnollHack source SHA:  ${series.currentSourceCodeHeadSha ?? 'not recorded'}`);
       const changed = series.changedInstrumentHashes ?? [];
       lines.push(`Changed since member 1: ${changed.length > 0 ? changed.join(', ') : 'none'}`);
       lines.push(`Instrument change acknowledged: ${series.instrumentChangeAcknowledged}`);

@@ -2271,6 +2271,8 @@ public class AdminBenchmarkController : ControllerBase
             CandidateSystemPromptSha256 = run.CandidateSystemPromptSha256,
             ToolGuidesSha256 = run.ToolGuidesSha256,
             KnowledgeBaseHeadSha = run.KnowledgeBaseHeadSha,
+            WikiHeadSha = run.WikiHeadSha,
+            SourceCodeHeadSha = run.SourceCodeHeadSha,
             ToolFamilyCounts = toolRouting.FamilyCalls.ToDictionary(
                 kv => kv.Key switch
                 {
@@ -2566,6 +2568,8 @@ public class AdminBenchmarkController : ControllerBase
                     CandidateSystemPromptSha256 = r.CandidateSystemPromptSha256,
                     ToolGuidesSha256 = r.ToolGuidesSha256,
                     KnowledgeBaseHeadSha = r.KnowledgeBaseHeadSha,
+                    WikiHeadSha = r.WikiHeadSha,
+                    SourceCodeHeadSha = r.SourceCodeHeadSha,
                     HarnessVersion = r.HarnessVersion,
                     TotalDurationMs = r.TotalDurationMs
                 },
@@ -3435,6 +3439,8 @@ public class AdminBenchmarkController : ControllerBase
             FirstMemberCandidateSystemPromptSha256 = series.FirstMemberCandidateSystemPromptSha256,
             FirstMemberToolGuidesSha256 = series.FirstMemberToolGuidesSha256,
             FirstMemberKnowledgeBaseHeadSha = series.FirstMemberKnowledgeBaseHeadSha,
+            FirstMemberWikiHeadSha = series.FirstMemberWikiHeadSha,
+            FirstMemberSourceCodeHeadSha = series.FirstMemberSourceCodeHeadSha,
             InstrumentChangeAcknowledged = series.InstrumentChangeAcknowledged,
             AutoCreatedGroupId = series.AutoCreatedGroupId
         };
@@ -3449,9 +3455,11 @@ public class AdminBenchmarkController : ControllerBase
 
             if (current != null)
             {
-                dto.CurrentCandidateSystemPromptSha256 = current.Value.CandidateSystemPromptSha256;
-                dto.CurrentToolGuidesSha256 = current.Value.ToolGuidesSha256;
-                dto.CurrentKnowledgeBaseHeadSha = current.Value.KnowledgeBaseHeadSha;
+                dto.CurrentCandidateSystemPromptSha256 = current.CandidateSystemPromptSha256;
+                dto.CurrentToolGuidesSha256 = current.ToolGuidesSha256;
+                dto.CurrentKnowledgeBaseHeadSha = current.KnowledgeBaseHeadSha;
+                dto.CurrentWikiHeadSha = current.WikiHeadSha;
+                dto.CurrentSourceCodeHeadSha = current.SourceCodeHeadSha;
 
                 void Compare(string name, string? recorded, string? now)
                 {
@@ -3462,9 +3470,11 @@ public class AdminBenchmarkController : ControllerBase
                     }
                 }
 
-                Compare("CandidateSystemPromptSha256", series.FirstMemberCandidateSystemPromptSha256, current.Value.CandidateSystemPromptSha256);
-                Compare("ToolGuidesSha256", series.FirstMemberToolGuidesSha256, current.Value.ToolGuidesSha256);
-                Compare("KnowledgeBaseHeadSha", series.FirstMemberKnowledgeBaseHeadSha, current.Value.KnowledgeBaseHeadSha);
+                Compare("CandidateSystemPromptSha256", series.FirstMemberCandidateSystemPromptSha256, current.CandidateSystemPromptSha256);
+                Compare("ToolGuidesSha256", series.FirstMemberToolGuidesSha256, current.ToolGuidesSha256);
+                Compare("KnowledgeBaseHeadSha", series.FirstMemberKnowledgeBaseHeadSha, current.KnowledgeBaseHeadSha);
+                Compare("WikiHeadSha", series.FirstMemberWikiHeadSha, current.WikiHeadSha);
+                Compare("SourceCodeHeadSha", series.FirstMemberSourceCodeHeadSha, current.SourceCodeHeadSha);
             }
         }
 
