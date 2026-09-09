@@ -208,14 +208,28 @@ chains above are what constrains sequencing here.
 
 ## AI Benchmark Plans and Chat Transfer
 
-Any plan derived from an AI benchmark run analysis, report, or diagnostic review **MUST** include a dedicated **Chat Transfer** section and must consult the **`server_benchmark_to_chat_transfer`** skill before drafting.
+Any plan derived from an AI benchmark run analysis, report, or diagnostic review **MUST** include a dedicated **Chat Transfer** section, and **MUST** consult all four skills `.agents/AGENTS.md` § *AI Benchmark Findings* names — `server_benchmark_to_chat_transfer`, `server_benchmark_tool_diagnostics`, `server_tool_data_sources` and `server_tool_parameter_reference` — before drafting. That requirement is unconditional; do not treat the last three as conditional on the shape of a finding.
+
+### The `Skills consulted:` line
+
+Every plan and every analysis document derived from a benchmark run **MUST** carry a one-line `Skills consulted:` field, near the top with the other metadata, listing the skills actually read — and stating explicitly when a mandatory one was **not** read, and why.
+
+```
+Skills consulted: server_benchmark_to_chat_transfer, server_benchmark_tool_diagnostics,
+server_tool_data_sources, server_tool_parameter_reference
+```
+
+One line, checkable at a glance. Its purpose is to make the next gap visible to the user without their having to ask: the run-28 analysis on 2026-09-09 shipped having read one of the four, and it took a direct question from the user to surface that. A document that claims a skill it did not read is a worse defect than one that admits the omission, so write what actually happened.
+
+The field belongs to **this repository's** plan format only, deliberately — the global `agent-implementation-planning` template lives in another repository and is out of scope here.
 
 The benchmark evaluates the production chat system prompt (`ChatService.BuildSystemPrompt`), so benchmark observations directly measure live assistant behavior. The plan's Chat Transfer section must:
-1. Triage findings into harness defects, suite defects, or chat-transferable findings.
+1. Triage findings into harness defects, suite defects, chat-transferable findings, or corpus / environment defects.
 2. Check configuration parity (e.g. `verboseMode` concise vs. detailed).
 3. Identify the proposed ladder rung (knowledge base article, wiki update, tool policy/description, limits parity, model selection, or prompt prose modification).
 4. Evaluate whether the evidence bar is met (minimum two comparable runs or an isolated variable pair) before any chat prompt change is proposed.
 5. State the pre-declared acceptance criterion and the rollback trigger for any proposed change, per the skill's Verification and Rollback section.
+6. Carry the **tool-diagnostics table** and the **"Limits of this pass"** statement that `server_benchmark_to_chat_transfer` § 10 requires, with columns as `server_benchmark_tool_diagnostics` § 10 defines them.
 
 If the plan addresses only harness or suite infrastructure, it must explicitly state: *"No chat-transferable changes proposed in this plan."*
 
@@ -224,4 +238,7 @@ If the plan addresses only harness or suite infrastructure, it must explicitly s
 - `agent-implementation-planning` (global lifecycle baseline)
 - `agent-subagent-guidelines` (subagent tiers and exclusivity)
 - `server_benchmark_to_chat_transfer` (mandatory method for benchmark-to-chat translation)
+- `server_benchmark_tool_diagnostics` (reading a run as a tool-layer instrument; the § 10 table)
+- `server_tool_data_sources` (the corpora behind each tool, and what each index excludes)
+- `server_tool_parameter_reference` (the per-tool parameter and result contract)
 - `testing_guidelines` (test classification and execution)

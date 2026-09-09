@@ -162,10 +162,60 @@ files are **ordered by descending match-line count and then `Take(maxResults)`**
 caps files, not individual matches, but files *are* ranked, contrary to a "no ranking" reading of
 this tool. Within each file, matching lines within `contextLines * 2` of each other are grouped;
 only the first 5 groups per file are shown, with `[... N additional match groups in this file
-hidden ...]` for the rest. The whole result is then truncated to `MaxSourceResultLength` (root
-config key, default 100000 in code — **not present in `appsettings.json`**, so any override lives
-only in User Secrets) with an `[... output truncated ...]` marker, *before* `ToolExecutor`'s own
-per-tool `MaxResultLength` cap ever applies — `source_code_search` truncates twice.
+hidden ...]` for the rest.
+
+> 🛑 **`source_code_search`'s `query` is a single literal substring, matched per line.**
+> `SourceCodeService.SearchFiles` (`Overseer/Services/SourceCodeService.cs:451-584`) tests each
+> indexed line with `doc.ContentLines[i].Contains(query, comparison)` (`:498`), where `comparison`
+> is `OrdinalIgnoreCase` unless `case_sensitive: true`. Every consequence follows from that one
+> line:
+>
+> - The query is **never split into terms** and never stemmed. `"layer glyph rendering"` matches
+>   only a line containing that exact 21-character run — not a line about layers and another about
+>   glyphs.
+> - It **cannot span a newline**, so a phrase broken across two source lines is unmatchable.
+> - **File and symbol names are not searched by `query` at all.** `file_filter` is the only thing
+>   that looks at a path; `filenames_only: true` changes how matches are *reported*, not what is
+>   matched.
+> - Exact spacing and punctuation are load-bearing: `"m_shot.n ="` misses a line written
+>   `m_shot.n=` or `m_shot.n  =`.
+>
+> **The two fallbacks do not rescue an ordinary miss.** `SourceCodeSearchTool.cs:144-163` retries
+> only in two situations — case-insensitively after a `case_sensitive: true` miss, and literally
+> after an `is_regex: true` miss. A plain multi-word or misspelled-identifier miss triggers
+> neither.
+>
+> **A miss returns `Success = true` with the 30-character string `"No relevant source code found."`**
+> (`SourceCodeSearchTool.cs:165-168`) and **no near-miss information** — no "did you mean", no
+> partial-term hit count, nothing to tell the model that its phrasing rather than the corpus was
+> the problem. So a model that guesses an identifier gets an answer indistinguishable from
+> "the game does not contain this", and its cheapest recovery is to guess again. That is a
+> **latency and cost** failure mode, not a correctness one; see
+> [`server_benchmark_tool_diagnostics`](../server_benchmark_tool_diagnostics/SKILL.md) § 4, the
+> empty-result cascade.
+>
+> **A 30-character result is a miss; a short result is not.** A successful `filenames_only: true`
+> probe legitimately returns 25–250 characters (`src/makemon.c (29 matches)`). Counting "results
+> under 100 characters" as misses conflates the two and overstates the miss rate — run 28's own
+> rows show 16 `source_code_search` results under 100 characters on two questions, of which 12
+> were the 30-character miss string and 4 were successful `filenames_only` probes.
+
+The whole result is then truncated to `MaxSourceResultLength` (root config key, **100000 at
+`Overseer/appsettings.json:17`**; `SourceCodeSearchTool.cs:30` reads it and falls back to the same
+value in code) with an `[... output truncated ...]` marker, *before* `ToolExecutor`'s own per-tool
+`MaxResultLength` cap ever applies — `source_code_search` truncates twice.
+
+> 🛑 **`MaxSourceResultLength` is effectively dead, and its informative suffix never reaches the
+> model.** `ToolExecutor` (`Overseer/Services/Tools/ToolExecutor.cs:252-282`) cuts a plain-text
+> result at `ToolExecutionContext.MaxResultLength` — **10,000** by default
+> (`IToolHandler.cs:55`; `appsettings.json:26` for the chat default and `:220` for the benchmark
+> value, both 10000) — and `SourceCodeSearchTool` declares no `MaxResultLengthOverride`, so
+> nothing raises that ceiling for it. A result long enough to hit the 100,000 cap therefore has
+> `SourceCodeService.cs:578-581`'s suffix — *"[Additional matches not shown — refine your query or
+> use source_code_view]"* — appended at character 100,000 and then removed by the 10,000-character
+> cut, which appends `... [Result truncated for length]` instead. **The model is never told to
+> refine its query**, in a benchmark run or in chat. Raising `MaxSourceResultLength` changes
+> nothing; only `MaxResultLength` or a handler override would.
 
 > 🛑 **A regex compile error returns `Success = true`.** `SearchFiles` catches an invalid regex
 > and returns the string `"Error: Invalid regular expression. …"` as ordinary content; the tool

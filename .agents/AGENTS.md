@@ -112,9 +112,22 @@ A plan is **not** required for single-file fixes, typo and comment corrections, 
 
 ## AI Benchmark Findings
 
-Any analysis of an AI benchmark run — its report, diagnostics, or assessments — and any implementation plan derived from one **MUST** read the `server-benchmark-to-chat-transfer` skill first, and **MUST** produce the **Chat Transfer** section it specifies. The benchmark grades the production chat system prompt, so a benchmark analysis that yields no conclusion about the chat assistant is incomplete, not merely brief. The skill is a living document: every analysis appends its run to the model behaviour notes.
+Any analysis of an AI benchmark run — its report, diagnostics, or assessments — and any implementation plan derived from one **MUST** read **all four** of these skills, in this order, **before the first finding is written**:
 
-**When any finding turns on what a tool returned** — a tool that was not called, one that errored, or one that answered "not found" — the analysis **MUST** also read `server-benchmark-tool-diagnostics`, and through it `server-tool-data-sources` and `server-tool-parameter-reference`. A run stores tool *counts* and discards tool arguments and results, so "the tool returned nothing" is four different verdicts and only one of them is about the model. A corpus that was missing, stale, outside the indexed scope or excluded by a size limit is a **Corpus / Environment Defect** and never produces a chat prompt change.
+1. `server-benchmark-to-chat-transfer`
+2. `server-benchmark-tool-diagnostics`
+3. `server-tool-data-sources`
+4. `server-tool-parameter-reference`
+
+This is **unconditional**. There is no finding-shaped condition to evaluate first, and none of the four is reached through any of the others. The earlier form of this rule made the last three conditional on *"any finding [that] turns on what a tool returned"* — a test an agent can only apply **after** the research those skills were meant to inform — and nested two of them inside the third, so a requirement lived inside a skill nobody had loaded. The run-28 analysis on 2026-09-09 read only the first and shipped with its tool layer un-audited, spending roughly 138,000 subagent tokens rediscovering a contract `server-tool-parameter-reference` already documented verbatim, and still filing the finding against the wrong contract.
+
+The analysis **MUST** produce the **Chat Transfer** section `server-benchmark-to-chat-transfer` § 10 specifies, including the tool-diagnostics table and "Limits of this pass" statement that section requires. The benchmark grades the production chat system prompt, so a benchmark analysis that yields no conclusion about the chat assistant is incomplete, not merely brief. Both skills are living documents: every analysis appends its run to the model behaviour notes.
+
+Why the last three earn their place: what a run stores about its tool calls **depends on its harness version** — before harness 17 it stored tool *counts* and discarded arguments and results; from harness 17 it stores every attempted call's arguments, result, error and timings — so "the tool returned nothing" is several different verdicts and only one of them is about the model. A corpus that was missing, stale, outside the indexed scope or excluded by a size limit is a **Corpus / Environment Defect** and never produces a chat prompt change.
+
+**The cost is accepted deliberately.** Reading all four is roughly 1,200 lines of context up front. That is a considered trade against a session that spent far more than that on subagents rediscovering a subset of the same material and still got a finding wrong. Do not "optimise" this rule back into a conditional one.
+
+A `UserPromptSubmit` hook in `.claude/settings.json` backs this rule up by injecting the four skill names on benchmark-shaped prompts. It is a reminder, not the rule — if you edit either half, check the other. Two properties of it are deliberate and should not be "fixed": it matches by grepping the hook's **raw stdin** (neither `jq` nor `pwsh` is installed on this machine, so every JSON-parsing variant of the pattern is unusable here), which means a session whose `cwd` or id happens to contain "benchmark" also matches — an accepted false positive costing one injected line; and it ends in `|| true`, so a non-match, a missing `grep` or any error exits 0 and never blocks the prompt.
 
 ## Publishing
 
