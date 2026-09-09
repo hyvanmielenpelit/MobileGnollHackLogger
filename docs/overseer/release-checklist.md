@@ -6,7 +6,10 @@ This checklist provides a concise, step-by-step procedure for cutting a new rele
 
 ## 1. Pre-Release Testing
 
-Run automated tests to ensure everything is working before preparing a release:
+Run automated tests to ensure everything is working before preparing a release. `dotnet test`
+requires the repository-root `global.json` (the Microsoft.Testing.Platform opt-in the .NET 10 SDK
+needs) and the `--filter` exactly as written — it fails open on a typo. See
+[commands.md](commands.md) § 4.
 
 ```bash
 # 1. Run backend unit & integration tests (skipping external AI APIs)

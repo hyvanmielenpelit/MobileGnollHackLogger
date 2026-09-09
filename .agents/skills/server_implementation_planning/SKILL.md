@@ -183,8 +183,14 @@ npm run build
 
 Three ways a plan gets this wrong, all of which have happened:
 
-- **Omitting `--filter "Category!=UsesExternalApi"`.** The run then calls live OpenAI,
-  Anthropic and Google APIs and spends real quota.
+- **Omitting `--filter "Category!=UsesExternalApi"`, or mistyping it.** The run then calls live
+  OpenAI, Anthropic and Google APIs and spends real quota. **The filter fails open**: a typo in the
+  trait name or its value selects the whole suite instead of erroring, so a plan that changes the
+  filter string must verify it by discovery (`--list-tests --filter "Category=UsesExternalApi"`),
+  never by running the suite. `testing_guidelines` § 1a has the measured table.
+- **Assuming `dotnet test` works on a fresh clone with `global.json` missing or edited.** That file
+  carries the Microsoft.Testing.Platform opt-in the .NET 10 SDK requires; without it every
+  `dotnet test` command above fails before running a single test.
 - **Writing `npm test`, `ng test`, or `npm test -- --watch=false`** instead of
   `npm run test:headless`. Karma stays in watch mode and the command never returns.
 - **Writing `.sln`.** This repository uses `MobileGnollHackLogger.slnx`.

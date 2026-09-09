@@ -337,8 +337,14 @@ public static class BenchmarkRunFinalizer
         run.UnansweredQuestionCount = answers.Count(IsModelProducedEmptyAnswer);
 
         // The index weights each item by its assessed difficulty, and an unanswered question has none —
-        // no grader read it — so it is weighted by its authored band's fallback. Recording that keeps the
-        // report's own claim about independent assessment honest.
+        // no grader read it — so it is weighted by its authored band's fallback.
+        //
+        // Two guards make this false on every run that can exist, and it is kept as a defensive
+        // assertion rather than a measurement: BenchmarkService coalesces the authored fallback into
+        // BenchmarkRunAnswer.AssessedDifficulty when it stores the answer, so the column is never null;
+        // and BenchmarkRunLauncher refuses to launch a suite carrying any question without an assessed
+        // difficulty, so the fallback is unreachable upstream of that. FallbackDifficulty itself is still
+        // live — it is the defensive default below and the report's assessed-difficulty label.
         run.DifficultyFallbackUsed = answers.Any(a => CountsTowardQualityIndex(a) && a.AssessedDifficulty == null);
         run.DegradedAnswerCount = answers.Count(IsDegraded);
         run.ToolStarvedAnswerCount = answers.Count(HasHarnessLimit);

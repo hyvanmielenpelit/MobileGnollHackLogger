@@ -177,7 +177,7 @@ public class ToolResultHandlingTests
 
         Assert.True(result.Success);
         Assert.Equal(60000, result.Content.Length);
-        Assert.DoesNotContain("[Result truncated for length]", result.Content);
+        Assert.DoesNotContain("[Truncated:", result.Content);
     }
 
     [Fact]
@@ -207,7 +207,7 @@ public class ToolResultHandlingTests
 
         Assert.True(result.Success);
         Assert.Equal(100000, result.Content.Length);
-        Assert.DoesNotContain("[Result truncated for length]", result.Content);
+        Assert.DoesNotContain("[Truncated:", result.Content);
     }
 
     [Fact]
@@ -237,7 +237,10 @@ public class ToolResultHandlingTests
 
         Assert.True(result.Success);
         Assert.StartsWith(new string('C', 10000), result.Content);
-        Assert.Contains("[Result truncated for length]", result.Content);
+        // The suffix names the next action and the size it was cut at, so the model can tell a
+        // truncated result from a complete one and knows what to do about it.
+        Assert.Contains("[Truncated: showing 10000 of 20000 characters.", result.Content);
+        Assert.Contains("Narrow the query, or ask for a specific section, to see the rest.", result.Content);
     }
 
     [Fact]

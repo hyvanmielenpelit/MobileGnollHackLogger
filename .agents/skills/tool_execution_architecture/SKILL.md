@@ -34,9 +34,9 @@ When modifying limits or investigating latency bottlenecks, refer to the multi-t
 | **`ToolBatchRunner`** | Client Tools | `AiPerformanceSettings:MaxParallelClientToolCalls:Default` | `1` (Min 1, Max 4) | Serializes interactive client-bridge tools (`IsClientTool`). |
 | **`ToolExecutor`** | Process-Wide | `ToolExecutionLimits:MaxProcessParallelToolCalls` | `30` | Semaphore across all active user sessions on the server. |
 | **`ToolExecutor`** | External APIs | `ToolExecutionLimits:MaxProcessExternalLookupCalls` | `3` | Throttler for `ToolCategory.ExternalLookup` tools. |
-| **`ToolExecutor`** | Session Quota | `AiPerformanceSettings:MaxCallsPerSession:Default` | `30` | Atomic rate limiter per session. |
+| **`ToolExecutor`** | Session Quota | `AiPerformanceSettings:MaxCallsPerSession:Default` | `150` (Min 5 / Max 500; `Benchmark:MaxCallsPerSession` is 50) | Atomic rate limiter per session. |
 | **`ToolExecutor`** | Per-Tool Timeout | `handler.TimeoutSeconds` | Configured per tool | Enforced via linked `CancellationTokenSource`. |
-| **`ToolExecutor`** | Per-Tool Size | `ToolExecutionContext.MaxResultLength` | `3,000` chars | Clamps single tool result with `... [Result truncated for length]`. |
+| **`ToolExecutor`** | Per-Tool Size | `ToolExecutionContext.MaxResultLength` | `10,000` chars | Clamps a single plain-text tool result with `ToolExecutor.BuildTruncationSuffix`: `... [Truncated: showing {shown} of {total} characters. Narrow the query, or ask for a specific section, to see the rest.]`. |
 | **`ToolBatchResultBudget`** | Batch Budget | `ToolExecutionLimits:MaxBatchResultLength` | `40,000` chars | Dynamically scales to `Math.Max(budgetChars, MaxResultLength)`. |
 
 ---
@@ -66,7 +66,8 @@ foreach (var outcome in outcomes)
 ### Truncation Markers:
 - `... (truncated: batch output budget reached)` — Result partially fit into remaining budget.
 - `(skipped: batch output budget reached)` — Result arrived after budget was completely exhausted.
-- `... [Result truncated for length]` — Result exceeded per-tool `MaxResultLength`.
+- `... [Truncated: showing {shown} of {total} characters. Narrow the query, or ask for a specific section, to see the rest.]` — Result exceeded per-tool `MaxResultLength`. Built by `ToolExecutor.BuildTruncationSuffix(shownLength, totalLength)` and shared by both truncation call sites, so the marker is **not** a fixed length: 107 characters of template plus the digits of the two figures.
+- `... [Result truncated for length]` — The same per-tool cut in a run recorded before 2026-09-09. Stored benchmark and chat rows from then still carry it, so a diagnostic that matches truncation markers has to accept both. Match the `[Truncated:` prefix rather than a length.
 
 ---
 

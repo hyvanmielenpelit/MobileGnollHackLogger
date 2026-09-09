@@ -273,12 +273,14 @@ namespace Overseer.Services.Tools
                             }
                             catch
                             {
-                                result.Content = result.Content.Substring(0, maxLen) + "... [Result truncated for length]";
+                                int fullLength = result.Content.Length;
+                                result.Content = result.Content.Substring(0, maxLen) + BuildTruncationSuffix(maxLen, fullLength);
                             }
                         }
                         else
                         {
-                            result.Content = result.Content.Substring(0, maxLen) + "... [Result truncated for length]";
+                            int fullLength = result.Content.Length;
+                            result.Content = result.Content.Substring(0, maxLen) + BuildTruncationSuffix(maxLen, fullLength);
                         }
                     }
                 }
@@ -289,6 +291,16 @@ namespace Overseer.Services.Tools
                 result.RemainingBudget = remainingBudget;
                 return result;
             }
+        }
+
+        /// <summary>
+        /// Suffix appended to any plain-text tool result cut off by the length cap. Shared by
+        /// every tool, so it names no tool by name — just the cap/total and the generic recovery
+        /// (narrow the query, or ask for a specific range).
+        /// </summary>
+        private static string BuildTruncationSuffix(int shownLength, int totalLength)
+        {
+            return $"... [Truncated: showing {shownLength} of {totalLength} characters. Narrow the query, or ask for a specific section, to see the rest.]";
         }
 
         /// <summary>

@@ -77,7 +77,7 @@ tools), confirming 20 server + 10 client with none missing and none duplicated.
 | `monster_lookup` | Server | `WikiService` | Yes | Wiki lookup for a monster, category-scoped with unfiltered fallback |
 | `item_lookup` | Server | `WikiService` | Yes | Wiki lookup for an item, category-scoped with unfiltered fallback |
 | `get_monster_stats` | Server | `SourceCodeService` (`src/monst.c`) | Yes | Structured monster stats, Level 1 → Level 2 fallback |
-| `get_item_stats` | Server | `SourceCodeService` (`src/objects.c`) | Yes | **Level 2 only** — raw macro dump, never structured stats |
+| `get_item_stats` | Server | `SourceCodeService` (`src/objects.c` + `include/objclass.h`) | Yes | Structured item stats, Level 1 → Level 2 fallback |
 | `get_artifact_stats` | Server | `SourceCodeService` (`include/artilist.h`) | Yes | Structured artifact stats, Level 1 → Level 2 fallback |
 | `get_knowledge_article` | Server | `KnowledgeBaseService` | Yes | Exact topic-key lookup of a curated article |
 | `search_github` | Server | `GitHubApiService` (network) | **No** | Search GitHub issues/PRs or commits |
@@ -165,10 +165,13 @@ only the first 5 groups per file are shown, with `[... N additional match groups
 hidden ...]` for the rest.
 
 > 🛑 **`source_code_search`'s `query` is a single literal substring, matched per line.**
-> `SourceCodeService.SearchFiles` (`Overseer/Services/SourceCodeService.cs:451-584`) tests each
-> indexed line with `doc.ContentLines[i].Contains(query, comparison)` (`:498`), where `comparison`
-> is `OrdinalIgnoreCase` unless `case_sensitive: true`. Every consequence follows from that one
-> line:
+> `SourceCodeService.SearchFiles` (`Overseer/Services/SourceCodeService.cs:470-603`) tests each
+> indexed line with `doc.ContentLines[i].Contains(query, comparison)` (`:517`), where `comparison`
+> is `OrdinalIgnoreCase` unless `case_sensitive: true`. The tool schema says as much in the
+> parameter's own description — *"One literal substring, matched against each source line on its
+> own. Not split into terms, cannot span a line break, and does not match file or symbol names.
+> Prefer a short distinctive identifier over a phrase."* — so a model that passes a term list is
+> going against the schema, not following it. Every consequence follows from that one line:
 >
 > - The query is **never split into terms** and never stemmed. `"layer glyph rendering"` matches
 >   only a line containing that exact 21-character run — not a line about layers and another about
@@ -180,42 +183,85 @@ hidden ...]` for the rest.
 > - Exact spacing and punctuation are load-bearing: `"m_shot.n ="` misses a line written
 >   `m_shot.n=` or `m_shot.n  =`.
 >
-> **The two fallbacks do not rescue an ordinary miss.** `SourceCodeSearchTool.cs:144-163` retries
+> **The two fallbacks do not rescue an ordinary miss.** `SourceCodeSearchTool.cs:146-165` retries
 > only in two situations — case-insensitively after a `case_sensitive: true` miss, and literally
 > after an `is_regex: true` miss. A plain multi-word or misspelled-identifier miss triggers
 > neither.
 >
-> **A miss returns `Success = true` with the 30-character string `"No relevant source code found."`**
-> (`SourceCodeSearchTool.cs:165-168`) and **no near-miss information** — no "did you mean", no
-> partial-term hit count, nothing to tell the model that its phrasing rather than the corpus was
-> the problem. So a model that guesses an identifier gets an answer indistinguishable from
-> "the game does not contain this", and its cheapest recovery is to guess again. That is a
-> **latency and cost** failure mode, not a correctness one; see
-> [`server_benchmark_tool_diagnostics`](../server_benchmark_tool_diagnostics/SKILL.md) § 4, the
-> empty-result cascade.
+> **A miss returns `Success = true` and carries near-miss information and a next action.**
+> `SourceCodeSearchTool.BuildMissContent` (`SourceCodeSearchTool.cs:188-225`, reached from the
+> miss return at `:167-170`) assembles the content from up to four parts, in this order:
 >
-> **A 30-character result is a miss; a short result is not.** A successful `filenames_only: true`
-> probe legitimately returns 25–250 characters (`src/makemon.c (29 matches)`). Counting "results
-> under 100 characters" as misses conflates the two and overstates the miss rate — run 28's own
-> rows show 16 `source_code_search` results under 100 characters on two questions, of which 12
-> were the 30-character miss string and 4 were successful `filenames_only` probes.
+> 1. `No relevant source code found for '<query>'.` — and, when a `file_filter` was passed,
+>    `(file_filter='<filter>' may be excluding the match)` before the period, so the model is
+>    pointed at one of its own arguments as a candidate cause.
+> 2. For an **identifier-shaped** query (not regex, no whitespace, matching
+>    `^[A-Za-z0-9_][A-Za-z0-9_.>\-]*$`): up to two near-neighbour probes, reported as
+>    `'<candidate>' matches N lines across <up to 3 paths>.` The candidates are the two longest
+>    alphanumeric tokens of at least 3 characters when the identifier has more than one, otherwise
+>    — for a query longer than 6 characters — the query minus its last two characters and a
+>    half-length prefix. When neither hits: `No shorter form of this identifier matched either.`
+> 3. For a **whitespace-bearing** query (not regex): the explicit
+>    `No line contains it as one literal substring — spacing matters (e.g. 'a =' and 'a=' do not
+>    match).`, then a whitespace-collapsed retry (`With whitespace removed, '<collapsed>' matches
+>    …`), then per-term probes of the first three whitespace-separated terms of 2+ characters, run
+>    only when at least two qualify and reported as `'<term>' matches …` joined by `; ` — or
+>    `None of the individual terms matched either.`
+> 4. `Try search_definitions for a known symbol, or list_indexed_files to see what is indexed.` —
+>    unconditionally, on every miss.
+>
+> Every probe goes through `SafeProbe`, which calls `SearchFiles` with `filenames_only`,
+> `ProbeMaxResults` **3**, `ProbeMaxResultLength` **1000**, `context_lines` 0, case-insensitive and
+> non-regex, and swallows both exceptions and `Error:`-prefixed content into "no hit" — so a miss
+> costs at most two extra bounded index scans on the identifier path and four on the whitespace
+> path (one collapsed retry plus three terms), and can never itself fail. The whole builder sits
+> inside a `catch` returning the bare `"No relevant source code found."`, which is therefore the
+> **resolver-defect** payload rather than the ordinary-miss one.
+>
+> The payload is deliberately short — a few hundred characters, not a report — because **every
+> tool result is re-sent to the model on each subsequent round of the same question**, so a
+> verbose miss is paid for once per remaining round.
+>
+> Read a run's misses against the payload of the harness version that produced them. An
+> information-free miss leaves a model no way to tell "my phrasing was wrong" from "the game does
+> not contain this", and its cheapest recovery is another guess — the **latency and cost** failure
+> mode diagnosed as the empty-result cascade in
+> [`server_benchmark_tool_diagnostics`](../server_benchmark_tool_diagnostics/SKILL.md) § 4.
+>
+> **Match the miss payload's prefix, not its length.** The *method* — compare against the tool's
+> known miss payload rather than against "short" — stands, but the constant it matches on does
+> not. A successful `filenames_only: true` probe legitimately returns 25–250 characters
+> (`src/makemon.c (29 matches)`), and the current miss payload runs to a few hundred, so the two
+> bands overlap outright and no length threshold separates them. The reliable test is the literal
+> opening `No relevant source code found for '`. A stored result that is exactly the
+> 30-character `"No relevant source code found."` is either a run recorded before the near-miss
+> builder existed or one where the builder threw. Run 28's figures are facts about run 28: 16
+> `source_code_search` results under 100 characters on two questions, of which 12 were the
+> 30-character miss string and 4 were successful `filenames_only` probes — a "results under 100
+> characters" proxy would have reported 16 misses where there were 12.
 
 The whole result is then truncated to `MaxSourceResultLength` (root config key, **100000 at
-`Overseer/appsettings.json:17`**; `SourceCodeSearchTool.cs:30` reads it and falls back to the same
+`Overseer/appsettings.json:17`**; `SourceCodeSearchTool.cs:32` reads it and falls back to the same
 value in code) with an `[... output truncated ...]` marker, *before* `ToolExecutor`'s own per-tool
 `MaxResultLength` cap ever applies — `source_code_search` truncates twice.
 
-> 🛑 **`MaxSourceResultLength` is effectively dead, and its informative suffix never reaches the
-> model.** `ToolExecutor` (`Overseer/Services/Tools/ToolExecutor.cs:252-282`) cuts a plain-text
-> result at `ToolExecutionContext.MaxResultLength` — **10,000** by default
-> (`IToolHandler.cs:55`; `appsettings.json:26` for the chat default and `:220` for the benchmark
-> value, both 10000) — and `SourceCodeSearchTool` declares no `MaxResultLengthOverride`, so
-> nothing raises that ceiling for it. A result long enough to hit the 100,000 cap therefore has
-> `SourceCodeService.cs:578-581`'s suffix — *"[Additional matches not shown — refine your query or
-> use source_code_view]"* — appended at character 100,000 and then removed by the 10,000-character
-> cut, which appends `... [Result truncated for length]` instead. **The model is never told to
-> refine its query**, in a benchmark run or in chat. Raising `MaxSourceResultLength` changes
-> nothing; only `MaxResultLength` or a handler override would.
+> 🛑 **`MaxSourceResultLength` is effectively dead, and the tool-specific advice it carries never
+> reaches the model — but a generic actionable suffix does.** `ToolExecutor`
+> (`Overseer/Services/Tools/ToolExecutor.cs:245-285`) cuts a plain-text result at
+> `ToolExecutionContext.MaxResultLength` — **10,000** by default (`IToolHandler.cs:55`;
+> `appsettings.json:26` for the chat default and `:220` for the benchmark value, both 10000) — and
+> `SourceCodeSearchTool` declares no `MaxResultLengthOverride`, so nothing raises that ceiling for
+> it. A result long enough to hit the 100,000 cap therefore has `SourceCodeService.cs:599`'s
+> suffix — *"[Additional matches not shown — refine your query or use source_code_view]"* —
+> appended at character 100,000 and then removed by the 10,000-character cut. **That suffix is
+> unreachable: the model is never told to use `source_code_view` by this route, in a benchmark run
+> or in chat, and raising `MaxSourceResultLength` changes nothing; only `MaxResultLength` or a
+> handler override would.** What arrives in its place is `ToolExecutor.BuildTruncationSuffix`
+> (`:301-304`), which names a next action of its own —
+> `... [Truncated: showing {shown} of {total} characters. Narrow the query, or ask for a specific
+> section, to see the rest.]`. So the two halves of this limit differ in consequence: the
+> *tool-specific* recovery is suppressed, while a *generic* "narrow the query" instruction does
+> reach the model on every truncated plain-text result.
 
 > 🛑 **A regex compile error returns `Success = true`.** `SearchFiles` catches an invalid regex
 > and returns the string `"Error: Invalid regular expression. …"` as ordinary content; the tool
@@ -309,7 +355,10 @@ monster/item: {name}"`. This double fallback makes both tools resilient to the w
 not actually organizing articles under a `monster`/`item` path segment.
 
 **`get_monster_stats` / `get_item_stats` / `get_artifact_stats`** — `name` (required, exact as
-written in the source: `src/monst.c`, `src/objects.c`, `include/artilist.h` respectively) only.
+written in the source: `src/monst.c`, `src/objects.c`, `include/artilist.h` respectively). For
+`get_item_stats` that is the bare `oc_name` — `digging`, not `wand of digging` — and it also takes
+an optional **`object_class`** (`WAND_CLASS`, `SCROLL_CLASS`, …) which selects among the object
+classes that hold an entry of that name; the other two take `name` only.
 All three guard on `SourceCodeService.IsIndexingComplete`
 (`ToolGuardMessages.SourceCodeIndexingInProgress`). All three serialize a
 `StatsResponse<T>` (`Overseer/Services/SourceCodeModels.cs`):
@@ -338,9 +387,13 @@ the handler re-serializes a minified version — dropping `flag_descriptions` if
 populated ("Level 1" minification), or dropping `macro_definitions`/`struct_definitions` if
 `RawDefinition` was populated ("Level 2" minification) — and if *that* still exceeds
 `HardLimit`, the tool returns `Success = false` with an over-the-limit error instead.
+`GetItemStatsTool` implements only the `RawDefinition`-populated branch, which is also the only
+one an item can reach: an item's Level 1 success populates `Stats` and `RawDefinition` together,
+so a minified item response keeps both and drops `flag_descriptions`,
+`macro_definitions` and `struct_definitions`.
 
 **The Level 1 → Level 2 *parsing* fallback (distinct from the truncation minification above)
-exists only for monsters and artifacts, not items:**
+exists for all three tools, by two different mechanisms:**
 
 - `get_monster_stats` and `get_artifact_stats` attempt a real positional-token parse of the
   macro call (Level 1: populates `Stats.Fields` and calls `PopulateFlagDescriptions`). On any
@@ -348,12 +401,56 @@ exists only for monsters and artifacts, not items:**
   failed for monster/artifact '{Name}', falling back to Level 2.")` and instead returns
   `RawDefinition` plus the relevant `MacroDefinitions`/`StructDefinitions` context — silently, from
   the caller's point of view, beyond the shape of the JSON.
-- **`get_item_stats` has no Level 1 at all.** The code's own comment is explicit: `/* Level 2 for
-  items — raw dump + context (structured parsing requires per-macro handlers) */`. Every
-  successful `get_item_stats` call returns `RawDefinition` + macro/struct context and a `Message`
-  telling the caller to interpret the raw macro invocation itself; `Stats` is never populated and
-  no "Level 1 failed" warning is ever logged for items, because there is no Level 1 to fail. A
-  diagnostic expecting `stats` on `get_item_stats` is diagnosing the wrong contract.
+- **`get_item_stats`'s Level 1 is a macro resolver, not a positional parse.**
+  `SourceCodeService.GetItemStats` (`:1073-1152`) calls `ObjectsMacroResolver.Resolve(name)`, which
+  expands the `objects.c` macro chain — `DRGN_ARMR`, `BITS`, `OBJ` and the rest — down to the
+  pass-2 `OBJECT` slots by repeated symbolic substitution, and runs a second structural expansion
+  with every parameter bound to its own name so derived values can be told from raw ones. On
+  success the response carries `Stats` from `ItemResolution.Fields`, `Message` from
+  `ItemResolution.Message` (the class-versus-instance caveat: these are object-class values,
+  further modified at run time by material, enchantment, exceptionality and erosion),
+  **`RawDefinition` beside them** rather than instead of them, and
+  `PopulateFlagDescriptions(response, resolution.FlagTokens)`. So `stats` and `raw_definition` are
+  populated together on an item, which they never are on a monster or an artifact.
+  - **The lookup key is the bare `oc_name`.** `digging`, not `wand of digging`; `dwarvish mattock`,
+    not `mattock`. It is the same string the entry-matching regex matches in `objects.c`, so one
+    `name` argument serves both the Level 1 resolver and the Level 2 raw dump.
+  - **A name several object classes share is reported, not resolved away.** `objects.c` holds 947
+    entries under 904 distinct names (the exact figures move with the game source;
+    `Overseer.Tests/UnitTests/ObjectsMacroResolverTests.cs` asserts only the invariant that entries
+    outnumber names). For a shared name the resolver takes the **first entry in file order**, puts
+    every sharing class into `Fields["ambiguous_object_classes"]` as a list, and adds a note naming
+    the class the values came from and the classes that also use the name. `Resolve` accepts an
+    optional object class to pick a different one, and that is reachable from the tool:
+    `get_item_stats`'s schema carries `object_class` and `GetItemStats(name, objectClass)` passes it
+    through, so the note's "Pass object_class to get one of those instead" is an instruction the
+    model can actually follow. A class the name does not appear in returns `Success = true` with an
+    `error` naming the classes it does appear in, not an empty result.
+  - **A slot whose value is an OR of symbolic flags comes back as a list**, not as a `|`-joined
+    string (`ObjectsMacroResolver.SplitFlagUnions`) — the same shape `get_monster_stats` already
+    returns for `mflags1` and its siblings via `SourceCodeService.ParseFlagField`. A value with no
+    `|` is left as it stands.
+  - **The AC, MC and spell-casting unit conventions travel with the values as `notes`**, because
+    all three are stored in units the player never sees. `ac_bonus` is the stored `oc_armor_class`,
+    which armour writes as `10 - ac` (`src/objects.c:1005`), and `base_ac` is that `ac` argument —
+    emitted only where the expansion actually contains the `10 - x` form, since
+    `GENERAL_CHARGED_WEAPON`, `WEAPONSHIELD`, `WEAPONBOOTS` and `WEAPONGLOVES` store their `acbon`
+    raw. `src/do.c:5273` negates `ac_bonus` into the hero's AC, so a **positive** bonus lowers AC,
+    which is an improvement. `magic_cancellation` is the stored MC level, further adjusted by
+    `ARM_MC_BONUS`. `spell_casting_penalty` is the stored value; the percentage a player
+    experiences is emitted alongside it as `spell_casting_penalty_percent`, that value times
+    `ARMOR_SPELL_CASTING_PENALTY_MULTIPLIER` (30).
+  - **A Level 1 failure is logged and named in `message`, not left to the JSON's shape alone.**
+    `ItemResolution.Failed` always carries a reason; `GetItemStats` logs it at *information* level
+    (`"Level 1 parsing did not resolve item '{Name}' ({Reason}); returning the raw definition."`),
+    or at warning level when the resolver threw, and then falls back to `RawDefinition` plus the
+    macro list for every armour wrapper and the `objclass` struct — with the failure reason
+    appended to `message` as *"Structured values were not available: …"*. The tool never throws.
+    Level 1 is **GnollHack-only**: the resolver is loaded in `ParseGameData()` from `src/objects.c`
+    together with `include/objclass.h` (which supplies the enum constants the ternary conditions in
+    `CHARGEDRING`, `MISCELLANEOUSITEM`, `GENERAL_TOOL`, `GENERAL_SPELLTOOL`, `CONTAINER` and
+    `GENERAL_ROCK` compare against), on every re-index, and `NetHackSourceCodeService` overrides
+    `ParseGameData()` with a no-op.
 
 ---
 
@@ -417,8 +514,8 @@ the config keys relevant to reading a tool's *output*, and where each is read.
 
 | Key | Default | Read in | Applies to |
 |---|---|---|---|
-| `MaxSourceResultLength` (root-level) | 100000 (code fallback; key absent from `appsettings.json`, so any override is a User Secret) | `SourceCodeSearchTool` constructor | Only `source_code_search`'s own pre-truncation of its concatenated multi-file result, before the generic per-tool cap below ever runs |
-| `AiPerformanceSettings:MaxResultLength:Default` | 10000 (Min 1000 / Max 100000, user-adjustable) | `ChatService.cs` when building `ToolExecutionContext` | Generic per-tool-call cap, enforced in `ToolExecutor.ExecuteAsync` step 4: a JSON-shaped result (starts with `{`/`[`) over the cap becomes a `Success = false` "Result too large" error instead of being substring-truncated (to avoid emitting invalid JSON); a plain-text result is hard-truncated with `... [Result truncated for length]` |
+| `MaxSourceResultLength` (root-level) | 100000 at `Overseer/appsettings.json:17`; `SourceCodeSearchTool.cs` falls back to the same figure in code | `SourceCodeSearchTool` constructor | Only `source_code_search`'s own pre-truncation of its concatenated multi-file result, before the generic per-tool cap below ever runs |
+| `AiPerformanceSettings:MaxResultLength:Default` | 10000 (Min 1000 / Max 100000, user-adjustable) | `ChatService.cs` when building `ToolExecutionContext` | Generic per-tool-call cap, enforced in `ToolExecutor.ExecuteAsync` step 4: a JSON-shaped result (starts with `{`/`[`) over the cap becomes a `Success = false` "Result too large" error instead of being substring-truncated (to avoid emitting invalid JSON); a plain-text result is hard-truncated with `ToolExecutor.BuildTruncationSuffix`'s `... [Truncated: showing {shown} of {total} characters. Narrow the query, or ask for a specific section, to see the rest.]` — 107 characters of fixed template plus the digits of both figures, so ≈117 for the common 10,000-of-N case, and **not a fixed length**. A run recorded before this suffix existed carries the 33-character `... [Result truncated for length]` instead |
 | `ToolExecutionLimits:MaxBatchResultLength` | 40000 | `AgentLoopRunner.cs` (`:482`) | One `ToolBatchResultBudget` per tool-call **batch** (one iteration's parallel tool calls), scaled to `Math.Max(this, ToolExecutionContext.MaxResultLength)`; a tool whose `MaxResultLengthOverride` already exceeds the context max (only `refresh_snapshot`, 60200) is exempted from this budget entirely |
 | `ToolExecutionLimits:MaxTurnResultLength` | 120000 | `AgentLoopRunner.cs` (`:123`) | A cumulative ceiling across **all** tool-call batches within one model turn (multiple iterations of the tool loop), distinct from and layered above the per-batch budget |
 

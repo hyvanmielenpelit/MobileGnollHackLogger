@@ -53,7 +53,7 @@ namespace Overseer.Services
         /* ---------------------------------------------------------------------------------
          * Table 1b -- the values the pass-2 BITS macro emits, in emission order
          *             (objects.c:79-80), landing on the first uchar block of
-         *             struct objclass (objclass.h:422-440).
+         *             struct objclass (objclass.h:423-441).
          *
          * BITS takes seventeen arguments and emits seventeen values, but not the same
          * seventeen and not in the same order: the 4th argument (ctnr) is discarded and a
@@ -187,13 +187,13 @@ namespace Overseer.Services
         private static readonly Dictionary<string, string?[]> _ocSlotsByClass =
             new(StringComparer.Ordinal)
             {
-                /* spellbooks -- objclass.h:788-795 */
+                /* spellbooks -- objclass.h:782-789 */
                 ["SPBOOK_CLASS"] = new string?[]
                 {
                     "spell_cooldown", "spell_level", "spell_mana_cost", "spell_attribute",
                     "spell_range", "spell_radius", "spell_skill_chance", "spell_per_level_step"
                 },
-                /* potions -- objclass.h:812-818 */
+                /* potions -- objclass.h:803-809 */
                 ["POTION_CLASS"] = new string?[]
                 {
                     "potion_breathe_buc_multiplier", "potion_normal_buc_multiplier",
@@ -201,7 +201,7 @@ namespace Overseer.Services
                     "potion_breathe_dice_buc_multiplier", "potion_normal_dice_buc_multiplier",
                     "potion_nutrition_dice_buc_multiplier", null
                 },
-                /* comestibles and reagents -- objclass.h:747-748 */
+                /* comestibles and reagents -- objclass.h:748-749 */
                 ["FOOD_CLASS"] = new string?[]
                 {
                     "edible_subtype", "edible_effect", null, null, null, null, null, null
@@ -210,7 +210,7 @@ namespace Overseer.Services
                 {
                     "edible_subtype", "edible_effect", null, null, null, null, null, null
                 },
-                /* wands -- only the range and radius slots are written (objects.c:4970) */
+                /* wands -- only the range and radius slots are written (objects.c:4969) */
                 ["WAND_CLASS"] = new string?[]
                 {
                     null, null, null, null, "spell_range", "spell_radius", null, null
@@ -227,7 +227,7 @@ namespace Overseer.Services
             {
                 ["ARMOR_CLASS"] = new(StringComparer.Ordinal)
                 {
-                    ["subtyp"] = "armor_category",  /* objclass.h:698 */
+                    ["subtyp"] = "armor_category",  /* objclass.h:737 */
                     ["big"] = "bulky",              /* objclass.h:440 */
                     ["dir"] = "damage_class"
                 },
@@ -244,25 +244,25 @@ namespace Overseer.Services
                 ["SPBOOK_CLASS"] = new(StringComparer.Ordinal)
                 {
                     ["dir"] = "targeting_mode",
-                    ["mc_adjustment"] = "spell_saving_throw_adjustment",   /* objclass.h:796 */
-                    ["aflags"] = "spell_flags",                            /* objclass.h:616 */
-                    ["aflags2"] = "spell_effect_flags",                    /* objclass.h:617 */
-                    ["wsdice"] = "spell_dmg_dice",                         /* objclass.h:797-799 */
+                    ["mc_adjustment"] = "spell_saving_throw_adjustment",   /* objclass.h:790 */
+                    ["aflags"] = "spell_flags",                            /* objclass.h:615 */
+                    ["aflags2"] = "spell_effect_flags",                    /* objclass.h:616 */
+                    ["wsdice"] = "spell_dmg_dice",                         /* objclass.h:791-793 */
                     ["wsdam"] = "spell_dmg_diesize",
                     ["wsdmgplus"] = "spell_dmg_plus",
-                    ["wldice"] = "spell_dur_dice",                         /* objclass.h:803-805 */
+                    ["wldice"] = "spell_dur_dice",                         /* objclass.h:797-799 */
                     ["wldam"] = "spell_dur_diesize",
                     ["wldmgplus"] = "spell_dur_plus",
-                    ["extra_damagetype"] = "spell_dur_buc_plus"            /* objclass.h:806 */
+                    ["extra_damagetype"] = "spell_dur_buc_plus"            /* objclass.h:800 */
                 },
                 ["SCROLL_CLASS"] = new(StringComparer.Ordinal)
                 {
                     ["aflags"] = "spell_flags",
-                    ["aflags2"] = "scroll_effect_flags",                   /* objclass.h:619 */
-                    ["wsdice"] = "scroll_dmg_dice",                        /* objclass.h:830-832 */
+                    ["aflags2"] = "scroll_effect_flags",                   /* objclass.h:618 */
+                    ["wsdice"] = "scroll_dmg_dice",                        /* objclass.h:823-825 */
                     ["wsdam"] = "scroll_dmg_diesize",
                     ["wsdmgplus"] = "scroll_dmg_plus",
-                    ["wldice"] = "scroll_dur_dice",                        /* objclass.h:833-835 */
+                    ["wldice"] = "scroll_dur_dice",                        /* objclass.h:826-828 */
                     ["wldam"] = "scroll_dur_diesize",
                     ["wldmgplus"] = "scroll_dur_plus",
                     ["extra_damagetype"] = "spell_dur_buc_plus"
@@ -273,31 +273,31 @@ namespace Overseer.Services
                     ["mc_adjustment"] = "spell_saving_throw_adjustment",
                     ["aflags"] = "spell_flags",
                     ["aflags2"] = "spell_effect_flags",
-                    ["wsdice"] = "wand_dmg_dice",                          /* objclass.h:838-840 */
+                    ["wsdice"] = "wand_dmg_dice",                          /* objclass.h:831-833 */
                     ["wsdam"] = "wand_dmg_diesize",
                     ["wsdmgplus"] = "wand_dmg_plus",
-                    ["wldice"] = "wand_dur_dice",                          /* objclass.h:841-843 */
+                    ["wldice"] = "wand_dur_dice",                          /* objclass.h:834-836 */
                     ["wldam"] = "wand_dur_diesize",
                     ["wldmgplus"] = "wand_dur_plus",
                     ["extra_damagetype"] = "spell_dur_buc_plus"
                 },
                 ["POTION_CLASS"] = new(StringComparer.Ordinal)
                 {
-                    ["mc_adjustment"] = "potion_saving_throw_adjustment",   /* objclass.h:819 */
-                    ["aflags2"] = "potion_effect_flags",                    /* objclass.h:618 */
-                    ["wsdice"] = "potion_breathe_dice",                     /* objclass.h:820-822 */
+                    ["mc_adjustment"] = "potion_saving_throw_adjustment",   /* objclass.h:810 */
+                    ["aflags2"] = "potion_effect_flags",                    /* objclass.h:617 */
+                    ["wsdice"] = "potion_breathe_dice",                     /* objclass.h:811-813 */
                     ["wsdam"] = "potion_breathe_diesize",
                     ["wsdmgplus"] = "potion_breathe_plus",
-                    ["wldice"] = "potion_normal_dice",                      /* objclass.h:824-826 */
+                    ["wldice"] = "potion_normal_dice",                      /* objclass.h:815-817 */
                     ["wldam"] = "potion_normal_diesize",
                     ["wldmgplus"] = "potion_normal_plus",
-                    ["wedice"] = "potion_nutrition_dice",                   /* objclass.h:827-829 */
+                    ["wedice"] = "potion_nutrition_dice",                   /* objclass.h:818-820 */
                     ["wedam"] = "potion_nutrition_diesize",
                     ["wedmgplus"] = "potion_nutrition_plus"
                 },
                 ["FOOD_CLASS"] = new(StringComparer.Ordinal)
                 {
-                    ["critical_strike_percentage"] = "effect_probability"   /* objclass.h:900 */
+                    ["critical_strike_percentage"] = "effect_probability"   /* objclass.h:854 */
                 },
                 ["REAGENT_CLASS"] = new(StringComparer.Ordinal)
                 {

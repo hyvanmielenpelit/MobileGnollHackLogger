@@ -547,6 +547,122 @@ change, not across it**: (a) one model, one suite, `verboseMode` false vs. true,
 now that `e9b3e9a752…`/`bb19dc24…` is a known isolated pair; and (b) a tool-policy variant run to test
 whether T5's latency correlation is causal.
 
+### Run 28 — 2026-09-09: Claude 5 Sonnet
+- **Candidate**: Claude 5 Sonnet (`claude-sonnet-5`), thinking level `high`. 18 questions, suite
+  *GnollHack Player Assistance Benchmark Suite* (suite 6). **The first Anthropic candidate ever
+  benchmarked here.**
+- **Prompt options**: `overseerMode` 0 (Gameplay Help); `verboseMode` **false**;
+  `spoilerFreeMode` false; `enableToolUse` true; `enableWebSearch` false; `enableSubAgents` false;
+  `allowSourceCodeReferences` true; `isGameOn`, `hasGameSnapshot`, `hasMessageHistory` and
+  `hasWikiContext` all false; `parallelMode` Enabled.
+- **Grading regime**: harness **17**, scoring method **10**; second-opinion mode
+  `FlaggedPlusSample` (4), **blind**; claim verifier `gpt-5.6-sol`. ⚠️ **The primary assessor and
+  second-opinion model ids are not recorded in the run-28 analysis.** Read them off the run's own
+  report before this entry is used as half of a reproduction — § 6 makes the roster part of what
+  two runs must share, and this entry cannot discharge that as it stands.
+- **Instrument SHAs**:
+  - `CandidateSystemPromptSha256 = bb19dc24e28755228647960efc5c6aa70cfed64262da29a4a5079181acf5753b`
+  - `ToolGuidesSha256 = 9c79137965e4fe19e5cb2faea71ed29598ff032a7f3a653d8504ffd8a91ea168`
+  - `KnowledgeBaseHeadSha = 576ca5741d1bd79ef1cb2f7db575709cf0bb0db8`
+  - `SourceCodeHeadSha = 3861281`
+
+  **All three of the first are byte-identical to runs 16–22 and run 25.** The chat instrument had
+  not moved when run 28 was measured.
+- **Quality**: Intelligence Index **84 ± 11** (95 % CI over 18 items); raw quality index 88;
+  unweighted mean 83 (difficulty weighting moved the index +1); holistic assessor score 83.
+  Accuracy 89.6 / Completeness 83.0 / Conciseness 89.7 / Readability 92.1. **2 critical errors as
+  published (Q3, Q14) — of which only Q14 is genuine.** 5 refuted claims across 4 answers.
+- **Speed**: Speed Index 92, **saturated** — 11 of 18 answers at the ceiling, so the index does not
+  discriminate for this candidate. Median model time 22,064 ms; P90 and maximum both produced by
+  the two source-heavy questions.
+- **Cost**: $3.73 — candidate $1.67 (45 %), grading $2.06 (55 %). 114 tool calls, **0 failed, 0
+  refused**. 87.1 % cache-read share against a prompt measured 99 % cacheable, so prompt
+  segmentation is exhausted as a cost lever. Wall time 23 m 42 s of which candidate answering was
+  10 m 39 s. Two questions (Q15, Q16) consumed **42.6 % of the run's input tokens**, and the
+  source-family share of a question's calls correlated **r = 0.92** with its model time and r = 0.14
+  with its quality.
+- **Comparability**: **run 28 has no comparable predecessor.** Runs 16–22 ran harness 12 / method 8,
+  run 24 method 9, run 25 method 9; three deliberate scoring-method resets (7→8, 8→9, 9→10) separate
+  run 28 from every completed run above. Every finding from it is therefore **single-run and
+  motivating only**, never justifying.
+- **Transfer Action**: a remediation round shipped on **2026-09-09**, all at **rung 3** — tool
+  descriptions and tool policy text — plus report and harness fixes that are not chat changes at all.
+  - **Rung 3, chat-transferable**: `get_item_stats` gained a Level 1 that returns named object class
+    values and states its own unit conventions (`ac_bonus` is the stored `oc_armor_class` = `10 - ac`,
+    `base_ac` is that argument, and the game negates the bonus into the hero's AC); `get_item_stats.md`
+    and `get_monster_stats.md` now state those conventions and the monster `ac`/`mc`/`mr` scales;
+    `source_code_search.md` states the matcher contract its own parameter prose had contradicted;
+    `_policy.md` scopes tool narration to the moment of the lookup, keeps it out of the answer's
+    opening, and adds miss-recovery guidance; `source_code_search`'s miss payload now names a next
+    action; and `ToolExecutor`'s plain-text truncation suffix does too.
+  - **Not chat changes**: the report's cost breakdown moved into `ModelPricingService` (its
+    parentheticals were arithmetically wrong in two ways, one of which would have misprinted any
+    OpenAI candidate); signed band drift, early terminations, near-ceiling answers, a capped-answer
+    caveat on the confidence interval, agreement by trigger and a verification-uninformed agreement
+    subset were added to the report; the saturated Speed Index is presented as advisory behind median
+    model time; and run-level claim verification now runs before the two run-level second-opinion
+    stages as well as after them, so every second opinion reads the same verification state.
+  - **Deliberately not done**: no `ChatService.cs` prose was edited, and no rung 5, 6 or 7 action was
+    taken. Widening `BenchmarkArtifactScrubber`'s narration regex was excluded because scrubbing is
+    destructive — it replaces the text the assessor grades — so a wider regex would change what is
+    graded; a flag-and-count-only path is its own round. `BenchmarkRunFinalizer.HasHarnessLimit` was
+    deliberately left alone: it feeds `Classify`, the clean count and the run status, so widening it
+    to cover a termination reason would change those for every future run.
+- **No harness or method bump, and why.** `HarnessVersion` stays `"17"` and `ScoringMethodVersion`
+  stays **10**, even though the tool-guide, `_policy.md` and tool-result changes do alter what the
+  candidate receives. Bumping either would mark the run that *verifies* this round non-comparable
+  with run 28 — the only run that motivated it — and the verification would measure nothing. The
+  round is recorded through the **instrument fingerprints** instead, which the comparability
+  machinery treats as provenance rather than as keys. **A reader comparing a pre-round run with a
+  post-round run must read the fingerprints, not the harness version.**
+  - `ToolGuidesSha256` after the round: `ed93e73d475c07b853957715bfa5e06aef307010769d09f965f0338fd5620480`
+    (computed over the built `ToolGuides` output directory, 34 files, by the same manifest algorithm
+    `BenchmarkService.ComputeToolGuidesSha256` uses).
+  - `CandidateSystemPromptSha256` after the round: **not yet known.** It is hashed over the prompt
+    the builder produces at run time, and `_policy.md` is injected into the frozen segment, so it has
+    certainly moved — but the new value can only be read off the first run made after the round. Fill
+    it in from the confirming run.
+- **A diagnostic marker moved with this round.** `ToolExecutor`'s truncation suffix changed from the
+  fixed 33-character `... [Result truncated for length]` to `... [Truncated: showing {shown} of
+  {total} characters. …]`, so the stored `ResultLengthChars` fingerprint of a truncated plain-text
+  result is no longer **10033**. Run 28's own 14 truncated results carry 10033 and always will;
+  a post-round run carries roughly 10117. Match on the `[Truncated:` prefix, never on a length.
+  `server_benchmark_tool_diagnostics` § 4 carries this.
+- **Verification Outcome**: ⚠️ **pending.** The confirming run had not been launched when this entry
+  was written. It must be **one run** (the criteria in the run-28 analysis are all countable events,
+  which is why one suffices), suite 6, candidate `claude-sonnet-5` at thinking level `high`, the same
+  assessor roster, `verboseMode: false`, harness 17, scoring method 10, after an Overseer restart —
+  the tool guides are read once at startup. Until it has completed and been evaluated against the
+  analysis's pre-declared criteria, **every rung-3 change above is unverified**, and § 9's rollback
+  rule applies to each of them. Record the outcome here.
+
+**Two suite defects run 28 exposed, which are not chat findings and must not be read as any.**
+
+- **Q3's critical error is spurious.** Its rubric asserts *"Base AC is 1 in GnollHack"* and
+  *"Spellcasting penalty is 5"* — both are `src/objects.c` macro **arguments**, not values a player
+  ever sees. `GENERAL_ARMOR` stores `10 - ac` (`src/objects.c:1005`), `ARM_AC_BONUS`
+  (`include/hack.h:681`) reads it and `src/do.c:5273` negates it into the hero's AC; the spellcasting
+  penalty is multiplied by 30 (`include/general.h:1145`, applied at `src/do.c:2733`). The answer's
+  *"−9 (i.e., improves your AC by 9)"* and *"−150 %"* were **both correct**. Scoring Q3 at its own raw
+  64 instead of the cap of 25 moves the index 84 → 86 and the critical-error count **2 → 1**. The
+  index barely moves — two points inside a ± 11 interval — but the count halves, and the count is the
+  figure the report itself directs a reader to for this failure mode. **The repair is a units rule
+  across every numeric rubric point in the suite, not a one-line edit**, and no harness check can
+  see this class of defect: the second opinion agreed at 25/25 because it read the same rubric.
+- **All 18 rubrics label their FORM section `**FORM** (readability)`**, asserting a grading link that
+  scoring method v9 abolished and that the assessor prompt now contradicts outright. The canonical
+  label — `**FORM** (not graded — presentation note only)` — existed in exactly one place in the
+  repository, the question editor's placeholder text. `BenchmarkGenerationPrompt` was the upstream
+  cause and was fixed in this round, so a newly generated suite cannot reproduce it; repairing the
+  18 live rubrics is a separate step, because editing `ExpectedPoints` increments `ItemRevision` and
+  nulls the assessed-difficulty snapshot, and `SuiteItemRevisions` is a **Fundamental** comparability
+  key. **When that repair happens it will be a fourth deliberate comparability break**, this one
+  suite-scoped rather than method-scoped: every run of suite 6 after the edit is non-comparable with
+  every run before it, `GET suites/6/item-analysis` will report every item as `InsufficientData`
+  until new runs accumulate (`BenchmarkItemAnalysis` admits an answer only at the question's current
+  revision), and stored `BenchmarkGroupAnalysis` rows covering suite-6 runs go stale. **It must be
+  written down here when it lands, or a later reader will read the revision bump as an improvement.**
+
 ---
 
 ## 12. Cross-References

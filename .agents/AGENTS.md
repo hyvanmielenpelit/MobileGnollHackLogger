@@ -52,6 +52,14 @@ These are the **only** correct ways to run this repository's tests. Use them ver
   ```
   The `--filter` is **not optional**. Without it the run calls live OpenAI, Anthropic and Google APIs, spending quota and money. For the whole solution, substitute `MobileGnollHackLogger.slnx` for `Overseer.Tests`. Note the project directory is `Overseer.Tests`, plural.
 
+  **This command depends on the repository-root `global.json`.** `Overseer.Tests` is a Microsoft.Testing.Platform application, and from the .NET 10 SDK onward `dotnet test` refuses to run one through the old VSTest path — *"Testing with VSTest target is no longer supported…"*. The `"test": { "runner": "Microsoft.Testing.Platform" }` entry in `global.json` selects the new runner, and without it the command above fails outright. **Do not delete or "modernise" that file** — see the `testing-guidelines` skill for why `dotnet.config` is not the mechanism here.
+
+  > ⚠️ **The filter fails open, so verify it rather than trusting it.** A typo in either the trait name or its value — `Categoy!=UsesExternalApi`, `Category!=UsesExternalApis` — matches nothing, excludes nothing, and runs the live-API tests without a word of complaint. If you change the filter string, confirm it with a **discovery** count first, which runs no test and spends nothing:
+  > ```bash
+  > dotnet test Overseer.Tests --list-tests --filter "Category=UsesExternalApi"
+  > ```
+  > That must report exactly the live-API tests (4 as of 2026-09-09). Never check a filter by running the suite unfiltered.
+
 - **Angular tests** (from `Overseer/ClientApp/`):
   ```bash
   npm run test:headless

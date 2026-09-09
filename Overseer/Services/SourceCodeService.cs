@@ -41,7 +41,12 @@ namespace Overseer.Services
         
         private readonly Dictionary<string, string> _flagDescriptions = new(StringComparer.OrdinalIgnoreCase);
         private readonly GameDataParser _dataParser = new();
-        
+
+        /* Reloaded from ParseGameData on every re-index, so it tracks the HEAD poll with the rest
+           of the corpus. Takes the same tokenizer the rest of the game-data parsing uses, so it
+           needs no DI registration of its own. */
+        private readonly ObjectsMacroResolver _itemResolver;
+
         public GameDataParser Parser => _dataParser;
         
         private readonly IConfiguration _configuration;
@@ -66,6 +71,7 @@ namespace Overseer.Services
         {
             _configuration = configuration;
             _logger = logger;
+            _itemResolver = new ObjectsMacroResolver(_dataParser);
             _sourceCodePath = configuration[configPathKey] ?? string.Empty;
             
             if (!int.TryParse(configuration["MaxSourceFileSizeKB"], out _maxFileSizeKB))
@@ -439,7 +445,20 @@ namespace Overseer.Services
                 var objectsDoc = _documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("src\\objects.c", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("src/objects.c", StringComparison.OrdinalIgnoreCase));
                 if (monstDoc != null) _dataParser.ParseMacros(monstDoc.ContentLines);
                 if (objectsDoc != null) _dataParser.ParseMacros(objectsDoc.ContentLines);
-                
+
+                /* objclass.h supplies the enum constants the ternary conditions in CHARGEDRING,
+                   MISCELLANEOUSITEM, GENERAL_TOOL, GENERAL_SPELLTOOL, CONTAINER and GENERAL_ROCK
+                   compare against; without it roughly sixty entries return C ternary text in place
+                   of a value. NetHackSourceCodeService overrides this method with a no-op, so the
+                   resolver is GnollHack-only without a guard here. */
+                if (objectsDoc != null)
+                {
+                    _itemResolver.Load(objectsDoc.ContentLines, objclassDoc?.ContentLines);
+                    _logger.LogInformation(
+                        "Indexed {Count} objects.c item entries for structured item stats.",
+                        _itemResolver.ItemNames.Count);
+                }
+
                 _logger.LogInformation("Parsed game data macros and structs.");
             }
             catch (Exception pex)
@@ -1051,7 +1070,10 @@ namespace Overseer.Services
             return results;
         }
 
-        public StatsResponse<ItemStats> GetItemStats(string name)
+        /// <param name="name">The item's bare <c>oc_name</c>, as src/objects.c writes it.</param>
+        /// <param name="objectClass">Selects among the object classes that hold an entry of this name.
+        /// Null resolves the first in file order and reports the sharing classes in the result.</param>
+        public StatsResponse<ItemStats> GetItemStats(string name, string? objectClass = null)
         {
             var response = new StatsResponse<ItemStats>();
             var doc = _documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("src\\objects.c", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("src/objects.c", StringComparison.OrdinalIgnoreCase));
@@ -1089,11 +1111,44 @@ namespace Overseer.Services
 
             string rawDef = doc.ContentLines[matchLine].TrimStart() + "\n" + string.Join("\n", doc.ContentLines.Skip(matchLine + 1).Take(extraction.EndLine - matchLine));
 
-            /* Level 2 for items — raw dump + context (structured parsing requires per-macro handlers) */
+            /* Level 1 — the named object class values, expanded from the macro chain by
+               ObjectsMacroResolver. The lookup key is the bare oc_name, which is the same name
+               the regex above matched, so the tool's contract does not change. */
+            ItemResolution resolution;
+            try
+            {
+                resolution = _itemResolver.Resolve(name, objectClass);
+            }
+            catch (Exception rex)
+            {
+                /* Never lose the raw definition to a resolver defect: the raw dump below is a
+                   complete answer on its own, and this tool is model-facing. */
+                _logger.LogWarning(rex, "Level 1 parsing threw for item '{Name}', falling back to Level 2.", name);
+                resolution = ItemResolution.Failed($"The macro resolver threw: {rex.Message}");
+            }
+
+            if (resolution.Success)
+            {
+                response.Stats = new ItemStats { Fields = resolution.Fields };
+                response.RawDefinition = rawDef;
+                response.Message = resolution.Message;
+                PopulateFlagDescriptions(response, resolution.FlagTokens);
+                return response;
+            }
+
+            _logger.LogInformation(
+                "Level 1 parsing did not resolve item '{Name}' ({Reason}); returning the raw definition.",
+                name, resolution.FailureReason);
+
+            /* Level 2 — raw dump plus the macro and struct context needed to read it. The name
+               regex above matches every armour wrapper, so the macro list has to as well or the
+               model is told to interpret definitions it was not given. */
             response.RawDefinition = rawDef;
-            response.MacroDefinitions = _dataParser.GetMacroDefinitions("OBJECT", "OBJ", "BITS", "WEAPON", "ARMOR", "POTION", "SCROLL", "SPELL", "WAND", "RING", "AMULET", "TOOL", "GEM", "ROCK", "COIN", "MISCELLANEOUSITEM", "FOOD", "REAGENT", "BOW", "PROJECTILE");
+            response.MacroDefinitions = _dataParser.GetMacroDefinitions("OBJECT", "OBJ", "BITS", "WEAPON", "ARMOR", "SUIT", "HELM", "CLOAK", "SHIELD", "GLOVES", "BOOTS", "SHIRT", "ROBE", "BRACERS", "DRGN_ARMR", "WEAPONSHIELD", "WEAPONBOOTS", "WEAPONGLOVES", "POTION", "SCROLL", "SPELL", "WAND", "RING", "CHARGEDRING", "AMULET", "TOOL", "SPELLTOOL", "WEPTOOL", "CONTAINER", "GEM", "ROCK", "COIN", "MISCELLANEOUSITEM", "FOOD", "REAGENT", "BOW", "PROJECTILE");
             response.StructDefinitions = _dataParser.GetStructDefinitions("objclass");
-            response.Message = $"Raw source and context provided for '{name}'. Item parsing uses many macro formats; interpret using the macro definitions provided.";
+            response.Message = response.MacroDefinitions.Count > 0
+                ? $"Raw source for '{name}', with the macro and struct definitions needed to read it. Interpret the macro invocation against those definitions. Structured values were not available: {resolution.FailureReason}"
+                : $"Raw source for '{name}'. No macro definitions were available for it, so interpret the invocation against src/objects.c itself. Structured values were not available: {resolution.FailureReason}";
             PopulateFlagDescriptions(response, rawDef);
 
             return response;

@@ -3296,7 +3296,16 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       // Read out of the run's own profile snapshot server-side, so this describes the run in
       // front of it rather than whatever the default profile says today.
       lines.push(`Speed: target ${run.scoringProfileSpeedTargetMs ?? 'n/a'} ms, decay k ${run.scoringProfileSpeedDecayK ?? 'n/a'}`);
-      lines.push(`Second opinion: mode ${this.diagnosticsModeName(run.secondOpinionModeUsed)}, threshold ${run.scoringProfileSecondOpinionQualityThreshold ?? 'n/a'}, outlier delta ${run.scoringProfileSecondOpinionOutlierDeltaPoints ?? 'n/a'}`);
+      // The outlier delta is read only by the FlaggedAndOutliers trigger, so under any other mode it
+      // is a setting that governed nothing and reads as a threshold the run applied.
+      const secondOpinionParts = [
+        `mode ${this.diagnosticsModeName(run.secondOpinionModeUsed)}`,
+        `threshold ${run.scoringProfileSecondOpinionQualityThreshold ?? 'n/a'}`
+      ];
+      if (run.secondOpinionModeUsed === BenchmarkSecondOpinionMode.FlaggedAndOutliers) {
+        secondOpinionParts.push(`outlier delta ${run.scoringProfileSecondOpinionOutlierDeltaPoints ?? 'n/a'}`);
+      }
+      lines.push(`Second opinion: ${secondOpinionParts.join(', ')}`);
       lines.push(`Tool call budget: ${run.maxToolCallsPerQuestionUsed ?? 'not recorded'}`);
       lines.push('');
 
@@ -3590,13 +3599,18 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     return lines.join('\n');
   }
 
-  /** Mode names for the diagnostics capture, which is read as plain text and not localised. */
+  /**
+   * Mode names for the diagnostics capture, which is read as plain text and not localised. Switched
+   * on the enum rather than on bare integers so a mode added to `BenchmarkSecondOpinionMode` cannot
+   * be missing here while the two remain in the same file.
+   */
   private diagnosticsModeName(mode: number | null | undefined): string {
     switch (mode) {
-      case 0: return 'Off';
-      case 1: return 'Flagged';
-      case 2: return 'FlaggedAndOutliers';
-      case 3: return 'All';
+      case BenchmarkSecondOpinionMode.Off: return 'Off';
+      case BenchmarkSecondOpinionMode.Flagged: return 'Flagged';
+      case BenchmarkSecondOpinionMode.FlaggedAndOutliers: return 'FlaggedAndOutliers';
+      case BenchmarkSecondOpinionMode.All: return 'All';
+      case BenchmarkSecondOpinionMode.FlaggedPlusSample: return 'FlaggedPlusSample';
       default: return 'unknown';
     }
   }
@@ -4448,6 +4462,47 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     return (this.selectedRunDetail?.answers ?? []).filter(a => this.assessedBandOf(a) !== null);
   }
 
+  /**
+   * The authored band's own midpoint, which a mismatch's signed delta is measured against. Mirrors
+   * BenchmarkRunFinalizer.FallbackDifficulty on the server.
+   */
+  private authoredBandMidpoint(difficulty: string | number): number {
+    switch (this.formatDifficulty(difficulty)) {
+      case 'Simple': return 25;
+      case 'Intermediate': return 55;
+      case 'Advanced': return 85;
+      default: return 50;
+    }
+  }
+
+  /**
+   * Signed band drift over the mismatches: how many were assessed harder than authored, how many
+   * easier, and the mean signed delta against the authored midpoint. A list of per-question shifts
+   * hides the case the operator has to see — every mismatch moving the same way — and assessed
+   * difficulty is the Intelligence Index weight, so a one-directional drift moves the headline.
+   */
+  bandDriftSummary(): { up: number; down: number; meanDelta: number; oneDirection: 'up' | 'down' | null } | null {
+    const mismatches = this.bandDisagreements();
+    if (mismatches.length === 0) return null;
+
+    let up = 0;
+    let down = 0;
+    let deltaSum = 0;
+    for (const ans of mismatches) {
+      const delta = (ans.assessedDifficulty ?? 0) - this.authoredBandMidpoint(ans.difficulty);
+      deltaSum += delta;
+      if (delta > 0) up++;
+      else if (delta < 0) down++;
+    }
+
+    return {
+      up,
+      down,
+      meanDelta: deltaSum / mismatches.length,
+      oneDirection: up > 0 && down === 0 ? 'up' : down > 0 && up === 0 ? 'down' : null
+    };
+  }
+
   // --- Tool usage profile ---
 
   /**
@@ -5169,6 +5224,30 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
 
   get speedIndexSaturationAdvisoryTitle(): string {
     return `Saturated — ${this.speedIndexCeilingAnswerCount} of ${this.speedIndexScoredAnswerCount} answers finished inside their difficulty-scaled target, so this index cannot discriminate at this speed. Compare median model time instead.`;
+  }
+
+  /**
+   * Median model time over the answered questions, which is what still discriminates once the Speed
+   * Index has run out of resolution. Mirrors the report's own median, from the same column.
+   */
+  get medianModelTimeMs(): number | null {
+    const times = this.answeredRunAnswers.map(a => this.modelTimeOf(a)).sort((x, y) => x - y);
+    if (times.length === 0) return null;
+
+    const mid = Math.floor(times.length / 2);
+    return times.length % 2 === 1 ? times[mid] : Math.round((times[mid - 1] + times[mid]) / 2);
+  }
+
+  /**
+   * H9. Where the index cannot discriminate — saturated, or a deliberating candidate on an
+   * interactive-latency profile — the card leads with median model time and demotes the index to its
+   * sub-line. Presentation only: no score, no scoring profile and no method version changes, because
+   * re-tuning the speed target would mark every future run non-comparable on the quality dimensions
+   * too.
+   */
+  get demoteSpeedIndex(): boolean {
+    return (this.showSpeedIndexSaturationAdvisory || this.showRunProfileFitAdvisory) &&
+      this.medianModelTimeMs != null;
   }
 
   get showAgreementTile(): boolean {

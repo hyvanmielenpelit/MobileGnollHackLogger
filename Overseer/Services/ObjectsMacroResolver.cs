@@ -128,6 +128,8 @@ namespace Overseer.Services
             public List<string> Arguments = new();
             public int FirstLine;
             public int LastLine;
+            /// <summary>oc_class of this entry, resolved once at index time.</summary>
+            public string ObjectClass = string.Empty;
         }
 
         private readonly GameDataParser _parser;
@@ -139,7 +141,12 @@ namespace Overseer.Services
         private readonly Dictionary<string, MacroDefine> _defines = new(StringComparer.Ordinal);
         private readonly Dictionary<string, long> _constants = new(StringComparer.Ordinal);
         private readonly Dictionary<string, List<string>> _structuralCache = new(StringComparer.Ordinal);
-        private readonly Dictionary<string, CallSite> _callSites = new(StringComparer.OrdinalIgnoreCase);
+        /* One oc_name can name entries in several object classes -- SCROLL("identify"),
+           WAND("identify") and SPELL("identify"), or RING("polymorph") and WAND("polymorph"),
+           43 names in all. Every entry is kept, in file order, so a resolve can say which
+           classes share the name and a caller can ask for one of them by class. */
+        private readonly Dictionary<string, List<CallSite>> _callSites =
+            new(StringComparer.OrdinalIgnoreCase);
         private readonly List<string> _itemNames = new();
 
         /// <summary>
@@ -159,7 +166,9 @@ namespace Overseer.Services
 
         /// <summary>
         /// Names of every item entry in objects.c, in file order, excluding macro-body
-        /// delegations, the <c>#if 0</c> block and the two array sentinels.
+        /// delegations, the <c>#if 0</c> block and the two array sentinels. One entry per distinct
+        /// oc_name: a name several object classes share appears once, and
+        /// <see cref="ObjectClassesOf"/> lists the classes that hold it.
         /// </summary>
         public IReadOnlyList<string> ItemNames
         {
@@ -187,7 +196,8 @@ namespace Overseer.Services
         /// <paramref name="objectsLines"/> first when they are not the lines already loaded.
         /// This is the entry point for SourceCodeService.GetItemStats.
         /// </summary>
-        public ItemResolution Resolve(string[] objectsLines, string[]? objclassLines, string itemName)
+        public ItemResolution Resolve(
+            string[] objectsLines, string[]? objclassLines, string itemName, string? objectClass = null)
         {
             if (objectsLines == null) return ItemResolution.Failed("objects.c content was not supplied.");
 
@@ -198,12 +208,17 @@ namespace Overseer.Services
                 {
                     LoadLocked(objectsLines, objclassLines);
                 }
-                return ResolveLocked(itemName);
+                return ResolveLocked(itemName, objectClass);
             }
         }
 
-        /// <summary>Resolves the item named <paramref name="itemName"/> from the loaded source.</summary>
-        public ItemResolution Resolve(string itemName)
+        /// <summary>
+        /// Resolves the item named <paramref name="itemName"/> from the loaded source.
+        /// <paramref name="objectClass"/> selects among the 43 names that several object classes
+        /// share; without it the first entry in file order is resolved and the resolution's notes
+        /// name the classes that share the name.
+        /// </summary>
+        public ItemResolution Resolve(string itemName, string? objectClass = null)
         {
             lock (_sync)
             {
@@ -211,7 +226,22 @@ namespace Overseer.Services
                 {
                     return ItemResolution.Failed("objects.c has not been indexed by ObjectsMacroResolver.");
                 }
-                return ResolveLocked(itemName);
+                return ResolveLocked(itemName, objectClass);
+            }
+        }
+
+        /// <summary>
+        /// The object classes that hold an entry named <paramref name="itemName"/>, in file order.
+        /// Empty when the name is not an item entry; more than one for the 43 shared names.
+        /// </summary>
+        public IReadOnlyList<string> ObjectClassesOf(string itemName)
+        {
+            lock (_sync)
+            {
+                if (string.IsNullOrWhiteSpace(itemName)) return Array.Empty<string>();
+                return _callSites.TryGetValue(itemName.Trim(), out var sharing)
+                    ? sharing.Select(s => s.ObjectClass).ToList()
+                    : Array.Empty<string>();
             }
         }
 
@@ -310,13 +340,16 @@ namespace Overseer.Services
                 /* The dummy objects[0] and the array terminator are well-formed OBJECT calls;
                    only their object class tells them apart (objects.c:94-102, 5551-5558). */
                 if (site.ItemName.Length == 0) continue;
-                if (string.Equals(GetObjectClassOf(site), "ILLOBJ_CLASS", StringComparison.Ordinal)) continue;
+                site.ObjectClass = GetObjectClassOf(site);
+                if (string.Equals(site.ObjectClass, "ILLOBJ_CLASS", StringComparison.Ordinal)) continue;
 
-                if (!_callSites.ContainsKey(site.ItemName))
+                if (!_callSites.TryGetValue(site.ItemName, out var sharing))
                 {
-                    _callSites[site.ItemName] = site;
+                    sharing = new List<CallSite>(1);
+                    _callSites[site.ItemName] = sharing;
                     _itemNames.Add(site.ItemName);
                 }
+                sharing.Add(site);
             }
         }
 
@@ -671,17 +704,37 @@ namespace Overseer.Services
          * Substitution
          * =============================================================================== */
 
-        private ItemResolution ResolveLocked(string itemName)
+        private ItemResolution ResolveLocked(string itemName, string? objectClass)
         {
             if (string.IsNullOrWhiteSpace(itemName))
             {
                 return ItemResolution.Failed("No item name was supplied.");
             }
 
-            if (!_callSites.TryGetValue(itemName.Trim(), out var site))
+            if (!_callSites.TryGetValue(itemName.Trim(), out var sharing) || sharing.Count == 0)
             {
                 return ItemResolution.Failed(
                     $"objects.c has no item entry named '{itemName}'. Macro-body delegations, the #if 0 block and the two array sentinels are not item entries.");
+            }
+
+            /* First in file order when no class is asked for, which is what the caller got before
+               the entries were kept separately. */
+            CallSite site;
+            if (string.IsNullOrWhiteSpace(objectClass))
+            {
+                site = sharing[0];
+            }
+            else
+            {
+                var requested = sharing.FirstOrDefault(
+                    s => string.Equals(s.ObjectClass, objectClass, StringComparison.OrdinalIgnoreCase));
+                if (requested == null)
+                {
+                    return ItemResolution.Failed(
+                        $"objects.c has an item entry named '{itemName}', but not in object class '{objectClass}'. "
+                        + $"It is in {string.Join(", ", sharing.Select(s => s.ObjectClass))}.");
+                }
+                site = requested;
             }
 
             if (!TryExpandToObject(site.MacroName, site.Arguments, out var slots, out string? error))
@@ -727,6 +780,27 @@ namespace Overseer.Services
 
             Emit(resolution, site, slots, objValues, bitsValues,
                 structural, structuralObjValues, structuralBitsValues);
+
+            /* The classes sharing the name are always reported, so a consumer can see that the
+               name is not unique. The note is added only when the resolver picked for the
+               caller: a caller that named a class chose it and is not being told something it
+               did not ask for. */
+            if (sharing.Count > 1)
+            {
+                resolution.Fields["ambiguous_object_classes"] =
+                    sharing.Select(s => s.ObjectClass).ToList();
+
+                if (string.IsNullOrWhiteSpace(objectClass))
+                {
+                    var others = sharing.Where(s => !ReferenceEquals(s, site)).Select(s => s.ObjectClass).ToList();
+                    resolution.Notes.Add(
+                        $"'{site.ItemName}' names {sharing.Count} entries in objects.c. These values are the "
+                        + $"{site.ObjectClass} one; the name is also used by {string.Join(", ", others)}. "
+                        + "Pass object_class to get one of those instead.");
+                }
+
+                resolution.Fields["notes"] = resolution.Notes.ToList();
+            }
 
             return resolution;
         }
@@ -1054,8 +1128,11 @@ namespace Overseer.Services
             return normalised;
         }
 
+        /* The casts to object are load-bearing: without them the conditional's own type is long,
+           so the int branch widens back to long before it is boxed and every value in Fields
+           arrives as a long. */
         private static object Number(long value) =>
-            value >= int.MinValue && value <= int.MaxValue ? (int)value : value;
+            value >= int.MinValue && value <= int.MaxValue ? (object)(int)value : (object)value;
 
         /// <summary>
         /// Expands the expression-shaped macros a slot can contain: HARDGEM(n) from objects.c,
@@ -1588,7 +1665,20 @@ namespace Overseer.Services
 
             /* --- material, category, skill ---------------------------------------------- */
             fields["material"] = EvaluateSlot(BitsValue(bitsValues, "oc_material") ?? "0");
-            fields["material_init_type"] = EvaluateSlot(BitsValue(bitsValues, "oc_material_init_type") ?? "0");
+            object materialInit = EvaluateSlot(BitsValue(bitsValues, "oc_material_init_type") ?? "0");
+            fields["material_init_type"] = materialInit;
+
+            /* MATINIT_BASE_MATERIAL is the only init type under which oc_material is the material a
+               player will see. Under any other one o_init.c randomises it through
+               material_wishing_definitions[], so the value here is a base a consumer could over-read
+               as the instance's material. */
+            if (!(materialInit is string init && init == "MATINIT_BASE_MATERIAL"))
+            {
+                notes.Add("material is the base material only: this entry's material_init_type is not "
+                    + "MATINIT_BASE_MATERIAL, so a particular object's material is randomised through "
+                    + "material_wishing_definitions[] in o_init.c.");
+            }
+
             fields[Key(objectClass, "subtyp", "subtype")] =
                 EvaluateSlot(BitsValue(bitsValues, "oc_subtyp") ?? "0");
             fields["skill"] = EvaluateSlot(BitsValue(bitsValues, "oc_skill") ?? "0");
@@ -1611,7 +1701,7 @@ namespace Overseer.Services
             fields["range"] = EvaluateSlot(Slot(slots, "oc_range") ?? "0");
 
             /* --- oc_oc1..oc_oc8, whose meaning depends on the object class -------------- */
-            EmitOcSlots(fields, objectClass, site, slots, structuralSlots);
+            EmitOcSlots(fields, notes, objectClass, site, slots, structuralSlots);
 
             /* --- conveyed properties and power flags ------------------------------------ */
             AddUnlessAbsent(fields, "conveyed_property", EvaluateSlot(Slot(slots, "oc_oprop") ?? "0"));
@@ -1645,6 +1735,11 @@ namespace Overseer.Services
             /* --- tile and descriptor data ----------------------------------------------- */
             fields["tile_floor_height"] = EvaluateSlot(ObjValue(objValues, "oc_tile_floor_height") ?? "0");
             fields["descriptor_flags"] = EvaluateSlot(ObjValue(objValues, "oc_descr_flags") ?? "0");
+            /* The last three struct objdescr members. Omitted at their NO_* defaults, which every
+               entry that does not override them carries, so a value here means the entry set one. */
+            AddSymbolUnlessDefault(fields, objValues, "stand_animation", "NO_ANIMATION");
+            AddSymbolUnlessDefault(fields, objValues, "enlargement", "NO_ENLARGEMENT");
+            AddSymbolUnlessDefault(fields, objValues, "replacement", "NO_REPLACEMENT");
 
             /* --- permissions and object flags ------------------------------------------- */
             fields["power_permissions"] = EvaluateSlot(Slot(slots, "oc_power_permissions") ?? "0");
@@ -1664,7 +1759,44 @@ namespace Overseer.Services
                 + "modified at run time by its material, enchantment, exceptionality and erosion "
                 + "(weapon.c:4867-4947, hack.h:681-686, spell.c:5159-5178).";
 
+            SplitFlagUnions(fields);
+
             if (notes.Count > 0) fields["notes"] = notes.ToList();
+        }
+
+        /// <summary>
+        /// A slot whose value is an OR of symbolic flags becomes a list of those flags, which is the
+        /// shape get_monster_stats already returns for mflags1 and its siblings
+        /// (SourceCodeService.ParseFlagField). A value with no <c>|</c> is left as it stands.
+        /// </summary>
+        private static void SplitFlagUnions(Dictionary<string, object> fields)
+        {
+            foreach (string key in fields.Keys.ToList())
+            {
+                if (fields[key] is not string text || !text.Contains('|')) continue;
+
+                var flags = text.Split('|')
+                    .Select(part => part.Trim())
+                    .Where(part => part.Length > 0)
+                    .ToList();
+                if (flags.Count > 1) fields[key] = flags;
+            }
+        }
+
+        /// <summary>
+        /// A struct objdescr member that carries a symbol rather than a number, emitted only when it
+        /// differs from <paramref name="defaultSymbol"/>.
+        /// </summary>
+        private void AddSymbolUnlessDefault(
+            Dictionary<string, object> fields, List<string> objValues, string key, string defaultSymbol)
+        {
+            string? raw = ObjValue(objValues, key);
+            if (raw == null) return;
+
+            string normalised = Normalise(raw);
+            if (normalised.Length == 0 || normalised == defaultSymbol || normalised == "0") return;
+
+            fields[key] = normalised;
         }
 
         private static void AddUnlessAbsent(Dictionary<string, object> fields, string key, object value)
@@ -1927,6 +2059,7 @@ namespace Overseer.Services
 
         private void EmitOcSlots(
             Dictionary<string, object> fields,
+            List<string> notes,
             string objectClass,
             CallSite site,
             List<string> slots,
@@ -1947,14 +2080,36 @@ namespace Overseer.Services
 
                 fields[name] = value;
 
+                /* Each of these three slots is stored in a unit the player never sees, and a
+                   consumer reading the number alone has no way to tell which unit it is in. The
+                   convention travels with the value rather than sitting only in a comment here. */
                 if (name == "ac_bonus")
                 {
                     EmitBaseAc(fields, site, structuralSlots, value);
+                    notes.Add("ac_bonus is oc_armor_class, the stored AC bonus, and armour stores it "
+                        + "as 10 - ac (src/objects.c:1005) — base_ac is that ac argument. "
+                        + "ARM_AC_BONUS (include/hack.h:681) reads oc_armor_class and src/do.c:5273 "
+                        + "negates it into the hero's AC, so a bonus of 9 lowers AC by 9, which is an "
+                        + "improvement.");
                 }
-                else if (name == "spell_casting_penalty" && value is int penalty)
+                else if (name == "magic_cancellation")
                 {
-                    fields["spell_casting_penalty_percent"] =
-                        Number(penalty * ArmorSpellCastingPenaltyMultiplier);
+                    notes.Add("magic_cancellation is oc_magic_cancellation, the stored MC level. "
+                        + "ARM_MC_BONUS (include/hack.h:686) adjusts it further, so the value a "
+                        + "worn instance confers is not always this number.");
+                }
+                else if (name == "spell_casting_penalty")
+                {
+                    if (value is int penalty)
+                    {
+                        fields["spell_casting_penalty_percent"] =
+                            Number(penalty * ArmorSpellCastingPenaltyMultiplier);
+                    }
+                    notes.Add("spell_casting_penalty is the stored oc_spell_casting_penalty. The "
+                        + "penalty a player experiences is spell_casting_penalty_percent, that value "
+                        + $"multiplied by ARMOR_SPELL_CASTING_PENALTY_MULTIPLIER = "
+                        + $"{ArmorSpellCastingPenaltyMultiplier} (include/general.h:1145, applied at "
+                        + "src/do.c:2733).");
                 }
             }
         }

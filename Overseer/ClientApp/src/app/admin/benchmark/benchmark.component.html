@@ -1416,30 +1416,40 @@
               <span class="score-note">weighting {{ weightingDeltaLabel }}</span>
             </div>
           }
+          <!--
+            Where the Speed Index cannot discriminate, the card leads with the figure that can and
+            the index moves to the sub-line. The demoted form is presentational: nothing about the
+            score, the profile or the scoring method version changes with it.
+          -->
           <div class="score-card">
-            <span class="score-label">Speed Index</span>
-            <span class="score-subvalue" [class]="getScoreBadgeClass(selectedRunDetail.speedIndex)">
-              {{ selectedRunDetail.speedIndex != null ? selectedRunDetail.speedIndex : 'N/A' }} / 100
-              @if (selectedRunDetail.speedMeasurementDegraded) {
-                <span class="degraded-tag" title="Concurrency enabled; speed advisory">*</span>
+            @if (demoteSpeedIndex) {
+              <span class="score-label">Median Model Time</span>
+              <span class="score-subvalue">
+                {{ medianModelTimeMs | number:'1.0-0' }} ms
+              </span>
+              <span class="score-note" [title]="showSpeedIndexSaturationAdvisory ? speedIndexSaturationAdvisoryTitle : runProfileFitAdvisoryTitle">
+                Speed Index {{ selectedRunDetail.speedIndex != null ? selectedRunDetail.speedIndex : 'N/A' }} / 100 &mdash;
+                advisory{{ showSpeedIndexSaturationAdvisory ? ' (saturated: ' + speedIndexCeilingAnswerCount + ' of ' + speedIndexScoredAnswerCount + ' at the ceiling)' : ' (profile latency target does not fit this thinking level)' }}
+              </span>
+            } @else {
+              <span class="score-label">Speed Index</span>
+              <span class="score-subvalue" [class]="getScoreBadgeClass(selectedRunDetail.speedIndex)">
+                {{ selectedRunDetail.speedIndex != null ? selectedRunDetail.speedIndex : 'N/A' }} / 100
+                @if (selectedRunDetail.speedMeasurementDegraded) {
+                  <span class="degraded-tag" title="Concurrency enabled; speed advisory">*</span>
+                }
+                <!--
+                  The other reason a Speed Index is advisory: a deliberating candidate measured
+                  against an interactive-latency profile. Reachable here only when there is no
+                  median to lead with, since otherwise the card is in its demoted form.
+                -->
+                @if (showRunProfileFitAdvisory) {
+                  <span class="degraded-tag" [title]="runProfileFitAdvisoryTitle">*</span>
+                }
+              </span>
+              @if (showSpeedIndexSaturationAdvisory) {
+                <span class="score-note" [title]="speedIndexSaturationAdvisoryTitle">saturated &mdash; {{ speedIndexCeilingAnswerCount }} of {{ speedIndexScoredAnswerCount }} at the ceiling; compare median model time</span>
               }
-              <!--
-                The other reason a Speed Index is advisory, which this screen used to omit: a
-                deliberating candidate measured against an interactive-latency profile. The
-                report said so; the tile showed a bare number.
-              -->
-              @if (showRunProfileFitAdvisory) {
-                <span class="degraded-tag" [title]="runProfileFitAdvisoryTitle">*</span>
-              }
-            </span>
-            <!--
-              A run whose Speed Index sits at the ceiling on most of its answers carries no
-              discriminating information: every answer at 100 looks identical to the index
-              whether it finished at the target or well inside it. Median model time still
-              separates them, so the note is shown rather than hidden behind a hover.
-            -->
-            @if (showSpeedIndexSaturationAdvisory) {
-              <span class="score-note" [title]="speedIndexSaturationAdvisoryTitle">saturated &mdash; {{ speedIndexCeilingAnswerCount }} of {{ speedIndexScoredAnswerCount }} at the ceiling; compare median model time</span>
             }
           </div>
           <!--
@@ -1724,6 +1734,25 @@
               {{ bandDisagreements().length }} of {{ selectedRunDetail.answers.length }} question(s)
               were assessed outside their authored band.
             </p>
+            <!--
+              Signed drift, before the per-question list. Assessed difficulty is the Intelligence
+              Index weight, so mismatches that all move one way shift the headline; the list alone
+              does not show that.
+            -->
+            @if (bandDriftSummary(); as drift) {
+              <p class="section-note">
+                {{ drift.up }} assessed harder than authored, {{ drift.down }} easier; mean signed
+                delta {{ drift.meanDelta > 0 ? '+' : '' }}{{ drift.meanDelta | number:'1.1-1' }}
+                points against the authored band midpoint.
+                @if (drift.oneDirection === 'up') {
+                  <strong>Every mismatch moved the same way &mdash; upward</strong>, so the authored
+                  bands under-rate this suite systematically.
+                } @else if (drift.oneDirection === 'down') {
+                  <strong>Every mismatch moved the same way &mdash; downward</strong>, so the authored
+                  bands over-rate this suite systematically.
+                }
+              </p>
+            }
             <ul class="band-shift-list">
               @for (ans of bandDisagreements(); track ans.orderIndex) {
                 <li>

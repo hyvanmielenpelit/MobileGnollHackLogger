@@ -12,6 +12,23 @@ Returns a unified JSON response with these fields:
 Use this tool for precise stat questions: exact AC, MR, damage dice, speed,
 resistances, flags. Every monster in the game is indexed.
 
+## Reading ac, mc and mr
+
+Three of these fields are on scales that run in different directions, and none of them is a
+plain "higher is stronger" number. State the direction whenever you quote one.
+
+- `ac` — armour class. **Lower is better for the defender**: it makes the monster harder to
+  hit, and it goes negative for well-armoured monsters.
+- `mc` — magic cancellation. A small **level**, not a percentage, and **higher is better** for
+  the monster. The game converts the level into a chance to negate a magical touch attack, so
+  the number in this field is not itself a percentage.
+- `mr` — magic resistance. A **percentage from 0 to 100**, and **higher is better** for the
+  monster: it is the chance to resist other magic outright. A small value therefore means
+  *little* resistance, not a little resistance that is hard to overcome.
+
+`mc` and `mr` are base values for the species. What a particular monster gets is adjusted at
+run time by its own intrinsics and equipment.
+
 For strategy advice, gameplay tips, or descriptions, use monster_lookup or
 wiki_search FIRST — they contain information not captured in raw struct fields.
 

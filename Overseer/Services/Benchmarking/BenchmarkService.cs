@@ -415,6 +415,16 @@ public class BenchmarkService
                 }
             }
 
+            // Claim Verification Stage: checks unverified claims against source and wiki.
+            //
+            // Ahead of the two run-level second-opinion stages below, so every second opinion in the
+            // run reads the same verification state. It used to follow them, which made "did this
+            // second reader see a refuted claim?" depend on which trigger selected it: the per-answer
+            // path verifies before its own second opinion, so a flagged answer's second reader was
+            // handed the refutation while an outlier-selected or sample-selected one was not. That
+            // made the pooled agreement figure a mixture of two different measurements.
+            await RunClaimVerificationAsync(db, configService, run, cancellationToken);
+
             // Stage 3, in FlaggedAndOutliers mode only: answers far below this run's own median.
             // It has to wait for every answer because it needs that median, which is the whole
             // reason it is a separate stage rather than another per-answer trigger. Placed before
@@ -427,7 +437,10 @@ public class BenchmarkService
             // outlier sweep above: "lowest quality score first" needs the full set of scores.
             await RunSecondOpinionSampleTopUpAsync(db, configService, run, profile, scoringConstants, cancellationToken);
 
-            // Claim Verification Stage: checks unverified claims against source and wiki
+            // Again, because a critical-error split is one of the things that makes an answer a
+            // verification candidate and only a second opinion can produce one. The pass filters on
+            // ClaimVerificationJson and ClaimVerificationError both being null, so it re-checks
+            // nothing and returns before any model call when the two stages above found no split.
             await RunClaimVerificationAsync(db, configService, run, cancellationToken);
 
             // Final Synthesis Pass

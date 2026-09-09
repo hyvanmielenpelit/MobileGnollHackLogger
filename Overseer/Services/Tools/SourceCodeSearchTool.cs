@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -39,7 +41,7 @@ namespace Overseer.Services.Tools
             {
                 ""type"": ""object"",
                 ""properties"": {
-                    ""query"": { ""type"": ""string"", ""description"": ""The search terms to look up in the source code"" },
+                    ""query"": { ""type"": ""string"", ""description"": ""One literal substring, matched against each source line on its own. Not split into terms, cannot span a line break, and does not match file or symbol names. Prefer a short distinctive identifier over a phrase."" },
                     ""file_filter"": { ""type"": ""string"", ""description"": ""Optional. Restrict to a specific file (e.g., 'potion.c')"" },
                     ""max_results"": { ""type"": ""integer"", ""description"": ""Maximum number of files to return matches from (default 10, max 100)"" },
                     ""is_regex"": { ""type"": ""boolean"", ""description"": ""Optional. If true, treat the query as a regular expression"" },
@@ -164,7 +166,7 @@ namespace Overseer.Services.Tools
 
             if (string.IsNullOrWhiteSpace(content))
             {
-                return Task.FromResult(new ToolResult { Success = true, Content = "No relevant source code found." });
+                return Task.FromResult(new ToolResult { Success = true, Content = BuildMissContent(service, query, fileFilter, includeNetCode, isRegex) });
             }
 
             if (context.SpoilerFreeMode)
@@ -173,6 +175,150 @@ namespace Overseer.Services.Tools
             }
 
             return Task.FromResult(new ToolResult { Success = true, Content = content });
+        }
+
+        private const int ProbeMaxResults = 3;
+        private const int ProbeMaxResultLength = 1000;
+
+        /// <summary>
+        /// Builds a miss message that points at a next action instead of a bare "not found":
+        /// near-neighbour identifiers, a whitespace-collapsed retry, or per-term phrase probes,
+        /// depending on the shape of the query. Never throws — falls back to a plain miss message.
+        /// </summary>
+        private string BuildMissContent(SourceCodeService service, string query, string fileFilter, bool includeNetCode, bool isRegex)
+        {
+            try
+            {
+                var sb = new System.Text.StringBuilder("No relevant source code found for '").Append(query).Append('\'');
+                if (!string.IsNullOrWhiteSpace(fileFilter))
+                {
+                    sb.Append(" (file_filter='").Append(fileFilter).Append("' may be excluding the match)");
+                }
+                sb.Append('.');
+
+                bool hasWhitespace = query.Any(char.IsWhiteSpace);
+
+                if (!isRegex && !hasWhitespace && Regex.IsMatch(query, @"^[A-Za-z0-9_][A-Za-z0-9_.>\-]*$"))
+                {
+                    AppendIdentifierNeighbours(sb, service, query, fileFilter, includeNetCode);
+                }
+                else if (!isRegex && hasWhitespace)
+                {
+                    sb.Append(" No line contains it as one literal substring — spacing matters (e.g. 'a =' and 'a=' do not match).");
+                    AppendCollapsedWhitespaceProbe(sb, service, query, fileFilter, includeNetCode);
+
+                    var terms = query.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries)
+                        .Where(t => t.Length >= 2).Take(3).ToArray();
+                    if (terms.Length >= 2)
+                    {
+                        AppendPhraseProbes(sb, service, terms, fileFilter, includeNetCode);
+                    }
+                }
+
+                sb.Append(" Try search_definitions for a known symbol, or list_indexed_files to see what is indexed.");
+                return sb.ToString();
+            }
+            catch
+            {
+                return "No relevant source code found.";
+            }
+        }
+
+        private static void AppendIdentifierNeighbours(System.Text.StringBuilder sb, SourceCodeService service, string query, string fileFilter, bool includeNetCode)
+        {
+            var candidates = new List<string>();
+            var tokens = Regex.Matches(query, @"[A-Za-z0-9]+")
+                .Select(m => m.Value).Where(t => t.Length >= 3)
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+            if (tokens.Count > 1)
+            {
+                candidates.AddRange(tokens.OrderByDescending(t => t.Length).Take(2));
+            }
+            else if (query.Length > 6)
+            {
+                candidates.Add(query.Substring(0, query.Length - 2));
+                int half = Math.Max(3, query.Length / 2);
+                if (half < query.Length - 2) candidates.Add(query.Substring(0, half));
+            }
+
+            bool found = false;
+            foreach (var candidate in candidates.Distinct(StringComparer.OrdinalIgnoreCase).Take(2))
+            {
+                string probe = SafeProbe(service, candidate, fileFilter, includeNetCode);
+                if (!string.IsNullOrWhiteSpace(probe))
+                {
+                    found = true;
+                    sb.Append(" '").Append(candidate).Append("' matches ").Append(SummarizeProbe(probe)).Append('.');
+                }
+            }
+            if (!found && candidates.Count > 0)
+            {
+                sb.Append(" No shorter form of this identifier matched either.");
+            }
+        }
+
+        private static void AppendCollapsedWhitespaceProbe(System.Text.StringBuilder sb, SourceCodeService service, string query, string fileFilter, bool includeNetCode)
+        {
+            string collapsed = Regex.Replace(query, @"\s+", "");
+            if (collapsed.Length == 0 || string.Equals(collapsed, query, StringComparison.Ordinal)) return;
+
+            string probe = SafeProbe(service, collapsed, fileFilter, includeNetCode);
+            if (!string.IsNullOrWhiteSpace(probe))
+            {
+                sb.Append(" With whitespace removed, '").Append(collapsed).Append("' matches ").Append(SummarizeProbe(probe)).Append('.');
+            }
+        }
+
+        private static void AppendPhraseProbes(System.Text.StringBuilder sb, SourceCodeService service, string[] terms, string fileFilter, bool includeNetCode)
+        {
+            var hits = new List<string>();
+            foreach (var term in terms)
+            {
+                string probe = SafeProbe(service, term, fileFilter, includeNetCode);
+                if (!string.IsNullOrWhiteSpace(probe))
+                {
+                    hits.Add($"'{term}' matches {SummarizeProbe(probe)}");
+                }
+            }
+            sb.Append(hits.Count > 0
+                ? " " + string.Join("; ", hits) + "."
+                : " None of the individual terms matched either.");
+        }
+
+        /// <summary>Runs one filenames_only near-miss probe, swallowing errors and the "Error: Invalid regular expression" content.</summary>
+        private static string SafeProbe(SourceCodeService service, string probeQuery, string fileFilter, bool includeNetCode)
+        {
+            try
+            {
+                var result = service.SearchFiles(probeQuery, fileFilter, ProbeMaxResults, includeNetCode, ProbeMaxResultLength, false, true, 0, false);
+                return string.IsNullOrWhiteSpace(result) || result.StartsWith("Error:", StringComparison.Ordinal)
+                    ? string.Empty
+                    : result;
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        /// <summary>Turns a filenames_only "path (N matches)" listing into a short "N lines across path, path2" summary.</summary>
+        private static string SummarizeProbe(string probeContent)
+        {
+            var files = new List<string>();
+            int totalMatches = 0;
+            foreach (var line in probeContent.Split('\n'))
+            {
+                var m = Regex.Match(line.Trim(), @"^(.*?)\s*\((\d+) matches?\)$");
+                if (m.Success)
+                {
+                    totalMatches += int.Parse(m.Groups[2].Value);
+                    files.Add(m.Groups[1].Value);
+                }
+            }
+            return files.Count == 0
+                ? "some lines"
+                : $"{totalMatches} lines across {string.Join(", ", files.Take(3))}";
         }
     }
 }

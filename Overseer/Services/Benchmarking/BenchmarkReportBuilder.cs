@@ -257,6 +257,60 @@ public static class BenchmarkReportBuilder
     }
 
     /// <summary>
+    /// One band's figure out of a run's banded cap column — <see cref="BenchmarkRun.ToolIterationCapsJson"/>
+    /// and its siblings, which store <c>{"Simple":22,"Intermediate":22,"Advanced":22}</c>. Null for a run
+    /// recorded before the column existed, or for a blob that will not parse: the caps are commentary here,
+    /// so an unreadable one costs a report line and nothing else.
+    /// </summary>
+    private static int? BandedCap(string? capsJson, BenchmarkDifficulty band)
+    {
+        if (string.IsNullOrWhiteSpace(capsJson)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(capsJson);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return null;
+            if (!doc.RootElement.TryGetProperty(band.ToString(), out var value)) return null;
+            return value.TryGetInt32(out int cap) ? cap : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Whether an answer finished within one step of a configured ceiling, and which one. A turn that
+    /// stopped one round short of its cap produced the answer the model could reach under the cap, not
+    /// the answer it would have produced without it, and no other line in the report says so.
+    ///
+    /// <para>The round count itself is not persisted on an answer, so
+    /// <see cref="BenchmarkRunAnswer.ModelCallCount"/> is measured against both caps. It is the right
+    /// proxy for the iteration cap because the agent loop makes exactly one model call per round, but
+    /// it is a model-call count and is labelled as one — the two figures can differ by the one forced
+    /// final call a fired limit produces.</para>
+    /// </summary>
+    private static string? NearCeilingNote(BenchmarkRun run, BenchmarkRunAnswer answer)
+    {
+        if (!answer.ModelCallCount.HasValue) return null;
+        int calls = answer.ModelCallCount.Value;
+
+        int? modelCallCap = BandedCap(run.TotalModelCallCapsJson, answer.Difficulty);
+        int? iterationCap = BandedCap(run.ToolIterationCapsJson, answer.Difficulty);
+
+        var reached = new List<string>(2);
+        if (modelCallCap.HasValue && modelCallCap.Value > 1 && calls >= modelCallCap.Value - 1)
+        {
+            reached.Add($"{calls} model call(s) against a model-call cap of {modelCallCap.Value}");
+        }
+        if (iterationCap.HasValue && iterationCap.Value > 1 && calls >= iterationCap.Value - 1)
+        {
+            reached.Add($"{calls} model call(s) against a tool-iteration cap of {iterationCap.Value}");
+        }
+
+        return reached.Count > 0 ? string.Join("; ", reached) : null;
+    }
+
+    /// <summary>
     /// The second-opinion mode this run was actually graded under, read from the run's own
     /// stamped value. An out-of-range value falls back to <c>Flagged</c> rather than to
     /// <c>Off</c>: <c>Off</c> would claim no second verdict was configured, which is the one
@@ -283,10 +337,14 @@ public static class BenchmarkReportBuilder
     private static string TriggerLabel(string trigger) => trigger switch
     {
         "CriticalError" => "critical error",
+        "RefutedClaim" => "refuted claim",
         "ContestedVerdict" => "contested verdict",
+        "UnevidencedDeduction" => "unevidenced deduction",
+        "OmissionAsAccuracy" => "omission docked as accuracy",
         "UnverifiedClaims" => "unverifiable claims",
         "BelowThreshold" => "score below the profile threshold",
         "Outlier" => "outlier below the run median",
+        "Sample" => "sample top-up",
         "All" => "double grading, every answer",
         "Manual" => "manual re-grade",
         _ => trigger
@@ -405,7 +463,8 @@ public static class BenchmarkReportBuilder
         bool deliberatingCandidate =
             candidateThinking.Equals("high", StringComparison.OrdinalIgnoreCase) ||
             candidateThinking.Equals("max", StringComparison.OrdinalIgnoreCase);
-        if (deliberatingCandidate && scoringConstants.SpeedTargetMs < InteractiveSpeedTargetMaxMs)
+        bool profileMisfit = deliberatingCandidate && scoringConstants.SpeedTargetMs < InteractiveSpeedTargetMaxMs;
+        if (profileMisfit)
         {
             sb.AppendLine($"- **Profile Fit:** this profile targets interactive latency ({Inv(scoringConstants.SpeedTargetMs, "N0")} ms) while the candidate ran at thinking level **{candidateThinking}**. The Speed Index is advisory for this run; compare it only against runs sharing both the profile and the thinking level.");
         }
@@ -670,6 +729,16 @@ public static class BenchmarkReportBuilder
         if (se.HasValue && run.QualityIndex.HasValue)
         {
             sb.AppendLine("*This reflects finite item-sampling uncertainty — how much the index would move under a different draw of questions of the same difficulty profile. Two runs whose intervals overlap are statistically indistinguishable on this suite.*");
+            // H12. The interval is a dispersion measure over the same difficulty-weighted scores, so a
+            // capped answer enters it as a large squared deviation weighted by assessed difficulty
+            // squared. A run with critical errors therefore reports a wide interval for a reason that is
+            // not item sampling, and reading the width as sampling noise understates the failure. The
+            // formula is unchanged — only what the reader is told about it.
+            if (cappedCount > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine($"> ⚠️ **The interval is inflated by {cappedCount} capped answer(s).** A critical-error cap replaces a score with 25, and that deviation enters the variance weighted by the item's assessed difficulty *squared*, so most of this width is those answers rather than question sampling. Read the **Critical Errors** count below for that failure mode; do not read the width as noise.");
+            }
             sb.AppendLine();
         }
         // Only shown when a critical-error cap actually moved it. Printing the identical number
@@ -702,13 +771,28 @@ public static class BenchmarkReportBuilder
         var modelTimesSorted = okAnswers.Select(a => a.ModelTimeMs).OrderBy(d => d).ToList();
         long? medianModelTimeMs = modelTimesSorted.Count > 0 ? Percentile(modelTimesSorted, 0.50) : (long?)null;
 
-        sb.AppendLine($"### **Speed Index: {(run.SpeedIndex.HasValue ? $"{run.SpeedIndex.Value} / 100" : "Not Scored")}**" + (run.SpeedMeasurementDegraded ? " *(Advisory — measured under concurrency)*" : ""));
         // A run whose Speed Index sits at the ceiling on most of its answers carries no
         // discriminating information: every answer at 100 looks identical to the index whether
         // it finished at the target or well inside it. Median model time still separates them.
         int speedScoredCount = scoredAnswers.Count;
         int speedCeilingCount = scoredAnswers.Count(a => a.SpeedScore.HasValue && a.SpeedScore.Value >= 100);
-        if (speedScoredCount > 0 && speedCeilingCount * 2 >= speedScoredCount)
+        bool speedSaturated = speedScoredCount > 0 && speedCeilingCount * 2 >= speedScoredCount;
+
+        // H9. Where the index cannot discriminate, the figure that can leads and the index follows as
+        // advisory. Presentation only: no score, no scoring profile and no method version moves, because
+        // a metric that has run out of resolution is a reporting problem and re-tuning the target would
+        // end the comparable series for every quality dimension as well.
+        bool speedAdvisory = speedSaturated || profileMisfit;
+        if (speedAdvisory && medianModelTimeMs.HasValue)
+        {
+            sb.AppendLine($"### **Median Model Time: {Inv(medianModelTimeMs.Value, "N0")} ms**");
+            sb.AppendLine($"*Speed Index {(run.SpeedIndex.HasValue ? $"{run.SpeedIndex.Value} / 100" : "Not Scored")} — advisory for this run{(run.SpeedMeasurementDegraded ? ", and measured under concurrency" : string.Empty)}.*");
+        }
+        else
+        {
+            sb.AppendLine($"### **Speed Index: {(run.SpeedIndex.HasValue ? $"{run.SpeedIndex.Value} / 100" : "Not Scored")}**" + (run.SpeedMeasurementDegraded ? " *(Advisory — measured under concurrency)*" : ""));
+        }
+        if (speedSaturated)
         {
             string medianClause = medianModelTimeMs.HasValue
                 ? $"Compare median model time ({Inv(medianModelTimeMs.Value, "N0")} ms) instead."
@@ -926,8 +1010,12 @@ public static class BenchmarkReportBuilder
 
             // Estimated Cost block (H7). Per-role totals come from ModelPricingService.ComputeRunRoleCosts,
             // the same routine the cost-panel UI calls, so the report and the UI cannot disagree about what
-            // the Grading subtotal includes. Only the presentational uncached/cached/write and in/out
-            // breakdowns are computed here, since the shared routine exposes role totals, not their parts.
+            // the Grading subtotal includes. The itemised buckets come from
+            // ModelPricingService.ComputeRunRoleCostBreakdowns, which the totals are read from as well, so
+            // the parts printed beside a role total are that total's own parts. No rate card is multiplied
+            // by a token count here: doing so would drop the long-context split and the service-tier
+            // multiplier, and would misread a stored Total*InputTokens column as an uncached figure when it
+            // is a prompt total that already contains the cache reads beside it.
             bool hasAssessor = run.TotalAssessmentInputTokens > 0 || run.TotalAssessmentOutputTokens > 0;
             bool hasSecondOpinion = run.TotalSecondOpinionInputTokens > 0 || run.TotalSecondOpinionOutputTokens > 0;
             bool hasVerifier = run.TotalClaimVerificationInputTokens > 0 || run.TotalClaimVerificationOutputTokens > 0;
@@ -948,62 +1036,49 @@ public static class BenchmarkReportBuilder
 
             if (canEstimateCost)
             {
-                var roleCosts = ModelPricingService.ComputeRunRoleCosts(run, runPricing!);
+                // canEstimateCost has already established the candidate's card, which is the one role that
+                // must price for anything here to be printable.
+                ModelPricing candidateCard = candidatePricing!;
 
-                long cachedInTokens = run.TotalCacheReadTokens;
-                long uncachedInTokens = Math.Max(0, run.TotalInputTokens - cachedInTokens);
-
-                decimal candidateInCost = (uncachedInTokens / 1_000_000m * candidatePricing!.InputPerMillion) +
-                                          (cachedInTokens / 1_000_000m * (candidatePricing.CachedInputPerMillion ?? candidatePricing.InputPerMillion));
-                decimal candidateOutCost = run.TotalOutputTokens / 1_000_000m * candidatePricing.OutputPerMillion;
-                decimal candidateCacheWriteCost = (run.TotalCacheCreationTokens > 0 && candidatePricing.CacheWritePerMillion.HasValue)
-                    ? (run.TotalCacheCreationTokens / 1_000_000m * candidatePricing.CacheWritePerMillion.Value)
-                    : 0m;
-                // Costed from the persisted long-context buckets, which were partitioned per model call at
-                // answer time, and scaled by the tier the provider actually served. Both reduce to the flat
-                // arithmetic above for a flat-rate model and for every run that predates tiered pricing, so
-                // the component lines printed above stay correct in that case.
+                // The candidate's long-context buckets were partitioned per model call at answer time and
+                // persisted, and the served tier is a property of the turn. Both are resolved once and
+                // handed to the two costing calls, so the totals and their parts see the same inputs.
                 string? servedServiceTier = BenchmarkRunFinalizer.ResolveServedServiceTier(run.Answers);
+                var roleCosts = ModelPricingService.ComputeRunRoleCosts(run, runPricing!, servedServiceTier);
+                var roleParts = ModelPricingService.ComputeRunRoleCostBreakdowns(run, runPricing!, servedServiceTier);
+
                 decimal candidateTotalCost = roleCosts.Candidate;
-
-                decimal assessorInCost = 0m;
-                decimal assessorOutCost = 0m;
-                if (hasAssessor && assessorPricing != null)
-                {
-                    assessorInCost = run.TotalAssessmentInputTokens / 1_000_000m * assessorPricing.InputPerMillion;
-                    assessorOutCost = run.TotalAssessmentOutputTokens / 1_000_000m * assessorPricing.OutputPerMillion;
-                }
                 decimal assessorTotalCost = roleCosts.Assessor;
-
-                decimal secondOpinionInCost = 0m;
-                decimal secondOpinionOutCost = 0m;
-                if (hasSecondOpinion && secondOpinionPricing != null)
-                {
-                    secondOpinionInCost = run.TotalSecondOpinionInputTokens / 1_000_000m * secondOpinionPricing.InputPerMillion;
-                    secondOpinionOutCost = run.TotalSecondOpinionOutputTokens / 1_000_000m * secondOpinionPricing.OutputPerMillion;
-                }
                 decimal secondOpinionTotalCost = roleCosts.SecondOpinion;
-
-                decimal verifierInCost = 0m;
-                decimal verifierOutCost = 0m;
-                if (hasVerifier && verifierPricing != null)
-                {
-                    verifierInCost = run.TotalClaimVerificationInputTokens / 1_000_000m * verifierPricing.InputPerMillion;
-                    verifierOutCost = run.TotalClaimVerificationOutputTokens / 1_000_000m * verifierPricing.OutputPerMillion;
-                }
                 decimal verifierTotalCost = roleCosts.ClaimVerifier;
-
-                decimal synthesisInCost = 0m;
-                decimal synthesisOutCost = 0m;
-                if (hasSynthesis && assessorPricing != null)
-                {
-                    synthesisInCost = run.TotalSynthesisInputTokens / 1_000_000m * assessorPricing.InputPerMillion;
-                    synthesisOutCost = run.TotalSynthesisOutputTokens / 1_000_000m * assessorPricing.OutputPerMillion;
-                }
                 decimal synthesisTotalCost = roleCosts.Synthesis;
 
                 decimal gradingTotalCost = roleCosts.Grading;
                 decimal totalCost = roleCosts.Total;
+
+                // "uncached in" and "cached in" are separated only where the card publishes a distinct
+                // cached rate; otherwise cache reads bill at the input rate and naming them separately
+                // would imply a saving the run did not get. Either way the printed components are the four
+                // buckets of that role's own costing, so they sum to the role total shown beside them.
+                static string CostParts(ModelCostBreakdown parts, ModelPricing card)
+                {
+                    var pieces = new List<string>(4);
+                    if (parts.CacheRead > 0m && card.CachedInputPerMillion.HasValue)
+                    {
+                        pieces.Add($"uncached in: ${Inv(parts.UncachedInput, "F2")}");
+                        pieces.Add($"cached in: ${Inv(parts.CacheRead, "F2")}");
+                    }
+                    else
+                    {
+                        pieces.Add($"in: ${Inv(parts.UncachedInput + parts.CacheRead, "F2")}");
+                    }
+                    if (parts.CacheWrite > 0m)
+                    {
+                        pieces.Add($"cache write: ${Inv(parts.CacheWrite, "F2")}");
+                    }
+                    pieces.Add($"out: ${Inv(parts.Output, "F2")}");
+                    return string.Join(", ", pieces);
+                }
 
                 if (!roleCosts.Incomplete)
                 {
@@ -1014,44 +1089,21 @@ public static class BenchmarkReportBuilder
                     sb.AppendLine("- **Estimated Cost:** not available as a single total — the participating roles do not price in comparable units; see the per-role figures below.");
                 }
 
-                if (candidatePricing.CachedInputPerMillion.HasValue && cachedInTokens > 0)
-                {
-                    decimal uncachedCost = uncachedInTokens / 1_000_000m * candidatePricing.InputPerMillion;
-                    decimal cachedCost = cachedInTokens / 1_000_000m * (candidatePricing.CachedInputPerMillion ?? candidatePricing.InputPerMillion);
-                    if (candidateCacheWriteCost > 0)
-                    {
-                        sb.AppendLine($"  - Candidate ({run.TestedModelIdUsed}): ${Inv(candidateTotalCost, "F2")} (uncached in: ${Inv(uncachedCost, "F2")}, cached in: ${Inv(cachedCost, "F2")}, cache write: ${Inv(candidateCacheWriteCost, "F2")}, out: ${Inv(candidateOutCost, "F2")})");
-                    }
-                    else
-                    {
-                        sb.AppendLine($"  - Candidate ({run.TestedModelIdUsed}): ${Inv(candidateTotalCost, "F2")} (uncached in: ${Inv(uncachedCost, "F2")}, cached in: ${Inv(cachedCost, "F2")}, out: ${Inv(candidateOutCost, "F2")})");
-                    }
-                }
-                else
-                {
-                    if (candidateCacheWriteCost > 0)
-                    {
-                        sb.AppendLine($"  - Candidate ({run.TestedModelIdUsed}): ${Inv(candidateTotalCost, "F2")} (in: ${Inv(candidateInCost, "F2")}, cache write: ${Inv(candidateCacheWriteCost, "F2")}, out: ${Inv(candidateOutCost, "F2")})");
-                    }
-                    else
-                    {
-                        sb.AppendLine($"  - Candidate ({run.TestedModelIdUsed}): ${Inv(candidateTotalCost, "F2")} (in: ${Inv(candidateInCost, "F2")}, out: ${Inv(candidateOutCost, "F2")})");
-                    }
-                }
+                sb.AppendLine($"  - Candidate ({run.TestedModelIdUsed}): ${Inv(candidateTotalCost, "F2")} ({CostParts(roleParts.Candidate, candidateCard)})");
 
                 if (hasAssessor && assessorPricing != null)
                 {
-                    sb.AppendLine($"  - Assessor ({run.AssessorModelIdUsed}): ${Inv(assessorTotalCost, "F2")} (in: ${Inv(assessorInCost, "F2")}, out: ${Inv(assessorOutCost, "F2")})");
+                    sb.AppendLine($"  - Assessor ({run.AssessorModelIdUsed}): ${Inv(assessorTotalCost, "F2")} ({CostParts(roleParts.Assessor, assessorPricing)})");
                 }
 
                 if (hasSecondOpinion && secondOpinionPricing != null)
                 {
-                    sb.AppendLine($"  - Second Opinion ({run.SecondOpinionAssessorModelIdUsed}): ${Inv(secondOpinionTotalCost, "F2")} (in: ${Inv(secondOpinionInCost, "F2")}, out: ${Inv(secondOpinionOutCost, "F2")})");
+                    sb.AppendLine($"  - Second Opinion ({run.SecondOpinionAssessorModelIdUsed}): ${Inv(secondOpinionTotalCost, "F2")} ({CostParts(roleParts.SecondOpinion, secondOpinionPricing)})");
                 }
 
                 if (hasVerifier && verifierPricing != null)
                 {
-                    sb.AppendLine($"  - Claim Verifier ({run.ClaimVerifierModelIdUsed}): ${Inv(verifierTotalCost, "F2")} (in: ${Inv(verifierInCost, "F2")}, out: ${Inv(verifierOutCost, "F2")})");
+                    sb.AppendLine($"  - Claim Verifier ({run.ClaimVerifierModelIdUsed}): ${Inv(verifierTotalCost, "F2")} ({CostParts(roleParts.ClaimVerifier, verifierPricing)})");
 
                     // H4. The verifier's own yield — what its dollars actually bought — was
                     // previously unreported: run 13 to run 14 alone it grew from 36% to 67% of run
@@ -1073,7 +1125,7 @@ public static class BenchmarkReportBuilder
 
                 if (hasSynthesis && assessorPricing != null)
                 {
-                    sb.AppendLine($"  - Synthesis ({run.AssessorModelIdUsed}): ${Inv(synthesisTotalCost, "F2")} (in: ${Inv(synthesisInCost, "F2")}, out: ${Inv(synthesisOutCost, "F2")})");
+                    sb.AppendLine($"  - Synthesis ({run.AssessorModelIdUsed}): ${Inv(synthesisTotalCost, "F2")} ({CostParts(roleParts.Synthesis, assessorPricing)})");
                 }
 
                 if (hasAssessor || hasSecondOpinion || hasVerifier || hasSynthesis)
@@ -1085,19 +1137,21 @@ public static class BenchmarkReportBuilder
                 // Both lines are printed only when they apply. An absent tier is omitted entirely rather
                 // than shown as 1.0x, and a run with no long-context tokens prints no surcharge line — a
                 // reader must not have to tell "no surcharge" from "surcharge of zero".
-                if (run.TotalLongContextInputTokens > 0 && candidatePricing.LongContext != null)
+                if (run.TotalLongContextInputTokens > 0 && candidateCard.LongContext != null)
                 {
                     int longContextAnswerCount = run.Answers.Count(a => (a.LongContextInputTokens ?? 0) > 0);
                     sb.AppendLine(
                         $"- **Long-context surcharge:** applied to {Inv(longContextAnswerCount, "N0")} answer(s) — " +
                         $"{Inv(run.TotalLongContextInputTokens, "N0")} input token(s) billed at the " +
-                        $">{Inv(candidatePricing.LongContext.ThresholdInputTokens, "N0")} rate " +
-                        $"(${Inv(candidatePricing.LongContext.InputPerMillion, "F2")}/M input vs " +
-                        $"${Inv(candidatePricing.InputPerMillion, "F2")}/M).");
+                        $">{Inv(candidateCard.LongContext.ThresholdInputTokens, "N0")} rate " +
+                        $"(${Inv(candidateCard.LongContext.InputPerMillion, "F2")}/M input vs " +
+                        $"${Inv(candidateCard.InputPerMillion, "F2")}/M). " +
+                        $"${Inv(roleParts.Candidate.LongContextPortion, "F2")} of the candidate's " +
+                        $"${Inv(candidateTotalCost, "F2")} was billed at that card.");
                 }
 
                 decimal servedTierMultiplier = ModelPricingService.ResolveServiceTierMultiplier(
-                    candidatePricing, servedServiceTier, run.TestedModelServiceTierUsed);
+                    candidateCard, servedServiceTier, run.TestedModelServiceTierUsed);
                 if (servedTierMultiplier != 1.0m && !string.IsNullOrEmpty(servedServiceTier))
                 {
                     sb.AppendLine(
@@ -1111,7 +1165,7 @@ public static class BenchmarkReportBuilder
                         return $"{roleTitle} custom";
                     return $"{roleTitle} catalog" + (!string.IsNullOrEmpty(p.AsOf) ? $" (as of {p.AsOf})" : "");
                 }
-                provenanceParts.Add(FormatProv("candidate", candidatePricing));
+                provenanceParts.Add(FormatProv("candidate", candidateCard));
                 if ((hasAssessor || hasSynthesis) && assessorPricing != null)
                 {
                     provenanceParts.Add(FormatProv("assessor", assessorPricing));
@@ -1225,6 +1279,36 @@ public static class BenchmarkReportBuilder
         sb.AppendLine($"- **Transport Defects:** {transportDefectCount} (empty: {emptyCount}, truncated: {truncatedCount}) — *unrecoverable; excluded or invalid*");
         sb.AppendLine($"- **Recovered:** {recoveredCount} (leaked transport artifacts in: {artifactCount}) — *the harness removed the leaked payloads and graded the answer beneath them; a provider-path defect, not a damaged result*");
         sb.AppendLine($"- **Harness Limits:** {harnessLimitCount} (tool budget exhausted: {answers.Count(a => a.ToolBudgetExhausted)})");
+
+        // H6. Beside the Harness Limits line, never inside it: BenchmarkRunFinalizer.HasHarnessLimit is
+        // the tool-budget predicate that feeds Classify, the clean count and the run status, and folding a
+        // termination reason into it would move all three. A loop that ended on its iteration cap is a
+        // reporting fact about the answer, not a reclassification of it.
+        var terminated = answers
+            .Where(a => !string.IsNullOrWhiteSpace(a.TerminationReason) &&
+                        !string.Equals(a.TerminationReason, "completed", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(a => a.OrderIndex)
+            .ToList();
+        if (terminated.Count > 0)
+        {
+            string reasonBreakdown = string.Join(", ", terminated
+                .GroupBy(a => a.TerminationReason!, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(g => $"{g.Key}: {g.Count()} (Q{string.Join(", Q", g.OrderBy(a => a.OrderIndex).Select(a => a.OrderIndex))})"));
+            sb.AppendLine($"- **Early Terminations:** {terminated.Count} of {totalQuestions} answer(s) did not end on their own — {reasonBreakdown} — *the answer is valid; the loop stopped before the model did, so it is the answer reachable under the cap*");
+        }
+
+        var nearCeiling = answers
+            .Select(a => (Answer: a, Note: NearCeilingNote(run, a)))
+            .Where(x => x.Note != null &&
+                        !string.Equals(x.Answer.TerminationReason, "iteration_limit", StringComparison.OrdinalIgnoreCase) &&
+                        !string.Equals(x.Answer.TerminationReason, "budget_exhausted", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(x => x.Answer.OrderIndex)
+            .ToList();
+        if (nearCeiling.Count > 0)
+        {
+            sb.AppendLine($"- **Near a Ceiling:** {string.Join("; ", nearCeiling.Select(x => $"Q{x.Answer.OrderIndex} — {x.Note}"))} — *finished within one step of a configured cap, so the cap may be shaping the answer even though it never fired*");
+        }
         sb.AppendLine($"- **Unanswered:** {unansweredCount} — *the model produced no answer; scored 0, not excluded*");
         sb.AppendLine($"- **Provider Errors:** {providerErrorCount}");
         sb.AppendLine($"*Clean + transport defects + recovered + harness limits + unanswered = {cleanCount + transportDefectCount + recoveredCount + harnessLimitCount + unansweredCount} of {totalQuestions}.*");
@@ -1232,7 +1316,12 @@ public static class BenchmarkReportBuilder
         // On the 2026-09-03 run the report claimed the removal was unconditional; the streaming
         // writer's bug (fixed alongside this) meant five graded answers still carried their own
         // narration. The sentence now says so when it happens instead of asserting it away.
-        string advisoryNote = bleedRemoved == bleedCount
+        //
+        // With no reasoning bleed detected at all there is nothing for either removal clause to
+        // describe, and both read as a claim about text that never existed.
+        string advisoryNote = bleedCount == 0
+            ? "— *advisory only; these overlap the categories above and do not affect the run status. An answer may carry more than one, so the breakdown can exceed the count.*"
+            : bleedRemoved == bleedCount
             ? "— *advisory only; these overlap the categories above, do not affect the run status, and the text they describe was removed before grading. An answer may carry more than one, so the breakdown can exceed the count.*"
             : $"— *advisory only; these overlap the categories above and do not affect the run status. Removed before grading in {bleedRemoved} of {bleedCount}; in the remainder the text was detected but remained in the graded answer. An answer may carry more than one, so the breakdown can exceed the count.*";
         if (bleedUnrecorded > 0)
@@ -1435,6 +1524,49 @@ public static class BenchmarkReportBuilder
                     : string.Empty;
                 sb.AppendLine($"- **Disagreements:** {disagreedAnswers.Count} of {graded.Count} ({Inv(disagreementPct, "F1")}%){named}. *A disagreement is a gap above {BenchmarkService.SecondOpinionDisagreementPoints} quality points — roughly one BARS level on the dominant dimension — or a split on criticalError.*");
             }
+            // H2. The pooled figures above are kept exactly as they were, so no historical number
+            // changes meaning — but they mix two populations. A second opinion on an answer carrying a
+            // refuted claim is handed that refutation in its own prompt (BenchmarkAssessmentPrompt's
+            // FACT-CHECK VERIFICATION CONTEXT block), so its disagreement is partly the verifier's
+            // finding rather than a second reader's independent judgement. The uninformed subset is the
+            // only part of the coverage that measures agreement between two readers of the same evidence.
+            if (graded.Count > 0)
+            {
+                string triggerBreakdown = string.Join(", ", graded
+                    .GroupBy(a => string.IsNullOrWhiteSpace(a.SecondOpinionTrigger) ? "not recorded" : a.SecondOpinionTrigger!, StringComparer.Ordinal)
+                    .OrderByDescending(g => g.Count())
+                    .ThenBy(g => g.Key, StringComparer.Ordinal)
+                    .Select(g => $"{TriggerLabel(g.Key)}: {g.Count()}"));
+                sb.AppendLine($"- **Coverage by trigger:** {triggerBreakdown}.");
+
+                static bool SawRefutation(BenchmarkRunAnswer a) =>
+                    string.Equals(a.SecondOpinionTrigger, "RefutedClaim", StringComparison.Ordinal) ||
+                    (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.RefutedClaim) != 0 ||
+                    (a.ClaimsRefutedCount ?? 0) > 0;
+
+                var uninformed = graded.Where(a => !SawRefutation(a)).ToList();
+                int informedCount = graded.Count - uninformed.Count;
+                if (informedCount > 0)
+                {
+                    if (uninformed.Count > 0)
+                    {
+                        double uninformedSigned = uninformed.Average(a => (double)(a.SecondOpinionQualityScore!.Value - a.QualityScore!.Value));
+                        double uninformedAbs = uninformed.Average(a => Math.Abs(a.SecondOpinionQualityScore!.Value - a.QualityScore!.Value));
+                        int uninformedDisagreements = uninformed.Count(a => a.SecondOpinionDisagreed);
+                        sb.AppendLine(
+                            $"- **Agreement over the verification-uninformed subset:** mean signed " +
+                            $"{(uninformedSigned > 0 ? "+" : string.Empty)}{Inv(uninformedSigned, "F1")} points, " +
+                            $"mean absolute {Inv(uninformedAbs, "F1")} points, {uninformedDisagreements} disagreement(s) " +
+                            $"over {uninformed.Count} of {graded.Count} re-graded answers " +
+                            $"({string.Join(", ", uninformed.Select(a => $"Q{a.OrderIndex}"))}). " +
+                            $"The other {informedCount} saw a refuted claim in their own prompt, so their delta is not an independent second reading.");
+                    }
+                    else
+                    {
+                        sb.AppendLine($"- **Agreement over the verification-uninformed subset:** none — all {graded.Count} re-graded answers carried a refuted claim, so this run measures no independent second reading at all.");
+                    }
+                }
+            }
             if (agreementMode != BenchmarkSecondOpinionMode.All)
             {
                 sb.AppendLine($"- *Coverage: {run.SecondOpinionGradedAnswerCount} of {answeredForAgreement}, selected by trigger. The disagreement rate is conditioned on the first assessor's own uncertainty and is not an unbiased estimate of grader agreement; `SecondOpinionMode = All` measures that.*");
@@ -1607,6 +1739,26 @@ public static class BenchmarkReportBuilder
         {
             sb.AppendLine($"{bandDisagreements.Count} of {totalQuestions} question(s) were assessed outside their authored band. The Difficulty Breakdown above buckets by **assessed** difficulty, which is why its counts can differ from the authored distribution.");
             sb.AppendLine();
+
+            // H5. Assessed difficulty is the Intelligence Index weight, so a drift that shares a
+            // direction across every mismatch is not eighteen independent authoring slips — it moves the
+            // headline, and a list of per-question band changes does not show it. Signed against the
+            // authored band's own midpoint, the 25/55/85 map in BenchmarkRunFinalizer.FallbackDifficulty.
+            int movedUp = bandDisagreements.Count(
+                a => a.AssessedDifficulty!.Value > BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty));
+            int movedDown = bandDisagreements.Count(
+                a => a.AssessedDifficulty!.Value < BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty));
+            double meanSignedDelta = bandDisagreements.Average(
+                a => (double)(a.AssessedDifficulty!.Value - BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty)));
+            string driftDirection = (movedUp > 0 && movedDown == 0) ? " **Every mismatch moved the same way — upward**, so the authored bands under-rate this suite systematically rather than in scattered cases."
+                : (movedDown > 0 && movedUp == 0) ? " **Every mismatch moved the same way — downward**, so the authored bands over-rate this suite systematically rather than in scattered cases."
+                : string.Empty;
+            sb.AppendLine(
+                $"- **Band Drift:** {movedUp} assessed harder than authored, {movedDown} easier; mean signed delta " +
+                $"**{(meanSignedDelta > 0 ? "+" : string.Empty)}{Inv(meanSignedDelta, "F1")}** points against the authored band midpoint. " +
+                $"Assessed difficulty is the Intelligence Index weight, so this shifts the headline as well as the bucketing.{driftDirection}");
+            sb.AppendLine();
+
             foreach (var a in bandDisagreements)
             {
                 sb.AppendLine($"- **Question {a.OrderIndex}:** authored {a.Difficulty} → assessed {BenchmarkDifficultyBands.BandOf(a.AssessedDifficulty!.Value)} ({a.AssessedDifficulty.Value})");
@@ -1920,6 +2072,21 @@ public static class BenchmarkReportBuilder
             {
                 sb.AppendLine($"- **Tools Called:** `{a.ToolCallSummary}`");
             }
+            // H6. Only when the loop did not end on its own: "completed" is the ordinary case and saying
+            // so on every question would bury the four answers where it matters.
+            if (!string.IsNullOrWhiteSpace(a.TerminationReason) &&
+                !string.Equals(a.TerminationReason, "completed", StringComparison.OrdinalIgnoreCase))
+            {
+                sb.AppendLine($"- **Termination:** `{a.TerminationReason}` — the loop stopped before the model did");
+            }
+            else
+            {
+                string? nearCeilingNote = NearCeilingNote(run, a);
+                if (nearCeilingNote != null)
+                {
+                    sb.AppendLine($"- **Near a Ceiling:** {nearCeilingNote} — finished within one step of a configured cap");
+                }
+            }
             if (a.ToolBudgetExhausted)
             {
                 sb.AppendLine($"- **Tool Budget:** Exhausted — {FormatToolBudgetLine(a)} (configured limit, not an error)");
@@ -2157,7 +2324,13 @@ public static class BenchmarkReportBuilder
         sb.AppendLine();
         sb.AppendLine($"- **Scoring Method Version:** {run.ScoringMethodVersion}");
         sb.AppendLine($"- **Scoring Profile:** {run.ScoringProfile?.Name ?? "Default Intelligence Profile"}");
-        sb.AppendLine($"- **Difficulty Fallback Applied:** {(run.DifficultyFallbackUsed ? "Yes (authored bands Simple=25, Intermediate=55, Advanced=85)" : "No (independently assessed)")}");
+        // H4. "No (independently assessed)" read as a measurement of this run, and it is not one:
+        // BenchmarkRunLauncher refuses to launch a suite carrying any question without an assessed
+        // difficulty, so a run that exists cannot have fallen back. The line states the guarantee and
+        // names the guard rather than implying a check the report performed.
+        sb.AppendLine(run.DifficultyFallbackUsed
+            ? "- **Difficulty Fallback Applied:** Yes (authored bands Simple=25, Intermediate=55, Advanced=85)"
+            : "- **Difficulty Fallback Applied:** No — every question carried an independently assessed difficulty. Guaranteed rather than measured: `BenchmarkRunLauncher` refuses to launch a suite with any unassessed question.");
         sb.AppendLine();
         sb.AppendLine("### Compliance & Evaluation Terms");
         sb.AppendLine($"- **Purpose Statement:** {run.PurposeStatementUsed ?? "Internal evaluation of candidate AI models for the Overseer assistant within GnollHack. Benchmark outputs are third-party generated content used solely for automated capability evaluation and scoring, and are not used for training, fine-tuning, distilling, or developing competing AI models."}");
@@ -2449,7 +2622,17 @@ public static class BenchmarkReportBuilder
         {
             sb.AppendLine($"### Contested-Verdict Sensitivity: {sensitivityIndex.Value} / 100 — Intelligence Index recomputed with each contested verdict upheld at the second reader's score.");
         }
-        sb.AppendLine($"### Speed Index: {run.SpeedIndex?.ToString() ?? "N/A"} / 100");
+        // H9. The same demotion as § 2, from the same two conditions, so the headline block and the
+        // summary cannot present the speed figure differently.
+        if (speedAdvisory && medianModelTimeMs.HasValue)
+        {
+            sb.AppendLine($"### Median Model Time: {Inv(medianModelTimeMs.Value, "N0")} ms");
+            sb.AppendLine($"*Speed Index {run.SpeedIndex?.ToString() ?? "N/A"} / 100 — advisory: {(speedSaturated ? "the index is saturated on this run" : "the profile's latency target does not fit this candidate's thinking level")}.*");
+        }
+        else
+        {
+            sb.AppendLine($"### Speed Index: {run.SpeedIndex?.ToString() ?? "N/A"} / 100");
+        }
         sb.AppendLine($"### Holistic Assessor Score: {run.FinalScore?.ToString() ?? "N/A"} / 100");
         sb.AppendLine();
         sb.AppendLine("> **How to read these:** the Intelligence Index is the canonical, reproducible metric and is **quality only** — Speed Index is not folded into it, by design, so a slow model and an inaccurate one are never confused for each other. The Holistic Assessor Score is the assessor's own narrative judgement and is reported for contrast, not used in any aggregate.");

@@ -33,7 +33,7 @@
     "pricing": {
       "inputPerMillion": 30.00,
       "outputPerMillion": 180.00,
-      "cachedInputPerMillion": null,
+      "cachedInputPerMillion": 3.00,
       "asOf": "2026-09-06",
       "longContext": {
         "thresholdInputTokens": 272000,
@@ -113,7 +113,7 @@
     "pricing": {
       "inputPerMillion": 30.00,
       "outputPerMillion": 180.00,
-      "cachedInputPerMillion": null,
+      "cachedInputPerMillion": 3.00,
       "asOf": "2026-09-06",
       "serviceTierMultipliers": { "batch": 0.5, "flex": 0.5, "priority": 2.0, "fast": 2.0 }
     }

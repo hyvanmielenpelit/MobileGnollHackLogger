@@ -22,6 +22,71 @@ Tests that call external APIs (like OpenAI, Anthropic, or Google) consume quota 
     dotnet test MobileGnollHackLogger.slnx --filter "Category!=UsesExternalApi"
     ```
     Both commands are also stated in **`AGENTS.md`**, which is loaded into every context window, so they are available without invoking this skill. The Verification Plan rules that consume them are in `server_implementation_planning`.
+
+### 1a. The two things that make that command work, and the one that makes it unsafe
+
+**The repository-root `global.json` is a prerequisite, not decoration.**
+
+```json
+{
+  "test": {
+    "runner": "Microsoft.Testing.Platform"
+  }
+}
+```
+
+`Overseer.Tests` references `xunit.v3` and `Microsoft.NET.Test.Sdk`, which make it a
+**Microsoft.Testing.Platform (MTP) application**. From the .NET 10 SDK onward `dotnet test`
+refuses to run an MTP application through the old VSTest target and fails with
+
+```
+error : Testing with VSTest target is no longer supported by Microsoft.Testing.Platform on
+.NET 10 SDK and later. If you use dotnet test, you should opt-in to the new dotnet test experience.
+```
+
+The `global.json` entry above is that opt-in. Delete the file and every `dotnet test` command in
+this repository stops working; the error names no file, so the cause is not obvious from it.
+
+> ⚠️ **`dotnet.config` is *not* the mechanism here, despite what current Microsoft documentation
+> says.** A repository-root `dotnet.config` carrying `[dotnet.test.runner] name =
+> "Microsoft.Testing.Platform"` was tried first on SDK **10.0.401** with
+> `microsoft.testing.platform.msbuild` **2.3.3** and had **no effect** — `dotnet test` still routed
+> to VSTest and still failed. The MSBuild target that raises the error gates on a property named
+> `_SupportsGlobalJsonTestRunner`, which is the giveaway. Use `global.json` on this toolchain, and
+> re-verify before switching: a change that silently reverts to the broken state looks like a
+> tidy-up in review.
+
+**The filter fails open.** This is the important one, because the filter is the only thing standing
+between a routine test run and real money on a machine that has the live-test secrets configured.
+A typo in either half matches nothing, therefore excludes nothing, and runs the live-API tests
+silently. Measured on 2026-09-09 by discovery count:
+
+| Filter | Tests selected |
+|---|---|
+| *(none)* | 1482 — the whole suite, live-API tests included |
+| `Category!=UsesExternalApi` | **1478** — correct |
+| `Category=UsesExternalApi` | 4 — exactly the live-API tests |
+| `Categoy!=UsesExternalApi` *(name typo)* | 1482 — **fails open, no warning** |
+| `Category!=UsesExternalApis` *(value typo)* | 1482 — **fails open, no warning** |
+
+**So verify a filter by discovery, never by running the suite.** `--list-tests` enumerates without
+executing anything, so it costs nothing:
+
+```bash
+dotnet test Overseer.Tests --list-tests --filter "Category=UsesExternalApi"
+```
+
+That must list exactly the live-API tests and nothing else. The arithmetic to check is
+`unfiltered − live == filtered`, all three from discovery, and then that the filtered **execution**
+total matches the filtered discovery total. As of 2026-09-09: 1482 − 4 = 1478, and a filtered run
+executes 1478.
+
+> **The four live tests fail rather than skip when their secrets are absent**
+> (`LiveTestSecrets.DescribeMissing` feeds `Assert.True`), which is deliberate — see § 1's secrets
+> note. The consequence for this section: on a machine **without** the secrets an unfiltered run
+> costs nothing and merely reports four failures, while on a machine **with** them it spends real
+> money. Do not infer from a clean unfiltered run on one machine that the filter is unnecessary on
+> another.
 *   **CLI Instructions in Code**: The test file must contain a human-readable header comment instructing developers and agents on how to skip these tests during normal execution.
     ```csharp
     // To run tests while SKIPPING this file (to save AI API quota), use:

@@ -9,7 +9,7 @@ public static class BenchmarkGenerationPrompt
 {
     public const string DefaultInstructions =
         "Write benchmark questions a GnollHack player would actually ask while looking at this " +
-        "exact game state. Each question must be unanswerable without the board � if it could be " +
+        "exact game state. Each question must be unanswerable without the board — if it could be " +
         "answered from general GnollHack knowledge alone, it belongs in the knowledge suite, not " +
         "here. Vary the decision type across questions; do not ask the same thing twice in " +
         "different words. In each rubric, state only board facts you can point to in the snapshot, " +
@@ -72,8 +72,8 @@ public static class BenchmarkGenerationPrompt
         sb.AppendLine("2. **REQUIRED**: Specific correct decisions, tactical advice, or warnings the candidate must provide.");
         sb.AppendLine("3. **CRITICAL ERROR**: Severe blunders or lethal mistakes (e.g. meleeing a mind flayer with low HP, praying while on timeout) that fail the answer.");
         sb.AppendLine("4. **SCOPE**: Boundaries of the question (e.g. immediate turn vs long-term).");
-        sb.AppendLine("5. **FORM**: Expected answer structure.");
-        sb.AppendLine("6. **SOURCE**: Must specify \"**SOURCE** � board\" for facts grounded in this snapshot, and relevant C source files or wiki citations for game mechanics.");
+        sb.AppendLine("5. **FORM** (not graded — presentation note only): Expected answer structure. Label this section exactly \"**FORM** (not graded — presentation note only)\". It is a presentation note the assessor does not score: a FORM suggestion is never a Readability criterion and the section must not assert a grading consequence.");
+        sb.AppendLine("6. **SOURCE**: Must specify \"**SOURCE** — board\" for facts grounded in this snapshot, and relevant C source files or wiki citations for game mechanics.");
         sb.AppendLine();
         sb.AppendLine("WORKED EXAMPLE OF EXPECTED RUBRIC:");
         sb.AppendLine(@"**BOARD FACTS**
@@ -93,10 +93,10 @@ public static class BenchmarkGenerationPrompt
 **SCOPE**
 - The turn 120 tactical emergency. Do not require long-term ascension advice.
 
-**FORM**
+**FORM** (not graded — presentation note only)
 - Direct tactical assessment with immediate recommended action first.
 
-**SOURCE** � board; C source: src/mhit.c (mind flayer attack), include/you.c (prayer safety)");
+**SOURCE** — board; C source: src/mhit.c (mind flayer attack), include/you.c (prayer safety)");
         sb.AppendLine();
 
         if (isFirstBand)
@@ -117,7 +117,7 @@ public static class BenchmarkGenerationPrompt
   ""questions"": [
     {
       ""questionText"": ""What is the most urgent threat this turn and what should I do?"",
-      ""expectedPoints"": ""**BOARD FACTS**\n- HP is 12/60...\n\n**REQUIRED**\n- ...\n\n**CRITICAL ERROR**\n- ...\n\n**SCOPE**\n- ...\n\n**FORM**\n- ...\n\n**SOURCE** � board""
+      ""expectedPoints"": ""**BOARD FACTS**\n- HP is 12/60...\n\n**REQUIRED**\n- ...\n\n**CRITICAL ERROR**\n- ...\n\n**SCOPE**\n- ...\n\n**FORM** (not graded — presentation note only)\n- ...\n\n**SOURCE** — board""
     }
   ]
 }");
@@ -128,7 +128,7 @@ public static class BenchmarkGenerationPrompt
   ""questions"": [
     {
       ""questionText"": ""What is the most urgent threat this turn and what should I do?"",
-      ""expectedPoints"": ""**BOARD FACTS**\n- HP is 12/60...\n\n**REQUIRED**\n- ...\n\n**CRITICAL ERROR**\n- ...\n\n**SCOPE**\n- ...\n\n**FORM**\n- ...\n\n**SOURCE** � board""
+      ""expectedPoints"": ""**BOARD FACTS**\n- HP is 12/60...\n\n**REQUIRED**\n- ...\n\n**CRITICAL ERROR**\n- ...\n\n**SCOPE**\n- ...\n\n**FORM** (not graded — presentation note only)\n- ...\n\n**SOURCE** — board""
     }
   ]
 }");

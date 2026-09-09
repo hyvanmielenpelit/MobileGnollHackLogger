@@ -19,7 +19,10 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin: 0 0 16px 0;
+  /* Symmetric, so the panel is separated from whatever precedes it in either host dialog. The
+     dialog body is a normal-flow block, so where the preceding sibling already carries a 16px
+     bottom margin the two collapse and the spacing is unchanged. */
+  margin: 16px 0;
   padding: 12px 14px;
   border: 1px solid #333;
   border-radius: 6px;

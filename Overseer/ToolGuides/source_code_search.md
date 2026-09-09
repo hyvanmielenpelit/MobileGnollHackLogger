@@ -36,14 +36,38 @@ Key files for common mechanic lookups:
 - src/objects.c — Object definitions (all items with stats; GnollHack). WARNING: Appearance/description strings in src/objects.c are pre-shuffle templates; appearances are randomized each game by shuffle_all() in src/o_init.c. The player's identified types for the current game are listed in the snapshot's `Discoveries` section.
 - src/monst.c — Monster definitions (all monsters with stats; GnollHack)
 
+## How the query is matched
+
+`query` is **one literal substring, tested against each indexed line on its own.** It is
+case-insensitive unless `case_sensitive` is true. Everything else follows from that:
+
+- It is **never split into terms** and never stemmed. A multi-word query matches only a line
+  where those exact characters appear contiguously; `"layer glyph rendering"` will not find a
+  line about layers and another about glyphs.
+- It **cannot span a line break**, so a phrase the source wraps across two lines is unmatchable.
+- **File and symbol names are not searched by `query`.** `file_filter` is the only parameter
+  that looks at a path, and `filenames_only` changes how matches are *reported*, not what is
+  matched.
+- **Spacing and punctuation are literal.** `"m_shot.n ="` misses a line written `m_shot.n=`.
+
+So prefer a **short, distinctive token you are confident appears verbatim** — an identifier, a
+macro name, a struct member — over a phrase describing the mechanic. When you do not know the
+identifier, do not guess at it repeatedly: use `search_definitions` for a symbol, or
+`list_indexed_files` and a `filenames_only` survey, and narrow from there.
+
 Search tips:
 - Search for function names (e.g., "potionhit", "hitmu", "rn2")
 - Search for constants (e.g., "PM_GNOLL", "SPE_FIREBALL", "EXPL_FIERY")
-- Search for game messages to find the code that produces them (e.g., "You feel a numbness")
-- Use file_filter to narrow results to a specific file when you know where to look
+- Search for a distinctive **fragment** of a game message rather than the whole sentence: the
+  source often builds a message from pieces, so a short unbroken run of words is far more
+  likely to be on one line than the message as the player reads it
+- Use file_filter to narrow results to a specific file when you know where to look. Remember
+  that a filter can also be what excludes the match — a miss under a filter is not evidence
+  that the corpus lacks the term
 
 ## Parameters
-- `query` (string, required): The search terms to look up in the source code.
+- `query` (string, required): One literal substring, matched per line. Not a term list — see
+  *How the query is matched* above.
 - `file_filter` (string, optional): A substring to filter the returned file paths.
 - `max_results` (integer, optional): The maximum number of files to return matches from. Defaults to 10. Max is 100.
 - `is_regex` (boolean, optional): If true, the query is treated as a regular expression. This is extremely useful for pattern matching, e.g., finding all random number calls like `rn[12]\(\d+\)`.

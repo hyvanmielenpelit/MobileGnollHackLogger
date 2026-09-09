@@ -2,6 +2,7 @@ namespace Overseer.Tests;
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -1765,6 +1766,480 @@ public class BenchmarkServiceTests
             .Where(a => a.BenchmarkRunId == runId)
             .OrderBy(a => a.OrderIndex)
             .ToListAsync();
+    }
+    // --- 13. Report Cost Breakdown, Integrity and Agreement Reporting ---
+
+    /// <summary>
+    /// A minimal answer that scores and counts as clean, so a report-shape test can add one field
+    /// at a time without carrying eighteen irrelevant ones.
+    /// </summary>
+    private static BenchmarkRunAnswer ReportAnswer(
+        int orderIndex,
+        BenchmarkDifficulty difficulty = BenchmarkDifficulty.Simple,
+        int assessedDifficulty = 25,
+        int qualityScore = 80,
+        int speedScore = 80)
+    {
+        return new BenchmarkRunAnswer
+        {
+            OrderIndex = orderIndex,
+            QuestionText = $"Question {orderIndex}",
+            Difficulty = difficulty,
+            AssessedDifficulty = assessedDifficulty,
+            AnswerText = $"Answer {orderIndex}",
+            Status = BenchmarkAnswerStatus.Ok,
+            AccuracyLevel = 5,
+            CompletenessLevel = 5,
+            ConcisenessLevel = 5,
+            ReadabilityLevel = 5,
+            QualityScore = qualityScore,
+            SpeedScore = speedScore,
+            DurationMs = 6000,
+            ToolTimeMs = 0,
+            TerminationReason = "completed"
+        };
+    }
+
+    private static BenchmarkRun ReportRun(params BenchmarkRunAnswer[] answers)
+    {
+        return new BenchmarkRun
+        {
+            Id = 501,
+            BenchmarkSuiteId = 6,
+            TestedModelDisplayNameUsed = "Candidate",
+            TestedModelProviderUsed = "Anthropic",
+            TestedModelIdUsed = "candidate-model",
+            AssessorModelDisplayNameUsed = "Assessor",
+            AssessorModelProviderUsed = "Anthropic",
+            AssessorModelIdUsed = "assessor-model",
+            Status = BenchmarkRunStatus.Completed,
+            StartedAtUtc = new DateTime(2026, 9, 9, 6, 0, 0, DateTimeKind.Utc),
+            CompletedAtUtc = new DateTime(2026, 9, 9, 6, 30, 0, DateTimeKind.Utc),
+            QualityIndex = 80,
+            SpeedIndex = 80,
+            ScoringMethodVersion = 10,
+            TotalQuestionCount = answers.Length,
+            AnsweredQuestionCount = answers.Length,
+            MaxParallelQuestionsUsed = 1,
+            Answers = answers.ToList()
+        };
+    }
+
+    /// <summary>
+    /// Every itemised cost parenthetical in the Estimated Cost block, as (roleLine, total, parts).
+    /// The parts are read back out of the printed text rather than recomputed, which is the point:
+    /// the assertion is that what the report prints adds up, not that the arithmetic can be redone.
+    /// </summary>
+    private static List<(string Role, decimal Total, List<decimal> Parts)> ParseCostRoleLines(string report)
+    {
+        var results = new List<(string, decimal, List<decimal>)>();
+        var lineRegex = new Regex(
+            @"^  - (?<role>[^:]+): \$(?<total>[0-9.]+) \((?<parts>[^)]*)\)\r?$",
+            RegexOptions.Multiline);
+        var partRegex = new Regex(@"\$(?<value>[0-9.]+)");
+
+        foreach (Match m in lineRegex.Matches(report))
+        {
+            var parts = partRegex.Matches(m.Groups["parts"].Value)
+                .Select(p => decimal.Parse(p.Groups["value"].Value, CultureInfo.InvariantCulture))
+                .ToList();
+            results.Add((
+                m.Groups["role"].Value,
+                decimal.Parse(m.Groups["total"].Value, CultureInfo.InvariantCulture),
+                parts));
+        }
+
+        return results;
+    }
+
+    private static decimal ParseSingleDollarAmount(string report, string pattern)
+    {
+        var match = Regex.Match(report, pattern, RegexOptions.Multiline);
+        Assert.True(match.Success, $"Report did not contain a line matching /{pattern}/.");
+        return decimal.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// H1's invariant, on a fixture with cache reads and cache writes on every role. Before the
+    /// breakdown moved into ModelPricingService the report priced each grading role's *total* prompt
+    /// column at the uncached input rate, so a role's printed "in:" figure could exceed its own total.
+    /// </summary>
+    [Fact]
+    public void BenchmarkReportBuilder_CostBreakdown_PartsSumToRoleTotalsAndRunTotal()
+    {
+        var run = ReportRun(ReportAnswer(1), ReportAnswer(2));
+        run.TotalInputTokens = 900_000;
+        run.TotalOutputTokens = 120_000;
+        run.TotalCacheReadTokens = 400_000;
+        run.TotalCacheCreationTokens = 150_000;
+        run.TotalAssessmentInputTokens = 300_000;
+        run.TotalAssessmentOutputTokens = 40_000;
+        run.TotalAssessmentCacheReadTokens = 120_000;
+        run.TotalAssessmentCacheCreationTokens = 30_000;
+        run.TotalSecondOpinionInputTokens = 100_000;
+        run.TotalSecondOpinionOutputTokens = 15_000;
+        run.TotalSecondOpinionCacheReadTokens = 40_000;
+        run.TotalSecondOpinionCacheCreationTokens = 10_000;
+        run.TotalClaimVerificationInputTokens = 200_000;
+        run.TotalClaimVerificationOutputTokens = 25_000;
+        run.TotalClaimVerificationCacheReadTokens = 90_000;
+        run.TotalClaimVerificationCacheCreationTokens = 20_000;
+        run.TotalSynthesisInputTokens = 50_000;
+        run.TotalSynthesisOutputTokens = 8_000;
+        run.TotalSynthesisCacheReadTokens = 20_000;
+        run.TotalSynthesisCacheCreationTokens = 5_000;
+        run.ClaimVerifierModelIdUsed = "verifier-model";
+        run.SecondOpinionAssessorModelIdUsed = "second-model";
+
+        var card = new ModelPricing(
+            InputPerMillion: 3.00m,
+            OutputPerMillion: 15.00m,
+            CachedInputPerMillion: 0.30m,
+            CacheWritePerMillion: 3.75m);
+        var pricing = new BenchmarkRunPricing(card, card, card, card);
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(run, "1.0.0", pricing);
+
+        var roleLines = ParseCostRoleLines(report);
+        Assert.Equal(5, roleLines.Count);
+        foreach (var (role, total, parts) in roleLines)
+        {
+            // Four buckets on every role, because every role here has cache reads and cache writes.
+            Assert.Equal(4, parts.Count);
+            Assert.True(Math.Abs(parts.Sum() - total) <= 0.01m,
+                $"{role}: parts {string.Join(" + ", parts)} = {parts.Sum()} but total printed as {total}.");
+        }
+
+        decimal runTotal = ParseSingleDollarAmount(report, @"^- \*\*Estimated Cost:\*\* \$([0-9.]+) total\r?$");
+        decimal roleTotalSum = roleLines.Sum(r => r.Total);
+        Assert.True(Math.Abs(roleTotalSum - runTotal) <= 0.05m,
+            $"Role totals sum to {roleTotalSum} but Estimated Cost printed as {runTotal}.");
+
+        decimal grading = ParseSingleDollarAmount(report, @"^  - \*\*Grading subtotal:\*\* \$([0-9.]+) ");
+        decimal candidate = roleLines.Single(r => r.Role.StartsWith("Candidate", StringComparison.Ordinal)).Total;
+        Assert.True(Math.Abs(candidate + grading - runTotal) <= 0.05m,
+            $"Candidate {candidate} + grading {grading} != Estimated Cost {runTotal}.");
+    }
+
+    /// <summary>
+    /// The sub-defect a flat-rate fixture cannot detect: a long-context card and a non-default served
+    /// tier. The report's own arithmetic modelled neither, so the components disagreed with the total
+    /// by the whole surcharge and the whole multiplier.
+    /// </summary>
+    [Fact]
+    public void BenchmarkReportBuilder_CostBreakdown_HoldsUnderLongContextAndServiceTier()
+    {
+        var answer = ReportAnswer(1);
+        answer.LongContextInputTokens = 500_000;
+        answer.LongContextOutputTokens = 60_000;
+        answer.LongContextCacheReadTokens = 200_000;
+        answer.LongContextCacheCreationTokens = 50_000;
+        answer.ActualServiceTierUsed = "priority";
+
+        var run = ReportRun(answer);
+        run.TotalInputTokens = 900_000;
+        run.TotalOutputTokens = 120_000;
+        run.TotalCacheReadTokens = 400_000;
+        run.TotalCacheCreationTokens = 150_000;
+        run.TotalLongContextInputTokens = 500_000;
+        run.TotalLongContextOutputTokens = 60_000;
+        run.TotalLongContextCacheReadTokens = 200_000;
+        run.TotalLongContextCacheCreationTokens = 50_000;
+        run.TestedModelServiceTierUsed = "priority";
+
+        var candidateCard = new ModelPricing(
+            InputPerMillion: 3.00m,
+            OutputPerMillion: 15.00m,
+            CachedInputPerMillion: 0.30m,
+            CacheWritePerMillion: 3.75m,
+            LongContext: new LongContextPricing(
+                ThresholdInputTokens: 272_000,
+                InputPerMillion: 6.00m,
+                OutputPerMillion: 22.50m),
+            ServiceTierMultipliers: new Dictionary<string, decimal> { ["priority"] = 2.0m });
+        var pricing = new BenchmarkRunPricing(candidateCard);
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(run, "1.0.0", pricing);
+
+        var roleLines = ParseCostRoleLines(report);
+        var candidate = Assert.Single(roleLines);
+        Assert.True(Math.Abs(candidate.Parts.Sum() - candidate.Total) <= 0.01m,
+            $"Candidate parts {candidate.Parts.Sum()} != printed total {candidate.Total}.");
+
+        // The printed total must equal the shared costing routine, multiplier and surcharge included —
+        // not the flat-rate approximation the report used to compute for itself.
+        decimal expected = ModelPricingService.ComputeCostFromTotals(
+            candidateCard,
+            run.TotalInputTokens, run.TotalOutputTokens,
+            run.TotalCacheReadTokens, run.TotalCacheCreationTokens,
+            run.TotalLongContextInputTokens, run.TotalLongContextOutputTokens,
+            run.TotalLongContextCacheReadTokens, run.TotalLongContextCacheCreationTokens,
+            actualServiceTier: "priority", requestedServiceTier: "priority");
+        Assert.True(Math.Abs(candidate.Total - expected) <= 0.01m,
+            $"Candidate printed {candidate.Total} but the pricing service costs it at {expected}.");
+
+        Assert.Contains("Long-context surcharge", report);
+        Assert.Contains("prices scaled by 2x", report);
+    }
+
+    /// <summary>
+    /// The breakdown record's own invariant, independent of any report text: the four buckets are the
+    /// total, and the long-context figure is a subset of them rather than a fifth bucket.
+    /// </summary>
+    [Fact]
+    public void ModelPricingService_CostBreakdown_TotalIsTheSumOfPartsAndLongContextIsASubset()
+    {
+        var card = new ModelPricing(
+            InputPerMillion: 3.00m,
+            OutputPerMillion: 15.00m,
+            CachedInputPerMillion: 0.30m,
+            CacheWritePerMillion: 3.75m,
+            LongContext: new LongContextPricing(272_000, 6.00m, 22.50m),
+            ServiceTierMultipliers: new Dictionary<string, decimal> { ["priority"] = 2.0m });
+
+        var breakdown = ModelPricingService.ComputeCostBreakdownFromTotals(
+            card,
+            totalPromptTokens: 900_000, totalOutputTokens: 120_000,
+            cacheReadTokens: 400_000, cacheCreationTokens: 150_000,
+            longContextPromptTokens: 500_000, longContextOutputTokens: 60_000,
+            longContextCacheReadTokens: 200_000, longContextCacheCreationTokens: 50_000,
+            actualServiceTier: "priority");
+
+        decimal total = ModelPricingService.ComputeCostFromTotals(
+            card,
+            900_000, 120_000, 400_000, 150_000,
+            500_000, 60_000, 200_000, 50_000,
+            actualServiceTier: "priority");
+
+        Assert.Equal(total, breakdown.Total);
+        Assert.Equal(
+            breakdown.UncachedInput + breakdown.CacheRead + breakdown.CacheWrite + breakdown.Output,
+            breakdown.Total);
+        Assert.True(breakdown.LongContextPortion > 0m);
+        Assert.True(breakdown.LongContextPortion < breakdown.Total);
+    }
+
+    /// <summary>
+    /// H7. With no reasoning bleed detected, neither removal clause has anything to describe.
+    /// </summary>
+    [Fact]
+    public void BenchmarkReportBuilder_AdvisoryFlags_OmitsBothRemovalClausesWhenNothingWasDetected()
+    {
+        var run = ReportRun(ReportAnswer(1), ReportAnswer(2));
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(run, "1.0.0");
+
+        Assert.Contains("reasoning bleed: 0", report);
+        Assert.DoesNotContain("was removed before grading", report);
+        Assert.DoesNotContain("Removed before grading in", report);
+    }
+
+    /// <summary>
+    /// H5. The signed summary, and the case the operator has to see: every mismatch in one direction.
+    /// </summary>
+    [Fact]
+    public void BenchmarkReportBuilder_BandAgreement_ReportsSignedDriftAndCallsOutOneDirection()
+    {
+        var run = ReportRun(
+            ReportAnswer(1, BenchmarkDifficulty.Simple, assessedDifficulty: 55),
+            ReportAnswer(2, BenchmarkDifficulty.Simple, assessedDifficulty: 65),
+            ReportAnswer(3, BenchmarkDifficulty.Intermediate, assessedDifficulty: 85),
+            ReportAnswer(4, BenchmarkDifficulty.Simple, assessedDifficulty: 25));
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(run, "1.0.0");
+
+        // +30, +40, +30 against the 25/55/85 midpoints; Q4 agrees and is not a mismatch.
+        Assert.Contains("**Band Drift:** 3 assessed harder than authored, 0 easier", report);
+        Assert.Contains("mean signed delta **+33.3** points", report);
+        Assert.Contains("Every mismatch moved the same way — upward", report);
+    }
+
+    [Fact]
+    public void BenchmarkReportBuilder_BandAgreement_ClaimsNoDirectionWhenMismatchesDisagree()
+    {
+        var run = ReportRun(
+            ReportAnswer(1, BenchmarkDifficulty.Simple, assessedDifficulty: 55),
+            ReportAnswer(2, BenchmarkDifficulty.Advanced, assessedDifficulty: 25));
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(run, "1.0.0");
+
+        Assert.Contains("**Band Drift:** 1 assessed harder than authored, 1 easier", report);
+        Assert.DoesNotContain("Every mismatch moved the same way", report);
+    }
+
+    /// <summary>
+    /// H6, and the prohibition that goes with it. The termination is reported, and the answer still
+    /// classifies as Clean with no harness limit — BenchmarkRunFinalizer.HasHarnessLimit feeds Classify,
+    /// the clean count and the run status, so widening it for a reporting gap would move all three.
+    /// </summary>
+    [Fact]
+    public void BenchmarkReportBuilder_Termination_IsReportedWithoutReclassifyingTheAnswer()
+    {
+        var terminated = ReportAnswer(1);
+        terminated.TerminationReason = "iteration_limit";
+        terminated.ModelCallCount = 22;
+
+        var run = ReportRun(terminated, ReportAnswer(2));
+        run.ToolIterationCapsJson = "{\"Simple\":22,\"Intermediate\":22,\"Advanced\":22}";
+        run.TotalModelCallCapsJson = "{\"Simple\":28,\"Intermediate\":28,\"Advanced\":28}";
+
+        Assert.Equal(BenchmarkAnswerIntegrity.Clean, BenchmarkRunFinalizer.Classify(terminated));
+        Assert.False(BenchmarkRunFinalizer.HasHarnessLimit(terminated));
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(run, "1.0.0");
+
+        Assert.Contains("**Early Terminations:** 1 of 2", report);
+        Assert.Contains("iteration_limit: 1 (Q1)", report);
+        Assert.Contains("**Termination:** `iteration_limit`", report);
+        Assert.Contains("- **Harness Limits:** 0 ", report);
+        Assert.Contains("**Clean Answers:** 2 of 2", report);
+    }
+
+    /// <summary>
+    /// H6's near-ceiling advisory: one round short of the tool-iteration cap, and the loop still ended
+    /// on its own. Nothing else in the report says the cap may have shaped the answer.
+    /// </summary>
+    [Fact]
+    public void BenchmarkReportBuilder_Termination_FlagsAnAnswerOneRoundShortOfTheIterationCeiling()
+    {
+        var nearCeiling = ReportAnswer(1);
+        nearCeiling.ModelCallCount = 21;
+
+        var run = ReportRun(nearCeiling, ReportAnswer(2));
+        run.ToolIterationCapsJson = "{\"Simple\":22,\"Intermediate\":22,\"Advanced\":22}";
+        run.TotalModelCallCapsJson = "{\"Simple\":28,\"Intermediate\":28,\"Advanced\":28}";
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(run, "1.0.0");
+
+        Assert.Contains("**Near a Ceiling:** Q1 — 21 model call(s) against a tool-iteration cap of 22", report);
+        Assert.DoesNotContain("**Early Terminations:**", report);
+    }
+
+    /// <summary>
+    /// H2. The pooled agreement figure mixes two populations: a second reader handed a refuted claim in
+    /// its own prompt, and one that was not. Both are reported, and the pooled one keeps its meaning.
+    /// </summary>
+    [Fact]
+    public void BenchmarkReportBuilder_Agreement_ReportsPooledAndVerificationUninformedFigures()
+    {
+        var refuted = ReportAnswer(1, qualityScore: 80);
+        refuted.SecondOpinionQualityScore = 55;
+        refuted.SecondOpinionDisagreed = true;
+        refuted.SecondOpinionTrigger = "RefutedClaim";
+        refuted.ClaimsRefutedCount = 1;
+        refuted.AnswerFlags = (int)BenchmarkAnswerFlags.RefutedClaim;
+
+        var uninformed = ReportAnswer(2, qualityScore: 80);
+        uninformed.SecondOpinionQualityScore = 80;
+        uninformed.SecondOpinionTrigger = "Sample";
+
+        var run = ReportRun(refuted, uninformed);
+        run.SecondOpinionGradedAnswerCount = 2;
+        run.SecondOpinionModeUsed = (int)BenchmarkSecondOpinionMode.FlaggedPlusSample;
+        run.SecondOpinionBlindUsed = true;
+        run.SecondOpinionAssessorModelConfigurationId = 3;
+        run.SecondOpinionAssessorModelIdUsed = "second-model";
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(run, "1.0.0");
+
+        Assert.Contains("**Coverage by trigger:** refuted claim: 1, sample top-up: 1", report);
+        Assert.Contains("**Mean signed difference:** -12.5 points", report);
+        Assert.Contains("**Agreement over the verification-uninformed subset:** mean signed 0.0 points", report);
+        Assert.Contains("over 1 of 2 re-graded answers (Q2)", report);
+        Assert.Contains("The other 1 saw a refuted claim in their own prompt", report);
+    }
+
+    /// <summary>
+    /// H4. The line stated a measurement the report never made. It now names the guard that makes it
+    /// true, so a reader is not told an independent check happened.
+    /// </summary>
+    [Fact]
+    public void BenchmarkReportBuilder_DifficultyFallback_NamesTheGuardRatherThanImplyingAMeasurement()
+    {
+        var run = ReportRun(ReportAnswer(1));
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(run, "1.0.0");
+
+        Assert.Contains("**Difficulty Fallback Applied:** No — every question carried an independently assessed difficulty.", report);
+        Assert.Contains("`BenchmarkRunLauncher` refuses to launch a suite with any unassessed question", report);
+        Assert.DoesNotContain("No (independently assessed)", report);
+    }
+
+    /// <summary>
+    /// H9. Where the Speed Index is saturated the figure that still discriminates leads, in both the
+    /// summary and the Final Indices block, and the index is marked advisory rather than re-tuned.
+    /// </summary>
+    [Fact]
+    public void BenchmarkReportBuilder_SaturatedSpeedIndex_LeadsWithMedianModelTime()
+    {
+        var a1 = ReportAnswer(1, speedScore: 100);
+        a1.DurationMs = 20_000;
+        var a2 = ReportAnswer(2, speedScore: 100);
+        a2.DurationMs = 24_000;
+        var a3 = ReportAnswer(3, speedScore: 50);
+        a3.DurationMs = 30_000;
+        var a4 = ReportAnswer(4, speedScore: 50);
+        a4.DurationMs = 40_000;
+
+        var run = ReportRun(a1, a2, a3, a4);
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(run, "1.0.0");
+
+        Assert.Contains("### **Median Model Time: 24,000 ms**", report);
+        Assert.Contains("### Median Model Time: 24,000 ms", report);
+        Assert.Contains("Speed Index 80 / 100 — advisory", report);
+        Assert.Contains("Saturated — 2 of 4 answers", report);
+        Assert.DoesNotContain("### **Speed Index: 80 / 100**", report);
+    }
+
+    [Fact]
+    public void BenchmarkReportBuilder_UnsaturatedSpeedIndex_KeepsTheIndexAsThePrimaryFigure()
+    {
+        var run = ReportRun(
+            ReportAnswer(1, speedScore: 100),
+            ReportAnswer(2, speedScore: 50),
+            ReportAnswer(3, speedScore: 50),
+            ReportAnswer(4, speedScore: 50));
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(run, "1.0.0");
+
+        Assert.Contains("### **Speed Index: 80 / 100**", report);
+        Assert.DoesNotContain("Median Model Time", report);
+    }
+
+    /// <summary>
+    /// H12. A capped answer enters the interval as a large squared deviation weighted by assessed
+    /// difficulty squared, so the width is not item sampling and must not be read as noise.
+    /// </summary>
+    [Fact]
+    public void BenchmarkReportBuilder_ConfidenceInterval_CaveatsTheWidthWhenAnswersWereCapped()
+    {
+        var capped = ReportAnswer(1, BenchmarkDifficulty.Advanced, assessedDifficulty: 85, qualityScore: 25);
+        capped.RawQualityScore = 90;
+        capped.CriticalError = true;
+
+        var run = ReportRun(
+            capped,
+            ReportAnswer(2, BenchmarkDifficulty.Intermediate, assessedDifficulty: 55, qualityScore: 88),
+            ReportAnswer(3, BenchmarkDifficulty.Simple, assessedDifficulty: 25, qualityScore: 92));
+        run.QualityIndexStandardError = 12.5;
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(run, "1.0.0");
+
+        Assert.Contains("The interval is inflated by 1 capped answer(s).", report);
+        Assert.Contains("weighted by the item's assessed difficulty *squared*", report);
+    }
+
+    [Fact]
+    public void BenchmarkReportBuilder_ConfidenceInterval_OmitsTheCaveatWhenNothingWasCapped()
+    {
+        var run = ReportRun(ReportAnswer(1), ReportAnswer(2), ReportAnswer(3));
+        run.QualityIndexStandardError = 3.0;
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(run, "1.0.0");
+
+        Assert.Contains("95% CI over 3 items", report);
+        Assert.DoesNotContain("The interval is inflated by", report);
     }
 }
 

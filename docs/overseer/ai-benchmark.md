@@ -551,6 +551,191 @@ Prompted by the gap harness 16 left standing: fingerprinting three of the run's 
 - **A 90-day retention window, keyed on the run's age, not the row's.** `ChatRetentionSettings.PruneBenchmarkToolCallResultsDays` defaults to **90** — three times chat's own `PruneToolCallResultsDays` (30), because a benchmark run stays evidence for a study longer than a chat turn stays evidence of anything. `ChatRetentionService.PruneAgedBenchmarkToolCallPayloadsAsync` is a new numbered step (step 5) in `RunFullMaintenanceAsync`'s sweep, and it nulls `ArgsText` and `Result` for every call whose **run** — via `BenchmarkRunAnswerToolCall.BenchmarkRunAnswer.BenchmarkRun.StartedAtUtc` — started before the cutoff, because the row carries no timestamp of its own: a run re-analysed long after it finished should keep its evidence until the run itself is old enough, not until an unrelated clock on the row ticks over. `Name`, `Status`, `Error`, `SortOrder`, the timings and `ResultLengthChars` are never pruned — they are a few bytes each, and they are what the aggregates and the tool-layer diagnostics actually read.
 - **Run-forward, with no backfill and no exception.** Rows exist only for runs from harness 17 onward, and none can be added to an older run after the fact — the arguments and results a pre-17 answer's calls carried were never captured, by construction, and no later pass can recover what was never written. Every consumer keeps its `ToolCallSummary` path for those runs permanently. `BenchmarkAssessmentPrompt.HarnessVersion` moves to `"17"`; `ScoringMethodVersion` stays at **10**, because no grading rule changed — this round only widens what the harness records about calls the candidate already made.
 
+### Reporting and Tool-Layer Round (2026-09-09) — No Version Bump
+
+A remediation round drawn from run 28's analysis. It changes **what the report says** and **what
+three tools return**, and it changes **no scoring rule**: `BenchmarkAssessmentPrompt.HarnessVersion`
+stays at `"17"` and `ScoringMethodVersion` stays at **10**.
+
+**That non-bump is a deliberate trade, and it is the one thing in this round worth arguing about.**
+Some of these changes do alter what the candidate receives — three tool guides, `_policy.md`, the
+`source_code_search` miss payload, the plain-text truncation suffix, and a `get_item_stats` result
+that now carries structured values. By the standard the harness-16-to-17 note states, that is
+exactly what a version bump records. Bumping it here would also mark the run that *verifies* this
+round non-comparable with run 28, which is the only run these changes were motivated by, and the
+verification would measure nothing. So the round is recorded through the **instrument
+fingerprints** instead — `ToolGuidesSha256` and `CandidateSystemPromptSha256` both move, and the
+comparability machinery treats them as provenance rather than as keys, which is precisely the
+distinction that makes this possible. A future reader comparing a pre-round run with a post-round
+run must therefore read the fingerprints, not the harness version, and the run registry in
+`server_benchmark_to_chat_transfer` § 11 is where the two values are written down.
+
+#### Report changes
+
+- **The cost breakdown is computed once, in the pricing service.** `ModelPricingService` gains
+  `ModelCostBreakdown` (uncached input, cache read, cache write, output, plus the long-context
+  portion as a *subset* of those four, not a fifth bucket) and
+  `ComputeCostBreakdownFromTotals`. `ComputeCostFromTotals` returns that breakdown's `Total`, so
+  the parts and the total are the same arithmetic by construction.
+  `ComputeRunRoleCostBreakdowns` produces the five roles' breakdowns and `ComputeRunRoleCosts`
+  reads its totals from it. The report no longer multiplies a rate card by a token count at all.
+  Two defects went with the old local arithmetic: it priced each grading role's *total* prompt
+  column at the uncached input rate, so a role's printed `in:` figure could exceed its own total;
+  and it modelled neither the long-context split nor the service-tier multiplier, so a candidate
+  with a long-context card would have misprinted its own components.
+- **All five roles are itemised**, with the same conditional shape: `uncached in` and `cached in`
+  are separated only where the card publishes a distinct cached rate, since otherwise cache reads
+  bill at the input rate and naming them apart would imply a saving the run did not get. The
+  **Long-context surcharge** line now also states how many dollars of the candidate's total were
+  billed at that card.
+- **The narration-removal wording is omitted when nothing was detected.** With `reasoning bleed: 0`
+  the Advisory Flags note used to claim either that the text "was removed before grading" or that
+  it was "removed in 0 of 0" — both describing text that never existed.
+- **Band Agreement carries a signed drift summary** before the per-question list: how many
+  questions were assessed harder than authored, how many easier, and the mean signed delta against
+  the authored band's midpoint (the 25 / 55 / 85 map in `BenchmarkRunFinalizer.FallbackDifficulty`).
+  When every mismatch shares a direction the line says so explicitly, because assessed difficulty
+  is the Intelligence Index weight — a one-directional drift moves the headline, and a list of
+  per-question band changes does not show that. The Angular Band Agreement panel carries the same
+  line.
+- **Early terminations and near-ceiling answers are reported, beside the Harness Limits line and
+  never inside it.** `TerminationReason` was persisted and rendered nowhere. Run Integrity now
+  carries an **Early Terminations** line with the reason breakdown and question numbers whenever
+  any answer did not end on its own, a **Near a Ceiling** line for an answer that finished within
+  one step of a configured cap without the cap firing, and a per-question **Termination** line.
+  `BenchmarkRunFinalizer.HasHarnessLimit` is deliberately **unchanged**: it feeds `Classify`,
+  `ToolStarvedAnswerCount` and the run status, so widening it for a reporting gap would move the
+  clean-answer count and the run status of every future run. A terminated answer therefore still
+  classifies as `Clean` with `Harness Limits: 0`, and a test asserts that.
+  The round count itself is not persisted on an answer; `ModelCallCount` stands in for it, which
+  is exact for a tool-using turn because the agent loop makes one model call per round.
+- **A saturated Speed Index is demoted rather than re-tuned.** When at least half the scored
+  answers sit at the Speed Index ceiling, or when a deliberating candidate ran against an
+  interactive-latency profile, § 2 and § 7 Final Indices both lead with **median model time** and
+  mark the index advisory; the Angular score card does the same, with the index on its sub-line.
+  No score, no scoring profile and no method version changes. The tempting alternative — a second
+  scoring profile with a larger `SpeedTargetMs` — was rejected: `speedTargetMs` is inside
+  `BenchmarkScoringProfileService.CanonicalSignature`, which is hashed into the comparability key,
+  so a profile differing *only* in its speed target would mark its runs non-comparable on every
+  quality dimension as well, for a reason that cannot touch a quality score. A metric that has run
+  out of resolution is a reporting problem, not a scoring one.
+- **The confidence interval carries a caveat when answers were capped.** A critical-error cap
+  replaces a score with 25, and that deviation enters the variance weighted by the item's assessed
+  difficulty *squared*, so a run with critical errors reports a wide interval for a reason that is
+  not item sampling. The formula is unchanged; the reader is told which figure to read instead —
+  the **Critical Errors** count.
+- **The difficulty-fallback line states a guarantee instead of implying a measurement.**
+  `BenchmarkRunLauncher` refuses to launch a suite carrying any question without an assessed
+  difficulty, and `BenchmarkService` coalesces the authored fallback into the stored
+  `AssessedDifficulty` when it writes an answer, so `DifficultyFallbackUsed` is false on every run
+  that can exist. The line now says so and names the guard. `FallbackDifficulty` itself stays: it
+  is still the defensive default in `BenchmarkRunFinalizer` and the report's assessed-difficulty
+  label.
+- **Assessor Agreement is reported by trigger, and over the verification-uninformed subset.** A
+  second opinion on an answer carrying a refuted claim is handed that refutation in its own prompt
+  (`BenchmarkAssessmentPrompt`'s fact-check verification block), so its disagreement is partly the
+  verifier's finding rather than an independent second reading. The section now prints the trigger
+  breakdown of the covered answers, and a second agreement figure over the answers that saw no
+  refuted claim. The existing pooled figures are unchanged, so no historical number changes
+  meaning.
+- **Diagnostics capture.** `diagnosticsModeName` switches on the `BenchmarkSecondOpinionMode` enum
+  rather than on bare integers, so `FlaggedPlusSample` is named instead of reported as `unknown`,
+  and a mode added later cannot regress it. The `outlier delta` figure prints only under
+  `FlaggedAndOutliers`, the one trigger that reads it.
+
+#### One ordering change, which is not presentational
+
+`RunClaimVerificationAsync` now runs **before** the outlier sweep and the second-opinion sample
+top-up, and again after them. Before, it ran only after: a flagged answer's second opinion was
+handed its refutation (the per-answer path verifies before its own second opinion) while an
+outlier-selected or sample-selected one was not, so the pooled agreement figure mixed two
+different measurements depending on which trigger had selected the answer. Running it first makes
+every second opinion in the run read the same verification state. The **second** call is what keeps
+an existing behaviour: a critical-error split is one of the things that makes an answer a
+verification candidate, and only a second opinion can produce one. The pass filters on
+`ClaimVerificationJson` and `ClaimVerificationError` both being null, so it re-checks nothing and
+returns before any model call when the two stages found no split. The second opinion is advisory
+and enters no index, so no score changes.
+
+#### Tool-layer changes
+
+- **`get_item_stats` has a Level 1.** `ObjectsMacroResolver` is loaded from
+  `SourceCodeService.ParseGameData()` on every re-index, with both `src/objects.c` and
+  `include/objclass.h` — the header supplies the enum constants that the ternary conditions in
+  `CHARGEDRING`, `MISCELLANEOUSITEM`, `GENERAL_TOOL`, `GENERAL_SPELLTOOL`, `CONTAINER` and
+  `GENERAL_ROCK` compare against, and without it roughly sixty entries return C ternary text in
+  place of a value. `GetItemStats` populates `StatsResponse<ItemStats>.Stats` from the resolution
+  and keeps the raw definition beside it; on a resolve failure it falls back to the raw dump plus
+  macro and struct context, with the failure reason in `message`, and never throws.
+  `NetHackSourceCodeService` overrides `ParseGameData()` with a no-op, so the resolver is
+  GnollHack-only without a guard.
+- **The item result states its own units.** `ac_bonus` is the stored `oc_armor_class`, which
+  GnollHack writes as `10 - ac`; `base_ac` is that `ac` argument; and the game negates `ac_bonus`
+  into the hero's AC, so a positive bonus *lowers* AC. Magic cancellation is a stored level
+  adjusted further at run time, and the spellcasting penalty's player-visible form is
+  `spell_casting_penalty_percent`. All three conventions are emitted as notes with the values, not
+  left in source comments — a model reading `ac_bonus: 9, base_ac: 1` cannot otherwise tell which
+  number is which, and that is the confusion that produced a spurious critical error on run 28.
+- **A name several object classes share is no longer silently resolved to one of them.**
+  `objects.c` holds 947 entries under 904 distinct names; the resolver keeps every entry, reports
+  the sharing classes in `ambiguous_object_classes`, notes which one the values came from when it
+  picked for the caller, and accepts an object class to select among them.
+- **Flag unions are lists.** A slot whose value is an OR of symbolic flags is returned as a list of
+  those flags, matching the shape `get_monster_stats` already returns for its own flag fields.
+- **`source_code_search`'s miss names a next action.** The bare 30-character
+  *"No relevant source code found."* carried no near-miss information, so a model that guessed an
+  identifier got an answer indistinguishable from "the game does not contain this" and its cheapest
+  recovery was another guess — 20 tool rounds of it on one run-28 question. The miss now probes the
+  index for near neighbours of an identifier-shaped query, states explicitly that a multi-word
+  query matched no line *as a literal substring*, reports which individual terms matched which
+  files, and names the `file_filter` in play. It stays short on purpose: every tool result is
+  re-sent on each subsequent round of the same question, so a verbose miss would undo the saving.
+- **The truncation suffix is actionable, and it is no longer a fixed-length marker.**
+  `ToolExecutor`'s `... [Result truncated for length]` said nothing a model could act on, and
+  `SourceCodeService`'s own *"refine your query or use source_code_view"* suffix was appended at
+  character 100,000 and then cut away by the 10,000-character cap, so the model had never once
+  received it. The suffix now states how many characters of how many are shown and what to do
+  about it. **Consequence for diagnostics:** the stored `10033` fingerprint — 10,000 characters
+  plus a 33-character marker — no longer identifies a truncated result. The marker is
+  `... [Truncated: showing {shown} of {total} characters. …]`, 107 characters plus the two figures'
+  digits, so a truncated plain-text result now stores roughly 10,117. Match on the `[Truncated:`
+  prefix rather than on a length.
+  `MaxSourceResultLength` is left at 100,000 and remains dead; raising it fixes nothing, and
+  raising `MaxResultLength` would raise input-token cost on every subsequent round of every
+  question.
+- **Tool guides.** `source_code_search.md` states the matcher contract its parameter prose used to
+  contradict — one literal substring, matched per line, never split into terms, unable to span a
+  line break, and blind to file and symbol names. `get_item_stats.md` describes the fields the tool
+  now returns and states the AC convention. `get_monster_stats.md` states the `ac`, `mc` and `mr`
+  scales and which direction is favourable for the monster, without naming any monster or value.
+  `_policy.md` scopes tool narration to the moment of the lookup and keeps it out of the answer's
+  opening, and adds miss-recovery guidance.
+
+#### The rubric FORM contract
+
+Scoring method v9 abolished the link between a rubric's FORM section and the Readability
+dimension, and the assessor prompt now says so outright: *"A rubric FORM or format suggestion is
+not a READABILITY criterion… do not lower the level"*. **The label a rubric must carry for that**
+existed in exactly one place in the repository — the placeholder text in the question editor:
+
+```
+**FORM** (not graded — presentation note only)
+```
+
+Every one of suite 6's eighteen rubrics instead says `**FORM** (readability)`, asserting a grading
+link that no longer exists. `BenchmarkGenerationPrompt` is the upstream cause and now carries the
+annotated label in its numbered instruction, its worked example and both JSON examples, so a newly
+generated suite cannot reproduce the defect. The heading shape is load-bearing:
+`BenchmarkRubricCitationValidator` bounds the `**SOURCE**` section with a look-ahead for bold
+ALL-CAPS headings at line start, and a parenthetical **after** the closing `**` still matches —
+`**FORM** (…)` is safe, `**FORM (…)**` is not.
+
+Repairing the eighteen live rubrics is a separate, deliberate step: editing `ExpectedPoints` calls
+`BenchmarkQuestionAssessment.Clear`, which increments `ItemRevision` and nulls the whole
+assessed-difficulty snapshot, and `SuiteItemRevisions` is a **Fundamental** comparability key — so
+every run of that suite after the edit is non-comparable with every run before it, and the suite
+cannot be run at all until difficulty is re-assessed for all eighteen questions.
+
 ### Multi-Run Replicate Sets (Harness Version 14)
 
 Four consecutive runs reproduced the same Completeness gap, and the harness still could not say whether any single figure would survive a re-run. A one-run result mixes the thing being measured with the noise of measuring it once, and no amount of care in the report separates them. Replicate sets do.

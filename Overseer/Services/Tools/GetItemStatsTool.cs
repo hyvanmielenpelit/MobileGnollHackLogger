@@ -30,7 +30,11 @@ namespace Overseer.Services.Tools
             "properties": {
                 "name": { 
                     "type": "string", 
-                    "description": "The exact name of the item as defined in src/objects.c (e.g. 'long sword', 'potion of healing')" 
+                    "description": "The exact name of the item as defined in src/objects.c. Use the bare oc_name, not the display name: 'digging', not 'wand of digging'." 
+                },
+                "object_class": {
+                    "type": "string",
+                    "description": "Optional. Selects among object classes when several hold an entry of the same name, e.g. 'WAND_CLASS' for the wand rather than the scroll. Omit unless a previous result reported ambiguous_object_classes."
                 }
             },
             "required": ["name"]
@@ -47,8 +51,12 @@ namespace Overseer.Services.Tools
             }
 
             string name = arguments.GetProperty("name").GetString() ?? string.Empty;
-            
-            var result = _sourceCodeService.GetItemStats(name);
+
+            string? objectClass = arguments.TryGetProperty("object_class", out var objectClassElem)
+                ? objectClassElem.GetString()
+                : null;
+
+            var result = _sourceCodeService.GetItemStats(name, objectClass);
             
             var options = new JsonSerializerOptions
             {

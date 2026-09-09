@@ -3013,33 +3013,123 @@ describe('AdminBenchmarkComponent', () => {
       expect(pills[2].classList.contains('verdict-refuted')).toBeFalse();
     });
 
+    describe('Band drift', () => {
+      function bandedAnswer(orderIndex: number, difficulty: number, assessedDifficulty: number): any {
+        return {
+          id: orderIndex, orderIndex, questionText: `Q${orderIndex}`, difficulty, assessedDifficulty,
+          answerText: 'a', status: 'Ok', assessmentStatus: 'Scored', durationMs: 1, modelTimeMs: 1,
+          scrubbedArtifactCount: 0, answerFlags: 0, answerFlagNames: [], qualityScore: 80
+        };
+      }
+
+      function bandSectionText(): string {
+        const section = fixture.nativeElement.querySelector('.band-agreement-section');
+        return ((section as HTMLElement)?.textContent || '').replace(/\s+/g, ' ').trim();
+      }
+
+      it('should call out a drift that moved every mismatch the same way', () => {
+        // Two authored Simple (midpoint 25) assessed into the Intermediate band, one authored
+        // Intermediate (midpoint 55) assessed into Advanced: +30, +40, +30, all upward.
+        component.selectedRunDetail = buildFinishedRun({
+          answers: [
+            bandedAnswer(1, 1, 55), bandedAnswer(2, 1, 65),
+            bandedAnswer(3, 2, 85), bandedAnswer(4, 1, 25)
+          ]
+        });
+        fixture.detectChanges();
+
+        expect(component.bandDisagreements().length).toBe(3);
+        const drift = component.bandDriftSummary()!;
+        expect(drift.up).toBe(3);
+        expect(drift.down).toBe(0);
+        expect(drift.meanDelta).toBeCloseTo(33.3, 1);
+        expect(drift.oneDirection).toBe('up');
+
+        const text = bandSectionText();
+        expect(text).toContain('3 assessed harder than authored, 0 easier');
+        expect(text).toContain('+33.3');
+        expect(text).toContain('Every mismatch moved the same way — upward');
+      });
+
+      it('should not claim a direction when the mismatches disagree', () => {
+        component.selectedRunDetail = buildFinishedRun({
+          answers: [bandedAnswer(1, 1, 55), bandedAnswer(2, 3, 25)]
+        });
+        fixture.detectChanges();
+
+        const drift = component.bandDriftSummary()!;
+        expect(drift.up).toBe(1);
+        expect(drift.down).toBe(1);
+        expect(drift.oneDirection).toBeNull();
+        expect(bandSectionText()).not.toContain('Every mismatch moved the same way');
+      });
+
+      it('should render no drift line when every question stayed in its authored band', () => {
+        component.selectedRunDetail = buildFinishedRun({
+          answers: [bandedAnswer(1, 1, 25), bandedAnswer(2, 2, 55)]
+        });
+        fixture.detectChanges();
+
+        expect(component.bandDisagreements().length).toBe(0);
+        expect(component.bandDriftSummary()).toBeNull();
+        expect(fixture.nativeElement.querySelector('.band-agreement-section')).toBeNull();
+      });
+    });
+
     describe('Speed Index saturation', () => {
-      function scoredAnswer(orderIndex: number, speedScore: number): any {
+      function scoredAnswer(orderIndex: number, speedScore: number, modelTimeMs = 1): any {
         return {
           id: orderIndex, orderIndex, questionText: `Q${orderIndex}`, difficulty: 1, answerText: 'a',
-          status: 'Ok', assessmentStatus: 'Scored', durationMs: 1, modelTimeMs: 1,
+          status: 'Ok', assessmentStatus: 'Scored', durationMs: modelTimeMs, modelTimeMs,
           scrubbedArtifactCount: 0, answerFlags: 0, answerFlagNames: [], qualityScore: 80, speedScore
         };
       }
 
-      function speedIndexNoteText(): string {
+      /**
+       * The speed card, found by either of its two labels: the card leads with the Speed Index
+       * ordinarily and with median model time once the index cannot discriminate.
+       */
+      function speedCard(): HTMLElement | undefined {
         const cards: HTMLElement[] = Array.from(fixture.nativeElement.querySelectorAll('.score-card'));
-        const card = cards.find(c => (c.querySelector('.score-label')?.textContent || '').trim() === 'Speed Index');
-        const notes: HTMLElement[] = Array.from(card?.querySelectorAll('.score-note') ?? []);
-        return notes.map(n => (n.textContent || '').trim()).join(' ');
+        return cards.find(c => {
+          const label = (c.querySelector('.score-label')?.textContent || '').trim();
+          return label === 'Speed Index' || label === 'Median Model Time';
+        });
       }
 
-      it('should flag saturation once exactly half the scored answers sit at the ceiling', () => {
+      function speedCardLabel(): string {
+        return (speedCard()?.querySelector('.score-label')?.textContent || '').trim();
+      }
+
+      function speedCardValueText(): string {
+        return ((speedCard()?.querySelector('.score-subvalue') as HTMLElement)?.textContent || '')
+          .replace(/\s+/g, ' ').trim();
+      }
+
+      function speedIndexNoteText(): string {
+        const notes: HTMLElement[] = Array.from(speedCard()?.querySelectorAll('.score-note') ?? []);
+        return notes.map(n => (n.textContent || '').replace(/\s+/g, ' ').trim()).join(' ');
+      }
+
+      it('should lead with median model time once exactly half the scored answers sit at the ceiling', () => {
         component.selectedRunDetail = buildFinishedRun({
           scoringProfileSpeedTargetMs: 30000,
-          answers: [scoredAnswer(1, 100), scoredAnswer(2, 100), scoredAnswer(3, 50), scoredAnswer(4, 50)]
+          answers: [
+            scoredAnswer(1, 100, 1000), scoredAnswer(2, 100, 2000),
+            scoredAnswer(3, 50, 3000), scoredAnswer(4, 50, 4000)
+          ]
         });
         fixture.detectChanges();
 
         expect(component.speedIndexScoredAnswerCount).toBe(4);
         expect(component.speedIndexCeilingAnswerCount).toBe(2);
         expect(component.showSpeedIndexSaturationAdvisory).toBeTrue();
-        expect(speedIndexNoteText()).toContain('saturated — 2 of 4 at the ceiling');
+        expect(component.demoteSpeedIndex).toBeTrue();
+        expect(component.medianModelTimeMs).toBe(2500);
+        expect(speedCardLabel()).toBe('Median Model Time');
+        expect(speedCardValueText()).toContain('2,500 ms');
+        expect(speedIndexNoteText()).toContain('Speed Index');
+        expect(speedIndexNoteText()).toContain('saturated: 2 of 4 at the ceiling');
       });
 
       it('should not flag saturation just below half', () => {
@@ -3052,6 +3142,8 @@ describe('AdminBenchmarkComponent', () => {
         expect(component.speedIndexScoredAnswerCount).toBe(5);
         expect(component.speedIndexCeilingAnswerCount).toBe(2);
         expect(component.showSpeedIndexSaturationAdvisory).toBeFalse();
+        expect(component.demoteSpeedIndex).toBeFalse();
+        expect(speedCardLabel()).toBe('Speed Index');
         expect(speedIndexNoteText()).not.toContain('saturated');
       });
     });
@@ -3213,7 +3305,22 @@ describe('AdminBenchmarkComponent', () => {
       expect(text).toContain('harness version: 7');
       expect(text).toContain('scoring method version: 6');
       expect(text).toContain('Speed: target 15000 ms, decay k 20');
-      expect(text).toContain('Second opinion: mode All, threshold 50, outlier delta 25');
+      // The outlier delta is read only by the FlaggedAndOutliers trigger, so under All it governed
+      // nothing and printing it read as a threshold this run applied.
+      expect(text).toContain('Second opinion: mode All, threshold 50');
+      expect(text).not.toContain('outlier delta');
+    });
+
+    it('should print the outlier delta only under the trigger that reads it', () => {
+      component.activeRunDetail = buildDiagnosticsRun({ secondOpinionModeUsed: 2 });
+      expect(component.runDiagnosticsText)
+        .toContain('Second opinion: mode FlaggedAndOutliers, threshold 50, outlier delta 25');
+    });
+
+    it('should name the mode added after this capture was written', () => {
+      component.activeRunDetail = buildDiagnosticsRun({ secondOpinionModeUsed: 4 });
+      expect(component.runDiagnosticsText).toContain('Second opinion: mode FlaggedPlusSample');
+      expect(component.runDiagnosticsText).not.toContain('mode unknown');
     });
 
     it('should omit the superseded computed score rather than printing "computed: n/a"', () => {

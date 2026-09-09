@@ -123,12 +123,27 @@ dotnet publish -c Release
 
 All test commands must be run from the `Overseer.Tests/` (or repository root) directory.
 
+> [!IMPORTANT]
+> **`dotnet test` depends on the repository-root `global.json`.** `Overseer.Tests` is a
+> Microsoft.Testing.Platform application, and from the .NET 10 SDK onward `dotnet test` will not
+> run one through the old VSTest path. `global.json` carries the opt-in:
+>
+> ```json
+> { "test": { "runner": "Microsoft.Testing.Platform" } }
+> ```
+>
+> Without it every command in this section fails with *"Testing with VSTest target is no longer
+> supported by Microsoft.Testing.Platform on .NET 10 SDK and later."* On this toolchain
+> (SDK 10.0.401) a `dotnet.config` `[dotnet.test.runner]` entry does **not** work as a substitute,
+> despite current Microsoft documentation; see the `testing-guidelines` skill § 1a.
+
 ### Running Backend Tests
 ```bash
 # Run all tests SKIPPING external AI API calls (Recommended - saves AI quota)
 dotnet test --filter "Category!=UsesExternalApi"
 
-# Run all tests (including external AI API calls - consumes API quota)
+# Run all tests INCLUDING external AI API calls - consumes API quota and spends real money.
+# Ask first; on a machine with the live-test secrets configured this bills three providers.
 dotnet test
 
 # Run a specific test class
@@ -141,6 +156,18 @@ dotnet test --filter "FullyQualifiedName~ChatServiceTests.StripThoughts_RemovesA
 
 > [!WARNING]
 > **AI API Quota**: Always use `--filter "Category!=UsesExternalApi"` unless you have explicit permission to consume live AI API tokens.
+>
+> **The filter fails open, so check it rather than trusting it.** A typo in the trait name or its
+> value matches nothing, excludes nothing, and runs the live tests without complaint —
+> `Categoy!=UsesExternalApi` and `Category!=UsesExternalApis` both select all 1482 tests. Verify a
+> filter with a discovery run, which executes nothing:
+>
+> ```bash
+> dotnet test Overseer.Tests --list-tests --filter "Category=UsesExternalApi"
+> ```
+>
+> It must list exactly the live-API tests (4 as of 2026-09-09). Never verify a filter by running
+> the suite unfiltered.
 
 ---
 

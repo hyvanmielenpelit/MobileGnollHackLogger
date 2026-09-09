@@ -73,6 +73,52 @@ public readonly record struct BenchmarkRoleCosts(
     decimal Candidate, decimal Assessor, decimal SecondOpinion, decimal ClaimVerifier,
     decimal Synthesis, decimal Grading, decimal Total, bool Incomplete, string Source);
 
+/// <summary>
+/// One costing split into the four disjoint buckets a provider bills, so a caller that wants to show
+/// the parts never has to recompute them from a rate card of its own.
+///
+/// <para><see cref="Total"/> is the sum of the four, by construction. A consumer printing the parts
+/// beside the total therefore cannot print a set that does not add up, which is the whole reason this
+/// type exists.</para>
+///
+/// <para><see cref="LongContextPortion"/> is <b>not</b> a fifth bucket. It is how much of
+/// <see cref="Total"/> was billed at the long-context card, and its tokens are already counted in the
+/// four buckets — the same subset relationship <see cref="LongContextTokenBuckets"/> carries. Adding
+/// it to <see cref="Total"/> would double count.</para>
+///
+/// <para>Every figure is already scaled by the served service-tier multiplier, so the parts and the
+/// total sit in the same units as anything the pricing service returns.</para>
+/// </summary>
+public readonly record struct ModelCostBreakdown(
+    decimal UncachedInput,
+    decimal CacheRead,
+    decimal CacheWrite,
+    decimal Output,
+    decimal LongContextPortion)
+{
+    public decimal Total => UncachedInput + CacheRead + CacheWrite + Output;
+
+    public static ModelCostBreakdown operator +(ModelCostBreakdown a, ModelCostBreakdown b)
+        => new(a.UncachedInput + b.UncachedInput, a.CacheRead + b.CacheRead,
+               a.CacheWrite + b.CacheWrite, a.Output + b.Output,
+               a.LongContextPortion + b.LongContextPortion);
+
+    public ModelCostBreakdown Scale(decimal multiplier)
+        => new(UncachedInput * multiplier, CacheRead * multiplier, CacheWrite * multiplier,
+               Output * multiplier, LongContextPortion * multiplier);
+}
+
+/// <summary>
+/// The five roles of <see cref="BenchmarkRoleCosts"/>, each as its bucket breakdown. Produced by the
+/// same per-role wiring that produces the totals, so a role's parts and its total come from one call.
+/// </summary>
+public readonly record struct BenchmarkRoleCostBreakdowns(
+    ModelCostBreakdown Candidate,
+    ModelCostBreakdown Assessor,
+    ModelCostBreakdown SecondOpinion,
+    ModelCostBreakdown ClaimVerifier,
+    ModelCostBreakdown Synthesis);
+
 public class ModelPricingService
 {
     private readonly ModelMetadataService _metadata;
@@ -364,25 +410,38 @@ public class ModelPricingService
         ModelPricing pricing,
         long inputTokens, long outputTokens,
         long cacheReadTokens = 0, long cacheCreationTokens = 0)
+        => ComputeCostParts(pricing, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens).Total;
+
+    /// <summary>
+    /// The four buckets behind <see cref="ComputeCost(ModelPricing, long, long, long, long)"/>, flat-rate
+    /// and unscaled. The single place any rate card is multiplied by a token count, so every costing
+    /// surface — total or itemised — derives from this arithmetic and no other.
+    /// </summary>
+    private static ModelCostBreakdown ComputeCostParts(
+        ModelPricing pricing,
+        long inputTokens, long outputTokens,
+        long cacheReadTokens, long cacheCreationTokens)
     {
-        if (pricing == null) return 0m;
+        if (pricing == null) return default;
 
         // inputTokens is uncached input tokens
-        decimal cost = (inputTokens / 1_000_000m) * pricing.InputPerMillion;
-        cost += (outputTokens / 1_000_000m) * pricing.OutputPerMillion;
+        decimal uncachedInput = (inputTokens / 1_000_000m) * pricing.InputPerMillion;
+        decimal output = (outputTokens / 1_000_000m) * pricing.OutputPerMillion;
 
+        decimal cacheRead = 0m;
         if (cacheReadTokens > 0)
         {
             decimal cacheReadRate = pricing.CachedInputPerMillion ?? pricing.InputPerMillion;
-            cost += (cacheReadTokens / 1_000_000m) * cacheReadRate;
+            cacheRead = (cacheReadTokens / 1_000_000m) * cacheReadRate;
         }
 
+        decimal cacheWrite = 0m;
         if (cacheCreationTokens > 0 && pricing.CacheWritePerMillion.HasValue)
         {
-            cost += (cacheCreationTokens / 1_000_000m) * pricing.CacheWritePerMillion.Value;
+            cacheWrite = (cacheCreationTokens / 1_000_000m) * pricing.CacheWritePerMillion.Value;
         }
 
-        return cost;
+        return new ModelCostBreakdown(uncachedInput, cacheRead, cacheWrite, output, 0m);
     }
 
     /// <summary>
@@ -498,8 +557,33 @@ public class ModelPricingService
         long longContextPromptTokens = 0, long longContextOutputTokens = 0,
         long longContextCacheReadTokens = 0, long longContextCacheCreationTokens = 0,
         string? actualServiceTier = null, string? requestedServiceTier = null)
+        => ComputeCostBreakdownFromTotals(
+            pricing, totalPromptTokens, totalOutputTokens, cacheReadTokens, cacheCreationTokens,
+            longContextPromptTokens, longContextOutputTokens,
+            longContextCacheReadTokens, longContextCacheCreationTokens,
+            actualServiceTier, requestedServiceTier).Total;
+
+    /// <summary>
+    /// The bucket breakdown behind <see cref="ComputeCostFromTotals"/>, on the same arguments and with
+    /// the same semantics. The long-context split and the service-tier multiplier are applied to every
+    /// part, so a caller itemising the buckets gets figures that sum to the total the run is reported
+    /// at rather than a flat-rate approximation of it.
+    ///
+    /// <para>A consumer must never rebuild these parts from a <see cref="ModelPricing"/> card and a
+    /// token count: doing so drops the long-context card and the tier multiplier, and drops the
+    /// distinction between a stored <c>Total*InputTokens</c> column — a prompt total that already
+    /// contains the cache reads and cache writes beside it — and the uncached figure the flat overload
+    /// takes.</para>
+    /// </summary>
+    public static ModelCostBreakdown ComputeCostBreakdownFromTotals(
+        ModelPricing pricing,
+        long totalPromptTokens, long totalOutputTokens,
+        long cacheReadTokens, long cacheCreationTokens,
+        long longContextPromptTokens = 0, long longContextOutputTokens = 0,
+        long longContextCacheReadTokens = 0, long longContextCacheCreationTokens = 0,
+        string? actualServiceTier = null, string? requestedServiceTier = null)
     {
-        if (pricing == null) return 0m;
+        if (pricing == null) return default;
 
         decimal tierMultiplier =
             ResolveServiceTierMultiplier(pricing, actualServiceTier, requestedServiceTier);
@@ -514,10 +598,11 @@ public class ModelPricingService
         long stdOutput = totalOutputTokens - lcOutput;
         long stdCacheCreation = cacheCreationTokens - lcCacheCreation;
 
-        decimal cost = ComputeCost(
+        var standard = ComputeCostParts(
             pricing,
             Math.Max(0, stdPrompt - stdCacheRead - stdCacheCreation), stdOutput, stdCacheRead, stdCacheCreation);
 
+        var longContext = default(ModelCostBreakdown);
         if (lcPrompt > 0 && pricing.LongContext != null)
         {
             var card = pricing with
@@ -530,12 +615,15 @@ public class ModelPricingService
                     pricing.LongContext.CacheWritePerMillion ?? pricing.CacheWritePerMillion
             };
 
-            cost += ComputeCost(
+            longContext = ComputeCostParts(
                 card,
                 Math.Max(0, lcPrompt - lcCacheRead - lcCacheCreation), lcOutput, lcCacheRead, lcCacheCreation);
         }
 
-        return cost * tierMultiplier;
+        // The long-context portion is carried as its own figure and is a subset of the four buckets, not
+        // an addition to them, so it is set after the sum rather than accumulated into it.
+        var combined = standard + longContext;
+        return (combined with { LongContextPortion = longContext.Total }).Scale(tierMultiplier);
     }
 
     /// <summary>
@@ -567,6 +655,83 @@ public class ModelPricingService
     /// <param name="pricing">The price cards resolved for the run's roles.</param>
     /// <param name="servedServiceTier">The tier the provider served for the candidate. Null resolves it
     /// from the run's answer rows, which a caller that did not load them must therefore pass itself.</param>
+    /// <summary>
+    /// The same five role costings as <see cref="ComputeRunRoleCosts"/>, each itemised into the buckets
+    /// a provider bills. <see cref="ComputeRunRoleCosts"/> reads its role totals from here, so a surface
+    /// printing the parts beside the totals is printing one costing rather than two.
+    ///
+    /// <para>The candidate carries its long-context subsets and served tier; the grading roles are flat,
+    /// because no per-call usage is recorded for them — the same asymmetry
+    /// <see cref="ComputeRunRoleCosts"/> documents, for the same reason.</para>
+    /// </summary>
+    public static BenchmarkRoleCostBreakdowns ComputeRunRoleCostBreakdowns(
+        BenchmarkRun run, BenchmarkRunPricing pricing, string? servedServiceTier = null)
+    {
+        if (run == null || pricing == null) return default;
+
+        string? servedTier = servedServiceTier
+            ?? Benchmarking.BenchmarkRunFinalizer.ResolveServedServiceTier(run.Answers);
+
+        var candidateCard = pricing.Candidate;
+        var assessorCard = pricing.Assessor;
+        var secondOpinionCard = pricing.SecondOpinion;
+        var verifierCard = pricing.ClaimVerifier;
+
+        var candidate = candidateCard != null
+            ? ComputeCostBreakdownFromTotals(
+                candidateCard,
+                run.TotalInputTokens, run.TotalOutputTokens,
+                run.TotalCacheReadTokens, run.TotalCacheCreationTokens,
+                run.TotalLongContextInputTokens, run.TotalLongContextOutputTokens,
+                run.TotalLongContextCacheReadTokens, run.TotalLongContextCacheCreationTokens,
+                actualServiceTier: servedTier,
+                requestedServiceTier: run.TestedModelServiceTierUsed)
+            : default;
+
+        // Every stored Total*InputTokens column is a *total* prompt figure that already contains the
+        // cache reads and cache writes beside it — the shape ComputeCostBreakdownFromTotals takes. With
+        // no long-context subset and no served tier, which no grading role records, it is the flat rate
+        // over the four disjoint buckets, and identical to what a run predating these columns cost.
+        var assessor = assessorCard != null && RoleHasTokens(
+                run.TotalAssessmentInputTokens, run.TotalAssessmentOutputTokens,
+                run.TotalAssessmentCacheReadTokens, run.TotalAssessmentCacheCreationTokens)
+            ? ComputeCostBreakdownFromTotals(
+                assessorCard,
+                run.TotalAssessmentInputTokens, run.TotalAssessmentOutputTokens,
+                run.TotalAssessmentCacheReadTokens, run.TotalAssessmentCacheCreationTokens)
+            : default;
+
+        var secondOpinion = secondOpinionCard != null && RoleHasTokens(
+                run.TotalSecondOpinionInputTokens, run.TotalSecondOpinionOutputTokens,
+                run.TotalSecondOpinionCacheReadTokens, run.TotalSecondOpinionCacheCreationTokens)
+            ? ComputeCostBreakdownFromTotals(
+                secondOpinionCard,
+                run.TotalSecondOpinionInputTokens, run.TotalSecondOpinionOutputTokens,
+                run.TotalSecondOpinionCacheReadTokens, run.TotalSecondOpinionCacheCreationTokens)
+            : default;
+
+        var claimVerifier = verifierCard != null && RoleHasTokens(
+                run.TotalClaimVerificationInputTokens, run.TotalClaimVerificationOutputTokens,
+                run.TotalClaimVerificationCacheReadTokens, run.TotalClaimVerificationCacheCreationTokens)
+            ? ComputeCostBreakdownFromTotals(
+                verifierCard,
+                run.TotalClaimVerificationInputTokens, run.TotalClaimVerificationOutputTokens,
+                run.TotalClaimVerificationCacheReadTokens, run.TotalClaimVerificationCacheCreationTokens)
+            : default;
+
+        var synthesis = assessorCard != null && RoleHasTokens(
+                run.TotalSynthesisInputTokens, run.TotalSynthesisOutputTokens,
+                run.TotalSynthesisCacheReadTokens, run.TotalSynthesisCacheCreationTokens)
+            ? ComputeCostBreakdownFromTotals(
+                assessorCard,
+                run.TotalSynthesisInputTokens, run.TotalSynthesisOutputTokens,
+                run.TotalSynthesisCacheReadTokens, run.TotalSynthesisCacheCreationTokens)
+            : default;
+
+        return new BenchmarkRoleCostBreakdowns(
+            candidate, assessor, secondOpinion, claimVerifier, synthesis);
+    }
+
     public static BenchmarkRoleCosts ComputeRunRoleCosts(
         BenchmarkRun run, BenchmarkRunPricing pricing, string? servedServiceTier = null)
     {
@@ -596,48 +761,13 @@ public class ModelPricingService
             run.TotalSynthesisInputTokens, run.TotalSynthesisOutputTokens,
             run.TotalSynthesisCacheReadTokens, run.TotalSynthesisCacheCreationTokens);
 
-        decimal candidate = candidateCard != null
-            ? ComputeCostFromTotals(
-                candidateCard,
-                run.TotalInputTokens, run.TotalOutputTokens,
-                run.TotalCacheReadTokens, run.TotalCacheCreationTokens,
-                run.TotalLongContextInputTokens, run.TotalLongContextOutputTokens,
-                run.TotalLongContextCacheReadTokens, run.TotalLongContextCacheCreationTokens,
-                actualServiceTier: servedTier,
-                requestedServiceTier: run.TestedModelServiceTierUsed)
-            : 0m;
+        var breakdowns = ComputeRunRoleCostBreakdowns(run, pricing, servedTier);
 
-        // Every stored Total*InputTokens column is a *total* prompt figure that already contains the
-        // cache reads and cache writes beside it — the shape ComputeCostFromTotals takes. With no
-        // long-context subset and no served tier, which no grading role records, it is the flat rate
-        // over the four disjoint buckets, and identical to what a run predating these columns cost.
-        decimal assessor = hasAssessor && assessorCard != null
-            ? ComputeCostFromTotals(
-                assessorCard,
-                run.TotalAssessmentInputTokens, run.TotalAssessmentOutputTokens,
-                run.TotalAssessmentCacheReadTokens, run.TotalAssessmentCacheCreationTokens)
-            : 0m;
-
-        decimal secondOpinion = hasSecondOpinion && secondOpinionCard != null
-            ? ComputeCostFromTotals(
-                secondOpinionCard,
-                run.TotalSecondOpinionInputTokens, run.TotalSecondOpinionOutputTokens,
-                run.TotalSecondOpinionCacheReadTokens, run.TotalSecondOpinionCacheCreationTokens)
-            : 0m;
-
-        decimal claimVerifier = hasVerifier && verifierCard != null
-            ? ComputeCostFromTotals(
-                verifierCard,
-                run.TotalClaimVerificationInputTokens, run.TotalClaimVerificationOutputTokens,
-                run.TotalClaimVerificationCacheReadTokens, run.TotalClaimVerificationCacheCreationTokens)
-            : 0m;
-
-        decimal synthesis = hasSynthesis && assessorCard != null
-            ? ComputeCostFromTotals(
-                assessorCard,
-                run.TotalSynthesisInputTokens, run.TotalSynthesisOutputTokens,
-                run.TotalSynthesisCacheReadTokens, run.TotalSynthesisCacheCreationTokens)
-            : 0m;
+        decimal candidate = breakdowns.Candidate.Total;
+        decimal assessor = breakdowns.Assessor.Total;
+        decimal secondOpinion = breakdowns.SecondOpinion.Total;
+        decimal claimVerifier = breakdowns.ClaimVerifier.Total;
+        decimal synthesis = breakdowns.Synthesis.Total;
 
         decimal grading = assessor + secondOpinion + claimVerifier + synthesis;
 
