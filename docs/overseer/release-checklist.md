@@ -8,12 +8,12 @@ This checklist provides a concise, step-by-step procedure for cutting a new rele
 
 Run automated tests to ensure everything is working before preparing a release. `dotnet test`
 requires the repository-root `global.json` (the Microsoft.Testing.Platform opt-in the .NET 10 SDK
-needs) and the `--filter` exactly as written — it fails open on a typo. See
+needs) and the `--filter-not-trait` argument exactly as written — it fails open on a typo. See
 [commands.md](commands.md) § 4.
 
 ```bash
 # 1. Run backend unit & integration tests (skipping external AI APIs)
-dotnet test --filter "Category!=UsesExternalApi"
+dotnet test --filter-not-trait "Category=UsesExternalApi"
 
 # 2. Run frontend unit tests in headless mode (from Overseer/ClientApp/)
 cd Overseer/ClientApp

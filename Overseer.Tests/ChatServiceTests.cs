@@ -12,7 +12,7 @@ using Xunit;
 // IMPORTANT: This test file connects to external AI APIs and consumes quota.
 // 
 // To run the test suite while SKIPPING this file (to save AI API quota), use:
-// dotnet test --filter "Category!=UsesExternalApi"
+// dotnet test --filter-not-trait "Category=UsesExternalApi"
 // ====================================================================================
 
 namespace Overseer.Tests

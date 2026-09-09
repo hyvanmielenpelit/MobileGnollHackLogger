@@ -18,7 +18,7 @@ using Xunit;
 // on a paid Tier 2 key.
 //
 // To run the test suite while SKIPPING this file (to save AI API quota and money), use:
-// dotnet test MobileGnollHackLogger.slnx --filter "Category!=UsesExternalApi"
+// dotnet test MobileGnollHackLogger.slnx --filter-not-trait "Category=UsesExternalApi"
 //
 // Expected behaviour of the live API is documented in
 // docs/overseer/gemini-service-tier-measurements.md — read it before debugging a failure.

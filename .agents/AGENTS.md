@@ -48,17 +48,21 @@ These are the **only** correct ways to run this repository's tests. Use them ver
 
 - **.NET tests** (from the repository root):
   ```bash
-  dotnet test Overseer.Tests --filter "Category!=UsesExternalApi"
+  dotnet test Overseer.Tests --filter-not-trait "Category=UsesExternalApi"
   ```
-  The `--filter` is **not optional**. Without it the run calls live OpenAI, Anthropic and Google APIs, spending quota and money. For the whole solution, substitute `MobileGnollHackLogger.slnx` for `Overseer.Tests`. Note the project directory is `Overseer.Tests`, plural.
+  The `--filter-not-trait` is **not optional**. Without it the run calls live OpenAI, Anthropic and Google APIs, spending quota and money. For the whole solution, substitute `MobileGnollHackLogger.slnx` for `Overseer.Tests`. Note the project directory is `Overseer.Tests`, plural.
+
+  To run **only** the live-API tests, which needs the secrets and your explicit permission, the counterpart is `--filter-trait "Category=UsesExternalApi"` — the same argument, without the `not`.
 
   **This command depends on the repository-root `global.json`.** `Overseer.Tests` is a Microsoft.Testing.Platform application, and from the .NET 10 SDK onward `dotnet test` refuses to run one through the old VSTest path — *"Testing with VSTest target is no longer supported…"*. The `"test": { "runner": "Microsoft.Testing.Platform" }` entry in `global.json` selects the new runner, and without it the command above fails outright. **Do not delete or "modernise" that file** — see the `testing-guidelines` skill for why `dotnet.config` is not the mechanism here.
 
-  > ⚠️ **The filter fails open, so verify it rather than trusting it.** A typo in either the trait name or its value — `Categoy!=UsesExternalApi`, `Category!=UsesExternalApis` — matches nothing, excludes nothing, and runs the live-API tests without a word of complaint. If you change the filter string, confirm it with a **discovery** count first, which runs no test and spends nothing:
+  > ⚠️ **The filter fails open, so verify it rather than trusting it.** A typo in the trait name or its value — `Categoy=UsesExternalApi`, `Category=UsesExternalApis` — matches nothing, therefore excludes nothing, and runs the live-API tests without a word of complaint. So does writing `!=` inside `--filter-not-trait`, which is the old VSTest habit. If you change the argument, confirm it with a **discovery** count first, which runs no test and spends nothing:
   > ```bash
-  > dotnet test Overseer.Tests --list-tests --filter "Category=UsesExternalApi"
+  > dotnet test Overseer.Tests --list-tests --filter-trait "Category=UsesExternalApi"
   > ```
   > That must report exactly the live-API tests (4 as of 2026-09-09). Never check a filter by running the suite unfiltered.
+
+  > **If you meet `--filter "Category!=UsesExternalApi"` in an older plan or commit, it is the same thing.** That is VSTest filter syntax, which Microsoft.Testing.Platform accepts as a compatibility shim; this repository moved to the native `--filter-not-trait` on 2026-09-09 so the documented command does not rest on a compatibility layer in a toolchain that has already dropped one. Both still work today.
 
 - **Angular tests** (from `Overseer/ClientApp/`):
   ```bash

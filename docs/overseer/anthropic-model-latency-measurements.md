@@ -279,7 +279,7 @@ Per the [`testing_guidelines`](../../.agents/skills/testing_guidelines/SKILL.md)
 tests are excluded by default and require explicit permission to run:
 
 ```powershell
-dotnet test MobileGnollHackLogger.slnx --filter "Category!=UsesExternalApi"
+dotnet test MobileGnollHackLogger.slnx --filter-not-trait "Category=UsesExternalApi"
 ```
 
 ---

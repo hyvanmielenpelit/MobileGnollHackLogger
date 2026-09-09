@@ -204,11 +204,11 @@ categorised `UsesExternalApi`. Per the
 **excluded by default** and require explicit permission to run, because they cost money:
 
 ```powershell
-dotnet test MobileGnollHackLogger.slnx --filter "Category!=UsesExternalApi"
+dotnet test MobileGnollHackLogger.slnx --filter-not-trait "Category=UsesExternalApi"
 ```
 
 ```powershell
-dotnet test Overseer.Tests\Overseer.Tests.csproj --filter "Category=UsesExternalApi"
+dotnet test Overseer.Tests\Overseer.Tests.csproj --filter-trait "Category=UsesExternalApi"
 ```
 
 Any live test touching these models **must** tolerate HTTP 429 and 503 by logging a

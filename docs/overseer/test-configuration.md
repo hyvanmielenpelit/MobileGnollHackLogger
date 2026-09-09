@@ -158,7 +158,7 @@ tests, see [`anthropic-model-latency-measurements.md`](anthropic-model-latency-m
 By default, all live external API tests are excluded to ensure fast and hermetic test runs:
 
 ```powershell
-dotnet test MobileGnollHackLogger.slnx --filter "Category!=UsesExternalApi"
+dotnet test MobileGnollHackLogger.slnx --filter-not-trait "Category=UsesExternalApi"
 ```
 
 Two prerequisites for that command, both easy to break:
@@ -168,12 +168,14 @@ Two prerequisites for that command, both easy to break:
    reason `dotnet.config` is not a substitute on this toolchain are in the `testing-guidelines`
    skill § 1a.
 2. **The filter has to be exactly right, because it fails open.** A typo in the trait name or its
-   value selects the whole suite rather than erroring, and on a machine with the secrets below
-   configured that means a real bill from three providers. Verify with a discovery run, which
-   executes nothing:
+   value selects the whole suite rather than erroring — and so does writing `!=` inside
+   `--filter-not-trait`, which is the habit VSTest syntax leaves behind. On a machine with the
+   secrets below configured that means a real bill from three providers. Note also that the
+   exclude and opt-in forms differ only by the word `not`, and the opt-in form runs **only** the
+   tests that cost money. Verify with a discovery run, which executes nothing:
 
    ```powershell
-   dotnet test Overseer.Tests --list-tests --filter "Category=UsesExternalApi"
+   dotnet test Overseer.Tests --list-tests --filter-trait "Category=UsesExternalApi"
    ```
 
    It must list exactly the live-API tests — 4 as of 2026-09-09, one in `ChatServiceTests` and
@@ -188,5 +190,5 @@ Two prerequisites for that command, both easy to break:
 Per [`testing_guidelines`](../../.agents/skills/testing_guidelines/SKILL.md) §1, AI agents must **always request explicit user permission** before executing tests that connect to external AI APIs:
 
 ```powershell
-dotnet test Overseer.Tests\Overseer.Tests.csproj --filter "Category=UsesExternalApi"
+dotnet test Overseer.Tests\Overseer.Tests.csproj --filter-trait "Category=UsesExternalApi"
 ```

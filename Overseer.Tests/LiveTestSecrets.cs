@@ -41,7 +41,7 @@ namespace Overseer.Tests
             }
             sb.AppendLine("These tests call external AI APIs and are excluded from a normal run.");
             sb.AppendLine("To skip them entirely:");
-            sb.AppendLine("  dotnet test MobileGnollHackLogger.slnx --filter \"Category!=UsesExternalApi\"");
+            sb.AppendLine("  dotnet test MobileGnollHackLogger.slnx --filter-not-trait \"Category=UsesExternalApi\"");
             sb.AppendLine();
             sb.AppendLine($"Setup instructions and the full secrets schema: {DocPath}");
             return sb.ToString();

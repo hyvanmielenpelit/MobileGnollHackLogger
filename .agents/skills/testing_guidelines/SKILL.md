@@ -13,17 +13,21 @@ Tests that call external APIs (like OpenAI, Anthropic, or Google) consume quota 
 
 *   **Ask for Permission**: You MUST ALWAYS ask the user for explicit permission before running any test that hits an external AI API.
 *   **Trait Tagging**: Every test method or class that connects to an external API must be decorated with `[Trait("Category", "UsesExternalApi")]`.
-*   **Default CLI Test Command**: When running test commands in verification plans or automated testing routines, always append `--filter "Category!=UsesExternalApi"` to prevent unintended API calls and quota consumption. **This is the command for this repository's implementation plans and verification runs:**
+*   **Default CLI Test Command**: When running test commands in verification plans or automated testing routines, always append `--filter-not-trait "Category=UsesExternalApi"` to prevent unintended API calls and quota consumption. **This is the command for this repository's implementation plans and verification runs:**
     ```bash
-    dotnet test Overseer.Tests --filter "Category!=UsesExternalApi"
+    dotnet test Overseer.Tests --filter-not-trait "Category=UsesExternalApi"
     ```
     The whole-solution variant, for when the other test projects matter too:
     ```bash
-    dotnet test MobileGnollHackLogger.slnx --filter "Category!=UsesExternalApi"
+    dotnet test MobileGnollHackLogger.slnx --filter-not-trait "Category=UsesExternalApi"
+    ```
+    The opt-in counterpart, for a deliberate live-API run, is the same argument without the `not`:
+    ```bash
+    dotnet test Overseer.Tests --filter-trait "Category=UsesExternalApi"
     ```
     Both commands are also stated in **`AGENTS.md`**, which is loaded into every context window, so they are available without invoking this skill. The Verification Plan rules that consume them are in `server_implementation_planning`.
 
-### 1a. The two things that make that command work, and the one that makes it unsafe
+### 1a. What makes that command work, what makes it unsafe, and why it is spelled this way
 
 **The repository-root `global.json` is a prerequisite, not decoration.**
 
@@ -64,16 +68,20 @@ silently. Measured on 2026-09-09 by discovery count:
 | Filter | Tests selected |
 |---|---|
 | *(none)* | 1482 — the whole suite, live-API tests included |
-| `Category!=UsesExternalApi` | **1478** — correct |
-| `Category=UsesExternalApi` | 4 — exactly the live-API tests |
-| `Categoy!=UsesExternalApi` *(name typo)* | 1482 — **fails open, no warning** |
-| `Category!=UsesExternalApis` *(value typo)* | 1482 — **fails open, no warning** |
+| `--filter-not-trait "Category=UsesExternalApi"` | **1478** — correct |
+| `--filter-trait "Category=UsesExternalApi"` | 4 — exactly the live-API tests |
+| `--filter-not-trait "Categoy=UsesExternalApi"` *(name typo)* | 1482 — **fails open, no warning** |
+| `--filter-not-trait "Category=UsesExternalApis"` *(value typo)* | 1482 — **fails open, no warning** |
+| `--filter-not-trait "Category!=UsesExternalApi"` *(VSTest `!=` habit)* | 1482 — **fails open, no warning** |
+
+The last row is the one to watch during the transition: `--filter-not-trait` takes a plain
+`name=value` pair, and an operator smuggled into the value is accepted in silence.
 
 **So verify a filter by discovery, never by running the suite.** `--list-tests` enumerates without
 executing anything, so it costs nothing:
 
 ```bash
-dotnet test Overseer.Tests --list-tests --filter "Category=UsesExternalApi"
+dotnet test Overseer.Tests --list-tests --filter-trait "Category=UsesExternalApi"
 ```
 
 That must list exactly the live-API tests and nothing else. The arithmetic to check is
@@ -87,15 +95,58 @@ executes 1478.
 > costs nothing and merely reports four failures, while on a machine **with** them it spends real
 > money. Do not infer from a clean unfiltered run on one machine that the filter is unnecessary on
 > another.
+
+**Why `--filter-not-trait` and not `--filter`.** Both select the same 1478 tests, in every command
+form and under `--list-tests`, so this is not a correctness question. It is a longevity one:
+Microsoft.Testing.Platform's own help describes `--filter` as *"Filter using the VSTest filter
+syntax"* and links to VSTest documentation, which makes it a **compatibility shim**.
+`--filter-not-trait` / `--filter-trait` are the native xunit v3 options. Since the reason this
+section exists at all is that a VSTest compatibility path was removed in the .NET 10 SDK,
+standardising the repository's most-repeated command on a second one would be the same bet twice.
+
+The native pair is also harder to get dangerously wrong. The old pair was
+`--filter "Category!=UsesExternalApi"` to exclude and `--filter "Category=UsesExternalApi"` to opt
+in — **one character apart, with the shorter one running only the tests that cost money.** The
+native pair differs by the word `not`.
+
+> **The honest counter-argument, for whoever revisits this:** `--filter-not-trait` is an xunit v3
+> *extension* option, native to the framework rather than to the platform. If this project ever
+> moved off xunit v3, that option name would change, whereas VSTest filter syntax is the more
+> cross-framework spelling. That is a real cost, and it was accepted because nothing suggests this
+> repository is leaving xunit. `--filter "Category!=UsesExternalApi"` still works today, so an
+> older plan or commit carrying it is not broken — just not the documented form.
+
+### Package hygiene: three VSTest-era references that do nothing
+
+`Overseer.Tests` is an MTP application because **`xunit.v3` makes it one** — `xunit.v3` 4.0.0 pulls
+`xunit.v3.core.mtp-v2`, whose dependencies include `Microsoft.Testing.Platform` and
+`Microsoft.Testing.Platform.MSBuild`. Nothing else in the project supplies that. Three references
+are therefore VSTest-era leftovers rather than load-bearing parts of the test setup:
+
+| Package | What it is | Status |
+|---|---|---|
+| `Microsoft.NET.Test.Sdk` 18.10.0 | pulls `Microsoft.TestPlatform.TestHost` and `ObjectModel` — the VSTest host | not used by the CLI path |
+| `xunit.runner.visualstudio` 4.0.0 | the VSTest adapter | not used by the CLI path |
+| `coverlet.collector` 10.0.1 | a VSTest data collector | referenced in no doc, script or workflow — default-template residue |
+
+**Verified on 2026-09-09:** with all three removed, `dotnet test Overseer.Tests
+--filter-not-trait "Category=UsesExternalApi"` ran **1478 passed, 0 failed**. They were then
+restored, and the removal was **deliberately not applied**, for one reason:
+`xunit.runner.visualstudio` is plausibly what lets Visual Studio Test Explorer discover these
+tests, and that cannot be verified from a terminal. **Before removing them, open Test Explorer in
+Visual Studio and confirm discovery still works** — VS supports MTP natively in recent versions,
+but it may need enabling. If coverage is ever wanted, note that `coverlet.collector` is driven by
+VSTest's `--collect:"XPlat Code Coverage"`; the MTP equivalent is a different package
+(`Microsoft.Testing.Extensions.CodeCoverage`) and a `--coverage` switch.
 *   **CLI Instructions in Code**: The test file must contain a human-readable header comment instructing developers and agents on how to skip these tests during normal execution.
     ```csharp
     // To run tests while SKIPPING this file (to save AI API quota), use:
-    // dotnet test MobileGnollHackLogger.slnx --filter "Category!=UsesExternalApi"
+    // dotnet test MobileGnollHackLogger.slnx --filter-not-trait "Category=UsesExternalApi"
     ```
 *   **Test Secrets & Configuration**: Live API credentials must be stored in User Secrets (never committed). See **[`docs/overseer/test-configuration.md`](../../../docs/overseer/test-configuration.md)** for the complete schema, setup commands, and troubleshooting guide.
 
 > [!NOTE]
-> **Solution File Format**: The repository uses the modern Visual Studio solution format **`MobileGnollHackLogger.slnx`** (not `.sln`). Use `dotnet build MobileGnollHackLogger.slnx` or `dotnet test MobileGnollHackLogger.slnx --filter "Category!=UsesExternalApi"` when building or testing the entire solution from the CLI.
+> **Solution File Format**: The repository uses the modern Visual Studio solution format **`MobileGnollHackLogger.slnx`** (not `.sln`). Use `dotnet build MobileGnollHackLogger.slnx` or `dotnet test MobileGnollHackLogger.slnx --filter-not-trait "Category=UsesExternalApi"` when building or testing the entire solution from the CLI.
 
 ## 1b. What to Expect from Live Gemini Calls
 

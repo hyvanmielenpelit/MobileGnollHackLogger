@@ -10,7 +10,7 @@ This guide provides a comprehensive reference of all command-line operations use
 | :--- | :--- | :--- |
 | **Run Entire App (Backend + SPA Proxy)** | `Overseer/` | `dotnet run` |
 | **Run Frontend Unit Tests (Headless)** | `Overseer/ClientApp/` | `npm run test:headless` |
-| **Run Backend Unit & Integration Tests** | `Overseer.Tests/` | `dotnet test --filter "Category!=UsesExternalApi"` |
+| **Run Backend Unit & Integration Tests** | `Overseer.Tests/` | `dotnet test --filter-not-trait "Category=UsesExternalApi"` |
 | **Build Frontend (Production)** | `Overseer/ClientApp/` | `npm run build` |
 | **Build Backend** | `Overseer/` | `dotnet build` |
 | **Release Application** | Root | *(See [release-checklist.md](release-checklist.md))* |
@@ -136,34 +136,42 @@ All test commands must be run from the `Overseer.Tests/` (or repository root) di
 > supported by Microsoft.Testing.Platform on .NET 10 SDK and later."* On this toolchain
 > (SDK 10.0.401) a `dotnet.config` `[dotnet.test.runner]` entry does **not** work as a substitute,
 > despite current Microsoft documentation; see the `testing-guidelines` skill § 1a.
+>
+> The filter arguments below are the **native xunit v3 options** (`--filter-not-trait`,
+> `--filter-trait`, `--filter-class`, `--filter-method`). `--filter "Category!=UsesExternalApi"` and
+> `--filter "FullyQualifiedName~X"` are the VSTest-syntax equivalents, which MTP still accepts as a
+> compatibility shim — they work, but this repository does not document them, for the reason in
+> `testing-guidelines` § 1a.
 
 ### Running Backend Tests
 ```bash
 # Run all tests SKIPPING external AI API calls (Recommended - saves AI quota)
-dotnet test --filter "Category!=UsesExternalApi"
+dotnet test --filter-not-trait "Category=UsesExternalApi"
 
 # Run all tests INCLUDING external AI API calls - consumes API quota and spends real money.
 # Ask first; on a machine with the live-test secrets configured this bills three providers.
 dotnet test
 
-# Run a specific test class
-dotnet test --filter "FullyQualifiedName~ChatServiceTests"
-dotnet test --filter "FullyQualifiedName~SourceCodeServiceTests"
+# Run a specific test class (fully qualified, or with a leading/trailing wildcard)
+dotnet test --filter-class "Overseer.Tests.UnitTests.BenchmarkScoringTests"
+dotnet test --filter-class "*BenchmarkScoringTests"
 
 # Run a specific test method
-dotnet test --filter "FullyQualifiedName~ChatServiceTests.StripThoughts_RemovesAiThoughtTags"
+dotnet test --filter-method "Overseer.Tests.ChatServiceTests.EmptyResponseNotice_NamesTheProviderFinishReason"
+dotnet test --filter-method "*EmptyResponseNotice_*"
 ```
 
 > [!WARNING]
-> **AI API Quota**: Always use `--filter "Category!=UsesExternalApi"` unless you have explicit permission to consume live AI API tokens.
+> **AI API Quota**: Always use `--filter-not-trait "Category=UsesExternalApi"` unless you have explicit permission to consume live AI API tokens.
 >
 > **The filter fails open, so check it rather than trusting it.** A typo in the trait name or its
-> value matches nothing, excludes nothing, and runs the live tests without complaint —
-> `Categoy!=UsesExternalApi` and `Category!=UsesExternalApis` both select all 1482 tests. Verify a
-> filter with a discovery run, which executes nothing:
+> value matches nothing, therefore excludes nothing, and runs the live tests without complaint —
+> `Categoy=UsesExternalApi` and `Category=UsesExternalApis` both select all 1482 tests, and so does
+> writing `!=` inside `--filter-not-trait`, which is the old VSTest habit. Verify a filter with a
+> discovery run, which executes nothing:
 >
 > ```bash
-> dotnet test Overseer.Tests --list-tests --filter "Category=UsesExternalApi"
+> dotnet test Overseer.Tests --list-tests --filter-trait "Category=UsesExternalApi"
 > ```
 >
 > It must list exactly the live-API tests (4 as of 2026-09-09). Never verify a filter by running
