@@ -2092,26 +2092,22 @@ public class AdminBenchmarkController : ControllerBase
                 c.Id == run.AssessorModelConfigurationId.Value &&
                 c.IsEnabled && c.EncryptedApiKey != null && (c.ModelRole & 4) == 4);
 
-        // While a run is running, the run-level totals are 0 because BenchmarkRunFinalizer
-        // writes them once at the end. Compute live candidate totals from answers so the progress dialog
-        // and mid-run diagnostics report actual progress. The finalizer remains the single writer.
+        // While a run is running, the run-level totals are 0 because BenchmarkRunFinalizer writes them
+        // once at the end. The mid-run figures are summed from the answer rows by the finalizer's own
+        // functions onto a detached copy, so the progress dialog and the finished run are costed by one
+        // code path rather than two formulas. The finalizer remains the single writer of the run's columns.
         bool isLiveRun = run.Status is BenchmarkRunStatus.Running;
-        var liveCandidateTotals = isLiveRun ? BenchmarkRunFinalizer.ComputeCandidateTotals(run.Answers) : default;
+        var totals = isLiveRun ? BuildLiveTotals(run) : run;
 
-        long totalInputTokens = isLiveRun ? liveCandidateTotals.TotalInputTokens : run.TotalInputTokens;
-        long totalOutputTokens = isLiveRun ? liveCandidateTotals.TotalOutputTokens : run.TotalOutputTokens;
-        long totalCacheReadTokens = isLiveRun ? liveCandidateTotals.TotalCacheReadTokens : run.TotalCacheReadTokens;
-        long totalCacheCreationTokens = isLiveRun ? liveCandidateTotals.TotalCacheCreationTokens : run.TotalCacheCreationTokens;
-        long totalAnswerDurationMs = isLiveRun ? liveCandidateTotals.TotalAnswerDurationMs : run.TotalAnswerDurationMs;
+        long totalInputTokens = totals.TotalInputTokens;
+        long totalOutputTokens = totals.TotalOutputTokens;
+        long totalCacheReadTokens = totals.TotalCacheReadTokens;
+        long totalCacheCreationTokens = totals.TotalCacheCreationTokens;
+        long totalAnswerDurationMs = totals.TotalAnswerDurationMs;
 
-        // The long-context portion of the totals above, and the tier the provider actually served. Both are
-        // zero / null for a flat-rate model and for every run recorded before tiered pricing existed, so the
-        // costing below reduces exactly to the flat-rate arithmetic it replaced.
-        var liveLongContextTotals = isLiveRun ? BenchmarkRunFinalizer.ComputeCandidateLongContextTotals(run.Answers) : default;
-        long totalLongContextInputTokens = isLiveRun ? liveLongContextTotals.TotalLongContextInputTokens : run.TotalLongContextInputTokens;
-        long totalLongContextOutputTokens = isLiveRun ? liveLongContextTotals.TotalLongContextOutputTokens : run.TotalLongContextOutputTokens;
-        long totalLongContextCacheReadTokens = isLiveRun ? liveLongContextTotals.TotalLongContextCacheReadTokens : run.TotalLongContextCacheReadTokens;
-        long totalLongContextCacheCreationTokens = isLiveRun ? liveLongContextTotals.TotalLongContextCacheCreationTokens : run.TotalLongContextCacheCreationTokens;
+        // The tier the provider actually served, which is what the candidate is billed at. Null for a run
+        // whose provider reported none, in which case costing falls back to the requested tier and then to
+        // a 1.0x multiplier.
         string? servedServiceTier = BenchmarkRunFinalizer.ResolveServedServiceTier(run.Answers);
 
         BenchmarkRunPricing? pricing = null;
@@ -2120,68 +2116,43 @@ public class AdminBenchmarkController : ControllerBase
             pricing = await _modelPricingService.ResolveForRunAsync(run);
         }
 
-        bool hasAssessor = run.TotalAssessmentInputTokens > 0 || run.TotalAssessmentOutputTokens > 0;
-        bool hasVerifier = run.TotalClaimVerificationInputTokens > 0 || run.TotalClaimVerificationOutputTokens > 0;
+        var costs = pricing != null
+            ? ModelPricingService.ComputeRunRoleCosts(totals, pricing, servedServiceTier)
+            : default;
 
-        var candidatePricing = pricing?.Candidate;
-        var assessorPricing = hasAssessor ? pricing?.Assessor : null;
-        var verifierPricing = hasVerifier ? pricing?.ClaimVerifier : null;
+        bool hasAssessor = ModelPricingService.RoleHasTokens(
+            totals.TotalAssessmentInputTokens, totals.TotalAssessmentOutputTokens,
+            totals.TotalAssessmentCacheReadTokens, totals.TotalAssessmentCacheCreationTokens);
+        bool hasSecondOpinion = ModelPricingService.RoleHasTokens(
+            totals.TotalSecondOpinionInputTokens, totals.TotalSecondOpinionOutputTokens,
+            totals.TotalSecondOpinionCacheReadTokens, totals.TotalSecondOpinionCacheCreationTokens);
+        bool hasVerifier = ModelPricingService.RoleHasTokens(
+            totals.TotalClaimVerificationInputTokens, totals.TotalClaimVerificationOutputTokens,
+            totals.TotalClaimVerificationCacheReadTokens, totals.TotalClaimVerificationCacheCreationTokens);
+        bool hasSynthesis = ModelPricingService.RoleHasTokens(
+            totals.TotalSynthesisInputTokens, totals.TotalSynthesisOutputTokens,
+            totals.TotalSynthesisCacheReadTokens, totals.TotalSynthesisCacheCreationTokens);
 
-        bool canEstimateCost = pricing != null &&
-            candidatePricing != null &&
-            (!hasAssessor || assessorPricing != null) &&
-            (!hasVerifier || verifierPricing != null);
+        // A role that spent nothing, or whose card did not resolve, reports no figure at all: the cost
+        // panel omits a null role and keeps a zero one, because zero is a measurement and absence is not.
+        static decimal? Priced(bool participated, ModelPricing? card, decimal cost) =>
+            participated && card != null ? cost : null;
 
-        decimal? candidateCost = null;
-        decimal? assessorCost = null;
-        decimal? verifierCost = null;
-        decimal? totalEstimatedCost = null;
-        string? pricingSource = null;
-        bool pricingIncomplete = !canEstimateCost;
+        decimal? candidateCost = Priced(true, pricing?.Candidate, costs.Candidate);
+        decimal? assessorCost = Priced(hasAssessor, pricing?.Assessor, costs.Assessor);
+        decimal? secondOpinionCost = Priced(hasSecondOpinion, pricing?.SecondOpinion, costs.SecondOpinion);
+        decimal? verifierCost = Priced(hasVerifier, pricing?.ClaimVerifier, costs.ClaimVerifier);
+        // The synthesis runs on the assessor's configuration and is priced on the assessor's card.
+        decimal? synthesisCost = Priced(hasSynthesis, pricing?.Assessor, costs.Synthesis);
 
-        if (pricing != null)
-        {
-            if (candidatePricing != null)
-            {
-                // The candidate is the only role costed from per-call evidence: its long-context portion was
-                // bucketed per model call at answer time and persisted, so the surcharge can be reproduced
-                // here without re-running anything.
-                candidateCost = ModelPricingService.ComputeCostFromTotals(
-                    candidatePricing,
-                    totalInputTokens, totalOutputTokens, totalCacheReadTokens, totalCacheCreationTokens,
-                    totalLongContextInputTokens, totalLongContextOutputTokens,
-                    totalLongContextCacheReadTokens, totalLongContextCacheCreationTokens,
-                    actualServiceTier: servedServiceTier,
-                    requestedServiceTier: run.TestedModelServiceTierUsed);
-            }
-            // Assessor and verifier are costed flat, from aggregate totals only: no per-call usage is
-            // recorded for either role, so neither a long-context card nor a served tier is knowable here.
-            if (hasAssessor && assessorPricing != null)
-            {
-                assessorCost = ModelPricingService.ComputeCost(assessorPricing, run.TotalAssessmentInputTokens, run.TotalAssessmentOutputTokens);
-            }
-            if (hasVerifier && verifierPricing != null)
-            {
-                verifierCost = ModelPricingService.ComputeCost(verifierPricing, run.TotalClaimVerificationInputTokens, run.TotalClaimVerificationOutputTokens);
-            }
+        decimal? gradingCost =
+            (assessorCost.HasValue || secondOpinionCost.HasValue || verifierCost.HasValue || synthesisCost.HasValue)
+                ? costs.Grading
+                : null;
 
-            var sources = new List<ModelPricingSource>();
-            if (candidatePricing != null) sources.Add(candidatePricing.Source);
-            if (hasAssessor && assessorPricing != null) sources.Add(assessorPricing.Source);
-            if (hasVerifier && verifierPricing != null) sources.Add(verifierPricing.Source);
-
-            if (sources.Count > 0)
-            {
-                if (sources.All(s => s == ModelPricingSource.Custom)) pricingSource = "custom";
-                else if (sources.All(s => s == ModelPricingSource.Catalog)) pricingSource = "catalog";
-                else pricingSource = "mixed";
-            }
-
-            if (canEstimateCost)
-            {
-                totalEstimatedCost = (candidateCost ?? 0m) + (assessorCost ?? 0m) + (verifierCost ?? 0m);
-            }
-        }
+        decimal? totalEstimatedCost = costs.Incomplete ? null : costs.Total;
+        string? pricingSource = string.IsNullOrEmpty(costs.Source) ? null : costs.Source;
+        bool pricingIncomplete = costs.Incomplete;
 
         // H4. The verifier's own yield: what its dollars actually bought, and what the deterministic
         // token budget (Benchmark:ClaimVerificationInputTokenBudget) stopped it from checking.
@@ -2334,17 +2305,32 @@ public class AdminBenchmarkController : ControllerBase
             TotalCacheReadTokens = totalCacheReadTokens,
             TotalCacheCreationTokens = totalCacheCreationTokens,
             TotalDurationMs = run.TotalDurationMs,
-            TotalAssessmentInputTokens = run.TotalAssessmentInputTokens,
-            TotalAssessmentOutputTokens = run.TotalAssessmentOutputTokens,
-            TotalAssessmentDurationMs = run.TotalAssessmentDurationMs,
-            TotalClaimVerificationInputTokens = run.TotalClaimVerificationInputTokens,
-            TotalClaimVerificationOutputTokens = run.TotalClaimVerificationOutputTokens,
-            TotalClaimVerificationDurationMs = run.TotalClaimVerificationDurationMs,
+            TotalAssessmentInputTokens = totals.TotalAssessmentInputTokens,
+            TotalAssessmentOutputTokens = totals.TotalAssessmentOutputTokens,
+            TotalAssessmentCacheReadTokens = totals.TotalAssessmentCacheReadTokens,
+            TotalAssessmentCacheCreationTokens = totals.TotalAssessmentCacheCreationTokens,
+            TotalAssessmentDurationMs = totals.TotalAssessmentDurationMs,
+            TotalSecondOpinionInputTokens = totals.TotalSecondOpinionInputTokens,
+            TotalSecondOpinionOutputTokens = totals.TotalSecondOpinionOutputTokens,
+            TotalSecondOpinionCacheReadTokens = totals.TotalSecondOpinionCacheReadTokens,
+            TotalSecondOpinionCacheCreationTokens = totals.TotalSecondOpinionCacheCreationTokens,
+            TotalSecondOpinionDurationMs = totals.TotalSecondOpinionDurationMs,
+            TotalClaimVerificationInputTokens = totals.TotalClaimVerificationInputTokens,
+            TotalClaimVerificationOutputTokens = totals.TotalClaimVerificationOutputTokens,
+            TotalClaimVerificationCacheReadTokens = totals.TotalClaimVerificationCacheReadTokens,
+            TotalClaimVerificationCacheCreationTokens = totals.TotalClaimVerificationCacheCreationTokens,
+            TotalClaimVerificationDurationMs = totals.TotalClaimVerificationDurationMs,
+            TotalSynthesisInputTokens = run.TotalSynthesisInputTokens,
+            TotalSynthesisOutputTokens = run.TotalSynthesisOutputTokens,
+            TotalSynthesisDurationMs = run.TotalSynthesisDurationMs,
             ErrorMessage = run.ErrorMessage,
             EstimatedCost = totalEstimatedCost,
             EstimatedCandidateCost = candidateCost,
             EstimatedAssessorCost = assessorCost,
+            EstimatedSecondOpinionCost = secondOpinionCost,
             EstimatedVerifierCost = verifierCost,
+            EstimatedSynthesisCost = synthesisCost,
+            EstimatedGradingCost = gradingCost,
             PricingSource = pricingSource,
             PricingIncomplete = pricingIncomplete,
 
@@ -2453,6 +2439,63 @@ public class AdminBenchmarkController : ControllerBase
     }
 
     /// <summary>
+    /// A detached copy of a still-running run carrying the totals summed from its answer rows, so a
+    /// mid-run figure is the same arithmetic as the finalized one.
+    ///
+    /// <para>Every sum comes from <see cref="BenchmarkRunFinalizer"/>, which stays the only writer of
+    /// the run's own columns — nothing here touches the tracked entity. The synthesis totals are
+    /// run-level, have no per-answer rows to sum from, and are carried across unchanged.</para>
+    /// </summary>
+    private static BenchmarkRun BuildLiveTotals(BenchmarkRun run)
+    {
+        var candidate = BenchmarkRunFinalizer.ComputeCandidateTotals(run.Answers);
+        var longContext = BenchmarkRunFinalizer.ComputeCandidateLongContextTotals(run.Answers);
+        var grading = BenchmarkRunFinalizer.SumGradingTotals(run.Answers);
+
+        return new BenchmarkRun
+        {
+            Id = run.Id,
+            TestedModelServiceTierUsed = run.TestedModelServiceTierUsed,
+
+            TotalInputTokens = candidate.TotalInputTokens,
+            TotalOutputTokens = candidate.TotalOutputTokens,
+            TotalCacheReadTokens = candidate.TotalCacheReadTokens,
+            TotalCacheCreationTokens = candidate.TotalCacheCreationTokens,
+            TotalAnswerDurationMs = candidate.TotalAnswerDurationMs,
+            TotalDurationMs = run.TotalDurationMs,
+
+            TotalLongContextInputTokens = longContext.TotalLongContextInputTokens,
+            TotalLongContextOutputTokens = longContext.TotalLongContextOutputTokens,
+            TotalLongContextCacheReadTokens = longContext.TotalLongContextCacheReadTokens,
+            TotalLongContextCacheCreationTokens = longContext.TotalLongContextCacheCreationTokens,
+
+            TotalAssessmentInputTokens = grading.TotalAssessmentInputTokens,
+            TotalAssessmentOutputTokens = grading.TotalAssessmentOutputTokens,
+            TotalAssessmentCacheReadTokens = grading.TotalAssessmentCacheReadTokens,
+            TotalAssessmentCacheCreationTokens = grading.TotalAssessmentCacheCreationTokens,
+            TotalAssessmentDurationMs = grading.TotalAssessmentDurationMs,
+
+            TotalSecondOpinionInputTokens = grading.TotalSecondOpinionInputTokens,
+            TotalSecondOpinionOutputTokens = grading.TotalSecondOpinionOutputTokens,
+            TotalSecondOpinionCacheReadTokens = grading.TotalSecondOpinionCacheReadTokens,
+            TotalSecondOpinionCacheCreationTokens = grading.TotalSecondOpinionCacheCreationTokens,
+            TotalSecondOpinionDurationMs = grading.TotalSecondOpinionDurationMs,
+
+            TotalClaimVerificationInputTokens = grading.TotalClaimVerificationInputTokens,
+            TotalClaimVerificationOutputTokens = grading.TotalClaimVerificationOutputTokens,
+            TotalClaimVerificationCacheReadTokens = grading.TotalClaimVerificationCacheReadTokens,
+            TotalClaimVerificationCacheCreationTokens = grading.TotalClaimVerificationCacheCreationTokens,
+            TotalClaimVerificationDurationMs = grading.TotalClaimVerificationDurationMs,
+
+            TotalSynthesisInputTokens = run.TotalSynthesisInputTokens,
+            TotalSynthesisOutputTokens = run.TotalSynthesisOutputTokens,
+            TotalSynthesisCacheReadTokens = run.TotalSynthesisCacheReadTokens,
+            TotalSynthesisCacheCreationTokens = run.TotalSynthesisCacheCreationTokens,
+            TotalSynthesisDurationMs = run.TotalSynthesisDurationMs
+        };
+    }
+
+    /// <summary>
     /// Returns the id of the run currently executing, so a client that reloaded mid-run can
     /// reattach to it. Only the id is returned; the client calls <see cref="GetRun"/> for the
     /// detail rather than duplicating that projection here.
@@ -2557,8 +2600,20 @@ public class AdminBenchmarkController : ControllerBase
                     .FirstOrDefault(),
                 r.TotalAssessmentInputTokens,
                 r.TotalAssessmentOutputTokens,
+                r.TotalAssessmentCacheReadTokens,
+                r.TotalAssessmentCacheCreationTokens,
+                r.TotalSecondOpinionInputTokens,
+                r.TotalSecondOpinionOutputTokens,
+                r.TotalSecondOpinionCacheReadTokens,
+                r.TotalSecondOpinionCacheCreationTokens,
                 r.TotalClaimVerificationInputTokens,
-                r.TotalClaimVerificationOutputTokens
+                r.TotalClaimVerificationOutputTokens,
+                r.TotalClaimVerificationCacheReadTokens,
+                r.TotalClaimVerificationCacheCreationTokens,
+                r.TotalSynthesisInputTokens,
+                r.TotalSynthesisOutputTokens,
+                r.TotalSynthesisCacheReadTokens,
+                r.TotalSynthesisCacheCreationTokens
             })
             .ToListAsync();
 
@@ -2592,43 +2647,33 @@ public class AdminBenchmarkController : ControllerBase
                     TestedModelServiceTierUsed = item.TestedModelServiceTierUsed,
                     TotalAssessmentInputTokens = item.TotalAssessmentInputTokens,
                     TotalAssessmentOutputTokens = item.TotalAssessmentOutputTokens,
+                    TotalAssessmentCacheReadTokens = item.TotalAssessmentCacheReadTokens,
+                    TotalAssessmentCacheCreationTokens = item.TotalAssessmentCacheCreationTokens,
+                    TotalSecondOpinionInputTokens = item.TotalSecondOpinionInputTokens,
+                    TotalSecondOpinionOutputTokens = item.TotalSecondOpinionOutputTokens,
+                    TotalSecondOpinionCacheReadTokens = item.TotalSecondOpinionCacheReadTokens,
+                    TotalSecondOpinionCacheCreationTokens = item.TotalSecondOpinionCacheCreationTokens,
                     TotalClaimVerificationInputTokens = item.TotalClaimVerificationInputTokens,
-                    TotalClaimVerificationOutputTokens = item.TotalClaimVerificationOutputTokens
+                    TotalClaimVerificationOutputTokens = item.TotalClaimVerificationOutputTokens,
+                    TotalClaimVerificationCacheReadTokens = item.TotalClaimVerificationCacheReadTokens,
+                    TotalClaimVerificationCacheCreationTokens = item.TotalClaimVerificationCacheCreationTokens,
+                    TotalSynthesisInputTokens = item.TotalSynthesisInputTokens,
+                    TotalSynthesisOutputTokens = item.TotalSynthesisOutputTokens,
+                    TotalSynthesisCacheReadTokens = item.TotalSynthesisCacheReadTokens,
+                    TotalSynthesisCacheCreationTokens = item.TotalSynthesisCacheCreationTokens
                 };
 
                 var pricing = await _modelPricingService.ResolveForRunAsync(tempRun);
 
-                bool hasAssessor = tempRun.TotalAssessmentInputTokens > 0 || tempRun.TotalAssessmentOutputTokens > 0;
-                bool hasVerifier = tempRun.TotalClaimVerificationInputTokens > 0 || tempRun.TotalClaimVerificationOutputTokens > 0;
+                // The history row shows one figure, and it is the same function's total that the run
+                // detail shows. The served tier arrives as the scalar above: this projection loads no
+                // answer rows for the function to read it from.
+                var costs = ModelPricingService.ComputeRunRoleCosts(tempRun, pricing, item.ServedServiceTier);
 
-                var candidatePricing = pricing?.Candidate;
-                var assessorPricing = hasAssessor ? pricing?.Assessor : null;
-                var verifierPricing = hasVerifier ? pricing?.ClaimVerifier : null;
-
-                bool canEstimateCost = pricing != null &&
-                    candidatePricing != null &&
-                    (!hasAssessor || assessorPricing != null) &&
-                    (!hasVerifier || verifierPricing != null);
-
-                if (!canEstimateCost)
+                item.Summary.PricingIncomplete = costs.Incomplete;
+                if (!costs.Incomplete)
                 {
-                    item.Summary.PricingIncomplete = true;
-                }
-                else
-                {
-                    decimal candCost = ModelPricingService.ComputeCostFromTotals(
-                        candidatePricing!,
-                        tempRun.TotalInputTokens, tempRun.TotalOutputTokens,
-                        tempRun.TotalCacheReadTokens, tempRun.TotalCacheCreationTokens,
-                        tempRun.TotalLongContextInputTokens, tempRun.TotalLongContextOutputTokens,
-                        tempRun.TotalLongContextCacheReadTokens, tempRun.TotalLongContextCacheCreationTokens,
-                        actualServiceTier: item.ServedServiceTier,
-                        requestedServiceTier: tempRun.TestedModelServiceTierUsed);
-                    decimal assCost = hasAssessor && assessorPricing != null ? ModelPricingService.ComputeCost(assessorPricing, tempRun.TotalAssessmentInputTokens, tempRun.TotalAssessmentOutputTokens) : 0m;
-                    decimal verCost = hasVerifier && verifierPricing != null ? ModelPricingService.ComputeCost(verifierPricing, tempRun.TotalClaimVerificationInputTokens, tempRun.TotalClaimVerificationOutputTokens) : 0m;
-
-                    item.Summary.EstimatedCost = candCost + assCost + verCost;
-                    item.Summary.PricingIncomplete = false;
+                    item.Summary.EstimatedCost = costs.Total;
                 }
             }
         }
@@ -3458,8 +3503,8 @@ public class AdminBenchmarkController : ControllerBase
     }
 
     /// <summary>
-    /// A run's total estimated cost across all three roles, or null when pricing is unavailable for
-    /// any role that actually spent tokens. Null means "not known", never "free" — a partial figure
+    /// A run's total estimated cost across every role, or null when pricing is unavailable for any
+    /// role that actually spent tokens. Null means "not known", never "free" — a partial figure
     /// presented as a total is worse than no figure.
     /// </summary>
     private async Task<decimal?> EstimateRunCostAsync(BenchmarkRun run, string? servedServiceTier)
@@ -3467,32 +3512,9 @@ public class AdminBenchmarkController : ControllerBase
         if (_modelPricingService == null) return null;
 
         var pricing = await _modelPricingService.ResolveForRunAsync(run);
-        if (pricing?.Candidate == null) return null;
+        var costs = ModelPricingService.ComputeRunRoleCosts(run, pricing, servedServiceTier);
 
-        bool hasAssessor = run.TotalAssessmentInputTokens > 0 || run.TotalAssessmentOutputTokens > 0;
-        bool hasVerifier = run.TotalClaimVerificationInputTokens > 0 || run.TotalClaimVerificationOutputTokens > 0;
-
-        if (hasAssessor && pricing.Assessor == null) return null;
-        if (hasVerifier && pricing.ClaimVerifier == null) return null;
-
-        decimal candidateCost = ModelPricingService.ComputeCostFromTotals(
-            pricing.Candidate,
-            run.TotalInputTokens, run.TotalOutputTokens,
-            run.TotalCacheReadTokens, run.TotalCacheCreationTokens,
-            run.TotalLongContextInputTokens, run.TotalLongContextOutputTokens,
-            run.TotalLongContextCacheReadTokens, run.TotalLongContextCacheCreationTokens,
-            actualServiceTier: servedServiceTier,
-            requestedServiceTier: run.TestedModelServiceTierUsed);
-
-        decimal assessorCost = hasAssessor
-            ? ModelPricingService.ComputeCost(pricing.Assessor!, run.TotalAssessmentInputTokens, run.TotalAssessmentOutputTokens)
-            : 0m;
-
-        decimal verifierCost = hasVerifier
-            ? ModelPricingService.ComputeCost(pricing.ClaimVerifier!, run.TotalClaimVerificationInputTokens, run.TotalClaimVerificationOutputTokens)
-            : 0m;
-
-        return candidateCost + assessorCost + verifierCost;
+        return costs.Incomplete ? null : costs.Total;
     }
 
     private static string? DescribeStopReason(BenchmarkRunSeriesStopReason? reason) => reason switch

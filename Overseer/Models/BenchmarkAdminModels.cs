@@ -737,20 +737,53 @@ public class BenchmarkRunDetailDto
     public long TotalCacheCreationTokens { get; set; }
     public long TotalDurationMs { get; set; }
 
-    /// <summary>Assessor-side usage, kept apart from the candidate totals above.</summary>
+    /// <summary>
+    /// Per-question assessment usage, kept apart from the candidate totals above. Excludes the final
+    /// synthesis, which is a peer role with its own totals below.
+    /// </summary>
     public long TotalAssessmentInputTokens { get; set; }
     public long TotalAssessmentOutputTokens { get; set; }
+    public long TotalAssessmentCacheReadTokens { get; set; }
+    public long TotalAssessmentCacheCreationTokens { get; set; }
     public long TotalAssessmentDurationMs { get; set; }
+
+    /// <summary>Second-opinion assessor usage, kept apart from every other role's totals.</summary>
+    public long TotalSecondOpinionInputTokens { get; set; }
+    public long TotalSecondOpinionOutputTokens { get; set; }
+    public long TotalSecondOpinionCacheReadTokens { get; set; }
+    public long TotalSecondOpinionCacheCreationTokens { get; set; }
+    public long TotalSecondOpinionDurationMs { get; set; }
 
     /// <summary>Claim-verifier-side usage, kept apart from candidate and assessor totals.</summary>
     public long TotalClaimVerificationInputTokens { get; set; }
     public long TotalClaimVerificationOutputTokens { get; set; }
+    public long TotalClaimVerificationCacheReadTokens { get; set; }
+    public long TotalClaimVerificationCacheCreationTokens { get; set; }
     public long TotalClaimVerificationDurationMs { get; set; }
+
+    /// <summary>
+    /// Final-synthesis usage: the single whole-run assessment that closes a run. Recorded at run level
+    /// only, with no per-answer counterpart.
+    /// </summary>
+    public long TotalSynthesisInputTokens { get; set; }
+    public long TotalSynthesisOutputTokens { get; set; }
+    public long TotalSynthesisDurationMs { get; set; }
 
     public decimal? EstimatedCost { get; set; }
     public decimal? EstimatedCandidateCost { get; set; }
+
+    /// <summary>The per-question assessments only. The final synthesis is costed separately below.</summary>
     public decimal? EstimatedAssessorCost { get; set; }
+    public decimal? EstimatedSecondOpinionCost { get; set; }
     public decimal? EstimatedVerifierCost { get; set; }
+    public decimal? EstimatedSynthesisCost { get; set; }
+
+    /// <summary>
+    /// Assessor, second opinion, claim verifier and synthesis together — the whole grading side. Summed
+    /// where the roles are costed, so this and the role lines cannot disagree.
+    /// </summary>
+    public decimal? EstimatedGradingCost { get; set; }
+
     public string? PricingSource { get; set; }
     public bool PricingIncomplete { get; set; }
 

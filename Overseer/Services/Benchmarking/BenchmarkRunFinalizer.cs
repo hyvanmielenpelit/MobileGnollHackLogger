@@ -242,10 +242,59 @@ public static class BenchmarkRunFinalizer
     }
 
     /// <summary>
+    /// Per-role token and duration sums over a run's answers: primary assessor, second opinion, and
+    /// claim verifier. No synthesis members — the final synthesis has no per-answer row to sum from,
+    /// and <see cref="BenchmarkService"/> assigns its totals onto <see cref="BenchmarkRun"/> directly.
+    /// </summary>
+    internal readonly record struct BenchmarkGradingTotals(
+        long TotalAssessmentInputTokens,
+        long TotalAssessmentOutputTokens,
+        long TotalAssessmentCacheReadTokens,
+        long TotalAssessmentCacheCreationTokens,
+        long TotalAssessmentDurationMs,
+        long TotalSecondOpinionInputTokens,
+        long TotalSecondOpinionOutputTokens,
+        long TotalSecondOpinionCacheReadTokens,
+        long TotalSecondOpinionCacheCreationTokens,
+        long TotalSecondOpinionDurationMs,
+        long TotalClaimVerificationInputTokens,
+        long TotalClaimVerificationOutputTokens,
+        long TotalClaimVerificationCacheReadTokens,
+        long TotalClaimVerificationCacheCreationTokens,
+        long TotalClaimVerificationDurationMs);
+
+    /// <summary>
+    /// Sums the per-role grading totals over a run's answers. Shared with AdminBenchmarkController
+    /// for live run-detail reporting while a run is pending or running, so the mid-run figure and the
+    /// finalized one come from one copy of the arithmetic.
+    /// </summary>
+    internal static BenchmarkGradingTotals SumGradingTotals(IReadOnlyCollection<BenchmarkRunAnswer> answers)
+    {
+        return new BenchmarkGradingTotals(
+            TotalAssessmentInputTokens: answers.Sum(a => (long)(a.AssessmentInputTokens ?? 0)),
+            TotalAssessmentOutputTokens: answers.Sum(a => (long)(a.AssessmentOutputTokens ?? 0)),
+            TotalAssessmentCacheReadTokens: answers.Sum(a => (long)(a.AssessmentCacheReadTokens ?? 0)),
+            TotalAssessmentCacheCreationTokens: answers.Sum(a => (long)(a.AssessmentCacheCreationTokens ?? 0)),
+            TotalAssessmentDurationMs: answers.Sum(a => a.AssessmentDurationMs ?? 0L),
+            TotalSecondOpinionInputTokens: answers.Sum(a => (long)(a.SecondOpinionInputTokens ?? 0)),
+            TotalSecondOpinionOutputTokens: answers.Sum(a => (long)(a.SecondOpinionOutputTokens ?? 0)),
+            TotalSecondOpinionCacheReadTokens: answers.Sum(a => (long)(a.SecondOpinionCacheReadTokens ?? 0)),
+            TotalSecondOpinionCacheCreationTokens: answers.Sum(a => (long)(a.SecondOpinionCacheCreationTokens ?? 0)),
+            TotalSecondOpinionDurationMs: answers.Sum(a => a.SecondOpinionDurationMs ?? 0L),
+            TotalClaimVerificationInputTokens: answers.Sum(a => (long)(a.ClaimVerificationInputTokens ?? 0)),
+            TotalClaimVerificationOutputTokens: answers.Sum(a => (long)(a.ClaimVerificationOutputTokens ?? 0)),
+            TotalClaimVerificationCacheReadTokens: answers.Sum(a => (long)(a.ClaimVerificationCacheReadTokens ?? 0)),
+            TotalClaimVerificationCacheCreationTokens: answers.Sum(a => (long)(a.ClaimVerificationCacheCreationTokens ?? 0)),
+            TotalClaimVerificationDurationMs: answers.Sum(a => a.ClaimVerificationDurationMs ?? 0L));
+    }
+
+    /// <summary>
     /// The measured totals: token sums, durations, integrity and advisory counts, and grader
     /// agreement. Nothing here is a score, and nothing here decides the run's status, which is what
     /// lets a run that stopped early use it on its own — such a run has a real cost and a real elapsed
     /// time, but a quality index over whichever questions happened to finish is not the suite's index.
+    /// Synthesis totals are untouched here: they are assigned directly onto the run elsewhere and
+    /// have no per-answer row to recompute from.
     /// </summary>
     public static void ApplyTotals(BenchmarkRun run, IReadOnlyCollection<BenchmarkRunAnswer> answers)
     {
@@ -262,16 +311,27 @@ public static class BenchmarkRunFinalizer
         run.TotalLongContextCacheReadTokens = longContextTotals.TotalLongContextCacheReadTokens;
         run.TotalLongContextCacheCreationTokens = longContextTotals.TotalLongContextCacheCreationTokens;
 
-        // Assessor side, kept separate from the candidate totals above: the run's cost is the
-        // two together, and the model under test must not be charged for its grader.
-        run.TotalAssessmentInputTokens = answers.Sum(a => (long)(a.AssessmentInputTokens ?? 0));
-        run.TotalAssessmentOutputTokens = answers.Sum(a => (long)(a.AssessmentOutputTokens ?? 0));
-        run.TotalAssessmentDurationMs = answers.Sum(a => a.AssessmentDurationMs ?? 0L);
+        // Assessor, second-opinion and claim-verifier sides, kept separate from the candidate totals
+        // above: the run's cost is all of these together, and the model under test must not be
+        // charged for its graders.
+        var gradingTotals = SumGradingTotals(answers);
+        run.TotalAssessmentInputTokens = gradingTotals.TotalAssessmentInputTokens;
+        run.TotalAssessmentOutputTokens = gradingTotals.TotalAssessmentOutputTokens;
+        run.TotalAssessmentCacheReadTokens = gradingTotals.TotalAssessmentCacheReadTokens;
+        run.TotalAssessmentCacheCreationTokens = gradingTotals.TotalAssessmentCacheCreationTokens;
+        run.TotalAssessmentDurationMs = gradingTotals.TotalAssessmentDurationMs;
 
-        // Claim verifier side, kept separate from candidate and assessor totals.
-        run.TotalClaimVerificationInputTokens = answers.Sum(a => (long)(a.ClaimVerificationInputTokens ?? 0));
-        run.TotalClaimVerificationOutputTokens = answers.Sum(a => (long)(a.ClaimVerificationOutputTokens ?? 0));
-        run.TotalClaimVerificationDurationMs = answers.Sum(a => a.ClaimVerificationDurationMs ?? 0L);
+        run.TotalSecondOpinionInputTokens = gradingTotals.TotalSecondOpinionInputTokens;
+        run.TotalSecondOpinionOutputTokens = gradingTotals.TotalSecondOpinionOutputTokens;
+        run.TotalSecondOpinionCacheReadTokens = gradingTotals.TotalSecondOpinionCacheReadTokens;
+        run.TotalSecondOpinionCacheCreationTokens = gradingTotals.TotalSecondOpinionCacheCreationTokens;
+        run.TotalSecondOpinionDurationMs = gradingTotals.TotalSecondOpinionDurationMs;
+
+        run.TotalClaimVerificationInputTokens = gradingTotals.TotalClaimVerificationInputTokens;
+        run.TotalClaimVerificationOutputTokens = gradingTotals.TotalClaimVerificationOutputTokens;
+        run.TotalClaimVerificationCacheReadTokens = gradingTotals.TotalClaimVerificationCacheReadTokens;
+        run.TotalClaimVerificationCacheCreationTokens = gradingTotals.TotalClaimVerificationCacheCreationTokens;
+        run.TotalClaimVerificationDurationMs = gradingTotals.TotalClaimVerificationDurationMs;
 
         run.AnsweredQuestionCount = answers.Count(a => a.Status == BenchmarkAnswerStatus.Ok);
         run.UnansweredQuestionCount = answers.Count(IsModelProducedEmptyAnswer);

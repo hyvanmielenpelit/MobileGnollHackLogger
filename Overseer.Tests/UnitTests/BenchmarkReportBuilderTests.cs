@@ -2256,4 +2256,159 @@ public class BenchmarkReportBuilderTests
         Assert.Contains("over answered questions and unanswered questions alike, the latter at 0", report);
         Assert.Contains("over answered questions only, since an answer that does not exist has no latency", report);
     }
+
+    // -------------------------------------------------------------------------------------
+    // Harness version 15: per-role cost tracking (Second Opinion and Synthesis as their own
+    // Harness Cost roles, and the Grading subtotal that sums them with the assessor and verifier).
+    // -------------------------------------------------------------------------------------
+
+    [Fact]
+    public void HarnessCost_SecondOpinionAndSynthesisTokenLinesAppear_AndTotalTokensSumsFiveRoles()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.All, q1);
+        run.HarnessVersion = "15";
+        run.TotalInputTokens = 100_000;
+        run.TotalOutputTokens = 10_000;
+        run.TotalAssessmentInputTokens = 50_000;
+        run.TotalAssessmentOutputTokens = 5_000;
+        run.TotalSecondOpinionInputTokens = 20_000;
+        run.TotalSecondOpinionOutputTokens = 2_000;
+        run.TotalClaimVerificationInputTokens = 10_000;
+        run.TotalClaimVerificationOutputTokens = 1_000;
+        run.TotalSynthesisInputTokens = 5_000;
+        run.TotalSynthesisOutputTokens = 500;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("**Second Opinion Tokens:** 20,000 in / 2,000 out", report);
+        Assert.Contains("**Synthesis Tokens:** 5,000 in / 500 out", report);
+        // 100,000 + 50,000 + 20,000 + 10,000 + 5,000 in; 10,000 + 5,000 + 2,000 + 1,000 + 500 out.
+        Assert.Contains("**Total Tokens:** 185,000 in / 18,500 out", report);
+    }
+
+    [Fact]
+    public void HarnessCost_PrintsARolesCacheFiguresOnlyWhenNonZero()
+    {
+        var withCache = HarnessV7Run(BenchmarkSecondOpinionMode.Off, ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80));
+        withCache.HarnessVersion = "15";
+        withCache.TotalAssessmentInputTokens = 50_000;
+        withCache.TotalAssessmentOutputTokens = 5_000;
+        withCache.TotalAssessmentCacheReadTokens = 12_000;
+        withCache.TotalAssessmentCacheCreationTokens = 3_000;
+
+        var reportWithCache = BenchmarkReportBuilder.BuildMarkdownReport(withCache);
+        Assert.Contains("**Assessor Tokens:** 50,000 in / 5,000 out (12,000 cache read, 3,000 cache creation)", reportWithCache);
+
+        var withoutCache = HarnessV7Run(BenchmarkSecondOpinionMode.Off, ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80));
+        withoutCache.HarnessVersion = "15";
+        withoutCache.TotalAssessmentInputTokens = 50_000;
+        withoutCache.TotalAssessmentOutputTokens = 5_000;
+
+        var reportWithoutCache = BenchmarkReportBuilder.BuildMarkdownReport(withoutCache);
+        Assert.Contains("**Assessor Tokens:** 50,000 in / 5,000 out", reportWithoutCache);
+        Assert.DoesNotContain("cache read", reportWithoutCache);
+        Assert.DoesNotContain("cache creation", reportWithoutCache);
+    }
+
+    [Fact]
+    public void EstimatedCost_RendersGradingSubtotalAndSecondOpinionAndSynthesisPeerLines()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.All, q1);
+        run.HarnessVersion = "15";
+        run.TestedModelIdUsed = "gpt-5.6";
+        run.AssessorModelIdUsed = "gemini-3.7-flash";
+        run.SecondOpinionAssessorModelIdUsed = "gemini-3.7-pro";
+        run.TotalInputTokens = 1_000_000;
+        run.TotalOutputTokens = 50_000;
+        run.TotalAssessmentInputTokens = 200_000;
+        run.TotalAssessmentOutputTokens = 10_000;
+        run.TotalSecondOpinionInputTokens = 100_000;
+        run.TotalSecondOpinionOutputTokens = 5_000;
+        run.TotalSynthesisInputTokens = 50_000;
+        run.TotalSynthesisOutputTokens = 2_000;
+
+        var runPricing = new BenchmarkRunPricing(
+            Candidate: new ModelPricing(2.50m, 10.00m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
+            Assessor: new ModelPricing(0.15m, 0.60m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
+            SecondOpinion: new ModelPricing(1.25m, 5.00m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
+            ClaimVerifier: null,
+            IsSnapshot: true
+        );
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run, runPricing: runPricing);
+
+        // Dollar figures are sourced from ModelPricingService.ComputeRunRoleCosts, not recomputed
+        // here, so the assertions check which lines and models render rather than exact amounts.
+        Assert.Contains("Second Opinion (gemini-3.7-pro):", report);
+        Assert.Contains("Synthesis (gemini-3.7-flash):", report);
+        Assert.Contains("- **Grading subtotal:**", report);
+        Assert.Contains("of total)", report);
+        Assert.Contains("second opinion catalog (as of 2026-09-05)", report);
+    }
+
+    [Fact]
+    public void HarnessCost_PipeliningSentenceGatedOnParallelism_MeasuredOverlapOtherwise()
+    {
+        var sequential = HarnessV7Run(BenchmarkSecondOpinionMode.Off, ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80));
+        sequential.HarnessVersion = "15";
+        sequential.MaxParallelQuestionsUsed = 1;
+        sequential.TotalInputTokens = 10_000;
+        sequential.TotalOutputTokens = 1_000;
+        sequential.TotalAnswerDurationMs = 5_000;
+        sequential.TotalAssessmentInputTokens = 2_000;
+        sequential.TotalAssessmentOutputTokens = 200;
+        sequential.TotalAssessmentDurationMs = 3_000;
+        sequential.TotalDurationMs = 9_000;
+
+        var sequentialReport = BenchmarkReportBuilder.BuildMarkdownReport(sequential);
+        Assert.DoesNotContain("Assessment runs pipelined behind each answer", sequentialReport);
+        // 9,000 wall clock minus (5,000 candidate + 3,000 assessment) leaves a 1,000 ms residual.
+        Assert.Contains("*Measured overlap:", sequentialReport);
+        Assert.Contains("1,000 ms", sequentialReport);
+
+        var parallel = HarnessV7Run(BenchmarkSecondOpinionMode.Off, ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80));
+        parallel.HarnessVersion = "15";
+        parallel.MaxParallelQuestionsUsed = 4;
+        parallel.TotalInputTokens = 10_000;
+        parallel.TotalOutputTokens = 1_000;
+        parallel.TotalAssessmentInputTokens = 2_000;
+        parallel.TotalAssessmentOutputTokens = 200;
+
+        var parallelReport = BenchmarkReportBuilder.BuildMarkdownReport(parallel);
+        Assert.Contains("Assessment runs pipelined behind each answer", parallelReport);
+        Assert.DoesNotContain("*Measured overlap:", parallelReport);
+    }
+
+    [Fact]
+    public void HarnessCost_LegacyPerRoleCostNoteAppearsOnlyBelowHarness15()
+    {
+        var old = HarnessV7Run(BenchmarkSecondOpinionMode.Off, ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80));
+        old.HarnessVersion = "14";
+        old.TotalAssessmentInputTokens = 1_000;
+        old.TotalAssessmentOutputTokens = 100;
+
+        var oldReport = BenchmarkReportBuilder.BuildMarkdownReport(old);
+        Assert.Contains(
+            "*Recorded before per-role cost tracking: the second opinion's spend is inside the assessor line, and the final synthesis is not counted at all.*",
+            oldReport);
+
+        var current = HarnessV7Run(BenchmarkSecondOpinionMode.Off, ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80));
+        current.HarnessVersion = "15";
+        current.TotalAssessmentInputTokens = 1_000;
+        current.TotalAssessmentOutputTokens = 100;
+
+        var currentReport = BenchmarkReportBuilder.BuildMarkdownReport(current);
+        Assert.DoesNotContain("Recorded before per-role cost tracking", currentReport);
+
+        // An unparseable version is not evidence of age, so the note must not print for one either.
+        var unparseable = HarnessV7Run(BenchmarkSecondOpinionMode.Off, ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80));
+        unparseable.HarnessVersion = "unknown";
+        unparseable.TotalAssessmentInputTokens = 1_000;
+        unparseable.TotalAssessmentOutputTokens = 100;
+
+        var unparseableReport = BenchmarkReportBuilder.BuildMarkdownReport(unparseable);
+        Assert.DoesNotContain("Recorded before per-role cost tracking", unparseableReport);
+    }
 }

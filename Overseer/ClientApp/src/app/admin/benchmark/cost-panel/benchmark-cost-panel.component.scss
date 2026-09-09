@@ -1,0 +1,183 @@
+/* Per-role cost panel.
+ *
+ * Component-scoped because both the live progress dialog and the finished-run dialog render the
+ * same component, so there is one definition rather than a copy in each host stylesheet.
+ *
+ * The dark vocabulary here — the #161616 fill, the 1px #333 border, the 6px radius, the 11-12px
+ * uppercase #888 labels and #eee values — matches benchmark.component.scss, which owns the
+ * dialogs this panel sits in.
+ */
+
+/* The host is a block so the panel below it has a definite inline size to be a query container
+   against. */
+:host {
+  display: block;
+}
+
+.gh-cost-panel {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 0 16px 0;
+  padding: 12px 14px;
+  border: 1px solid #333;
+  border-radius: 6px;
+  background: #161616;
+}
+
+.gh-cost-panel__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+
+.gh-cost-panel__title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #888;
+}
+
+.gh-cost-panel__total {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  margin: 0;
+}
+
+.gh-cost-panel__amount {
+  font-size: 18px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--gh-gold, #e0ba6d);
+}
+
+.gh-cost-panel__marker {
+  font-weight: 700;
+  color: #ffb74d;
+}
+
+.gh-cost-panel__prov {
+  font-size: 11px;
+  color: #888;
+}
+
+/* The narrow layout is the un-queried one, so a browser without container query support lands on
+   the safe default: one role per row, name and amount on a line, bar beneath, no share column. */
+.gh-cost-panel__roles {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin: 0;
+}
+
+.gh-cost-role {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: 2px 10px;
+  min-inline-size: 0;
+}
+
+.gh-cost-role__name {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #888;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gh-cost-role__amount {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #eee;
+  text-align: end;
+}
+
+.gh-cost-role__share {
+  display: none;
+  margin: 0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: #888;
+  text-align: end;
+}
+
+/* One accent at five widths. This is a part-to-whole breakdown, so the parts share a colour and
+   differ only in length. */
+.gh-cost-role__bar {
+  grid-column: 1 / -1;
+  align-self: center;
+  block-size: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+
+  &::before {
+    content: '';
+    display: block;
+    block-size: 100%;
+    inline-size: var(--gh-cost-share, 0%);
+    background: rgba(224, 186, 109, 0.35);
+  }
+}
+
+/* Subordinate to the role lines above it: a lighter rule, no bar, no share. */
+.gh-cost-role--subtotal {
+  margin-block-start: 2px;
+  padding-block-start: 8px;
+  border-block-start: 1px solid rgba(255, 255, 255, 0.08);
+
+  .gh-cost-role__name {
+    color: #777;
+  }
+
+  .gh-cost-role__amount {
+    font-weight: 600;
+    color: #aaa;
+  }
+}
+
+.gh-cost-panel__note {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #888;
+}
+
+/* Wide layout above the 420px threshold: three aligned columns, with each role a subgrid of the
+   list's own tracks so the amounts and shares line up down the panel. */
+@container (min-width: 421px) {
+  .gh-cost-panel__roles {
+    grid-template-columns: 1fr auto 3.5rem;
+    gap: 10px;
+  }
+
+  .gh-cost-role {
+    grid-column: 1 / -1;
+    /* Same-cascade fallback, ignored wherever subgrid is supported. */
+    grid-template-columns: 1fr auto 3.5rem;
+    grid-template-columns: subgrid;
+  }
+
+  .gh-cost-role__share {
+    display: block;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .gh-cost-role__bar::before {
+    transition: inline-size 0.35s ease-out;
+  }
+}

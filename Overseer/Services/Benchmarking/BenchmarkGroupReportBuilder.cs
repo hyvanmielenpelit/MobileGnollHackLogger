@@ -790,9 +790,6 @@ public static class BenchmarkGroupReportBuilder
         sb.AppendLine();
     }
 
-    /// <summary>The cost role the claim verifier's spend is keyed under.</summary>
-    private const string ClaimVerifierCostRole = "claimVerifier";
-
     /// <summary>
     /// The verifier's yield as division rather than as two counts placed side by side.
     ///
@@ -806,8 +803,10 @@ public static class BenchmarkGroupReportBuilder
         BenchmarkGroupUsageStatistics usage,
         BenchmarkGroupCostStatistics? cost)
     {
+        // Keyed by the same constant the analysis service writes, so the two sides cannot drift apart.
         double? verifierCost = null;
-        if (cost != null && cost.TotalCostByRole.TryGetValue(ClaimVerifierCostRole, out double resolved))
+        if (cost != null && cost.TotalCostByRole.TryGetValue(
+                BenchmarkGroupAnalysisService.ClaimVerifierRole, out double resolved))
         {
             verifierCost = resolved;
         }

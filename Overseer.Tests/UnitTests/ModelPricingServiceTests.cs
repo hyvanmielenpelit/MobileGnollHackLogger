@@ -256,8 +256,10 @@ public class ModelPricingServiceTests
 
         decimal cost = ModelPricingService.ComputeCost(pricing, calls);
 
-        // Uncached in 200,000 @ 20.00; out 10,000 @ 75.00; cache read 100,000 @ 2.00; cache write 50,000 @ 25.00
-        decimal expected = (200_000 / 1_000_000m * 20.00m)
+        // The four buckets partition the 300,000-token prompt: base in 150,000 @ 20.00 (the prompt less the
+        // 100,000 read from cache and the 50,000 written to it); out 10,000 @ 75.00; cache read 100,000 @
+        // 2.00; cache write 50,000 @ 25.00.
+        decimal expected = (150_000 / 1_000_000m * 20.00m)
             + (10_000 / 1_000_000m * 75.00m)
             + (100_000 / 1_000_000m * 2.00m)
             + (50_000 / 1_000_000m * 25.00m);
@@ -313,7 +315,9 @@ public class ModelPricingServiceTests
         decimal cost = ModelPricingService.ComputeCost(
             pricing, new List<TokenUsageReport> { Call(300_000, cacheCreation: 100_000) });
 
-        decimal expected = (300_000 / 1_000_000m * 20.00m) + (100_000 / 1_000_000m * 12.50m);
+        // Base in 200,000 @ 20.00 (the 300,000-token prompt less the 100,000 written to cache), cache write
+        // 100,000 @ the base card's 12.50.
+        decimal expected = (200_000 / 1_000_000m * 20.00m) + (100_000 / 1_000_000m * 12.50m);
         Assert.Equal(expected, cost);
     }
 
@@ -626,7 +630,8 @@ public class ModelPricingServiceTests
             pricing, totalPromptTokens: 1_000_000, totalOutputTokens: 100_000,
             cacheReadTokens: 400_000, cacheCreationTokens: 50_000);
 
-        decimal flat = ModelPricingService.ComputeCost(pricing, 600_000, 100_000, 400_000, 50_000);
+        // 1,000,000 prompt less 400,000 cache reads and 50,000 cache writes leaves 550,000 at the base rate.
+        decimal flat = ModelPricingService.ComputeCost(pricing, 550_000, 100_000, 400_000, 50_000);
 
         Assert.Equal(flat, fromTotals);
     }
@@ -643,8 +648,10 @@ public class ModelPricingServiceTests
             longContextPromptTokens: 300_000, longContextOutputTokens: 20_000,
             longContextCacheReadTokens: 100_000, longContextCacheCreationTokens: 10_000);
 
-        decimal standard = ModelPricingService.ComputeCost(pricing, 400_000, 80_000, 300_000, 40_000);
-        decimal longCard = (200_000 / 1_000_000m * 20.00m)
+        // Standard portion: 700,000 prompt less 300,000 cache reads and 40,000 cache writes = 360,000 base.
+        decimal standard = ModelPricingService.ComputeCost(pricing, 360_000, 80_000, 300_000, 40_000);
+        // Long-context portion: 300,000 prompt less 100,000 cache reads and 10,000 cache writes = 190,000 base.
+        decimal longCard = (190_000 / 1_000_000m * 20.00m)
             + (20_000 / 1_000_000m * 75.00m)
             + (100_000 / 1_000_000m * 2.00m)
             + (10_000 / 1_000_000m * 25.00m);
@@ -682,5 +689,154 @@ public class ModelPricingServiceTests
         Assert.Equal(4_000, buckets.OutputTokens);
         Assert.Equal(200_000, buckets.CacheReadTokens);
         Assert.Equal(5_000, buckets.CacheCreationTokens);
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // The cache-creation partition. The four billed buckets — base input, output, cache read, cache
+    // write — are disjoint, so a cache-written token is charged at the write rate and nowhere else.
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// A usage report shaped the way AnthropicProvider shapes one: the API reports three separate prompt
+    /// figures, so the total is their sum and UncachedInputTokens is the total less the cache reads —
+    /// which still contains the cache-creation tokens.
+    /// </summary>
+    private static TokenUsageReport AnthropicCall(
+        int inputTokens, int cacheCreationTokens, int cacheReadTokens, int outputTokens) =>
+        new TokenUsageReport
+        {
+            TotalPromptTokens = inputTokens + cacheCreationTokens + cacheReadTokens,
+            CacheReadTokens = cacheReadTokens,
+            CacheCreationTokens = cacheCreationTokens,
+            UncachedInputTokens = inputTokens + cacheCreationTokens,
+            OutputTokens = outputTokens
+        };
+
+    [Fact]
+    public void ComputeCost_AnthropicShapedCall_ChargesEachOfTheFourBucketsExactlyOnce()
+    {
+        var pricing = new ModelPricing(
+            InputPerMillion: 2.00m,
+            OutputPerMillion: 10.00m,
+            CachedInputPerMillion: 0.20m,
+            CacheWritePerMillion: 2.50m);
+
+        var call = AnthropicCall(
+            inputTokens: 40_000, cacheCreationTokens: 60_000,
+            cacheReadTokens: 500_000, outputTokens: 8_000);
+
+        // The report's own arithmetic: the provider's three prompt figures partition the prompt total, and
+        // the property that names the base-input bucket recovers the first of them.
+        Assert.Equal(600_000, call.TotalPromptTokens);
+        Assert.Equal(100_000, call.UncachedInputTokens);
+        Assert.Equal(40_000, call.BillableUncachedInputTokens);
+
+        decimal cost = ModelPricingService.ComputeCost(
+            pricing, new List<TokenUsageReport> { call });
+
+        decimal expected = (40_000 / 1_000_000m * 2.00m)
+            + (8_000 / 1_000_000m * 10.00m)
+            + (500_000 / 1_000_000m * 0.20m)
+            + (60_000 / 1_000_000m * 2.50m);
+        Assert.Equal(expected, cost);
+
+        // Billing the 60,000 written tokens at the base rate as well overcharges by exactly their base-rate
+        // price, which is what makes the buckets' disjointness load-bearing rather than cosmetic.
+        Assert.Equal(
+            expected + (60_000 / 1_000_000m * 2.00m),
+            ModelPricingService.ComputeCost(
+                pricing, call.UncachedInputTokens, call.OutputTokens,
+                call.CacheReadTokens, call.CacheCreationTokens));
+    }
+
+    [Fact]
+    public void ComputeCost_Run27Totals_ChargeCacheWritesOnlyAtTheWriteRate()
+    {
+        // Benchmark run 27: a cache-heavy agentic run against Claude 5 Sonnet, whose 291,680 cache-written
+        // tokens are nearly all of what is left of the prompt once the cache reads are taken off. Only 176
+        // tokens are genuinely new input, so charging the written tokens twice inflates the run by ~41%.
+        using var db = CreateInMemoryDb();
+        var service = new ModelPricingService(_metadataService, db);
+
+        var pricing = service.ResolveDefault("Anthropic", "claude-sonnet-5");
+        Assert.NotNull(pricing);
+        Assert.Equal(2.00m, pricing.InputPerMillion);
+        Assert.Equal(10.00m, pricing.OutputPerMillion);
+        Assert.Equal(0.20m, pricing.CachedInputPerMillion);
+        Assert.Equal(2.50m, pricing.CacheWritePerMillion);
+        Assert.Null(pricing.LongContext);
+
+        const int promptTokens = 2_123_059;
+        const int outputTokens = 31_844;
+        const int cacheReadTokens = 1_831_203;
+        const int cacheCreationTokens = 291_680;
+
+        int baseInputTokens = promptTokens - cacheReadTokens - cacheCreationTokens;
+        Assert.Equal(176, baseInputTokens);
+
+        decimal expected = (baseInputTokens / 1_000_000m * 2.00m)
+            + (outputTokens / 1_000_000m * 10.00m)
+            + (cacheReadTokens / 1_000_000m * 0.20m)
+            + (cacheCreationTokens / 1_000_000m * 2.50m);
+
+        decimal fromTotals = ModelPricingService.ComputeCostFromTotals(
+            pricing,
+            totalPromptTokens: promptTokens, totalOutputTokens: outputTokens,
+            cacheReadTokens: cacheReadTokens, cacheCreationTokens: cacheCreationTokens);
+        Assert.Equal(expected, fromTotals);
+
+        // The per-call path agrees: with no long-context card a single call costs the same either way.
+        decimal perCall = ModelPricingService.ComputeCost(
+            pricing,
+            new List<TokenUsageReport>
+            {
+                AnthropicCall(baseInputTokens, cacheCreationTokens, cacheReadTokens, outputTokens)
+            });
+        Assert.Equal(expected, perCall);
+
+        // The overcharge is the cache-written tokens at the base input rate, and nothing else.
+        Assert.Equal(
+            expected + (cacheCreationTokens / 1_000_000m * 2.00m),
+            ModelPricingService.ComputeCost(
+                pricing, promptTokens - cacheReadTokens, outputTokens,
+                cacheReadTokens, cacheCreationTokens));
+        Assert.True(fromTotals < 1.50m);
+    }
+
+    [Fact]
+    public void ComputeCost_ReportWithoutCacheCreation_IsExactlyTheUncachedInputFigure()
+    {
+        // Google and the OpenAI Responses API report no cache-creation tokens at all, so for them the
+        // base-input bucket and the uncached figure coincide and costing is bit-identical. Flat rates, so
+        // that the per-call path and the four-argument path are reading the same card.
+        var pricing = new ModelPricing(
+            InputPerMillion: 10.00m,
+            OutputPerMillion: 50.00m,
+            CachedInputPerMillion: 1.00m,
+            CacheWritePerMillion: 12.50m);
+        var call = AnthropicCall(
+            inputTokens: 150_000, cacheCreationTokens: 0,
+            cacheReadTokens: 250_000, outputTokens: 12_000);
+
+        Assert.Equal(call.UncachedInputTokens, call.BillableUncachedInputTokens);
+
+        decimal perCall = ModelPricingService.ComputeCost(pricing, new List<TokenUsageReport> { call });
+        decimal byUncachedFigure = ModelPricingService.ComputeCost(
+            pricing, call.UncachedInputTokens, call.OutputTokens,
+            call.CacheReadTokens, call.CacheCreationTokens);
+
+        Assert.Equal(byUncachedFigure, perCall);
+        Assert.Equal(
+            (150_000 / 1_000_000m * 10.00m)
+                + (12_000 / 1_000_000m * 50.00m)
+                + (250_000 / 1_000_000m * 1.00m),
+            perCall);
+
+        // Same for the totals overload: with no cache writes recorded the extra subtraction is a no-op.
+        Assert.Equal(
+            ModelPricingService.ComputeCost(pricing, 600_000, 100_000, 400_000, 0),
+            ModelPricingService.ComputeCostFromTotals(
+                pricing, totalPromptTokens: 1_000_000, totalOutputTokens: 100_000,
+                cacheReadTokens: 400_000, cacheCreationTokens: 0));
     }
 }

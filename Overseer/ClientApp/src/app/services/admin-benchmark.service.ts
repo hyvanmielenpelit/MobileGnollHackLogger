@@ -785,15 +785,34 @@ export interface BenchmarkRunDetailDto {
   totalCacheCreationTokens: number;
   totalDurationMs: number;
 
-  /** Assessor-side usage, kept apart from the candidate totals above. */
+  /**
+   * Per-question assessment usage, kept apart from the candidate totals above. Excludes the
+   * final synthesis, which is a peer role with its own totals below.
+   */
   totalAssessmentInputTokens?: number;
   totalAssessmentOutputTokens?: number;
+  totalAssessmentCacheReadTokens?: number;
+  totalAssessmentCacheCreationTokens?: number;
   totalAssessmentDurationMs?: number;
+
+  /** Second-opinion assessor usage. */
+  totalSecondOpinionInputTokens?: number;
+  totalSecondOpinionOutputTokens?: number;
+  totalSecondOpinionCacheReadTokens?: number;
+  totalSecondOpinionCacheCreationTokens?: number;
+  totalSecondOpinionDurationMs?: number;
 
   /** Claim-verifier usage. */
   totalClaimVerificationInputTokens?: number;
   totalClaimVerificationOutputTokens?: number;
+  totalClaimVerificationCacheReadTokens?: number;
+  totalClaimVerificationCacheCreationTokens?: number;
   totalClaimVerificationDurationMs?: number;
+
+  /** Final synthesis usage — the single whole-run assessment that closes a run. */
+  totalSynthesisInputTokens?: number;
+  totalSynthesisOutputTokens?: number;
+  totalSynthesisDurationMs?: number;
 
   /**
    * Completeness deductions the assessor itself placed outside the question's scope. This is
@@ -833,8 +852,13 @@ export interface BenchmarkRunDetailDto {
 
   estimatedCost?: number | null;
   estimatedCandidateCost?: number | null;
+  /** The per-question assessments only. The final synthesis is a peer role, costed separately. */
   estimatedAssessorCost?: number | null;
+  estimatedSecondOpinionCost?: number | null;
   estimatedVerifierCost?: number | null;
+  estimatedSynthesisCost?: number | null;
+  /** Assessor, second opinion, claim verifier and synthesis together — the whole grading side. */
+  estimatedGradingCost?: number | null;
   pricingSource?: string | null;
   pricingIncomplete?: boolean;
 

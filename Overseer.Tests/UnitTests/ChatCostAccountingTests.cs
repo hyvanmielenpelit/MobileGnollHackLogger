@@ -279,4 +279,59 @@ public class ChatCostAccountingTests
             (200_000 / 1_000_000m * 1m) + (50_000 / 1_000_000m * 12.5m),
             aggregate);
     }
+
+    [Fact]
+    public void AggregateFallback_CostArgument_ExcludesCacheWritesFromTheBaseInputFigure()
+    {
+        // The chat fallback path's wholeTurnInputTokens is the provider's uncached figure — the prompt less
+        // the cache reads — so it still contains the cache-creation tokens. The figure handed to the cost
+        // call takes them off, because the same call bills them at the cache-write rate. The variable itself
+        // is left whole: it is also the turn's reported input-token count and the value persisted on the row.
+        var pricing = new ModelPricing(10m, 50m, 1m, 12.5m);
+
+        int baseInputTokens = 100_000;
+        long cacheCreationTokens = 40_000;
+        long cacheReadTokens = 200_000;
+        int wholeTurnInputTokens = baseInputTokens + (int)cacheCreationTokens;
+        int wholeTurnOutputTokens = 15_000;
+
+        decimal cost = ModelPricingService.ComputeCost(
+            pricing,
+            Math.Max(0, wholeTurnInputTokens - (int)cacheCreationTokens),
+            wholeTurnOutputTokens, cacheReadTokens, cacheCreationTokens);
+
+        decimal expected = (100_000 / 1_000_000m * 10m)
+            + (15_000 / 1_000_000m * 50m)
+            + (200_000 / 1_000_000m * 1m)
+            + (40_000 / 1_000_000m * 12.5m);
+        Assert.Equal(expected, cost);
+
+        // Handing the whole figure over charges the 40,000 written tokens a second time, at the base rate.
+        decimal doubleCharged = ModelPricingService.ComputeCost(
+            pricing, wholeTurnInputTokens, wholeTurnOutputTokens, cacheReadTokens, cacheCreationTokens);
+        Assert.Equal(expected + (40_000 / 1_000_000m * 10m), doubleCharged);
+        Assert.True(cost < doubleCharged);
+    }
+
+    [Fact]
+    public void AggregateFallback_WithNoCacheWrites_CostsExactlyTheUncachedInputFigure()
+    {
+        // Every provider but Anthropic reports no cache-creation tokens, so the subtraction is a no-op and
+        // the turn costs what the uncached figure alone costs.
+        var pricing = new ModelPricing(10m, 50m, 1m, 12.5m);
+
+        int wholeTurnInputTokens = 1_100_000;
+        long cacheCreationTokens = 0;
+        long cacheReadTokens = 200_000;
+
+        decimal cost = ModelPricingService.ComputeCost(
+            pricing,
+            Math.Max(0, wholeTurnInputTokens - (int)cacheCreationTokens),
+            15_000, cacheReadTokens, cacheCreationTokens);
+
+        Assert.Equal(
+            (1_100_000 / 1_000_000m * 10m) + (15_000 / 1_000_000m * 50m) +
+            (200_000 / 1_000_000m * 1m),
+            cost);
+    }
 }

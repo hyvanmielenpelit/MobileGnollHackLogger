@@ -3,6 +3,7 @@ namespace Overseer.Tests.UnitTests;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using MobileGnollHackLogger.Data;
 using Overseer.Services.Benchmarking;
 using Xunit;
@@ -526,7 +527,9 @@ public class BenchmarkGroupReportBuilderTests
                 RunId = 1,
                 CostByRole = new Dictionary<string, double>
                 {
-                    ["candidate"] = 0.30, ["assessor"] = 0.50, ["claimVerifier"] = 2.00
+                    [BenchmarkGroupAnalysisService.CandidateRole] = 0.30,
+                    [BenchmarkGroupAnalysisService.AssessorRole] = 0.50,
+                    [BenchmarkGroupAnalysisService.ClaimVerifierRole] = 2.00
                 }
             },
             new BenchmarkGroupRunCost
@@ -534,7 +537,9 @@ public class BenchmarkGroupReportBuilderTests
                 RunId = 2,
                 CostByRole = new Dictionary<string, double>
                 {
-                    ["candidate"] = 0.30, ["assessor"] = 0.50, ["claimVerifier"] = 5.00
+                    [BenchmarkGroupAnalysisService.CandidateRole] = 0.30,
+                    [BenchmarkGroupAnalysisService.AssessorRole] = 0.50,
+                    [BenchmarkGroupAnalysisService.ClaimVerifierRole] = 5.00
                 }
             }
         });
@@ -546,7 +551,7 @@ public class BenchmarkGroupReportBuilderTests
 
         Assert.Contains("| Role | Total | Mean per run | SD | Min | Max | Share |", md);
         Assert.Contains("**Per-run totals:**", md);
-        Assert.Contains("Cost dispersion sits mostly in `claimVerifier`", md);
+        Assert.Contains($"Cost dispersion sits mostly in `{BenchmarkGroupAnalysisService.ClaimVerifierRole}`", md);
     }
 
     // --- Tracing an unstable item to the run that produced it -------------------------------------
@@ -805,12 +810,20 @@ public class BenchmarkGroupReportBuilderTests
             new BenchmarkGroupRunCost
             {
                 RunId = 1,
-                CostByRole = new Dictionary<string, double> { ["candidate"] = 0.30, ["claimVerifier"] = 1.55 }
+                CostByRole = new Dictionary<string, double>
+                {
+                    [BenchmarkGroupAnalysisService.CandidateRole] = 0.30,
+                    [BenchmarkGroupAnalysisService.ClaimVerifierRole] = 1.55
+                }
             },
             new BenchmarkGroupRunCost
             {
                 RunId = 2,
-                CostByRole = new Dictionary<string, double> { ["candidate"] = 0.30, ["claimVerifier"] = 1.55 }
+                CostByRole = new Dictionary<string, double>
+                {
+                    [BenchmarkGroupAnalysisService.CandidateRole] = 0.30,
+                    [BenchmarkGroupAnalysisService.ClaimVerifierRole] = 1.55
+                }
             }
         });
 
@@ -848,12 +861,18 @@ public class BenchmarkGroupReportBuilderTests
             new BenchmarkGroupRunCost
             {
                 RunId = 1,
-                CostByRole = new Dictionary<string, double> { ["claimVerifier"] = 1.55 }
+                CostByRole = new Dictionary<string, double>
+                {
+                    [BenchmarkGroupAnalysisService.ClaimVerifierRole] = 1.55
+                }
             },
             new BenchmarkGroupRunCost
             {
                 RunId = 2,
-                CostByRole = new Dictionary<string, double> { ["claimVerifier"] = 1.55 }
+                CostByRole = new Dictionary<string, double>
+                {
+                    [BenchmarkGroupAnalysisService.ClaimVerifierRole] = 1.55
+                }
             }
         });
 
@@ -892,5 +911,76 @@ public class BenchmarkGroupReportBuilderTests
         Assert.Contains("†", md);
         Assert.Contains("pinned there", md);
         Assert.DoesNotContain("128.9", md);
+    }
+
+    // --- Role keys are written and read through one set of constants --------------------------------
+
+    /// <summary>
+    /// The per-role cost dictionary is written by <see cref="BenchmarkGroupAnalysisService"/> and read
+    /// by the report, under <see cref="StringComparer.Ordinal"/>. A role the report looks up by a
+    /// spelling the analysis service never writes is unreachable, and the section degrades to its
+    /// "not resolvable" prose while the spend it was meant to divide sits in the table one page above.
+    /// </summary>
+    [Fact]
+    public void Report_PricesTheVerifier_WhenKeyedAsTheAnalysisServiceKeysIt()
+    {
+        var suite = Suite();
+        var questions = Questions(50);
+        var runs = new List<BenchmarkRun> { Run(1, questions, new[] { 90 }) };
+
+        runs[0].ClaimsSupportedCount = 8;
+        runs[0].ClaimsRefutedCount = 2;
+        runs[0].ClaimVerifiedAnswerCount = 1;
+
+        var result = BenchmarkGroupStatistics.Compute(suite, questions, runs, new[]
+        {
+            new BenchmarkGroupRunCost
+            {
+                RunId = 1,
+                CostByRole = new Dictionary<string, double>(StringComparer.Ordinal)
+                {
+                    [BenchmarkGroupAnalysisService.ClaimVerifierRole] = 4.00
+                }
+            }
+        });
+
+        var group = new BenchmarkRunGroup { Id = 1, Name = "G", BenchmarkSuiteId = 5 };
+
+        string md = BenchmarkGroupReportBuilder.BuildMarkdownReport(
+            group, result, BenchmarkComparabilityKey.Resolve(runs), runs);
+
+        Assert.Contains("**Cost per claim checked:** $0.4000 — $4.00 over 10 claims", md);
+        Assert.Contains("**Cost per refutation:** $2.00 — $4.00 over 2 refutation(s)", md);
+        Assert.DoesNotContain("the verifier's cost is not resolvable", md);
+        Assert.DoesNotContain("cannot be priced", md);
+    }
+
+    /// <summary>
+    /// Every role name is <see cref="BenchmarkGroupAnalysisService"/>'s to declare. A second copy of
+    /// one of those strings elsewhere is the defect this guards, because the copy can disagree with
+    /// the original and nothing fails until a reader notices a missing line in a report.
+    /// </summary>
+    [Fact]
+    public void ReportBuilder_DeclaresNoRoleKeyStringOfItsOwn()
+    {
+        static string Fold(string s) => s.Replace(" ", string.Empty).ToLowerInvariant();
+
+        var roleNames = typeof(BenchmarkGroupAnalysisService)
+            .GetFields(BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy)
+            .Where(f => f.IsLiteral && !f.IsInitOnly && f.FieldType == typeof(string))
+            .Where(f => f.Name.EndsWith("Role", StringComparison.Ordinal))
+            .Select(f => (string)f.GetRawConstantValue()!)
+            .ToList();
+
+        Assert.NotEmpty(roleNames);
+
+        var duplicated = typeof(BenchmarkGroupReportBuilder)
+            .GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)
+            .Where(f => f.IsLiteral && !f.IsInitOnly && f.FieldType == typeof(string))
+            .Select(f => (Name: f.Name, Value: (string)f.GetRawConstantValue()!))
+            .Where(f => roleNames.Any(r => Fold(r) == Fold(f.Value)))
+            .ToList();
+
+        Assert.Empty(duplicated);
     }
 }

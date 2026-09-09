@@ -1,0 +1,60 @@
+<!--
+  Not a live region: the live dialog repaints these figures on every 2-second poll, and a
+  26-minute run would produce several hundred announcements. The panel is reachable and readable
+  on demand through its heading.
+
+  The bars are aria-hidden because the percentage beside them says the same thing.
+-->
+<section class="gh-cost-panel" [attr.aria-labelledby]="headingId">
+  <header class="gh-cost-panel__head">
+    <h4 class="gh-cost-panel__title" [id]="headingId">{{ heading }}</h4>
+    <p class="gh-cost-panel__total">
+      <span class="gh-cost-panel__amount">{{ totalLabel }}</span>
+      @if (pricingIncomplete) {
+        <span class="gh-cost-panel__marker" aria-hidden="true">*</span>
+      }
+      <span class="gh-cost-panel__prov">{{ pricingSource || 'Pricing unknown' }}</span>
+    </p>
+  </header>
+
+  @let roleRows = roles;
+  @if (roleRows.length > 0) {
+    <dl class="gh-cost-panel__roles">
+      @for (role of roleRows; track role.key) {
+        <div class="gh-cost-role">
+          <dt class="gh-cost-role__name">{{ role.name }}</dt>
+          <dd class="gh-cost-role__amount">{{ role.amountLabel }}</dd>
+          <dd class="gh-cost-role__share">{{ role.shareLabel }}</dd>
+          <!--
+            Literal attribute text rather than a style binding, so the custom property lands in
+            the attribute for every engine. One accent at five widths: this is a part-to-whole
+            breakdown, and colouring the parts differently would imply a distinction that is not
+            there.
+          -->
+          <div class="gh-cost-role__bar" aria-hidden="true"
+               [attr.style]="'--gh-cost-share: ' + role.sharePercent + '%'"></div>
+        </div>
+      }
+      @if (hasGradingSubtotal) {
+        <div class="gh-cost-role gh-cost-role--subtotal">
+          <dt class="gh-cost-role__name">Grading subtotal</dt>
+          <dd class="gh-cost-role__amount">{{ gradingLabel }}</dd>
+        </div>
+      }
+    </dl>
+  }
+
+  @if (pricingIncomplete) {
+    <p class="gh-cost-panel__note">
+      <span aria-hidden="true">*</span>
+      Some participating models have no price on record, so every figure here is a lower bound.
+    </p>
+  }
+
+  @if (legacyRun) {
+    <p class="gh-cost-panel__note">
+      Recorded before per-role cost tracking: the second opinion's spend sits inside the assessor
+      line, and the final synthesis is not counted at all.
+    </p>
+  }
+</section>

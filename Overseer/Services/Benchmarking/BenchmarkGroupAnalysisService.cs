@@ -31,7 +31,9 @@ public class BenchmarkGroupAnalysisService
 
     public const string CandidateRole = "Candidate";
     public const string AssessorRole = "Assessor";
+    public const string SecondOpinionRole = "Second opinion";
     public const string ClaimVerifierRole = "Claim verifier";
+    public const string SynthesisRole = "Final synthesis";
 
     public BenchmarkGroupAnalysisService(
         ApplicationDbContext db,
@@ -94,7 +96,7 @@ public class BenchmarkGroupAnalysisService
     /// <summary>
     /// Computes the statistics for a loaded group and persists them.
     ///
-    /// Refuses when the set is below Tier B, and refuses to pool a Tier C set — such a set is two
+    /// Refuses when the set is below Tier B, and refuses to pool a Tier C set â€” such a set is two
     /// conditions, and the honest operation on it is a comparison, not an average.
     /// </summary>
     public async Task<(BenchmarkGroupAnalysis? Analysis, BenchmarkGroupStatisticsResult? Result, string? Error)>
@@ -146,13 +148,13 @@ public class BenchmarkGroupAnalysisService
 
         var newest = loaded.Runs.OrderByDescending(r => r.StartedAtUtc).First();
 
-        // The paired comparison — the T15 use case. Computed here rather than on demand so the
+        // The paired comparison â€” the T15 use case. Computed here rather than on demand so the
         // stored analysis is self-contained: the baseline group's membership may change later, and
         // a report must keep describing the comparison that was actually run.
         //
         // The named group is the *baseline* and this one the treatment, so a positive mean
-        // difference means this group scored higher. A comparison that cannot be computed — the
-        // baseline is gone, or is itself unanalysable — is not an error for this analysis: the
+        // difference means this group scored higher. A comparison that cannot be computed â€” the
+        // baseline is gone, or is itself unanalysable â€” is not an error for this analysis: the
         // group's own statistics are still valid, and the comparison is simply absent.
         string? comparisonJson = null;
         if (comparedWithGroupId.HasValue && comparedWithGroupId.Value != groupId)
@@ -205,7 +207,7 @@ public class BenchmarkGroupAnalysisService
 
     /// <summary>
     /// The statistics for a group, computed for use as the baseline half of a comparison and
-    /// <b>not</b> persisted — the comparison is stored on the treatment side's analysis, and writing
+    /// <b>not</b> persisted â€” the comparison is stored on the treatment side's analysis, and writing
     /// a second analysis row here would make the baseline group look freshly analysed when nobody
     /// asked it to be.
     ///
@@ -245,7 +247,7 @@ public class BenchmarkGroupAnalysisService
 
     /// <summary>
     /// True when the group's membership has changed since the analysis was computed. A stale
-    /// analysis is not wrong — it is a correct statement about a different set of runs — so it is
+    /// analysis is not wrong â€” it is a correct statement about a different set of runs â€” so it is
     /// badged rather than discarded.
     /// </summary>
     public static bool IsStale(BenchmarkRunGroup group, BenchmarkGroupAnalysis? analysis)
@@ -303,11 +305,10 @@ public class BenchmarkGroupAnalysisService
     /// <summary>
     /// Per-run, per-role costs for the group, resolved from each run's own pricing snapshot.
     ///
-    /// The arithmetic mirrors the single-run report's Estimated Cost block exactly, including the
-    /// long-context buckets and the *served* service tier rather than the requested one, so a group
-    /// total is the sum of the figures an operator already read on the individual runs. A run whose
-    /// pricing cannot be resolved contributes nothing and is simply absent — an unknown cost is
-    /// reported as unknown, never as zero.
+    /// The arithmetic is <see cref="ModelPricingService.ComputeRunRoleCosts"/>, the same function the
+    /// single-run report and the run detail use, so a group total is the sum of the figures an operator
+    /// already read on the individual runs. A run whose pricing cannot be resolved contributes nothing
+    /// and is simply absent â€” an unknown cost is reported as unknown, never as zero.
     /// </summary>
     private async Task<List<BenchmarkGroupRunCost>> ResolveCostsAsync(IReadOnlyList<BenchmarkRun> runs)
     {
@@ -332,28 +333,43 @@ public class BenchmarkGroupAnalysisService
             var byRole = new Dictionary<string, double>(StringComparer.Ordinal);
 
             string? servedTier = BenchmarkRunFinalizer.ResolveServedServiceTier(run.Answers);
-            decimal candidate = ModelPricingService.ComputeCostFromTotals(
-                pricing.Candidate,
-                run.TotalInputTokens, run.TotalOutputTokens,
-                run.TotalCacheReadTokens, run.TotalCacheCreationTokens,
-                run.TotalLongContextInputTokens, run.TotalLongContextOutputTokens,
-                run.TotalLongContextCacheReadTokens, run.TotalLongContextCacheCreationTokens,
-                actualServiceTier: servedTier,
-                requestedServiceTier: run.TestedModelServiceTierUsed);
-            byRole[CandidateRole] = (double)candidate;
+            var roleCosts = ModelPricingService.ComputeRunRoleCosts(run, pricing, servedTier);
 
-            bool hasAssessor = run.TotalAssessmentInputTokens > 0 || run.TotalAssessmentOutputTokens > 0;
+            byRole[CandidateRole] = (double)roleCosts.Candidate;
+
+            // A role is keyed only where it both spent tokens and resolved to a price card: an unknown
+            // cost is reported by its absence, never as zero.
+            bool hasAssessor = ModelPricingService.RoleHasTokens(
+                run.TotalAssessmentInputTokens, run.TotalAssessmentOutputTokens,
+                run.TotalAssessmentCacheReadTokens, run.TotalAssessmentCacheCreationTokens);
             if (hasAssessor && pricing.Assessor != null)
             {
-                byRole[AssessorRole] = (double)ModelPricingService.ComputeCost(
-                    pricing.Assessor, run.TotalAssessmentInputTokens, run.TotalAssessmentOutputTokens);
+                byRole[AssessorRole] = (double)roleCosts.Assessor;
             }
 
-            bool hasVerifier = run.TotalClaimVerificationInputTokens > 0 || run.TotalClaimVerificationOutputTokens > 0;
+            bool hasSecondOpinion = ModelPricingService.RoleHasTokens(
+                run.TotalSecondOpinionInputTokens, run.TotalSecondOpinionOutputTokens,
+                run.TotalSecondOpinionCacheReadTokens, run.TotalSecondOpinionCacheCreationTokens);
+            if (hasSecondOpinion && pricing.SecondOpinion != null)
+            {
+                byRole[SecondOpinionRole] = (double)roleCosts.SecondOpinion;
+            }
+
+            bool hasVerifier = ModelPricingService.RoleHasTokens(
+                run.TotalClaimVerificationInputTokens, run.TotalClaimVerificationOutputTokens,
+                run.TotalClaimVerificationCacheReadTokens, run.TotalClaimVerificationCacheCreationTokens);
             if (hasVerifier && pricing.ClaimVerifier != null)
             {
-                byRole[ClaimVerifierRole] = (double)ModelPricingService.ComputeCost(
-                    pricing.ClaimVerifier, run.TotalClaimVerificationInputTokens, run.TotalClaimVerificationOutputTokens);
+                byRole[ClaimVerifierRole] = (double)roleCosts.ClaimVerifier;
+            }
+
+            // The synthesis is priced on the assessor's card: it runs on the assessor's configuration.
+            bool hasSynthesis = ModelPricingService.RoleHasTokens(
+                run.TotalSynthesisInputTokens, run.TotalSynthesisOutputTokens,
+                run.TotalSynthesisCacheReadTokens, run.TotalSynthesisCacheCreationTokens);
+            if (hasSynthesis && pricing.Assessor != null)
+            {
+                byRole[SynthesisRole] = (double)roleCosts.Synthesis;
             }
 
             costs.Add(new BenchmarkGroupRunCost { RunId = run.Id, CostByRole = byRole });

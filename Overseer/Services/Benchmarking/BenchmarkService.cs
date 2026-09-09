@@ -1263,6 +1263,8 @@ public class BenchmarkService
         // it actually consumed. The stopwatch keeps running for the same reason.
         int assessmentInputTokens = runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : runResult.EstimatedInputTokens;
         int assessmentOutputTokens = runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens;
+        int assessmentCacheReadTokens = runResult.CacheReadTokens;
+        int assessmentCacheCreationTokens = runResult.CacheCreationTokens;
 
         // The graded text is passed so an unverifiable critical error is demoted rather than
         // capping the question at 25 on an assertion nobody can check.
@@ -1293,12 +1295,16 @@ public class BenchmarkService
             }
             assessmentInputTokens += retryResult.TotalPromptTokens > 0 ? retryResult.TotalPromptTokens : retryResult.EstimatedInputTokens;
             assessmentOutputTokens += retryResult.OutputTokens > 0 ? retryResult.OutputTokens : retryResult.EstimatedOutputTokens;
+            assessmentCacheReadTokens += retryResult.CacheReadTokens;
+            assessmentCacheCreationTokens += retryResult.CacheCreationTokens;
             if (retryResult.TotalPromptTokens > 0) runResult = retryResult;
         }
 
         sw.Stop();
         answer.AssessmentInputTokens = assessmentInputTokens;
         answer.AssessmentOutputTokens = assessmentOutputTokens;
+        answer.AssessmentCacheReadTokens = assessmentCacheReadTokens;
+        answer.AssessmentCacheCreationTokens = assessmentCacheCreationTokens;
         answer.AssessmentDurationMs = sw.ElapsedMilliseconds;
 
         if (string.IsNullOrWhiteSpace(terminalError) && parseResult.Success && parseResult.Result != null)
@@ -2102,6 +2108,8 @@ public class BenchmarkService
             inputTokens = runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : runResult.EstimatedInputTokens;
             outputTokens = runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens;
         }
+        int cacheReadTokens = runResult.CacheReadTokens;
+        int cacheCreationTokens = runResult.CacheCreationTokens;
         int toolCallsCount = runResult.ToolCalls.Count(tc => tc.Status == "completed");
 
         if (!string.IsNullOrWhiteSpace(terminalError))
@@ -2109,6 +2117,8 @@ public class BenchmarkService
             sw.Stop();
             answer.ClaimVerificationInputTokens = inputTokens;
             answer.ClaimVerificationOutputTokens = outputTokens;
+            answer.ClaimVerificationCacheReadTokens = cacheReadTokens;
+            answer.ClaimVerificationCacheCreationTokens = cacheCreationTokens;
             answer.ClaimVerificationDurationMs = sw.ElapsedMilliseconds;
             answer.ClaimVerificationToolCallCount = toolCallsCount;
             answer.ClaimVerificationByModelDisplayNameUsed = verifierConfig.DisplayName ?? verifierConfig.ModelId;
@@ -2159,6 +2169,8 @@ public class BenchmarkService
                 int retryOutputTokens = retryResult.OutputTokens > 0 ? retryResult.OutputTokens : retryResult.EstimatedOutputTokens;
                 inputTokens += retryInputTokens;
                 outputTokens += retryOutputTokens;
+                cacheReadTokens += retryResult.CacheReadTokens;
+                cacheCreationTokens += retryResult.CacheCreationTokens;
                 toolCallsCount += retryResult.ToolCalls.Count(tc => tc.Status == "completed");
 
                 if (string.IsNullOrWhiteSpace(terminalError))
@@ -2174,6 +2186,8 @@ public class BenchmarkService
             sw.Stop();
             answer.ClaimVerificationInputTokens = inputTokens;
             answer.ClaimVerificationOutputTokens = outputTokens;
+            answer.ClaimVerificationCacheReadTokens = cacheReadTokens;
+            answer.ClaimVerificationCacheCreationTokens = cacheCreationTokens;
             answer.ClaimVerificationDurationMs = sw.ElapsedMilliseconds;
             answer.ClaimVerificationToolCallCount = toolCallsCount;
             answer.ClaimVerificationByModelDisplayNameUsed = verifierConfig.DisplayName ?? verifierConfig.ModelId;
@@ -2802,6 +2816,7 @@ public class BenchmarkService
             run, answer, expectedPoints, assessorConfig, assessorApiKey, cancellationToken);
 
         // Assessor-side cost either way, so it is recorded even when the verdict is unusable.
+        // Pooled into the primary assessor's fields regardless of the trial model; BenchmarkAssessorCalibration carries this call's own record separately.
         answer.AssessmentInputTokens = (answer.AssessmentInputTokens ?? 0) + verdict.InputTokens;
         answer.AssessmentOutputTokens = (answer.AssessmentOutputTokens ?? 0) + verdict.OutputTokens;
         answer.AssessmentDurationMs = (answer.AssessmentDurationMs ?? 0) + verdict.DurationMs;
@@ -3025,12 +3040,14 @@ public class BenchmarkService
         catch (Exception ex) { terminalError = ex.Message; }
         sw.Stop();
 
-        // Assessor-side cost either way, so it is recorded even when the verdict is unusable.
-        answer.AssessmentInputTokens = (answer.AssessmentInputTokens ?? 0) +
+        // Second-opinion-side cost either way, so it is recorded even when the verdict is unusable.
+        answer.SecondOpinionInputTokens = (answer.SecondOpinionInputTokens ?? 0) +
             (runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : runResult.EstimatedInputTokens);
-        answer.AssessmentOutputTokens = (answer.AssessmentOutputTokens ?? 0) +
+        answer.SecondOpinionOutputTokens = (answer.SecondOpinionOutputTokens ?? 0) +
             (runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens);
-        answer.AssessmentDurationMs = (answer.AssessmentDurationMs ?? 0) + sw.ElapsedMilliseconds;
+        answer.SecondOpinionCacheReadTokens = (answer.SecondOpinionCacheReadTokens ?? 0) + runResult.CacheReadTokens;
+        answer.SecondOpinionCacheCreationTokens = (answer.SecondOpinionCacheCreationTokens ?? 0) + runResult.CacheCreationTokens;
+        answer.SecondOpinionDurationMs = (answer.SecondOpinionDurationMs ?? 0) + sw.ElapsedMilliseconds;
 
         var parseResult = string.IsNullOrWhiteSpace(terminalError)
             ? BenchmarkAssessmentParser.ParsePerQuestion(runResult.FinalText, answer.AnswerText)
@@ -3243,6 +3260,13 @@ public class BenchmarkService
 
         var parseResult = BenchmarkAssessmentParser.ParseFinalSynthesis(runResult.FinalText);
 
+        // Accumulated across the retry below, so a synthesis that needed a second attempt reports
+        // what it actually consumed rather than only the surviving attempt's usage.
+        int synthesisInputTokens = runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : runResult.EstimatedInputTokens;
+        int synthesisOutputTokens = runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens;
+        int synthesisCacheReadTokens = runResult.CacheReadTokens;
+        int synthesisCacheCreationTokens = runResult.CacheCreationTokens;
+
         if (!parseResult.Success)
         {
             _logger.LogWarning("Assessor synthesis output failed JSON parsing. Retrying once...");
@@ -3252,6 +3276,10 @@ public class BenchmarkService
             var retryResult = new AgentRunResult();
             await foreach (var _ in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, retryResult, cancellationToken)) { }
             parseResult = BenchmarkAssessmentParser.ParseFinalSynthesis(retryResult.FinalText);
+            synthesisInputTokens += retryResult.TotalPromptTokens > 0 ? retryResult.TotalPromptTokens : retryResult.EstimatedInputTokens;
+            synthesisOutputTokens += retryResult.OutputTokens > 0 ? retryResult.OutputTokens : retryResult.EstimatedOutputTokens;
+            synthesisCacheReadTokens += retryResult.CacheReadTokens;
+            synthesisCacheCreationTokens += retryResult.CacheCreationTokens;
             if (retryResult.TotalPromptTokens > 0) runResult = retryResult;
         }
 
@@ -3269,6 +3297,15 @@ public class BenchmarkService
             run.AssessmentText = null;
             run.AssessmentParseFailed = true;
         }
+
+        // Assigned, not accumulated: a rerun-synthesis replaces the prior attempt's figure rather
+        // than doubling it. Not summed in BenchmarkRunFinalizer.ApplyTotals — there is no per-answer
+        // synthesis row to sum from.
+        run.TotalSynthesisInputTokens = synthesisInputTokens;
+        run.TotalSynthesisOutputTokens = synthesisOutputTokens;
+        run.TotalSynthesisCacheReadTokens = synthesisCacheReadTokens;
+        run.TotalSynthesisCacheCreationTokens = synthesisCacheCreationTokens;
+        run.TotalSynthesisDurationMs = sw.ElapsedMilliseconds;
 
         await db.SaveChangesAsync(CancellationToken.None);
 

@@ -17,6 +17,20 @@ public static class BenchmarkReportBuilder
     }
 
     /// <summary>
+    /// A Harness Cost role's token line: the always-present in/out pair, with cache read and cache
+    /// creation appended only when non-zero, so a role that carries no cache activity reads exactly
+    /// as an in/out-only line.
+    /// </summary>
+    private static string HarnessCostTokenLine(long input, long output, long cacheRead, long cacheCreation)
+    {
+        var extras = new List<string>();
+        if (cacheRead > 0) extras.Add($"{Inv(cacheRead, "N0")} cache read");
+        if (cacheCreation > 0) extras.Add($"{Inv(cacheCreation, "N0")} cache creation");
+        string line = $"{Inv(input, "N0")} in / {Inv(output, "N0")} out";
+        return extras.Count > 0 ? $"{line} ({string.Join(", ", extras)})" : line;
+    }
+
+    /// <summary>
     /// True when a stored <see cref="BenchmarkRunAnswer.ClaimVerificationError"/> is the
     /// deterministic token-budget skip written by
     /// <see cref="BenchmarkService.BenchmarkClaimVerificationNotCheckedReason"/> rather than a real
@@ -860,43 +874,80 @@ public static class BenchmarkReportBuilder
         // exactly the runs whose cost is least obvious elsewhere.
         if (run.TotalInputTokens > 0 || run.TotalOutputTokens > 0 ||
             run.TotalAssessmentInputTokens > 0 || run.TotalAssessmentOutputTokens > 0 || run.TotalAssessmentDurationMs > 0 ||
-            run.TotalClaimVerificationInputTokens > 0 || run.TotalClaimVerificationOutputTokens > 0 || run.TotalClaimVerificationDurationMs > 0)
+            run.TotalSecondOpinionInputTokens > 0 || run.TotalSecondOpinionOutputTokens > 0 || run.TotalSecondOpinionDurationMs > 0 ||
+            run.TotalClaimVerificationInputTokens > 0 || run.TotalClaimVerificationOutputTokens > 0 || run.TotalClaimVerificationDurationMs > 0 ||
+            run.TotalSynthesisInputTokens > 0 || run.TotalSynthesisOutputTokens > 0 || run.TotalSynthesisDurationMs > 0)
         {
             sb.AppendLine("### Harness Cost");
+
+            if (PredatesHarnessVersion(run, 15))
+            {
+                sb.AppendLine("*Recorded before per-role cost tracking: the second opinion's spend is inside the assessor line, and the final synthesis is not counted at all.*");
+            }
+
             sb.AppendLine($"- **Candidate Tokens:** {Inv(run.TotalInputTokens, "N0")} in / {Inv(run.TotalOutputTokens, "N0")} out");
-            sb.AppendLine($"- **Assessor Tokens:** {Inv(run.TotalAssessmentInputTokens, "N0")} in / {Inv(run.TotalAssessmentOutputTokens, "N0")} out");
+            sb.AppendLine($"- **Assessor Tokens:** {HarnessCostTokenLine(run.TotalAssessmentInputTokens, run.TotalAssessmentOutputTokens, run.TotalAssessmentCacheReadTokens, run.TotalAssessmentCacheCreationTokens)}");
+            if (run.TotalSecondOpinionInputTokens > 0 || run.TotalSecondOpinionOutputTokens > 0 || run.SecondOpinionAssessorModelConfigurationId.HasValue)
+            {
+                sb.AppendLine($"- **Second Opinion Tokens:** {HarnessCostTokenLine(run.TotalSecondOpinionInputTokens, run.TotalSecondOpinionOutputTokens, run.TotalSecondOpinionCacheReadTokens, run.TotalSecondOpinionCacheCreationTokens)}");
+            }
             if (run.TotalClaimVerificationInputTokens > 0 || run.TotalClaimVerificationOutputTokens > 0 || run.ClaimVerifierModelConfigurationId.HasValue)
             {
                 bool allVerificationAttemptsFailed =
                     answers.Any(a => !string.IsNullOrWhiteSpace(a.ClaimVerificationError) && !IsClaimVerificationBudgetNotChecked(a.ClaimVerificationError)) &&
                     !answers.Any(a => string.IsNullOrWhiteSpace(a.ClaimVerificationError) && (a.ClaimsSupportedCount.HasValue || a.ClaimsRefutedCount.HasValue || a.ClaimsIndeterminateCount.HasValue));
                 string failedCaveat = allVerificationAttemptsFailed ? " — *every attempt failed; see Issues*" : string.Empty;
-                sb.AppendLine($"- **Claim Verifier Tokens:** {Inv(run.TotalClaimVerificationInputTokens, "N0")} in / {Inv(run.TotalClaimVerificationOutputTokens, "N0")} out{failedCaveat}");
+                sb.AppendLine($"- **Claim Verifier Tokens:** {HarnessCostTokenLine(run.TotalClaimVerificationInputTokens, run.TotalClaimVerificationOutputTokens, run.TotalClaimVerificationCacheReadTokens, run.TotalClaimVerificationCacheCreationTokens)}{failedCaveat}");
             }
-            long totalInput = run.TotalInputTokens + run.TotalAssessmentInputTokens + run.TotalClaimVerificationInputTokens;
-            long totalOutput = run.TotalOutputTokens + run.TotalAssessmentOutputTokens + run.TotalClaimVerificationOutputTokens;
+            if (run.TotalSynthesisInputTokens > 0 || run.TotalSynthesisOutputTokens > 0 || run.TotalSynthesisDurationMs > 0)
+            {
+                sb.AppendLine($"- **Synthesis Tokens:** {HarnessCostTokenLine(run.TotalSynthesisInputTokens, run.TotalSynthesisOutputTokens, run.TotalSynthesisCacheReadTokens, run.TotalSynthesisCacheCreationTokens)}");
+            }
+            long totalInput = run.TotalInputTokens + run.TotalAssessmentInputTokens + run.TotalSecondOpinionInputTokens +
+                run.TotalClaimVerificationInputTokens + run.TotalSynthesisInputTokens;
+            long totalOutput = run.TotalOutputTokens + run.TotalAssessmentOutputTokens + run.TotalSecondOpinionOutputTokens +
+                run.TotalClaimVerificationOutputTokens + run.TotalSynthesisOutputTokens;
             sb.AppendLine($"- **Total Tokens:** {Inv(totalInput, "N0")} in / {Inv(totalOutput, "N0")} out");
             sb.AppendLine($"- **Assessment Time:** {FormatDuration(run.TotalAssessmentDurationMs)} ({Inv(run.TotalAssessmentDurationMs, "N0")} ms)");
+            if (run.TotalSecondOpinionDurationMs > 0)
+            {
+                sb.AppendLine($"- **Second Opinion Time:** {FormatDuration(run.TotalSecondOpinionDurationMs)} ({Inv(run.TotalSecondOpinionDurationMs, "N0")} ms)");
+            }
             if (run.TotalClaimVerificationDurationMs > 0)
             {
                 sb.AppendLine($"- **Claim Verification Time:** {FormatDuration(run.TotalClaimVerificationDurationMs)} ({Inv(run.TotalClaimVerificationDurationMs, "N0")} ms)");
             }
+            if (run.TotalSynthesisDurationMs > 0)
+            {
+                sb.AppendLine($"- **Synthesis Time:** {FormatDuration(run.TotalSynthesisDurationMs)} ({Inv(run.TotalSynthesisDurationMs, "N0")} ms)");
+            }
 
-            // Estimated Cost block (H7)
+            // Estimated Cost block (H7). Per-role totals come from ModelPricingService.ComputeRunRoleCosts,
+            // the same routine the cost-panel UI calls, so the report and the UI cannot disagree about what
+            // the Grading subtotal includes. Only the presentational uncached/cached/write and in/out
+            // breakdowns are computed here, since the shared routine exposes role totals, not their parts.
             bool hasAssessor = run.TotalAssessmentInputTokens > 0 || run.TotalAssessmentOutputTokens > 0;
+            bool hasSecondOpinion = run.TotalSecondOpinionInputTokens > 0 || run.TotalSecondOpinionOutputTokens > 0;
             bool hasVerifier = run.TotalClaimVerificationInputTokens > 0 || run.TotalClaimVerificationOutputTokens > 0;
+            bool hasSynthesis = run.TotalSynthesisInputTokens > 0 || run.TotalSynthesisOutputTokens > 0;
 
             var candidatePricing = runPricing?.Candidate;
-            var assessorPricing = hasAssessor ? runPricing?.Assessor : null;
+            // Synthesis is priced on the assessor's own card, so its pricing requirement folds into
+            // the assessor's rather than needing a card of its own.
+            var assessorPricing = (hasAssessor || hasSynthesis) ? runPricing?.Assessor : null;
+            var secondOpinionPricing = hasSecondOpinion ? runPricing?.SecondOpinion : null;
             var verifierPricing = hasVerifier ? runPricing?.ClaimVerifier : null;
 
             bool canEstimateCost = runPricing != null &&
                 candidatePricing != null &&
-                (!hasAssessor || assessorPricing != null) &&
+                (!(hasAssessor || hasSynthesis) || assessorPricing != null) &&
+                (!hasSecondOpinion || secondOpinionPricing != null) &&
                 (!hasVerifier || verifierPricing != null);
 
             if (canEstimateCost)
             {
+                var roleCosts = ModelPricingService.ComputeRunRoleCosts(run, runPricing!);
+
                 long cachedInTokens = run.TotalCacheReadTokens;
                 long uncachedInTokens = Math.Max(0, run.TotalInputTokens - cachedInTokens);
 
@@ -911,37 +962,55 @@ public static class BenchmarkReportBuilder
                 // arithmetic above for a flat-rate model and for every run that predates tiered pricing, so
                 // the component lines printed above stay correct in that case.
                 string? servedServiceTier = BenchmarkRunFinalizer.ResolveServedServiceTier(run.Answers);
-                decimal candidateTotalCost = ModelPricingService.ComputeCostFromTotals(
-                    candidatePricing,
-                    run.TotalInputTokens, run.TotalOutputTokens,
-                    run.TotalCacheReadTokens, run.TotalCacheCreationTokens,
-                    run.TotalLongContextInputTokens, run.TotalLongContextOutputTokens,
-                    run.TotalLongContextCacheReadTokens, run.TotalLongContextCacheCreationTokens,
-                    actualServiceTier: servedServiceTier,
-                    requestedServiceTier: run.TestedModelServiceTierUsed);
+                decimal candidateTotalCost = roleCosts.Candidate;
 
-                decimal assessorTotalCost = 0m;
                 decimal assessorInCost = 0m;
                 decimal assessorOutCost = 0m;
                 if (hasAssessor && assessorPricing != null)
                 {
                     assessorInCost = run.TotalAssessmentInputTokens / 1_000_000m * assessorPricing.InputPerMillion;
                     assessorOutCost = run.TotalAssessmentOutputTokens / 1_000_000m * assessorPricing.OutputPerMillion;
-                    assessorTotalCost = ModelPricingService.ComputeCost(assessorPricing, run.TotalAssessmentInputTokens, run.TotalAssessmentOutputTokens);
                 }
+                decimal assessorTotalCost = roleCosts.Assessor;
 
-                decimal verifierTotalCost = 0m;
+                decimal secondOpinionInCost = 0m;
+                decimal secondOpinionOutCost = 0m;
+                if (hasSecondOpinion && secondOpinionPricing != null)
+                {
+                    secondOpinionInCost = run.TotalSecondOpinionInputTokens / 1_000_000m * secondOpinionPricing.InputPerMillion;
+                    secondOpinionOutCost = run.TotalSecondOpinionOutputTokens / 1_000_000m * secondOpinionPricing.OutputPerMillion;
+                }
+                decimal secondOpinionTotalCost = roleCosts.SecondOpinion;
+
                 decimal verifierInCost = 0m;
                 decimal verifierOutCost = 0m;
                 if (hasVerifier && verifierPricing != null)
                 {
                     verifierInCost = run.TotalClaimVerificationInputTokens / 1_000_000m * verifierPricing.InputPerMillion;
                     verifierOutCost = run.TotalClaimVerificationOutputTokens / 1_000_000m * verifierPricing.OutputPerMillion;
-                    verifierTotalCost = ModelPricingService.ComputeCost(verifierPricing, run.TotalClaimVerificationInputTokens, run.TotalClaimVerificationOutputTokens);
                 }
+                decimal verifierTotalCost = roleCosts.ClaimVerifier;
 
-                decimal totalCost = candidateTotalCost + assessorTotalCost + verifierTotalCost;
-                sb.AppendLine($"- **Estimated Cost:** ${Inv(totalCost, "F2")} total");
+                decimal synthesisInCost = 0m;
+                decimal synthesisOutCost = 0m;
+                if (hasSynthesis && assessorPricing != null)
+                {
+                    synthesisInCost = run.TotalSynthesisInputTokens / 1_000_000m * assessorPricing.InputPerMillion;
+                    synthesisOutCost = run.TotalSynthesisOutputTokens / 1_000_000m * assessorPricing.OutputPerMillion;
+                }
+                decimal synthesisTotalCost = roleCosts.Synthesis;
+
+                decimal gradingTotalCost = roleCosts.Grading;
+                decimal totalCost = roleCosts.Total;
+
+                if (!roleCosts.Incomplete)
+                {
+                    sb.AppendLine($"- **Estimated Cost:** ${Inv(totalCost, "F2")} total");
+                }
+                else
+                {
+                    sb.AppendLine("- **Estimated Cost:** not available as a single total — the participating roles do not price in comparable units; see the per-role figures below.");
+                }
 
                 if (candidatePricing.CachedInputPerMillion.HasValue && cachedInTokens > 0)
                 {
@@ -973,6 +1042,11 @@ public static class BenchmarkReportBuilder
                     sb.AppendLine($"  - Assessor ({run.AssessorModelIdUsed}): ${Inv(assessorTotalCost, "F2")} (in: ${Inv(assessorInCost, "F2")}, out: ${Inv(assessorOutCost, "F2")})");
                 }
 
+                if (hasSecondOpinion && secondOpinionPricing != null)
+                {
+                    sb.AppendLine($"  - Second Opinion ({run.SecondOpinionAssessorModelIdUsed}): ${Inv(secondOpinionTotalCost, "F2")} (in: ${Inv(secondOpinionInCost, "F2")}, out: ${Inv(secondOpinionOutCost, "F2")})");
+                }
+
                 if (hasVerifier && verifierPricing != null)
                 {
                     sb.AppendLine($"  - Claim Verifier ({run.ClaimVerifierModelIdUsed}): ${Inv(verifierTotalCost, "F2")} (in: ${Inv(verifierInCost, "F2")}, out: ${Inv(verifierOutCost, "F2")})");
@@ -993,6 +1067,17 @@ public static class BenchmarkReportBuilder
                             $"{Inv(run.ClaimsIndeterminateCount, "N0")} indeterminate. " +
                             $"${Inv(verifierTotalCost, "F2")} (${Inv(costPerClaim, "F2")}/claim), {Inv(verifierCostShare, "F0")}% of run cost.");
                     }
+                }
+
+                if (hasSynthesis && assessorPricing != null)
+                {
+                    sb.AppendLine($"  - Synthesis ({run.AssessorModelIdUsed}): ${Inv(synthesisTotalCost, "F2")} (in: ${Inv(synthesisInCost, "F2")}, out: ${Inv(synthesisOutCost, "F2")})");
+                }
+
+                if (hasAssessor || hasSecondOpinion || hasVerifier || hasSynthesis)
+                {
+                    decimal gradingShare = totalCost > 0 ? gradingTotalCost / totalCost * 100m : 0m;
+                    sb.AppendLine($"  - **Grading subtotal:** ${Inv(gradingTotalCost, "F2")} ({Inv(gradingShare, "F0")}% of total)");
                 }
 
                 // Both lines are printed only when they apply. An absent tier is omitted entirely rather
@@ -1025,9 +1110,13 @@ public static class BenchmarkReportBuilder
                     return $"{roleTitle} catalog" + (!string.IsNullOrEmpty(p.AsOf) ? $" (as of {p.AsOf})" : "");
                 }
                 provenanceParts.Add(FormatProv("candidate", candidatePricing));
-                if (hasAssessor && assessorPricing != null)
+                if ((hasAssessor || hasSynthesis) && assessorPricing != null)
                 {
                     provenanceParts.Add(FormatProv("assessor", assessorPricing));
+                }
+                if (hasSecondOpinion && secondOpinionPricing != null)
+                {
+                    provenanceParts.Add(FormatProv("second opinion", secondOpinionPricing));
                 }
                 if (hasVerifier && verifierPricing != null)
                 {
@@ -1045,7 +1134,8 @@ public static class BenchmarkReportBuilder
             {
                 var missingRoles = new List<string>();
                 if (candidatePricing == null) missingRoles.Add("candidate");
-                if (hasAssessor && assessorPricing == null) missingRoles.Add("assessor");
+                if ((hasAssessor || hasSynthesis) && assessorPricing == null) missingRoles.Add("assessor");
+                if (hasSecondOpinion && secondOpinionPricing == null) missingRoles.Add("second opinion");
                 if (hasVerifier && verifierPricing == null) missingRoles.Add("claim verifier");
                 if (missingRoles.Count == 0) missingRoles.Add("participating models");
 
@@ -1053,7 +1143,25 @@ public static class BenchmarkReportBuilder
             }
 
 
-            sb.AppendLine("*Assessment runs pipelined behind each answer, so assessment time overlaps the candidate's and the two do not sum to the wall time.*");
+            // H6. Only a run with question-level concurrency actually pipelines an answer's grading
+            // behind the next answer's candidate call. A sequential run has no such overlap to
+            // disclaim, so it gets the measured figure instead: wall clock minus every recorded stage
+            // duration, candidate included. A run whose synthesis is available folds it into that sum,
+            // since a synthesis call sits on the same critical path as the other grading stages —
+            // one measured run's residual dropped to 17 seconds once synthesis was counted with it.
+            if (run.MaxParallelQuestionsUsed > 1)
+            {
+                sb.AppendLine("*Assessment runs pipelined behind each answer, so assessment time overlaps the candidate's and the two do not sum to the wall time.*");
+            }
+            else
+            {
+                long summedStageDurations = run.TotalAnswerDurationMs + run.TotalAssessmentDurationMs +
+                    run.TotalSecondOpinionDurationMs + run.TotalClaimVerificationDurationMs + run.TotalSynthesisDurationMs;
+                long measuredOverlapMs = run.TotalDurationMs - summedStageDurations;
+                sb.AppendLine(
+                    $"*Measured overlap: wall clock minus the summed stage durations (candidate, assessment, second opinion, claim verification, synthesis) leaves " +
+                    $"{FormatDuration(measuredOverlapMs)} ({Inv(measuredOverlapMs, "N0")} ms) unaccounted for by sequential stage time.*");
+            }
             sb.AppendLine();
         }
         else

@@ -135,6 +135,8 @@ public class BenchmarkRunAnswer
     // OutputTokens below: those describe the model under test.
     public int? AssessmentInputTokens { get; set; }
     public int? AssessmentOutputTokens { get; set; }
+    public int? AssessmentCacheReadTokens { get; set; }
+    public int? AssessmentCacheCreationTokens { get; set; }
     public long? AssessmentDurationMs { get; set; }
 
     /// <summary>
@@ -199,6 +201,12 @@ public class BenchmarkRunAnswer
     /// grader spoke last is not an improvement in accuracy, only in agreeableness.
     /// </summary>
     public string? SecondOpinionJson { get; set; }
+
+    public int? SecondOpinionInputTokens { get; set; }
+    public int? SecondOpinionOutputTokens { get; set; }
+    public int? SecondOpinionCacheReadTokens { get; set; }
+    public int? SecondOpinionCacheCreationTokens { get; set; }
+    public long? SecondOpinionDurationMs { get; set; }
 
     [MaxLength(256)]
     public string? SecondOpinionByModelDisplayNameUsed { get; set; }
@@ -269,6 +277,8 @@ public class BenchmarkRunAnswer
 
     public int? ClaimVerificationInputTokens { get; set; }
     public int? ClaimVerificationOutputTokens { get; set; }
+    public int? ClaimVerificationCacheReadTokens { get; set; }
+    public int? ClaimVerificationCacheCreationTokens { get; set; }
     public long? ClaimVerificationDurationMs { get; set; }
     public int? ClaimVerificationToolCallCount { get; set; }
 

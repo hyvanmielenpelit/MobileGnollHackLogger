@@ -45,6 +45,7 @@ import { CollapsibleMarkdownComponent } from '../../shared/collapsible-markdown/
 import { SuiteHealthComponent, SuiteHealthTab } from './suite-health/suite-health.component';
 import { MultiRunComponent } from './multi-run/multi-run.component';
 import { MultiRunProgressDialogComponent } from './multi-run/multi-run-progress-dialog.component';
+import { BenchmarkCostPanelComponent } from './cost-panel/benchmark-cost-panel.component';
 import { SnapshotViewerComponent } from '../../shared/snapshot-viewer/snapshot-viewer.component';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../utils/polyfills.util';
 import { SystemService } from '../../services/system.service';
@@ -188,7 +189,7 @@ interface BenchmarkRunSettings {
     CommonModule, DecimalPipe, FormsModule, CollapsibleMarkdownComponent, SuiteHealthComponent,
     SnapshotViewerComponent, MultiRunComponent, MultiRunProgressDialogComponent,
     SortHeaderComponent, TablePagerComponent, ModelComparisonComponent,
-    ComparisonSourcePickerComponent
+    ComparisonSourcePickerComponent, BenchmarkCostPanelComponent
   ],
   templateUrl: './benchmark.component.html',
   styleUrls: ['./benchmark.component.scss']
@@ -362,6 +363,12 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   footprints: { [suiteId: number]: BenchmarkFootprintDto } = {};
   suiteForBulkDelete: BenchmarkSuiteDto | null = null;
   deletingSuiteRuns = false;
+
+  /**
+   * The harness version from which the second opinion and the final synthesis carry costs of
+   * their own. Mirrors BenchmarkReportBuilder's PredatesHarnessVersion constants.
+   */
+  private static readonly PER_ROLE_COST_HARNESS_VERSION = 15;
 
   // Active Run Tracking
   private static readonly RUN_POLL_INTERVAL_MS = 2000;
@@ -1371,29 +1378,6 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     return `$${inPrice}/$${outPrice} per 1M`;
   }
 
-  get estimatedRunCostSoFar(): number | null {
-    if (!this.activeRunDetail || !this.activeRunDetail.testedModelConfigurationId) return null;
-    const config = this.benchmarkCapableConfigs.find(c => c.id === this.activeRunDetail!.testedModelConfigurationId);
-    if (!config || config.effectiveInputPricePerMillion == null || config.effectiveOutputPricePerMillion == null) return null;
-
-    let inputTokens = this.activeRunDetail.totalInputTokens ?? 0;
-    const outputTokens = this.activeRunDetail.totalOutputTokens ?? 0;
-    const cacheReadTokens = this.activeRunDetail.totalCacheReadTokens ?? 0;
-
-    let cost = 0;
-    cost += (outputTokens / 1000000) * config.effectiveOutputPricePerMillion;
-
-    if (config.effectiveCachedInputPricePerMillion != null && cacheReadTokens > 0 && inputTokens >= cacheReadTokens) {
-      const uncached = inputTokens - cacheReadTokens;
-      cost += (uncached / 1000000) * config.effectiveInputPricePerMillion;
-      cost += (cacheReadTokens / 1000000) * config.effectiveCachedInputPricePerMillion;
-    } else {
-      cost += (inputTokens / 1000000) * config.effectiveInputPricePerMillion;
-    }
-
-    return cost;
-  }
-
   /**
    * U3. A dollar amount at the precision the figure deserves.
    *
@@ -1411,6 +1395,19 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
 
   formatRunEstimatedCost(run: BenchmarkRunSummaryDto | BenchmarkRunDetailDto): string {
     return this.formatCostAmount(run.estimatedCost);
+  }
+
+  /**
+   * Whether a run predates the harness version that costed the second opinion and the final
+   * synthesis as roles of their own. Such a run's assessor line still carries the second
+   * opinion's spend and its synthesis is uncosted, so the cost panel says so rather than
+   * presenting the lines as a complete split.
+   *
+   * An unparseable version is not evidence of age and is therefore not treated as legacy.
+   */
+  isLegacyCostRun(run: BenchmarkRunDetailDto | null | undefined): boolean {
+    const version = Number.parseInt(run?.harnessVersion ?? '', 10);
+    return Number.isInteger(version) && version < AdminBenchmarkComponent.PER_ROLE_COST_HARNESS_VERSION;
   }
 
   /**
@@ -5052,41 +5049,6 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     return 'Coverage is selected by trigger, so this is conditioned on the first assessor’s own ' +
       `uncertainty, not an unbiased agreement rate. n = ${graded} of ${answered}.`;
   }
-
-  /**
-   * H5. The per-role split behind the Estimated Cost figure, which the card otherwise hides. On run 13 it
-   * is the finding: the candidate was 28 % of the cost and grading plus verification 72 %, so the cost of
-   * a benchmark is mostly the harness, not the model under test.
-   *
-   * Empty when no per-role figure is available, in which case the tooltip is not rendered at all rather
-   * than shown with zeros.
-   */
-  get costBreakdownLabel(): string {
-    const run = this.selectedRunDetail;
-    if (!run) return '';
-
-    const candidate = run.estimatedCandidateCost;
-    const assessor = run.estimatedAssessorCost;
-    const verifier = run.estimatedVerifierCost;
-    if (candidate == null && assessor == null && verifier == null) return '';
-
-    const total = (candidate ?? 0) + (assessor ?? 0) + (verifier ?? 0);
-    const numPipe = new DecimalPipe('en-US');
-    const part = (label: string, value: number | null | undefined): string | null => {
-      if (value == null) return null;
-      const share = total > 0 ? ` (${Math.round((value / total) * 100)}%)` : '';
-      return `${label} $${numPipe.transform(value, '1.2-4')}${share}`;
-    };
-
-    const parts = [
-      part('Candidate', candidate),
-      part('Assessor', assessor),
-      part('Claim verifier', verifier)
-    ].filter((p): p is string => p !== null);
-
-    return parts.join(' · ');
-  }
-
 
   /**
    * Shown only where the two aggregations differ, following the Raw Quality Index tile. The gap

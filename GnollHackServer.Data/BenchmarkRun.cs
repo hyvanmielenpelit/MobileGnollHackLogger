@@ -603,12 +603,39 @@ public class BenchmarkRun
     // two are what the run actually cost, which was previously not recorded anywhere.
     public long TotalAssessmentInputTokens { get; set; }
     public long TotalAssessmentOutputTokens { get; set; }
+    public long TotalAssessmentCacheReadTokens { get; set; }
+    public long TotalAssessmentCacheCreationTokens { get; set; }
     public long TotalAssessmentDurationMs { get; set; }
+
+    // Second-opinion-side usage, kept apart from candidate, assessor and claim-verifier totals.
+    // The second opinion is a separate assessor call from the primary assessment above and is
+    // never pooled into TotalAssessment* here.
+    public long TotalSecondOpinionInputTokens { get; set; }
+    public long TotalSecondOpinionOutputTokens { get; set; }
+    public long TotalSecondOpinionCacheReadTokens { get; set; }
+    public long TotalSecondOpinionCacheCreationTokens { get; set; }
+    public long TotalSecondOpinionDurationMs { get; set; }
 
     // Claim-verifier-side usage, kept apart from candidate and assessor totals above.
     public long TotalClaimVerificationInputTokens { get; set; }
     public long TotalClaimVerificationOutputTokens { get; set; }
+    public long TotalClaimVerificationCacheReadTokens { get; set; }
+    public long TotalClaimVerificationCacheCreationTokens { get; set; }
     public long TotalClaimVerificationDurationMs { get; set; }
+
+    /// <summary>
+    /// Final-synthesis usage: the call that merges the assessor's and second opinion's verdicts
+    /// into the run's published result. Recorded only here, at run level — there is no per-answer
+    /// counterpart, because <c>BenchmarkRunFinalizer.ApplyTotals</c> recomputes the assessor totals
+    /// above from the answer rows on every call, so a synthesis figure folded into
+    /// <see cref="TotalAssessmentInputTokens"/> or its siblings would be erased by the next
+    /// re-score.
+    /// </summary>
+    public long TotalSynthesisInputTokens { get; set; }
+    public long TotalSynthesisOutputTokens { get; set; }
+    public long TotalSynthesisCacheReadTokens { get; set; }
+    public long TotalSynthesisCacheCreationTokens { get; set; }
+    public long TotalSynthesisDurationMs { get; set; }
 
     /// <summary>
     /// Resolved per-million prices for every role, captured when the run started. A report

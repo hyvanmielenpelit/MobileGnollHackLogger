@@ -1484,24 +1484,18 @@
             <span class="score-note">start to finish, grading included</span>
           </div>
           <!--
-            H5. The card showed one figure, and the split it hides is the interesting one: on run 13 the
-            candidate is 28 % of the cost and grading plus verification is 72 %, which inverts the intuition
-            that a benchmark's cost is the model under test.
+            H5. The headline figure only. The per-role split it hides — on run 13 the candidate was
+            28 % of the cost and grading plus verification 72 %, which inverts the intuition that a
+            benchmark's cost is the model under test — is the cost panel further down the dialog.
           -->
           <div class="score-card">
             <span class="score-label">Estimated Cost</span>
-            <span class="score-subvalue"
-                  [attr.interestfor]="costBreakdownLabel ? 'tip-run-cost-breakdown' : null"
-                  [attr.style]="costBreakdownLabel ? 'anchor-name: --tip-run-cost-breakdown' : null">
+            <span class="score-subvalue">
               {{ formatRunEstimatedCost(selectedRunDetail) }}
               @if (selectedRunDetail.pricingIncomplete) {
                 <span class="degraded-tag" title="Some participating models lack pricing">*</span>
               }
             </span>
-            @if (costBreakdownLabel) {
-              <div popover="hint" class="gh-tooltip" id="tip-run-cost-breakdown"
-                   style="position-anchor: --tip-run-cost-breakdown">{{ costBreakdownLabel }}</div>
-            }
             <span class="score-note">{{ selectedRunDetail.pricingSource || 'Pricing unknown' }}</span>
           </div>
         </div>
@@ -1780,6 +1774,23 @@
             }
           </div>
         }
+
+        <!--
+          Where the Estimated Cost card's figure went. The five roles and the grading subtotal are
+          visible rather than behind a hover, because the split is the point.
+        -->
+        <app-benchmark-cost-panel
+          variant="final"
+          [total]="selectedRunDetail.estimatedCost ?? null"
+          [candidate]="selectedRunDetail.estimatedCandidateCost ?? null"
+          [assessor]="selectedRunDetail.estimatedAssessorCost ?? null"
+          [secondOpinion]="selectedRunDetail.estimatedSecondOpinionCost ?? null"
+          [claimVerifier]="selectedRunDetail.estimatedVerifierCost ?? null"
+          [synthesis]="selectedRunDetail.estimatedSynthesisCost ?? null"
+          [grading]="selectedRunDetail.estimatedGradingCost ?? null"
+          [pricingSource]="selectedRunDetail.pricingSource ?? null"
+          [pricingIncomplete]="selectedRunDetail.pricingIncomplete ?? false"
+          [legacyRun]="isLegacyCostRun(selectedRunDetail)"></app-benchmark-cost-panel>
 
         <!-- Questions & Answers -->
         <div class="questions-detail-section">
@@ -3249,13 +3260,24 @@
           <dt>Cache creation</dt>
           <dd>{{ (activeRunDetail?.totalCacheCreationTokens ?? 0) | number }}</dd>
         </div>
-        @if (estimatedRunCostSoFar != null) {
-          <div class="run-stat">
-            <dt>Est. cost so far</dt>
-            <dd>${{ estimatedRunCostSoFar | number:'1.2-4' }}</dd>
-          </div>
-        }
       </dl>
+
+      <!--
+        The per-role split, from the same server-side figures the finished-run dialog shows, so a
+        run's live cost and its final cost are one number computed once.
+      -->
+      <app-benchmark-cost-panel
+        variant="live"
+        [total]="activeRunDetail?.estimatedCost ?? null"
+        [candidate]="activeRunDetail?.estimatedCandidateCost ?? null"
+        [assessor]="activeRunDetail?.estimatedAssessorCost ?? null"
+        [secondOpinion]="activeRunDetail?.estimatedSecondOpinionCost ?? null"
+        [claimVerifier]="activeRunDetail?.estimatedVerifierCost ?? null"
+        [synthesis]="activeRunDetail?.estimatedSynthesisCost ?? null"
+        [grading]="activeRunDetail?.estimatedGradingCost ?? null"
+        [pricingSource]="activeRunDetail?.pricingSource ?? null"
+        [pricingIncomplete]="activeRunDetail?.pricingIncomplete ?? false"
+        [legacyRun]="isLegacyCostRun(activeRunDetail)"></app-benchmark-cost-panel>
 
       <ul class="job-item-list run-question-list">
         @for (row of runProgressRows; track row.orderIndex) {

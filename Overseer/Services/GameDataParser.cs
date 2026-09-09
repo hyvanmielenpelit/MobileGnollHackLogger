@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace Overseer.Services
@@ -98,65 +99,182 @@ namespace Overseer.Services
         {
             for (int i = 0; i < lines.Length; i++)
             {
-                string line = lines[i];
-                var match = Regex.Match(line, @"^\s*#define\s+([A-Za-z0-9_]+)\(([^)]*)\)\s*(.*)");
+                // Both the parameter list and the body may be backslash-continued,
+                // so the directive is matched against its joined logical line.
+                if (!Regex.IsMatch(lines[i], @"^\s*#define\s+[A-Za-z0-9_]+\(")) continue;
+
+                int lastLine = i;
+                while (lastLine < lines.Length - 1 && lines[lastLine].EndsWith("\\")) lastLine++;
+
+                string logicalLine = JoinContinuedLines(lines, i, lastLine);
+
+                var match = Regex.Match(logicalLine, @"^\s*#define\s+([A-Za-z0-9_]+)\(([^)]*)\)\s*(.*)");
                 if (match.Success)
                 {
                     var macro = new MacroDefinition
                     {
                         Name = match.Groups[1].Value,
+                        // Parameter names are kept in declaration order so a call's
+                        // arguments can be bound to them by position.
                         Parameters = match.Groups[2].Value.Split(',').Select(p => p.Trim()).ToList(),
-                        Body = match.Groups[3].Value.Trim()
+                        Body = match.Groups[3].Value.Replace("\\", "").Trim()
                     };
-                    
-                    int current = i;
-                    while (current < lines.Length && lines[current].EndsWith("\\"))
-                    {
-                        current++;
-                        if (current < lines.Length)
-                        {
-                            macro.Body += " " + lines[current].Trim();
-                        }
-                    }
-                    macro.Body = macro.Body.Replace("\\", "").Trim();
 
                     // Basic tokenization of the body
-                    macro.BodyTokens = TokenizeMacroBody(macro.Body);
+                    macro.BodyTokens = ParseMacroArgs(macro.Body);
                     _macros[macro.Name] = macro;
                 }
             }
         }
 
-        private List<string> TokenizeMacroBody(string body)
+        /// <summary>
+        /// Joins the physical lines <paramref name="firstLine"/>..<paramref name="lastLine"/> of a
+        /// backslash-continued directive into one logical line, dropping the continuation backslashes.
+        /// </summary>
+        private static string JoinContinuedLines(string[] lines, int firstLine, int lastLine)
+        {
+            var joined = new StringBuilder();
+            for (int i = firstLine; i <= lastLine; i++)
+            {
+                string part = i == firstLine ? lines[i] : lines[i].Trim();
+                if (i < lastLine && part.EndsWith("\\"))
+                {
+                    part = part.Substring(0, part.Length - 1);
+                }
+                if (i > firstLine) joined.Append(' ');
+                joined.Append(part);
+            }
+            return joined.ToString();
+        }
+
+        /// <summary>
+        /// Splits a macro body, or the argument list of a macro call, into its top-level arguments.
+        /// Comments are discarded. String and character literals are opaque, so commas and
+        /// parentheses inside them are not separators, and adjacent literals with a macro call
+        /// between them stay in one argument. A nested call survives as a single argument.
+        /// </summary>
+        public List<string> ParseMacroArgs(string body)
         {
             var tokens = new List<string>();
-            if (body.StartsWith("{"))
+            string text = StripComments(body).Trim();
+            if (text.StartsWith("{"))
             {
-                body = body.Substring(1);
-                if (body.EndsWith("}")) body = body.Substring(0, body.Length - 1);
+                text = text.Substring(1);
+                if (text.EndsWith("}")) text = text.Substring(0, text.Length - 1);
             }
-            
+
             int depth = 0;
-            string currentToken = "";
-            foreach (char c in body)
+            var currentToken = new StringBuilder();
+            for (int i = 0; i < text.Length; i++)
             {
+                char c = text[i];
+                if (c == '"' || (c == '\'' && IsCharLiteralStart(text, i)))
+                {
+                    int literalEnd = SkipLiteral(text, i);
+                    currentToken.Append(text, i, literalEnd - i);
+                    i = literalEnd - 1;
+                    continue;
+                }
+
                 if (c == '(') depth++;
                 else if (c == ')') depth--;
                 else if (c == ',' && depth == 0)
                 {
-                    tokens.Add(currentToken.Trim());
-                    currentToken = "";
+                    tokens.Add(currentToken.ToString().Trim());
+                    currentToken.Clear();
                     continue;
                 }
-                currentToken += c;
+                currentToken.Append(c);
             }
-            if (!string.IsNullOrWhiteSpace(currentToken))
+            if (!string.IsNullOrWhiteSpace(currentToken.ToString()))
             {
-                tokens.Add(currentToken.Trim());
+                tokens.Add(currentToken.ToString().Trim());
             }
             return tokens;
         }
-        
+
+        /// <summary>
+        /// Replaces every C comment with a single space, leaving string and character literals intact.
+        /// </summary>
+        private static string StripComments(string text)
+        {
+            var result = new StringBuilder(text.Length);
+            for (int i = 0; i < text.Length; i++)
+            {
+                char c = text[i];
+                char next = i + 1 < text.Length ? text[i + 1] : '\0';
+
+                if (c == '"' || (c == '\'' && IsCharLiteralStart(text, i)))
+                {
+                    int literalEnd = SkipLiteral(text, i);
+                    result.Append(text, i, literalEnd - i);
+                    i = literalEnd - 1;
+                    continue;
+                }
+
+                if (c == '/' && next == '/')
+                {
+                    // The line break that ends the comment is left for the normal path to copy.
+                    while (i < text.Length && text[i] != '\n' && text[i] != '\r') i++;
+                    result.Append(' ');
+                    i--;
+                    continue;
+                }
+
+                if (c == '/' && next == '*')
+                {
+                    int commentEnd = text.IndexOf("*/", i + 2, StringComparison.Ordinal);
+                    result.Append(' ');
+                    if (commentEnd < 0) break;
+                    i = commentEnd + 1;
+                    continue;
+                }
+
+                result.Append(c);
+            }
+            return result.ToString();
+        }
+
+        /// <summary>
+        /// Returns the index just past the string or character literal starting at
+        /// <paramref name="start"/>, or the end of the text if the literal is unterminated.
+        /// A backslash escapes the character that follows it.
+        /// </summary>
+        private static int SkipLiteral(string text, int start)
+        {
+            char quote = text[start];
+            for (int i = start + 1; i < text.Length; i++)
+            {
+                if (text[i] == '\\')
+                {
+                    i++;
+                    continue;
+                }
+                if (text[i] == quote) return i + 1;
+            }
+            return text.Length;
+        }
+
+        /// <summary>
+        /// Reports whether the apostrophe at <paramref name="index"/> opens a character literal,
+        /// which requires a closing apostrophe within the span a literal can occupy. An apostrophe
+        /// in prose is therefore treated as an ordinary character.
+        /// </summary>
+        private static bool IsCharLiteralStart(string text, int index)
+        {
+            int limit = Math.Min(text.Length, index + 8);
+            for (int i = index + 1; i < limit; i++)
+            {
+                if (text[i] == '\\')
+                {
+                    i++;
+                    continue;
+                }
+                if (text[i] == '\'') return i > index + 1;
+            }
+            return false;
+        }
+
         public Dictionary<string, string> GetMacroDefinitions(params string[] names)
         {
             var res = new Dictionary<string, string>();
@@ -208,9 +326,12 @@ namespace Overseer.Services
             };
         }
 
+        /// <summary>
+        /// Alias of <see cref="ParseMacroArgs"/> retained for the monster and artifact call sites.
+        /// </summary>
         public List<string> ParseMonsterMacroArgs(string body)
         {
-            return TokenizeMacroBody(body);
+            return ParseMacroArgs(body);
         }
     }
 }

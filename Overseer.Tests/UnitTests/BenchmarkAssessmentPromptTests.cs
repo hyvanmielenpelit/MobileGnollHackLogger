@@ -212,9 +212,9 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsTwelve()
+    public void HarnessVersion_IsFifteen()
     {
-        Assert.Equal("12", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("15", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -436,9 +436,9 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs12_ScoringMethodIs10()
+    public void Versions_HarnessIs15_ScoringMethodIs10()
     {
-        Assert.Equal("12", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("15", BenchmarkAssessmentPrompt.HarnessVersion);
         Assert.Equal(10, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 

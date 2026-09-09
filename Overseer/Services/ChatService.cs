@@ -962,9 +962,12 @@ public class ChatService
                             resolvedPricing, runResult.ModelCallUsages,
                             actualServiceTier: runResult.ActualServiceTier,
                             requestedServiceTier: serviceTier)
+                        // Cache writes are billed at the write rate by the same call, so they are excluded
+                        // from the base-input figure handed to it.
                         : ModelPricingService.ComputeCost(
-                            resolvedPricing, wholeTurnInputTokens, wholeTurnOutputTokens,
-                            cacheReadTokens, cacheCreationTokens);
+                            resolvedPricing,
+                            Math.Max(0, wholeTurnInputTokens - (int)cacheCreationTokens),
+                            wholeTurnOutputTokens, cacheReadTokens, cacheCreationTokens);
                     pricingSource = resolvedPricing.Source == ModelPricingSource.Custom ? "custom" : "catalog";
 
                     // The event is still emitted when the price is withheld, with the price removed. That is what

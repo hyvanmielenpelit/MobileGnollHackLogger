@@ -3,6 +3,7 @@ namespace Overseer.Services;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using MobileGnollHackLogger.Data;
@@ -52,6 +53,25 @@ public record BenchmarkRunPricing(
     ModelPricing? ClaimVerifier = null,
     ModelPricing? SecondOpinion = null,
     bool IsSnapshot = false);
+
+/// <summary>
+/// One benchmark run's cost, split across the five roles that spend on it.
+///
+/// <para><see cref="Grading"/> is <see cref="Assessor"/>, <see cref="SecondOpinion"/>,
+/// <see cref="ClaimVerifier"/> and <see cref="Synthesis"/> together; <see cref="Total"/> is those
+/// four plus <see cref="Candidate"/>. Both subtotals are derived where the roles are costed, so a
+/// report and a screen reading the same run cannot disagree about what "grading" includes.</para>
+///
+/// <para><see cref="Incomplete"/> says a role that spent tokens has no resolved price. The per-role
+/// figures still stand and are worth showing, but <see cref="Total"/> is 0 in that case: a sum that
+/// silently omits a role reads as a run total and is worse than no figure at all.</para>
+///
+/// <para><see cref="Source"/> is <c>"custom"</c>, <c>"catalog"</c>, <c>"mixed"</c>, or empty when no
+/// role resolved to a price card at all.</para>
+/// </summary>
+public readonly record struct BenchmarkRoleCosts(
+    decimal Candidate, decimal Assessor, decimal SecondOpinion, decimal ClaimVerifier,
+    decimal Synthesis, decimal Grading, decimal Total, bool Incomplete, string Source);
 
 public class ModelPricingService
 {
@@ -376,6 +396,11 @@ public class ModelPricingService
     /// it would surcharge the whole turn whenever the sum crossed the threshold, and an agentic turn's
     /// sum crosses it routinely while no single request does. Run 13's Q18 reported 847,245 input tokens
     /// across ~30 calls against a 272,000 threshold — not one of them was a long-context request.
+    ///
+    /// Each call is split into the four disjoint buckets the four-argument overload bills: base input,
+    /// output, cache reads and cache writes. Base input is <see cref="TokenUsageReport.BillableUncachedInputTokens"/>,
+    /// not <see cref="TokenUsageReport.UncachedInputTokens"/>, because the latter still contains the
+    /// cache-creation tokens that the cache-write rate already covers.
     /// </summary>
     public static decimal ComputeCost(
         ModelPricing pricing,
@@ -411,7 +436,7 @@ public class ModelPricingService
                 : pricing;
 
             total += ComputeCost(
-                card, call.UncachedInputTokens, call.OutputTokens,
+                card, call.BillableUncachedInputTokens, call.OutputTokens,
                 call.CacheReadTokens, call.CacheCreationTokens);
         }
 
@@ -455,9 +480,13 @@ public class ModelPricingService
     /// the remainder at the base card, then scaling by the served service tier.
     ///
     /// <paramref name="totalPromptTokens"/> and <paramref name="longContextPromptTokens"/> are <b>total</b>
-    /// prompt tokens including cache reads — the shape BenchmarkRun stores — not the uncached figure the
-    /// four-argument overload takes. The long-context figures are a subset of the totals, so subtracting
-    /// them leaves the standard portion.
+    /// prompt tokens including both cache reads and cache writes — the shape BenchmarkRun stores — not the
+    /// uncached figure the four-argument overload takes. The long-context figures are a subset of the
+    /// totals, so subtracting them leaves the standard portion.
+    ///
+    /// Each portion is then partitioned into the four disjoint buckets the four-argument overload bills:
+    /// both the cache reads and the cache writes come off the prompt total, leaving only the tokens billed
+    /// at the base input rate, because cache reads and cache writes each carry their own rate.
     ///
     /// With no long-context tokens recorded this is exactly the flat-rate result, which is what every run
     /// predating tiered pricing must still produce.
@@ -487,7 +516,7 @@ public class ModelPricingService
 
         decimal cost = ComputeCost(
             pricing,
-            Math.Max(0, stdPrompt - stdCacheRead), stdOutput, stdCacheRead, stdCacheCreation);
+            Math.Max(0, stdPrompt - stdCacheRead - stdCacheCreation), stdOutput, stdCacheRead, stdCacheCreation);
 
         if (lcPrompt > 0 && pricing.LongContext != null)
         {
@@ -503,10 +532,141 @@ public class ModelPricingService
 
             cost += ComputeCost(
                 card,
-                Math.Max(0, lcPrompt - lcCacheRead), lcOutput, lcCacheRead, lcCacheCreation);
+                Math.Max(0, lcPrompt - lcCacheRead - lcCacheCreation), lcOutput, lcCacheRead, lcCacheCreation);
         }
 
         return cost * tierMultiplier;
+    }
+
+    /// <summary>
+    /// Whether a role spent anything billable. Cache reads and cache writes count: a role whose
+    /// prompt was served entirely from cache reports no uncached input tokens and still costs money.
+    /// </summary>
+    public static bool RoleHasTokens(
+        long inputTokens, long outputTokens, long cacheReadTokens = 0, long cacheCreationTokens = 0)
+        => inputTokens > 0 || outputTokens > 0 || cacheReadTokens > 0 || cacheCreationTokens > 0;
+
+    /// <summary>
+    /// The one costing of a benchmark run: five roles, their grading subtotal and their total, from
+    /// the run's stored totals and the price cards resolved for it. Every surface that reports a run's
+    /// cost — the run detail, the history list, the series estimate, the group analysis and the
+    /// report — calls this, so none of them can hold a second copy of the arithmetic.
+    ///
+    /// <para>The candidate is costed from totals with its long-context subsets and the service tier the
+    /// provider actually served, because its per-call evidence was bucketed at answer time and
+    /// persisted. The grading roles are costed flat from aggregate totals, each with its own cache
+    /// read and cache creation figures: no per-call usage is recorded for them, so neither a
+    /// long-context card nor a served tier is knowable for them here.</para>
+    ///
+    /// <para>The final synthesis is priced on <see cref="BenchmarkRunPricing.Assessor"/>: it runs on the
+    /// assessor's configuration, which is why <see cref="BenchmarkRunPricing"/> carries no synthesis
+    /// member. It is a peer of the per-question assessments, not a component of them, and
+    /// <see cref="BenchmarkRoleCosts.Assessor"/> excludes it.</para>
+    /// </summary>
+    /// <param name="run">The run whose stored totals are costed.</param>
+    /// <param name="pricing">The price cards resolved for the run's roles.</param>
+    /// <param name="servedServiceTier">The tier the provider served for the candidate. Null resolves it
+    /// from the run's answer rows, which a caller that did not load them must therefore pass itself.</param>
+    public static BenchmarkRoleCosts ComputeRunRoleCosts(
+        BenchmarkRun run, BenchmarkRunPricing pricing, string? servedServiceTier = null)
+    {
+        if (run == null || pricing == null)
+        {
+            return new BenchmarkRoleCosts(0m, 0m, 0m, 0m, 0m, 0m, 0m, true, string.Empty);
+        }
+
+        string? servedTier = servedServiceTier
+            ?? Benchmarking.BenchmarkRunFinalizer.ResolveServedServiceTier(run.Answers);
+
+        var candidateCard = pricing.Candidate;
+        var assessorCard = pricing.Assessor;
+        var secondOpinionCard = pricing.SecondOpinion;
+        var verifierCard = pricing.ClaimVerifier;
+
+        bool hasAssessor = RoleHasTokens(
+            run.TotalAssessmentInputTokens, run.TotalAssessmentOutputTokens,
+            run.TotalAssessmentCacheReadTokens, run.TotalAssessmentCacheCreationTokens);
+        bool hasSecondOpinion = RoleHasTokens(
+            run.TotalSecondOpinionInputTokens, run.TotalSecondOpinionOutputTokens,
+            run.TotalSecondOpinionCacheReadTokens, run.TotalSecondOpinionCacheCreationTokens);
+        bool hasVerifier = RoleHasTokens(
+            run.TotalClaimVerificationInputTokens, run.TotalClaimVerificationOutputTokens,
+            run.TotalClaimVerificationCacheReadTokens, run.TotalClaimVerificationCacheCreationTokens);
+        bool hasSynthesis = RoleHasTokens(
+            run.TotalSynthesisInputTokens, run.TotalSynthesisOutputTokens,
+            run.TotalSynthesisCacheReadTokens, run.TotalSynthesisCacheCreationTokens);
+
+        decimal candidate = candidateCard != null
+            ? ComputeCostFromTotals(
+                candidateCard,
+                run.TotalInputTokens, run.TotalOutputTokens,
+                run.TotalCacheReadTokens, run.TotalCacheCreationTokens,
+                run.TotalLongContextInputTokens, run.TotalLongContextOutputTokens,
+                run.TotalLongContextCacheReadTokens, run.TotalLongContextCacheCreationTokens,
+                actualServiceTier: servedTier,
+                requestedServiceTier: run.TestedModelServiceTierUsed)
+            : 0m;
+
+        // Every stored Total*InputTokens column is a *total* prompt figure that already contains the
+        // cache reads and cache writes beside it — the shape ComputeCostFromTotals takes. With no
+        // long-context subset and no served tier, which no grading role records, it is the flat rate
+        // over the four disjoint buckets, and identical to what a run predating these columns cost.
+        decimal assessor = hasAssessor && assessorCard != null
+            ? ComputeCostFromTotals(
+                assessorCard,
+                run.TotalAssessmentInputTokens, run.TotalAssessmentOutputTokens,
+                run.TotalAssessmentCacheReadTokens, run.TotalAssessmentCacheCreationTokens)
+            : 0m;
+
+        decimal secondOpinion = hasSecondOpinion && secondOpinionCard != null
+            ? ComputeCostFromTotals(
+                secondOpinionCard,
+                run.TotalSecondOpinionInputTokens, run.TotalSecondOpinionOutputTokens,
+                run.TotalSecondOpinionCacheReadTokens, run.TotalSecondOpinionCacheCreationTokens)
+            : 0m;
+
+        decimal claimVerifier = hasVerifier && verifierCard != null
+            ? ComputeCostFromTotals(
+                verifierCard,
+                run.TotalClaimVerificationInputTokens, run.TotalClaimVerificationOutputTokens,
+                run.TotalClaimVerificationCacheReadTokens, run.TotalClaimVerificationCacheCreationTokens)
+            : 0m;
+
+        decimal synthesis = hasSynthesis && assessorCard != null
+            ? ComputeCostFromTotals(
+                assessorCard,
+                run.TotalSynthesisInputTokens, run.TotalSynthesisOutputTokens,
+                run.TotalSynthesisCacheReadTokens, run.TotalSynthesisCacheCreationTokens)
+            : 0m;
+
+        decimal grading = assessor + secondOpinion + claimVerifier + synthesis;
+
+        // The candidate's card is required whatever its token counts: a run whose model under test
+        // cannot be priced has no total worth printing.
+        bool incomplete = candidateCard == null
+            || (hasAssessor && assessorCard == null)
+            || (hasSecondOpinion && secondOpinionCard == null)
+            || (hasVerifier && verifierCard == null)
+            || (hasSynthesis && assessorCard == null);
+
+        var sources = new List<ModelPricingSource>(4);
+        if (candidateCard != null) sources.Add(candidateCard.Source);
+        if ((hasAssessor || hasSynthesis) && assessorCard != null) sources.Add(assessorCard.Source);
+        if (hasSecondOpinion && secondOpinionCard != null) sources.Add(secondOpinionCard.Source);
+        if (hasVerifier && verifierCard != null) sources.Add(verifierCard.Source);
+
+        string source = string.Empty;
+        if (sources.Count > 0)
+        {
+            if (sources.All(s => s == ModelPricingSource.Custom)) source = "custom";
+            else if (sources.All(s => s == ModelPricingSource.Catalog)) source = "catalog";
+            else source = "mixed";
+        }
+
+        return new BenchmarkRoleCosts(
+            candidate, assessor, secondOpinion, claimVerifier, synthesis, grading,
+            incomplete ? 0m : candidate + grading,
+            incomplete, source);
     }
 }
 

@@ -166,8 +166,24 @@ public static class BenchmarkAssessmentPrompt
     ///     shared JSON extractor; substitution is not an omission; agreement direction and signed
     ///     delta; synthesis prompt receives refuted claims and second-opinion verdicts; candidate
     ///     prompt options recorded and Response Style control added.
+    /// v13: model calls and input-token-per-call reported; instrument fingerprint carried on the run
+    ///     summary; tool-family classification centralised on the server; assessor agreement coverage
+    ///     advisory; per-question resource caps flattened to the Advanced band's figures with
+    ///     QuestionTimeoutSeconds staying banded; long-context, service-tier and scheduled pricing in
+    ///     run costing.
+    /// v14: replicate sets introduced; synthesis accuracy divergence detected and reported apart from
+    ///     the per-question verdicts it must not override; completeness scope became a grading rule
+    ///     (scoring method 8, in step with v9's readability FORM rule); FlaggedPlusSample second-opinion
+    ///     mode with a deterministic top-up; claim verification yield reported and an optional verifier
+    ///     token budget added; input-token concentration reported per run.
+    /// v15: per-role cost tracking. Second opinion and final synthesis usage are recorded on their own
+    ///     run and answer columns instead of pooling into the assessor's, so the Assessor role in a
+    ///     cost breakdown is the per-question assessments alone and the synthesis call — previously
+    ///     uncounted — is priced on the assessor's own card as a peer role. This constant had read "12"
+    ///     since v12 despite v13 and v14 both landing and being run under; the runs stamped "12" from
+    ///     v13 on were not harness 12, and nothing repairs those rows.
     /// </summary>
-    public const string HarnessVersion = "12";
+    public const string HarnessVersion = "15";
 
     public static string BuildPerQuestionPrompt(
         string suiteName,
